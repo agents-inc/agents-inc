@@ -4,10 +4,20 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupFixture, configTsPath, readTestFile, skillsPath } from "../helpers/test-utils.js";
+import {
+  cleanupFixture,
+  cleanupTempDir,
+  configTsPath,
+  createTempDir,
+  readTestFile,
+  skillsPath,
+  sourceFolderIn,
+} from "../helpers/test-utils.js";
+import { foundByName } from "../helpers/found-by-name.js";
+import { pathHoldingOnly } from "../helpers/path-holding-only.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import type { WizardResult } from "../pages/wizard-result.js";
-import { DIRS, E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
@@ -62,24 +72,36 @@ const READ_ONLY_DIR = 0o555;
 /** The mode a fixture directory is built with, restored so cleanup can remove the tree. */
 const WRITABLE_DIR = 0o755;
 
-/**
- * A PATH carrying node and the standard bin directories but deliberately no `claude`, so
- * `claudePluginUninstall` fails with `spawn claude ENOENT` whether or not the machine
- * running the suite has the binary installed.
- */
-const PATH_WITHOUT_CLAUDE = [path.dirname(process.execPath), "/usr/bin", "/bin"].join(":");
+/** The binary `claudePluginUninstall` spawns by name, which the case below must not find. */
+const CLAUDE_BINARY = "claude";
 
 describe("an eject migration that could not do its work must not report success", () => {
   let source: E2ESource;
   let wizard: EditWizard | undefined;
   let lockedDirs: string[] = [];
+  /** Holds the directory `node` is linked into, outside every project. */
+  let nodeLinkRoot: string;
+  /**
+   * A PATH carrying node and the standard bin directories but deliberately no `claude`, so
+   * `claudePluginUninstall` fails with `spawn claude ENOENT`.
+   *
+   * `node` is linked into a directory of its own rather than named by the directory it runs
+   * from. That directory is where `npm install -g @anthropic-ai/claude-code` puts `claude`, so
+   * naming it handed the binary back on exactly the machines that have it. `/usr/bin` and `/bin`
+   * are the machine's own, so the case asserts the absence rather than trusting the construction.
+   */
+  let pathWithoutClaude: string;
 
   beforeAll(async () => {
     source = await createE2ESource();
+    nodeLinkRoot = await createTempDir();
+    const nodeAlone = await pathHoldingOnly({ root: nodeLinkRoot }, ["node"]);
+    pathWithoutClaude = [nodeAlone, "/usr/bin", "/bin"].join(path.delimiter);
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
     await cleanupFixture(source);
+    await cleanupTempDir(nodeLinkRoot);
   });
 
   afterEach(async () => {
@@ -151,7 +173,7 @@ describe("an eject migration that could not do its work must not report success"
     async () => {
       const project = await pluginInstallWithNoLocalCopy();
 
-      const configDir = path.join(project.dir, DIRS.CLAUDE_SRC);
+      const configDir = sourceFolderIn(project.dir);
       await chmod(configTsPath(project.dir), READ_ONLY_DIR);
       await chmod(configDir, READ_ONLY_DIR);
       lockedDirs.push(configDir, configTsPath(project.dir));
@@ -172,11 +194,15 @@ describe("an eject migration that could not do its work must not report success"
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const project = await pluginInstallWithNoLocalCopy();
+      expect(
+        await foundByName(CLAUDE_BINARY, pathWithoutClaude),
+        "the PATH this edit is handed finds a claude, so its uninstall can fail for a reason other than a missing binary",
+      ).toBe("");
 
       wizard = await EditWizard.launch({
         projectDir: project.dir,
         source,
-        env: { PATH: PATH_WITHOUT_CLAUDE },
+        env: { PATH: pathWithoutClaude },
       });
       const sources = await wizard.build.advanceToSources();
       await sources.setAllLocal();

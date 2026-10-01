@@ -20,7 +20,14 @@ import {
 import type { FixtureProjectConfig } from "../helpers/test-utils.js";
 import { BRANDING, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import type { ProjectHandle } from "../pages/wizard-result.js";
-import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
@@ -68,19 +75,15 @@ const DASHBOARD_CONTENT: DeclaredContent = {
  * refuses it, and a project-scoped skill assigned to a sub-agent resting at the shared default is
  * a pair the decode refuses outright.
  */
-const SEED_PAYLOAD = {
-  v: 5,
-  matrixVersion: "1.0.0",
-  stackId: null,
+const SEED_PAYLOAD = buildSeedPayload({
   skills: {
-    [E2E_SKILL.react.id]: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
       install: "eject",
       scope: "global",
-      assignments: { "web-developer": "lazy" },
-    },
+      assignments: { [E2E_AGENT["web-developer"].name]: "lazy" },
+    }),
   },
-  agents: {},
-};
+});
 
 /** The id the store publishes {@link SEED_PAYLOAD} under. Eight characters, as the wire requires. */
 const SEED_ID = "Brand001";
@@ -134,12 +137,15 @@ describe("the name a run prints itself under", () => {
     await mkdir(home, { recursive: true });
     await mkdir(marketplaceDir, { recursive: true });
 
-    await writeProjectConfig(projectDir, {
-      name: PROJECT_NAME,
-      marketplace: marketplaceDir,
-      ...declares,
-      ...(brandingName !== undefined && { branding: { name: brandingName } }),
-    });
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: PROJECT_NAME,
+        marketplace: marketplaceDir,
+        ...declares,
+        ...(brandingName !== undefined && { branding: { name: brandingName } }),
+      }),
+    );
 
     return { project: { dir: projectDir }, env: { HOME: home } };
   }
@@ -151,18 +157,21 @@ describe("the name a run prints itself under", () => {
 
   /**
    * An EMPTY working directory under a HOME that carries the branded configuration. The project
-   * has no `.claude-src/` of its own, so the only rung left is the global one.
+   * has no source folder of its own, so the only rung left is the global one.
    */
   async function buildProjectUnderBrandedHome(brandingName?: string): Promise<BrandedProject> {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
     const home = path.join(tempDir, "home");
     await mkdir(projectDir, { recursive: true });
-    await writeProjectConfig(home, {
-      name: PROJECT_NAME,
-      ...NOTHING_DECLARED,
-      ...(brandingName !== undefined && { branding: { name: brandingName } }),
-    });
+    await writeProjectConfig(
+      home,
+      buildProjectConfig({
+        name: PROJECT_NAME,
+        ...NOTHING_DECLARED,
+        ...(brandingName !== undefined && { branding: { name: brandingName } }),
+      }),
+    );
 
     return { project: { dir: projectDir }, env: { HOME: home } };
   }

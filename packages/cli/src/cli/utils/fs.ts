@@ -2,7 +2,8 @@ import fs from "fs-extra";
 import fg from "fast-glob";
 import os from "os";
 import path from "path";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../consts";
+import { LEGACY_SOURCE_DIR, PROVIDERS, STANDARD_FILES } from "../consts";
+import { sourceDir } from "../lib/installation/install-layout.js";
 // The gate's private token module, imported here by exception (eslint records
 // it): this file is the write choke point every pair write funnels through, and
 // `gate-token.ts` is a dependency-free leaf, so the import cannot cycle.
@@ -79,6 +80,34 @@ export async function glob(
   return fg(pattern, { cwd, onlyFiles: true, dot });
 }
 
+/** The two files the gate owns, wherever a global pair sits. */
+const PAIR_HALVES = [STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS];
+
+/**
+ * Every folder a GLOBAL config pair can sit in: the one every pre-rename installation carries,
+ * and one per provider under the new root.
+ *
+ * All of them, rather than the one this home is on, because the guard has to hold against the
+ * write it did not expect. A tripwire that knew only the folder in use would let a write into any
+ * other one through with nothing failing anywhere — and the gate's static layers cannot see that
+ * at all, since a write that simply lands somewhere they were not told about satisfies every one
+ * of them.
+ */
+function globalPairFolders(): string[] {
+  const home = os.homedir();
+  return [
+    path.join(home, LEGACY_SOURCE_DIR),
+    ...PROVIDERS.map((provider) => sourceDir(home, provider)),
+  ];
+}
+
+/** Every path either half of the global pair can have. */
+function everyGlobalPairPath(): string[] {
+  return globalPairFolders().flatMap((folder) =>
+    PAIR_HALVES.map((half) => path.join(folder, half)),
+  );
+}
+
 /**
  * True when `resolvedPath` is one of the two halves of the global config pair.
  *
@@ -88,11 +117,7 @@ export async function glob(
  * cannot do.
  */
 function isGlobalPairPath(resolvedPath: string): boolean {
-  const globalConfigDir = path.join(os.homedir(), CLAUDE_SRC_DIR);
-  return (
-    resolvedPath === path.join(globalConfigDir, STANDARD_FILES.CONFIG_TS) ||
-    resolvedPath === path.join(globalConfigDir, STANDARD_FILES.CONFIG_TYPES_TS)
-  );
+  return everyGlobalPairPath().includes(resolvedPath);
 }
 
 export async function writeFile(filePath: string, content: string): Promise<void> {

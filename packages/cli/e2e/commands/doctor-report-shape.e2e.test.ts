@@ -47,7 +47,7 @@ const EMPTY_CONTENT_SECTION = [
  */
 const EMPTY_OPERATIONAL_OPENING = [
   "  Operational checks",
-  "    Config Valid            ✗  .claude-src/config.ts not found",
+  "    Config Valid            ✗  .agents-inc/claude/config.ts not found",
 ].join("\n");
 
 describe("the report doctor prints over a directory holding nothing", () => {

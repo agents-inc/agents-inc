@@ -29,7 +29,7 @@ import { renderAgent } from "@workspace/compile/agent-source";
 import { cliVersion } from "../src/cli/lib/agents/agent-provenance.js";
 import {
   buildAgentTemplateContext,
-  compileAgentForPlugin,
+  compileAgentForHost,
   createLiquidEngine,
 } from "../src/cli/lib/compiler.js";
 import { createMockAgentConfig } from "../src/cli/lib/__tests__/factories/agent-factories.js";
@@ -356,7 +356,7 @@ describe("the gate is wired where its sibling is", () => {
  */
 describe("a browser render of a vendored sub-agent", () => {
   it("is byte-identical to the render the CLI writes from disk", async () => {
-    // Neither skill carries a `source`, so `compileAgentForPlugin`'s per-skill
+    // Neither skill carries a `source`, so `compileAgentForHost`'s per-skill
     // `pluginRef` mapping is the identity and the corpus render needs no mapping
     // to match it. One preloaded and one lazy, because the split is order-preserving
     // and a single-skill agent would exercise neither side of it.
@@ -367,7 +367,8 @@ describe("a browser render of a vendored sub-agent", () => {
     const agent = createMockAgentConfig(FIDELITY_AGENT, skills, { path: FIDELITY_AGENT_PATH });
     const version = await cliVersion();
 
-    const fromDisk = await compileAgentForPlugin(
+    const fromDisk = await compileAgentForHost(
+      "claude",
       FIDELITY_AGENT,
       agent,
       PROJECT_ROOT,

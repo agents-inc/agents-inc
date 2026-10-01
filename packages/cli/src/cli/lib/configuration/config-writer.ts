@@ -1,6 +1,6 @@
 import os from "os";
-import path from "path";
-import { CLAUDE_SRC_DIR } from "../../consts";
+import type { Provider } from "../../consts";
+import { sourceFolderInUse } from "../installation/install-layout";
 
 /**
  * The config-pair renderers live in `@workspace/compile` and are re-exported here, so the
@@ -19,7 +19,7 @@ export {
 } from "@workspace/compile/config-source";
 
 /**
- * Returns the absolute path to the global .claude-src directory.
+ * Returns the absolute path to the global source directory.
  *
  * The import path for the config form that extends the global config by importing it rather
  * than inlining it — a form with no production caller: `writeProjectConfigPair` in
@@ -27,7 +27,10 @@ export {
  * `globalConfig` alongside, which routes to the inlining branch. It is a parameter of
  * `generateConfigSource` (`options.globalImportPath`) rather than a read inside it, because the
  * editor's output preview renders the same function in a browser.
+ *
+ * The provider is the importing PROJECT's: the specifier points a project config at the global
+ * one it extends, and each provider family inherits only within itself.
  */
-export function getGlobalConfigImportPath(): string {
-  return path.join(os.homedir(), CLAUDE_SRC_DIR);
+export function getGlobalConfigImportPath(provider: Provider): string {
+  return sourceFolderInUse(os.homedir(), provider).dir;
 }

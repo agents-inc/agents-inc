@@ -2,7 +2,8 @@ import path from "path";
 import { mkdir, readFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { STANDARD_FILES } from "../../../consts";
+import { sourceFolderInUse } from "../../installation/install-layout.js";
 import type { AgentName } from "../../../types";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 import { reconcileTypesFromDisk } from "../../config-gate/index.js";
@@ -61,7 +62,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
 
   /** The global pair's types half — where a home-directory install writes the standalone unions. */
   function globalTypesPath(): string {
-    return path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS);
+    return path.join(sourceFolderInUse(homeDir, "claude").dir, STANDARD_FILES.CONFIG_TYPES_TS);
   }
 
   beforeEach(async () => {
@@ -124,7 +125,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
    * `loadAgentDefs` — the value that pass also hands its compiler.
    */
   async function refreshAsCompileDoes(): Promise<void> {
-    const loaded = await loadProjectConfigFromDir(homeDir);
+    const loaded = await loadProjectConfigFromDir(homeDir, "claude");
     expect(loaded, "init must have written a config for the refresh to read").not.toBeNull();
 
     await reconcileTypesFromDisk(homeDir, loaded!.config, {
@@ -165,7 +166,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
     await installAtHome();
     const afterInit = await readFile(globalTypesPath(), "utf-8");
 
-    const loaded = await loadProjectConfigFromDir(homeDir);
+    const loaded = await loadProjectConfigFromDir(homeDir, "claude");
     const activeNames = (loaded?.config.agents ?? [])
       .filter((agent) => !agent.excluded)
       .map((agent) => agent.name);

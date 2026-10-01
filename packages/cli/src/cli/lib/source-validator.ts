@@ -24,7 +24,7 @@ import {
   stacksConfigSchema,
 } from "./schemas";
 import { parseFrontmatter } from "./loading/loader";
-import { ConfigDefaultExportError, loadConfig, loadProjectSourceConfig } from "./configuration";
+import { ConfigDefaultExportError, loadConfig, loadSourceRepoConfig } from "./configuration";
 import { checkMatrixHealth, type MatrixHealthIssue } from "./matrix";
 import { loadSkillsMatrixFromSource } from "./loading/source-loader";
 import { MarketplaceNameRefusedError } from "./loading/source-fetcher";
@@ -69,7 +69,7 @@ export async function isSourceRepo(dir: string): Promise<boolean> {
   // ABORT on an unreadable config, and it is caught rather than fatal at both callers: `doctor`
   // reaches this through `safeCheck`, so the throw becomes a failed row instead of an aborted
   // command, and its other caller asks only where no config file exists at all.
-  const sourceConfig = await loadProjectSourceConfig(dir);
+  const sourceConfig = await loadSourceRepoConfig(dir);
   return directoryExists(path.join(dir, sourceConfig?.skillsDir ?? SKILLS_DIR_PATH));
 }
 
@@ -205,33 +205,27 @@ export async function validateSource(
   sourcePath: string,
   reader: MarketplaceReader = "author",
 ): Promise<SourceValidationResult> {
-  const issues: SourceValidationIssue[] = [];
-
   const resolvedPath = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(sourcePath);
 
   if (!(await directoryExists(resolvedPath))) {
-    issues.push({
-      severity: "error",
-      file: resolvedPath,
-      message: "Marketplace directory does not exist",
-    });
-    return buildResult(issues, 0);
+    return buildResult(
+      [{ severity: "error", file: resolvedPath, message: "Marketplace directory does not exist" }],
+      0,
+    );
   }
 
   // ABORT on an unreadable config, caught by `validateOneSource`, which turns it into an issue
   // against this marketplace. Defaulting past it would validate whatever sits at `src/skills/` and
   // call a marketplace whose skills live elsewhere empty.
-  const sourceProjectConfig = await loadProjectSourceConfig(resolvedPath);
+  const sourceProjectConfig = await loadSourceRepoConfig(resolvedPath);
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
   const skillsDir = path.join(resolvedPath, skillsDirRelPath);
 
   if (!(await directoryExists(skillsDir))) {
-    issues.push({
-      severity: "error",
-      file: skillsDir,
-      message: "Skills directory does not exist",
-    });
-    return buildResult(issues, 0);
+    return buildResult(
+      [{ severity: "error", file: skillsDir, message: "Skills directory does not exist" }],
+      0,
+    );
   }
 
   // Phase 1: Check every skill directory has both SKILL.md and metadata.yaml
@@ -241,17 +235,15 @@ export async function validateSource(
   const skillMdDirs = new Set(skillMdFiles.map((f) => path.dirname(f)));
   const metadataDirs = new Set(metadataFiles.map((f) => path.dirname(f)));
 
-  issues.push(...validateSkillFilePairs(skillMdDirs, metadataDirs, skillsDir));
+  const pairIssues = validateSkillFilePairs(skillMdDirs, metadataDirs, skillsDir);
 
   // Phase 2: Validate each metadata.yaml against strict schema and conventions.
   // Pair violations were already reported by phase 1 — validate only complete pairs.
   const validMetadataFiles = metadataFiles.filter((f) => skillMdDirs.has(path.dirname(f)));
-  for (const metadataFile of validMetadataFiles) {
-    issues.push(...(await validateOneSkill(skillsDir, skillsDirRelPath, metadataFile)));
-  }
+  const skillIssues = await validateSkillsInTurn(skillsDir, skillsDirRelPath, validMetadataFiles);
 
   // Phase 3: Cross-reference validation via matrix health check
-  issues.push(...(await checkCrossReferences(resolvedPath, reader)));
+  const crossReferenceIssues = await checkCrossReferences(resolvedPath, reader);
 
   // Phases 4–6: optional source-repo targets — run in parallel
   // Phase 4: stack skill metadata + stack configs
@@ -262,9 +254,24 @@ export async function validateSource(
     validateAgents(resolvedPath),
     validateConfigFiles(resolvedPath),
   ]);
-  issues.push(...extraIssues.flat());
 
-  return buildResult(issues, validMetadataFiles.length);
+  return buildResult(
+    [...pairIssues, ...skillIssues, ...crossReferenceIssues, ...extraIssues.flat()],
+    validMetadataFiles.length,
+  );
+}
+
+/** {@link validateOneSkill} over every complete pair, one skill at a time, in the order given. */
+async function validateSkillsInTurn(
+  skillsDir: string,
+  skillsDirRelPath: string,
+  metadataFiles: string[],
+): Promise<SourceValidationIssue[]> {
+  const issues: SourceValidationIssue[] = [];
+  for (const metadataFile of metadataFiles) {
+    issues.push(...(await validateOneSkill(skillsDir, skillsDirRelPath, metadataFile)));
+  }
+  return issues;
 }
 
 /**
@@ -512,44 +519,57 @@ async function validateConfigFiles(resolvedPath: string): Promise<SourceValidati
   return results.flat();
 }
 
-/**
- * Globs YAML files under baseDir and validates each against the given schema.
- * Reports parse errors, schema errors (as field-path messages), and uses relBaseDir
- * for display paths so issue locations match the project-relative form used elsewhere.
- */
-async function validateYamlFiles(opts: {
+/** One kind of YAML file a source may carry: where it lives, and the schema each must satisfy. */
+type YamlFileScan = {
   baseDir: string;
+  /**
+   * `baseDir` as issues report it, so their locations match the project-relative form used
+   * elsewhere.
+   */
   relBaseDir: string;
   pattern: string;
   schema: z.ZodType<unknown>;
-}): Promise<SourceValidationIssue[]> {
+};
+
+/**
+ * {@link validateYamlFile} over every file the scan's pattern matches, one file at a time, in
+ * glob order.
+ */
+async function validateYamlFiles(scan: YamlFileScan): Promise<SourceValidationIssue[]> {
   const issues: SourceValidationIssue[] = [];
-  const files = await glob(opts.pattern, opts.baseDir);
+  const files = await glob(scan.pattern, scan.baseDir);
 
   for (const relFile of files) {
-    const absPath = path.join(opts.baseDir, relFile);
-    const displayPath = path.join(opts.relBaseDir, relFile);
-
-    let parsed: unknown;
-    try {
-      parsed = parseYaml(await readFile(absPath));
-    } catch (error) {
-      issues.push({ severity: "error", file: displayPath, message: yamlParseFailure(error) });
-      continue;
-    }
-
-    const result = opts.schema.safeParse(parsed);
-    if (result.success) continue;
-
-    issues.push(
-      ...formatZodErrors(result.error).map((message) => ({
-        severity: "error" as const,
-        file: displayPath,
-        message,
-      })),
-    );
+    issues.push(...(await validateYamlFile(scan, relFile)));
   }
   return issues;
+}
+
+/**
+ * One YAML file judged against the scan's schema: its parse error if it cannot be read, otherwise
+ * the schema's errors as field-path messages — none when it passes.
+ */
+async function validateYamlFile(
+  scan: YamlFileScan,
+  relFile: string,
+): Promise<SourceValidationIssue[]> {
+  const displayPath = path.join(scan.relBaseDir, relFile);
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(await readFile(path.join(scan.baseDir, relFile)));
+  } catch (error) {
+    return [{ severity: "error", file: displayPath, message: yamlParseFailure(error) }];
+  }
+
+  const result = scan.schema.safeParse(parsed);
+  if (result.success) return [];
+
+  return formatZodErrors(result.error).map((message) => ({
+    severity: "error" as const,
+    file: displayPath,
+    message,
+  }));
 }
 
 /**

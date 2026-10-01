@@ -5,14 +5,21 @@ import { extractFrontmatter } from "../../utils/frontmatter";
 import { glob, readFile, directoryExists, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import {
-  CLAUDE_SRC_DIR,
   DIRS,
   LOCAL_PSEUDO_CATEGORY,
   STANDARD_DIRS,
   STANDARD_FILES,
   PROJECT_ROOT,
 } from "../../consts";
-import type { AgentDefinition, AgentName, SkillDefinitionMap, SkillFrontmatter } from "../../types";
+import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
+import type {
+  AgentDefinition,
+  AgentName,
+  AgentYamlConfig,
+  SkillDefinition,
+  SkillDefinitionMap,
+  SkillFrontmatter,
+} from "../../types";
 import {
   describeMetadataSchemaFailure,
   formatZodIssues,
@@ -110,7 +117,7 @@ export function parseFrontmatter(content: string, filePath?: string): SkillFront
 }
 
 type LoadAgentsFromDirOptions = {
-  /** Relative base recorded on each definition (project agents live under .claude-src/agents). */
+  /** Relative base recorded on each definition (project agents live under the source folder's agents/). */
   agentBaseDir?: string;
   /** Propagate the `custom: true` metadata flag (source/CLI agents only). */
   includeCustomFlag?: boolean;
@@ -151,29 +158,7 @@ async function loadAgentsFromDir(
       }
       const config = parsed.data;
 
-      agents[config.id] = {
-        title: config.title,
-        description: config.description,
-        ...(config.model !== undefined && { model: config.model }),
-        ...(config.effort !== undefined && { effort: config.effort }),
-        tools: config.tools,
-        // The rest of what `agent.liquid` reads. Spread conditionally, because the template
-        // branches on presence — an explicit `undefined` renders as an empty frontmatter key.
-        ...(config.disallowedTools !== undefined && {
-          disallowedTools: config.disallowedTools,
-        }),
-        ...(config.permissionMode !== undefined && { permissionMode: config.permissionMode }),
-        ...(config.isolation !== undefined && { isolation: config.isolation }),
-        ...(config.hooks !== undefined && { hooks: config.hooks }),
-        ...(config.experimental !== undefined && { experimental: config.experimental }),
-        ...(config.outputFormat !== undefined && { outputFormat: config.outputFormat }),
-        path: path.dirname(file),
-        sourceRoot,
-        ...(options.agentBaseDir ? { agentBaseDir: options.agentBaseDir } : {}),
-        ...(config.domain ? { domain: config.domain } : {}),
-        ...(options.includeCustomFlag && config.custom === true ? { custom: true } : {}),
-      };
-
+      agents[config.id] = toAgentDefinition(config, file, sourceRoot, options);
       verbose(`Loaded ${options.verboseLabel}: ${config.id} from ${file}`);
     } catch (error) {
       warn(refusalOfAgentMetadata(fullPath, getErrorMessage(error)));
@@ -181,6 +166,40 @@ async function loadAgentsFromDir(
   }
 
   return agents;
+}
+
+/**
+ * One parsed agent `metadata.yaml` as the definition the compiler reads, recording where it was
+ * found: `file` is its path under the agents directory, whose parent becomes the agent's `path`.
+ */
+function toAgentDefinition(
+  config: AgentYamlConfig,
+  file: string,
+  sourceRoot: string,
+  options: LoadAgentsFromDirOptions,
+): AgentDefinition {
+  return {
+    title: config.title,
+    description: config.description,
+    ...(config.model !== undefined && { model: config.model }),
+    ...(config.effort !== undefined && { effort: config.effort }),
+    tools: config.tools,
+    // The rest of what `agent.liquid` reads. Spread conditionally, because the template
+    // branches on presence — an explicit `undefined` renders as an empty frontmatter key.
+    ...(config.disallowedTools !== undefined && {
+      disallowedTools: config.disallowedTools,
+    }),
+    ...(config.permissionMode !== undefined && { permissionMode: config.permissionMode }),
+    ...(config.isolation !== undefined && { isolation: config.isolation }),
+    ...(config.hooks !== undefined && { hooks: config.hooks }),
+    ...(config.experimental !== undefined && { experimental: config.experimental }),
+    ...(config.outputFormat !== undefined && { outputFormat: config.outputFormat }),
+    path: path.dirname(file),
+    sourceRoot,
+    ...(options.agentBaseDir ? { agentBaseDir: options.agentBaseDir } : {}),
+    ...(config.domain ? { domain: config.domain } : {}),
+    ...(options.includeCustomFlag && config.custom === true ? { custom: true } : {}),
+  };
 }
 
 export async function loadAllAgents(
@@ -209,7 +228,8 @@ export async function loadMergedAgents(
 export async function loadProjectAgents(
   projectRoot: string,
 ): Promise<Partial<Record<AgentName, AgentDefinition>>> {
-  const projectAgentsDir = path.join(projectRoot, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
+  const sourceFolder = sourceFolderInUse(projectRoot, providerInUse(projectRoot));
+  const projectAgentsDir = path.join(sourceFolder.dir, STANDARD_DIRS.AGENTS);
 
   if (!(await directoryExists(projectAgentsDir))) {
     verbose(`No project agents directory at ${projectAgentsDir}`);
@@ -218,8 +238,9 @@ export async function loadProjectAgents(
   }
 
   return loadAgentsFromDir(projectAgentsDir, projectRoot, {
-    // Project agents are in .claude-src/agents/
-    agentBaseDir: `${CLAUDE_SRC_DIR}/agents`,
+    // The recorded base is the folder this scope is actually on, so an agent's `path` names a
+    // directory the reader can open rather than the layout the product is moving to.
+    agentBaseDir: `${sourceFolder.relName}/${STANDARD_DIRS.AGENTS}`,
     verboseLabel: "project agent",
   });
 }
@@ -275,63 +296,113 @@ export async function loadSkillsFromDir(
   const skillFiles = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
 
   for (const skillFile of skillFiles) {
-    const skillPath = path.join(skillsDir, skillFile);
-    const skillDir = path.dirname(skillPath);
-    const relativePath = path.relative(skillsDir, skillDir);
-    const skillDirName = path.basename(skillDir);
-    const displayPath = pathPrefix ? `${pathPrefix}/${relativePath}/` : `${relativePath}/`;
+    const skill = locateSkill(skillsDir, skillFile, pathPrefix);
 
     if (requireMetadata) {
-      const metadataPath = path.join(skillDir, STANDARD_FILES.METADATA_YAML);
-      if (!(await fileExists(metadataPath))) {
-        warn(
-          `Skill '${skillDirName}' in '${displayPath}' is missing ${STANDARD_FILES.METADATA_YAML} — skipped. Add ${STANDARD_FILES.METADATA_YAML} to register it with the CLI.`,
-        );
-        continue;
-      }
-
-      // A metadata.yaml that describes no skill is reported to the caller rather
-      // than loaded around: the local-skill discovery behind config-types
-      // generation refuses the same file, and compile refuses the whole run over it.
-      const read = await readSkillMetadata(metadataPath);
-      if (!read.usable) {
-        unusableMetadata.push({ skillDirName, metadataPath, reason: read.reason });
-        verbose(`  Unusable ${STANDARD_FILES.METADATA_YAML} in '${skillDirName}'`);
-        continue;
-      }
-
-      // Skipped rather than reported, and silently: the file is intact, so there is nothing
-      // here to repair or refuse a run over — and the sentence telling the user which field
-      // to fix is `extractLocalSkill`'s, which every command reaching here also runs.
-      if (namesPlaceholderCategory(read.metadata)) {
-        verbose(`  Placeholder ${METADATA_KEYS.CATEGORY} in '${skillDirName}'`);
-        continue;
-      }
+      const verdict = await judgeSkillMetadata(skill);
+      if (verdict.kind === "unusable") unusableMetadata.push(verdict.refusal);
+      if (verdict.kind !== "admitted") continue;
     }
 
-    try {
-      const content = await readFile(skillPath);
-      const frontmatter = parseFrontmatter(content, skillPath);
-
-      if (!frontmatter?.name) {
-        warn(`Skipping skill in '${skillDirName}': missing or invalid frontmatter name`);
-        continue;
-      }
-
-      const canonicalId = frontmatter.name;
-      skills[canonicalId] = {
-        id: canonicalId,
-        path: displayPath,
-        description: frontmatter.description || "",
-      };
-
-      verbose(`  Loaded skill: ${canonicalId}`);
-    } catch (error) {
-      verbose(`  Failed to load skill: ${skillFile} - ${getErrorMessage(error)}`);
-    }
+    const definition = await readSkillDefinition(skill);
+    if (definition) skills[definition.id] = definition;
   }
 
   return { skills, unusableMetadata };
+}
+
+/** One SKILL.md the glob found, in each of the forms the loader reads or reports it by. */
+type SkillLocation = {
+  /** The SKILL.md relative to the skills directory, as the glob returned it. */
+  skillFile: string;
+  /** Absolute path to the SKILL.md. */
+  skillMdPath: string;
+  /** Absolute path to the directory holding it. */
+  skillDir: string;
+  /** That directory's own name. */
+  skillDirName: string;
+  /** The `path` recorded on the skill: prefixed, relative, slash-terminated. */
+  displayPath: string;
+};
+
+function locateSkill(skillsDir: string, skillFile: string, pathPrefix: string): SkillLocation {
+  const skillMdPath = path.join(skillsDir, skillFile);
+  const skillDir = path.dirname(skillMdPath);
+  const relativePath = path.relative(skillsDir, skillDir);
+
+  return {
+    skillFile,
+    skillMdPath,
+    skillDir,
+    skillDirName: path.basename(skillDir),
+    displayPath: pathPrefix ? `${pathPrefix}/${relativePath}/` : `${relativePath}/`,
+  };
+}
+
+/**
+ * What a skill's metadata.yaml says about loading it, under `requireMetadata`. Only an
+ * `unusable` file is the caller's to report; a `skipped` skill is logged here and left out.
+ */
+type SkillMetadataVerdict =
+  { kind: "admitted" } | { kind: "skipped" } | { kind: "unusable"; refusal: UnusableSkillMetadata };
+
+async function judgeSkillMetadata(skill: SkillLocation): Promise<SkillMetadataVerdict> {
+  const metadataPath = path.join(skill.skillDir, STANDARD_FILES.METADATA_YAML);
+  if (!(await fileExists(metadataPath))) {
+    warn(
+      `Skill '${skill.skillDirName}' in '${skill.displayPath}' is missing ${STANDARD_FILES.METADATA_YAML} — skipped. Add ${STANDARD_FILES.METADATA_YAML} to register it with the CLI.`,
+    );
+    return { kind: "skipped" };
+  }
+
+  // A metadata.yaml that describes no skill is reported to the caller rather
+  // than loaded around: the local-skill discovery behind config-types
+  // generation refuses the same file, and compile refuses the whole run over it.
+  const read = await readSkillMetadata(metadataPath);
+  if (!read.usable) {
+    verbose(`  Unusable ${STANDARD_FILES.METADATA_YAML} in '${skill.skillDirName}'`);
+    return {
+      kind: "unusable",
+      refusal: { skillDirName: skill.skillDirName, metadataPath, reason: read.reason },
+    };
+  }
+
+  // Skipped rather than reported, and silently: the file is intact, so there is nothing
+  // here to repair or refuse a run over — and the sentence telling the user which field
+  // to fix is `extractLocalSkill`'s, which every command reaching here also runs.
+  if (namesPlaceholderCategory(read.metadata)) {
+    verbose(`  Placeholder ${METADATA_KEYS.CATEGORY} in '${skill.skillDirName}'`);
+    return { kind: "skipped" };
+  }
+
+  return { kind: "admitted" };
+}
+
+/**
+ * The skill a SKILL.md defines, keyed by its frontmatter `name`, or undefined — logged, never
+ * thrown — when the file cannot be read or names no skill.
+ */
+async function readSkillDefinition(skill: SkillLocation): Promise<SkillDefinition | undefined> {
+  try {
+    const content = await readFile(skill.skillMdPath);
+    const frontmatter = parseFrontmatter(content, skill.skillMdPath);
+
+    if (!frontmatter?.name) {
+      warn(`Skipping skill in '${skill.skillDirName}': missing or invalid frontmatter name`);
+      return undefined;
+    }
+
+    const canonicalId = frontmatter.name;
+    verbose(`  Loaded skill: ${canonicalId}`);
+    return {
+      id: canonicalId,
+      path: skill.displayPath,
+      description: frontmatter.description || "",
+    };
+  } catch (error) {
+    verbose(`  Failed to load skill: ${skill.skillFile} - ${getErrorMessage(error)}`);
+    return undefined;
+  }
 }
 
 /**

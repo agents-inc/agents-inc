@@ -171,18 +171,24 @@ describe("marketplace author arc — check, build, publish, install", () => {
       expect((await listFiles(skillsPath(globalHome))).length).toBeGreaterThan(0);
 
       // Surface 4.
-      const claudeSrcDir = path.dirname(configTypesTsPath(globalHome));
-      const typecheck = await typecheckGeneratedConfig(claudeSrcDir);
+      const sourceFolderDir = path.dirname(configTypesTsPath(globalHome));
+      const typecheck = await typecheckGeneratedConfig(sourceFolderDir);
       expect(
         typecheck.exitCode,
         `the installed config must type-check.\ntsc output:\n${typecheck.output}`,
       ).toBe(EXIT_CODES.SUCCESS);
-      const probe = await probeConfigTypesNarrowing(claudeSrcDir, GENERATED_ALIASES);
+      const probe = await probeConfigTypesNarrowing(sourceFolderDir, GENERATED_ALIASES);
       expect(
         probe.exitCode,
         `a bogus literal must not type-check against the installed pair.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`.
+      expect(
+        probe.rejected,
+        `every alias asked for must reject its bogus literal.\ntsc output:\n${probe.output}`,
+      ).toStrictEqual([...GENERATED_ALIASES]);
 
       // The same command that skipped the operational layer in the repository
       // runs both layers here — the difference IS the installation.

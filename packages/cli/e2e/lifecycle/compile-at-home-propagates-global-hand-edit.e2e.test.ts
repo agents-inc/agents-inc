@@ -22,7 +22,7 @@ import {
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
 
 /**
- * The documented hand-edit workflow — edit `.claude-src/config.ts`, then run
+ * The documented hand-edit workflow — edit the scope's `config.ts`, then run
  * `compile` — must reach the registered projects a global change invalidates.
  *
  * A global-scope `compile` regenerates `~/.claude-src/config-types.ts` from the
@@ -55,8 +55,8 @@ const PROJECT_AGENT = E2E_AGENT["api-developer"];
 /** `source` recorded for skills installed from a local source via `setAllLocal`. */
 const EJECT_SOURCE = "eject";
 
-/** The `.claude-src/` directory holding a scope's generated config pair. */
-function claudeSrcDir(dir: string): string {
+/** The source folder holding a scope's generated config pair. */
+function sourceFolderOf(dir: string): string {
   return path.dirname(configTsPath(dir));
 }
 
@@ -117,7 +117,7 @@ describe("compile at the home directory fans a hand-edited global config out to 
 
       // Control: what the install wrote type-checks, so a failure at the end is
       // about the global change and not about the install.
-      const afterInstall = await typecheckGeneratedConfig(claudeSrcDir(projectDir));
+      const afterInstall = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
       expect(
         afterInstall.exitCode,
         `A freshly installed project config.ts must type-check.\ntsc output:\n${afterInstall.output}`,
@@ -142,7 +142,7 @@ describe("compile at the home directory fans a hand-edited global config out to 
         "no trace of the removed skill may remain in the project's config.ts",
       ).not.toContain(REMOVED_SKILL.id);
 
-      const afterPropagation = await typecheckGeneratedConfig(claudeSrcDir(projectDir));
+      const afterPropagation = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
       expect(
         afterPropagation.exitCode,
         `Propagation must leave the project's config pair type-checking.\ntsc output:\n${afterPropagation.output || "(no diagnostics)"}`,

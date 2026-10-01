@@ -4,18 +4,21 @@ import {
   buildAgentTemplateContext,
   pluginRefFor,
   renderAgent,
+  renderAgentBody,
+  renderAgentRoleToml,
   type AgentFiles,
 } from "@workspace/compile/agent-source";
 import { readFile, readFileOptional, directoryExists } from "../utils/fs";
 import { verbose } from "../utils/logger";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DIRS,
   PROJECT_ROOT,
   STANDARD_FILES,
   STANDARD_DIRS,
+  type Provider,
 } from "../consts";
+import { providerInUse, sourceFolderInUse, sourceFolderName } from "./installation/install-layout";
 import { cliVersion } from "./agents/agent-provenance";
 import "./compile-seat.js";
 import type { AgentConfig, AgentName } from "../types";
@@ -40,7 +43,8 @@ async function readAgentFiles(
 ): Promise<AgentFiles> {
   const agentSourceRoot = agent.sourceRoot || projectRoot;
   const agentBaseDir = agent.agentBaseDir || DIRS.agents;
-  const agentDir = path.join(agentSourceRoot, agentBaseDir, agent.path || name);
+  const agentPath = agent.path || name;
+  const agentDir = path.join(agentSourceRoot, agentBaseDir, agentPath);
 
   const identity = await readFile(path.join(agentDir, STANDARD_FILES.IDENTITY_MD));
   const playbook = await readFile(path.join(agentDir, STANDARD_FILES.PLAYBOOK_MD));
@@ -53,24 +57,26 @@ async function readAgentFiles(
     "",
   );
 
-  const agentPath = agent.path || name;
-  const parts = agentPath.split("/");
-  const category = parts[0] || name;
+  const category = agentPath.split("/")[0] || name;
   const categoryDir = path.join(agentSourceRoot, agentBaseDir, category);
-
-  let output = await readFileOptional(path.join(agentDir, STANDARD_FILES.OUTPUT_MD), "");
-  if (!output) {
-    output = await readFileOptional(path.join(categoryDir, STANDARD_FILES.OUTPUT_MD), "");
-  }
+  const output = await readOutputPartial(agentDir, categoryDir);
 
   return { identity, playbook, output, criticalRequirementsTop, criticalReminders };
+}
+
+/** The agent's own `output.md`, or its category's where the agent's is absent or empty. */
+async function readOutputPartial(agentDir: string, categoryDir: string): Promise<string> {
+  const own = await readFileOptional(path.join(agentDir, STANDARD_FILES.OUTPUT_MD), "");
+  if (own) return own;
+  return readFileOptional(path.join(categoryDir, STANDARD_FILES.OUTPUT_MD), "");
 }
 
 /**
  * Creates a Liquid template engine with a layered template root hierarchy.
  *
  * Template resolution order (first match wins):
- * 1. Project-local templates: `{projectDir}/.claude-src/agents/_templates/`
+ * 1. Project-local templates: `agents/_templates/` inside whichever source folder the project is
+ *    on — `.claude-src/` or `.agents-inc/<provider>/`, resolved by `sourceFolderInUse`
  * 2. Legacy templates: `{projectDir}/.claude/templates/`
  * 3. Built-in templates: `{PROJECT_ROOT}/src/agents/_templates/`
  *
@@ -79,16 +85,24 @@ async function readAgentFiles(
  * below is duplicated there, because a render that resolved filters or variables differently
  * would produce a different file from the same data.
  *
+ * `globals.sourceFolder` is what makes a compiled agent's own text install-specific. A partial is
+ * never rendered through this engine — it is prose, inlined verbatim — so `renderAgent` asks the
+ * engine for that global and substitutes the one opted-in token itself, which is how
+ * `agent-summoner` names the folder THIS project keeps its source in rather than a literal that is
+ * wrong on every install of the other layout.
+ *
  * @param projectDir - Optional project directory for local template overrides
  * @returns Configured Liquid engine with `.liquid` extension and strict filters
  */
 export async function createLiquidEngine(projectDir?: string): Promise<Liquid> {
   const roots: string[] = [];
+  // One read for both answers below: the templates this install overrides with, and the folder
+  // name a compiled `agent-summoner` is told to author into, have to name one installation.
+  const provider = providerInUse(projectDir);
 
   if (projectDir) {
     const srcTemplatesDir = path.join(
-      projectDir,
-      CLAUDE_SRC_DIR,
+      sourceFolderInUse(projectDir, provider).dir,
       STANDARD_DIRS.AGENTS,
       path.basename(DIRS.templates),
     );
@@ -111,16 +125,32 @@ export async function createLiquidEngine(projectDir?: string): Promise<Liquid> {
     extname: ".liquid",
     strictVariables: false,
     strictFilters: true,
+    globals: { sourceFolder: sourceFolderName(projectDir, provider) },
   });
 }
 
-export async function compileAgentForPlugin(
+/**
+ * One resolved sub-agent as the file `provider`'s host actually reads.
+ *
+ * **The two hosts share every byte of the prose and disagree about everything around it.** Claude
+ * reads markdown under a frontmatter block; Codex reads an agent ROLE DEFINITION — TOML, three
+ * required keys, and a deserializer that drops the WHOLE file on one unlisted key. So the split is
+ * at the RENDER and not at the data: both start from the same
+ * {@link buildAgentTemplateContext} context, and `renderAgentBody` is by construction the tail of
+ * `renderAgent`, which is what makes a Codex sub-agent's instructions its Claude twin's byte for
+ * byte.
+ *
+ * Nothing here decides WHICH sub-agents a host gets — `hostCompilesAgent` answers that, before the
+ * write pass reaches this — and nothing here decides where the file goes.
+ */
+export async function compileAgentForHost(
+  provider: Provider,
   name: AgentName,
   agent: AgentConfig,
   fallbackRoot: string,
   engine: Liquid,
 ): Promise<string> {
-  verbose(`Compiling agent: ${name}`);
+  verbose(`Compiling agent: ${name} (${provider})`);
 
   const files = await readAgentFiles(name, agent, fallbackRoot);
 
@@ -134,6 +164,16 @@ export async function compileAgentForPlugin(
     ...skill,
     ...pluginRefFor(skill),
   }));
+  const version = await cliVersion();
 
-  return renderAgent(engine, data, await cliVersion());
+  switch (provider) {
+    case "claude":
+      return renderAgent(engine, data, version);
+    case "codex":
+      return renderAgentRoleToml(agent, await renderAgentBody(engine, data, version));
+    default: {
+      const _exhaustive: never = provider;
+      return _exhaustive;
+    }
+  }
 }

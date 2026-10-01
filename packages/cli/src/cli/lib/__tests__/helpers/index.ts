@@ -34,6 +34,7 @@ export type { PluginTestDirs } from "./test-dir-setup.js";
 export { setupIsolatedHome, useFakeHome } from "./isolated-home.js";
 export type { IsolatedHome } from "./isolated-home.js";
 export { silenceConsole } from "./silence-console.js";
+export { createMockPluginHost } from "./mock-plugin-host.js";
 export { elementAt, firstElement } from "./element-at.js";
 export { installThroughOperations } from "./install-through-operations.js";
 export type {

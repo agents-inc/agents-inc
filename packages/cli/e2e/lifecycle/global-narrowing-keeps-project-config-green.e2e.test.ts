@@ -59,8 +59,8 @@ const NARROWED_CATEGORY = "web-client-state";
 /** `source` recorded for skills installed from a local source via `setAllLocal`. */
 const EJECT_SOURCE = "eject";
 
-/** The `.claude-src/` directory holding a scope's generated config pair. */
-function claudeSrcDir(dir: string): string {
+/** The source folder holding a scope's generated config pair. */
+function sourceFolderOf(dir: string): string {
   return path.dirname(configTsPath(dir));
 }
 
@@ -175,7 +175,7 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
 
       // Control: what the CLI just wrote type-checks. Without this the assertion
       // at the end could be failing on something the install never got right.
-      const afterInstall = await typecheckGeneratedConfig(claudeSrcDir(projectDir));
+      const afterInstall = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
       expect(
         afterInstall.exitCode,
         `A freshly installed project config.ts must type-check.\ntsc output:\n${afterInstall.output}`,
@@ -203,7 +203,7 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
 
       // Phase 3 — the property that matters: a file the user never edited must
       // not have become a type error.
-      const afterNarrowing = await typecheckGeneratedConfig(claudeSrcDir(projectDir));
+      const afterNarrowing = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
       expect(
         afterNarrowing.exitCode,
         `A global-scope edit must not invalidate an untouched project's config.ts.\ntsc output:\n${afterNarrowing.output || "(no diagnostics)"}`,

@@ -2,7 +2,10 @@ import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CLI } from "../fixtures/cli.js";
+import { withCodexOnIt } from "../fixtures/codex-on-path.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { foundByName } from "../helpers/found-by-name.js";
+import { pathHoldingOnly } from "../helpers/path-holding-only.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -26,18 +29,33 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * alone, which is what makes an eject-only installation a successful no-op rather than
  * an error.
  *
- * The Claude-CLI-absent runs use a minimal PATH (node + the standard bin directories,
- * no `claude`), the same technique `plugin-uninstall-edge-cases.e2e.test.ts` uses. It is
- * the one claude-dependent branch that is deterministic on every machine: asserting a
- * SUCCESSFUL marketplace refresh from here would need a real marketplace registered in
- * the run's fake HOME, so that assertion lives in the unit spec, against the wrapper.
+ * The Claude-CLI-absent runs are handed a PATH holding node and sh alone, and ASSERT that no
+ * `claude` is found on it — the technique `plugin-uninstall-edge-cases.e2e.test.ts` uses. Asserting
+ * a SUCCESSFUL marketplace refresh from here would need a real marketplace registered in the run's
+ * fake HOME, so that assertion lives in the unit spec, against the wrapper.
+ *
+ * _Corrected 2026-09-26:_ these runs were handed `node`'s own bin directory plus `/usr/bin:/bin`,
+ * and called that deterministic on every machine. It is where `npm i -g @anthropic-ai/claude-code`
+ * puts `claude`, and on the machine this was measured on it held one — so the "no Claude CLI" cases
+ * ran with a real `claude` on their PATH.
  */
 
 /** The marketplace name the seeded config claims its plugin skills came from. */
 const MARKETPLACE = "e2e-update-marketplace";
 
-/** A PATH with node and the standard bin directories but deliberately no `claude`. */
-const PATH_WITHOUT_CLAUDE = [path.dirname(process.execPath), "/usr/bin", "/bin"].join(":");
+/**
+ * A PATH holding node and sh alone, linked under `root`, and the subject guard that no `claude` is
+ * found on it — asked of the PATH the command is actually handed, since `CLI.run` puts the pinned
+ * codex in front of whatever it is given.
+ */
+async function aPathWithoutClaude(root: string): Promise<string> {
+  const searchPath = await pathHoldingOnly({ root }, ["node", "sh"]);
+  expect(
+    await foundByName("claude", withCodexOnIt(searchPath)),
+    "the run below would have a claude on its PATH, so it could not show what its absence does",
+  ).toBe("");
+  return searchPath;
+}
 
 describe("update command", () => {
   let tempDir: string | undefined;
@@ -102,7 +120,7 @@ describe("update command", () => {
       const { exitCode, output } = await CLI.run(
         ["update"],
         { dir: projectDir },
-        { env: { PATH: PATH_WITHOUT_CLAUDE, HOME: projectDir } },
+        { env: { PATH: await aPathWithoutClaude(tempDir), HOME: projectDir } },
       );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -139,7 +157,7 @@ describe("update command", () => {
       const { exitCode, output } = await CLI.run(
         ["update"],
         { dir: projectDir },
-        { env: { PATH: PATH_WITHOUT_CLAUDE, HOME: projectDir } },
+        { env: { PATH: await aPathWithoutClaude(tempDir), HOME: projectDir } },
       );
 
       // The ownership line is printed before the marketplace half runs, so it survives
@@ -169,7 +187,7 @@ describe("update command", () => {
       const { exitCode, output } = await CLI.run(
         ["update"],
         { dir: projectDir },
-        { env: { PATH: PATH_WITHOUT_CLAUDE, HOME: projectDir } },
+        { env: { PATH: await aPathWithoutClaude(tempDir), HOME: projectDir } },
       );
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);

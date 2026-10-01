@@ -1,9 +1,15 @@
+/**
+ * Spawning a child process, and the argument checks every host's plugin commands owe.
+ *
+ * The `claude*` functions this module used to carry moved into `lib/hosts/claude-host.ts` in C3,
+ * where one host's vocabulary belongs. What stays is what is not any one host's: the `spawn`
+ * wrapper itself, and three validators that refuse a name, a path or a marketplace source before
+ * it reaches an argument vector. Codex's plugin verbs differ from Claude's word for word, so a
+ * shared argv builder was never on offer — these checks are the part both hosts do share.
+ */
+
 import { spawn } from "child_process";
-import { z } from "zod";
-import os from "os";
-import type { ClaudePluginScope } from "../types/config";
-import { getErrorMessage } from "./errors";
-import { warn } from "./logger";
+import path from "path";
 
 // Argument length limits to prevent oversized CLI arguments
 const MAX_PLUGIN_PATH_LENGTH = 1024;
@@ -16,10 +22,25 @@ const SAFE_NAME_PATTERN = /^[a-zA-Z0-9._@/-]+$/;
 // Plugin path/ref: alphanumeric, dashes, underscores, dots, slashes, @, colons (for marketplace refs like skill@marketplace)
 const SAFE_PLUGIN_PATH_PATTERN = /^[a-zA-Z0-9._@/:~-]+$/;
 
+/** A source that opens with `./` or `../` — the relative half of a directory on this machine. */
+const OPENS_A_RELATIVE_PATH = /^\.\.?[/\\]/;
+
+/**
+ * Whether a marketplace source names a DIRECTORY on this machine rather than a reference to fetch.
+ *
+ * The same split `isLocalSource` in `lib/configuration/config.ts` makes for the fetcher, spelled
+ * again here rather than imported: `utils/` sits under `lib/`, and that function THROWS on a
+ * traversal pattern, which is a refusal this check has no standing to make on another program's
+ * behalf.
+ */
+function namesADirectoryOnThisMachine(source: string): boolean {
+  return path.isAbsolute(source) || OPENS_A_RELATIVE_PATH.test(source);
+}
+
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0E-\x1F\x7F]/u;
 
-function validatePluginPath(pluginPath: string): void {
+export function validatePluginPath(pluginPath: string): void {
   if (!pluginPath || pluginPath.trim().length === 0) {
     throw new Error("Plugin path must not be empty.");
   }
@@ -42,7 +63,30 @@ function validatePluginPath(pluginPath: string): void {
   }
 }
 
-function validateMarketplaceSource(source: string): void {
+/**
+ * Refuses a marketplace source before it reaches an argument vector — a reference by its shape, a
+ * directory by nothing but its length and its bytes.
+ *
+ * **A DIRECTORY'S NAME IS THE FILESYSTEM'S TO DECIDE, and holding one to the reference pattern
+ * refused a directory the host accepts.** A marketplace named as a directory on this machine — an
+ * absolute path, or one opening `./` or `../` — carries whatever the filesystem called it, and
+ * under `/Users/My Name` that includes a space the reference pattern has no room for. Codex itself
+ * has no objection: measured on the pinned 0.155.1, 2026-09-23, with `HOME` and `CODEX_HOME`
+ * pinned to a scratch tree whose path contains a space and the global `config.toml` deleted first,
+ * `codex plugin marketplace add '<…>/My Home/…' --json` exits 0 and `plugin add` then installs a
+ * plugin from it.
+ *
+ * **What the pattern was ever protecting against is not reachable from here.** {@link execCommand}
+ * spawns with an argv array and never passes `shell`, so a source is handed to the binary as data
+ * and there is no shell to re-read it. The pattern stays on for a REFERENCE, where it does real
+ * work — it refuses a value that is not a reference at all — and
+ * `hosts/__tests__/a-marketplace-directory-with-a-space-reaches-the-host.test.ts` pins both halves
+ * together, because an admitted directory on its own reads exactly like a check that was deleted.
+ *
+ * The length bound and the control-character refusal apply to both: a NUL byte is not a filename
+ * on any host this runs on, and `spawn` throws on one rather than saying which argument it was.
+ */
+export function validateMarketplaceSource(source: string): void {
   if (!source || source.trim().length === 0) {
     throw new Error("Marketplace must not be empty.");
   }
@@ -57,6 +101,8 @@ function validateMarketplaceSource(source: string): void {
     throw new Error("Marketplace contains invalid control characters.");
   }
 
+  if (namesADirectoryOnThisMachine(source)) return;
+
   if (!SAFE_PLUGIN_PATH_PATTERN.test(source)) {
     throw new Error(
       `Marketplace contains invalid characters: "${source}"\n` +
@@ -65,7 +111,7 @@ function validateMarketplaceSource(source: string): void {
   }
 }
 
-function validatePluginName(pluginName: string): void {
+export function validatePluginName(pluginName: string): void {
   if (!pluginName || pluginName.trim().length === 0) {
     throw new Error("Plugin name must not be empty.");
   }
@@ -94,6 +140,13 @@ export type ExecResult = {
   exitCode: number;
 };
 
+/**
+ * One child process run to completion, with the environment forwarded and `options.env` over it.
+ *
+ * **This module is the one place in the package that forwards the whole environment**, and
+ * `__tests__/e2e-runner-environment.test.ts` is what holds it to exactly one: a spread anywhere
+ * else hands every variable to a child that nothing named it for.
+ */
 export async function execCommand(
   command: string,
   args: string[],
@@ -129,235 +182,4 @@ export async function execCommand(
       reject(err);
     });
   });
-}
-
-/** User-scoped plugins run from home dir so Claude CLI only writes to ~/.claude/settings.json */
-function resolvePluginCwd(scope: ClaudePluginScope, projectDir: string): string {
-  return scope === "user" ? os.homedir() : projectDir;
-}
-
-/**
- * Which Claude installation a `claude plugin` call reads and writes.
- *
- * Omitted, the call inherits the one its process already points at — the user's
- * own, in production. `configDir` redirects the entire config tree: the
- * marketplace registry, the installed-plugin registry and user settings all move
- * with it. It is how a test drives the Claude CLI without touching the machine
- * running it.
- */
-export type ClaudeConfigOptions = { configDir?: string };
-
-/**
- * The `execCommand` options fragment that pins the config dir — empty when there
- * is none, so the call inherits its process's environment untouched.
- *
- * `CLAUDE_CONFIG_DIR` takes precedence over `HOME` in the Claude CLI, so passing
- * it also overrides an exported one rather than merely competing with it.
- */
-function configDirEnv(options: ClaudeConfigOptions | undefined): { env?: NodeJS.ProcessEnv } {
-  if (options?.configDir === undefined) return {};
-  return { env: { CLAUDE_CONFIG_DIR: options.configDir } };
-}
-
-export async function claudePluginInstall(
-  pluginPath: string,
-  scope: ClaudePluginScope,
-  projectDir: string,
-  options?: ClaudeConfigOptions,
-): Promise<void> {
-  validatePluginPath(pluginPath);
-
-  const cwd = resolvePluginCwd(scope, projectDir);
-  const args = ["plugin", "install", pluginPath, "--scope", scope];
-  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
-
-  if (result.exitCode !== 0) {
-    const errorMessage = result.stderr || result.stdout || "Unknown error";
-    throw new Error(`Plugin installation failed: ${errorMessage.trim()}`);
-  }
-}
-
-export async function isClaudeCLIAvailable(): Promise<boolean> {
-  try {
-    const result = await execCommand("claude", ["--version"], {});
-    return result.exitCode === 0;
-  } catch {
-    return false;
-  }
-}
-
-export type MarketplaceInfo = {
-  name: string;
-  source: string;
-  repo?: string;
-  path?: string;
-};
-
-const marketplaceInfoListSchema: z.ZodType<MarketplaceInfo[]> = z.array(
-  z.object({
-    name: z.string(),
-    source: z.string(),
-    repo: z.string().exactOptional(),
-    path: z.string().exactOptional(),
-  }),
-);
-
-export async function claudePluginMarketplaceList(
-  options?: ClaudeConfigOptions,
-): Promise<MarketplaceInfo[]> {
-  try {
-    const result = await execCommand(
-      "claude",
-      ["plugin", "marketplace", "list", "--json"],
-      configDirEnv(options),
-    );
-
-    if (result.exitCode !== 0) {
-      return [];
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(result.stdout);
-    } catch {
-      warn("Failed to parse marketplace list output as JSON");
-      return [];
-    }
-
-    const listResult = marketplaceInfoListSchema.safeParse(parsed);
-    if (!listResult.success) {
-      warn("Unexpected marketplace list format — expected an array of marketplace entries");
-      return [];
-    }
-
-    return listResult.data;
-  } catch {
-    return [];
-  }
-}
-
-export async function claudePluginMarketplaceExists(
-  name: string,
-  options?: ClaudeConfigOptions,
-): Promise<boolean> {
-  const marketplaces = await claudePluginMarketplaceList(options);
-  return marketplaces.some((m) => m.name === name);
-}
-
-export async function claudePluginMarketplaceAdd(
-  source: string,
-  options?: ClaudeConfigOptions,
-): Promise<void> {
-  validateMarketplaceSource(source);
-
-  const args = ["plugin", "marketplace", "add", source];
-  let result;
-  try {
-    result = await execCommand("claude", args, configDirEnv(options));
-  } catch (err) {
-    throw new Error(`Failed to add marketplace: ${getErrorMessage(err)}`, { cause: err });
-  }
-
-  if (result.exitCode !== 0) {
-    const errorMessage = result.stderr || result.stdout || "Unknown error";
-    if (errorMessage.includes("already installed")) {
-      return;
-    }
-    throw new Error(`Failed to add marketplace: ${errorMessage.trim()}`);
-  }
-}
-
-export async function claudePluginMarketplaceRemove(
-  name: string,
-  options?: ClaudeConfigOptions,
-): Promise<void> {
-  validatePluginName(name);
-
-  const args = ["plugin", "marketplace", "remove", name];
-  let result;
-  try {
-    result = await execCommand("claude", args, configDirEnv(options));
-  } catch (err) {
-    throw new Error(`Failed to remove marketplace: ${getErrorMessage(err)}`, { cause: err });
-  }
-
-  if (result.exitCode !== 0) {
-    const errorMessage = result.stderr || result.stdout || "Unknown error";
-    if (errorMessage.includes("not found") || errorMessage.includes("not installed")) {
-      return;
-    }
-    throw new Error(`Failed to remove marketplace: ${errorMessage.trim()}`);
-  }
-}
-
-export async function claudePluginMarketplaceUpdate(
-  name: string,
-  options?: ClaudeConfigOptions,
-): Promise<void> {
-  validatePluginName(name);
-
-  const args = ["plugin", "marketplace", "update", name];
-  let result;
-  try {
-    result = await execCommand("claude", args, configDirEnv(options));
-  } catch (err) {
-    throw new Error(`Failed to update marketplace: ${getErrorMessage(err)}`, { cause: err });
-  }
-
-  if (result.exitCode !== 0) {
-    const errorMessage = result.stderr || result.stdout || "Unknown error";
-    throw new Error(`Failed to update marketplace: ${errorMessage.trim()}`);
-  }
-}
-
-export async function claudePluginUninstall(
-  pluginName: string,
-  scope: ClaudePluginScope,
-  projectDir: string,
-  options?: ClaudeConfigOptions,
-): Promise<void> {
-  validatePluginName(pluginName);
-
-  const cwd = resolvePluginCwd(scope, projectDir);
-  const args = ["plugin", "uninstall", pluginName, "--scope", scope];
-  const result = await execCommand("claude", args, { cwd, ...configDirEnv(options) });
-
-  if (result.exitCode !== 0) {
-    const errorMessage = result.stderr || result.stdout || "Unknown error";
-    // Ignore "not installed" errors - plugin may already be removed
-    if (errorMessage.includes("not installed") || errorMessage.includes("not found")) {
-      return;
-    }
-    throw new Error(`Plugin uninstall failed: ${errorMessage.trim()}`);
-  }
-}
-
-/**
- * Best-effort plugin uninstall that tries both scopes.
- *
- * Use when the plugin's actual registered scope is ambiguous — e.g., a skill
- * was re-scoped after install, or we're cleaning up on uninstall and the config
- * scope may not match the registry entry. Tries the primary scope first, then
- * the fallback, silently swallowing errors from each attempt.
- *
- * The plugin reference must be qualified (e.g., `skill-id@marketplace`), matching
- * the form used at install time — bare skill IDs will not match the registry.
- */
-export async function claudePluginUninstallBestEffort(
-  pluginRef: string,
-  primaryScope: ClaudePluginScope,
-  projectDir: string,
-  options?: ClaudeConfigOptions,
-): Promise<void> {
-  const fallbackScope = primaryScope === "project" ? "user" : "project";
-  try {
-    await claudePluginUninstall(pluginRef, primaryScope, projectDir, options);
-  } catch {
-    // Best-effort: plugin may not be registered with primary scope
-  }
-  try {
-    await claudePluginUninstall(pluginRef, fallbackScope, projectDir, options);
-  } catch {
-    // Best-effort: plugin may not be registered with fallback scope either
-  }
 }

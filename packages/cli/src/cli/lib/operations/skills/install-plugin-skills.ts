@@ -1,6 +1,6 @@
-import { claudePluginInstall } from "../../../utils/exec.js";
+import { hostAt } from "../../hosts/host-for.js";
 import { isLocalOnlySkill } from "../../loading/multi-source-loader.js";
-import { buildMarketplacePluginRef, toClaudePluginScope } from "../../plugins/index.js";
+import { buildMarketplacePluginRef } from "../../plugins/index.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { CLI_INVOKE_COMMAND, EJECT_SOURCE } from "../../../consts.js";
 import type { MergedSkillsMatrix, SkillId } from "../../../types/index.js";
@@ -51,25 +51,27 @@ export function unbackedPluginInstallError(ids: SkillId[]): string {
 }
 
 /**
- * Installs skill plugins via the Claude CLI, routing by scope.
+ * Installs skill plugins through the host this installation belongs to, routing by scope.
  *
- * For each skill, constructs the plugin ref as `{skillId}@{marketplace}`
- * and invokes `claudePluginInstall` with the correct scope.
+ * For each skill, constructs the plugin ref as `{skillId}@{marketplace}` and asks the host to
+ * install it at the skill's own scope. The host is read off the folder under `projectDir`,
+ * because the folder is the only record of a provider — which is also the limit of it: a run
+ * creating a folder that is not there yet must hand the provider down instead (C4).
  */
 export async function installPluginSkills(
   skills: SkillConfig[],
   marketplace: string,
   projectDir: string,
 ): Promise<PluginInstallResult> {
+  const host = hostAt(projectDir);
   const pluginSkills = skills.filter((s) => s.origin !== EJECT_SOURCE);
   const installed: PluginInstallResult["installed"] = [];
   const failed: PluginInstallResult["failed"] = [];
 
   for (const skill of pluginSkills) {
     const pluginRef = buildMarketplacePluginRef(skill.id, marketplace);
-    const pluginScope = toClaudePluginScope(skill.scope);
     try {
-      await claudePluginInstall(pluginRef, pluginScope, projectDir);
+      await host.installPlugin(pluginRef, skill.scope, projectDir);
       installed.push({ id: skill.id, ref: pluginRef });
     } catch (error) {
       failed.push({ id: skill.id, error: getErrorMessage(error) });

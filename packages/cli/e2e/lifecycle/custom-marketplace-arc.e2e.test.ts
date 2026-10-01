@@ -151,18 +151,24 @@ async function expectInstallSurfaces(
   ).toStrictEqual([...expectedAgents].sort());
   expect((await listFiles(skillsPath(installDir))).length).toBeGreaterThan(0);
 
-  const claudeSrcDir = path.dirname(configTypesTsPath(installDir));
-  const typecheck = await typecheckGeneratedConfig(claudeSrcDir);
+  const sourceFolderDir = path.dirname(configTypesTsPath(installDir));
+  const typecheck = await typecheckGeneratedConfig(sourceFolderDir);
   expect(
     typecheck.exitCode,
     `a config installed from a custom source must type-check.\ntsc output:\n${typecheck.output}`,
   ).toBe(EXIT_CODES.SUCCESS);
-  const probe = await probeConfigTypesNarrowing(claudeSrcDir, GENERATED_ALIASES);
+  const probe = await probeConfigTypesNarrowing(sourceFolderDir, GENERATED_ALIASES);
   expect(
     probe.exitCode,
     `a bogus literal must not type-check against a custom-source install.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
   ).not.toBe(EXIT_CODES.SUCCESS);
   expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
+  // EACH alias, not any: the two above hold while one alias rejects and the others have
+  // collapsed to `string`.
+  expect(
+    probe.rejected,
+    `every alias asked for must reject its bogus literal.\ntsc output:\n${probe.output}`,
+  ).toStrictEqual([...GENERATED_ALIASES]);
 }
 
 describe("a custom marketplace is stored by init and resolved by every later command", () => {

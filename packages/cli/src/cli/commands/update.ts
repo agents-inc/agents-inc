@@ -4,11 +4,19 @@ import { BaseCommand } from "../base-command.js";
 import { EJECT_SOURCE } from "../consts.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { loadProjectConfig } from "../lib/configuration/index.js";
-import { claudePluginMarketplaceUpdate, isClaudeCLIAvailable } from "../utils/exec.js";
+import { hostAt } from "../lib/hosts/host-for.js";
+import {
+  providerFlag,
+  providerNamedBy,
+  refuseAnAmbiguousInstallation,
+} from "../lib/installation/provider-flag.js";
+import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
+import type { PluginHost } from "../lib/hosts/plugin-host.js";
 import { getErrorMessage } from "../utils/errors.js";
 import {
   ERROR_MESSAGES,
   INFO_MESSAGES,
+  hostCliNotFound,
   marketplaceRefreshFailed,
   marketplacesRefreshFailed,
   marketplacesRefreshed,
@@ -36,13 +44,26 @@ export default class Update extends BaseCommand {
   static description =
     "Runs Claude's own marketplace update for every marketplace this installation's config names. Ejected skills are copies you own and are never touched. Sub-agents reference plugin skills by pointer, so refreshed content lands without recompiling anything.";
 
-  static flags = {};
+  static flags = { provider: providerFlag() };
 
   static examples = ["<%= config.bin %> <%= command.id %>"];
 
   async run(): Promise<void> {
-    await this.parse(Update);
+    const { flags } = await this.parse(Update);
 
+    // Before the config is loaded, because loading it is already an answer: `loadProjectConfig`
+    // and `hostAt` both resolve the provider through `providerInUse`, which picks by ROSTER ORDER
+    // where a scope holds one installation of each. So a refresh with no flag read one user's
+    // Claude config, refreshed the marketplaces IT names, and reported them as refreshed with
+    // nothing saying whose they were.
+    await refuseAnAmbiguousInstallation(
+      process.cwd(),
+      "update",
+      providerNamedBy(flags.provider),
+      (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    );
+    await this.settleSourceLayoutBeforeWriting(process.cwd());
+    await this.refuseUnofferablePlacements(process.cwd());
     const config = await this.loadInstalledConfig(process.cwd());
     if (!config) {
       this.warn(ERROR_MESSAGES.NO_INSTALLATION);
@@ -58,8 +79,22 @@ export default class Update extends BaseCommand {
       return;
     }
 
-    await this.requireClaudeCli();
-    await this.refreshMarketplaces(marketplaces);
+    const host = hostAt(process.cwd());
+    await this.requireHost(host);
+    await this.refreshMarketplaces(marketplaces, host);
+  }
+
+  /**
+   * Refuses a configuration whose own host cannot place what it asks for.
+   *
+   * The same reading `compile` and `edit` make, off the same host roster. It matters here because
+   * this command REFRESHES the marketplaces a configuration names — so on a configuration whose
+   * plugin rows the host can never install, every refresh is work done for rows that will never
+   * become an install, reported as a success.
+   */
+  private async refuseUnofferablePlacements(projectDir: string): Promise<void> {
+    const [finding] = await unofferablePlacementsFound(projectDir);
+    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
   /**
@@ -84,26 +119,28 @@ export default class Update extends BaseCommand {
 
   /**
    * Gated on there being a marketplace to refresh, so an eject-only installation
-   * never fails on a Claude CLI it had no reason to call.
+   * never fails on a host binary it had no reason to call.
    */
-  private async requireClaudeCli(): Promise<void> {
-    if (await isClaudeCLIAvailable()) return;
-    this.error(ERROR_MESSAGES.CLAUDE_CLI_NOT_FOUND, { exit: EXIT_CODES.ERROR });
+  private async requireHost(host: PluginHost): Promise<void> {
+    if (await host.isAvailable()) return;
+    // The host's own provider, never a constant: this command reaches either host from C4, and a
+    // fixed line tells a Codex user to install Claude Code — not the binary that is missing.
+    this.error(hostCliNotFound(host.provider), { exit: EXIT_CODES.ERROR });
   }
 
   /**
-   * One `claude plugin marketplace update` per marketplace, in sequence: they write
+   * One marketplace refresh per marketplace, in sequence: they write
    * to the same registry, and interleaved progress lines would not say which
    * marketplace each belongs to. A failure is collected rather than thrown, so one
    * unreachable marketplace cannot hide the state of the others.
    */
-  private async refreshMarketplaces(marketplaces: string[]): Promise<void> {
+  private async refreshMarketplaces(marketplaces: string[], host: PluginHost): Promise<void> {
     const failed: string[] = [];
 
     for (const marketplace of marketplaces) {
       this.log(`Refreshing marketplace ${marketplace}...`);
       try {
-        await claudePluginMarketplaceUpdate(marketplace);
+        await host.refreshMarketplace(marketplace);
         this.log(`  Updated marketplace ${marketplace}`);
       } catch (error) {
         failed.push(marketplace);

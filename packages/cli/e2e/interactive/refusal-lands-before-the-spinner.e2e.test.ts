@@ -115,7 +115,7 @@ describe("a refusal does not sit under a live spinner", () => {
     await mkdir(projectDir, { recursive: true });
 
     // `Init.selectionFromWizard` has the identical structure: render, await the
-    // load, then clear and unmount as statements AFTER the await.
+    // load, then take the spinner down (`awaitUnderSpinner`) only AFTER the await.
     prompt = new InteractivePrompt(["init", "--marketplace", MISSING_SOURCE_PATH], projectDir, {
       env: { CC_MARKETPLACE: undefined },
     });

@@ -2,7 +2,13 @@ import { execa } from "execa";
 import { globalHomeFor } from "../../src/cli/lib/__tests__/helpers/global-home.js";
 import { stripVTControlCharacters } from "node:util";
 import type { ProjectHandle } from "../pages/wizard-result.js";
-import { BIN_RUN, NO_BACKGROUND_VERSION_CHECK, claudeConfigDir } from "../helpers/test-utils.js";
+import {
+  BIN_RUN,
+  NO_BACKGROUND_VERSION_CHECK,
+  claudeConfigDir,
+  codexHome,
+} from "../helpers/test-utils.js";
+import { withCodexOnIt } from "./codex-on-path.js";
 
 export type CLIResult = {
   exitCode: number;
@@ -51,7 +57,8 @@ export class CLI {
    * value would send every `claude plugin` call this command makes into the
    * developer's real installation, past the fake HOME entirely. It is derived
    * after `options.env` is applied, so it follows an overridden HOME rather than
-   * contradicting it.
+   * contradicting it. `CODEX_HOME` is Codex's equivalent and is pinned beside it,
+   * to `<home>/.codex`, for the same reason and in the same position.
    *
    * {@link NO_BACKGROUND_VERSION_CHECK} is the third class again — not hygiene but a race.
    * It stops oclif's update plugin spawning the detached child that writes into the fake
@@ -88,6 +95,16 @@ export class CLI {
         ...options?.env,
         HOME: home,
         CLAUDE_CONFIG_DIR: claudeConfigDir(home),
+        CODEX_HOME: codexHome(home),
+        // The product resolves its Codex host's binary BY NAME, in THIS child, so pinning
+        // `CODEX_HOME` above is only half of what a Codex spec needs — see `codex-on-path.ts`.
+        //
+        // PREPENDED to whatever PATH is in effect, never replacing it, and that is the whole of
+        // the difference between this line and the three above. Those pin a value a spec must not
+        // be able to override; a PATH is the opposite — `update`'s "the Claude CLI is missing"
+        // cases hand over a PATH with no `claude` on it, and a pin would have handed the developer's
+        // own back and made every one of them a test of this machine.
+        PATH: withCodexOnIt(options?.env?.["PATH"]),
       },
     });
 

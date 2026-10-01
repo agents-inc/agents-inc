@@ -1,4 +1,5 @@
 import { ensureMarketplace } from "./ensure-marketplace.js";
+import type { PluginHost } from "../../hosts/plugin-host.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 
 export type MarketplaceRequirement =
@@ -13,8 +14,9 @@ export type MarketplaceRequirement =
 export async function requireMarketplace(
   sourceResult: SourceLoadResult,
   purpose: string,
+  host: PluginHost,
 ): Promise<MarketplaceRequirement> {
-  const mpResult = await ensureMarketplace(sourceResult);
+  const mpResult = await ensureMarketplace(sourceResult, host);
   if (!mpResult.marketplace) {
     return {
       ok: false,

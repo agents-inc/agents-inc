@@ -3,17 +3,16 @@ import { realpathSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import {
-  createTempDir,
+  agentsPath,
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
+  createTempDir,
   directoryExists,
   listFiles,
   readTestFile,
   renderMetadataYaml,
-  renderSkillMd,
-  agentsPath,
-  skillsPath,
+  sourceFolderIn,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import {
@@ -29,6 +28,7 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { saUnflagged } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -116,7 +116,7 @@ describe("compile command", () => {
     ).not.toContain(STEP_TEXT.LOCAL_SKILL_PLACEHOLDER_CATEGORY);
 
     const generatedTypes = await readTestFile(
-      path.join(project.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS),
+      path.join(sourceFolderIn(project.dir), FILES.CONFIG_TYPES_TS),
     );
     expect(
       readGeneratedUnionMembers(generatedTypes, "Category"),
@@ -128,13 +128,17 @@ describe("compile command", () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "empty-project");
     await mkdir(projectDir, { recursive: true });
-    // Declare an agent so the project is a detected installation; compile then
-    // reaches the no-skills-found failure because no skills exist on disk.
-    await writeProjectConfig(projectDir, {
-      name: "empty",
-      skills: [],
-      agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-    });
+    // The config declares a skill that is not on disk: a lost installation, which compile
+    // refuses. A config declaring NO skill compiles its agents as base agents instead —
+    // compile-a-skill-less-installation.e2e.test.ts holds that half.
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "empty",
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: EJECT_ORIGIN }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
+      }),
+    );
 
     const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -155,14 +159,17 @@ describe("compile command", () => {
       const projectDir = path.join(tempDir, "project");
       // Declare the agents so the project is a detected installation; the local
       // skills under test are discovered from disk independently of the config.
-      await writeProjectConfig(projectDir, {
-        name: "e2e-test",
-        skills: [],
-        agents: [
-          { name: E2E_AGENT["web-developer"].name, scope: "project" },
-          { name: E2E_AGENT["api-developer"].name, scope: "project" },
-        ],
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-test",
+          skills: [],
+          agents: buildAgentConfigs(
+            [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+            { scope: "project" },
+          ),
+        }),
+      );
 
       await createLocalSkill(projectDir, "web-testing-react-testing-library", {
         description: "First test skill",
@@ -246,14 +253,17 @@ describe("compile command", () => {
       const projectDir = path.join(tempDir, "project");
       // Declare the agents so the project is a detected installation; the local
       // skills under test are discovered from disk independently of the config.
-      await writeProjectConfig(projectDir, {
-        name: "e2e-test",
-        skills: [],
-        agents: [
-          { name: E2E_AGENT["web-developer"].name, scope: "project" },
-          { name: E2E_AGENT["api-developer"].name, scope: "project" },
-        ],
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-test",
+          skills: [],
+          agents: buildAgentConfigs(
+            [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+            { scope: "project" },
+          ),
+        }),
+      );
 
       // Create a valid skill
       await createLocalSkill(projectDir, "web-state-jotai", {
@@ -264,12 +274,11 @@ describe("compile command", () => {
         }),
       });
 
-      const invalidSkillDir = path.join(skillsPath(projectDir), "web-state-mobx");
-      await mkdir(invalidSkillDir, { recursive: true });
-      await writeFile(
-        path.join(invalidSkillDir, FILES.SKILL_MD),
-        renderSkillMd("web-state-mobx", "Missing metadata", "# No Metadata"),
-      );
+      // No `metadata` option, so the skill directory holds a SKILL.md and nothing else.
+      await createLocalSkill(projectDir, "web-state-mobx", {
+        description: "Missing metadata",
+        body: "# No Metadata",
+      });
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -311,13 +320,19 @@ describe("compile command", () => {
       const projectDir = path.join(tempDir, "project");
       // Create project with .claude/ but no skills/ subdirectory
       await mkdir(path.join(projectDir, DIRS.CLAUDE), { recursive: true });
-      // Declare an agent so the project is a detected installation; compile then
-      // reaches the no-skills-found failure because no skills/ directory exists.
-      await writeProjectConfig(projectDir, {
-        name: "empty",
-        skills: [],
-        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-      });
+      // The config declares a skill the missing skills/ directory would hold, so compile
+      // reaches the no-skills-found refusal rather than compiling base agents.
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "empty",
+          skills: buildSkillConfigs([E2E_SKILL.react.id], {
+            scope: "project",
+            origin: EJECT_ORIGIN,
+          }),
+          agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
+        }),
+      );
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -467,15 +482,18 @@ describe("compile command", () => {
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
 
-      await writeProjectConfig(projectDir, {
-        name: "e2e-test",
-        skills: [],
-        agents: [
-          { name: E2E_AGENT["web-developer"].name, scope: "project" },
-          { name: E2E_AGENT["api-developer"].name, scope: "project" },
-        ],
-        marketplace: sourceDir,
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-test",
+          skills: [],
+          agents: buildAgentConfigs(
+            [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+            { scope: "project" },
+          ),
+          marketplace: sourceDir,
+        }),
+      );
 
       // Create a local skill in the project
       await createLocalSkill(projectDir, E2E_SKILL.pinia.id, {
@@ -518,15 +536,18 @@ describe("compile command", () => {
       // The home root holds the GLOBAL config. There is no project here, so the
       // config the run reads is `~/.claude-src/config.ts` and nothing else.
       const globalHome = path.join(tempDir, "global-home");
-      await writeProjectConfig(globalHome, {
-        name: "global-install",
-        skills: [],
-        agents: [
-          { name: E2E_AGENT["web-developer"].name, scope: "global" },
-          { name: E2E_AGENT["api-developer"].name, scope: "global" },
-        ],
-        marketplace: sourceDir,
-      });
+      await writeProjectConfig(
+        globalHome,
+        buildProjectConfig({
+          name: "global-install",
+          skills: [],
+          agents: buildAgentConfigs(
+            [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+            { scope: "global" },
+          ),
+          marketplace: sourceDir,
+        }),
+      );
       await createLocalSkill(globalHome, E2E_SKILL.pinia.id, {
         description: "Skill for home-root source labelling",
         metadata: renderMetadataYaml({
@@ -565,12 +586,15 @@ describe("compile command", () => {
       sourceTempDir = srcTempDir;
 
       const globalHome = path.join(tempDir, "global-home");
-      await writeProjectConfig(globalHome, {
-        name: "global-install",
-        skills: [],
-        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "global" }],
-        marketplace: sourceDir,
-      });
+      await writeProjectConfig(
+        globalHome,
+        buildProjectConfig({
+          name: "global-install",
+          skills: [],
+          agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+          marketplace: sourceDir,
+        }),
+      );
       await createLocalSkill(globalHome, E2E_SKILL.pinia.id, {
         description: "Skill for home-root config labelling",
         metadata: renderMetadataYaml({
@@ -612,15 +636,18 @@ describe("compile command", () => {
       await mkdir(separateHome, { recursive: true });
 
       const projectDir = path.join(tempDir, "project");
-      await writeProjectConfig(projectDir, {
-        name: "e2e-test",
-        skills: [],
-        agents: [
-          { name: E2E_AGENT["web-developer"].name, scope: "global" },
-          { name: E2E_AGENT["api-developer"].name, scope: "global" },
-        ],
-        marketplace: sourceDir,
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-test",
+          skills: [],
+          agents: buildAgentConfigs(
+            [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+            { scope: "global" },
+          ),
+          marketplace: sourceDir,
+        }),
+      );
       await createLocalSkill(projectDir, E2E_SKILL.pinia.id, {
         description: "Skill for project source labelling",
         metadata: renderMetadataYaml({
@@ -659,11 +686,17 @@ describe("compile command", () => {
 
       // Create a "global home" directory with .claude-src/config.ts and .claude/skills/
       const globalHome = path.join(tempDir, "global-home");
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        skills: [{ id: "web-testing-cypress-e2e", scope: "project", origin: "eject" }],
-        agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
-      });
+      await writeProjectConfig(
+        globalHome,
+        buildProjectConfig({
+          name: "global-test",
+          skills: buildSkillConfigs(["web-testing-cypress-e2e"], {
+            scope: "project",
+            origin: EJECT_ORIGIN,
+          }),
+          agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
+        }),
+      );
 
       // Create a local skill in the global home directory
       await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
@@ -748,7 +781,7 @@ describe("compile command", () => {
             name: "fan-out-seat-global",
             skills: buildSkillConfigs([globalSkill.id], { scope: "global", origin: EJECT_ORIGIN }),
             agents: buildAgentConfigs([globalAgent.name], { scope: "global" }),
-            stack: { [globalAgent.name]: { "web-framework": [{ id: globalSkill.id }] } },
+            stack: { [globalAgent.name]: { "web-framework": [saUnflagged(globalSkill.id)] } },
             projects: [realpathSync(projectDir)],
           }),
         );
@@ -771,7 +804,7 @@ describe("compile command", () => {
               ...buildSkillConfigs([projectSkill.id], { scope: "project", origin: EJECT_ORIGIN }),
             ],
             agents: buildAgentConfigs([projectAgent.name], { scope: "project" }),
-            stack: { [projectAgent.name]: { "web-testing": [{ id: projectSkill.id }] } },
+            stack: { [projectAgent.name]: { "web-testing": [saUnflagged(projectSkill.id)] } },
           }),
         );
         await createLocalSkill(projectDir, projectSkill.id, {

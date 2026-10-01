@@ -29,7 +29,7 @@ import { EJECT_SOURCE } from "../../src/cli/consts.js";
  * variant key produces `<id>@<marketplace>`, which is the key the Claude plugin
  * registry uses. When the global config omits `marketplace`, no key matches: a
  * global `uninstall --yes` finds no CLI-owned plugins, skips the plugin branch
- * entirely, and then removes the `.claude-src/` config manifest — destroying the
+ * entirely, and then removes the source folder's config manifest — destroying the
  * only record of plugins that remain registered and enabled.
  *
  * The A/B control (init run FROM the home root) writes the config directly and

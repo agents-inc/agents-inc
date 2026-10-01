@@ -1,9 +1,8 @@
-import path from "path";
 import { realpathSync } from "fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -16,6 +15,7 @@ import {
   runCLI,
   skillsPath,
 } from "../helpers/test-utils.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import {
   createTestEnvironment,
   initGlobalWithEject,
@@ -72,11 +72,12 @@ describe("uninstall-reinit lifecycle", () => {
         EXIT_CODES.SUCCESS,
       );
 
-      // Verify uninstall cleaned everything
-      expect(
-        await directoryExists(path.join(fakeHome, DIRS.CLAUDE_SRC)),
-        "Config dir must be removed after uninstall",
-      ).toBe(false);
+      // Verify uninstall cleaned everything.
+      //
+      // `expectNoSourceFolder` rather than one `directoryExists`: the resolved folder's absence is
+      // satisfied by an emptied `.agents-inc/` parent left sitting there, and by a `.claude-src/`
+      // beside it — a whole-source-folder absence has to ask after every name one is spelled in.
+      await expectNoSourceFolder(fakeHome, "uninstall removed the global install it made");
       expect(
         await directoryExists(globalSkillsDir),
         "Skills dir must be removed after uninstall",

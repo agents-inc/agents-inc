@@ -1,14 +1,20 @@
-import { mkdir, writeFile, readFile } from "fs/promises";
-import path from "path";
+import { readFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeProjectPartial } from "../index.js";
 import { loadProjectSourceConfig } from "../../configuration/config.js";
 import { loadProjectConfigFromDir } from "../../configuration/project-config.js";
 import { createTempDir, cleanupTempDir } from "../../__tests__/test-fs-utils.js";
-import { readTestTsConfig } from "../../__tests__/helpers/config-io.js";
+import {
+  readTestTsConfig,
+  writeRawTestConfig,
+  writeTestTsConfig,
+} from "../../__tests__/helpers/config-io.js";
 import { sa } from "../../__tests__/factories/skill-factories.js";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts.js";
-import { renderConfigTs } from "../../__tests__/content-generators.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../__tests__/factories/config-factories.js";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 import type { ProjectConfig } from "../../../types/index.js";
 
 /**
@@ -45,7 +51,7 @@ describe("writeProjectPartial", () => {
   it("creates config file with source when no config exists", async () => {
     await saveSource(tempDir, "github:my-org/skills", "my-project");
 
-    const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const configPath = getProjectConfigPath(tempDir, "claude");
     const config = await readTestTsConfig<Record<string, unknown>>(configPath);
 
     expect(config).toStrictEqual({
@@ -56,10 +62,10 @@ describe("writeProjectPartial", () => {
     });
   });
 
-  it("creates .claude-src directory if it does not exist", async () => {
+  it("creates the source folder if it does not exist", async () => {
     await saveSource(tempDir, "github:test/repo", "test-project");
 
-    const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const configPath = getProjectConfigPath(tempDir, "claude");
     const content = await readFile(configPath, "utf-8");
 
     expect(content).toContain("export default");
@@ -68,25 +74,22 @@ describe("writeProjectPartial", () => {
   });
 
   it("preserves existing config fields when adding source", async () => {
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-    await mkdir(configDir, { recursive: true });
-    await writeFile(
-      path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
-        name: "my-project",
-        agents: ["web-developer"],
-        author: "@vince",
-      }),
-    );
+    // Deliberately partial — no `skills` — because filling a missing required field is part of
+    // what the write below is held to.
+    await writeTestTsConfig(tempDir, {
+      name: "my-project",
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      author: "@vince",
+    });
 
     await saveSource(tempDir, "github:new/source", "fallback-name");
 
-    const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const configPath = getProjectConfigPath(tempDir, "claude");
     const config = await readTestTsConfig<Record<string, unknown>>(configPath);
 
     expect(config).toStrictEqual({
       name: "my-project",
-      agents: ["web-developer"],
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
       author: "@vince",
       skills: [],
       marketplace: "github:new/source",
@@ -94,19 +97,15 @@ describe("writeProjectPartial", () => {
   });
 
   it("overwrites existing source value", async () => {
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-    await mkdir(configDir, { recursive: true });
-    await writeFile(
-      path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
-        marketplace: "github:old/source",
-        name: "project",
-      }),
-    );
+    // Deliberately partial — no `skills`, no `agents` — for the reason the spec above gives.
+    await writeTestTsConfig(tempDir, {
+      marketplace: "github:old/source",
+      name: "project",
+    });
 
     await saveSource(tempDir, "github:new/source", "fallback-name");
 
-    const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const configPath = getProjectConfigPath(tempDir, "claude");
     const config = await readTestTsConfig<Record<string, unknown>>(configPath);
 
     expect(config).toStrictEqual({
@@ -129,11 +128,8 @@ describe("writeProjectPartial", () => {
    * "anything already on disk".
    */
   it("refuses to overwrite a config file it cannot read, rather than inventing a fresh one", async () => {
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-    await mkdir(configDir, { recursive: true });
-    const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
     const corruptSource = "invalid typescript content {{";
-    await writeFile(configPath, corruptSource);
+    const configPath = await writeRawTestConfig(tempDir, corruptSource);
 
     await expect(saveSource(tempDir, "github:my-org/skills", "recovered-project")).rejects.toThrow(
       configPath,
@@ -146,13 +142,13 @@ describe("writeProjectPartial", () => {
   });
 
   it("uses the fallback name when the config file is empty", async () => {
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-    await mkdir(configDir, { recursive: true });
-    await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), "");
+    // The allowed half of the pair above, not a second corrupt case: an empty config.ts loads as
+    // absence. The raw writer is used only because no config object renders to zero bytes.
+    await writeRawTestConfig(tempDir, "");
 
     await saveSource(tempDir, "github:my-org/skills", "empty-project");
 
-    const configPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const configPath = getProjectConfigPath(tempDir, "claude");
     const config = await readTestTsConfig<Record<string, unknown>>(configPath);
 
     expect(config).toStrictEqual({
@@ -196,24 +192,27 @@ describe("writeProjectPartial", () => {
     };
 
     async function loadFullOrFail(dir: string): Promise<ProjectConfig> {
-      const loaded = await loadProjectConfigFromDir(dir);
+      const loaded = await loadProjectConfigFromDir(dir, "claude");
       if (!loaded) throw new Error(`config.ts must exist and be loadable at ${dir}`);
       return loaded.config;
     }
 
     it("preserves an exclusive stack category", async () => {
-      await writeProjectPartial(tempDir, {
-        name: "stack-project",
-        skills: [],
-        agents: [{ name: "web-developer", scope: "project" }],
-        stack: STACK_WITH_EXCLUSIVE_CATEGORY,
-      });
+      await writeProjectPartial(
+        tempDir,
+        buildProjectConfig({
+          name: "stack-project",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+          stack: STACK_WITH_EXCLUSIVE_CATEGORY,
+        }),
+      );
 
       // Pre-condition: the file on disk carries the compact bare form, which is
       // the input the bug needs. Without this the spec could pass on a config
       // that never exercised the compaction at all.
       expect(
-        await readFile(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS), "utf-8"),
+        await readFile(getProjectConfigPath(tempDir, "claude"), "utf-8"),
         "the writer must emit the exclusive category in its bare form",
       ).toMatch(/'web-framework':\s*'web-framework-react'/);
 
@@ -230,12 +229,15 @@ describe("writeProjectPartial", () => {
         "web-developer": { "web-framework": [sa("web-framework-react", true)] },
       };
 
-      await writeProjectPartial(tempDir, {
-        name: "preloaded-stack-project",
-        skills: [],
-        agents: [{ name: "web-developer", scope: "project" }],
-        stack: preloadedStack,
-      });
+      await writeProjectPartial(
+        tempDir,
+        buildProjectConfig({
+          name: "preloaded-stack-project",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+          stack: preloadedStack,
+        }),
+      );
 
       await saveSource(tempDir, "github:my-org/skills", "preloaded-stack-project");
 

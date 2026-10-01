@@ -13,6 +13,7 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
@@ -20,9 +21,10 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -49,11 +51,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-si
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
-
-/** A skill that lands in the user's own ~/.claude, and so makes a payload a global install. */
-function globalSkill(skillId: string) {
-  return { [skillId]: buildSeedSkill({ scope: "global", assignments: { [WEB_DEV]: "lazy" } }) };
-}
 
 describe("init --from <id>: greenfield only", () => {
   let sourceDir: string;
@@ -82,8 +79,14 @@ describe("init --from <id>: greenfield only", () => {
     const secondProjectDir = path.join(env.fakeHome, "second-project");
     await mkdir(secondProjectDir, { recursive: true });
 
-    store.publish("GlobalA01", buildSeedPayload({ skills: globalSkill(E2E_SKILL.react.id) }));
-    store.publish("GlobalB02", buildSeedPayload({ skills: globalSkill(E2E_SKILL.hono.id) }));
+    store.publish(
+      "GlobalA01",
+      buildSeedPayload({ skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() } }),
+    );
+    store.publish(
+      "GlobalB02",
+      buildSeedPayload({ skills: { [E2E_SKILL.hono.id]: ejectedGlobalSkill() } }),
+    );
 
     const first = await runInitFrom(
       store,
@@ -93,7 +96,7 @@ describe("init --from <id>: greenfield only", () => {
     );
     expect(first.exitCode, `first install failed: ${first.output}`).toBe(EXIT_CODES.SUCCESS);
     expect(await loadConfigOrFail(env.fakeHome)).toMatchObject({
-      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
+      skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
     });
 
     // Everything the refused run must leave exactly as it found it, captured before it runs.
@@ -125,7 +128,10 @@ describe("init --from <id>: greenfield only", () => {
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_UNINSTALL_HINT);
 
     // The second project is untouched...
-    expect(await listFiles(secondProjectDir)).not.toContain(DIRS.CLAUDE_SRC);
+    await expectNoSourceFolder(
+      secondProjectDir,
+      "a global install leaves the second project untouched",
+    );
     // ...and so is the install that blocked it, on both sides.
     expect(await readTestFile(configTsPath(env.fakeHome))).toBe(globalConfigBefore);
     expect(await readTreeSnapshot(skillsPath(env.fakeHome))).toStrictEqual(globalSkillsBefore);
@@ -137,12 +143,16 @@ describe("init --from <id>: greenfield only", () => {
     const secondProjectDir = path.join(env.fakeHome, "second-project");
     await mkdir(secondProjectDir, { recursive: true });
 
-    store.publish("GlobalC03", buildSeedPayload({ skills: globalSkill(E2E_SKILL.react.id) }));
+    store.publish(
+      "GlobalC03",
+      buildSeedPayload({ skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() } }),
+    );
     store.publish(
       "Project04",
       buildSeedPayload({
         skills: {
           [E2E_SKILL.vitest.id]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -199,6 +209,7 @@ describe("init --from <id>: greenfield only", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -220,7 +231,13 @@ describe("init --from <id>: greenfield only", () => {
     expect(said).toContain(`${E2E_SKILL.react.id} -> ${WEB_DEV}`);
 
     // The refusal is a decode failure, so nothing was installed at either scope.
-    expect(await listFiles(env.projectDir)).not.toContain(DIRS.CLAUDE_SRC);
-    expect(await listFiles(env.fakeHome)).not.toContain(DIRS.CLAUDE_SRC);
+    await expectNoSourceFolder(
+      env.projectDir,
+      "the refusal is a decode failure, so nothing was installed at project scope",
+    );
+    await expectNoSourceFolder(
+      env.fakeHome,
+      "the refusal is a decode failure, so nothing was installed at global scope",
+    );
   });
 });

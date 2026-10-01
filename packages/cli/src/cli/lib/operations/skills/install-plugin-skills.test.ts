@@ -1,14 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("../../../utils/exec.js", () => ({
-  claudePluginInstall: vi.fn(),
-}));
+vi.mock("../../hosts/host-for.js", async () => {
+  const { createMockPluginHost } = await import("../../__tests__/helpers/mock-plugin-host.js");
+  const host = createMockPluginHost();
+  return { hostAt: () => host, hostFor: () => host };
+});
 
 import { installPluginSkills } from "./install-plugin-skills";
-import { claudePluginInstall } from "../../../utils/exec.js";
+import { hostAt } from "../../hosts/host-for.js";
 import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 
-const mockClaudePluginInstall = vi.mocked(claudePluginInstall);
+/** The one host every `hostAt` answer in this file is, so a spy set here is the spy called. */
+const mockInstallPlugin = vi.mocked(hostAt("/any-root").installPlugin);
 
 const PROJECT_DIR = "/tmp/test-project";
 const MARKETPLACE = "agents-inc";
@@ -26,15 +29,15 @@ describe("installPluginSkills", () => {
 
     const result = await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
 
-    expect(mockClaudePluginInstall).toHaveBeenCalledTimes(2);
-    expect(mockClaudePluginInstall).toHaveBeenCalledWith(
+    expect(mockInstallPlugin).toHaveBeenCalledTimes(2);
+    expect(mockInstallPlugin).toHaveBeenCalledWith(
       `web-framework-react@${MARKETPLACE}`,
       "project",
       PROJECT_DIR,
     );
-    expect(mockClaudePluginInstall).toHaveBeenCalledWith(
+    expect(mockInstallPlugin).toHaveBeenCalledWith(
       `api-framework-hono@${MARKETPLACE}`,
-      "user",
+      "global",
       PROJECT_DIR,
     );
 
@@ -54,8 +57,8 @@ describe("installPluginSkills", () => {
 
     const result = await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
 
-    expect(mockClaudePluginInstall).toHaveBeenCalledTimes(1);
-    expect(mockClaudePluginInstall).toHaveBeenCalledWith(
+    expect(mockInstallPlugin).toHaveBeenCalledTimes(1);
+    expect(mockInstallPlugin).toHaveBeenCalledWith(
       `api-framework-hono@${MARKETPLACE}`,
       "project",
       PROJECT_DIR,
@@ -72,7 +75,7 @@ describe("installPluginSkills", () => {
       buildSkillConfig("api-framework-hono", { scope: "project", origin: MARKETPLACE }),
     ];
 
-    mockClaudePluginInstall
+    mockInstallPlugin
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("Plugin install failed: timeout"));
 
@@ -93,7 +96,7 @@ describe("installPluginSkills", () => {
 
     await installPluginSkills(skills, MARKETPLACE, PROJECT_DIR);
 
-    expect(mockClaudePluginInstall).toHaveBeenCalledWith(
+    expect(mockInstallPlugin).toHaveBeenCalledWith(
       "web-testing-vitest@agents-inc",
       "project",
       PROJECT_DIR,
@@ -103,7 +106,7 @@ describe("installPluginSkills", () => {
   it("should return empty results when no plugin skills", async () => {
     const result = await installPluginSkills([], MARKETPLACE, PROJECT_DIR);
 
-    expect(mockClaudePluginInstall).not.toHaveBeenCalled();
+    expect(mockInstallPlugin).not.toHaveBeenCalled();
     expect(result).toStrictEqual({ installed: [], failed: [] });
   });
 });

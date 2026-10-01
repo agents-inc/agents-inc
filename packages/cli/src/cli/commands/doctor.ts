@@ -5,7 +5,7 @@ import { getErrorMessage } from "../utils/errors";
 import { EXIT_CODES } from "../lib/exit-codes";
 import {
   effectivelyExcludedSkillIds,
-  loadProjectConfigFromDir,
+  loadInstalledConfig,
   validateProjectConfig,
   SOURCE_ENV_VAR,
   type ResolvedConfig,
@@ -14,7 +14,7 @@ import { loadSource, detectProject, type DetectedProject } from "../lib/operatio
 import { matrix } from "../lib/matrix/matrix-provider";
 import { discoverLocalSkills } from "../lib/skills";
 import { getStackSkillIds } from "../lib/stacks";
-import { filterExcludedEntries, listAgentMdFiles } from "../lib/agents";
+import { filterExcludedEntries, listAgentFilesOf } from "../lib/agents";
 import { getVerifiedPluginInstallPaths, parseMarketplacePluginRef } from "../lib/plugins";
 import {
   declaresNoContent,
@@ -22,7 +22,22 @@ import {
   installBaseDir,
   resolveInstallPaths,
 } from "../lib/installation";
-import { getProjectConfigPath } from "../lib/configuration";
+import {
+  agentCodec,
+  type AgentCodec,
+  hostCompilesAgent,
+  providerInUse,
+  relativeConfigPath,
+  resolveSourceDir,
+  skillsDir,
+  skillsPathPrefix,
+} from "../lib/installation/install-layout";
+import { ambiguityFinding } from "../lib/installation/provider-flag";
+import { unofferablePlacementsFound } from "../lib/hosts/configured-placements";
+import { sourceScopesInPlay } from "../lib/installation/source-scopes";
+import { layoutFindingFor, type LayoutFinding } from "../lib/installation/layout-findings";
+import { REGISTRY_IS_NOT_AN_INVENTORY } from "../utils/messages";
+import { getInstalledConfigPath } from "../lib/installation/install-base-dir";
 import { isSourceRepo } from "../lib/source-validator";
 import {
   listInstalledArtifacts,
@@ -35,22 +50,31 @@ import {
   type ContentValidation,
 } from "../lib/content-validator";
 import type { SourceLoadResult } from "../lib/loading";
-import type { MergedSkillsMatrix, ProjectConfig, SkillConfig } from "../types";
+import type {
+  AgentName,
+  AgentScopeConfig,
+  MergedSkillsMatrix,
+  ProjectConfig,
+  SkillConfig,
+  SkillId,
+  SkillScope,
+} from "../types";
 import { fileExists, directoryExists } from "../utils/fs";
 import {
-  CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   EJECT_SOURCE,
-  LOCAL_SKILLS_PATH,
   STANDARD_FILES,
   UI_SYMBOLS,
+  type Provider,
 } from "../consts";
 import { countBy, unique } from "remeda";
 
 type CheckKind =
   | "config"
   | "config-empty"
+  | "layout"
+  | "placements"
   | "skills"
   | "agents"
   | "orphans"
@@ -88,9 +112,6 @@ type ConfigState =
   | { kind: "declares-nothing"; config: ProjectConfig }
   | { kind: "loaded"; config: ProjectConfig };
 
-/** Project-relative path to the config file, shown in doctor messages. */
-const CONFIG_TS_REL = `${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`;
-
 /**
  * The config in THIS directory, and what state it is in. Only this directory: the global fallback
  * is `detectInstallation`'s to make and it has already made it, so a project with no config of its
@@ -106,7 +127,7 @@ async function resolveConfigState(
 ): Promise<ConfigState> {
   if (detected?.config) return { kind: "loaded", config: detected.config };
 
-  const loaded = await loadProjectConfigFromDir(projectDir);
+  const loaded = await loadInstalledConfig(projectDir);
   if (!loaded) return { kind: "absent" };
 
   return declaresNoContent(loaded.config)
@@ -114,13 +135,20 @@ async function resolveConfigState(
     : { kind: "loaded", config: loaded.config };
 }
 
-function checkConfigValid(state: ConfigState): ConfigCheckOutput {
+/**
+ * `projectDir` rather than a module-level constant for the path this reports about: a scope's
+ * source folder is resolved from disk, so nothing about it exists at module load, and every line
+ * below has to name the folder this project is ACTUALLY on. A constant would tell a user on the
+ * old name to go and edit a file that is not there.
+ */
+function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOutput {
+  const configTsRel = relativeConfigPath(projectDir, providerInUse(projectDir));
   if (state.kind === "absent") {
     return {
       result: {
         kind: "config",
         status: "fail",
-        message: `${CONFIG_TS_REL} not found`,
+        message: `${configTsRel} not found`,
         details: [`Run '${CLI_INVOKE_COMMAND} init' to create a configuration`],
       },
       config: null,
@@ -135,7 +163,7 @@ function checkConfigValid(state: ConfigState): ConfigCheckOutput {
       result: {
         kind: "config-empty",
         status: "warn",
-        message: `${CONFIG_TS_REL} is valid but declares no skills and no agents`,
+        message: `${configTsRel} is valid but declares no skills and no agents`,
       },
       config: state.config,
     };
@@ -149,7 +177,7 @@ function checkConfigValid(state: ConfigState): ConfigCheckOutput {
       result: {
         kind: "config",
         status: "fail",
-        message: `${CONFIG_TS_REL} has errors`,
+        message: `${configTsRel} has errors`,
         details: validation.errors,
       },
       config: null,
@@ -161,7 +189,7 @@ function checkConfigValid(state: ConfigState): ConfigCheckOutput {
       result: {
         kind: "config",
         status: "warn",
-        message: `${CONFIG_TS_REL} has warnings`,
+        message: `${configTsRel} has warnings`,
         details: validation.warnings,
       },
       config,
@@ -172,7 +200,7 @@ function checkConfigValid(state: ConfigState): ConfigCheckOutput {
     result: {
       kind: "config",
       status: "pass",
-      message: `${CONFIG_TS_REL} is valid`,
+      message: `${configTsRel} is valid`,
     },
     config,
   };
@@ -229,6 +257,25 @@ async function checkSkillsResolved(
   };
 }
 
+/**
+ * Whether every configured sub-agent is compiled where its own host reads it.
+ *
+ * **Two things here were Claude's and are the host's**, and both were found by running the
+ * command on a healthy Codex installation rather than by reading it:
+ *
+ * - the FILENAME was `${name}.md`. Claude reads `.md` and Codex reads `.toml`, so on Codex this
+ *   looked for a file no release will ever write. {@link agentCodec} answers the extension, and
+ *   this is the extension ban's own census in action — the eslint config leaves `.md` unbanned
+ *   precisely because product modules like this one still spell it.
+ * - the VERDICT was "needs recompilation", for a sub-agent {@link hostCompilesAgent} says this
+ *   host does not carry at all. Recompiling writes nothing, so the row asked for a remedy that
+ *   does not exist and turned an install working exactly as this release intends into a warning.
+ *   With C5 that is no longer a whole provider but two named sub-agents — `agent-summoner` and
+ *   `skill-summoner`, which Codex leaves out for v1 — so the row names them rather than the host.
+ *
+ * The host is read per SCOPE, the way `resolveInstallPaths` reads it beside this: two scopes can
+ * be on two providers, and one answer for both is how a row reports about the wrong installation.
+ */
 async function checkAgentsCompiled(
   config: ProjectConfig,
   projectDir: string,
@@ -243,17 +290,36 @@ async function checkAgentsCompiled(
     };
   }
 
-  const projectAgentsDir = resolveInstallPaths(projectDir, "project").agentsDir;
-  const globalAgentsDir = resolveInstallPaths(projectDir, "global").agentsDir;
+  const hosts = {
+    global: providerInUse(installBaseDir(projectDir, "global")),
+    project: providerInUse(installBaseDir(projectDir, "project")),
+  };
+  const dirs = {
+    global: resolveInstallPaths(projectDir, "global").agentsDir,
+    project: resolveInstallPaths(projectDir, "project").agentsDir,
+  };
+
   const agentChecks = await Promise.all(
-    agents.map(async (agent) => {
-      // Check scope-appropriate directory for the agent
-      const agentsDir = agent.scope === "global" ? globalAgentsDir : projectAgentsDir;
-      const agentPath = path.join(agentsDir, `${agent.name}.md`);
-      return { name: agent.name, compiled: await fileExists(agentPath) };
-    }),
+    agents.map((agent) => agentCompileCheck(agent, hosts, dirs)),
   );
-  const missingAgents = agentChecks.filter((c) => !c.compiled).map((c) => c.name);
+
+  const unrenderable = agentChecks.filter((c) => c.state === "unrenderable");
+  const missingAgents = agentChecks.filter((c) => c.state === "missing").map((c) => c.name);
+
+  // The no-renderer answer leads when it is the whole story, because then nothing is wrong and
+  // nothing can be done: a `warn` here would make every `doctor` on a Codex installation read as
+  // a fault report about the one thing this release has already said it does not do yet. The
+  // providers come off the rows themselves rather than off both scopes, so a project on one host
+  // under a global on another names only the host whose sub-agents this is about.
+  if (unrenderable.length === agents.length) {
+    const hostsLeavingThemOut = unique(unrenderable.map((a) => a.provider)).join(" or ");
+    return {
+      kind: "agents",
+      status: "pass",
+      message: `No sub-agent in this configuration is carried by ${hostsLeavingThemOut}`,
+      details: unrenderable.map((a) => `- ${a.name} (left out of ${a.provider})`),
+    };
+  }
 
   if (missingAgents.length > 0) {
     return {
@@ -264,14 +330,44 @@ async function checkAgentsCompiled(
     };
   }
 
+  const renderable = agents.length - unrenderable.length;
   return {
     kind: "agents",
     status: "pass",
-    message: `${agents.length}/${agents.length} agents compiled`,
+    message: `${renderable}/${renderable} agents compiled`,
   };
 }
 
+/** One configured sub-agent as the Agents Compiled row sees it, and the host that decided it. */
+type AgentCompileCheck = {
+  name: AgentName;
+  provider: Provider;
+  state: "unrenderable" | "compiled" | "missing";
+};
+
+/**
+ * Whether one sub-agent is left out by its scope's host, or else compiled or missing where that
+ * host reads it — the extension and the directory are both the host's.
+ */
+async function agentCompileCheck(
+  agent: AgentScopeConfig,
+  hosts: Record<SkillScope, Provider>,
+  agentsDirs: Record<SkillScope, string>,
+): Promise<AgentCompileCheck> {
+  const provider = hosts[agent.scope];
+  if (!hostCompilesAgent(provider, agent.name)) {
+    return { name: agent.name, provider, state: "unrenderable" };
+  }
+
+  const file = `${agent.name}${agentCodec(provider).extension}`;
+  const compiled = await fileExists(path.join(agentsDirs[agent.scope], file));
+  return { name: agent.name, provider, state: compiled ? "compiled" : "missing" };
+}
+
 async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promise<CheckResult> {
+  // The host's own agent files — `*.toml` roles on Codex, where a `*.md`-only listing found no
+  // compiled agent and so no orphan either (the CLI-896 class, 2026-09-27).
+  const codec = agentCodec(providerInUse(projectDir));
   const projectAgentsDir = resolveInstallPaths(projectDir, "project").agentsDir;
   const globalAgentsDir = resolveInstallPaths(projectDir, "global").agentsDir;
 
@@ -292,8 +388,8 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
     };
   }
 
-  const projectMdFiles = projectExists ? await listAgentMdFiles(projectAgentsDir) : [];
-  const globalMdFiles = globalExists ? await listAgentMdFiles(globalAgentsDir) : [];
+  const projectMdFiles = projectExists ? await listAgentFilesOf(projectAgentsDir, codec) : [];
+  const globalMdFiles = globalExists ? await listAgentFilesOf(globalAgentsDir, codec) : [];
 
   // Project files: only active project-scoped agents should have .md files here
   const activeProjectAgents: Set<string> = new Set(
@@ -309,8 +405,8 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
     : activeProjectAgents;
 
   const orphanedFiles = [
-    ...orphanedAgentNames(projectMdFiles, knownProjectDirAgents),
-    ...orphanedAgentNames(globalMdFiles, knownGlobalAgents),
+    ...orphanedAgentNames(projectMdFiles, knownProjectDirAgents, codec),
+    ...orphanedAgentNames(globalMdFiles, knownGlobalAgents, codec),
   ];
 
   if (orphanedFiles.length > 0) {
@@ -334,9 +430,13 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
  * roster differs per directory — a project directory knows only its own active agents, the
  * global one knows every global-scoped agent including the excluded — so it is a parameter.
  */
-function orphanedAgentNames(mdFiles: string[], knownAgents: ReadonlySet<string>): string[] {
+function orphanedAgentNames(
+  mdFiles: string[],
+  knownAgents: ReadonlySet<string>,
+  codec: AgentCodec,
+): string[] {
   return mdFiles
-    .map((fileName) => fileName.replace(/\.md$/, ""))
+    .map((fileName) => path.basename(fileName, codec.extension))
     .filter((agentName) => !knownAgents.has(agentName));
 }
 
@@ -379,6 +479,22 @@ function countedArtifacts(skills: string[], agents: string[]): string {
   ].join(" and ");
 }
 
+/**
+ * Whether every eject-mode skill the configuration names is on disk where its own host reads it.
+ *
+ * **It composed `<scope root>/.claude/skills/<id>/SKILL.md` for every provider until
+ * 2026-09-22**, which made a healthy Codex installation report every one of its skills missing
+ * and told the reader to look in a directory that installation does not have. The write path had
+ * already moved through the layout — `copyLocalSkills` writes `$CODEX_HOME/skills` and
+ * `<repo>/.agents/skills` — so this row was the half that stayed behind, and it is the kind of
+ * defect the host-path lint ban cannot report: the path was composed from a CONSTANT, and that
+ * ban matches literals.
+ *
+ * The directory is asked per SKILL rather than once for the row, because scope decides it and a
+ * configuration mixes scopes freely. The reader is told the directory that was actually looked
+ * in, for the same reason — one sentence naming one folder cannot be true of two scopes on two
+ * different hosts.
+ */
 async function checkSkillsInstalled(
   config: ProjectConfig,
   projectDir: string,
@@ -395,20 +511,16 @@ async function checkSkillsInstalled(
   }
 
   const skillChecks = await Promise.all(
-    ejectSkills.map(async (skill) => {
-      const baseDir = installBaseDir(projectDir, skill.scope);
-      const skillMdPath = path.join(baseDir, LOCAL_SKILLS_PATH, skill.id, STANDARD_FILES.SKILL_MD);
-      return { id: skill.id, installed: await fileExists(skillMdPath) };
-    }),
+    ejectSkills.map((skill) => ejectedSkillCheck(skill, projectDir)),
   );
-  const missingSkills = skillChecks.filter((c) => !c.installed).map((c) => c.id);
+  const missingSkills = skillChecks.filter((c) => !c.installed);
 
   if (missingSkills.length > 0) {
     return {
       kind: "installed",
       status: "warn",
       message: `${plural(missingSkills.length, "skill")} missing from disk`,
-      details: missingSkills.map((s) => `- ${s} (not found in ${LOCAL_SKILLS_PATH}/)`),
+      details: missingSkills.map((s) => `- ${s.id} (not found in ${s.lookedIn}/)`),
     };
   }
 
@@ -416,6 +528,31 @@ async function checkSkillsInstalled(
     kind: "installed",
     status: "pass",
     message: `${ejectSkills.length}/${ejectSkills.length} eject-mode skills installed`,
+  };
+}
+
+/** One eject-mode skill as the Skills Installed row sees it, and where it was looked for. */
+type EjectedSkillCheck = { id: SkillId; installed: boolean; lookedIn: string };
+
+/**
+ * Whether one eject-mode skill's `SKILL.md` is where its scope's host reads it.
+ *
+ * The provider is read off the scope's OWN root, the way `resolveInstallPaths` and
+ * `discoverLocalProjectSkills` read it: two scopes can be on two different providers, and one
+ * probe per skill is what keeps the directory and the reported prefix naming one of them.
+ */
+async function ejectedSkillCheck(
+  skill: SkillConfig,
+  projectDir: string,
+): Promise<EjectedSkillCheck> {
+  const provider = providerInUse(installBaseDir(projectDir, skill.scope));
+  const dir = skillsDir(provider, skill.scope, projectDir);
+  const installed = await fileExists(path.join(dir, skill.id, STANDARD_FILES.SKILL_MD));
+
+  return {
+    id: skill.id,
+    installed,
+    lookedIn: skillsPathPrefix(provider, skill.scope, projectDir),
   };
 }
 
@@ -798,6 +935,100 @@ function formatTips(results: CheckResult[]): string[] {
   );
 }
 
+/** The row name every Layout row is printed under, one per scope. */
+const LAYOUT_ROW_NAME = "Layout";
+
+function toLayoutResult(finding: LayoutFinding): CheckResult {
+  return {
+    kind: "layout",
+    status: finding.status,
+    message: finding.message,
+    details: finding.details,
+  };
+}
+
+/**
+ * Registered projects whose own source folder is still the old one, as the registry spells them.
+ *
+ * Read from the global config's `projects` array and nothing else — which is exactly why the line
+ * above the list says so. A config that cannot be loaded yields no list rather than a failed row:
+ * the file itself is already this report's own finding, one row up.
+ */
+async function registeredProjectsOnTheOldFolder(home: string): Promise<string[]> {
+  const loaded = await loadInstalledConfig(home).catch(() => null);
+  return (loaded?.config.projects ?? []).filter(isOnTheLegacySourceFolder);
+}
+
+/**
+ * Whether the installation in `dir` is read from the folder every pre-rename install carries.
+ *
+ * The provider is read off the directory rather than assumed: the retired name is Claude's, so a
+ * registered project on another provider has only ever had one folder and is never on the old one.
+ */
+function isOnTheLegacySourceFolder(dir: string): boolean {
+  return resolveSourceDir(dir, providerInUse(dir)).legacy;
+}
+
+/** The row name the placement and installation-ambiguity findings are printed under. */
+const PLACEMENTS_ROW_NAME = "Placements Offered";
+
+/**
+ * Whether this installation is one every other command will act on — as a ROW, not a throw.
+ *
+ * **It carries the two findings that make the rest of this report a claim about nothing.** A
+ * configuration asking for a mode/scope cell its host does not offer is refused by `compile`,
+ * `edit` and `update`; a scope holding an installation of each provider is refused by `edit`,
+ * `uninstall`, `share` and `eject`. Until this row existed, `doctor` — the one command whose job
+ * is saying whether an installation is healthy — walked straight past both and pronounced a clean
+ * bill of health on a configuration no command would touch. A diagnostic that disagrees with every
+ * command it is diagnosing is worse than a missing one.
+ *
+ * **It reports and never refuses**, which is the same distinction `settleSourceLayoutBeforeWriting`
+ * draws for the rival-folder refusal: a command that changes nothing must not refuse to LOOK,
+ * because this is exactly the state a user needs to see in order to fix it.
+ *
+ * The message is the refusal's own, word for word, off the same host roster — so what a user is
+ * told here and what they are told when `compile` stops are one sentence, not two that agree
+ * today.
+ *
+ * **The summary counts FINDINGS, and said "unusable installation" until 2026-09-22.** The two
+ * are not the same number in either direction: one installation with an unofferable placement AND
+ * an ambiguous folder contributes two findings, while the ambiguity finding is itself about a
+ * scope holding two installations. A count of one noun printed over a list of another is a
+ * sentence a reader cannot check against the lines underneath it.
+ */
+async function checkOfferedPlacements(projectDir: string): Promise<CheckResult> {
+  const findings = await everythingThatWouldStopACommandActing(projectDir);
+
+  if (findings.length === 0) {
+    return { kind: "placements", status: "pass", message: "Every configured skill is placeable" };
+  }
+
+  return {
+    kind: "placements",
+    status: "fail",
+    message: `${plural(findings.length, "finding")} would stop a command acting here`,
+    details: findings.map((finding) => `- ${finding}`),
+  };
+}
+
+/**
+ * The two findings a command would stop on, in one list: a placement no host can fill, and a scope
+ * holding an installation of each provider.
+ *
+ * Asked together rather than in sequence because neither answer depends on the other, and reported
+ * together because they are one question for a user — "will anything act on this?" — with two ways
+ * of being answered no.
+ */
+async function everythingThatWouldStopACommandActing(projectDir: string): Promise<string[]> {
+  const [unofferable, ambiguous] = await Promise.all([
+    unofferablePlacementsFound(projectDir),
+    ambiguityFinding(projectDir),
+  ]);
+
+  return ambiguous === null ? unofferable : [...unofferable, ambiguous];
+}
+
 function skippedResult(kind: CheckKind): CheckResult {
   return { kind, status: "skip", message: "Skipped (config invalid)" };
 }
@@ -959,7 +1190,7 @@ export default class Doctor extends BaseCommand {
    * at all, not merely no usable one.
    */
   private async isUninstalledSourceRepo(projectDir: string): Promise<boolean> {
-    if (await fileExists(getProjectConfigPath(projectDir))) return false;
+    if (await fileExists(getInstalledConfigPath(projectDir))) return false;
     return isSourceRepo(projectDir);
   }
 
@@ -968,8 +1199,17 @@ export default class Doctor extends BaseCommand {
     configState: ConfigState,
     failedContent: ReadonlySet<CheckKind>,
   ): Promise<CheckResult[]> {
-    const { result: configResult, config } = checkConfigValid(configState);
+    const { result: configResult, config } = checkConfigValid(configState, projectDir);
     this.logCheck("Config Valid", configResult);
+
+    const layoutResults = await this.reportLayout(projectDir);
+
+    // Directly under Layout, and above every row that reads content: Layout says which FOLDER this
+    // report is about and this row says whether any command will act on what is in it.
+    const placementsResult = await safeCheck("placements", () =>
+      checkOfferedPlacements(projectDir),
+    );
+    this.logCheck(PLACEMENTS_ROW_NAME, placementsResult);
 
     // loadSource (called by checkSourceReachable) populates the matrix. Run it
     // before checkSkillsResolved so skills lookups see a populated matrix; if
@@ -1006,6 +1246,8 @@ export default class Doctor extends BaseCommand {
 
     return [
       configResult,
+      ...layoutResults,
+      placementsResult,
       skillsResult,
       agentsResult,
       orphansResult,
@@ -1013,6 +1255,57 @@ export default class Doctor extends BaseCommand {
       pluginsResult,
       sourceResult,
     ];
+  }
+
+  /**
+   * One `Layout` row per scope in play, and — at the home directory — the registered projects
+   * still on the old folder.
+   *
+   * Per scope rather than per machine: a project and the global installation can be on different
+   * layouts, and one row for the two can only be right about one of them.
+   *
+   * Printed right under `Config Valid`, because every row below it is read out of a config file
+   * whose folder this row is about — a scope with two rival folders has a config the rest of the
+   * report may have read from either one.
+   */
+  private async reportLayout(projectDir: string): Promise<CheckResult[]> {
+    const scopes = await sourceScopesInPlay(projectDir);
+    const rows = await Promise.all(
+      scopes.map(async (scope) => toLayoutResult(await layoutFindingFor(scope))),
+    );
+    const withRegistry = await this.appendRegistryList(projectDir, rows);
+
+    for (const row of withRegistry) {
+      this.logCheck(LAYOUT_ROW_NAME, row);
+    }
+    return withRegistry;
+  }
+
+  /**
+   * The registered projects still on the old folder, added to the LAST row, and only at HOME.
+   *
+   * At home because that is where the registry lives, and the move a legacy project needs is made
+   * by hand in that project — a list of other people's projects printed inside one of them is a
+   * list nobody standing there can act on. The caveat travels with it: the registry holds a
+   * fraction of the installations on a machine, so a list printed without it reads as an
+   * inventory.
+   */
+  private async appendRegistryList(
+    projectDir: string,
+    rows: CheckResult[],
+  ): Promise<CheckResult[]> {
+    const last = rows.at(-1);
+    if (!isHomeDirectory(projectDir) || last === undefined) return rows;
+
+    const legacyProjects = await registeredProjectsOnTheOldFolder(projectDir);
+    if (legacyProjects.length === 0) return rows;
+
+    const detailed: CheckResult = {
+      ...last,
+      status: last.status === "fail" ? "fail" : "warn",
+      details: [...(last.details ?? []), REGISTRY_IS_NOT_AN_INVENTORY, ...legacyProjects],
+    };
+    return [...rows.slice(0, -1), detailed];
   }
 
   /**

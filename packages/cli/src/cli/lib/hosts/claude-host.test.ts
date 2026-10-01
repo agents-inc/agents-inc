@@ -1,45 +1,57 @@
+/**
+ * What the Claude host refuses before an argument reaches a command line, and which installation
+ * every call touches.
+ *
+ * It arrived here from `src/cli/utils/exec.test.ts` with C3, unedited but for the module it
+ * imports from and one row: `claudePluginUninstallBestEffort` is gone, because the two-scope
+ * sweep is the CALLER's now — `uninstallPlugins` in `commands/uninstall.tsx` reads the scopes off
+ * `PluginHost.offeredPlacements`, which is what lets a host that installs plugins globally only
+ * sweep one scope rather than two. `lib/__tests__/commands/uninstall.test.ts` holds the order.
+ *
+ * Its siblings in `__tests__/` beside this file cover what it does not: the seam's shape, and
+ * every argv the host hands the binary.
+ */
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock child_process spawn to prevent actual command execution
-vi.mock("child_process", () => ({
-  spawn: vi.fn(() => {
-    const stdoutCallbacks: Array<(data: string) => void> = [];
-    const stderrCallbacks: Array<(data: string) => void> = [];
-    const closeCallbacks: Array<(code: number) => void> = [];
+// Mock child_process spawn to prevent actual command execution. Each spawn is answered in the
+// top-level beforeEach below, once the fake child it hands back has been imported.
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return { ...actual, spawn: vi.fn<typeof actual.spawn>() };
+});
 
-    const proc = {
-      stdout: {
-        on: vi.fn((event: string, cb: (data: string) => void) => {
-          if (event === "data") stdoutCallbacks.push(cb);
-        }),
-      },
-      stderr: {
-        on: vi.fn((event: string, cb: (data: string) => void) => {
-          if (event === "data") stderrCallbacks.push(cb);
-        }),
-      },
-      on: vi.fn((event: string, cb: (code: number) => void) => {
-        if (event === "close") closeCallbacks.push(cb);
-      }),
-    };
+vi.mock("../../utils/logger");
 
-    // Simulate successful command execution asynchronously
-    setTimeout(() => {
-      stdoutCallbacks.forEach((cb) => cb(""));
-      stderrCallbacks.forEach((cb) => cb(""));
-      closeCallbacks.forEach((cb) => cb(0));
-    }, 0);
-
-    return proc;
-  }),
+/**
+ * The two filesystem reads the LISTING is made of — Claude has no `plugin list --json`, so the
+ * one member of this host that spawns nothing is also the one whose pinned installation cannot be
+ * seen in a spawned environment.
+ *
+ * Typed against the real functions, so an answer these mocks give that the functions can no
+ * longer return is a compile error here rather than a value nothing reads.
+ */
+const { mockFileExists, mockReadFileSafe } = vi.hoisted(() => ({
+  mockFileExists: vi.fn<typeof fileExists>(),
+  mockReadFileSafe: vi.fn<typeof readFileSafe>(),
 }));
 
-vi.mock("./logger");
+vi.mock("../../utils/fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../utils/fs")>()),
+  fileExists: mockFileExists,
+  readFileSafe: mockReadFileSafe,
+}));
 
 import { spawn } from "child_process";
-import { DEFAULT_PLUGIN_NAME } from "../consts";
-import type { ClaudeConfigOptions } from "./exec";
+import os from "os";
+import path from "path";
+import { DEFAULT_PLUGIN_NAME } from "../../consts";
+import { renderInstalledPluginsRegistry } from "../__tests__/factories/plugin-registry-factories";
+import type { fileExists, readFileSafe } from "../../utils/fs";
+import type { ClaudeConfigOptions } from "./claude-host";
+import { fakeChildProcess } from "./__tests__/helpers/fake-child-process.js";
 import {
+  claudeHost,
   claudePluginInstall,
   claudePluginMarketplaceAdd,
   claudePluginMarketplaceExists,
@@ -47,8 +59,8 @@ import {
   claudePluginMarketplaceRemove,
   claudePluginMarketplaceUpdate,
   claudePluginUninstall,
-  claudePluginUninstallBestEffort,
-} from "./exec";
+  isClaudeCLIAvailable,
+} from "./claude-host";
 
 /**
  * The word withdrawn from the user-facing surface, as a whole word so
@@ -56,7 +68,12 @@ import {
  */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
 
-describe("exec argument validation", () => {
+/** Every spawn exits clean with nothing on either stream — the one answer every case here needs. */
+beforeEach(() => {
+  vi.mocked(spawn).mockImplementation(() => fakeChildProcess());
+});
+
+describe("Claude host argument validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -123,23 +140,28 @@ describe("exec argument validation", () => {
       );
     });
 
+    /**
+     * Each accepted value is awaited to its answer. These cases used to assert only that the call
+     * returned a Promise, which an async function does whether its validator admits the value or
+     * refuses it — so a validator that refused every path left all three green. The spawn mock
+     * above closes with exit 0, so an admitted path resolves the way the max-length case does.
+     */
     it("accepts valid plugin path", async () => {
-      // Valid path should pass validation (spawn is mocked so it won't actually execute)
-      // The spawn mock doesn't resolve, so the promise hangs -- we just verify no validation error
-      const promise = claudePluginInstall("my-skill@my-marketplace", "project", "/project");
-      // If validation passed, the function would call spawn (which is mocked and won't resolve)
-      // We can't await it, but we can verify it didn't throw synchronously
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(
+        claudePluginInstall("my-skill@my-marketplace", "project", "/project"),
+      ).resolves.toBeUndefined();
     });
 
     it("accepts plugin path with slashes", async () => {
-      const promise = claudePluginInstall("org/repo/skill", "project", "/project");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(
+        claudePluginInstall("org/repo/skill", "project", "/project"),
+      ).resolves.toBeUndefined();
     });
 
     it("accepts plugin path with @ symbol", async () => {
-      const promise = claudePluginInstall("skill-name@marketplace", "project", "/project");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(
+        claudePluginInstall("skill-name@marketplace", "project", "/project"),
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -192,23 +214,19 @@ describe("exec argument validation", () => {
     });
 
     it("accepts owner/repo format", async () => {
-      const promise = claudePluginMarketplaceAdd("my-org/my-repo");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(claudePluginMarketplaceAdd("my-org/my-repo")).resolves.toBeUndefined();
     });
 
     it("accepts github: prefixed source", async () => {
-      const promise = claudePluginMarketplaceAdd("github:my-org/my-repo");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(claudePluginMarketplaceAdd("github:my-org/my-repo")).resolves.toBeUndefined();
     });
 
     it("accepts source with dots and underscores", async () => {
-      const promise = claudePluginMarketplaceAdd("my_org.name/my_repo.name");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(claudePluginMarketplaceAdd("my_org.name/my_repo.name")).resolves.toBeUndefined();
     });
 
     it("accepts source with @ symbol", async () => {
-      const promise = claudePluginMarketplaceAdd("my-org/my-repo@main");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(claudePluginMarketplaceAdd("my-org/my-repo@main")).resolves.toBeUndefined();
     });
   });
 
@@ -245,13 +263,15 @@ describe("exec argument validation", () => {
     });
 
     it("accepts valid plugin name", async () => {
-      const promise = claudePluginUninstall(DEFAULT_PLUGIN_NAME, "project", "/project");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(claudePluginUninstall(DEFAULT_PLUGIN_NAME, "project", "/project")).resolves.toBe(
+        "removed",
+      );
     });
 
     it("accepts plugin name with @ symbol", async () => {
-      const promise = claudePluginUninstall("@org/plugin-name", "project", "/project");
-      expect(promise).toBeInstanceOf(Promise);
+      await expect(claudePluginUninstall("@org/plugin-name", "project", "/project")).resolves.toBe(
+        "removed",
+      );
     });
   });
 });
@@ -263,9 +283,17 @@ const MARKETPLACE_NAME = "my-marketplace";
 const MARKETPLACE_SOURCE = "my-org/my-repo";
 
 /**
- * Every helper that reaches the Claude CLI's config tree. `isClaudeCLIAvailable`
- * is absent on purpose — `claude --version` reads no config, so it has nothing
- * to isolate.
+ * Every helper that reaches the Claude CLI's config tree.
+ *
+ * **`isClaudeCLIAvailable` is in this list, and it was deliberately absent until 2026-09-22.**
+ * The reason given for leaving it out was true of this binary and of no other: measured on
+ * 2026-09-21, `claude --version` under a pinned scratch `HOME` and `CLAUDE_CONFIG_DIR` wrote
+ * nothing at all. What made it the wrong call is that the seam carries the option, and the next
+ * host's probe is a WRITE — `codex --version` links helper binaries under `$CODEX_HOME/tmp/arg0/`
+ * before it reads an argument (re-derived on `@openai/codex` 0.155.1, 2026-09-22) — so a member
+ * whose Claude implementation drops the argument makes the seam untestable for the host that
+ * needs it. `listPlugins` is absent for a different reason and has its own describe below: it
+ * spawns nothing, so no spawned environment can carry its answer.
  */
 const CONFIG_READING_HELPERS: Array<[string, (options?: ClaudeConfigOptions) => Promise<unknown>]> =
   [
@@ -276,10 +304,6 @@ const CONFIG_READING_HELPERS: Array<[string, (options?: ClaudeConfigOptions) => 
     [
       "claudePluginUninstall",
       (options) => claudePluginUninstall(PLUGIN_REF, "user", PROJECT_DIR, options),
-    ],
-    [
-      "claudePluginUninstallBestEffort",
-      (options) => claudePluginUninstallBestEffort(PLUGIN_REF, "user", PROJECT_DIR, options),
     ],
     ["claudePluginMarketplaceList", (options) => claudePluginMarketplaceList(options)],
     [
@@ -298,6 +322,7 @@ const CONFIG_READING_HELPERS: Array<[string, (options?: ClaudeConfigOptions) => 
       "claudePluginMarketplaceUpdate",
       (options) => claudePluginMarketplaceUpdate(MARKETPLACE_NAME, options),
     ],
+    ["isClaudeCLIAvailable", (options) => isClaudeCLIAvailable(options)],
   ];
 
 /**
@@ -326,6 +351,12 @@ describe("Claude config dir isolation", () => {
     async (_name, call) => {
       await call();
 
+      // The subject guard. With no CLAUDE_CONFIG_DIR exported by the shell, a helper that
+      // spawned nothing reads `undefined` on both sides of the assertion below and passes it.
+      expect(
+        vi.mocked(spawn),
+        "the helper spawned nothing, so the environment below was never handed to a process",
+      ).toHaveBeenCalled();
       expect(vi.mocked(spawn).mock.lastCall?.[2]?.env?.CLAUDE_CONFIG_DIR).toBe(
         process.env.CLAUDE_CONFIG_DIR,
       );
@@ -336,5 +367,56 @@ describe("Claude config dir isolation", () => {
     await claudePluginMarketplaceAdd(MARKETPLACE_SOURCE, { configDir: ISOLATED_CONFIG_DIR });
 
     expect(vi.mocked(spawn).mock.lastCall?.[2]?.env?.PATH).toBe(process.env.PATH);
+  });
+});
+
+/**
+ * Which installation the LISTING is read from, which no spawned environment can show.
+ *
+ * Every other member of this host hands `CLAUDE_CONFIG_DIR` to a child process, so the describe
+ * above can read the answer off `spawn`. This one reads two files: the installed-plugin registry
+ * under the plugins directory, and the project's own settings. A member that ignored the pinned
+ * config directory would answer about the developer's own installation while every spawned call
+ * beside it answered about the test's — and the two disagreeing is invisible, because a listing
+ * has no exit code to be wrong.
+ *
+ * The paths are literals rather than the product's own constants, for the reason
+ * `e2e/pages/constants.ts` exists: an assertion built from the constant the product joins moves
+ * with it and could never fail.
+ */
+describe("which installation a listing is read from", () => {
+  const REGISTRY_FILE = "installed_plugins.json";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFileExists.mockResolvedValue(true);
+    mockReadFileSafe.mockResolvedValue(renderInstalledPluginsRegistry({}));
+  });
+
+  it("reads the registry of the installation the caller pinned", async () => {
+    await claudeHost().listPlugins(PROJECT_DIR, { configDir: ISOLATED_CONFIG_DIR });
+
+    expect(
+      mockFileExists,
+      "without this the option is accepted and dropped, and a smoke run reads the machine's real ~/.claude while writing into a temp tree",
+    ).toHaveBeenCalledWith(path.join(ISOLATED_CONFIG_DIR, "plugins", REGISTRY_FILE));
+  });
+
+  it("reads the user's own installation when nothing is pinned", async () => {
+    await claudeHost().listPlugins(PROJECT_DIR);
+
+    expect(
+      mockFileExists,
+      "a host that always demanded a pinned directory would answer nothing in production, where the installation is whichever one the process already points at",
+    ).toHaveBeenCalledWith(path.join(os.homedir(), ".claude", "plugins", REGISTRY_FILE));
+  });
+
+  it("answers an empty listing for an installation with no registry at all", async () => {
+    mockFileExists.mockResolvedValue(false);
+
+    expect(
+      await claudeHost().listPlugins(PROJECT_DIR, { configDir: ISOLATED_CONFIG_DIR }),
+      "an installation that has never installed a plugin is not a broken one, and reading it as an error would fail every command on a fresh machine",
+    ).toStrictEqual([]);
   });
 });

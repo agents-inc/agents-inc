@@ -21,6 +21,7 @@ export {
 
 export {
   type AgentProvenanceSplit,
+  listAgentFilesOf,
   listAgentMdFiles,
   listCompiledAgentNames,
   splitAgentsByProvenance,

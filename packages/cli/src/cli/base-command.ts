@@ -5,10 +5,11 @@ import { unique } from "remeda";
 
 import { CLI_COLORS, DEFAULT_BRANDING, MIN_TERMINAL_SIZE } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
-import { verbose } from "./utils/logger.js";
+import { verbose, warn } from "./utils/logger.js";
 import {
   completedWithFailures,
   configUnreadableError,
+  rivalSourceFoldersRefuseWrites,
   type IncompleteWork,
   pluginsInstalled,
   propagatedRecompileSummary,
@@ -18,6 +19,7 @@ import {
   skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
   STATUS_MESSAGES,
+  WRITE_REFUSED_RIVAL_SOURCE_FOLDERS,
 } from "./utils/messages.js";
 import {
   clearTerminalScreen,
@@ -28,6 +30,11 @@ import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { resolveBranding } from "./lib/configuration/config.js";
 import { isHomeDirectory } from "./lib/installation/index.js";
+import {
+  folderBeingRead,
+  sourceScopesInPlay,
+  type SourceScope,
+} from "./lib/installation/source-scopes.js";
 import type { WizardResultV2 } from "./components/wizard/wizard.js";
 import { getStackSkillIds } from "./lib/stacks/index.js";
 import type {
@@ -40,6 +47,7 @@ import type {
 } from "./types/index.js";
 import { findConfigLoadFailures } from "./lib/configuration/project-config.js";
 import { findUnusableSavedSkillMetadata } from "./lib/skills/index.js";
+import type { PluginHost } from "./lib/hosts/plugin-host.js";
 import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
 import {
   installPluginSkills,
@@ -235,13 +243,18 @@ export abstract class BaseCommand extends Command {
    * Resolves the marketplace required for a plugin operation, or hard-exits with
    * an actionable error when it cannot be resolved. `onRegistered` is invoked
    * (when provided) if the marketplace had to be registered — init uses it to log.
+   *
+   * `host` is the caller's because a marketplace registration is handed no directory of its own:
+   * every caller here holds the install root the run is about, and `hostAt` turns one into the
+   * host whose registry the marketplace has to land in.
    */
   protected async requireMarketplaceOrExit(
     sourceResult: SourceLoadResult,
     purpose: string,
+    host: PluginHost,
     onRegistered?: (marketplace: string) => void,
   ): Promise<string> {
-    const required = await requireMarketplace(sourceResult, purpose);
+    const required = await requireMarketplace(sourceResult, purpose, host);
     if (!required.ok) {
       this.error(required.error, { exit: EXIT_CODES.ERROR });
     }
@@ -435,10 +448,10 @@ export abstract class BaseCommand extends Command {
    * Refuses a shared configuration carrying project-scoped content at the home directory.
    *
    * The home directory IS the global scope, and a global installation holds only global-scoped
-   * content. Both scopes resolve to the same files there — one config, one skills directory, one
-   * agents directory — so a project-scoped entry does not land somewhere else; it lands in the
-   * global config wearing a label that contradicts the file it is in, and `toClaudePluginScope`
-   * maps that declared scope onward, registering the skill against `$HOME` as a project. Nothing
+   * content. Both scopes read one config file there, and on Claude one skills directory and one
+   * agents directory as well — so a project-scoped entry lands in the global config wearing a
+   * label that contradicts the file it is in, and on Claude `toClaudePluginScope` maps that
+   * declared scope onward, registering the skill against `$HOME` as a project. Nothing
    * below this point reads the scope again, so whatever the boundary lets through becomes the
    * truth.
    *
@@ -465,6 +478,57 @@ export abstract class BaseCommand extends Command {
     if (skillIds.length === 0 && agentNames.length === 0) return;
 
     this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames), { exit: EXIT_CODES.ERROR });
+  }
+
+  /**
+   * What a command that is about to WRITE owes the user about the layout of the folders it will
+   * write into: a refusal where a scope holds two of them.
+   *
+   * A scope on the retired name alone is NOT nudged and never was a fault. Such an installation
+   * is read and written exactly where it is, indefinitely; there is no command that moves one,
+   * and a line printed on every write about a supported state is one people learn to skip.
+   *
+   * Read-only commands do not call this: `doctor`'s Layout row is where a command that changes
+   * nothing says all of this, and a user whose scope holds two folders has to be able to LOOK at
+   * it.
+   */
+  protected async settleSourceLayoutBeforeWriting(projectDir: string): Promise<void> {
+    this.refuseRivalSourceFolders(await sourceScopesInPlay(projectDir));
+  }
+
+  /**
+   * A scope holding both source folders stops a write command, and names both.
+   *
+   * The preference order is why it is a refusal rather than a warning: with two folders on disk
+   * the resolver reads whichever holds a `config.ts`, and that can be the STALE one — so the
+   * write lands in a folder nothing compiles, beside a folder holding the sub-agents the user is
+   * about to stop seeing. Both of its causes are the product's own: a compiled `agent-summoner`
+   * names the source folder in its prompt, so a copy compiled under either layout authors into
+   * the other one.
+   *
+   * The way out is a manual one, and the sentence names it: nothing in this CLI merges two source
+   * folders, so the user moves what they want into the folder being read and removes the other.
+   * Which folder that is comes from {@link folderBeingRead} rather than from the new name — the
+   * preference order takes whichever holds a `config.ts`, so in the state this refusal is read in
+   * the live folder is very often the OLD one.
+   */
+  private refuseRivalSourceFolders(scopes: readonly SourceScope[]): void {
+    const rivals = scopes.filter((scope) => scope.both);
+    const [first] = rivals;
+    if (first?.move === undefined || first.move === null) return;
+
+    // Through `warn()` from `utils/logger.ts` rather than `this.warn`: oclif hard-wraps at the
+    // terminal width, and this sentence names three folders and an invocation — none of which
+    // survives being broken in half.
+    warn(
+      rivalSourceFoldersRefuseWrites(
+        rivals.map((scope) => scope.kind),
+        first.move.from.relName,
+        first.move.to.relName,
+        folderBeingRead(first, first.move),
+      ),
+    );
+    this.error(WRITE_REFUSED_RIVAL_SOURCE_FOLDERS, { exit: EXIT_CODES.ERROR });
   }
 
   /** Whether this run owes an account — the one thing a command may ask about the list. */

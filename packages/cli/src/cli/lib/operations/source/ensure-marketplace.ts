@@ -1,8 +1,4 @@
-import {
-  claudePluginMarketplaceExists,
-  claudePluginMarketplaceAdd,
-  claudePluginMarketplaceUpdate,
-} from "../../../utils/exec.js";
+import type { PluginHost } from "../../hosts/plugin-host.js";
 import { fetchMarketplace } from "../../loading/index.js";
 import { warn } from "../../../utils/logger.js";
 import { getErrorMessage } from "../../../utils/errors.js";
@@ -16,7 +12,12 @@ export type MarketplaceResult = {
 };
 
 /**
- * Ensures the marketplace is registered with the Claude CLI.
+ * Ensures the marketplace is registered with the host this installation runs on.
+ *
+ * The host is a parameter rather than something resolved here: this is the one plugin operation
+ * that is handed no directory at all — a marketplace is user-level state under one HOME, and its
+ * verbs take a name and a source and nothing else — so there is no folder for it to read a
+ * provider off.
  *
  * If the marketplace does not exist, registers it. If it exists, updates it.
  * Handles lazy marketplace name resolution when sourceResult.marketplace is undefined.
@@ -28,6 +29,7 @@ export type MarketplaceResult = {
  */
 export async function ensureMarketplace(
   sourceResult: SourceLoadResult,
+  host: PluginHost,
 ): Promise<MarketplaceResult> {
   const source = sourceResult.sourceConfig.source;
 
@@ -42,16 +44,16 @@ export async function ensureMarketplace(
   }
 
   const marketplace = sourceResult.marketplace;
-  const exists = await claudePluginMarketplaceExists(marketplace);
+  const exists = await host.marketplaceExists(marketplace);
 
   if (!exists) {
     const marketplaceSource = source.replace(/^github:/, "");
-    await claudePluginMarketplaceAdd(marketplaceSource);
+    await host.addMarketplace(marketplaceSource);
     return { marketplace, registered: true };
   }
 
   try {
-    await claudePluginMarketplaceUpdate(marketplace);
+    await host.refreshMarketplace(marketplace);
   } catch {
     warn("Could not update marketplace — continuing with cached version");
   }

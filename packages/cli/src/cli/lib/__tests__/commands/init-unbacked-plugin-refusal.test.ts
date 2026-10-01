@@ -7,7 +7,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
-import { buildGateReport, buildSourceResult } from "../factories/config-factories.js";
+import { buildAgentDefs } from "../factories/agent-factories.js";
+import {
+  buildConfigWriteResult,
+  buildProjectConfig,
+  buildSourceResult,
+} from "../factories/config-factories.js";
+import {
+  buildCompilationResult,
+  buildDiscoveredSkills,
+  buildLoadedSource,
+} from "../factories/operation-result-factories.js";
 import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
 import { MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX } from "../mock-data/mock-matrices";
 import { CUSTOM_HOUSE_TOOLING_ID } from "../mock-data/mock-skills";
@@ -15,6 +25,14 @@ import { initializeMatrix } from "../../matrix/matrix-provider";
 import { EXIT_CODES } from "../../exit-codes";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import type { SeedPayload } from "@workspace/matrix/seed";
+import type { PluginHost } from "../../hosts/plugin-host.js";
+import type {
+  compileAgentsAllScopes,
+  discoverInstalledSkills,
+  loadAgentDefs,
+  loadSource,
+  writeProjectConfig,
+} from "../../operations/index.js";
 
 /**
  * A skill that exists only in this project cannot be pulled from a marketplace, so an
@@ -33,38 +51,38 @@ const SEED_ID = "Unbacked1";
 const WEB_DEV = "web-developer";
 
 const {
-  mockClaudePluginInstall,
+  mockInstallPlugin,
   mockLoadSource,
   mockWriteProjectConfig,
   mockLoadAgentDefs,
   mockDiscoverInstalledSkills,
   mockCompileAgentsAllScopes,
 } = vi.hoisted(() => ({
-  mockClaudePluginInstall: vi.fn(),
-  mockLoadSource: vi.fn(),
-  mockWriteProjectConfig: vi.fn(),
-  mockLoadAgentDefs: vi.fn(),
-  mockDiscoverInstalledSkills: vi.fn(),
-  mockCompileAgentsAllScopes: vi.fn(),
+  // Typed against the real functions, so a field a stub returns that the product has retired is
+  // a compile error here rather than a dead value nothing reads.
+  mockInstallPlugin: vi.fn<PluginHost["installPlugin"]>(),
+  mockLoadSource: vi.fn<typeof loadSource>(),
+  mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
+  mockLoadAgentDefs: vi.fn<typeof loadAgentDefs>(),
+  mockDiscoverInstalledSkills: vi.fn<typeof discoverInstalledSkills>(),
+  mockCompileAgentsAllScopes: vi.fn<typeof compileAgentsAllScopes>(),
 }));
 
-vi.mock("../../../utils/exec.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../utils/exec.js")>()),
-  claudePluginInstall: (...args: unknown[]) => mockClaudePluginInstall(...(args as [])),
-  claudePluginMarketplaceExists: vi.fn().mockResolvedValue(true),
-  claudePluginMarketplaceUpdate: vi.fn().mockResolvedValue(undefined),
-  isClaudeCLIAvailable: vi.fn().mockResolvedValue(true),
-}));
+vi.mock("../../hosts/host-for.js", async () => {
+  const { createMockPluginHost } = await import("../helpers/mock-plugin-host.js");
+  const host = createMockPluginHost({ installPlugin: mockInstallPlugin });
+  return { hostAt: () => host, hostFor: () => host };
+});
 
 vi.mock("../../operations/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../operations/index.js")>();
   return {
     ...original,
-    loadSource: (...args: unknown[]) => mockLoadSource(...(args as [])),
-    loadAgentDefs: (...args: unknown[]) => mockLoadAgentDefs(...(args as [])),
-    writeProjectConfig: (...args: unknown[]) => mockWriteProjectConfig(...(args as [])),
-    discoverInstalledSkills: (...args: unknown[]) => mockDiscoverInstalledSkills(...(args as [])),
-    compileAgentsAllScopes: (...args: unknown[]) => mockCompileAgentsAllScopes(...(args as [])),
+    loadSource: mockLoadSource,
+    loadAgentDefs: mockLoadAgentDefs,
+    writeProjectConfig: mockWriteProjectConfig,
+    discoverInstalledSkills: mockDiscoverInstalledSkills,
+    compileAgentsAllScopes: mockCompileAgentsAllScopes,
   };
 });
 
@@ -100,39 +118,23 @@ describe("init --from: a plugin install nothing backs", () => {
 
     initializeMatrix(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX);
 
-    mockLoadSource.mockResolvedValue({
-      sourceResult: buildSourceResult(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX, tempDir, {
-        marketplace: MARKETPLACE,
-      }),
-      startupMessages: [],
-    });
-    mockWriteProjectConfig.mockResolvedValue({
-      config: { name: "unbacked", skills: [], agents: [] },
-      configPath: path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-      wasMerged: false,
-      filesWritten: 1,
-      propagation: buildGateReport(),
-    });
-    mockLoadAgentDefs.mockResolvedValue({
-      agents: {},
-      sourcePath: tempDir,
-      agentSourcePaths: { agentsDir: tempDir, sourcePath: tempDir },
-    });
-    mockDiscoverInstalledSkills.mockResolvedValue({
-      allSkills: {},
-      totalSkillCount: 0,
-      pluginSkillCount: 0,
-      localSkillCount: 0,
-      globalPluginSkillCount: 0,
-      globalLocalSkillCount: 0,
-    });
-    mockCompileAgentsAllScopes.mockResolvedValue({
-      compiled: [],
-      rewritten: [],
-      failed: [],
-      warnings: [],
-    });
-    mockClaudePluginInstall.mockResolvedValue(undefined);
+    mockLoadSource.mockResolvedValue(
+      buildLoadedSource(
+        buildSourceResult(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX, tempDir, {
+          marketplace: MARKETPLACE,
+        }),
+      ),
+    );
+    mockWriteProjectConfig.mockResolvedValue(
+      buildConfigWriteResult(
+        buildProjectConfig({ name: "unbacked", skills: [], agents: [] }),
+        path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+      ),
+    );
+    mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
+    mockDiscoverInstalledSkills.mockResolvedValue(buildDiscoveredSkills());
+    mockCompileAgentsAllScopes.mockResolvedValue(buildCompilationResult());
+    mockInstallPlugin.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -169,7 +171,7 @@ describe("init --from: a plugin install nothing backs", () => {
       "the refusal must name the skill it is about — the generic marketplace advice cannot",
     ).toContain(CUSTOM_HOUSE_TOOLING_ID);
     expect(
-      mockClaudePluginInstall,
+      mockInstallPlugin,
       "the refusal is a precondition: nothing may reach the Claude CLI",
     ).not.toHaveBeenCalled();
     expect(mockWriteProjectConfig).not.toHaveBeenCalled();
@@ -195,7 +197,7 @@ describe("init --from: a plugin install nothing backs", () => {
 
     await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
-    expect(mockClaudePluginInstall).toHaveBeenCalledWith(
+    expect(mockInstallPlugin).toHaveBeenCalledWith(
       `web-framework-react@${MARKETPLACE}`,
       "project",
       process.cwd(),

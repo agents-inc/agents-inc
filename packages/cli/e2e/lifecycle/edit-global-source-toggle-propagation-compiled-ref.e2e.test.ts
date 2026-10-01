@@ -35,7 +35,7 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
  * config.ts.
  *
  * `propagateGlobalChangesToProjects` (local-installer.ts) rewrites each
- * registered project's `.claude-src/config.ts` and `config-types.ts` after a
+ * registered project's own `config.ts` and `config-types.ts` after a
  * global change, but never recompiles that project's `.claude/agents/*.md`.
  * `compileAgentsAllScopes` only covers the CURRENT context (home + the current
  * project), never the other registered projects. So after the toggle the

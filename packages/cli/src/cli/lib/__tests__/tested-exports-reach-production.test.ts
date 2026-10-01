@@ -79,6 +79,52 @@ const TEST_ONLY_EXPORTS = [
     posture: "unjudged",
   },
   {
+    file: "src/cli/lib/hosts/claude-host.ts",
+    name: "claudePluginMarketplaceRemove",
+    // The second decision. `Add` is reached from the marketplace operation, `Update` from
+    // `update`, and `List` from this module's own `Exists` — so the door is live and this arm
+    // is deliberately not: a marketplace is user-level state shared across every project under
+    // one HOME, and no command creates it on a project's behalf, so no project-scoped command
+    // may delete it. The suite is its whole audience because the suite IS the caller that
+    // creates marketplaces of its own — `e2e/global-setup.ts` sweeps the ones a run leaves
+    // behind, which is what keeps `home-isolation.smoke.test.ts` a statement about isolation.
+    posture: "test utility",
+  },
+  // `agentCodec` sat here as "unjudged" until 2026-09-22 and came off when its first production
+  // caller arrived: `doctor`'s Agents Compiled row takes `agentCodec(provider).extension` rather
+  // than looking for `<name>.md`, which is what stopped it reporting a healthy Codex installation
+  // out of date over a file Claude's renderer would have written. The entry said the rows below
+  // "fall together when the provider reaches the commands"; they are falling one at a time, which
+  // is the shape this roster is written for.
+  {
+    file: "src/cli/lib/installation/install-layout.ts",
+    name: "forgetTheProviderChosenForThisRun",
+    // The reset for the run-scoped `--provider` choice, and production never calls it: a CLI
+    // process runs one command and exits, so nothing there outlives a choice. A vitest worker
+    // does, and `providerInUse` is read by most of this suite — so a spec that made a choice and
+    // did not clear it would decide the provider for every spec scheduled after it. Deleting the
+    // export would take that reset away and leave the leak with nothing to answer it.
+    posture: "test utility",
+  },
+  {
+    file: "src/cli/lib/installation/install-layout.ts",
+    name: "ownedRoots",
+    // A host role, for its siblings' reason. It answers which roots say WHOSE installation a
+    // command is looking at, which nothing asks until a second provider can be installed.
+    posture: "unjudged",
+  },
+  // `permissionFiles` came off the same day and for the same reason: `lib/permission-checker.tsx`
+  // composed the two settings paths from `CLAUDE_DIR` and now asks the layout, which is what
+  // stopped a Codex install ending by telling the user to edit a Claude settings file.
+  {
+    file: "src/cli/lib/installation/install-layout.ts",
+    name: "pluginRegistry",
+    // A host role, for its siblings' reason. `getInstalledPluginsRegistryPath` in
+    // `lib/plugins/plugin-settings.ts` is the reader that takes it, and already shares this
+    // module's `INSTALLED_PLUGINS_FILE` so the two cannot name different files.
+    posture: "unjudged",
+  },
+  {
     file: "src/cli/lib/testing/dist-staleness.ts",
     name: "assertDistIsFresh",
     // The one decision here. Every caller is a runner's own entry point or the E2E harness, and
@@ -102,18 +148,6 @@ const TEST_ONLY_EXPORTS = [
     // its only callers, and both are test support by definition: it refuses a spec whose `dist/`
     // was emptied mid-run by a build started elsewhere in the same checkout, so a production
     // caller would mean the shipped CLI watches its own build directory while it runs.
-    posture: "test utility",
-  },
-  {
-    file: "src/cli/utils/exec.ts",
-    name: "claudePluginMarketplaceRemove",
-    // The second decision. `Add` is reached from the marketplace operation, `Update` from
-    // `update`, and `List` from this module's own `Exists` — so the door is live and this arm
-    // is deliberately not: a marketplace is user-level state shared across every project under
-    // one HOME, and no command creates it on a project's behalf, so no project-scoped command
-    // may delete it. The suite is its whole audience because the suite IS the caller that
-    // creates marketplaces of its own — `e2e/global-setup.ts` sweeps the ones a run leaves
-    // behind, which is what keeps `home-isolation.smoke.test.ts` a statement about isolation.
     posture: "test utility",
   },
 ] as const satisfies readonly TestOnlyExport[];

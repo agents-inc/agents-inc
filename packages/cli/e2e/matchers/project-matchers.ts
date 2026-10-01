@@ -1,7 +1,13 @@
 import path from "path";
 import { readFile, readdir } from "fs/promises";
 import { DIRS, FILES } from "../pages/constants.js";
-import { directoryExists, fileExists, loadConfigOrFail } from "../helpers/test-utils.js";
+import {
+  configTsPath,
+  directoryExists,
+  fileExists,
+  loadConfigOrFail,
+  sourceFolderIn,
+} from "../helpers/test-utils.js";
 
 export type PluginScope = "project" | "user";
 
@@ -124,11 +130,15 @@ async function describeMissingContent(
 
 export const projectMatchers = {
   /**
-   * Checks that .claude-src/config.ts exists and optionally validates content.
+   * Checks that the scope's `config.ts` exists and optionally validates content.
    * Usage: await expect(project).toHaveConfig({ skillIds: [E2E_SKILL.react.id] })
+   *
+   * The folder is RESOLVED rather than named: this matcher is called over installs on both
+   * layouts, and naming one made it report "does not exist" for every project this release
+   * created.
    */
   async toHaveConfig(received: { dir: string }, expectations?: ConfigExpectations) {
-    const configPath = path.join(received.dir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+    const configPath = configTsPath(received.dir);
     const exists = await fileExists(configPath);
 
     if (!exists) {
@@ -529,8 +539,7 @@ export const projectMatchers = {
    */
   async toHaveEjectedTemplate(received: { dir: string }) {
     const templatePath = path.join(
-      received.dir,
-      DIRS.CLAUDE_SRC,
+      sourceFolderIn(received.dir),
       "agents",
       "_templates",
       "agent.liquid",

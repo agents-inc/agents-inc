@@ -9,8 +9,7 @@ import {
   removeDirIfEmpty,
 } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
-import { LOCAL_SKILLS_PATH } from "../../consts";
-import { installBaseDir } from "../installation/install-base-dir";
+import { resolveInstallPaths } from "../installation/install-base-dir";
 import type { SkillId, SkillScope } from "../../types";
 
 /**
@@ -29,16 +28,27 @@ function validateSkillId(skillId: SkillId): boolean {
 }
 
 /**
- * Delete a local skill directory at .claude/skills/{skill-id}/
+ * Delete an ejected skill's directory at `<skillsDir>/<skill-id>/`, where `skillsDir` is the one the
+ * installation at `projectDir` keeps ejected skills in at `scope` — `.claude/skills` on Claude,
+ * `$CODEX_HOME/skills` or `<repo>/.agents/skills` on Codex.
+ *
+ * **Resolved per host, as the copy side resolves it** (`resolveInstallPaths(...).skillsDir`).
+ * _Corrected 2026-09-26 (CLI-895):_ this joined Claude's `.claude/skills` to the base directory
+ * whatever the host, so on Codex a switch to plugin mode and a deselected ejected skill both left
+ * the copy where Codex reads skills — and Codex then read the skill twice.
  */
-export async function deleteLocalSkill(projectDir: string, skillId: SkillId): Promise<void> {
+export async function deleteLocalSkill(
+  projectDir: string,
+  skillId: SkillId,
+  scope: SkillScope = "project",
+): Promise<void> {
   if (!validateSkillId(skillId)) {
     warn(`Invalid skill ID for deletion: '${skillId}'`);
     return;
   }
 
-  const skillPath = path.resolve(path.join(projectDir, LOCAL_SKILLS_PATH, skillId));
-  const skillsDir = path.resolve(path.join(projectDir, LOCAL_SKILLS_PATH));
+  const skillsDir = path.resolve(resolveInstallPaths(projectDir, scope).skillsDir);
+  const skillPath = path.resolve(skillsDir, skillId);
 
   if (!isPathWithin(skillPath, skillsDir)) {
     warn(`Skill ID '${skillId}' resolves outside the skills directory.`);
@@ -51,7 +61,7 @@ export async function deleteLocalSkill(projectDir: string, skillId: SkillId): Pr
     // Skill may not exist — silently ignore
   }
 
-  // The skills directory only — `.claude/` above it stays whatever happens here.
+  // The skills directory only — the host's directory above it stays whatever happens here.
   // Removing that one is uninstall's decision, not the edit path's.
   await removeDirIfEmpty(skillsDir);
 
@@ -77,15 +87,13 @@ export async function migrateLocalSkillScope(
   }
 
   const toScope: SkillScope = fromScope === "global" ? "project" : "global";
-  // installBaseDir resolves os.homedir() at runtime so test home-dir mocks apply.
-  const fromBaseDir = installBaseDir(projectDir, fromScope);
-  const toBaseDir = installBaseDir(projectDir, toScope);
+  // Each scope's skills directory as its host keeps it — see `deleteLocalSkill` (CLI-895). It
+  // resolves `os.homedir()` at call time, so test home-dir mocks apply.
+  const fromSkillsDir = path.resolve(resolveInstallPaths(projectDir, fromScope).skillsDir);
+  const toSkillsDir = path.resolve(resolveInstallPaths(projectDir, toScope).skillsDir);
 
-  const fromPath = path.resolve(path.join(fromBaseDir, LOCAL_SKILLS_PATH, skillId));
-  const toPath = path.resolve(path.join(toBaseDir, LOCAL_SKILLS_PATH, skillId));
-
-  const fromSkillsDir = path.resolve(path.join(fromBaseDir, LOCAL_SKILLS_PATH));
-  const toSkillsDir = path.resolve(path.join(toBaseDir, LOCAL_SKILLS_PATH));
+  const fromPath = path.resolve(fromSkillsDir, skillId);
+  const toPath = path.resolve(toSkillsDir, skillId);
 
   if (!isPathWithin(fromPath, fromSkillsDir)) {
     warn(`Skill ID '${skillId}' resolves outside the source skills directory.`);

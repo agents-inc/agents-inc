@@ -5,6 +5,12 @@ import { render } from "../components/render.js";
 
 import { BaseCommand } from "../base-command.js";
 import { CLI_INVOKE_COMMAND, CLI_COLORS, DEFAULT_BRANDING } from "../consts.js";
+import { chooseProviderForThisRun, providerInUse } from "../lib/installation/install-layout.js";
+import {
+  otherInstallationsInThisScope,
+  providerFlag,
+  providerNamedBy,
+} from "../lib/installation/provider-flag.js";
 import { getInstallationInfo, formatInstallationDisplay } from "../lib/plugins/index.js";
 import { detectInstallation, INSTALL_MODE_LABELS } from "../lib/installation/installation.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
@@ -56,6 +62,8 @@ export default class List extends BaseCommand {
   static description = `Display details about the ${DEFAULT_BRANDING.NAME} installation (local or plugin mode)`;
   static aliases = ["ls"];
 
+  static flags = { provider: providerFlag() };
+
   static examples = [
     {
       description: "Show current installation details",
@@ -63,8 +71,35 @@ export default class List extends BaseCommand {
     },
   ];
 
+  /**
+   * Which of the scope's installations this report is about, said out loud where there are two.
+   *
+   * **`list` reported one of two and nothing anywhere said so.** Everything below resolves the
+   * provider through `providerInUse`, which answers by ROSTER ORDER for a scope holding one
+   * installation of each — so the report named one installation, its mode, its counts and its
+   * config path, all correct, about the half of the directory the user was not asking after. Every
+   * command that WRITES refuses this state by name and `doctor` reports it as a finding; the one
+   * command whose whole job is to say what is installed was silent about it.
+   *
+   * It reports rather than refusing, for the reason `doctor` does: a read-only command that
+   * refused would leave a user whose scope holds two installations unable to look at either,
+   * which is the one state they most need to see.
+   */
+  private async sayWhichInstallationThisIs(providerFlagValue: string | undefined): Promise<void> {
+    const named = providerNamedBy(providerFlagValue);
+    if (named !== undefined) {
+      chooseProviderForThisRun(named);
+      return;
+    }
+
+    const cwd = process.cwd();
+    const line = await otherInstallationsInThisScope(cwd, providerInUse(cwd));
+    if (line !== null) this.log(line);
+  }
+
   async run(): Promise<void> {
-    await this.parse(List);
+    const { flags } = await this.parse(List);
+    await this.sayWhichInstallationThisIs(flags.provider);
 
     const installation = await detectInstallation();
 

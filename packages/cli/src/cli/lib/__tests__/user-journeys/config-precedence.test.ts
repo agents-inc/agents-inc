@@ -1,6 +1,6 @@
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import {
   resolveSource,
   loadProjectSourceConfig,
@@ -20,15 +20,11 @@ import {
   buildPreRenameProjectConfig,
   buildPreRenameSkillEntryConfig,
 } from "../factories/config-factories.js";
-import {
-  readTestTsConfig,
-  writeCorruptTestConfig,
-  writeTestTsConfig,
-} from "../helpers/config-io.js";
+import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
+import { readTestTsConfig, writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { TEST_CUSTOM_SOURCE_URL, TEST_SOURCE_URL } from "../test-constants.js";
-import { renderConfigTs } from "../content-generators";
-import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, STANDARD_FILES } from "../../../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, STANDARD_FILES } from "../../../consts";
 
 /** A third ref, distinct from the flag's and the config's, so each rung is identifiable. */
 const ENV_SOURCE_REF = "github:env-named/skills";
@@ -184,7 +180,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       expect(result.sourceOrigin).toBe("project");
     });
 
-    it("should load project config from .claude-src/config.ts", async () => {
+    it("should load a project config from the folder the project is on", async () => {
       const configPath = await createProjectConfig(projectDir, {
         marketplace: "github:my-company/internal-skills",
       });
@@ -225,7 +221,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
      * scoped guard from one that has swallowed both cases.
      */
     it("should refuse a project config that exists and cannot be evaluated", async () => {
-      const configPath = await writeCorruptTestConfig(projectDir, "invalid typescript content {{");
+      const configPath = await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
 
       const resolution = resolveSource({ caller: "stored", projectDir });
 
@@ -405,7 +401,7 @@ describe("User Journey: Project Config Save and Load", () => {
     it("should create config directory if it does not exist", async () => {
       await saveSourceToProjectConfig(projectDir, "github:test/repo", "test-project");
 
-      const configPath = getProjectConfigPath(projectDir);
+      const configPath = getProjectConfigPath(projectDir, "claude");
       expect(await fileExists(configPath)).toBe(true);
 
       // Boundary cast: config parse returns `unknown`
@@ -417,7 +413,7 @@ describe("User Journey: Project Config Save and Load", () => {
       await saveSourceToProjectConfig(projectDir, "github:first/repo", "test-project");
       await saveSourceToProjectConfig(projectDir, "github:second/repo", "test-project");
 
-      const configPath = getProjectConfigPath(projectDir);
+      const configPath = getProjectConfigPath(projectDir, "claude");
       // Boundary cast: config parse returns `unknown`
       const config = await readTestTsConfig<ProjectConfig>(configPath);
 
@@ -427,15 +423,10 @@ describe("User Journey: Project Config Save and Load", () => {
 
   describe("loadProjectSourceConfig", () => {
     it("should load saved config correctly", async () => {
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        renderConfigTs({
-          marketplace: "github:company/private-skills",
-          marketplaceName: "https://internal-marketplace.company.com",
-        }),
-      );
+      await writeTestTsConfig(projectDir, {
+        marketplace: "github:company/private-skills",
+        marketplaceName: "https://internal-marketplace.company.com",
+      });
 
       const config = await loadProjectSourceConfig(projectDir);
 
@@ -443,9 +434,14 @@ describe("User Journey: Project Config Save and Load", () => {
       expect(config?.marketplaceName).toBe("https://internal-marketplace.company.com");
     });
 
+    // A literal rather than the constant the product writes: a folder name is text on people's
+    // disks, and an assertion that imported it could not fail when it moved. This project has
+    // neither folder on disk, so the answer is where a new installation is created.
     it("should return config path from getProjectConfigPath", () => {
-      const configPath = getProjectConfigPath(projectDir);
-      expect(configPath).toBe(path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
+      const configPath = getProjectConfigPath(projectDir, "claude");
+      expect(configPath).toBe(
+        path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS),
+      );
     });
   });
 });
@@ -545,9 +541,7 @@ describe("User Journey: Config Edge Cases", () => {
 
   it("should handle empty config file gracefully", async () => {
     const projectDir = path.join(tempDir, "project");
-    const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(configDir, { recursive: true });
-    await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), "export default {};");
+    await writeTestTsConfig(projectDir, {});
 
     const config = await loadProjectSourceConfig(projectDir);
     // Empty config (zero keys) is treated as "not installed" — loadConfig returns null
@@ -560,16 +554,11 @@ describe("User Journey: Config Edge Cases", () => {
     // rather than rejected. This enables forward compatibility — older CLI versions
     // can load configs written by newer versions without breaking.
     const projectDir = path.join(tempDir, "project");
-    const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(configDir, { recursive: true });
-    await writeFile(
-      path.join(configDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
-        marketplace: "github:valid/source",
-        unknown_field: "should_be_ignored",
-        another_unknown: "also_ignored",
-      }),
-    );
+    await writeTestTsConfig(projectDir, {
+      marketplace: "github:valid/source",
+      unknown_field: "should_be_ignored",
+      another_unknown: "also_ignored",
+    });
 
     const config = await loadProjectSourceConfig(projectDir);
     expect(config?.marketplace).toBe("github:valid/source");

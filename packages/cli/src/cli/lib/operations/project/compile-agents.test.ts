@@ -2,7 +2,11 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import type { AgentName, SkillScope } from "../../../types";
-import { buildAgentConfigs } from "../../__tests__/factories/config-factories.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../__tests__/factories/config-factories.js";
+import { buildRecompileAgentsResult } from "../../__tests__/factories/recompile-factories.js";
 import { renderAgentMd } from "../../__tests__/content-generators.js";
 import {
   cleanupTempDir,
@@ -16,7 +20,7 @@ vi.mock("../../agents/index.js", () => ({
 }));
 
 vi.mock("../../configuration/index.js", () => ({
-  loadProjectConfigFromDir: vi.fn(),
+  loadInstalledConfig: vi.fn(),
 }));
 
 vi.mock("../../installation/index.js", () => ({
@@ -25,11 +29,11 @@ vi.mock("../../installation/index.js", () => ({
 
 import { compileAgents } from "./compile-agents";
 import { recompileAgents } from "../../agents/index.js";
-import { loadProjectConfigFromDir } from "../../configuration/index.js";
+import { loadInstalledConfig } from "../../configuration/index.js";
 import { buildAgentScopeMap } from "../../installation/index.js";
 
 const mockRecompileAgents = vi.mocked(recompileAgents);
-const mockLoadProjectConfigFromDir = vi.mocked(loadProjectConfigFromDir);
+const mockLoadInstalledConfig = vi.mocked(loadInstalledConfig);
 const mockBuildAgentScopeMap = vi.mocked(buildAgentScopeMap);
 
 describe("compile-agents", () => {
@@ -39,12 +43,12 @@ describe("compile-agents", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockRecompileAgents.mockResolvedValue({
-      compiled: ["web-developer"],
-      rewritten: ["web-developer"],
-      failed: [],
-      warnings: [],
-    });
+    mockRecompileAgents.mockResolvedValue(
+      buildRecompileAgentsResult({
+        compiled: ["web-developer"],
+        rewritten: ["web-developer"],
+      }),
+    );
   });
 
   it("should pass options through to recompileAgents", async () => {
@@ -85,31 +89,31 @@ describe("compile-agents", () => {
   });
 
   it("should filter agents by scopeFilter when set", async () => {
-    const config = {
-      name: "test",
+    const config = buildProjectConfig({
       agents: [
         ...buildAgentConfigs(["web-developer"]),
         ...buildAgentConfigs(["api-developer"], { scope: "global" }),
       ],
       skills: [],
-    };
+    });
     const scopeMap = new Map<AgentName, SkillScope>([
       ["web-developer", "project"],
       ["api-developer", "global"],
     ]);
 
-    mockLoadProjectConfigFromDir.mockResolvedValue({
+    mockLoadInstalledConfig.mockResolvedValue({
       config,
       configPath: "/test/project/.claude-src/config.ts",
+      provider: "claude",
     });
     mockBuildAgentScopeMap.mockReturnValue(scopeMap);
 
-    mockRecompileAgents.mockResolvedValue({
-      compiled: ["web-developer"],
-      rewritten: ["web-developer"],
-      failed: [],
-      warnings: [],
-    });
+    mockRecompileAgents.mockResolvedValue(
+      buildRecompileAgentsResult({
+        compiled: ["web-developer"],
+        rewritten: ["web-developer"],
+      }),
+    );
 
     const result = await compileAgents({
       projectDir,
@@ -117,7 +121,7 @@ describe("compile-agents", () => {
       scopeFilter: "project",
     });
 
-    expect(mockLoadProjectConfigFromDir).toHaveBeenCalledWith(projectDir);
+    expect(mockLoadInstalledConfig).toHaveBeenCalledWith(projectDir);
     expect(mockBuildAgentScopeMap).toHaveBeenCalledWith(config);
     expect(mockRecompileAgents).toHaveBeenCalledWith({
       pluginDir: projectDir,
@@ -132,23 +136,23 @@ describe("compile-agents", () => {
   });
 
   it("should intersect scopeFilter with explicit agents list", async () => {
-    const config = {
-      name: "test",
+    const config = buildProjectConfig({
       agents: [
         ...buildAgentConfigs(["web-developer", "api-developer"]),
         ...buildAgentConfigs(["pm"], { scope: "global" }),
       ],
       skills: [],
-    };
+    });
     const scopeMap = new Map<AgentName, SkillScope>([
       ["web-developer", "project"],
       ["api-developer", "project"],
       ["pm", "global"],
     ]);
 
-    mockLoadProjectConfigFromDir.mockResolvedValue({
+    mockLoadInstalledConfig.mockResolvedValue({
       config,
       configPath: "/test/project/.claude-src/config.ts",
+      provider: "claude",
     });
     mockBuildAgentScopeMap.mockReturnValue(scopeMap);
 
@@ -173,19 +177,19 @@ describe("compile-agents", () => {
   });
 
   it("should exclude agents with excluded flag when using scopeFilter", async () => {
-    const config = {
-      name: "test",
+    const config = buildProjectConfig({
       agents: [
         ...buildAgentConfigs(["web-developer"]),
         ...buildAgentConfigs(["api-developer"], { excluded: true }),
       ],
       skills: [],
-    };
+    });
     const scopeMap = new Map<AgentName, SkillScope>([["web-developer", "project"]]);
 
-    mockLoadProjectConfigFromDir.mockResolvedValue({
+    mockLoadInstalledConfig.mockResolvedValue({
       config,
       configPath: "/test/project/.claude-src/config.ts",
+      provider: "claude",
     });
     mockBuildAgentScopeMap.mockReturnValue(scopeMap);
 
@@ -211,12 +215,14 @@ describe("compile-agents", () => {
   // different facts, so a pass-through that filled `rewritten` from `compiled` would
   // read as correct against equal lists and is caught by unequal ones.
   it("should return compilation result from recompileAgents", async () => {
-    mockRecompileAgents.mockResolvedValue({
-      compiled: ["web-developer", "api-developer"],
-      rewritten: ["web-developer"],
-      failed: ["pm"],
-      warnings: ["Agent pm had issues"],
-    });
+    mockRecompileAgents.mockResolvedValue(
+      buildRecompileAgentsResult({
+        compiled: ["web-developer", "api-developer"],
+        rewritten: ["web-developer"],
+        failed: ["pm"],
+        warnings: ["Agent pm had issues"],
+      }),
+    );
 
     const result = await compileAgents({
       projectDir,
@@ -262,12 +268,9 @@ describe("compile-agents", () => {
 
     it("removes the output agents directory when the prune leaves nothing in it", async () => {
       await seedOutputDir([STALE_AGENT]);
-      mockRecompileAgents.mockResolvedValue({
-        compiled: [],
-        rewritten: [],
-        failed: [],
-        warnings: [],
-      });
+      mockRecompileAgents.mockResolvedValue(
+        buildRecompileAgentsResult({ compiled: [], rewritten: [] }),
+      );
 
       await compileAgents({ projectDir, sourcePath, outputDir });
 
@@ -283,12 +286,9 @@ describe("compile-agents", () => {
 
     it("keeps the output agents directory when a hand-authored agent survives the prune", async () => {
       await seedOutputDir([STALE_AGENT, HAND_AUTHORED_AGENT]);
-      mockRecompileAgents.mockResolvedValue({
-        compiled: [],
-        rewritten: [],
-        failed: [],
-        warnings: [],
-      });
+      mockRecompileAgents.mockResolvedValue(
+        buildRecompileAgentsResult({ compiled: [], rewritten: [] }),
+      );
 
       await compileAgents({ projectDir, sourcePath, outputDir });
 
@@ -305,12 +305,9 @@ describe("compile-agents", () => {
 
     it("keeps the output agents directory when a compiled agent remains", async () => {
       await seedOutputDir([KEPT_AGENT, STALE_AGENT]);
-      mockRecompileAgents.mockResolvedValue({
-        compiled: [KEPT_AGENT],
-        rewritten: [KEPT_AGENT],
-        failed: [],
-        warnings: [],
-      });
+      mockRecompileAgents.mockResolvedValue(
+        buildRecompileAgentsResult({ compiled: [KEPT_AGENT], rewritten: [KEPT_AGENT] }),
+      );
 
       await compileAgents({ projectDir, sourcePath, outputDir });
 
@@ -321,12 +318,9 @@ describe("compile-agents", () => {
 
     it("leaves the output agents directory untouched on a scope-filtered pass", async () => {
       await seedOutputDir([STALE_AGENT]);
-      mockRecompileAgents.mockResolvedValue({
-        compiled: [],
-        rewritten: [],
-        failed: [],
-        warnings: [],
-      });
+      mockRecompileAgents.mockResolvedValue(
+        buildRecompileAgentsResult({ compiled: [], rewritten: [] }),
+      );
 
       await compileAgents({ projectDir, sourcePath, outputDir, scopeFilter: "project" });
 

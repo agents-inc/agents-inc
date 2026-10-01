@@ -83,3 +83,23 @@ export function warn(msg: string, options?: WarnOptions): void {
   }
   console.warn(`  Warning: ${msg}`);
 }
+
+const alreadySaid = new Set<string>();
+
+/**
+ * The same warning, said once however many times this process reaches the line that says it.
+ *
+ * For a warning about the ENVIRONMENT rather than about the work in hand. One unreadable entry in
+ * a user's own Codex marketplace registry fails every listing verb Codex has, and a single
+ * `doctor` run asks for a listing from plugin discovery and from skill discovery — so one broken
+ * entry said the same sentence twice, which reads as two faults.
+ *
+ * Keyed by the message, so two different causes are both still said. There is deliberately no
+ * reset: the scope is one CLI invocation, and every surface that asserts on one of these lines
+ * drives a spawned binary, which is a fresh process by construction.
+ */
+export function warnOnce(msg: string, options?: WarnOptions): void {
+  if (alreadySaid.has(msg)) return;
+  alreadySaid.add(msg);
+  warn(msg, options);
+}

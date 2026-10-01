@@ -4,7 +4,8 @@ import { mkdir } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeConfigs, mergeWithExistingConfig } from "./config-merger";
 import type { ProjectConfig, SkillAssignment, SkillId } from "../../types";
-import { CLAUDE_SRC_DIR, DEFAULT_PLUGIN_NAME, STANDARD_FILES } from "../../consts";
+import { DEFAULT_PLUGIN_NAME } from "../../consts";
+import { getProjectConfigPath } from "../installation/install-base-dir.js";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
@@ -29,7 +30,6 @@ describe("config-merger", () => {
 
   describe("mergeWithExistingConfig", () => {
     async function writeFullConfig(config: ProjectConfig): Promise<void> {
-      // Boundary cast: ProjectConfig to generic record for writeTestTsConfig
       await writeTestTsConfig(tempDir, config);
     }
 
@@ -490,7 +490,7 @@ describe("config-merger", () => {
       });
 
       expect(result.merged).toBe(true);
-      expect(result.existingConfigPath).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
+      expect(result.existingConfigPath).toBe(getProjectConfigPath(tempDir, "claude"));
     });
   });
 
@@ -1501,7 +1501,7 @@ describe("config-merger", () => {
         });
         const existingConfig = buildProjectConfig({
           name: "project",
-          agents: buildAgentConfigs(["api-developer"]),
+          agents: buildAgentConfigs(["api-developer"], { scope: "project" }),
           skills: [],
         });
 

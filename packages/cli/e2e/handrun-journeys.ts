@@ -49,21 +49,47 @@ import {
   buildSharedSource,
   removeSharedSource,
 } from "../src/cli/lib/__tests__/helpers/shared-source.js";
-import { claudePluginMarketplaceAdd } from "../src/cli/utils/exec.js";
+import { claudePluginMarketplaceAdd } from "../src/cli/lib/hosts/claude-host.js";
 import { InitWizard } from "./pages/wizards/init-wizard.js";
+import { EditWizard } from "./pages/wizards/edit-wizard.js";
 import { initGlobalWithEject } from "./fixtures/dual-scope-helpers.js";
 import {
+  CLAUDE_SOURCE_REL,
+  CODEX_SOURCE_REL,
+  PROVIDER_CODEX,
+  runInitFromOnCodex,
+} from "./fixtures/codex-install.js";
+import { installCodexOnPath } from "./fixtures/codex-on-path.js";
+import { isCodexCLIAvailable, runCodex } from "./fixtures/codex.js";
+import {
+  codexDelegationScenario,
+  everyRequestOf,
+  mockProviderConfig,
+  startCodexResponsesMock,
+} from "./fixtures/codex-responses-mock.js";
+import {
   agentsPath,
+  codexHome,
   completeWithLocalSources,
+  configTsPath,
+  configTypesTsPath,
   createLocalSkill,
   listFiles,
   MONOREPO_ROOT,
   readCompiledAgents,
   readMarketplaceJson,
+  readTreeSnapshot,
+  renderSkillMd,
   skillsPath,
   writeAgentFile,
   writeTestPackageJson,
 } from "./helpers/test-utils.js";
+import type { TreeSnapshotEntry } from "./helpers/test-utils.js";
+import {
+  buildSeedExternalSkill,
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../src/cli/lib/__tests__/factories/seed-factories.js";
 import {
   BUILT_IN_STACK_DISPLAY,
   E2E_SKILL,
@@ -71,12 +97,14 @@ import {
   E2E_STACK_DISPLAY,
 } from "./fixtures/expected-values.js";
 import {
+  DIRS,
   E2E_MARKETPLACE_NAME,
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
   SOURCE_PATHS,
   STEP_TEXT,
+  TERMINAL_SIZE,
   WIZARD_TAB_LABELS_WITHOUT_STACK,
   WIZARD_TAB_STACK,
 } from "./pages/constants.js";
@@ -146,7 +174,7 @@ async function journeyGlobalInstall(): Promise<{ project: ProjectHandle; sourceD
   const run = await initGlobalWithEject(source, home);
   note(`exit ${run.exitCode}`);
 
-  note("global config", skillIdsIn(path.join(home, ".claude-src", "config.ts")));
+  note("global config", skillIdsIn(configTsPath(home)));
   note("global skills", listDir(path.join(home, ".claude", "skills")));
   note("global agents", listDir(path.join(home, ".claude", "agents")));
   const surfaces = await checkFourSurfaces("global", home);
@@ -305,9 +333,9 @@ async function journeyCommandsOverInstall(home: string): Promise<void> {
   const doctor = await CLI.run(["doctor"], at);
   note(`doctor exit ${doctor.exitCode}`, firstLine(doctor.output, /Summary:/));
 
-  const before = readFileSync(path.join(home, ".claude-src", "config-types.ts"), "utf8");
+  const before = readFileSync(configTypesTsPath(home), "utf8");
   const compile = await CLI.run(["compile"], at);
-  const after = readFileSync(path.join(home, ".claude-src", "config-types.ts"), "utf8");
+  const after = readFileSync(configTypesTsPath(home), "utf8");
   note(`compile exit ${compile.exitCode}`);
   verdict("journey 11 — compile leaves config-types.ts byte-identical", before === after);
 
@@ -365,7 +393,7 @@ async function journeyUninstall(): Promise<void> {
   note("skills before", before);
   note("skills after", listDir(path.join(home, ".claude", "skills")));
   const skillsGone = listDir(path.join(home, ".claude", "skills"));
-  const configGone = !existsSync(path.join(home, ".claude-src", "config.ts"));
+  const configGone = !existsSync(configTsPath(home));
   const agentsGone = listDir(path.join(home, ".claude", "agents"));
   note("config.ts after", configGone ? "gone" : "still present");
   note("agents after", agentsGone);
@@ -382,7 +410,7 @@ async function journeyDeletedConfig(): Promise<void> {
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j14-"));
   await initGlobalWithEject(source, home);
-  rmSync(path.join(home, ".claude-src", "config.ts"), { force: true });
+  rmSync(configTsPath(home), { force: true });
 
   const at: ProjectHandle = { dir: home, globalHome: home };
   const doctor = await CLI.run(["doctor"], at);
@@ -451,7 +479,7 @@ async function journeyStackRoster(): Promise<void> {
   const ids = await readConfigSkillIds(home);
   note("skills the stack installed", ids.join(", "));
   note("agents compiled", listDir(path.join(home, ".claude", "agents")));
-  const types = path.join(home, ".claude-src", "config-types.ts");
+  const types = configTypesTsPath(home);
   note("generated types", existsSync(types) ? "written" : "MISSING");
   const stacked = await checkFourSurfaces("stack-install", home);
   verdict(
@@ -485,7 +513,7 @@ async function journeyProjectOverGlobal(): Promise<void> {
     firstLine(doctorB.output, /Summary:/),
   );
   const g = await checkFourSurfaces("global", home);
-  const projectOwnsNothing = !existsSync(path.join(projA, ".claude-src", "config.ts"));
+  const projectOwnsNothing = !existsSync(configTsPath(projA));
   note(
     "the unregistered project owns",
     projectOwnsNothing ? "nothing, correctly" : "a config of its own",
@@ -506,10 +534,7 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
 
   const mine = path.join(home, ".claude", "skills", "my-own-skill");
   mkdirSync(mine, { recursive: true });
-  writeFileSync(
-    path.join(mine, "SKILL.md"),
-    "---\nname: my-own-skill\ndescription: mine\n---\nBody.\n",
-  );
+  writeFileSync(path.join(mine, "SKILL.md"), renderSkillMd("my-own-skill", "mine", "Body."));
   writeFileSync(
     path.join(mine, "metadata.yaml"),
     'displayName: Mine\nslug: my-own-skill\ncategory: web-framework\ndomain: web\nusageGuidance: Mine.\nauthor: "@me"\ncustom: true\n',
@@ -612,16 +637,16 @@ async function journeyPropagation(): Promise<void> {
   const proj = mkdtempSync(path.join(tmpdir(), "handrun-j7-proj-"));
   await setupDualScopeWithEject(source, home, proj);
 
-  const globalTypes = readFileSync(path.join(home, ".claude-src", "config-types.ts"), "utf8");
+  const globalTypes = readFileSync(configTypesTsPath(home), "utf8");
   const compile = await CLI.run(["compile"], { dir: proj, globalHome: home });
   note(`compile in the project exit ${compile.exitCode}`);
-  const globalTypesAfter = readFileSync(path.join(home, ".claude-src", "config-types.ts"), "utf8");
+  const globalTypesAfter = readFileSync(configTypesTsPath(home), "utf8");
   verdict(
     "journey 8 — a project compile leaves the global pair untouched",
     globalTypes === globalTypesAfter,
   );
 
-  const projects = readFileSync(path.join(home, ".claude-src", "config.ts"), "utf8");
+  const projects = readFileSync(configTsPath(home), "utf8");
   note(
     "the global config registers",
     /projects/.test(projects) ? "a projects list" : "no projects list",
@@ -640,25 +665,24 @@ async function journeyExternalSkills(store: SeedConfigStore, sourceDir: string):
   }
   const payload = JSON.parse(base) as Record<string, unknown>;
   payload.external = {
-    "external-web-framework-handrun": {
+    "external-web-framework-handrun": buildSeedExternalSkill({
       displayName: "Handrun Skill",
       description: "Carried inline by the hand-run",
       categoryId: "web-framework",
       repo: "handrun/example",
       path: "skills/handrun",
       files: {
-        "SKILL.md":
-          "---\nname: external-web-framework-handrun\ndescription: Carried inline\n---\nBody.\n",
+        "SKILL.md": renderSkillMd("external-web-framework-handrun", "Carried inline", "Body."),
         "reference/notes.md": "notes\n",
       },
-    },
+    }),
   };
   const skills = payload.skills as Record<string, unknown>;
-  skills["external-web-framework-handrun"] = {
+  skills["external-web-framework-handrun"] = buildSeedSkill({
     install: "eject",
     scope: "global",
     assignments: {},
-  };
+  });
   store.publish("Carried", payload);
 
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j24-"));
@@ -707,7 +731,7 @@ async function journeyCustomMarketplaceArc(): Promise<void> {
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j18-"));
   await initGlobalWithEject(source, home);
 
-  const config = readFileSync(path.join(home, ".claude-src", "config.ts"), "utf8");
+  const config = readFileSync(configTsPath(home), "utf8");
   const storesIt = config.includes(source.sourceDir);
   note("the config records the marketplace", storesIt ? "yes" : "no");
 
@@ -1137,6 +1161,179 @@ async function journeySharedDirectoryOwnership(): Promise<void> {
   }
 }
 
+/** The sub-agent every Codex journey and journey 79 installs. */
+const WEB_DEVELOPER = "web-developer";
+
+/**
+ * The extension a compiled Codex role file carries, MIRRORED rather than imported.
+ *
+ * `agentCodec("codex").extension` is the product's own answer, and an assertion importing it
+ * moves with it and can never fail — the rule `e2e/pages/constants.ts` states for every string
+ * the product renders. A compile that started writing Claude's `.md` into `.codex/agents/` has to
+ * redden here.
+ */
+const CODEX_ROLE_EXTENSION = ".toml";
+
+/** The prompt handed to the root agent. Its text decides nothing — the scenario does. */
+const CODEX_ANY_PROMPT = "make the change";
+
+/** One ejected skill and the sub-agent it is assigned to, both in the project. */
+const CODEX_PROJECT_PAYLOAD = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      install: "eject",
+      scope: "project",
+      assignments: { [WEB_DEVELOPER]: "lazy" },
+    }),
+  },
+  agents: { [WEB_DEVELOPER]: { on: true, scope: "project" } },
+});
+
+/** A scratch root holding a HOME and a project side by side, which Codex needs kept apart. */
+function codexScratch(label: string): { root: string; home: string; project: string } {
+  const root = mkdtempSync(path.join(tmpdir(), `handrun-${label}-`));
+  const home = path.join(root, "home");
+  const project = path.join(root, "project");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(project, { recursive: true });
+  return { root, home, project };
+}
+
+/** The id each half of the uninstall journey publishes its configuration under. */
+const CODEX_UNINSTALL_IDS = { claude: "HandBothC", codex: "HandBothX" };
+
+/**
+ * One ejected skill at global scope with its sub-agent beside it, installable on either provider.
+ *
+ * Ejecting is deliberate rather than convenient: an eject needs no `claude` binary and no `codex
+ * plugin add`, so both sides of the comparison below are this CLI's own writes and the result does
+ * not depend on a host binary being on the machine.
+ */
+const GLOBAL_EJECT_PAYLOAD = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      install: "eject",
+      scope: "global",
+      assignments: { [WEB_DEVELOPER]: "lazy" },
+    }),
+  },
+  agents: { [WEB_DEVELOPER]: { on: true, scope: "global" } },
+});
+
+/**
+ * Every tree a Claude installation occupies under one HOME, as one comparable snapshot.
+ *
+ * Three rather than the source folder alone: the configuration pair, the ejected skills and the
+ * compiled sub-agents are written by three different passes, and a mis-routed Codex uninstall
+ * reaching any one of them is the whole subject. Each carries content AND mtime, so a rewrite
+ * producing identical bytes is still visible.
+ */
+async function claudeTreeUnder(home: string): Promise<Record<string, TreeSnapshotEntry>> {
+  const trees = await Promise.all(
+    [
+      path.join(home, CLAUDE_SOURCE_REL),
+      path.join(home, DIRS.CLAUDE, DIRS.SKILLS),
+      path.join(home, DIRS.CLAUDE, DIRS.AGENTS),
+    ].map(async (dir) => {
+      const snapshot = await readTreeSnapshot(dir);
+      return Object.entries(snapshot).map(
+        ([file, entry]) => [path.join(dir, file), entry] as const,
+      );
+    }),
+  );
+  return Object.fromEntries(trees.flat());
+}
+
+/**
+ * Journeys 64 / 66 / 67 — one HOME holding both installations: `uninstall` refuses to guess, and
+ * the flag it names takes the Codex one away without touching Claude.
+ *
+ * **The refusal and the selection are one claim and neither half means anything alone.** A
+ * refusal naming a flag that selects nothing is worse than no refusal: the user reads the
+ * sentence, types the flag, and the command refuses again or acts on whichever installation it was
+ * going to act on anyway. So the run with no flag is here to be refused, and the run with it is
+ * here to succeed.
+ *
+ * **What makes "Claude is untouched" a claim rather than a look**: the Claude tree is snapshotted
+ * with content AND mtime before the Codex uninstall and compared afterwards. Content alone cannot
+ * see a rewrite that produced identical bytes, which is what an unwanted recompile of an unchanged
+ * config does — and an empty snapshot would satisfy the comparison on both sides, so the snapshot
+ * is checked for being non-empty first.
+ *
+ * This is the journey the C7b unhide is FOR. The refusal below is the only place a user meets the
+ * flag, and until C7b `--provider` was absent from every help screen the refusal sends them to.
+ */
+async function journeyCodexUninstallLeavesClaude(
+  store: SeedConfigStore,
+  sourceDir: string,
+): Promise<void> {
+  section("Journeys 64 / 66 / 67 — a Codex uninstall leaves Claude untouched");
+
+  const home = mkdtempSync(path.join(tmpdir(), "handrun-both-providers-"));
+  try {
+    const at: ProjectHandle = { dir: home, globalHome: home };
+    store.publish(CODEX_UNINSTALL_IDS.claude, GLOBAL_EJECT_PAYLOAD);
+    store.publish(CODEX_UNINSTALL_IDS.codex, GLOBAL_EJECT_PAYLOAD);
+
+    const claude = await runInitFrom(store, CODEX_UNINSTALL_IDS.claude, at, sourceDir);
+    const codex = await runInitFromOnCodex(store, CODEX_UNINSTALL_IDS.codex, at, sourceDir);
+    note(
+      `init --from (no flag) exit ${claude.exitCode}`,
+      listDir(path.join(home, CLAUDE_SOURCE_REL)),
+    );
+    note(
+      `init --from --provider codex exit ${codex.exitCode}`,
+      listDir(path.join(home, CODEX_SOURCE_REL)),
+    );
+
+    const bothThere =
+      existsSync(path.join(home, CLAUDE_SOURCE_REL, FILES.CONFIG_TS)) &&
+      existsSync(path.join(home, CODEX_SOURCE_REL, FILES.CONFIG_TS));
+    verdict(
+      "journey 64 — one HOME now holds a Claude installation and a Codex one, which is the state the refusal is about",
+      bothThere,
+    );
+
+    const refused = await CLI.run(["uninstall", "--yes"], at);
+    note(`uninstall with no flag — exit ${refused.exitCode}`, firstLine(refused.output, /holds/));
+    verdict(
+      "journey 64 — uninstall refuses to guess which installation it is about, names --provider and both providers, and removes nothing",
+      refused.exitCode === EXIT_CODES.INVALID_ARGS &&
+        refused.output.includes("--provider") &&
+        refused.output.includes(PROVIDER_CODEX[1]) &&
+        existsSync(path.join(home, CODEX_SOURCE_REL, FILES.CONFIG_TS)),
+    );
+
+    // Content and mtime, so a rewrite producing identical bytes is still visible — and every tree
+    // a Claude installation occupies, not just its source folder.
+    const claudeBefore = await claudeTreeUnder(home);
+
+    const removed = await CLI.run(["uninstall", "--yes", ...PROVIDER_CODEX], at);
+    note(
+      `uninstall --provider codex — exit ${removed.exitCode}`,
+      firstLine(removed.output, /emov/),
+    );
+    note("the Codex folder after", listDir(path.join(home, CODEX_SOURCE_REL)));
+    note("the Codex home after", listDir(codexHome(home)));
+    note("the Claude folder after", listDir(path.join(home, CLAUDE_SOURCE_REL)));
+
+    const claudeAfter = await claudeTreeUnder(home);
+    // A subject guard, not decoration: two empty snapshots compare equal for free, so a run whose
+    // Claude install never landed would satisfy the comparison perfectly.
+    const claudeFileCount = Object.keys(claudeBefore).length;
+    note("Claude files snapshotted before the Codex uninstall", String(claudeFileCount));
+    verdict(
+      "journeys 66 / 67 — the flag removed the Codex installation and left every Claude file byte-identical and untouched",
+      removed.exitCode === EXIT_CODES.SUCCESS &&
+        !existsSync(path.join(home, CODEX_SOURCE_REL)) &&
+        claudeFileCount > 0 &&
+        JSON.stringify(claudeAfter) === JSON.stringify(claudeBefore),
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 /**
  * The two shared fixtures, built exactly as `e2e/global-setup.ts` builds them.
  *
@@ -1153,9 +1350,18 @@ async function journeySharedDirectoryOwnership(): Promise<void> {
  * Built here rather than in `scripts/handrun.mjs` because the builders are TypeScript and that
  * file is a plain bundler; putting them here keeps the two setups the same two calls in the same
  * order, so a fixture that gains a step gains it for both.
+ *
+ * **{@link installCodexOnPath} is the third call, and it is the same class of silent failure one
+ * host over.** The product resolves the Codex binary BY NAME — `codex-host.ts` spawns `codex` with
+ * no shell and no path — so a spawned `bin/run.js` finds whatever the child's PATH carries.
+ * `globalSetup` writes that shim for the E2E suite, nothing outside vitest runs `globalSetup`, and
+ * without it a Codex journey does not fail honestly: `init` reports the Codex CLI missing, every
+ * assertion about a plugin becomes an assertion about this machine, and the hand-run prints a
+ * transcript of a provider it never exercised.
  */
 async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
   process.stdout.write("building the shared fixtures (plugin tree + plain tree)...\n");
+  await installCodexOnPath();
   await buildSharedSource(async (root) => {
     await buildPluginSourceInto(root);
     await buildSharedE2ESourceInto(root);
@@ -1166,6 +1372,249 @@ async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
   } finally {
     await removeSharedSource();
     process.stdout.write("shared fixtures removed\n");
+  }
+}
+
+/**
+ * Journeys 76 / 78 — a Codex PROJECT install through the binary, as a user who never edits their
+ * own Codex config meets it.
+ *
+ * 76: the install trusts the project in the global Codex config itself and says so (CLI-893), and
+ * the role file names no Claude model — so Codex offers the role, and a sub-agent can be spawned,
+ * with no trust line written by hand.
+ * 78: `uninstall` takes the role files away — CLI-896: the agent lister only knew `*.md`, so on
+ * Codex it found no compiled role and left every one behind while saying it had removed them.
+ */
+async function journeyCodexProjectInstallTrustsItself(
+  store: SeedConfigStore,
+  sourceDir: string,
+): Promise<void> {
+  section("Journeys 76 / 78 — a Codex project install trusts itself");
+
+  const codexRan = await isCodexCLIAvailable();
+  verdict("journey 76 — the pinned Codex binary this lane measures against starts", codexRan);
+  if (!codexRan) return;
+
+  const { root, home, project } = codexScratch("codex-trusts-itself");
+  try {
+    store.publish("HandCdxTrust", CODEX_PROJECT_PAYLOAD);
+    const at: ProjectHandle = { dir: project, globalHome: home };
+    const installed = await runInitFromOnCodex(store, "HandCdxTrust", at, sourceDir);
+    note(
+      `init --from HandCdxTrust --provider codex — exit ${installed.exitCode}`,
+      firstLine(installed.output, /Error/i),
+    );
+    note("what it said about project trust", firstLine(installed.output, /Trusted this project/));
+
+    const globalConfig = path.join(codexHome(home), "config.toml");
+    const written = existsSync(globalConfig) ? readFileSync(globalConfig, "utf8") : "";
+    const trustTables = written.split(`[projects."${project}"]`).length - 1;
+    note("trust tables for this project in the global Codex config", String(trustTables));
+    verdict(
+      "journey 76 — the install trusted the project in the global Codex config, once, and said so",
+      installed.exitCode === EXIT_CODES.SUCCESS &&
+        installed.output.includes(STEP_TEXT.CODEX_PROJECT_TRUSTED) &&
+        trustTables === 1,
+    );
+
+    const role = path.join(
+      project,
+      DIRS.CODEX,
+      DIRS.AGENTS,
+      `${WEB_DEVELOPER}${CODEX_ROLE_EXTENSION}`,
+    );
+    const roleText = existsSync(role) ? readFileSync(role, "utf8") : "";
+    verdict(
+      `journey 76 — ${WEB_DEVELOPER}'s role file exists and names no model, so Codex can start it`,
+      roleText !== "" && !/^model\s*=/m.test(roleText),
+    );
+
+    const mock = await startCodexResponsesMock(codexDelegationScenario(WEB_DEVELOPER));
+    try {
+      const exec = await runCodex(
+        home,
+        ["exec", ...mockProviderConfig(mock), "--skip-git-repo-check", CODEX_ANY_PROMPT],
+        project,
+      );
+      const wire = everyRequestOf(mock);
+      note(`codex exec exit ${exec.exitCode}`, firstLine(exec.stderr, /./) || "(silent)");
+      verdict(
+        "journey 76 — with no trust written by hand, Codex offered the role and spawned it",
+        wire.includes("spawn_agent") && wire.includes(WEB_DEVELOPER),
+      );
+    } finally {
+      await mock.close();
+    }
+
+    const uninstalled = await CLI.run(["uninstall", "--yes"], at);
+    note(
+      `uninstall --yes — exit ${uninstalled.exitCode}`,
+      firstLine(uninstalled.output, /agents/i),
+    );
+    note("role files left in .codex/agents", listDir(path.join(project, DIRS.CODEX, DIRS.AGENTS)));
+    verdict("journey 78 — uninstall took the Codex role files away", !existsSync(role));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Journey 75 — the edit wizard over a Codex installation, driven through the page objects: an
+ * ejected skill deselected leaves `$CODEX_HOME/skills`, the one place Codex reads it from (CLI-895).
+ * The skill kept beside it is the control — a delete that took the whole directory satisfies the
+ * first claim too.
+ */
+async function journeyCodexEditWizard(store: SeedConfigStore, sourceDir: string): Promise<void> {
+  section("Journey 75 — the edit wizard over a Codex installation");
+
+  const { root, home } = codexScratch("codex-edit");
+  try {
+    store.publish(
+      "HandCdxEdit",
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { [WEB_DEVELOPER]: "lazy" },
+          }),
+          [E2E_SKILL.zustand.id]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { [WEB_DEVELOPER]: "lazy" },
+          }),
+        },
+        agents: { [WEB_DEVELOPER]: { on: true, scope: "global" } },
+      }),
+    );
+    const at: ProjectHandle = { dir: home, globalHome: home };
+    const installed = await runInitFromOnCodex(store, "HandCdxEdit", at, sourceDir);
+    note(
+      `init --from HandCdxEdit --provider codex — exit ${installed.exitCode}`,
+      firstLine(installed.output, /Error/i),
+    );
+
+    const codexSkills = path.join(codexHome(home), DIRS.SKILLS);
+    note("skills Codex reads, before the edit", listDir(codexSkills));
+
+    const wizard = await EditWizard.launchInGlobal({
+      projectDir: home,
+      source: { sourceDir, tempDir: sourceDir },
+      ...TERMINAL_SIZE.TALL,
+    });
+    try {
+      await wizard.build.selectSkill(E2E_SKILL.zustand.display);
+      const result = await wizard.completeFromBuild();
+      note(`edit — exit ${await result.exitCode}`, "");
+    } finally {
+      await wizard.destroy();
+    }
+
+    note("skills Codex reads, after the edit", listDir(codexSkills));
+    verdict(
+      "journey 75 — the deselected ejected skill left the directory Codex reads skills from",
+      !existsSync(path.join(codexSkills, E2E_SKILL.zustand.id)),
+    );
+    verdict(
+      "journey 75 — and the skill kept beside it is still there",
+      existsSync(path.join(codexSkills, E2E_SKILL.react.id)),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A writing sub-agent at PROJECT scope on Claude — the one whose completion gate needs a trusted
+ * folder.
+ */
+const CLAUDE_PROJECT_PAYLOAD = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      install: "eject",
+      scope: "project",
+      assignments: { [WEB_DEVELOPER]: "lazy" },
+    }),
+  },
+  agents: { [WEB_DEVELOPER]: { on: true, scope: "project" } },
+});
+
+/**
+ * Journey 79 — a Claude project install says its sub-agents' completion gate needs the folder
+ * trusted, and stops saying so once `~/.claude.json` records the dialog as accepted.
+ *
+ * The control is a global install run from the home directory, which says nothing: there the
+ * project agents directory IS `~/.claude/agents/`, which Claude Code trusts unconditionally. A
+ * notice printed for every install with a writing sub-agent satisfies the first half too.
+ */
+async function journeyClaudeFolderTrust(store: SeedConfigStore, sourceDir: string): Promise<void> {
+  section("Journey 79 — a Claude project install says the folder must be trusted");
+
+  await journeyClaudeHomeNeedsNoTrust(store, sourceDir);
+
+  const { root, home, project } = codexScratch("claude-folder-trust");
+  try {
+    store.publish("HandClaTrust", CLAUDE_PROJECT_PAYLOAD);
+    const at: ProjectHandle = { dir: project, globalHome: home };
+    const installed = await runInitFrom(store, "HandClaTrust", at, sourceDir);
+    note(
+      `init --from HandClaTrust — exit ${installed.exitCode}`,
+      firstLine(installed.output, /trust the folder/),
+    );
+    verdict(
+      "journey 79 — the install named the folder that has to be trusted",
+      installed.output.includes(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED) &&
+        installed.output.includes(project),
+    );
+
+    writeFileSync(
+      path.join(home, ".claude.json"),
+      JSON.stringify({ projects: { [project]: { hasTrustDialogAccepted: true } } }),
+    );
+    const recompiled = await CLI.run(["compile"], at);
+    note(`compile, after the dialog was accepted — exit ${recompiled.exitCode}`, "");
+    verdict(
+      "journey 79 — once the folder is trusted, compile says nothing about it",
+      recompiled.exitCode === EXIT_CODES.SUCCESS &&
+        !recompiled.output.includes(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** Journey 79's control: a global install from the home directory, with no trust record at all. */
+async function journeyClaudeHomeNeedsNoTrust(
+  store: SeedConfigStore,
+  sourceDir: string,
+): Promise<void> {
+  const { root, home } = codexScratch("claude-home-trust");
+  try {
+    store.publish("HandClaHome", GLOBAL_EJECT_PAYLOAD);
+    const installed = await runInitFrom(
+      store,
+      "HandClaHome",
+      { dir: home, globalHome: home },
+      sourceDir,
+    );
+    note(
+      `init --from HandClaHome, run from the home directory — exit ${installed.exitCode}`,
+      firstLine(installed.output, /trust the folder/),
+    );
+
+    const compiled = (await readCompiledAgents(home))[`${WEB_DEVELOPER}.md`];
+    verdict(
+      `journey 79 — the global install from the home directory compiled ${WEB_DEVELOPER} with its completion gate`,
+      installed.exitCode === EXIT_CODES.SUCCESS &&
+        compiled !== undefined &&
+        compiled.includes('\nhooks: {"Stop":[{'),
+    );
+    verdict(
+      "journey 79 — and said nothing about trusting a folder, since its project agents ARE the global ones",
+      !installed.output.includes(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 }
 
@@ -1201,6 +1650,14 @@ async function main(): Promise<void> {
     await attempt("journeyShareRoundTrip", () => journeyShareRoundTrip(store));
     await attempt("journeyCatalogueEmission", () => journeyCatalogueEmission());
     await attempt("journeySharedDirectoryOwnership", () => journeySharedDirectoryOwnership());
+    await attempt("journeyCodexUninstallLeavesClaude", () =>
+      journeyCodexUninstallLeavesClaude(store, sourceDir),
+    );
+    await attempt("journeyCodexProjectInstallTrustsItself", () =>
+      journeyCodexProjectInstallTrustsItself(store, sourceDir),
+    );
+    await attempt("journeyCodexEditWizard", () => journeyCodexEditWizard(store, sourceDir));
+    await attempt("journeyClaudeFolderTrust", () => journeyClaudeFolderTrust(store, sourceDir));
   } finally {
     await store.close();
     process.stdout.write("\nstore closed\n");

@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import path from "path";
 import { fileURLToPath } from "url";
 import { mkdir, readFile as fsReadFile, writeFile as fsWrite } from "fs/promises";
 import type { AgentConfig } from "../types";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
+import { renderAgentMd } from "./__tests__/content-generators.js";
 import { createMockSkillEntry } from "./__tests__/factories/skill-factories";
 import {
   createMockAgentConfig,
@@ -26,7 +27,7 @@ vi.mock("../utils/logger", async (importOriginal) => ({
 }));
 
 import {
-  compileAgentForPlugin,
+  compileAgentForHost,
   createLiquidEngine,
   sanitizeLiquidSyntax,
   sanitizeCompiledAgentData,
@@ -34,7 +35,8 @@ import {
 } from "./compiler";
 import { hasProvenanceMarker, stampProvenanceMarker } from "./agents/agent-provenance.js";
 import { warn } from "../utils/logger";
-import { CLAUDE_SRC_DIR, DIRS, EJECT_SOURCE, STANDARD_DIRS } from "../consts";
+import { DIRS, EJECT_SOURCE, STANDARD_DIRS } from "../consts";
+import { sourceFolderInUse } from "./installation/install-layout.js";
 import type { CompiledAgentData, PluginSkillRef, SkillId } from "../types";
 import { elementAt, firstElement } from "./__tests__/helpers/element-at.js";
 import {
@@ -90,8 +92,7 @@ async function createProjectFromFixtures(): Promise<string> {
  */
 async function installProjectTemplateOverride(projectDir: string): Promise<void> {
   const templatesDir = path.join(
-    projectDir,
-    CLAUDE_SRC_DIR,
+    sourceFolderInUse(projectDir, "claude").dir,
     STANDARD_DIRS.AGENTS,
     path.basename(DIRS.templates),
   );
@@ -205,7 +206,29 @@ const SHIPPED_TEMPLATE_SECTIONS = [
   "<system-reminder>",
 ] as const;
 
-const STUB_OUTPUT = "---\nname: test\n---\n# output";
+/**
+ * What a stubbed engine answers for `renderFile`: a compiled agent as the fixture generator writes
+ * one. Opaque to every assertion that reads it — each compares what the compile returned against
+ * this same value, with or without the provenance stamp.
+ */
+const STUB_OUTPUT = renderAgentMd("web-developer");
+
+/**
+ * The two engine methods a compile calls, stubbed — `renderFile` for the template, and
+ * `parseAndRender` for each of the five partials.
+ *
+ * `parseAndRender` is not optional and a stub without it does not merely under-report: every spec
+ * here that hands the compiler a bare `{ renderFile }` died with "engine.parseAndRender is not a
+ * function" the moment `renderAgent` began resolving partials through the engine, which is how the
+ * source folder reaches an agent's own prose as a value rather than as a literal. The pass-through
+ * is what Liquid does to text carrying no template syntax, which is all the fixture partials carry.
+ */
+function stubEngine(rendered?: string): { renderFile: Mock; parseAndRender: Mock } {
+  return {
+    renderFile: rendered === undefined ? vi.fn() : vi.fn().mockResolvedValue(rendered),
+    parseAndRender: vi.fn((partial: string) => Promise.resolve(partial)),
+  };
+}
 
 describe("compiler", () => {
   let projectDir: string;
@@ -226,9 +249,10 @@ describe("compiler", () => {
    */
   describe("reading agent source files", () => {
     it("when compiling an agent, should pass agent data to template engine", async () => {
-      const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
+      const engine = stubEngine(STUB_OUTPUT);
 
-      await compileAgentForPlugin(
+      await compileAgentForHost(
+        "claude",
         "api-developer",
         createMockAgentConfig("api-developer"),
         projectDir,
@@ -245,9 +269,10 @@ describe("compiler", () => {
     });
 
     it("when compiling an agent, should read optional output.md file", async () => {
-      const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
+      const engine = stubEngine(STUB_OUTPUT);
 
-      await compileAgentForPlugin(
+      await compileAgentForHost(
+        "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
@@ -261,10 +286,11 @@ describe("compiler", () => {
     });
 
     it("when the agent directory is absent, should reject naming the path it could not read", async () => {
-      const engine = { renderFile: vi.fn() };
+      const engine = stubEngine();
 
       await expect(
-        compileAgentForPlugin(
+        compileAgentForHost(
+          "claude",
           "web-developer",
           createMockAgentConfig("web-developer", [], { path: "nonexistent-agent" }),
           projectDir,
@@ -291,7 +317,8 @@ describe("compiler", () => {
       await installProjectTemplateOverride(projectDir);
       const engine = await createLiquidEngine(projectDir);
 
-      const compiled = await compileAgentForPlugin(
+      const compiled = await compileAgentForHost(
+        "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
@@ -310,7 +337,8 @@ describe("compiler", () => {
     it("renders the shipped template when the project has no override", async () => {
       const engine = await createLiquidEngine(projectDir);
 
-      const compiled = await compileAgentForPlugin(
+      const compiled = await compileAgentForHost(
+        "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
@@ -474,11 +502,12 @@ describe("compiler", () => {
     });
   });
 
-  describe("compileAgentForPlugin", () => {
+  describe("compileAgentForHost", () => {
     it("stamps the compiled agent with the provenance marker", async () => {
-      const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
+      const engine = stubEngine(STUB_OUTPUT);
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
@@ -495,9 +524,10 @@ describe("compiler", () => {
      */
     it("does not stack a second marker when the render already carries one", async () => {
       const alreadyStamped = stampProvenanceMarker(STUB_OUTPUT);
-      const engine = { renderFile: vi.fn().mockResolvedValue(alreadyStamped) };
+      const engine = stubEngine(alreadyStamped);
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
@@ -531,7 +561,8 @@ describe("compiler", () => {
     it("emits the permissionMode the agent carries, not the template default", async () => {
       const engine = await createLiquidEngine();
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         WEB_DEV_TUNED_PERMISSIONS,
         projectDir,
@@ -544,7 +575,8 @@ describe("compiler", () => {
     it("emits disallowedTools when the agent carries them", async () => {
       const engine = await createLiquidEngine();
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         WEB_DEV_TUNED_PERMISSIONS,
         projectDir,
@@ -557,7 +589,8 @@ describe("compiler", () => {
     it("falls back to the default permissionMode and omits disallowedTools when neither is set", async () => {
       const engine = await createLiquidEngine();
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
@@ -571,7 +604,8 @@ describe("compiler", () => {
     it("preloads exactly the skills the agent marks preloaded, in declaration order", async () => {
       const engine = await createLiquidEngine();
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         WEB_DEV_PLUGIN_SKILLS,
         projectDir,
@@ -586,7 +620,8 @@ describe("compiler", () => {
     it("activates exactly the skills the agent leaves dynamic, in declaration order", async () => {
       const engine = await createLiquidEngine();
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         WEB_DEV_PLUGIN_SKILLS,
         projectDir,
@@ -601,7 +636,8 @@ describe("compiler", () => {
     it("renders an ejected skill as its bare id on both sides", async () => {
       const engine = await createLiquidEngine();
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         WEB_DEV_EJECTED_SKILLS,
         projectDir,
@@ -616,7 +652,8 @@ describe("compiler", () => {
     it("opens its own sections in order around the agent's prose", async () => {
       const engine = await createLiquidEngine();
 
-      const output = await compileAgentForPlugin(
+      const output = await compileAgentForHost(
+        "claude",
         "web-developer",
         WEB_DEV_PLUGIN_SKILLS,
         projectDir,
@@ -631,9 +668,10 @@ describe("compiler", () => {
 
   describe("template injection prevention (integration)", () => {
     it("when agent.name contains Liquid syntax, should not execute it", async () => {
-      const engine = { renderFile: vi.fn().mockResolvedValue(STUB_OUTPUT) };
+      const engine = stubEngine(STUB_OUTPUT);
 
-      await compileAgentForPlugin(
+      await compileAgentForHost(
+        "claude",
         "web-developer",
         WEB_DEV_LIQUID_INJECTION,
         projectDir,
@@ -734,6 +772,10 @@ describe("compiler", () => {
       expect(result.preloadedSkills).toHaveLength(2);
       expect(result.dynamicSkills).toHaveLength(0);
       expect(result.preloadedSkillIds).toHaveLength(2);
+      // The members as well as the counts: a count cannot see a swap or a duplicate.
+      expect(result.preloadedSkills).toStrictEqual(skills);
+      expect(result.dynamicSkills).toStrictEqual([]);
+      expect(result.preloadedSkillIds).toStrictEqual(["web-framework-react", "web-testing-vitest"]);
     });
 
     it("should handle agent with only dynamic skills", () => {
@@ -748,6 +790,10 @@ describe("compiler", () => {
       expect(result.preloadedSkills).toHaveLength(0);
       expect(result.dynamicSkills).toHaveLength(2);
       expect(result.preloadedSkillIds).toHaveLength(0);
+      // The members as well as the counts: a count cannot see a swap or a duplicate.
+      expect(result.preloadedSkills).toStrictEqual([]);
+      expect(result.dynamicSkills).toStrictEqual(skills);
+      expect(result.preloadedSkillIds).toStrictEqual([]);
     });
   });
 });

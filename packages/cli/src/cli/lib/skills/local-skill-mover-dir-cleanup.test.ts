@@ -9,6 +9,8 @@ import { resolveInstallPaths } from "../installation/install-base-dir";
 import { writeTestSkill } from "../__tests__/helpers/disk-writers";
 import { cleanupTempDir, createTempDir, directoryExists } from "../__tests__/test-fs-utils";
 import { SKILLS } from "../__tests__/test-fixtures";
+import { buildProjectConfig } from "../__tests__/factories/config-factories";
+import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { CLAUDE_DIR } from "../../consts";
 
 /**
@@ -80,5 +82,50 @@ describe("deleteLocalSkill directory collapse", () => {
 
     expect(await directoryExists(skillsDir())).toBe(false);
     expect(await directoryExists(projectDir)).toBe(false);
+  });
+});
+
+/**
+ * **The host decides which directory an ejected skill lives in — CLI-895, 2026-09-26.** On a Codex
+ * project it is `<repo>/.agents/skills`, and `deleteLocalSkill` joined Claude's `.claude/skills`
+ * whatever the host, so the copy Codex reads survived every delete. The paired Claude directory is
+ * planted with the same skill as the control: the delete has to reach the Codex copy and ONLY it.
+ */
+describe("deleteLocalSkill on a Codex project", () => {
+  /** The source folder a Codex installation is recognised by, as a user sees it. */
+  const CODEX_SOURCE_REL = ".agents-inc/codex";
+
+  let tempDir: string;
+  let projectDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-local-skill-mover-codex-");
+    projectDir = path.join(tempDir, "project");
+    await writeTestTsConfig(projectDir, buildProjectConfig(), CODEX_SOURCE_REL);
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("deletes the copy from the directory Codex reads, and leaves a Claude-path folder alone", async () => {
+    const codexSkillsDir = resolveInstallPaths(projectDir, "project").skillsDir;
+    expect(
+      codexSkillsDir,
+      "the project did not resolve onto Codex, so this case tests Claude again",
+    ).not.toContain(CLAUDE_DIR);
+    const codexCopy = await writeTestSkill(codexSkillsDir, SKILLS.react.id, { skipMetadata: true });
+    const claudePathCopy = await writeTestSkill(
+      path.join(projectDir, CLAUDE_DIR, "skills"),
+      SKILLS.react.id,
+      { skipMetadata: true },
+    );
+
+    await deleteLocalSkill(projectDir, SKILLS.react.id);
+
+    expect(await directoryExists(codexCopy), "the copy Codex reads survived the delete").toBe(
+      false,
+    );
+    expect(await directoryExists(claudePathCopy)).toBe(true);
   });
 });

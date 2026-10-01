@@ -17,7 +17,7 @@ import {
   effectivelyExcludedSkillIds,
   isActiveAt,
   loadProjectConfig,
-  loadProjectConfigFromDir,
+  loadInstalledConfig,
   resolveSource,
 } from "../lib/configuration";
 import { getStackSkillIds, resolveAgentConfigToSkills } from "../lib/stacks";
@@ -38,6 +38,14 @@ import {
   skillMetadataUnusableError,
 } from "../utils/messages";
 import { reconcileTypesFromDisk, type GateReport } from "../lib/config-gate/index.js";
+import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
+import { providerInUse } from "../lib/installation/install-layout.js";
+import {
+  providerFlag,
+  providerNamedBy,
+  refuseAnAmbiguousInstallation,
+} from "../lib/installation/provider-flag.js";
+import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import type { Installation } from "../lib/installation";
 import type { SkillScope } from "../types/config";
 import type {
@@ -67,6 +75,7 @@ export default class Compile extends BaseCommand {
       description: "Enable verbose logging",
       default: false,
     }),
+    provider: providerFlag(),
   };
 
   async run(): Promise<void> {
@@ -74,10 +83,47 @@ export default class Compile extends BaseCommand {
     setVerbose(flags.verbose);
     const cwd = process.cwd();
 
+    // First, and before anything reads a folder: every path below resolves its provider through
+    // `providerInUse`, which answers by ROSTER ORDER when a scope holds one installation of each —
+    // so a compile with no flag rewrote the Claude one of a project that also has a Codex one, and
+    // said nothing anywhere about which it had been about. `edit`, `uninstall`, `share` and
+    // `eject` have refused this since C7b and `doctor` reports it as a finding; these two were the
+    // hole, and they are the two that WRITE.
+    await refuseAnAmbiguousInstallation(
+      cwd,
+      "compile",
+      providerNamedBy(flags.provider),
+      (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    );
+    await this.settleSourceLayoutBeforeWriting(cwd);
     const installations = await this.detectInstallations(cwd);
+    await this.refuseUnofferablePlacements(cwd);
     await this.resolveAndLogSource(cwd);
     const agentDefs = await this.loadAgentDefsOrFail();
     await this.runCompilePasses(installations, agentDefs, cwd);
+    await this.reportWhatThisHostCannotCarry(installations, cwd);
+  }
+
+  /**
+   * What this host could not carry, once per run and after the passes.
+   *
+   * AFTER, because the trust half of it is a question about the tree as it now stands: a project
+   * whose role files this run just wrote is exactly the one whose user has to trust it, and asking
+   * before the write would answer about the previous state.
+   *
+   * `init` prints the same lines in the same order — {@link hostCompileNotices} is the one place
+   * either of them gets them from, so the two commands cannot drift into saying different things
+   * about one tree.
+   */
+  private async reportWhatThisHostCannotCarry(
+    installations: BothInstallations,
+    cwd: string,
+  ): Promise<void> {
+    const root = rootThisRunCompiled(installations, cwd);
+
+    for (const notice of await hostCompileNotices(providerInUse(root), cwd)) {
+      this.log(notice);
+    }
   }
 
   private async detectInstallations(cwd: string): Promise<BothInstallations> {
@@ -101,6 +147,27 @@ export default class Compile extends BaseCommand {
     }
 
     return installations;
+  }
+
+  /**
+   * Refuses a configuration asking for a mode/scope cell its own host does not offer, BEFORE
+   * anything is discovered, compiled or written.
+   *
+   * **The install path's pre-flight cannot cover this, and nothing ties a folder's contents to
+   * its name.** `config.ts` carries no provider field — the ruling forbids one, so that a saved
+   * configuration installs onto either provider — which means a user who copies
+   * `.agents-inc/claude/` to `.agents-inc/codex/` has a Codex installation holding a
+   * configuration that never met `init --from --provider codex`'s refusal. This is the command
+   * that turns a configuration into files on disk, so it is the one that has to ask again.
+   *
+   * Both scopes, because a project inherits its global's rows and an unofferable row in either
+   * file is a row this run would act on. Each installation is asked about its OWN host: the two
+   * scopes can be on different providers, and asking one host about the other's configuration is
+   * how a refusal fires on a cell that is offered where the skill actually lives.
+   */
+  private async refuseUnofferablePlacements(cwd: string): Promise<void> {
+    const [finding] = await unofferablePlacementsFound(cwd);
+    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
   /**
@@ -144,13 +211,13 @@ export default class Compile extends BaseCommand {
   ): Promise<void> {
     const passes = buildCompilePasses(installations, cwd, agentDefs);
 
-    let totalPassesWithSkills = 0;
+    let passesCompiled = 0;
     for (const pass of passes) {
-      const hadSkills = await this.runCompilePass(pass, cwd);
-      if (hadSkills) totalPassesWithSkills++;
+      const compiled = await this.runCompilePass(pass, cwd);
+      if (compiled) passesCompiled++;
     }
 
-    if (totalPassesWithSkills === 0) {
+    if (passesCompiled === 0) {
       this.error(ERROR_MESSAGES.NO_SKILLS_TO_COMPILE, { exit: EXIT_CODES.ERROR });
     }
   }
@@ -237,7 +304,7 @@ export default class Compile extends BaseCommand {
    * change, so name the global context and the count.
    */
   private async hintGlobalScopedAgents(projectDir: string): Promise<void> {
-    const loaded = await loadProjectConfigFromDir(projectDir);
+    const loaded = await loadInstalledConfig(projectDir);
     if (!loaded) return;
 
     const globalAgentCount = loaded.config.agents.filter(
@@ -332,7 +399,7 @@ export default class Compile extends BaseCommand {
 
     let report: GateReport;
     try {
-      const loaded = await loadProjectConfigFromDir(pass.projectDir);
+      const loaded = await loadInstalledConfig(pass.projectDir);
       if (!loaded) {
         verbose(
           `No config found at ${pass.projectDir} — skipping ${STANDARD_FILES.CONFIG_TYPES_TS} refresh`,
@@ -370,6 +437,7 @@ export default class Compile extends BaseCommand {
     this.reportPropagatedRecompile(report);
   }
 
+  /** Runs one pass, and answers whether it compiled rather than skipping for want of anything to. */
   private async runCompilePass(params: CompilePass, cwd: string): Promise<boolean> {
     const { label, projectDir, installation, sourcePath, scopeFilter } = params;
 
@@ -385,8 +453,11 @@ export default class Compile extends BaseCommand {
     const seatedMatrix = await this.seatMatrixForPass(projectDir);
 
     const { allSkills, totalSkillCount } = await this.discoverAllSkills(projectDir);
+    const compilesBaseAgents = totalSkillCount === 0 && (await declaresOnlyBaseAgents(params));
 
-    if (totalSkillCount === 0) {
+    if (compilesBaseAgents) {
+      this.log(`No skills configured for ${label.toLowerCase()} pass, compiling base agents`);
+    } else if (totalSkillCount === 0) {
       this.log(`No skills found for ${label.toLowerCase()} pass, skipping`);
       // The config loads independently of discovered skills: a hand-edited
       // config.ts can list skills while nothing is installed for this scope,
@@ -509,6 +580,41 @@ function buildCompilePasses(
   }
 
   return [];
+}
+
+/**
+ * The install root this run compiled, which the reports after the passes read the provider off.
+ *
+ * The root {@link buildCompilePasses} picks, read the same way it picks it: a project installation
+ * is this run's subject and the global one is what a directory with none is about. Asking `cwd`
+ * alone would answer Claude for a project that has no installation of its own under a Codex
+ * global.
+ */
+function rootThisRunCompiled(installations: BothInstallations, cwd: string): string {
+  return installations.project ? cwd : os.homedir();
+}
+
+/**
+ * Whether a pass that discovered no skill still has something to compile: sub-agents its config
+ * pins on with no skill at all, which the editor produces ("no skills — base agent") and `init`
+ * compiles like any other roster — `compileAgentsAllScopes` asks nothing about skills. The roster
+ * is read the way `compileAgents` reads it: active rows, narrowed to the pass's scope when it has
+ * one.
+ *
+ * A config that DECLARES a skill, none of which is on disk, is not this. It is an installation
+ * whose skills were lost, and compiling it would rewrite every sub-agent without them — so that
+ * pass is still skipped and, with no other pass compiling, still refused.
+ */
+async function declaresOnlyBaseAgents(pass: CompilePass): Promise<boolean> {
+  const loaded = await loadInstalledConfig(pass.projectDir);
+  if (!loaded) return false;
+
+  const { skills, agents } = loaded.config;
+  const declaresASkill = skills.some((skill) => !skill.excluded);
+  const compilesAnAgent = agents.some((agent) =>
+    pass.scopeFilter === undefined ? !agent.excluded : isActiveAt(agent, pass.scopeFilter),
+  );
+  return !declaresASkill && compilesAnAgent;
 }
 
 /**

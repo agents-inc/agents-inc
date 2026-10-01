@@ -6,11 +6,7 @@ export {
   writePluginManifest,
 } from "./plugin-manifest";
 
-export {
-  buildMarketplacePluginRef,
-  parseMarketplacePluginRef,
-  toClaudePluginScope,
-} from "./plugin-ref";
+export { buildMarketplacePluginRef, parseMarketplacePluginRef } from "./plugin-ref";
 
 export {
   getUserPluginsDir,
@@ -36,14 +32,17 @@ export {
   printPluginValidationResult,
 } from "./plugin-validator";
 
-export { discoverAllPluginSkills, listPluginNames } from "./plugin-discovery";
+export {
+  discoverAllPluginSkills,
+  getVerifiedPluginInstallPaths,
+  listPluginNames,
+} from "./plugin-discovery";
 
 export {
   type PluginKey,
   type ResolvedPlugin,
   getEnabledPluginKeys,
   getInstalledPluginsRegistryPath,
+  listPluginInstallsForProject,
   listRegisteredPluginInstalls,
-  resolvePluginInstallPaths,
-  getVerifiedPluginInstallPaths,
 } from "./plugin-settings";

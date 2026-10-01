@@ -7,14 +7,16 @@ import { getErrorMessage } from "../../utils/errors";
 import {
   DEFAULT_BRANDING,
   GITHUB_SOURCE,
+  LEGACY_SOURCE_DIR,
   PUBLIC_CATALOGUE_PACKAGE,
+  SOURCE_ROOT_DIR,
   STANDARD_FILES,
 } from "../../consts";
 import { configUnreadableError } from "../../utils/messages";
 import { projectSourceConfigSchema } from "../schemas";
 import type { ProjectConfig, SourceEntry } from "../../types";
 import { ConfigDefaultExportError, ConfigSchemaError, loadConfig } from "./config-loader";
-import { getProjectConfigPath } from "../installation/install-base-dir";
+import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
 import { isHomeDirectory } from "../installation/is-home-directory";
 
 export const DEFAULT_SOURCE = `${GITHUB_SOURCE.GITHUB_PREFIX}agents-inc/skills`;
@@ -84,7 +86,7 @@ async function loadSourceConfig(
   scope: "project" | "global",
 ): Promise<Partial<ProjectConfig> | null> {
   const scopeLabel = scope === "project" ? "Project" : "Global";
-  const configPath = getProjectConfigPath(dir);
+  const configPath = getInstalledConfigPath(dir);
 
   if (!(await fileExists(configPath))) {
     verbose(`${scopeLabel} config not found at ${configPath}`);
@@ -143,7 +145,46 @@ function unreadableSourceConfig(cause: unknown): Error {
 }
 
 /**
- * Load source config from a directory's own `.claude-src/config.ts`.
+ * The config a MARKETPLACE SOURCE REPOSITORY declares about itself, or `null` when it declares
+ * none: `<base>/.agents-inc/config.ts`, falling back to `<base>/.claude-src/config.ts`.
+ *
+ * Its own door, because it answers a different question from every other reader of this file.
+ * An INSTALLATION's config lives inside a provider folder — one installation is exactly one
+ * provider and the folder is what says which. A source repo's config is provider-NEUTRAL and
+ * carries no provider segment: `skillsDir` and `stacksFile` describe the repository's own layout
+ * and have nothing to do with a provider, and a marketplace serving both would otherwise have to
+ * declare its layout twice.
+ *
+ * The old name is a fallback with NO sunset. The CLI can never move a folder in a repository it
+ * only reads, and an author who moved it would break every consumer still on an older CLI —
+ * silently, as "No skills found". Keeping both names reachable from one function is what lets
+ * "read `.claude-src` in sources forever" and "sunset `.claude-src` for installs" both be true.
+ */
+export async function loadSourceRepoConfig(
+  basePath: string,
+): Promise<Partial<ProjectConfig> | null> {
+  for (const folder of SOURCE_REPO_CONFIG_FOLDERS) {
+    const declared = await readDeclaredConfig(path.join(basePath, folder));
+    if (declared) return declared;
+  }
+  return null;
+}
+
+/** Where a source repo may declare itself, in the order the first one found wins. */
+const SOURCE_REPO_CONFIG_FOLDERS = [SOURCE_ROOT_DIR, LEGACY_SOURCE_DIR];
+
+/** The config in one candidate folder, or `null` when that folder declares none. */
+async function readDeclaredConfig(dir: string): Promise<Partial<ProjectConfig> | null> {
+  const configPath = path.join(dir, STANDARD_FILES.CONFIG_TS);
+  if (!(await fileExists(configPath))) {
+    verbose(`Source config not found at ${configPath}`);
+    return null;
+  }
+  return readSourceConfigOrRefuse(configPath);
+}
+
+/**
+ * Load source config from a directory's own installation folder.
  *
  * The scope it announces is derived, not assumed: at the home root the file this reads
  * IS the global config, and a caller asking a project question there — `doctor` deciding
@@ -156,7 +197,7 @@ export async function loadProjectSourceConfig(
   return loadSourceConfig(projectDir, isHomeDirectory(projectDir) ? "global" : "project");
 }
 
-/** Load source config from the global home directory (~/.claude-src/config.ts). */
+/** Load source config from the global home directory's own source folder. */
 export async function loadGlobalSourceConfig(): Promise<Partial<ProjectConfig> | null> {
   return loadSourceConfig(os.homedir(), "global");
 }
@@ -438,12 +479,11 @@ function validateRemoteSource(source: string, protocol: string, flagName: string
   // For https:// and http:// URLs, validate basic URL structure
   if (protocol === "https://" || protocol === "http://") {
     validateHttpUrl(source, flagName);
+    return;
   }
 
   // For git shorthand protocols (github:, gh:, gitlab:, etc.), validate org/repo pattern
-  if (protocol !== "https://" && protocol !== "http://") {
-    validateGitShorthand(source, pathAfterProtocol, flagName);
-  }
+  validateGitShorthand(source, pathAfterProtocol, flagName);
 }
 
 function validateHttpUrl(source: string, flagName: string): void {
@@ -453,9 +493,7 @@ function validateHttpUrl(source: string, flagName: string): void {
   const hostnameWithPort = afterProtocol.split("/")[0] ?? "";
   const hostname = hostnameWithPort.split(":")[0] ?? "";
 
-  // Allow: dotted hostnames (github.com), localhost, and bracketed IPv6 ([::1])
-  const isBracketedIPv6 = hostnameWithPort.startsWith("[") && hostnameWithPort.includes("]");
-  if (!hostname || (!hostname.includes(".") && hostname !== "localhost" && !isBracketedIPv6)) {
+  if (!namesAcceptedHost(hostname, hostnameWithPort)) {
     throw new Error(
       `${flagName} has an invalid URL: "${source}"\n\n` +
         `The URL must include a valid hostname.\n` +
@@ -476,6 +514,16 @@ function validateHttpUrl(source: string, flagName: string): void {
         `  ${flagName} https://gitlab.company.com/team/skills`,
     );
   }
+}
+
+/**
+ * Whether the URL names an accepted host: a dotted hostname (github.com), localhost, or a
+ * bracketed IPv6 address ([::1]).
+ */
+function namesAcceptedHost(hostname: string, hostnameWithPort: string): boolean {
+  if (!hostname) return false;
+  const isBracketedIPv6 = hostnameWithPort.startsWith("[") && hostnameWithPort.includes("]");
+  return hostname.includes(".") || hostname === "localhost" || isBracketedIPv6;
 }
 
 function validateGitShorthand(source: string, repoPath: string, flagName: string): void {
@@ -597,14 +645,12 @@ export function isLocalSource(source: string): boolean {
   }
 
   const hasRemoteProtocol = REMOTE_PROTOCOLS.some((prefix) => source.startsWith(prefix));
+  if (hasRemoteProtocol) return false;
 
-  if (!hasRemoteProtocol) {
-    if (source.includes("..") || source.includes("~")) {
-      throw new Error(
-        `Invalid marketplace path: ${source}. Path traversal patterns like '..' and '~' are not allowed for security reasons. Use absolute paths or remote URLs instead (e.g., '/home/user/skills' or 'https://github.com/user/repo').`,
-      );
-    }
+  if (source.includes("..") || source.includes("~")) {
+    throw new Error(
+      `Invalid marketplace path: ${source}. Path traversal patterns like '..' and '~' are not allowed for security reasons. Use absolute paths or remote URLs instead (e.g., '/home/user/skills' or 'https://github.com/user/repo').`,
+    );
   }
-
-  return !hasRemoteProtocol;
+  return true;
 }

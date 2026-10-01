@@ -5,18 +5,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import {
-  FORKED_FROM_METADATA,
   agentsPath,
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
+  FORKED_FROM_METADATA,
   listFiles,
   loadConfigOrFail,
   readTestFile,
   readTreeSnapshot,
   runCLI,
   skillsPath,
+  sourceFolderIn,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -33,6 +34,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import type {
   FixtureProjectConfig,
   FixtureStackAgentConfig,
@@ -57,7 +59,7 @@ import type { AgentName } from "../../src/cli/types/index.js";
  *
  * Both halves have to land or the machine contradicts itself: the removal DIFF deletes
  * `~/.claude/skills/<id>` and the compiled global agent, and the config gate is what stops
- * `~/.claude-src/config.ts` going on declaring them. Every spec below reads both surfaces.
+ * the global `config.ts` going on declaring them. Every spec below reads both surfaces.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -76,12 +78,12 @@ type Fixture = {
 
 /** The bystander's own sub-agent preloads the GLOBAL skill, so its compiled agent tracks it. */
 const bystanderStack = {
-  [WEB_DEV]: { "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: true }] },
+  [WEB_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 /** The global installation's own sub-agent stack, which the same removal has to prune. */
 const globalStack = {
-  [API_DEV]: { "web-testing": [{ id: E2E_SKILL.vitest.id, preloaded: true }] },
+  [API_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
 /** The compiled project-scope agent a registered project owns. */
@@ -99,7 +101,7 @@ function bystanderAgentPath(dir: string): string {
 function snapshotEveryScope(fixture: Fixture): Promise<Record<string, TreeSnapshotEntry>[]> {
   return Promise.all(
     [fixture.home, fixture.projectA, fixture.projectB]
-      .flatMap((dir) => [path.join(dir, DIRS.CLAUDE_SRC), path.join(dir, DIRS.CLAUDE)])
+      .flatMap((dir) => [sourceFolderIn(dir), path.join(dir, DIRS.CLAUDE)])
       .map(readTreeSnapshot),
   );
 }

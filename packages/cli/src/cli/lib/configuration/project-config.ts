@@ -3,17 +3,29 @@ import path from "path";
 import { fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
+import type { Provider } from "../../consts";
 import type { ProjectConfig, ValidationResult } from "../../types";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { projectConfigLoaderSchema } from "../schemas";
 import { formatZodErrors } from "../schema-validator";
 import { getProjectConfigPath } from "../installation/install-base-dir";
+import { providerInUse } from "../installation/install-layout";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import { loadConfig } from "./config-loader";
 
 export type LoadedProjectConfig = {
   config: ProjectConfig;
   configPath: string;
+  /**
+   * Which installation this config was read out of.
+   *
+   * It says which installation the caller is holding, never which folder name it was found
+   * under: a pre-rename `.claude-src/` answers `claude` exactly as `.agents-inc/claude/` does.
+   * Carried on the read because nothing inside the file records it — the folder is the only
+   * record — so a caller that has to write back, compile, or name a host directory would
+   * otherwise have to re-derive the provider and could derive a different one.
+   */
+  provider: Provider;
 };
 
 /**
@@ -48,8 +60,9 @@ export class ConfigLoadError extends Error {
  */
 export async function loadProjectConfigFromDir(
   projectDir: string,
+  provider: Provider,
 ): Promise<LoadedProjectConfig | null> {
-  const configPath = getProjectConfigPath(projectDir);
+  const configPath = getProjectConfigPath(projectDir, provider);
   const scope = isHomeDirectory(projectDir) ? "global" : "project";
   const scopeLabel = scope === "project" ? "Project" : "Global";
 
@@ -113,7 +126,19 @@ export async function loadProjectConfigFromDir(
   return {
     config,
     configPath,
+    provider,
   };
+}
+
+/**
+ * The config of whichever installation `dir` holds, read off the folder.
+ *
+ * The sibling of `getInstalledConfigPath`, and the form every caller that holds a directory and
+ * no provider wants: the alternative is that same resolution written out at each of them, which
+ * is one concept with several definitions and no name.
+ */
+export async function loadInstalledConfig(dir: string): Promise<LoadedProjectConfig | null> {
+  return loadProjectConfigFromDir(dir, providerInUse(dir));
 }
 
 /**
@@ -141,7 +166,7 @@ export async function findConfigLoadFailures(projectDir: string): Promise<Config
 
 async function configLoadFailure(dir: string): Promise<ConfigLoadError | undefined> {
   try {
-    await loadProjectConfigFromDir(dir);
+    await loadInstalledConfig(dir);
     return undefined;
   } catch (error) {
     if (error instanceof ConfigLoadError) return error;
@@ -150,17 +175,29 @@ async function configLoadFailure(dir: string): Promise<ConfigLoadError | undefin
 }
 
 /**
- * Load project config with global fallback.
- * Checks the given projectDir first, then falls back to the home directory.
+ * Load the config of the installation this run is about: the project's own, falling back to the
+ * global one.
+ *
+ * **The fallback stays inside one provider, and the provider is read off the project rather than
+ * passed in.** Each provider family inherits only within itself — the owner's ruling, and what
+ * `.agents-inc/claude/` beside `.agents-inc/codex/` means — so a Codex project under a Claude
+ * global inherits nothing, exactly as it would if the global were absent.
+ *
+ * The provider is resolved here rather than at each of the dozen callers because every one of
+ * them holds a project directory and nothing else: twelve copies of the same resolution is twelve
+ * places for it to drift, and the answer comes back on {@link LoadedProjectConfig.provider} for
+ * the callers that need it. A caller that knows which installation it wants asks
+ * {@link loadProjectConfigFromDir} by name instead.
  */
 export async function loadProjectConfig(projectDir: string): Promise<LoadedProjectConfig | null> {
-  const projectResult = await loadProjectConfigFromDir(projectDir);
+  const provider = providerInUse(projectDir);
+  const projectResult = await loadProjectConfigFromDir(projectDir, provider);
   if (projectResult) return projectResult;
 
   // Global fallback: try home directory
   const homeDir = os.homedir();
   if (!isHomeDirectory(projectDir)) {
-    return loadProjectConfigFromDir(homeDir);
+    return loadProjectConfigFromDir(homeDir, provider);
   }
 
   return null;

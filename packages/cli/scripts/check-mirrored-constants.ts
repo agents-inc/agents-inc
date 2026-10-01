@@ -40,6 +40,11 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 const E2E_CONSTANTS = "e2e/pages/constants.ts";
 const EXIT_CODES_MODULE = "src/cli/lib/exit-codes.ts";
 const CONSTS = "src/cli/consts.ts";
+/**
+ * The path vocabulary's own home. `src/cli/consts.ts` re-exports these names and declares none of
+ * them, so a mirror bound there would compare against a re-export and say nothing about the value.
+ */
+const COMPILE_PATHS = "../compile/src/paths.ts";
 
 export const NO_SOURCE_FILE = "names a source file that does not exist";
 export const NO_SYMBOL = "names a symbol its source file does not declare";
@@ -97,6 +102,41 @@ export const MIRRORS: Mirror[] = [
     kind: "value",
     e2e: { file: E2E_CONSTANTS, symbol: "SOURCE_PATHS", path: ["PLUGINS_DIST"] },
     product: { file: CONSTS, symbol: "PLUGINS_DIST_PATH", path: [] },
+  },
+  /**
+   * Registered with the source-folder rename, which is the change that gave this pair a second
+   * name to drift towards.
+   *
+   * `DIRS.CLAUDE_SRC` is the e2e tree's copy of the folder every pre-rename installation carries,
+   * and it is used on dozens of lines across the E2E suite. While `.claude-src/` and
+   * `.agents-inc/<provider>/` are both live, a mirror that quietly moved to the new name would
+   * turn every one of those assertions into a statement about a folder the CLI does not write —
+   * and every one of them would go on passing, because they assert an absence as often as a
+   * presence.
+   */
+  {
+    name: "DIRS.CLAUDE_SRC",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "DIRS", path: ["CLAUDE_SRC"] },
+    product: { file: COMPILE_PATHS, symbol: "LEGACY_SOURCE_DIR", path: [] },
+  },
+  /**
+   * The other half of that pair, and it was the half left unregistered: `e2e/pages/constants.ts`
+   * declared `DIRS.SOURCE_ROOT` as mirroring `SOURCE_ROOT_DIR` while only the legacy row existed,
+   * so the file's own header — every mirrored value owes a third party comparing it — was true of
+   * one of the two names and not the other.
+   *
+   * It is the name `expectNoSourceFolder` asks after when neither provider folder is present, and
+   * an uninstall that leaves an emptied `.agents-inc/` behind is exactly what that assertion is
+   * for — so a mirror that drifted here would turn a cleanup claim into one about a directory
+   * nothing creates. `DIRS.SOURCE_CLAUDE` beside it stays unregistered on purpose: its production
+   * counterpart is `sourceDirName(provider)`, a function, and this check compares literals.
+   */
+  {
+    name: "DIRS.SOURCE_ROOT",
+    kind: "value",
+    e2e: { file: E2E_CONSTANTS, symbol: "DIRS", path: ["SOURCE_ROOT"] },
+    product: { file: COMPILE_PATHS, symbol: "SOURCE_ROOT_DIR", path: [] },
   },
   /**
    * Added 2026-09-01, after this exact pair drifted through a whole apex migration unnoticed.

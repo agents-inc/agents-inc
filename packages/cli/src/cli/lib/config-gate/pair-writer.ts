@@ -1,7 +1,9 @@
 import os from "os";
 import path from "path";
 import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../../types";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts";
+import type { Provider } from "../../consts";
+import { STANDARD_FILES } from "../../consts";
+import { sourceFolderInUse } from "../installation/install-layout";
 import { ensureDir, fileExists, readFile, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import {
@@ -41,11 +43,14 @@ export type GlobalPairPaths = {
 };
 
 /**
- * Resolves the global pair's paths. `os.homedir()` at call time, so they agree
+ * Resolves `provider`'s global pair paths. `os.homedir()` at call time, so they agree
  * with every other home-dir reader and with test home mocks.
+ *
+ * The provider is the asking run's, because the home root can hold a global installation of
+ * each and the pair belongs to exactly one of them.
  */
-export function globalPairPaths(): GlobalPairPaths {
-  const dir = path.join(os.homedir(), CLAUDE_SRC_DIR);
+export function globalPairPaths(provider: Provider): GlobalPairPaths {
+  const dir = sourceFolderInUse(os.homedir(), provider).dir;
   return {
     configPath: path.join(dir, STANDARD_FILES.CONFIG_TS),
     typesPath: path.join(dir, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -147,12 +152,12 @@ export async function writeGlobalPair(
 }
 
 /**
- * Creates a blank global pair at `~/.claude-src/` when none exists: `config.ts`
+ * Creates a blank global pair in `provider`'s home-scope source folder when none exists: `config.ts`
  * with empty arrays and `config-types.ts` with `never` unions. Returns true when
  * the files were created, false when they already existed.
  */
-export async function ensureBlankPair(): Promise<boolean> {
-  const { configPath, typesPath } = globalPairPaths();
+export async function ensureBlankPair(provider: Provider): Promise<boolean> {
+  const { configPath, typesPath } = globalPairPaths(provider);
 
   if (await fileExists(configPath)) {
     verbose("Global config already exists, skipping blank creation");

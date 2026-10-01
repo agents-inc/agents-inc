@@ -5,7 +5,15 @@ import { stripVTControlCharacters } from "node:util";
 import pty from "@lydell/node-pty";
 import { Terminal } from "@xterm/headless";
 import treeKill from "tree-kill";
-import { BIN_RUN, NO_BACKGROUND_VERSION_CHECK, cleanupTempDir, pollUntil } from "./test-utils.js";
+import {
+  BIN_RUN,
+  NO_BACKGROUND_VERSION_CHECK,
+  claudeConfigDir,
+  cleanupTempDir,
+  codexHome,
+  pollUntil,
+} from "./test-utils.js";
+import { withCodexOnIt } from "../fixtures/codex-on-path.js";
 import { TIMEOUTS } from "../pages/constants.js";
 
 const DEFAULT_COLS = 120;
@@ -14,6 +22,21 @@ const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
 function isDefinedEntry(entry: [string, string | undefined]): entry is [string, string] {
   return entry[1] !== undefined;
+}
+
+/**
+ * The HOME a session hands its binary, and the directory this session allocated for it when the
+ * caller named none — which is the one `destroy()` removes. A caller's HOME is never allocated here
+ * and never removed.
+ */
+function resolveSessionHome(explicitHome: string | undefined): {
+  home: string;
+  autoHomeDir: string | undefined;
+} {
+  if (explicitHome !== undefined) return { home: explicitHome, autoHomeDir: undefined };
+
+  const autoHomeDir = mkdtempSync(path.join(os.tmpdir(), AUTO_HOME_PREFIX));
+  return { home: autoHomeDir, autoHomeDir };
 }
 
 function getDefaultTimeout(): number {
@@ -81,11 +104,8 @@ export class TerminalSession {
     // fresh sibling temp dir (removed in destroy()) so os.homedir() never
     // collapses onto cwd/projectDir and silently forces a project edit/init
     // into global scope.
-    const explicitHome = options?.env?.HOME;
-    if (typeof explicitHome !== "string") {
-      this.autoHomeDir = mkdtempSync(path.join(os.tmpdir(), AUTO_HOME_PREFIX));
-    }
-    const home = this.autoHomeDir ?? explicitHome;
+    const { home, autoHomeDir } = resolveSessionHome(options?.env?.HOME);
+    this.autoHomeDir = autoHomeDir;
 
     // Build env: merge process.env, defaults, and overrides.
     // node-pty converts `undefined` values to the string "undefined" instead of
@@ -112,6 +132,19 @@ export class TerminalSession {
       GIGET_AUTH: undefined,
       ...options?.env,
       HOME: home,
+      // Each host's state directory, PINNED to this HOME after the caller's environment — the
+      // same position `CLI.run` and `runCLI` pin them in. Both variables beat `HOME` in the binary
+      // that reads them, so the `process.env` spread above would otherwise send every `claude` or
+      // `codex` call the wizard makes into the developer's own installation whenever their shell
+      // exports one. This door pinned neither until 2026-09-19.
+      CLAUDE_CONFIG_DIR: claudeConfigDir(home),
+      CODEX_HOME: codexHome(home),
+      // The pinned codex, PREPENDED to whatever PATH is in effect — the line `CLI.run` carries, for
+      // its reason: the product resolves its Codex host's binary BY NAME in this child, so a wizard
+      // run over a Codex installation otherwise found whatever `codex` this machine has, or none.
+      // Absent from this door until 2026-09-26, which no spec noticed because none drove the
+      // wizard over a Codex installation (CLI-894).
+      PATH: withCodexOnIt(options?.env?.["PATH"]),
       NO_COLOR: "1",
       FORCE_COLOR: "0",
       // The harness's own variable, never the product's. `warn({ suppressInTest: true })`

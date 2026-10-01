@@ -10,7 +10,12 @@ import {
   writeCorruptConfig,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  renderSchemaViolatingConfigTs,
+  renderUnparseableConfigTs,
+} from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
 /**
  * A configuration that exists and cannot be parsed is a state of its own, and `doctor` — the one
@@ -25,22 +30,22 @@ import { DIRS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
  */
 
 /** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
-const SYNTAX_ERROR = `export default {{{ not valid typescript`;
+const SYNTAX_ERROR = renderUnparseableConfigTs();
 
 /** A file that parses cleanly but exports nothing, so the loader gets no config object at all. */
 const NO_DEFAULT_EXPORT = "";
 
-/** How a config under the user's own home is rendered in a finding — `~/`-relative, as they say it. */
-const GLOBAL_CONFIG_DISPLAY_PATH = path.join("~", DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
+/**
+ * How a config under the user's own home is rendered in a finding — `~/`-relative, as they say it.
+ *
+ * A literal folder name: this is text doctor prints, and an assertion built from the constant the
+ * product renders it from would move with it and could never fail. These fixtures are installs
+ * this release created, so the folder is the one it creates.
+ */
+const GLOBAL_CONFIG_DISPLAY_PATH = path.join("~", ".agents-inc", "claude", FILES.CONFIG_TS);
 
 /** Valid TypeScript whose shape the loader schema rejects (`skills` must be an array). */
-const SCHEMA_VIOLATION = [
-  `export default {`,
-  `  name: "schema-violation-fixture",`,
-  `  skills: "nope",`,
-  `  agents: [],`,
-  `};`,
-].join("\n");
+const SCHEMA_VIOLATION = renderSchemaViolatingConfigTs();
 
 describe("doctor with an unreadable config", () => {
   let tempDir: string;
@@ -139,7 +144,10 @@ describe("doctor with an unreadable config", () => {
     const projectDir = path.join(tempDir, "project");
     const globalHome = path.join(tempDir, "home");
     await mkdir(projectDir, { recursive: true });
-    await writeProjectConfig(projectDir, { name: "intact-project", agents: [] });
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({ name: "intact-project", skills: [], agents: [] }),
+    );
     await writeCorruptConfig(globalHome, SYNTAX_ERROR);
 
     const { exitCode, stdout } = await CLI.run(
@@ -175,7 +183,10 @@ describe("doctor with an unreadable config", () => {
   /** The other control: a readable config reaches the operational layer as it always did. */
   it("reaches the operational layer when the config loads", async () => {
     tempDir = await createTempDir();
-    await writeProjectConfig(tempDir, { name: "intact-project", agents: [] });
+    await writeProjectConfig(
+      tempDir,
+      buildProjectConfig({ name: "intact-project", skills: [], agents: [] }),
+    );
 
     const { stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
@@ -192,7 +203,10 @@ describe("doctor with an unreadable config", () => {
    */
   it("names a config that loads and declares nothing instead of calling it missing", async () => {
     tempDir = await createTempDir();
-    await writeProjectConfig(tempDir, { name: "declares-nothing", agents: [] });
+    await writeProjectConfig(
+      tempDir,
+      buildProjectConfig({ name: "declares-nothing", skills: [], agents: [] }),
+    );
 
     const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
@@ -221,7 +235,10 @@ describe("doctor with an unreadable config", () => {
    */
   it("runs the rows underneath rather than skipping them as invalid", async () => {
     tempDir = await createTempDir();
-    await writeProjectConfig(tempDir, { name: "declares-nothing", agents: [] });
+    await writeProjectConfig(
+      tempDir,
+      buildProjectConfig({ name: "declares-nothing", skills: [], agents: [] }),
+    );
 
     const { stdout } = await CLI.run(["doctor"], { dir: tempDir });
 

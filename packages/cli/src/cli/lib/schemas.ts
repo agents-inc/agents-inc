@@ -370,7 +370,7 @@ const projectConfigFields = z
   .passthrough();
 
 /**
- * Lenient loader for .claude-src/config.ts (ProjectConfig).
+ * Lenient loader for a source folder's config.ts (ProjectConfig).
  * name/agents optional since partial configs are valid at load time.
  * Full validation happens in validateProjectConfig().
  */
@@ -645,7 +645,7 @@ const projectSourceConfigFields = z
   .passthrough();
 
 /**
- * Project source configuration from .claude-src/config.ts.
+ * Project source configuration from a source folder's config.ts.
  * Stores multi-source settings, custom directory overrides, and bound skills.
  */
 export const projectSourceConfigSchema = renamedFieldGuard.pipe(projectSourceConfigFields);

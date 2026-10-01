@@ -4,14 +4,19 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import { runCliCommand } from "../helpers/cli-runner.js";
-import { writeCorruptTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import {
+  writeRawTestConfig,
+  writeTestPackageJson,
+  writeTestTsConfig,
+} from "../helpers/config-io.js";
 import {
   writeTestInstalledPluginsRegistry,
   writeTestPluginManifest,
 } from "../helpers/disk-writers.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
-import { buildAgentConfigs } from "../factories/config-factories.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
+import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
+import { buildSkillConfigs, type FixtureProjectConfig } from "../helpers/wizard-simulation.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { validateSource } from "../../source-validator";
 import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
@@ -23,7 +28,6 @@ import {
   PLUGINS_SUBDIR,
   PUBLIC_CATALOGUE_PACKAGE,
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   STANDARD_DIRS,
@@ -126,9 +130,6 @@ const UNPARSEABLE_REGISTRY = "{ not valid json !!!";
 
 /** An agent file carrying no frontmatter — content the agents pass reports and nothing else reads. */
 const AGENT_MD_WITHOUT_FRONTMATTER = "# Just a plain markdown file, no frontmatter here.\n";
-
-/** A config file the loader cannot evaluate — present on disk, and describing nothing. */
-const UNREADABLE_CONFIG = "export default {{{ not valid typescript";
 
 /** A slug the fixture marketplaces below never ship, so a rule naming it resolves to nothing. */
 const DANGLING_RULE_SLUG = "angular-standalone";
@@ -371,10 +372,7 @@ async function buildSourceWithDanglingSlugAndAuditContradiction(sourceDir: strin
   const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
   const configDir = path.join(sourceDir, "config");
   await mkdir(configDir, { recursive: true });
-  await writeFile(
-    path.join(sourceDir, STANDARD_FILES.PACKAGE_JSON),
-    JSON.stringify({ name: PUBLIC_CATALOGUE_PACKAGE, version: "1.0.0" }),
-  );
+  await writeTestPackageJson(sourceDir, { name: PUBLIC_CATALOGUE_PACKAGE });
 
   await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
   await writeValidSourceSkill(skillsDir, UNIVERSAL_VERDICT_SKILL.id, UNIVERSAL_VERDICT_SKILL);
@@ -418,17 +416,20 @@ async function buildInvalidSource(sourceDir: string): Promise<void> {
 async function setupValidatedProject(
   tempDir: string,
   projectDir: string,
-  configOverrides?: Record<string, unknown>,
+  configOverrides: Partial<FixtureProjectConfig> = {},
 ): Promise<string> {
   const sourceDir = path.join(tempDir, "source");
   await buildValidSource(sourceDir);
-  await writeTestTsConfig(projectDir, {
-    name: "test-project",
-    skills: [],
-    agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
-    marketplace: sourceDir,
-    ...configOverrides,
-  });
+  await writeTestTsConfig(
+    projectDir,
+    buildProjectConfig({
+      name: "test-project",
+      skills: [],
+      agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+      marketplace: sourceDir,
+      ...configOverrides,
+    }),
+  );
   return sourceDir;
 }
 
@@ -471,12 +472,15 @@ describe("doctor content checks", () => {
     it("should stand down only the row a broken primary source can mislead", async () => {
       const sourceDir = path.join(tempDir, "source");
       await buildInvalidSource(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
-        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
-        marketplace: sourceDir,
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+          marketplace: sourceDir,
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -492,12 +496,15 @@ describe("doctor content checks", () => {
     });
 
     it("should skip remote sources and not count them as errors", async () => {
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: buildAgentConfigs(["web-developer"]),
-        marketplace: TEST_SOURCE_URL,
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: TEST_SOURCE_URL,
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -511,12 +518,15 @@ describe("doctor content checks", () => {
       const primarySourceDir = path.join(tempDir, "primary-source");
       await buildValidSource(primarySourceDir);
 
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: buildAgentConfigs(["web-developer"]),
-        marketplace: primarySourceDir,
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: primarySourceDir,
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -560,12 +570,15 @@ describe("doctor content checks", () => {
 
     it("should exit with ERROR when a registered source path does not exist", async () => {
       const missingSourceDir = path.join(tempDir, "does-not-exist");
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: [],
-        agents: buildAgentConfigs(["web-developer"]),
-        marketplace: missingSourceDir,
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: missingSourceDir,
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -579,14 +592,17 @@ describe("doctor content checks", () => {
       // Source with no skills directory → 1 error.
       const sourceDir = path.join(tempDir, "source");
       await mkdir(sourceDir, { recursive: true });
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        // The configuration names the skill below, which is what makes its directory this
-        // installation's to judge — a metadata.yaml that is gone can carry no provenance.
-        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
-        agents: buildAgentConfigs(["web-developer"]),
-        marketplace: sourceDir,
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          // The configuration names the skill below, which is what makes its directory this
+          // installation's to judge — a metadata.yaml that is gone can carry no provenance.
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: sourceDir,
+        }),
+      );
 
       // Plugin with invalid JSON in plugin.json → 1 error.
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "broken-plugin");
@@ -629,12 +645,15 @@ describe("doctor content checks", () => {
     it("should warn without failing for a slug the marketplace it reads from dangles", async () => {
       const sourceDir = path.join(tempDir, "source");
       await buildSourceWithDanglingRuleSlug(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
-        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
-        marketplace: sourceDir,
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+          marketplace: sourceDir,
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -652,12 +671,15 @@ describe("doctor content checks", () => {
     it("should stand no operational row down for a marketplace warning", async () => {
       const sourceDir = path.join(tempDir, "source");
       await buildSourceWithDanglingRuleSlug(sourceDir);
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
-        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
-        marketplace: sourceDir,
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+          marketplace: sourceDir,
+        }),
+      );
 
       const { stdout } = await runCliCommand(["doctor"]);
 
@@ -1164,12 +1186,15 @@ describe("doctor content checks", () => {
     it("should walk the shared skills and agents directories once when cwd === homedir()", async () => {
       const sourceDir = path.join(tempDir, "source");
       await buildValidSource(sourceDir);
-      await writeTestTsConfig(fakeHome, {
-        name: "test-project",
-        skills: [],
-        agents: buildAgentConfigs(["web-developer"]),
-        marketplace: sourceDir,
-      });
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "test-project",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: sourceDir,
+        }),
+      );
 
       // Install a skill and an agent under the fake-home location only.
       await writeValidInstalledSkill(
@@ -1261,7 +1286,7 @@ describe("doctor content checks", () => {
       const { stdout } = await runCliCommand(["doctor"]);
 
       expect(stdout).toContain(ROW_CONFIG_VALID);
-      expect(stdout).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`);
+      expect(stdout).toContain(`.agents-inc/claude/${STANDARD_FILES.CONFIG_TS} is valid`);
       expect(stdout).toContain(ROW_MARKETPLACE_REACHABLE);
       expect(stdout).toContain(`Connected to local: ${sourceDir}`);
       expect(
@@ -1306,8 +1331,14 @@ describe("doctor content checks", () => {
     });
 
     /**
-     * Twelve rows are printed and one of them stands down, so eleven verdicts are what the counts
-     * add up to. A summary that folded the skipped row into `passed` would claim one nobody reached.
+     * Fourteen rows are printed and one of them stands down, so thirteen verdicts are what the
+     * counts add up to. A summary that folded the skipped row into `passed` would claim one nobody
+     * reached.
+     *
+     * The count IS this spec's subject, which is why it stays a count: the claim is arithmetic —
+     * that the skipped row is counted nowhere — and no roster of row names can state it. The
+     * breakdown below is what keeps the number legible when it moves, and it has moved twice: the
+     * Layout row took the passes from 8 to 9, and the Placements Offered row from 9 to 10.
      */
     it("counts only the rows it actually ran", async () => {
       await setupProjectWithOperationalFindings();
@@ -1316,9 +1347,9 @@ describe("doctor content checks", () => {
       const { stdout } = await runCliCommand(["doctor"]);
 
       // Four content rows pass and the skills pass fails; of the operational rows the config,
-      // agents, plugins and marketplace rows pass, orphans and installed skills warn, and the
-      // skills row stands down — counted nowhere.
-      expect(stdout).toContain("Summary: 8 passed, 2 warnings, 1 error");
+      // layout, placements, agents, plugins and marketplace rows pass, orphans and installed skills
+      // warn, and the skills row stands down — counted nowhere.
+      expect(stdout).toContain("Summary: 10 passed, 2 warnings, 1 error");
     });
 
     it("stands the plugins row down when the registry it reads cannot be parsed", async () => {
@@ -1355,7 +1386,7 @@ describe("doctor content checks", () => {
 
       const { stdout } = await runCliCommand(["doctor"]);
 
-      expect(stdout).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`);
+      expect(stdout).toContain(`.agents-inc/claude/${STANDARD_FILES.CONFIG_TS} is valid`);
       expect(stdout).toContain(ROW_NO_ORPHANS);
       expect(stdout).toContain(`Connected to local: ${sourceDir}`);
       expect(
@@ -1381,7 +1412,7 @@ describe("doctor content checks", () => {
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain("Missing or invalid YAML frontmatter");
       expect(stdout).not.toContain(SKIP_AFTER_CONTENT_ERRORS);
-      expect(stdout).toContain(`${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS} is valid`);
+      expect(stdout).toContain(`.agents-inc/claude/${STANDARD_FILES.CONFIG_TS} is valid`);
       expect(stdout).toContain("1/1 skills found");
       expect(stdout).toContain("1/1 agents compiled");
       expect(stdout).toContain("2 orphaned agent files");
@@ -1398,7 +1429,7 @@ describe("doctor content checks", () => {
      */
     it("keeps the whole layer down when the config every row reads cannot be loaded", async () => {
       await setupProjectWithOperationalFindings();
-      await writeCorruptTestConfig(projectDir, UNREADABLE_CONFIG);
+      await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 

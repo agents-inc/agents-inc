@@ -7,7 +7,6 @@ import {
   formatInstallationDisplay,
   type InstallationInfo,
 } from "./plugin-info";
-import type { Installation } from "../installation";
 import type { SkillDefinitionMap, SkillId } from "../../types";
 import {
   CLAUDE_DIR,
@@ -47,6 +46,10 @@ import { directoryExists } from "../../utils/fs";
 import { detectInstallation } from "../installation";
 import { loadProjectConfig } from "../configuration";
 import { buildProjectConfig } from "../__tests__/factories/config-factories";
+import {
+  buildInstallation,
+  buildPluginInstallation,
+} from "../__tests__/factories/installation-factories.js";
 import { createMockSkillDefinition } from "../__tests__/factories/skill-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 
@@ -55,6 +58,13 @@ const mockedDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
 const mockedDirectoryExists = vi.mocked(directoryExists);
 const mockedDetectInstallation = vi.mocked(detectInstallation);
 const mockedLoadProjectConfig = vi.mocked(loadProjectConfig);
+
+/**
+ * The project every installation below is detected at. `getInstallationInfo` resolves both agents
+ * directories from `installation.projectDir` — never from the installation's own `agentsDir` — so
+ * a spec whose report names a directory hands this root to the factory and joins its paths from it.
+ */
+const PROJECT_DIR = "/project";
 
 /** Skills a `claude plugin install --scope user` leaves enabled under the home root. */
 const GLOBAL_PLUGIN_SKILLS: SkillDefinitionMap = {
@@ -103,37 +113,29 @@ describe("plugin-info", () => {
     });
 
     it("should return local installation info", async () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const agentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const skillsDir = path.join("/project", CLAUDE_DIR, "skills");
-      const installation: Installation = {
-        mode: "eject",
-        configPath,
-        agentsDir,
-        skillsDir,
-        projectDir: "/project",
-      };
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const agentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const skillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
-      mockedDetectInstallation.mockResolvedValue(installation);
+      mockedDetectInstallation.mockResolvedValue(
+        buildInstallation({
+          mode: "eject",
+          configPath,
+          agentsDir,
+          skillsDir,
+          projectDir: PROJECT_DIR,
+        }),
+      );
       mockedDirectoryExists.mockResolvedValue(true);
 
       // Exact paths, not suffixes: getInstallationInfo also counts the global
       // scope, whose dirs share the same trailing segments.
-      // Boundary cast: mock readdir return type for each branch
-      mockedReaddir.mockImplementation((dirPath) => {
-        const dir = dirPath as string;
-        if (dir === skillsDir) {
-          return Promise.resolve([
-            createDirent("web-framework-react", { isDir: true }),
-            createDirent("web-state-zustand", { isDir: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        if (dir === agentsDir) {
-          return Promise.resolve([
-            createDirent("web-developer.md", { isFile: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        return Promise.resolve([]);
+      mockReaddirByDir({
+        [skillsDir]: [
+          createDirent("web-framework-react", { isDir: true }),
+          createDirent("web-state-zustand", { isDir: true }),
+        ],
+        [agentsDir]: [createDirent("web-developer.md", { isFile: true })],
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
@@ -144,6 +146,7 @@ describe("plugin-info", () => {
           }),
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -159,48 +162,32 @@ describe("plugin-info", () => {
     });
 
     it("counts skills and agents at both scopes and names both agents directories", async () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const projectSkillsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const projectSkillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const globalSkillsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.SKILLS);
-      const installation: Installation = {
-        mode: "eject",
-        configPath,
-        agentsDir: projectAgentsDir,
-        skillsDir: projectSkillsDir,
-        projectDir: "/project",
-      };
 
-      mockedDetectInstallation.mockResolvedValue(installation);
+      mockedDetectInstallation.mockResolvedValue(
+        buildInstallation({
+          configPath,
+          agentsDir: projectAgentsDir,
+          skillsDir: projectSkillsDir,
+          projectDir: PROJECT_DIR,
+        }),
+      );
       mockedDirectoryExists.mockResolvedValue(true);
-
-      // Boundary cast: mock readdir return type for each branch
-      mockedReaddir.mockImplementation((dirPath) => {
-        const dir = dirPath as string;
-        if (dir === projectSkillsDir) {
-          return Promise.resolve([
-            createDirent("web-framework-react", { isDir: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        if (dir === globalSkillsDir) {
-          return Promise.resolve([
-            createDirent("web-state-zustand", { isDir: true }),
-            createDirent("web-testing-vitest", { isDir: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        if (dir === projectAgentsDir) {
-          return Promise.resolve([
-            createDirent("web-developer.md", { isFile: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        if (dir === globalAgentsDir) {
-          return Promise.resolve([
-            createDirent("api-developer.md", { isFile: true }),
-            createDirent("reviewer.md", { isFile: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        return Promise.resolve([]);
+      mockReaddirByDir({
+        [projectSkillsDir]: [createDirent("web-framework-react", { isDir: true })],
+        [globalSkillsDir]: [
+          createDirent("web-state-zustand", { isDir: true }),
+          createDirent("web-testing-vitest", { isDir: true }),
+        ],
+        [projectAgentsDir]: [createDirent("web-developer.md", { isFile: true })],
+        [globalAgentsDir]: [
+          createDirent("api-developer.md", { isFile: true }),
+          createDirent("reviewer.md", { isFile: true }),
+        ],
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
@@ -218,6 +205,7 @@ describe("plugin-info", () => {
           ],
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -232,13 +220,13 @@ describe("plugin-info", () => {
     });
 
     it("names only the global agents directory when every agent is installed globally", async () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const globalSkillsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
       mockedDetectInstallation.mockResolvedValue(
-        buildInstallation({ configPath, agentsDir: projectAgentsDir }),
+        buildInstallation({ configPath, agentsDir: projectAgentsDir, projectDir: PROJECT_DIR }),
       );
       mockedDirectoryExists.mockResolvedValue(true);
       mockReaddirByDir({
@@ -251,6 +239,7 @@ describe("plugin-info", () => {
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({ name: "global-only", skills: [] }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -264,12 +253,12 @@ describe("plugin-info", () => {
     });
 
     it("names only the project agents directory when every agent is installed in the project", async () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const projectSkillsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const projectSkillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
       mockedDetectInstallation.mockResolvedValue(
-        buildInstallation({ configPath, agentsDir: projectAgentsDir }),
+        buildInstallation({ configPath, agentsDir: projectAgentsDir, projectDir: PROJECT_DIR }),
       );
       mockedDirectoryExists.mockResolvedValue(true);
       mockReaddirByDir({
@@ -279,6 +268,7 @@ describe("plugin-info", () => {
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({ name: "project-only", skills: [] }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -292,7 +282,7 @@ describe("plugin-info", () => {
     });
 
     it("names no agents directory when no scope holds compiled agents", async () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
 
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
@@ -300,6 +290,7 @@ describe("plugin-info", () => {
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({ name: "no-agents", skills: [] }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -316,32 +307,17 @@ describe("plugin-info", () => {
       const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
       const agentsDir = path.join(homeDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const skillsDir = path.join(homeDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
-      const installation: Installation = {
-        mode: "eject",
-        configPath,
-        agentsDir,
-        skillsDir,
-        projectDir: homeDir,
-      };
 
-      mockedDetectInstallation.mockResolvedValue(installation);
+      mockedDetectInstallation.mockResolvedValue(
+        buildInstallation({ configPath, agentsDir, skillsDir, projectDir: homeDir }),
+      );
       mockedDirectoryExists.mockResolvedValue(true);
-
-      // Boundary cast: mock readdir return type for each branch
-      mockedReaddir.mockImplementation((dirPath) => {
-        const dir = dirPath as string;
-        if (dir === skillsDir) {
-          return Promise.resolve([
-            createDirent("web-framework-react", { isDir: true }),
-            createDirent("web-state-zustand", { isDir: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        if (dir === agentsDir) {
-          return Promise.resolve([
-            createDirent("web-developer.md", { isFile: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        return Promise.resolve([]);
+      mockReaddirByDir({
+        [skillsDir]: [
+          createDirent("web-framework-react", { isDir: true }),
+          createDirent("web-state-zustand", { isDir: true }),
+        ],
+        [agentsDir]: [createDirent("web-developer.md", { isFile: true })],
       });
 
       mockedLoadProjectConfig.mockResolvedValue({
@@ -353,6 +329,7 @@ describe("plugin-info", () => {
           }),
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -364,16 +341,15 @@ describe("plugin-info", () => {
     });
 
     it("should return plugin installation info", async () => {
-      const agentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const installation: Installation = {
-        mode: "plugin",
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-        agentsDir,
-        skillsDir: path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR),
-        projectDir: "/project",
-      };
+      const agentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
 
-      mockedDetectInstallation.mockResolvedValue(installation);
+      mockedDetectInstallation.mockResolvedValue(
+        buildPluginInstallation({
+          configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+          agentsDir,
+          projectDir: PROJECT_DIR,
+        }),
+      );
       mockedDirectoryExists.mockResolvedValue(true);
 
       mockedLoadProjectConfig.mockResolvedValue({
@@ -381,30 +357,25 @@ describe("plugin-info", () => {
           name: "my-plugin",
           skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         }),
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        provider: "claude",
       });
 
       // Plugin mode uses discoverAllPluginSkills instead of readdir
       mockedDiscoverAllPluginSkills.mockResolvedValue({
-        "web-framework-react": {
-          id: "web-framework-react",
+        "web-framework-react": createMockSkillDefinition("web-framework-react", {
           description: "React",
           path: "/global/cache/react",
-        },
-      } satisfies Record<string, import("../../types").SkillDefinition>);
+        }),
+      });
 
       // Exact path, not a suffix: getInstallationInfo also counts the global
       // agents dir, which shares the same trailing segment.
-      // Boundary cast: mock readdir return type for each branch
-      mockedReaddir.mockImplementation((dirPath) => {
-        const dir = dirPath as string;
-        if (dir === agentsDir) {
-          return Promise.resolve([
-            createDirent("agent-1.md", { isFile: true }),
-            createDirent("agent-2.md", { isFile: true }),
-          ]) as unknown as ReturnType<typeof readdir>;
-        }
-        return Promise.resolve([]);
+      mockReaddirByDir({
+        [agentsDir]: [
+          createDirent("agent-1.md", { isFile: true }),
+          createDirent("agent-2.md", { isFile: true }),
+        ],
       });
 
       const result = await getInstallationInfo();
@@ -414,13 +385,13 @@ describe("plugin-info", () => {
         name: "my-plugin",
         skillCount: 1,
         agentCount: 2,
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
         agentDirs: [agentsDir],
       });
     });
 
     it("counts plugin skills enabled at the home root when the command runs in a project", async () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
 
       mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
@@ -435,6 +406,7 @@ describe("plugin-info", () => {
           }),
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -447,11 +419,13 @@ describe("plugin-info", () => {
     });
 
     it("counts a plugin skill enabled at both scopes once", async () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
 
-      mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
+      mockedDetectInstallation.mockResolvedValue(
+        buildPluginInstallation({ configPath, projectDir: PROJECT_DIR }),
+      );
       mockedDirectoryExists.mockResolvedValue(true);
       mockReaddirByDir({
         [globalAgentsDir]: [createDirent("api-developer.md", { isFile: true })],
@@ -459,7 +433,7 @@ describe("plugin-info", () => {
       });
       mockPluginSkillsByDir({
         [os.homedir()]: GLOBAL_PLUGIN_SKILLS,
-        "/project": PROJECT_PLUGIN_SKILLS,
+        [PROJECT_DIR]: PROJECT_PLUGIN_SKILLS,
       });
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({
@@ -476,6 +450,7 @@ describe("plugin-info", () => {
           ],
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -523,6 +498,7 @@ describe("plugin-info", () => {
           }),
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -535,20 +511,14 @@ describe("plugin-info", () => {
     });
 
     it("should use default name when local config has no name", async () => {
-      const mockConfigPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const installation: Installation = {
-        mode: "eject",
-        configPath: mockConfigPath,
-        agentsDir: path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS),
-        skillsDir: path.join("/project", CLAUDE_DIR, "skills"),
-        projectDir: "/project",
-      };
+      const mockConfigPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
 
-      mockedDetectInstallation.mockResolvedValue(installation);
+      mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath: mockConfigPath }));
       mockedDirectoryExists.mockResolvedValue(false);
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({ name: "", agents: [], skills: [] }),
         configPath: mockConfigPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -558,15 +528,7 @@ describe("plugin-info", () => {
     });
 
     it("should use default name when loadProjectConfig returns null", async () => {
-      const installation: Installation = {
-        mode: "eject",
-        configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-        agentsDir: path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS),
-        skillsDir: path.join("/project", CLAUDE_DIR, "skills"),
-        projectDir: "/project",
-      };
-
-      mockedDetectInstallation.mockResolvedValue(installation);
+      mockedDetectInstallation.mockResolvedValue(buildInstallation());
       mockedDirectoryExists.mockResolvedValue(false);
       mockedLoadProjectConfig.mockResolvedValue(null);
 
@@ -577,20 +539,14 @@ describe("plugin-info", () => {
     });
 
     it("should handle readdir errors gracefully for skills", async () => {
-      const mockConfigPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const installation: Installation = {
-        mode: "eject",
-        configPath: mockConfigPath,
-        agentsDir: path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS),
-        skillsDir: path.join("/project", CLAUDE_DIR, "skills"),
-        projectDir: "/project",
-      };
+      const mockConfigPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
 
-      mockedDetectInstallation.mockResolvedValue(installation);
+      mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath: mockConfigPath }));
       mockedDirectoryExists.mockResolvedValue(true);
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({ name: "test", agents: [], skills: [] }),
         configPath: mockConfigPath,
+        provider: "claude",
       });
 
       mockedReaddir.mockRejectedValue(new Error("EACCES permission denied"));
@@ -617,8 +573,8 @@ describe("plugin-info", () => {
    * so each mode gets a fixture where that source under-reports.
    */
   describe("the skill count is what the configuration declares", () => {
-    const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-    const projectSkillsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+    const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const projectSkillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
     it("counts a mixed installation's plugin skills, which own no directory on disk", async () => {
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ mode: "mixed", configPath }));
@@ -638,6 +594,7 @@ describe("plugin-info", () => {
           ],
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -662,6 +619,7 @@ describe("plugin-info", () => {
           skills: buildSkillConfigs(MARKETPLACE_SKILL_IDS, { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -687,6 +645,7 @@ describe("plugin-info", () => {
           skills: buildSkillConfigs(MARKETPLACE_SKILL_IDS, { origin: EJECT_SOURCE }),
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -711,6 +670,7 @@ describe("plugin-info", () => {
           skills: buildSkillConfigs(MARKETPLACE_SKILL_IDS, { origin: EJECT_SOURCE }),
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -747,6 +707,7 @@ describe("plugin-info", () => {
           ],
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -783,6 +744,7 @@ describe("plugin-info", () => {
           ],
         }),
         configPath,
+        provider: "claude",
       });
 
       const result = await getInstallationInfo();
@@ -797,8 +759,8 @@ describe("plugin-info", () => {
 
   describe("formatInstallationDisplay", () => {
     it("should format eject installation info", () => {
-      const configPath = path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
-      const agentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const agentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const info = buildInstallationInfo({
         name: "my-project",
         skillCount: 5,
@@ -819,7 +781,7 @@ describe("plugin-info", () => {
 
     it("prints one agents path line per directory that holds agents", () => {
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const info = buildInstallationInfo({
         name: "dual-scope-project",
         skillCount: 3,
@@ -835,7 +797,7 @@ describe("plugin-info", () => {
 
     it("prints no directory the agents are not in", () => {
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
-      const projectAgentsDir = path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const info = buildInstallationInfo({
         name: "global-only",
         skillCount: 7,
@@ -906,31 +868,10 @@ function buildInstallationInfo(overrides: Partial<InstallationInfo> = {}): Insta
     name: "my-project",
     skillCount: 5,
     agentCount: 3,
-    configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-    agentDirs: [path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS)],
+    configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+    agentDirs: [path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS)],
     ...overrides,
   };
-}
-
-/** Eject-mode installation rooted at `/project`, i.e. a project context whose global root is HOME. */
-function buildInstallation(overrides: Partial<Installation> = {}): Installation {
-  return {
-    mode: "eject",
-    configPath: path.join("/project", CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-    agentsDir: path.join("/project", CLAUDE_DIR, STANDARD_DIRS.AGENTS),
-    skillsDir: path.join("/project", CLAUDE_DIR, STANDARD_DIRS.SKILLS),
-    projectDir: "/project",
-    ...overrides,
-  };
-}
-
-/** Plugin-mode installation rooted at `/project`, whose skills live in the plugin registry. */
-function buildPluginInstallation(overrides: Partial<Installation> = {}): Installation {
-  return buildInstallation({
-    mode: "plugin",
-    skillsDir: path.join("/project", CLAUDE_DIR, PLUGINS_SUBDIR),
-    ...overrides,
-  });
 }
 
 /**
@@ -948,15 +889,15 @@ function mockPluginSkillsByDir(skillsByDir: Record<string, SkillDefinitionMap>):
 function mockReaddirByDir(entriesByDir: Record<string, Dirent[]>): void {
   mockedReaddir.mockImplementation(
     (dirPath) =>
-      // Boundary cast: readdir's overloaded return type cannot be inferred from a mock
+      // Boundary cast: a mock is typed against readdir's LAST overload, whose entries are
+      // `Dirent<NonSharedBuffer>`; the call under test is the `withFileTypes` string overload.
       Promise.resolve(entriesByDir[dirPath as string] ?? []) as unknown as ReturnType<
         typeof readdir
       >,
   );
 }
 
-function createDirent(name: string, opts: { isDir?: boolean; isFile?: boolean }) {
-  // Boundary cast: mock Dirent for test — only implements methods used by production code
+function createDirent(name: string, opts: { isDir?: boolean; isFile?: boolean }): Dirent {
   return {
     name,
     isDirectory: () => opts.isDir ?? false,
@@ -967,6 +908,5 @@ function createDirent(name: string, opts: { isDir?: boolean; isFile?: boolean })
     isSocket: () => false,
     isSymbolicLink: () => false,
     parentPath: "",
-    path: "",
-  } as unknown as import("fs").Dirent;
+  };
 }

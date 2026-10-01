@@ -1,43 +1,38 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import os from "os";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { buildProjectConfig } from "../__tests__/factories/config-factories";
+import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories";
+import { renderUnparseableConfigTs } from "../__tests__/factories/unloadable-config-factories";
+import { writeRawTestConfig, writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, PLUGINS_SUBDIR, STANDARD_FILES } from "../../consts";
+import { SKILLS } from "../__tests__/test-fixtures";
+import { CLAUDE_DIR, DEFAULT_PUBLIC_SOURCE_NAME, PLUGINS_SUBDIR } from "../../consts";
+import { getProjectConfigPath } from "./install-base-dir.js";
 
 // Mock logger (suppress verbose/warn output during tests)
 vi.mock("../../utils/logger");
 
 import { detectInstallation, detectProjectInstallation } from "./installation";
-import { renderConfigTs } from "../__tests__/content-generators";
 
-const LOCAL_CONFIG = buildProjectConfig({
+/**
+ * An installation holding a sub-agent and no skill at all. The sub-agent is what makes it an
+ * installation — a config declaring neither is content-less and detection answers `null` for it —
+ * and the empty skill list is what `deriveInstallMode` reads as eject.
+ */
+const AN_EJECT_INSTALLATION = buildProjectConfig({
   name: "my-project",
+  agents: buildAgentConfigs(["web-developer"]),
   skills: [],
 });
 
-async function createLocalProject(
-  projectDir: string,
-  options: { configContent?: Record<string, unknown> } = {},
-): Promise<void> {
-  const { configContent = LOCAL_CONFIG } = options;
-  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-  await mkdir(configDir, { recursive: true });
-  await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(configContent));
-}
-
-const PLUGIN_CONFIG = buildProjectConfig({
+/** The same installation with its one skill installed from the public marketplace: plugin mode. */
+const A_PLUGIN_INSTALLATION = buildProjectConfig({
   name: "my-project",
-  skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
+  agents: buildAgentConfigs(["web-developer"]),
+  skills: buildSkillConfigs([SKILLS.react.id], { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
 });
-
-async function createPluginProject(projectDir: string): Promise<void> {
-  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
-  await mkdir(configDir, { recursive: true });
-  await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), renderConfigTs(PLUGIN_CONFIG));
-}
 
 describe("installation", () => {
   let tempDir: string;
@@ -58,22 +53,22 @@ describe("installation", () => {
   });
 
   describe("detectInstallation", () => {
-    it("detects local installation with .claude-src/config.ts", async () => {
-      await createLocalProject(tempDir);
+    it("detects a local installation from the config.ts in its source folder", async () => {
+      await writeTestTsConfig(tempDir, AN_EJECT_INSTALLATION);
 
       const result = await detectInstallation(tempDir);
 
       expect(result).not.toBeNull();
       expect(result!.mode).toBe("eject");
 
-      expect(result!.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
+      expect(result!.configPath).toBe(getProjectConfigPath(tempDir, "claude"));
       expect(result!.agentsDir).toBe(path.join(tempDir, CLAUDE_DIR, "agents"));
       expect(result!.skillsDir).toBe(path.join(tempDir, CLAUDE_DIR, "skills"));
       expect(result!.projectDir).toBe(tempDir);
     });
 
-    it("defaults to eject mode when installMode is not set", async () => {
-      await createLocalProject(tempDir, { configContent: LOCAL_CONFIG });
+    it("defaults to eject mode for an installation holding no skill", async () => {
+      await writeTestTsConfig(tempDir, AN_EJECT_INSTALLATION);
 
       const result = await detectInstallation(tempDir);
 
@@ -81,15 +76,15 @@ describe("installation", () => {
       expect(result!.mode).toBe("eject");
     });
 
-    it("detects plugin installation when installMode is plugin", async () => {
-      await createPluginProject(tempDir);
+    it("detects plugin installation when its skill comes from a marketplace", async () => {
+      await writeTestTsConfig(tempDir, A_PLUGIN_INSTALLATION);
 
       const result = await detectInstallation(tempDir);
 
       expect(result).not.toBeNull();
       expect(result!.mode).toBe("plugin");
 
-      expect(result!.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
+      expect(result!.configPath).toBe(getProjectConfigPath(tempDir, "claude"));
       expect(result!.agentsDir).toBe(path.join(tempDir, CLAUDE_DIR, "agents"));
       expect(result!.skillsDir).toBe(path.join(tempDir, CLAUDE_DIR, PLUGINS_SUBDIR));
       expect(result!.projectDir).toBe(tempDir);
@@ -116,12 +111,7 @@ describe("installation", () => {
       // A config file that exists but cannot be parsed must NOT be treated as an
       // eject installation — that phantom install lets compile run config-less and
       // resurrect deselected agents. Detection surfaces the corruption instead.
-      const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        "invalid typescript content {{",
-      );
+      await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
 
       await expect(detectInstallation(tempDir)).rejects.toThrow("could not be loaded");
     });
@@ -131,12 +121,23 @@ describe("installation", () => {
       const result = await detectProjectInstallation(tempDir);
 
       expect(result).toBeNull();
+
+      // The half that can fail. The null above holds for a detection that ignored its argument
+      // and read the process's own working directory whenever that directory holds no
+      // installation either, so the same directory is asked again once it holds one: an answer
+      // that follows the directory handed in is what says the parameter is the one being read.
+      await writeTestTsConfig(tempDir, AN_EJECT_INSTALLATION);
+
+      expect(
+        await detectInstallation(tempDir),
+        "detection answered for a directory other than the one it was handed",
+      ).toMatchObject({ projectDir: tempDir });
     });
   });
 
   describe("detectProjectInstallation", () => {
     it("returns project-scoped installation when config exists", async () => {
-      await createLocalProject(tempDir);
+      await writeTestTsConfig(tempDir, AN_EJECT_INSTALLATION);
 
       const result = await detectProjectInstallation(tempDir);
 
@@ -155,7 +156,7 @@ describe("installation", () => {
   describe("global fallback", () => {
     it("falls back to global when project config not found", async () => {
       // Project dir has no config; the isolated home does -> fallback to global
-      await createLocalProject(fakeHome);
+      await writeTestTsConfig(fakeHome, AN_EJECT_INSTALLATION);
 
       const result = await detectInstallation(tempDir);
 
@@ -171,7 +172,7 @@ describe("installation", () => {
 
     it("project takes precedence over global", async () => {
       // Project config exists — should use project, not global
-      await createLocalProject(tempDir);
+      await writeTestTsConfig(tempDir, AN_EJECT_INSTALLATION);
 
       const result = await detectInstallation(tempDir);
 

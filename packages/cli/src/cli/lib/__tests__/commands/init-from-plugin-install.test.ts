@@ -7,7 +7,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
-import { buildGateReport, buildSourceResult } from "../factories/config-factories.js";
+import { buildAgentDefs } from "../factories/agent-factories.js";
+import {
+  buildConfigWriteResult,
+  buildProjectConfig,
+  buildSourceResult,
+} from "../factories/config-factories.js";
+import {
+  buildCompilationResult,
+  buildDiscoveredSkills,
+  buildLoadedSource,
+} from "../factories/operation-result-factories.js";
 import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
 import { REACT_HONO_WEB_API_DOMAINS_MATRIX } from "../mock-data/mock-matrices";
 import { initializeMatrix } from "../../matrix/matrix-provider";
@@ -15,6 +25,14 @@ import { EXIT_CODES } from "../../exit-codes";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import { buildMarketplacePluginRef } from "../../plugins/plugin-ref.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
+import type { PluginHost } from "../../hosts/plugin-host.js";
+import type {
+  compileAgentsAllScopes,
+  discoverInstalledSkills,
+  loadAgentDefs,
+  loadSource,
+  writeProjectConfig,
+} from "../../operations/index.js";
 import type { SkillId } from "../../../types";
 
 /**
@@ -39,9 +57,15 @@ const MARKETPLACE = "drift-lock-marketplace";
 const SEED_ID = "DriftLock1";
 const WEB_DEV = "web-developer";
 
-/** Project-scoped in the payload — the Claude CLI calls that scope "project". */
+/** Project-scoped in the payload, and therefore at the seam. */
 const PROJECT_SKILL_ID = "web-framework-react" satisfies SkillId;
-/** Global-scoped in the payload — the Claude CLI calls that scope "user". */
+/**
+ * Global-scoped in the payload, and therefore at the seam.
+ *
+ * The seam speaks this product's scope words; Claude's own are `user` and `project`, and the
+ * translation is the Claude host's — `lib/hosts/__tests__/the-claude-host-spawns-what-it-spawns-today.test.ts`
+ * is where `--scope user` is pinned.
+ */
 const GLOBAL_SKILL_ID = "api-framework-hono" satisfies SkillId;
 
 const PROJECT_SKILL_REF = buildMarketplacePluginRef(PROJECT_SKILL_ID, MARKETPLACE);
@@ -50,32 +74,32 @@ const GLOBAL_SKILL_REF = buildMarketplacePluginRef(GLOBAL_SKILL_ID, MARKETPLACE)
 const CLAUDE_INSTALL_FAILURE = "Plugin installation failed: no such plugin";
 
 const {
-  mockClaudePluginInstall,
+  mockInstallPlugin,
   mockLoadSource,
   mockWriteProjectConfig,
   mockLoadAgentDefs,
   mockDiscoverInstalledSkills,
   mockCompileAgentsAllScopes,
 } = vi.hoisted(() => ({
-  mockClaudePluginInstall: vi.fn(),
-  mockLoadSource: vi.fn(),
-  mockWriteProjectConfig: vi.fn(),
-  mockLoadAgentDefs: vi.fn(),
-  mockDiscoverInstalledSkills: vi.fn(),
-  mockCompileAgentsAllScopes: vi.fn(),
+  // Typed against the real functions, so a field a stub returns that the product has retired is
+  // a compile error here rather than a dead value nothing reads.
+  mockInstallPlugin: vi.fn<PluginHost["installPlugin"]>(),
+  mockLoadSource: vi.fn<typeof loadSource>(),
+  mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
+  mockLoadAgentDefs: vi.fn<typeof loadAgentDefs>(),
+  mockDiscoverInstalledSkills: vi.fn<typeof discoverInstalledSkills>(),
+  mockCompileAgentsAllScopes: vi.fn<typeof compileAgentsAllScopes>(),
 }));
 
-// The one seam below the spine: everything from `installPluginSkills` upward runs
-// for real, so the ref and the scope this records are the ones the Claude CLI
-// would have been handed. The marketplace calls are stubbed too — `init` resolves
-// the marketplace before it installs anything, and that resolution shells out.
-vi.mock("../../../utils/exec.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../utils/exec.js")>()),
-  claudePluginInstall: (...args: unknown[]) => mockClaudePluginInstall(...(args as [])),
-  claudePluginMarketplaceExists: vi.fn().mockResolvedValue(true),
-  claudePluginMarketplaceUpdate: vi.fn().mockResolvedValue(undefined),
-  isClaudeCLIAvailable: vi.fn().mockResolvedValue(true),
-}));
+// The one seam below the spine: everything from `installPluginSkills` upward runs for real, so
+// the ref and the scope this records are the ones the host would have been handed. The whole host
+// is stubbed rather than one member — `init` resolves the marketplace before it installs
+// anything, and that resolution shells out too.
+vi.mock("../../hosts/host-for.js", async () => {
+  const { createMockPluginHost } = await import("../helpers/mock-plugin-host.js");
+  const host = createMockPluginHost({ installPlugin: mockInstallPlugin });
+  return { hostAt: () => host, hostFor: () => host };
+});
 
 // `installPluginSkills` and `pluginInstallFailureError` are deliberately NOT
 // overridden — they are the spine. Only the source load and the write/compile
@@ -84,11 +108,11 @@ vi.mock("../../operations/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../operations/index.js")>();
   return {
     ...original,
-    loadSource: (...args: unknown[]) => mockLoadSource(...(args as [])),
-    loadAgentDefs: (...args: unknown[]) => mockLoadAgentDefs(...(args as [])),
-    writeProjectConfig: (...args: unknown[]) => mockWriteProjectConfig(...(args as [])),
-    discoverInstalledSkills: (...args: unknown[]) => mockDiscoverInstalledSkills(...(args as [])),
-    compileAgentsAllScopes: (...args: unknown[]) => mockCompileAgentsAllScopes(...(args as [])),
+    loadSource: mockLoadSource,
+    loadAgentDefs: mockLoadAgentDefs,
+    writeProjectConfig: mockWriteProjectConfig,
+    discoverInstalledSkills: mockDiscoverInstalledSkills,
+    compileAgentsAllScopes: mockCompileAgentsAllScopes,
   };
 });
 
@@ -128,9 +152,9 @@ function serveSeed(payload: SeedPayload): void {
   configMockServer.use(storedConfigHandlerFor(SEED_ID, payload));
 }
 
-/** `claudePluginInstall` arguments as `[ref, scope]`, dropping the project dir. */
+/** The host's `installPlugin` arguments as `[ref, scope]`, dropping the project dir. */
 function installedRefsAndScopes(): Array<[string, string]> {
-  return mockClaudePluginInstall.mock.calls.map(([ref, scope]) => [ref, scope]);
+  return mockInstallPlugin.mock.calls.map(([ref, scope]) => [ref, scope]);
 }
 
 describe("init --from: plugin install spine", () => {
@@ -165,39 +189,21 @@ describe("init --from: plugin install spine", () => {
     // decode reads from the ACTIVE matrix, not from sourceResult.
     initializeMatrix(REACT_HONO_WEB_API_DOMAINS_MATRIX);
 
-    mockLoadSource.mockResolvedValue({
-      sourceResult: buildSourceResult(REACT_HONO_WEB_API_DOMAINS_MATRIX, tempDir, {
-        marketplace: MARKETPLACE,
-      }),
-      startupMessages: [],
-    });
-    mockWriteProjectConfig.mockResolvedValue({
-      config: { name: "drift-lock", skills: [], agents: [] },
-      configPath: path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-      wasMerged: false,
-      filesWritten: 1,
-      propagation: buildGateReport(),
-    });
-    mockLoadAgentDefs.mockResolvedValue({
-      agents: {},
-      sourcePath: tempDir,
-      agentSourcePaths: { agentsDir: tempDir, sourcePath: tempDir },
-    });
-    mockDiscoverInstalledSkills.mockResolvedValue({
-      allSkills: {},
-      totalSkillCount: 0,
-      pluginSkillCount: 0,
-      localSkillCount: 0,
-      globalPluginSkillCount: 0,
-      globalLocalSkillCount: 0,
-    });
-    mockCompileAgentsAllScopes.mockResolvedValue({
-      compiled: [],
-      rewritten: [],
-      failed: [],
-      warnings: [],
-    });
-    mockClaudePluginInstall.mockResolvedValue(undefined);
+    mockLoadSource.mockResolvedValue(
+      buildLoadedSource(
+        buildSourceResult(REACT_HONO_WEB_API_DOMAINS_MATRIX, tempDir, { marketplace: MARKETPLACE }),
+      ),
+    );
+    mockWriteProjectConfig.mockResolvedValue(
+      buildConfigWriteResult(
+        buildProjectConfig({ name: "drift-lock", skills: [], agents: [] }),
+        path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+      ),
+    );
+    mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
+    mockDiscoverInstalledSkills.mockResolvedValue(buildDiscoveredSkills());
+    mockCompileAgentsAllScopes.mockResolvedValue(buildCompilationResult());
+    mockInstallPlugin.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -216,11 +222,11 @@ describe("init --from: plugin install spine", () => {
     // something nobody asked for. Both are invisible to a per-call assertion.
     expect(installedRefsAndScopes()).toStrictEqual([
       [PROJECT_SKILL_REF, "project"],
-      [GLOBAL_SKILL_REF, "user"],
+      [GLOBAL_SKILL_REF, "global"],
     ]);
     // Third argument: every install is anchored to the directory the command runs
     // in, which is what decides where a project-scoped install is recorded.
-    for (const call of mockClaudePluginInstall.mock.calls) {
+    for (const call of mockInstallPlugin.mock.calls) {
       expect(call[2]).toBe(process.cwd());
     }
   });
@@ -231,7 +237,7 @@ describe("init --from: plugin install spine", () => {
     await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
     expect(mockWriteProjectConfig).toHaveBeenCalledTimes(1);
-    const [installOrder] = mockClaudePluginInstall.mock.invocationCallOrder.slice(-1);
+    const [installOrder] = mockInstallPlugin.mock.invocationCallOrder.slice(-1);
     const [writeOrder] = mockWriteProjectConfig.mock.invocationCallOrder;
     expect(
       installOrder,
@@ -259,7 +265,7 @@ describe("init --from: plugin install spine", () => {
       "a project-scoped payload at the global root must not exit successfully",
     ).toBeDefined();
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-    expect(mockClaudePluginInstall).not.toHaveBeenCalled();
+    expect(mockInstallPlugin).not.toHaveBeenCalled();
     expect(mockWriteProjectConfig).not.toHaveBeenCalled();
   });
 
@@ -267,7 +273,7 @@ describe("init --from: plugin install spine", () => {
     serveSeed(buildTwoScopePluginPayload());
     // The first skill installs, the second does not — the partial-failure shape.
     // A config written here would claim BOTH skills are installed.
-    mockClaudePluginInstall
+    mockInstallPlugin
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error(CLAUDE_INSTALL_FAILURE));
 

@@ -1,5 +1,3 @@
-import type { ClaudePluginScope, SkillScope } from "../../types/config.js";
-
 /**
  * Marketplace-qualified plugin reference (`{id}@{marketplace}`) — the form the
  * Claude CLI plugin registry expects. Bare ids do not match registry entries.
@@ -15,13 +13,4 @@ export function buildMarketplacePluginRef(id: string, marketplace: string): stri
 export function parseMarketplacePluginRef(ref: string): string {
   const separator = ref.indexOf("@");
   return separator === -1 ? ref : ref.slice(0, separator);
-}
-
-/**
- * Maps a cc scope to the Claude CLI plugin scope: `"global"` installs are
- * user-scoped in Claude (registered in `~/.claude/settings.json`); anything
- * else — including an absent scope — is project-scoped.
- */
-export function toClaudePluginScope(scope: SkillScope | undefined): ClaudePluginScope {
-  return scope === "global" ? "user" : "project";
 }

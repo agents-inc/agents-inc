@@ -7,8 +7,10 @@ import {
   MARKETPLACE_JSON,
   STANDARD_FILES,
   editorConfigUrl,
+  type Provider,
 } from "../consts.js";
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
+import type { ScopeKind } from "../lib/installation/source-scopes.js";
 import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
 import type { AgentName, SkillId } from "../types/index.js";
 
@@ -19,7 +21,6 @@ export const ERROR_MESSAGES = {
   FAILED_RESOLVE_SOURCE: "Failed to resolve marketplace",
   FAILED_LOAD_AGENT_PARTIALS: "Failed to load agent partials",
   FAILED_COMPILE_AGENTS: "Failed to compile agents",
-  CLAUDE_CLI_NOT_FOUND: `Claude CLI not found — '${CLI_INVOKE_COMMAND} update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`,
   /**
    * What `compile` refuses with when every pass discovered zero skills. It is reached only
    * after an installation was detected, so the state it describes is a configuration with
@@ -35,6 +36,40 @@ export const SUCCESS_MESSAGES = {
   UNINSTALL_COMPLETE: "Uninstall complete!",
   PLUGIN_COMPILE_COMPLETE: "Plugin compile complete!",
 } as const;
+
+/**
+ * How each provider's own CLI is named, and what a user does about it not being there.
+ *
+ * A table keyed on {@link Provider} rather than a sentence built from the provider's own value:
+ * "Codex CLI" and "Claude Code" are proper names, and the thing to DO about each is a different
+ * fact again — one is a product to install, the other is an npm package whose bin has to reach
+ * PATH. Neither is derivable from the four letters the folder is named after.
+ *
+ * The Codex row names the package this repository pins as a devDependency rather than a download
+ * page, because the package is a fact this tree can be held against
+ * (`packages/cli/package.json` -> `@openai/codex`) and a URL is one it cannot.
+ */
+const HOST_CLI: Record<Provider, { name: string; install: string }> = {
+  claude: { name: "Claude CLI", install: "Install Claude Code first: https://claude.ai/code" },
+  codex: {
+    name: "Codex CLI",
+    install: "Install the '@openai/codex' package first, so that 'codex' is on PATH",
+  },
+};
+
+/**
+ * What a command says when the host binary its work goes through is not on the machine.
+ *
+ * It was a constant naming Claude until C4, with one caller — true while Claude was the only host,
+ * and a wrong answer the moment a Codex installation could resolve one: a machine with no `codex`
+ * was told to install Claude Code, which is neither the binary that is missing nor a step that
+ * would help. The provider comes from the host the caller is already holding, so the line cannot
+ * disagree with the installation it is about.
+ */
+export function hostCliNotFound(provider: Provider): string {
+  const cli = HOST_CLI[provider];
+  return `${cli.name} not found — '${CLI_INVOKE_COMMAND} update' refreshes marketplaces through it. ${cli.install}`;
+}
 
 /**
  * `init`'s closing line, under the name the run prints itself as.
@@ -733,4 +768,116 @@ export function localSkillsRemoval(skillsDir: string): string {
  */
 export function compiledAgentsRemoval(agentsDir: string): string {
   return `${agentsDir}/ (CLI-compiled)`;
+}
+
+// --- The source folder rename: doctor's Layout row, and the rival-folder refusal --------------
+//
+// Every sentence below names BOTH folders, and never from a literal: which one a scope is on is
+// resolved from disk, and the same sentence is printed by more than one command. The Layout row
+// reports, the write commands refuse — two surfaces describing one state, so one builder each and
+// no command holding its own copy.
+//
+// **No sentence here names a command that moves a source folder, because there is none.** Moving
+// one is a manual step, and the messages that meet a user in that state say so rather than
+// handing out an invocation that would exit 127.
+
+/** How a sentence names the directory a source folder sits under, mid-sentence. */
+export function scopeNoun(kind: ScopeKind): string {
+  return kind === "project" ? "this project" : "the global installation";
+}
+
+/** The same noun where it starts a sentence — doctor's rows and the refusal. */
+export function scopeLabel(kind: ScopeKind): string {
+  return sentenceCase(scopeNoun(kind));
+}
+
+function sentenceCase(text: string): string {
+  return `${text.slice(0, 1).toUpperCase()}${text.slice(1)}`;
+}
+
+/**
+ * Two rival folders in one scope.
+ *
+ * Shared by doctor's Layout row and the write commands' refusal on purpose: a state one of them
+ * calls a collision and the other does not is a state a user cannot get out of.
+ *
+ * `readFrom` is the folder the resolver ACTUALLY picked and is the only half of this sentence a
+ * reader has to be told — the two names in front of the dash are settled by the layout itself.
+ * It is a parameter rather than `to` for the reason the state exists: the preference order takes
+ * whichever folder holds a `config.ts` before it looks at content, so the live folder is very
+ * often the OLD one.
+ */
+export function bothSourceFoldersPresent(from: string, to: string, readFrom: string): string {
+  return `both ${from}/ and ${to}/ are on disk — ${readFrom}/ is the one being read`;
+}
+
+/**
+ * What a write command says when a scope in play holds two rival source folders.
+ *
+ * A refusal rather than a warning, and the reason is the preference order: with two folders on
+ * disk the resolver prefers whichever holds a config, which can perfectly well be the STALE one —
+ * so a write that went ahead would land in a folder nothing compiles, beside a folder holding the
+ * sub-agents the user is about to lose sight of. Reading is left alone deliberately: a user in
+ * this state has to be able to look at it, which is what `doctor`'s Layout row is for.
+ *
+ * The remedy is stated as the manual operation it is. Nothing in this CLI merges two source
+ * folders or moves one, so the sentence names the folder being read and asks the user to move
+ * what they want into it — a sentence that handed out a command would be handing out one that
+ * does not exist.
+ */
+export function rivalSourceFoldersRefuseWrites(
+  kinds: readonly ScopeKind[],
+  from: string,
+  to: string,
+  readFrom: string,
+): string {
+  const subject = sentenceCase(kinds.map(scopeNoun).join(" and "));
+  const verb = kinds.length === 1 ? "holds" : "hold";
+  const other = readFrom === from ? to : from;
+  return `${subject} ${verb} both ${from}/ and ${to}/ — ${readFrom}/ is the one being read, so anything under ${other}/ is invisible to this CLI. No command merges them: move what you want to keep from ${other}/ into ${readFrom}/ yourself, then delete ${other}/. '${CLI_INVOKE_COMMAND} doctor' still reports on either.`;
+}
+
+/**
+ * The line the run ENDS on, kept short because oclif hard-wraps its errors at the terminal width.
+ *
+ * The sentence above it goes through `warn()` for that reason — it names three folders and an
+ * invocation, none of which survives being broken across a line — and this is what is left for
+ * the error itself to carry.
+ */
+export const WRITE_REFUSED_RIVAL_SOURCE_FOLDERS =
+  "Refusing to write while two source folders are on disk.";
+
+/**
+ * The heading over the registered projects still on the old name, and the caveat it carries.
+ *
+ * The caveat is not optional politeness: the registry holds a fraction of the installations on a
+ * machine — one entry against six on the machine this was written for — so a list printed without
+ * it reads as an inventory and under-reports by whatever the factor happens to be.
+ */
+export const REGISTRY_IS_NOT_AN_INVENTORY =
+  "Registered projects still on the old folder — this list is the registry, not an inventory of this machine:";
+
+/**
+ * doctor's Layout row for a scope still on the retired name.
+ *
+ * It is a `warn` rather than a fail and the sentence has to carry that: nothing is broken, the
+ * installation is read and written where it is for as long as the user leaves it there. What the
+ * row owes is the name of the folder this release would create and the fact that getting there is
+ * a manual move — there is no command, so naming one would send a reader to a 127.
+ */
+export function layoutIsLegacy(label: string, from: string, to: string): string {
+  return `${label} is on ${from}/, which this CLI goes on reading and writing — move its contents into ${to}/ by hand to be on the current layout`;
+}
+
+/** doctor's Layout row for a scope this release reads and writes without doing anything. */
+export function layoutIsCurrent(label: string, to: string): string {
+  return `${label} is on ${to}/`;
+}
+
+/**
+ * An installed agent whose prompt tells it to author into a folder this installation does not
+ * read, so every file it writes there silently never compiles.
+ */
+export function compiledAgentNamesTheOtherFolder(agentFile: string, unusedFolder: string): string {
+  return `${agentFile} names a source folder this installation does not use (${unusedFolder}/) — recompile it with '${CLI_INVOKE_COMMAND} compile'`;
 }

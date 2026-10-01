@@ -1,23 +1,32 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
+import { foundByName } from "../helpers/found-by-name.js";
+import { pathHoldingOnly } from "../helpers/path-holding-only.js";
 import {
-  createTempDir,
+  agentsPath,
   cleanupTempDir,
+  createLocalSkill,
+  createTempDir,
   directoryExists,
   fileExists,
-  readTestFile,
-  renderSkillMd,
-  writeProjectConfig,
-  writeAgentFile,
-  agentsPath,
-  skillsPath,
   FORKED_FROM_METADATA,
+  readTestFile,
+  sourceFolderIn,
+  writeAgentFile,
+  writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
+import { withCodexOnIt } from "../fixtures/codex-on-path.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { buildClaudeSettings } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
  * Plugin-mode uninstall E2E tests — edge cases.
@@ -37,44 +46,47 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 /**
  * Creates a standard uninstall test project with config, a skill, and agents.
  * Returns the project directory and paths to key directories for assertions.
+ *
+ * `enabledPlugins` writes a `.claude/settings.json` switching those plugin keys on; without it
+ * the project has no settings file at all.
  */
 async function createUninstallableProject(
   tempDir: string,
   options: {
     configName: string;
     skillSource: string;
-    settingsJson?: string;
+    enabledPlugins?: readonly string[];
   },
 ): Promise<{ projectDir: string; skillDir: string; agentsDir: string }> {
   const projectDir = path.join(tempDir, "project");
 
-  await writeProjectConfig(projectDir, {
-    name: options.configName,
-    skills: [
-      {
-        id: E2E_SKILL.react.id,
+  await writeProjectConfig(
+    projectDir,
+    buildProjectConfig({
+      name: options.configName,
+      skills: buildSkillConfigs([E2E_SKILL.react.id], {
         scope: "project",
         origin: options.skillSource,
-      },
-    ],
-    agents: [{ name: "web-developer", scope: "project" }],
-    selectedDomains: ["web"],
-  });
-
-  const skillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
-  await mkdir(skillDir, { recursive: true });
-  await writeFile(
-    path.join(skillDir, FILES.SKILL_MD),
-    renderSkillMd(E2E_SKILL.react.id, "React framework", "# React\n\nTest content."),
+      }),
+      agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      selectedDomains: ["web"],
+    }),
   );
-  await writeFile(path.join(skillDir, FILES.METADATA_YAML), FORKED_FROM_METADATA);
+
+  const skillDir = await createLocalSkill(projectDir, E2E_SKILL.react.id, {
+    description: "React framework",
+    body: "# React\n\nTest content.",
+    metadata: FORKED_FROM_METADATA,
+  });
 
   const agentsDir = agentsPath(projectDir);
   await writeAgentFile(projectDir, "web-developer", { frontmatter: true, body: "" });
 
-  if (options.settingsJson) {
-    const claudeDir = path.join(projectDir, DIRS.CLAUDE);
-    await writeFile(path.join(claudeDir, FILES.SETTINGS_JSON), options.settingsJson);
+  if (options.enabledPlugins) {
+    await writeFile(
+      path.join(projectDir, DIRS.CLAUDE, FILES.SETTINGS_JSON),
+      JSON.stringify(buildClaudeSettings(options.enabledPlugins)),
+    );
   }
 
   return { projectDir, skillDir, agentsDir };
@@ -128,12 +140,7 @@ describe("uninstall with plugin config but no installed plugins", () => {
     const { projectDir, skillDir } = await createUninstallableProject(tempDir, {
       configName: "local-only-project",
       skillSource: "eject",
-      settingsJson: JSON.stringify({
-        permissions: { allow: ["Read(*)"] },
-        enabledPlugins: {
-          "manual-plugin@some-marketplace": true,
-        },
-      }),
+      enabledPlugins: ["manual-plugin@some-marketplace"],
     });
 
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
@@ -158,7 +165,7 @@ describe("uninstall with plugin config but no installed plugins", () => {
       skillSource: "fake-marketplace",
     });
 
-    const configDir = path.join(projectDir, DIRS.CLAUDE_SRC);
+    const configDir = sourceFolderIn(projectDir);
     expect(await directoryExists(configDir)).toBe(true);
 
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], {
@@ -188,13 +195,7 @@ describe("uninstall preserves non-CLI plugins", () => {
     const { projectDir, skillDir } = await createUninstallableProject(tempDir, {
       configName: "preserve-manual-plugins-test",
       skillSource: "some-marketplace",
-      settingsJson: JSON.stringify({
-        permissions: { allow: ["Read(*)"] },
-        enabledPlugins: {
-          "web-framework-react@some-marketplace": true,
-          "manual-plugin@other-marketplace": true,
-        },
-      }),
+      enabledPlugins: ["web-framework-react@some-marketplace", "manual-plugin@other-marketplace"],
     });
 
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
@@ -216,14 +217,11 @@ describe("uninstall preserves non-CLI plugins", () => {
     const { projectDir } = await createUninstallableProject(tempDir, {
       configName: "multi-plugin-test",
       skillSource: "marketplace-a",
-      settingsJson: JSON.stringify({
-        permissions: { allow: ["Read(*)"] },
-        enabledPlugins: {
-          "web-framework-react@marketplace-a": true,
-          "some-other-skill@marketplace-b": true,
-          "third-party-tool@external-source": true,
-        },
-      }),
+      enabledPlugins: [
+        "web-framework-react@marketplace-a",
+        "some-other-skill@marketplace-b",
+        "third-party-tool@external-source",
+      ],
     });
 
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
@@ -254,26 +252,31 @@ describe("uninstall without Claude CLI on PATH", () => {
     const { projectDir, skillDir, agentsDir } = await createUninstallableProject(tempDir, {
       configName: "no-claude-cli-test",
       skillSource: "some-marketplace",
-      settingsJson: JSON.stringify({
-        permissions: { allow: ["Read(*)"] },
-        enabledPlugins: {
-          "web-framework-react@some-marketplace": true,
-        },
-      }),
+      enabledPlugins: ["web-framework-react@some-marketplace"],
     });
 
     expect(await directoryExists(skillDir)).toBe(true);
     expect(await directoryExists(agentsDir)).toBe(true);
 
-    // Use a minimal PATH that includes node and basic Unix utilities but NOT claude.
-    const minimalPath = [path.dirname(process.execPath), "/usr/bin", "/bin"].join(":");
+    // A PATH holding node and sh alone, each linked to the one this suite found. Never a list of
+    // directories: node's own bin directory is where `npm i -g @anthropic-ai/claude-code` puts
+    // `claude`, so a PATH naming that directory hands the binary back on every machine that
+    // installed it that way — and this spec then passes without running the branch it is named for.
+    const pathWithoutClaude = await pathHoldingOnly({ root: tempDir }, ["node", "sh"]);
+
+    // The subject guard, asked of the PATH the command is actually handed — `CLI.run` puts the
+    // pinned codex in front of whatever PATH it is given.
+    expect(
+      await foundByName("claude", withCodexOnIt(pathWithoutClaude)),
+      "the uninstall below would run with a claude on its PATH, so it could not show the binary's absence is survived",
+    ).toBe("");
 
     const { exitCode, stdout, stderr } = await CLI.run(
       ["uninstall", "--yes"],
       { dir: projectDir },
       {
         env: {
-          PATH: minimalPath,
+          PATH: pathWithoutClaude,
           HOME: projectDir,
         },
       },

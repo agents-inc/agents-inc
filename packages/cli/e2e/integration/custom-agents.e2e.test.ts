@@ -1,17 +1,31 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
-import { cleanupTempDir, renderAgentYaml, writeProjectConfig } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  renderAgentYaml,
+  sourceFolderIn,
+  writeProjectConfig,
+} from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
-import type { SkillId, AgentName } from "../../src/cli/types/index.js";
+import { EXIT_CODES, FILES } from "../pages/constants.js";
+import type { AgentName } from "../../src/cli/types/index.js";
 import { CLI } from "../fixtures/cli.js";
-
-const E2E_COMPILE_SKILL = "web-testing-e2e-compile" as SkillId;
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
- * Writes a custom agent structure under .claude-src/agents/<agentName>/
+ * A fabricated skill id: nothing writes it to disk, and only the config names it. Held as the
+ * string a fixture config accepts rather than cast into the `SkillId` union.
+ */
+const E2E_COMPILE_SKILL = "web-testing-e2e-compile";
+
+/**
+ * Writes a custom agent structure under <source folder>/agents/<agentName>/
  * with metadata.yaml, identity.md, and optionally playbook.md.
  */
 async function createCustomAgent(
@@ -26,7 +40,7 @@ async function createCustomAgent(
     domain?: string;
   },
 ): Promise<string> {
-  const agentDir = path.join(projectDir, DIRS.CLAUDE_SRC, "agents", agentName);
+  const agentDir = path.join(sourceFolderIn(projectDir), "agents", agentName);
   await mkdir(agentDir, { recursive: true });
 
   const metadataYaml =
@@ -71,14 +85,17 @@ describe("custom sub-agents", () => {
       });
 
       // Update config to reference the custom agent
-      await writeProjectConfig(projectDir, {
-        name: "e2e-custom-agent-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
-        agents: [
-          { name: "web-developer", scope: "project" },
-          { name: "my-custom-agent" as AgentName, scope: "project" }, // fabricated E2E test ID
-        ],
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-custom-agent-test",
+          skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
+          // "my-custom-agent" is a fabricated E2E test ID
+          agents: buildAgentConfigs(["web-developer", "my-custom-agent" as AgentName], {
+            scope: "project",
+          }),
+        }),
+      );
 
       const { exitCode } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -132,14 +149,17 @@ describe("custom sub-agents", () => {
       });
 
       // Config includes both built-in and custom agents
-      await writeProjectConfig(projectDir, {
-        name: "e2e-coexistence-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
-        agents: [
-          { name: "web-developer", scope: "project" },
-          { name: "my-custom-agent" as AgentName, scope: "project" }, // fabricated E2E test ID
-        ],
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-coexistence-test",
+          skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
+          // "my-custom-agent" is a fabricated E2E test ID
+          agents: buildAgentConfigs(["web-developer", "my-custom-agent" as AgentName], {
+            scope: "project",
+          }),
+        }),
+      );
 
       const { exitCode } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -177,11 +197,15 @@ describe("custom sub-agents", () => {
         domain: "web",
       });
 
-      await writeProjectConfig(projectDir, {
-        name: "e2e-missing-workflow-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
-        agents: [{ name: "incomplete-agent" as AgentName, scope: "project" }], // fabricated E2E test ID
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-missing-workflow-test",
+          skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
+          // "incomplete-agent" is a fabricated E2E test ID
+          agents: buildAgentConfigs(["incomplete-agent" as AgentName], { scope: "project" }),
+        }),
+      );
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
@@ -198,19 +222,22 @@ describe("custom sub-agents", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      const agentDir = path.join(projectDir, DIRS.CLAUDE_SRC, "agents", "broken-agent");
-      await mkdir(agentDir, { recursive: true });
-
-      // Write an empty metadata.yaml (missing required fields)
-      await writeFile(path.join(agentDir, FILES.METADATA_YAML), "");
-      await writeFile(path.join(agentDir, FILES.IDENTITY_MD), "Some intro");
-      await writeFile(path.join(agentDir, FILES.PLAYBOOK_MD), "Some workflow");
-
-      await writeProjectConfig(projectDir, {
-        name: "e2e-empty-metadata-test",
-        skills: [{ id: E2E_COMPILE_SKILL, scope: "project", origin: "eject" }],
-        agents: [{ name: "broken-agent" as AgentName, scope: "project" }], // fabricated E2E test ID
+      // An empty metadata.yaml (missing every required field) — the subject, named here.
+      await createCustomAgent(projectDir, "broken-agent", {
+        metadataYaml: "",
+        identityContent: "Some intro",
+        playbookContent: "Some workflow",
       });
+
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "e2e-empty-metadata-test",
+          skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
+          // "broken-agent" is a fabricated E2E test ID
+          agents: buildAgentConfigs(["broken-agent" as AgentName], { scope: "project" }),
+        }),
+      );
 
       const { output } = await CLI.run(["compile"], { dir: projectDir });
 

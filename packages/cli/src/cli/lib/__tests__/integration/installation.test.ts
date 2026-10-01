@@ -1,16 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, DEFAULT_PLUGIN_NAME, STANDARD_FILES } from "../../../consts";
+import { mkdir } from "fs/promises";
+import { CLAUDE_DIR, DEFAULT_PLUGIN_NAME } from "../../../consts";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 import { buildProjectConfig } from "../factories/config-factories.js";
+import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { detectInstallation } from "../../installation";
-import { writeTestTsConfig } from "../helpers/config-io.js";
+import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import type { ProjectConfig } from "../../../types";
 
-/** Writes a `.claude-src/config.ts` with the given config into the temp dir. */
+/** Writes a `config.ts` into the source folder the temp dir is on. */
 async function writeInstallationConfig(tempDir: string, config: ProjectConfig): Promise<void> {
   await writeTestTsConfig(tempDir, config);
 }
@@ -27,14 +29,14 @@ describe("installation", () => {
   });
 
   describe("detectInstallation - eject mode", () => {
-    it("should return eject installation when .claude-src/config.ts exists", async () => {
+    it("should return eject installation when the project config.ts exists", async () => {
       await writeInstallationConfig(tempDir, buildProjectConfig());
 
       const result = await detectInstallation(tempDir);
 
       expect(result).not.toBeNull();
       expect(result?.mode).toBe("eject");
-      expect(result?.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
+      expect(result?.configPath).toBe(getProjectConfigPath(tempDir, "claude"));
       expect(result?.projectDir).toBe(tempDir);
     });
 
@@ -72,7 +74,7 @@ describe("installation", () => {
 
       expect(result).not.toBeNull();
       expect(result?.mode).toBe("plugin");
-      expect(result?.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
+      expect(result?.configPath).toBe(getProjectConfigPath(tempDir, "claude"));
       expect(result?.projectDir).toBe(tempDir);
     });
 
@@ -147,16 +149,11 @@ describe("installation", () => {
 
       expect(result).not.toBeNull();
       expect(result?.mode).toBe("plugin");
-      expect(result?.configPath).toBe(path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS));
+      expect(result?.configPath).toBe(getProjectConfigPath(tempDir, "claude"));
     });
 
     it("surfaces a corrupt config file instead of treating it as eject mode", async () => {
-      const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        "invalid typescript content {{",
-      );
+      await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
 
       // A file that exists but cannot be parsed must not become a phantom eject
       // installation — detection surfaces the corruption so callers can report it.

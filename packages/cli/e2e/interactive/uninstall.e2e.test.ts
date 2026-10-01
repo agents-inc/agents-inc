@@ -1,7 +1,8 @@
 import path from "path";
 import { describe, it, expect, afterEach } from "vitest";
 import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT } from "../pages/constants.js";
-import { cleanupTempDir, directoryExists } from "../helpers/test-utils.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
+import { cleanupTempDir, directoryExists, sourceFolderIn } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
@@ -138,7 +139,7 @@ describe("uninstall interactive", () => {
 
       expect(await directoryExists(skillsDir)).toBe(true);
       expect(await directoryExists(agentsDir)).toBe(true);
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(true);
+      expect(await directoryExists(sourceFolderIn(projectDir))).toBe(true);
     });
 
     it("should cancel when user presses Enter (default is cancel)", async () => {
@@ -214,8 +215,11 @@ describe("uninstall interactive", () => {
 
       expect(await directoryExists(skillsDir)).toBe(false);
       expect(await directoryExists(agentsDir)).toBe(false);
-      // The config manifest is now removed by default, emptying .claude-src/
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(false);
+      // The config manifest is now removed by default, emptying the source folder
+      await expectNoSourceFolder(
+        projectDir,
+        "removing the config manifest empties the source folder, so uninstall takes it away",
+      );
     });
   });
 
@@ -236,7 +240,7 @@ describe("uninstall interactive", () => {
 
       const output = prompt.getOutput();
       expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
-      expect(output).toContain(DIRS.CLAUDE_SRC);
+      expect(output).toContain(".agents-inc/claude/config.ts");
     });
   });
 
@@ -289,7 +293,7 @@ describe("uninstall interactive", () => {
 
       expect(await directoryExists(skillsDir)).toBe(true);
       expect(await directoryExists(agentsDir)).toBe(true);
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(true);
+      expect(await directoryExists(sourceFolderIn(projectDir))).toBe(true);
     });
   });
 });

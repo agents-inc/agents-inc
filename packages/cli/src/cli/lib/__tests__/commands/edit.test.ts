@@ -7,9 +7,9 @@ import type { Errors } from "@oclif/core";
 import { parseRefusal, runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { useFakeHome } from "../helpers/isolated-home.js";
-import { writeCorruptTestConfig } from "../helpers/config-io.js";
+import { writeRawTestConfig } from "../helpers/config-io.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
-import { createMockSkill } from "../factories/skill-factories.js";
+import { createMockSkill, createMockSkillDefinition } from "../factories/skill-factories.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
 import {
   buildProjectConfig,
@@ -17,18 +17,35 @@ import {
   buildWizardResult,
   buildAgentConfigs,
 } from "../factories/config-factories.js";
+import { buildInstallation } from "../factories/installation-factories.js";
+import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
 import { SKILLS, TEST_CATEGORIES } from "../test-fixtures";
 import { FULLSTACK_PAIR_MATRIX } from "../mock-data/mock-matrices";
 import { EXPECTED_SKILLS } from "../expected-values";
 import { EXIT_CODES } from "../../exit-codes";
-import { EDITOR_URL, EJECT_SOURCE } from "../../../consts";
+import {
+  CLAUDE_DIR,
+  CLAUDE_SRC_DIR,
+  EDITOR_URL,
+  EJECT_SOURCE,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../../consts";
 import { ERROR_MESSAGES } from "../../../utils/messages";
 import * as wizardStore from "../../../stores/wizard-store";
 import { useWizardStore } from "../../../stores/wizard-store";
 import { initializeMatrix } from "../../matrix/matrix-provider";
-import * as execModule from "../../../utils/exec.js";
-import type { CategoryPath, SkillConfig, SkillId, SkillScope } from "../../../types";
+import { hostAt } from "../../hosts/host-for.js";
+import type { CategoryPath, ProjectConfig, SkillId, SkillScope } from "../../../types";
+import type { getAgentDefinitions } from "../../agents/index.js";
+import type { loadProjectConfig } from "../../configuration/index.js";
+import type { detectInstallation, Installation } from "../../installation/index.js";
+import type { loadSkillsMatrixFromSource } from "../../loading/index.js";
+import type { discoverAllPluginSkills } from "../../plugins/index.js";
+import type { copySkillsToLocalFlattened, deleteLocalSkill } from "../../skills/index.js";
+import type { ensureDir } from "../../../utils/fs.js";
 import { firstElement } from "../helpers/element-at.js";
+import { stubInkInstance } from "../helpers/stub-ink-instance.js";
 import Edit, {
   applyMigratedGlobalSources,
   migratePluginSkillScopes,
@@ -47,23 +64,24 @@ const {
   mockDeleteLocalSkill,
   mockEnsureDir,
   mockGetAgentDefinitions,
-} = vi.hoisted(() => ({
+} = await vi.hoisted(async () => ({
+  // Imported here rather than at the top: hoisting runs this block before the file's imports.
   mockRender: vi
     .fn()
-    .mockReturnValue({ waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() }),
-  mockDetectInstallation: vi.fn().mockResolvedValue(null),
-  mockLoadSkillsMatrixFromSource: vi.fn(),
-  mockLoadProjectConfig: vi.fn().mockResolvedValue(null),
-  mockDiscoverAllPluginSkills: vi.fn().mockResolvedValue({}),
+    .mockReturnValue((await import("../helpers/stub-ink-instance.js")).stubInkInstance()),
+  mockDetectInstallation: vi.fn<typeof detectInstallation>().mockResolvedValue(null),
+  mockLoadSkillsMatrixFromSource: vi.fn<typeof loadSkillsMatrixFromSource>(),
+  mockLoadProjectConfig: vi.fn<typeof loadProjectConfig>().mockResolvedValue(null),
+  mockDiscoverAllPluginSkills: vi.fn<typeof discoverAllPluginSkills>().mockResolvedValue({}),
   // `copySkillsToLocalFlattened` resolves `CopiedSkill[]`, never `undefined` — the empty
   // array is the shape of a copy that did nothing. It read `undefined` while the eject
   // migration wrapped its whole pass in one `try`, which turned the resulting TypeError
   // into a warning and let the run continue; the migration now reports a failed copy
   // structurally and hard-errors on it, so a mock of the wrong shape stops the command.
-  mockCopySkillsToLocalFlattened: vi.fn().mockResolvedValue([]),
-  mockDeleteLocalSkill: vi.fn().mockResolvedValue(undefined),
-  mockEnsureDir: vi.fn().mockResolvedValue(undefined),
-  mockGetAgentDefinitions: vi.fn().mockResolvedValue({
+  mockCopySkillsToLocalFlattened: vi.fn<typeof copySkillsToLocalFlattened>().mockResolvedValue([]),
+  mockDeleteLocalSkill: vi.fn<typeof deleteLocalSkill>().mockResolvedValue(undefined),
+  mockEnsureDir: vi.fn<typeof ensureDir>().mockResolvedValue(undefined),
+  mockGetAgentDefinitions: vi.fn<typeof getAgentDefinitions>().mockResolvedValue({
     agentsDir: "/mock/agents",
     sourcePath: "/mock/source",
   }),
@@ -78,7 +96,7 @@ vi.mock("../../installation/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../installation/index.js")>();
   return {
     ...original,
-    detectInstallation: (...args: unknown[]) => mockDetectInstallation(...(args as [])),
+    detectInstallation: mockDetectInstallation,
   };
 });
 
@@ -86,8 +104,7 @@ vi.mock("../../loading/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../loading/index.js")>();
   return {
     ...original,
-    loadSkillsMatrixFromSource: (...args: unknown[]) =>
-      mockLoadSkillsMatrixFromSource(...(args as [])),
+    loadSkillsMatrixFromSource: mockLoadSkillsMatrixFromSource,
   };
 });
 
@@ -95,15 +112,21 @@ vi.mock("../../configuration/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../configuration/index.js")>();
   return {
     ...original,
-    loadProjectConfig: (...args: unknown[]) => mockLoadProjectConfig(...(args as [])),
+    loadProjectConfig: mockLoadProjectConfig,
   };
+});
+
+vi.mock("../../hosts/host-for.js", async () => {
+  const { createMockPluginHost } = await import("../helpers/mock-plugin-host.js");
+  const host = createMockPluginHost();
+  return { hostAt: () => host, hostFor: () => host };
 });
 
 vi.mock("../../plugins/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../plugins/index.js")>();
   return {
     ...original,
-    discoverAllPluginSkills: (...args: unknown[]) => mockDiscoverAllPluginSkills(...(args as [])),
+    discoverAllPluginSkills: mockDiscoverAllPluginSkills,
   };
 });
 
@@ -111,7 +134,7 @@ vi.mock("../../agents/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../agents/index.js")>();
   return {
     ...original,
-    getAgentDefinitions: (...args: unknown[]) => mockGetAgentDefinitions(...(args as [])),
+    getAgentDefinitions: mockGetAgentDefinitions,
   };
 });
 
@@ -119,9 +142,8 @@ vi.mock("../../skills/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../skills/index.js")>();
   return {
     ...original,
-    copySkillsToLocalFlattened: (...args: unknown[]) =>
-      mockCopySkillsToLocalFlattened(...(args as [])),
-    deleteLocalSkill: (...args: unknown[]) => mockDeleteLocalSkill(...(args as [])),
+    copySkillsToLocalFlattened: mockCopySkillsToLocalFlattened,
+    deleteLocalSkill: mockDeleteLocalSkill,
   };
 });
 
@@ -129,28 +151,61 @@ vi.mock("../../../utils/fs.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../utils/fs.js")>();
   return {
     ...original,
-    ensureDir: (...args: unknown[]) => mockEnsureDir(...(args as [])),
+    ensureDir: mockEnsureDir,
   };
 });
 
-/** Mocks loadProjectConfig with the standard `{ config, configPath }` wrapper. */
-function mockProjectConfig(projectDir: string, config: Record<string, unknown>): void {
+/**
+ * Both folders an installation's `config.ts` can be written into, as a user writes one.
+ *
+ * An assertion that a config was NOT written has to ask after every name it could have been
+ * written under, and until the source-folder rename there was only one. Naming just the folder
+ * this release happens to create makes the absence true of the other for free — and an absence
+ * that cannot fail is the shape `packages/cli/CLAUDE.md` calls a gap encoded in an assertion.
+ */
+const CONFIG_PATHS_UNDER_EITHER_LAYOUT = [
+  ".claude-src/config.ts",
+  ".agents-inc/claude/config.ts",
+] as const;
+
+/** Every config.ts actually on disk under `projectDir`, by the relative path it was found at. */
+async function configsWrittenUnder(projectDir: string): Promise<string[]> {
+  const found = await Promise.all(
+    CONFIG_PATHS_UNDER_EITHER_LAYOUT.map(async (relative) =>
+      (await fileExists(path.join(projectDir, relative))) ? relative : null,
+    ),
+  );
+
+  return found.filter((relative) => relative !== null);
+}
+
+/**
+ * Mocks loadProjectConfig with what it answers for a Claude installation on the legacy folder:
+ * the config, the path it was read from, and the provider that folder belongs to. `provider` was
+ * missing here while the mock was an untyped `vi.fn()`, and nothing said so.
+ */
+function mockProjectConfig(projectDir: string, config: ProjectConfig): void {
   mockLoadProjectConfig.mockResolvedValue({
     config,
     configPath: path.join(projectDir, ".claude-src/config.ts"),
+    provider: "claude",
   });
 }
 
-/** A detected project-scope eject installation rooted at `projectDir`. */
-function buildEjectInstallation(projectDir: string) {
-  return {
-    mode: "eject" as const,
-    scope: "project" as const,
-    configPath: path.join(projectDir, ".claude-src/config.ts"),
-    agentsDir: path.join(projectDir, ".claude/agents"),
-    skillsDir: path.join(projectDir, ".claude/skills"),
+/**
+ * A detected eject installation rooted at `projectDir` rather than at the factory's `/project`,
+ * because these specs run the command inside that directory. Typed through `buildInstallation`, so
+ * a field `Installation` no longer declares is a compile error here — a `scope` this helper kept
+ * returning after the type dropped it went unreported while its return type was inferred.
+ */
+function buildEjectInstallation(projectDir: string): Installation {
+  return buildInstallation({
+    mode: "eject",
     projectDir,
-  };
+    configPath: path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+    agentsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
+    skillsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS),
+  });
 }
 
 /**
@@ -163,12 +218,9 @@ function mockWizardCompletion(wizardResult: unknown): void {
     if (onComplete) {
       onComplete(wizardResult);
     }
-    return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
+    return stubInkInstance();
   });
 }
-
-/** A genuine TypeScript syntax error — the config loader throws while evaluating the file. */
-const CORRUPT_CONFIG_SOURCE = "export default {{{ not valid typescript";
 
 /** The phrase `ConfigLoadError` builds its message around. */
 const CONFIG_LOAD_FAILED_PHRASE = "could not be loaded";
@@ -198,8 +250,8 @@ describe("edit command", () => {
   });
 
   describe("no installation found", () => {
-    it("when .claude-src/ directory is missing, should exit with error code", async () => {
-      // Clean temp dir has no .claude/ or .claude-src/ directories
+    it("when no source folder is present under either name, should exit with error code", async () => {
+      // Clean temp dir holds neither an installed `.claude/` nor a source folder of either name
       const { error } = await runCliCommand(["edit"]);
 
       // Should exit with EXIT_CODES.ERROR (1) because detectInstallation returns null
@@ -223,7 +275,7 @@ describe("edit command", () => {
     const fakeHome = useFakeHome(() => tempDir);
 
     it("refuses, naming the config it could not read", async () => {
-      const configPath = await writeCorruptTestConfig(projectDir, CORRUPT_CONFIG_SOURCE);
+      const configPath = await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
 
       const { error } = await runCliCommand(["edit"]);
 
@@ -234,7 +286,7 @@ describe("edit command", () => {
     });
 
     it("says to recreate the configuration and where to build a new one", async () => {
-      await writeCorruptTestConfig(projectDir, CORRUPT_CONFIG_SOURCE);
+      await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
 
       const { error } = await runCliCommand(["edit"]);
 
@@ -243,7 +295,7 @@ describe("edit command", () => {
     });
 
     it("refuses when the unreadable config is the global one and the project has none", async () => {
-      const globalConfigPath = await writeCorruptTestConfig(fakeHome.dir, CORRUPT_CONFIG_SOURCE);
+      const globalConfigPath = await writeRawTestConfig(fakeHome.dir, renderUnparseableConfigTs());
 
       const { error } = await runCliCommand(["edit"]);
 
@@ -587,11 +639,7 @@ describe("edit command eject-mode skill fallback", () => {
   let originalCwd: string;
 
   const CONFIG_SKILL_IDS: SkillId[] = ["web-framework-react", "api-framework-hono"];
-  const CONFIG_SKILLS = CONFIG_SKILL_IDS.map((id) => ({
-    id,
-    scope: "project" as const,
-    origin: "eject",
-  }));
+  const CONFIG_SKILLS = buildSkillConfigs(CONFIG_SKILL_IDS, { scope: "project", origin: "eject" });
 
   const testMatrix = FULLSTACK_PAIR_MATRIX;
 
@@ -621,11 +669,7 @@ describe("edit command eject-mode skill fallback", () => {
 
     // Reset all mocks to known state for each test
     mockRender.mockClear();
-    mockRender.mockReturnValue({
-      waitUntilExit: () => Promise.resolve(),
-      clear: vi.fn(),
-      unmount: vi.fn(),
-    });
+    mockRender.mockReturnValue(stubInkInstance());
 
     mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
 
@@ -641,11 +685,7 @@ describe("edit command eject-mode skill fallback", () => {
 
   it("should use project config skills as installedSkillIds when plugin discovery returns empty", async () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({});
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: [],
-      skills: CONFIG_SKILLS,
-    });
+    mockProjectConfig(projectDir, buildProjectConfig({ agents: [], skills: CONFIG_SKILLS }));
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -656,13 +696,9 @@ describe("edit command eject-mode skill fallback", () => {
 
   it("should merge discovered plugin skills with config skills as installedSkillIds", async () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({
-      "web-framework-react": { id: "web-framework-react", path: "skills/web-framework-react/" },
+      "web-framework-react": createMockSkillDefinition("web-framework-react"),
     });
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: [],
-      skills: CONFIG_SKILLS,
-    });
+    mockProjectConfig(projectDir, buildProjectConfig({ agents: [], skills: CONFIG_SKILLS }));
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
@@ -713,11 +749,10 @@ describe("edit command detects added agents", () => {
 
   it("should NOT report 'No changes made' when only agents are added", async () => {
     // Old config has one agent: web-developer
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: buildAgentConfigs(["web-developer"]),
-      skills: EXISTING_SKILLS,
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({ agents: buildAgentConfigs(["web-developer"]), skills: EXISTING_SKILLS }),
+    );
 
     // Mock render to invoke onComplete with a wizard result that adds web-tester
     // (same skills, but a new agent)
@@ -772,11 +807,10 @@ describe("edit command copies newly added local skills", () => {
 
   it("should call copySkillsToLocalFlattened when a local skill is added", async () => {
     // Old config has no skills
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: buildAgentConfigs(["web-developer"]),
-      skills: [],
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({ agents: buildAgentConfigs(["web-developer"]), skills: [] }),
+    );
 
     const newLocalSkills = buildSkillConfigs(["web-framework-react"], {
       scope: "project",
@@ -837,47 +871,63 @@ describe("edit command removes deselected local skills", () => {
   }
 
   it("deletes a deselected PROJECT-scope eject skill's directory from the project dir", async () => {
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: buildAgentConfigs(["web-developer"]),
-      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+      }),
+    );
     mockRemovalWizard();
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
     // Project-scope eject skill dir is removed from the project directory (cwd), not home.
-    expect(mockDeleteLocalSkill).toHaveBeenCalledWith(process.cwd(), "web-framework-react");
+    expect(mockDeleteLocalSkill).toHaveBeenCalledWith(
+      process.cwd(),
+      "web-framework-react",
+      "project",
+    );
   });
 
   it("deletes a deselected GLOBAL-scope eject skill's directory from the home dir", async () => {
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: buildAgentConfigs(["web-developer"]),
-      skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
+      }),
+    );
     mockRemovalWizard();
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    // Global-scope eject skill dir is removed from the home directory, not the project.
-    expect(mockDeleteLocalSkill).toHaveBeenCalledWith(os.homedir(), "web-framework-react");
+    // Global-scope eject skill dir is removed at GLOBAL scope, not the project's: the scope is
+    // handed over and `deleteLocalSkill` resolves the home directory's skills folder for the host
+    // (CLI-895, 2026-09-26 — it used to be handed `os.homedir()` and join `.claude/skills` to it).
+    expect(mockDeleteLocalSkill).toHaveBeenCalledWith(
+      process.cwd(),
+      "web-framework-react",
+      "global",
+    );
   });
 
   it("does NOT delete a directory for a deselected plugin-mode skill (handled by plugin uninstall)", async () => {
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: buildAgentConfigs(["web-developer"]),
-      skills: buildSkillConfigs(["web-framework-react"], {
-        scope: "project",
-        origin: "agents-inc",
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        agents: buildAgentConfigs(["web-developer"]),
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          origin: "agents-inc",
+        }),
       }),
-    });
+    );
     mockRemovalWizard();
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    expect(mockDeleteLocalSkill).not.toHaveBeenCalledWith(expect.anything(), "web-framework-react");
+    expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
   });
 });
 
@@ -1000,11 +1050,13 @@ describe("edit command source switches on inherited global-active skills", () =>
   });
 
   it("applies a source switch on an inherited global-active skill rather than discarding it", async () => {
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: AGENTS,
-      skills: [...GLOBAL_PLUGIN_REACT, ...PROJECT_PLUGIN_HONO],
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        agents: AGENTS,
+        skills: [...GLOBAL_PLUGIN_REACT, ...PROJECT_PLUGIN_HONO],
+      }),
+    );
     mockWizardCompletion(
       buildWizardResult([...GLOBAL_EJECT_REACT, ...PROJECT_PLUGIN_HONO], { agentConfigs: AGENTS }),
     );
@@ -1033,9 +1085,9 @@ describe("edit command mode migration with a failing plugin install", () => {
   const testSourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, "/test/source", {
     marketplace: MARKETPLACE,
   });
-  const installSpy = vi.spyOn(execModule, "claudePluginInstall");
-  const marketplaceExistsSpy = vi.spyOn(execModule, "claudePluginMarketplaceExists");
-  const marketplaceUpdateSpy = vi.spyOn(execModule, "claudePluginMarketplaceUpdate");
+  const installSpy = vi.mocked(hostAt("/any-root").installPlugin);
+  const marketplaceExistsSpy = vi.mocked(hostAt("/any-root").marketplaceExists);
+  const marketplaceUpdateSpy = vi.mocked(hostAt("/any-root").refreshMarketplace);
 
   beforeEach(async () => {
     originalCwd = process.cwd();
@@ -1075,11 +1127,13 @@ describe("edit command mode migration with a failing plugin install", () => {
   });
 
   it("exits with ERROR, writes no config.ts and keeps the ejected copy on disk", async () => {
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: AGENTS,
-      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
-    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        agents: AGENTS,
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+      }),
+    );
     mockWizardCompletion(
       buildWizardResult(
         buildSkillConfigs(["web-framework-react"], { scope: "project", origin: MARKETPLACE }),
@@ -1101,9 +1155,9 @@ describe("edit command mode migration with a failing plugin install", () => {
     expect(stderrChunks.join("")).toContain("Failed to install plugin web-framework-react");
 
     expect(
-      await fileExists(path.join(projectDir, ".claude-src/config.ts")),
+      await configsWrittenUnder(projectDir),
       "config.ts must not record a marketplace source for a skill that was never plugin-installed",
-    ).toBe(false);
+    ).toStrictEqual([]);
     expect(
       mockDeleteLocalSkill,
       "the ejected working copy must survive a migration whose plugin install failed",
@@ -1200,11 +1254,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
   });
 
   it("names the skill that landed in no agent's stack", async () => {
-    mockProjectConfig(projectDir, {
-      name: "test-project",
-      agents: GLOBAL_AGENTS,
-      skills: [],
-    });
+    mockProjectConfig(projectDir, buildProjectConfig({ agents: GLOBAL_AGENTS, skills: [] }));
     mockWizardCompletion(buildWizardResult(PROJECT_EJECT_REACT, { agentConfigs: GLOBAL_AGENTS }));
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
@@ -1220,17 +1270,17 @@ describe("edit command reports a selected skill the scope filter left unassigned
   });
 });
 
-// Bug regression: migratePluginSkillScopes must NOT uninstall the global ("user")
-// plugin when re-scoping from global to project. The global registration is shared
-// across projects and must remain intact. Only project→global should uninstall.
+// Bug regression: migratePluginSkillScopes must NOT uninstall the global plugin when re-scoping
+// from global to project. The global registration is shared across projects and must remain
+// intact. Only project→global should uninstall.
 
 describe("migratePluginSkillScopes", () => {
-  const installSpy = vi.spyOn(execModule, "claudePluginInstall");
-  const uninstallSpy = vi.spyOn(execModule, "claudePluginUninstall");
+  const installSpy = vi.mocked(hostAt("/any-root").installPlugin);
+  const uninstallSpy = vi.mocked(hostAt("/any-root").uninstallPlugin);
 
   beforeEach(() => {
     installSpy.mockReset().mockResolvedValue();
-    uninstallSpy.mockReset().mockResolvedValue();
+    uninstallSpy.mockReset().mockResolvedValue("removed");
   });
 
   afterAll(() => {});
@@ -1239,15 +1289,13 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "origin">[] = [
-      { id: "web-framework-react", origin: "agents-inc" },
-    ];
+    const skills = buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" });
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
     expect(uninstallSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
-      "user",
+      "global",
       "/project",
     );
     expect(installSpy).toHaveBeenCalledWith(
@@ -1261,9 +1309,7 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "origin">[] = [
-      { id: "web-framework-react", origin: "agents-inc" },
-    ];
+    const skills = buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" });
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -1272,16 +1318,14 @@ describe("migratePluginSkillScopes", () => {
       "project",
       "/project",
     );
-    expect(installSpy).toHaveBeenCalledWith("web-framework-react@agents-inc", "user", "/project");
+    expect(installSpy).toHaveBeenCalledWith("web-framework-react@agents-inc", "global", "/project");
   });
 
   it("should skip eject-source skills during scope migration", async () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "origin">[] = [
-      { id: "web-framework-react", origin: "eject" },
-    ];
+    const skills = buildSkillConfigs(["web-framework-react"], { origin: "eject" });
 
     await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -1294,10 +1338,9 @@ describe("migratePluginSkillScopes", () => {
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
       ["web-state-zustand", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "origin">[] = [
-      { id: "web-framework-react", origin: "agents-inc" },
-      { id: "web-state-zustand", origin: "agents-inc" },
-    ];
+    const skills = buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+      origin: "agents-inc",
+    });
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -1306,7 +1349,7 @@ describe("migratePluginSkillScopes", () => {
     // React global→project: NO uninstall, install at project
     expect(uninstallSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
-      "user",
+      "global",
       "/project",
     );
     expect(installSpy).toHaveBeenCalledWith(
@@ -1315,13 +1358,13 @@ describe("migratePluginSkillScopes", () => {
       "/project",
     );
 
-    // Zustand project→global: uninstall project, install at user
+    // Zustand project→global: uninstall project, install at global
     expect(uninstallSpy).toHaveBeenCalledWith(
       "web-state-zustand@agents-inc",
       "project",
       "/project",
     );
-    expect(installSpy).toHaveBeenCalledWith("web-state-zustand@agents-inc", "user", "/project");
+    expect(installSpy).toHaveBeenCalledWith("web-state-zustand@agents-inc", "global", "/project");
   });
 
   it("should report install failure without affecting global registration", async () => {
@@ -1330,16 +1373,14 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "origin">[] = [
-      { id: "web-framework-react", origin: "agents-inc" },
-    ];
+    const skills = buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" });
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
     // Should NOT have uninstalled global
     expect(uninstallSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
-      "user",
+      "global",
       "/project",
     );
     // Should report failure
@@ -1354,9 +1395,7 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "project" as const, to: "global" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "origin">[] = [
-      { id: "web-framework-react", origin: "agents-inc" },
-    ];
+    const skills = buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" });
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -1369,7 +1408,7 @@ describe("migratePluginSkillScopes", () => {
     // Should NOT have installed at global (uninstall failed, catch fired)
     expect(installSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
-      "user",
+      "global",
       "/project",
     );
     // Should report failure
@@ -1382,7 +1421,7 @@ describe("migratePluginSkillScopes", () => {
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
     // Empty skills array — skill not found
-    const skills: Array<{ id: SkillId; origin: string }> = [];
+    const skills = buildSkillConfigs<SkillId>([]);
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -1399,10 +1438,9 @@ describe("migratePluginSkillScopes", () => {
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
       ["web-state-zustand", { from: "global" as const, to: "project" as const }],
     ]);
-    const skills: Pick<SkillConfig, "id" | "origin">[] = [
-      { id: "web-framework-react", origin: "agents-inc" },
-      { id: "web-state-zustand", origin: "agents-inc" },
-    ];
+    const skills = buildSkillConfigs(["web-framework-react", "web-state-zustand"], {
+      origin: "agents-inc",
+    });
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
@@ -1863,7 +1901,7 @@ describe("edit change summary display", () => {
           ),
         );
       }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
+      return stubInkInstance();
     });
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
@@ -1924,7 +1962,7 @@ describe("edit change summary display", () => {
           }),
         );
       }
-      return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
+      return stubInkInstance();
     });
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});

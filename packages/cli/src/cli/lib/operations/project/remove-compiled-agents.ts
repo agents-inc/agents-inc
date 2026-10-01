@@ -1,5 +1,6 @@
 import path from "path";
 import { pruneStaleCompiledAgents } from "../../agents/list-compiled-agents.js";
+import type { AgentCodec } from "../../installation/install-layout.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { remove, removeDirIfEmpty } from "../../../utils/fs.js";
 import type { AgentName } from "../../../types/index.js";
@@ -19,6 +20,8 @@ export type PruneCompiledAgentsOptions = {
    * CLI-compiled agent there is stale. Only an authoritative pass can say this.
    */
   keep: ReadonlySet<AgentName>;
+  /** The host's agent file format — Claude's `.md` when absent. */
+  codec?: AgentCodec;
 };
 
 export type RemoveCompiledAgentsResult = {
@@ -63,7 +66,7 @@ export async function removeCompiledAgents(
  * predicate, so a directory this leaves empty is one nothing at all remains in.
  */
 export async function pruneCompiledAgents(options: PruneCompiledAgentsOptions): Promise<void> {
-  await pruneStaleCompiledAgents(options.agentsDir, options.keep);
+  await pruneStaleCompiledAgents(options.agentsDir, options.keep, options.codec);
   await tidyEmptiedAgentsDir(options.agentsDir);
 }
 

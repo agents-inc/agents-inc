@@ -193,7 +193,13 @@ const EMPTIED_MODULES: readonly { file: string; symbols: readonly string[] }[] =
     file: "consts.ts",
     symbols: [
       "CLAUDE_DIR",
+      // The source folder's names. `CLAUDE_SRC_DIR` is the old spelling, kept alive as one alias
+      // in the package's barrel while the editor still imports it; the two below are what the CLI
+      // reaches for, and an absence check naming only the retired name would pass vacuously the
+      // moment it goes.
       "CLAUDE_SRC_DIR",
+      "LEGACY_SOURCE_DIR",
+      "SOURCE_ROOT_DIR",
       "LOCAL_SKILLS_PATH",
       "STANDARD_DIRS",
       "STANDARD_FILES",

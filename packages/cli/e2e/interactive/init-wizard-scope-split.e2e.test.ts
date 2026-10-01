@@ -24,8 +24,8 @@ import "../matchers/setup.js";
  *
  * When some skills are project-scoped and others are global-scoped,
  * writeScopedFromWizard() should produce TWO config files:
- *   - ~/.claude-src/config.ts (global-scoped items)
- *   - <projectDir>/.claude-src/config.ts (project-scoped items)
+ *   - ~/.agents-inc/claude/config.ts (global-scoped items)
+ *   - <projectDir>/.agents-inc/claude/config.ts (project-scoped items)
  */
 
 describe("init wizard — mixed scope config split", () => {

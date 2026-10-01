@@ -15,8 +15,9 @@ import {
   createTempDir,
   loadConfigOrFail,
   readCompiledAgents,
+  sourceFolderIn,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 import { loadSkillsMatrixFromSource } from "../../src/cli/lib/loading/index.js";
 import { AGENT_NAMES } from "../../src/cli/types/agents.js";
 import { CORPUS_CLI_VERSION } from "@workspace/compile/corpus";
@@ -92,8 +93,8 @@ describe("the bytes the shared renderer draws", () => {
       });
       const config = await loadConfigOrFail(globalHome);
 
-      const configPath = path.join(globalHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TS);
-      const typesPath = path.join(globalHome, DIRS.CLAUDE_SRC, FILES.CONFIG_TYPES_TS);
+      const configPath = path.join(sourceFolderIn(globalHome), FILES.CONFIG_TS);
+      const typesPath = path.join(sourceFolderIn(globalHome), FILES.CONFIG_TYPES_TS);
 
       const [onDiskConfig, onDiskTypes] = await Promise.all([
         readFile(configPath, "utf8"),
@@ -145,7 +146,7 @@ describe("the bytes the shared renderer draws", () => {
       const { project: projectSplit } = splitConfigByScope(inlinedProjectConfig);
 
       const onDiskConfig = await readFile(
-        path.join(projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS),
+        path.join(sourceFolderIn(projectDir), FILES.CONFIG_TS),
         "utf8",
       );
 

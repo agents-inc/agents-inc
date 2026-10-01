@@ -6,19 +6,38 @@ import type { ReactElement } from "react";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
-import { renderConfigTs } from "../content-generators";
+import { writeTestTsConfig } from "../helpers/config-io.js";
+import { stubInkInstance } from "../helpers/stub-ink-instance.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildAgentDefs } from "../factories/agent-factories.js";
 import {
+  buildConfigWriteResult,
   buildGateReport,
+  buildProjectConfig,
   buildSourceResult,
   buildWizardResult,
 } from "../factories/config-factories.js";
+import {
+  buildCompilationResult,
+  buildDiscoveredSkills,
+  buildLoadedSource,
+  buildSkillCopyResult,
+} from "../factories/operation-result-factories.js";
 import { BUILD_STEP_REQUIRES_MATRIX } from "../mock-data/mock-matrices";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { validateSelection } from "../../matrix/index.js";
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import type { SkillId } from "../../../types";
 import type { WizardResultV2 } from "../../../components/wizard/wizard.js";
+import type {
+  compileAgentsAllScopes,
+  copyLocalSkills,
+  discoverInstalledSkills,
+  loadAgentDefs,
+  loadSource,
+  writeProjectConfig,
+} from "../../operations/index.js";
+import type { discoverAllPluginSkills } from "../../plugins/index.js";
 
 /**
  * One rejected selection, two commands, one wording.
@@ -41,13 +60,15 @@ const {
   mockDiscoverAllPluginSkills,
 } = vi.hoisted(() => ({
   mockRender: vi.fn(),
-  mockLoadSource: vi.fn(),
-  mockLoadAgentDefs: vi.fn(),
-  mockWriteProjectConfig: vi.fn(),
-  mockDiscoverInstalledSkills: vi.fn(),
-  mockCompileAgentsAllScopes: vi.fn(),
-  mockCopyLocalSkills: vi.fn(),
-  mockDiscoverAllPluginSkills: vi.fn(),
+  // Typed against the real functions, so a field a stub returns that the product has retired is
+  // a compile error here rather than a dead value nothing reads.
+  mockLoadSource: vi.fn<typeof loadSource>(),
+  mockLoadAgentDefs: vi.fn<typeof loadAgentDefs>(),
+  mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
+  mockDiscoverInstalledSkills: vi.fn<typeof discoverInstalledSkills>(),
+  mockCompileAgentsAllScopes: vi.fn<typeof compileAgentsAllScopes>(),
+  mockCopyLocalSkills: vi.fn<typeof copyLocalSkills>(),
+  mockDiscoverAllPluginSkills: vi.fn<typeof discoverAllPluginSkills>(),
 }));
 
 vi.mock("ink", async (importOriginal) => ({
@@ -59,17 +80,17 @@ vi.mock("ink", async (importOriginal) => ({
 // the reporting under test is.
 vi.mock("../../operations/index.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../operations/index.js")>()),
-  loadSource: (...args: unknown[]) => mockLoadSource(...(args as [])),
-  loadAgentDefs: (...args: unknown[]) => mockLoadAgentDefs(...(args as [])),
-  writeProjectConfig: (...args: unknown[]) => mockWriteProjectConfig(...(args as [])),
-  discoverInstalledSkills: (...args: unknown[]) => mockDiscoverInstalledSkills(...(args as [])),
-  compileAgentsAllScopes: (...args: unknown[]) => mockCompileAgentsAllScopes(...(args as [])),
-  copyLocalSkills: (...args: unknown[]) => mockCopyLocalSkills(...(args as [])),
+  loadSource: mockLoadSource,
+  loadAgentDefs: mockLoadAgentDefs,
+  writeProjectConfig: mockWriteProjectConfig,
+  discoverInstalledSkills: mockDiscoverInstalledSkills,
+  compileAgentsAllScopes: mockCompileAgentsAllScopes,
+  copyLocalSkills: mockCopyLocalSkills,
 }));
 
 vi.mock("../../plugins/index.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../plugins/index.js")>()),
-  discoverAllPluginSkills: (...args: unknown[]) => mockDiscoverAllPluginSkills(...(args as [])),
+  discoverAllPluginSkills: mockDiscoverAllPluginSkills,
 }));
 
 const { default: Init } = await import("../../../commands/init.js");
@@ -111,7 +132,7 @@ function stubWizardCompletion(result: WizardResultV2): void {
     const onComplete = element.props.onComplete as
       ((completed: WizardResultV2) => void) | undefined;
     onComplete?.(result);
-    return { waitUntilExit: () => Promise.resolve(), clear: vi.fn(), unmount: vi.fn() };
+    return stubInkInstance();
   });
 }
 
@@ -146,7 +167,6 @@ describe("init and edit report a rejected selection identically", () => {
     initProjectDir = path.join(tempDir, "init-project");
     editProjectDir = path.join(tempDir, "edit-project");
     await mkdir(path.join(initProjectDir, CLAUDE_DIR), { recursive: true });
-    await mkdir(path.join(editProjectDir, CLAUDE_SRC_DIR), { recursive: true });
 
     // A settings file that already grants a permission, so init's post-install permission notice
     // resolves to null and never renders.
@@ -157,48 +177,38 @@ describe("init and edit report a rejected selection identically", () => {
 
     // The installed roster matches the rejected wizard result exactly, so `edit` reaches its
     // no-change branch: the validation report is then the only thing that run has to say.
-    await writeFile(
-      path.join(editProjectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs({
+    // `agents: []` is named because the factory's default roster would give edit a change to make.
+    await writeTestTsConfig(
+      editProjectDir,
+      buildProjectConfig({
         name: PROJECT_NAME,
         skills: buildSkillConfigs([REQUIRING_SKILL_ID]),
         agents: [],
       }),
+      CLAUDE_SRC_DIR,
     );
 
     initializeMatrix(BUILD_STEP_REQUIRES_MATRIX);
     stubWizardCompletion(REJECTED_WIZARD_RESULT);
-    mockLoadSource.mockResolvedValue({
-      sourceResult: buildSourceResult(BUILD_STEP_REQUIRES_MATRIX, tempDir),
-      startupMessages: [],
-    });
-    mockLoadAgentDefs.mockResolvedValue({
-      agents: {},
-      sourcePath: tempDir,
-      agentSourcePaths: { agentsDir: tempDir, sourcePath: tempDir },
-    });
-    mockWriteProjectConfig.mockResolvedValue({
-      config: { name: PROJECT_NAME, skills: [], agents: [] },
-      configPath: path.join(initProjectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
-      wasMerged: false,
-      filesWritten: 1,
-      propagation: buildGateReport(),
-    });
-    mockDiscoverInstalledSkills.mockResolvedValue({
-      allSkills: {},
-      totalSkillCount: 0,
-      pluginSkillCount: 0,
-      localSkillCount: 0,
-      globalPluginSkillCount: 0,
-      globalLocalSkillCount: 0,
-    });
-    mockCompileAgentsAllScopes.mockResolvedValue({
-      compiled: [],
-      rewritten: [],
-      failed: [],
-      warnings: [],
-    });
-    mockCopyLocalSkills.mockResolvedValue({ projectCopied: [], globalCopied: [], totalCopied: 0 });
+    mockLoadSource.mockResolvedValue(
+      buildLoadedSource(buildSourceResult(BUILD_STEP_REQUIRES_MATRIX, tempDir)),
+    );
+    mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
+    // Every warning either command could add after the write is switched off BY NAME, because
+    // these specs compare the warnings a run emitted against the validator's alone: a config
+    // holding a skill no sub-agent loads is warned about, so is every compile warning, and so is
+    // every warning from a recompile the write propagated into another project — which is why the
+    // gate report names the empty list of projects it reached.
+    mockWriteProjectConfig.mockResolvedValue(
+      buildConfigWriteResult(
+        buildProjectConfig({ name: PROJECT_NAME, skills: [], agents: [] }),
+        path.join(initProjectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        { propagation: buildGateReport([]) },
+      ),
+    );
+    mockDiscoverInstalledSkills.mockResolvedValue(buildDiscoveredSkills());
+    mockCompileAgentsAllScopes.mockResolvedValue(buildCompilationResult({ warnings: [] }));
+    mockCopyLocalSkills.mockResolvedValue(buildSkillCopyResult());
     mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 

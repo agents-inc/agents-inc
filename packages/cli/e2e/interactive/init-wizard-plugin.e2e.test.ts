@@ -9,11 +9,11 @@ import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import {
   cleanupFixture,
   cleanupTempDir,
   createTempDir,
-  directoryExists,
   isClaudeCLIAvailable,
   readCompiledAgents,
   readTestFile,
@@ -165,7 +165,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
    * See feedback_no_plugin_to_eject_fallback.md.
    *
    * This suite complements the init scenario in edit-plugin-hard-error.e2e.test.ts
-   * by asserting filesystem state integrity (no `.claude-src/` created, existing
+   * by asserting filesystem state integrity (no source folder created, existing
    * `.claude/settings.json` untouched) in addition to exit code + output.
    */
   describe("hard error when source has no marketplace", () => {
@@ -220,11 +220,16 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
         expect(output).not.toContain(STEP_TEXT.INIT_SUCCESS);
 
-        // Filesystem integrity: init must not create `.claude-src/` on
-        // hard-error, and the pre-existing permissions file must remain
-        // byte-identical.
-        const claudeSrcExists = await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC));
-        expect(claudeSrcExists).toBe(false);
+        // Filesystem integrity: init must not create a source folder on hard-error, and the
+        // pre-existing permissions file must remain byte-identical.
+        //
+        // `expectNoSourceFolder` rather than one `directoryExists` on the legacy name: this run
+        // would have created `.agents-inc/claude/`, so an assertion naming `.claude-src/` was
+        // true whatever init had left behind and could not fail.
+        await expectNoSourceFolder(
+          projectDir,
+          "init hard-errored on an unresolvable marketplace and must have created no source folder",
+        );
 
         const settingsAfter = await readTestFile(settingsPath);
         expect(settingsAfter).toStrictEqual(settingsBefore);

@@ -1,11 +1,13 @@
 import path from "path";
 
-import type { AgentDefinition, AgentName, MergedSkillsMatrix } from "../../types";
-import { CLAUDE_SRC_DIR, globalInstallRoot, STANDARD_FILES } from "../../consts";
+import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../../types";
+import type { Provider } from "../../consts";
+import { globalInstallRoot, STANDARD_FILES } from "../../consts";
 // The gate's private token module, imported here by exception (eslint records
 // it): this is one of the two enforcement guards, and `gate-token.ts` is a
 // dependency-free leaf, so the import cannot cycle back through the gate.
 import { GlobalPairWriteViolation } from "../config-gate/gate-token.js";
+import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import { fileExists, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
@@ -29,13 +31,17 @@ import { activeAgentNames, activeProjectAgentNames } from "./scope-predicates";
  */
 
 /**
- * Returns the absolute path to the global config-types.ts if it exists, or null.
+ * Returns the absolute path to `provider`'s global config-types.ts if it exists, or null.
  * Used to determine whether a project config-types.ts should import from global.
+ *
+ * The provider is the asking PROJECT's, not the global root's: a project inherits only from the
+ * global installation of its own provider, so a Codex project under a Claude global finds none
+ * and writes a standalone types file — which is the same answer it gets when there is no global
+ * installation at all.
  */
-export async function getGlobalConfigTypesPath(): Promise<string | null> {
+export async function getGlobalConfigTypesPath(provider: Provider): Promise<string | null> {
   const globalConfigTypesPath = path.join(
-    globalInstallRoot(),
-    CLAUDE_SRC_DIR,
+    sourceFolderInUse(globalInstallRoot(), provider).dir,
     STANDARD_FILES.CONFIG_TYPES_TS,
   );
   if (await fileExists(globalConfigTypesPath)) {
@@ -45,17 +51,23 @@ export async function getGlobalConfigTypesPath(): Promise<string | null> {
 }
 
 /**
- * Computes a relative import path from a project's .claude-src/ to the global .claude-src/.
+ * Computes a relative import path from a project's source folder to the global one.
  * Returns a POSIX-style relative path suitable for TypeScript import statements.
+ *
+ * Both ends are resolved rather than assumed, so a project and a global on different layouts each
+ * contribute their own folder and the specifier spans whatever depth separates them. A project
+ * inherits only from the global of the SAME provider, which is why ONE provider argument governs
+ * both ends — it was one shared default until C2, and a specifier built from two different
+ * providers' folders would name a file the project cannot compile against.
  *
  * Deliberately NOT part of the shared package: it is `path.relative` against the running
  * machine's `$HOME`, so a browser has nothing to compute it from and the preview draws a
  * placeholder for that one line instead of inventing a path.
  */
-function computeGlobalTypesImportPath(projectDir: string): string {
-  const projectClaudeSrc = path.join(projectDir, CLAUDE_SRC_DIR);
-  const globalClaudeSrc = path.join(globalInstallRoot(), CLAUDE_SRC_DIR);
-  const relativePath = path.relative(projectClaudeSrc, globalClaudeSrc);
+function computeGlobalTypesImportPath(projectDir: string, provider: Provider): string {
+  const projectSourceDir = sourceFolderInUse(projectDir, provider).dir;
+  const globalSourceDir = sourceFolderInUse(globalInstallRoot(), provider).dir;
+  const relativePath = path.relative(projectSourceDir, globalSourceDir);
   // Convert to POSIX separators for TypeScript imports
   return relativePath.split(path.sep).join("/");
 }
@@ -101,57 +113,70 @@ export async function regenerateConfigTypes(
   backgroundData: Promise<ConfigTypesBackgroundData>,
   extras?: ConfigTypesExtras,
 ): Promise<void> {
+  // Read once, at the top, and handed to every path this function builds: the types file, the
+  // global one it may extend and the specifier between them all have to name ONE installation.
+  const provider = providerInUse(projectDir);
+
   // The home directory's config-types.ts is the global pair's types half, which
   // only config-gate may write. Refusing here rather than leaving it to the
   // write primitive's tripwire names the offending entry point, and — unlike the
   // tripwire — survives a unit test that mocks `utils/fs`.
   if (isHomeDirectory(projectDir)) {
     throw new GlobalPairWriteViolation(
-      path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS),
+      path.join(sourceFolderInUse(projectDir, provider).dir, STANDARD_FILES.CONFIG_TYPES_TS),
     );
   }
 
   const data = await backgroundData;
 
-  const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
+  const sourceFolderDir = sourceFolderInUse(projectDir, provider).dir;
 
-  // When a global installation exists and we're regenerating for a project,
-  // generate a project config-types.ts that imports from the global one
-  const isProjectScope = !isHomeDirectory(projectDir);
-  const globalConfigTypes = isProjectScope ? await getGlobalConfigTypesPath() : null;
-  const loadedConfig = await loadProjectConfigFromDir(projectDir);
+  // When a global installation of this provider exists, the project's config-types.ts
+  // imports from the global one.
+  const globalConfigTypes = await getGlobalConfigTypesPath(provider);
+  const loadedConfig = await loadProjectConfigFromDir(projectDir, provider);
 
-  let source: string;
-  if (globalConfigTypes) {
-    const agents = loadedConfig?.config.agents;
-    const selectedAgentNames = agents ? activeAgentNames(agents) : undefined;
-    const projectScopedAgentNames = agents ? activeProjectAgentNames(agents) : undefined;
-    source = generateProjectConfigTypesSource({
-      globalTypesImportPath: computeGlobalTypesImportPath(projectDir),
-      projectSkillIds: extras?.extraSkillIds ?? [],
-      projectAgentNames: extras?.extraAgentNames ?? [],
-      projectDomains: extras?.extraDomains ?? [],
-      projectCategories: extras?.extraCategories ?? [],
-      ...(selectedAgentNames?.length ? { selectedAgentNames } : {}),
-      ...(projectScopedAgentNames?.length ? { projectScopedAgentNames } : {}),
-    });
-    verbose("Using project config-types.ts that imports from global");
-  } else {
-    // Narrowed to the config on disk, exactly as the wizard write path narrows the
-    // standalone form. The full matrix is the fallback only when there is no config
-    // to narrow to — a union covering every skill the source offers would declare
-    // literals the sibling config.ts never installs, and `satisfies` would stop
-    // catching a config that names one of them.
-    source = generateConfigTypesSource(
-      data.matrix,
-      data.agentNames,
-      data.customAgentNames,
-      extras,
-      loadedConfig?.config,
-    );
-  }
+  // Otherwise the standalone form, narrowed to the config on disk, exactly as the wizard write
+  // path narrows it. The full matrix is the fallback only when there is no config
+  // to narrow to — a union covering every skill the source offers would declare
+  // literals the sibling config.ts never installs, and `satisfies` would stop
+  // catching a config that names one of them.
+  const source = globalConfigTypes
+    ? renderTypesExtendingGlobal(projectDir, provider, loadedConfig?.config.agents, extras)
+    : generateConfigTypesSource(
+        data.matrix,
+        data.agentNames,
+        data.customAgentNames,
+        extras,
+        loadedConfig?.config,
+      );
 
-  const configTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
+  const configTypesPath = path.join(sourceFolderDir, STANDARD_FILES.CONFIG_TYPES_TS);
   await writeFile(configTypesPath, source);
   verbose(`Regenerated ${STANDARD_FILES.CONFIG_TYPES_TS}`);
+}
+
+/**
+ * The project config-types.ts that imports the global one and extends it: `extras` supply the
+ * project's own literals, and the config's active agents supply the two agent-name unions.
+ */
+function renderTypesExtendingGlobal(
+  projectDir: string,
+  provider: Provider,
+  agents: ProjectConfig["agents"] | undefined,
+  extras: ConfigTypesExtras | undefined,
+): string {
+  const selectedAgentNames = agents ? activeAgentNames(agents) : undefined;
+  const projectScopedAgentNames = agents ? activeProjectAgentNames(agents) : undefined;
+  const source = generateProjectConfigTypesSource({
+    globalTypesImportPath: computeGlobalTypesImportPath(projectDir, provider),
+    projectSkillIds: extras?.extraSkillIds ?? [],
+    projectAgentNames: extras?.extraAgentNames ?? [],
+    projectDomains: extras?.extraDomains ?? [],
+    projectCategories: extras?.extraCategories ?? [],
+    ...(selectedAgentNames?.length ? { selectedAgentNames } : {}),
+    ...(projectScopedAgentNames?.length ? { projectScopedAgentNames } : {}),
+  });
+  verbose("Using project config-types.ts that imports from global");
+  return source;
 }

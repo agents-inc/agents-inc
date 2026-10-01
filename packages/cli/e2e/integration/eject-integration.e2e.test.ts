@@ -3,16 +3,17 @@ import { writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
-  createTempDir,
   cleanupTempDir,
+  createTempDir,
   directoryExists,
   getEjectedTemplatePath,
   listFiles,
   readTestFile,
+  sourceFolderIn,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 
 /**
@@ -70,8 +71,8 @@ describe("eject command integration", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // The path loadProjectAgents() scans: .claude-src/agents/
-    const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
+    // The path loadProjectAgents() scans: <source folder>/agents/
+    const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(agentsDir)).toBe(true);
 
     // The named partial, not a search for any directory that happens to hold the

@@ -4,12 +4,13 @@ import {
   SUCCESS_MESSAGES,
   STATUS_MESSAGES,
   INFO_MESSAGES,
+  hostCliNotFound,
   initSucceeded,
   localSkillsRemoval,
   notInstalledHere,
   sourceUnreachableUsingCache,
 } from "./messages";
-import { DEFAULT_BRANDING } from "../consts";
+import { DEFAULT_BRANDING, PROVIDERS } from "../consts";
 
 /**
  * The word withdrawn from the user-facing surface, as a whole word so
@@ -53,6 +54,34 @@ describe("the lines that carry the name a run prints itself under", () => {
   });
 });
 
+/**
+ * The line a command prints when the host binary its work goes through is not on the machine.
+ *
+ * It was once the constant `ERROR_MESSAGES.CLAUDE_CLI_NOT_FOUND`, with one caller, and it
+ * named Claude whichever host the run was on. That was true while Claude was the only host and
+ * became a wrong answer the moment `hostFor("codex")` stopped refusing: a Codex installation with
+ * no `codex` on PATH was told to install Claude Code, which is neither the missing binary nor a
+ * step that would help.
+ *
+ * Every provider is covered by the loop rather than by a spec apiece, because the defect is a
+ * provider the table forgot — which a per-provider spec cannot see and a roster walk can. Each
+ * answer must NAME its own provider and must not name any other: a builder that ignored its
+ * argument and a table with two rows pointing at one string both satisfy "is a non-empty string".
+ */
+describe("the line a missing host binary produces", () => {
+  it("names the provider whose binary is missing, and no other", () => {
+    for (const provider of PROVIDERS) {
+      const said = hostCliNotFound(provider).toLowerCase();
+      const others = PROVIDERS.filter((other) => other !== provider);
+
+      expect(said, `${provider} is not named in its own message`).toContain(provider);
+      for (const other of others) {
+        expect(said, `${provider}'s message names ${other} instead`).not.toContain(other);
+      }
+    }
+  });
+});
+
 describe("ERROR_MESSAGES", () => {
   it("should have all expected keys", () => {
     expect(Object.keys(ERROR_MESSAGES)).toStrictEqual([
@@ -62,7 +91,6 @@ describe("ERROR_MESSAGES", () => {
       "FAILED_RESOLVE_SOURCE",
       "FAILED_LOAD_AGENT_PARTIALS",
       "FAILED_COMPILE_AGENTS",
-      "CLAUDE_CLI_NOT_FOUND",
       "NO_SKILLS_TO_COMPILE",
     ]);
   });

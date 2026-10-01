@@ -1,12 +1,12 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { matrixSchema } from "@workspace/matrix/matrix-schema";
 import { CLI } from "../fixtures/cli.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import {
   cleanupTempDir,
   createTempDir,
-  directoryExists,
   fileExists,
   listFiles,
   loadConfigOrFail,
@@ -14,9 +14,9 @@ import {
   readMarketplaceJson,
   readTestFile,
   skillsPath,
+  writeTestPackageJson,
 } from "../helpers/test-utils.js";
 import {
-  DIRS,
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
@@ -130,9 +130,10 @@ describe("new marketplace — refusals", () => {
   it("refuses a target that already holds something, leaving it exactly as it was", async () => {
     tempDir = await createTempDir();
     const occupied = path.join(tempDir, MARKETPLACE_NAME);
-    const occupantPackageJson = `{ "name": "${MARKETPLACE_NAME}", "version": "9.9.9" }\n`;
     await mkdir(occupied, { recursive: true });
-    await writeFile(path.join(occupied, FILES.PACKAGE_JSON), occupantPackageJson);
+    // A version no scaffold writes, so the author's file cannot be mistaken for one.
+    await writeTestPackageJson(occupied, { name: MARKETPLACE_NAME, version: "9.9.9" });
+    const occupantPackageJson = await readTestFile(path.join(occupied, FILES.PACKAGE_JSON));
 
     const { exitCode, output } = await CLI.run(["new", "marketplace", MARKETPLACE_NAME], {
       dir: tempDir,
@@ -225,11 +226,14 @@ describe("new marketplace — what it writes", () => {
     ).toContain("export default");
   });
 
+  // Every name a source folder is spelled in, not one: `new marketplace` writes `config/*.ts`
+  // and nothing under a source folder, so naming only the legacy one made this true of every
+  // marketplace this release creates whatever else had been left beside it.
   it("does not leave the marketplace looking like an installation", async () => {
-    expect(
-      await directoryExists(path.join(marketplaceDir, DIRS.CLAUDE_SRC)),
+    await expectNoSourceFolder(
+      marketplaceDir,
       "a marketplace is a repository of skills, not a project with skills installed in it",
-    ).toBe(false);
+    );
   });
 });
 

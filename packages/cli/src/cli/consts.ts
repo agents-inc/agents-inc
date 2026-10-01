@@ -21,14 +21,20 @@ export {
   DIRS,
   EJECT_SOURCE,
   GLOBAL_CONFIG_NAME,
+  LEGACY_SOURCE_DIR,
   LOCAL_PSEUDO_CATEGORY,
   LOCAL_SKILLS_PATH,
   PLUGIN_MANIFEST_FILE,
+  PROVIDERS,
   SKILLS_DIR_PATH,
+  SOURCE_ROOT_DIR,
   SOURCE_SRC_DIR,
+  sourceDirName,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "@workspace/compile";
+
+export type { Provider } from "@workspace/compile";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

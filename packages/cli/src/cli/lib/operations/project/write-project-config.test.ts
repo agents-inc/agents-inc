@@ -120,7 +120,7 @@ describe("write-project-config", () => {
       undefined,
       undefined,
     );
-    expect(mockEnsureBlankPair).toHaveBeenCalledWith();
+    expect(mockEnsureBlankPair).toHaveBeenCalledWith("claude");
     expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
       finalConfig,
       matrix: sourceResult.matrix,
@@ -133,7 +133,6 @@ describe("write-project-config", () => {
       config: finalConfig,
       configPath,
       wasMerged: false,
-      filesWritten: 4,
       propagation: buildGateReport(),
     });
   });
@@ -164,7 +163,6 @@ describe("write-project-config", () => {
       config: finalConfig,
       configPath,
       wasMerged: false,
-      filesWritten: 2,
       propagation: buildGateReport(),
     });
   });
@@ -250,7 +248,6 @@ describe("write-project-config", () => {
       configPath,
       wasMerged: true,
       existingConfigPath: "/test/project/.claude-src/config.ts.bak",
-      filesWritten: 4,
       propagation: buildGateReport(),
     });
   });

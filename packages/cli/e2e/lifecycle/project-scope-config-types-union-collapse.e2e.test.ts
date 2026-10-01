@@ -65,7 +65,7 @@ const _aLiteralIsNotAnAliasName: Parameters<typeof probeConfigTypesNarrowing>[1]
   E2E_SKILL.react.id,
 ];
 
-/** Everything an eject-mode install writes into a `.claude-src/` directory. */
+/** Everything an eject-mode install writes into its source folder. */
 const INSTALLED_CLAUDE_SRC_ENTRIES = ["config-types.ts", "config.ts"];
 
 /** `source` recorded for skills installed from a local source via `setAllLocal`. */
@@ -191,6 +191,12 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the project's config-types.ts.\ntsc output:\n${projectProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(projectProbe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`.
+      expect(
+        projectProbe.rejected,
+        `every alias asked for must reject its bogus literal.\ntsc output:\n${projectProbe.output}`,
+      ).toStrictEqual([...SKILL_SCOPED_ALIASES]);
 
       // Same invariant at the scope the collapse originates from: a global config
       // with zero installed skills must reject every skill id, not accept all.
@@ -203,6 +209,12 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the global config-types.ts.\ntsc output:\n${globalProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(globalProbe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`.
+      expect(
+        globalProbe.rejected,
+        `every alias asked for must reject its bogus literal.\ntsc output:\n${globalProbe.output}`,
+      ).toStrictEqual([...SKILL_SCOPED_ALIASES]);
 
       // Secondary, on the emitted text: pins the exact defect signature so the
       // failure names the mechanism, not just the symptom.
@@ -264,6 +276,12 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the global config-types.ts.\ntsc output:\n${globalProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(globalProbe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`.
+      expect(
+        globalProbe.rejected,
+        `every alias asked for must reject its bogus literal.\ntsc output:\n${globalProbe.output}`,
+      ).toStrictEqual([...SKILL_SCOPED_ALIASES]);
 
       const projectProbe = await probeConfigTypesNarrowing(
         path.dirname(projectTypesPath),
@@ -274,16 +292,22 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the project's config-types.ts.\ntsc output:\n${projectProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(projectProbe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`.
+      expect(
+        projectProbe.rejected,
+        `every alias asked for must reject its bogus literal.\ntsc output:\n${projectProbe.output}`,
+      ).toStrictEqual([...SKILL_SCOPED_ALIASES]);
 
-      // Filesystem side: probing is a read-only act. Both .claude-src trees must
+      // Filesystem side: probing is a read-only act. Both source-folder trees must
       // be exactly what the install wrote, with no probe artifact left behind.
       expect(
         await listFiles(path.dirname(projectTypesPath)),
-        "probing must leave the project .claude-src tree untouched",
+        "probing must leave the project source-folder tree untouched",
       ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
       expect(
         await listFiles(path.dirname(globalTypesPath)),
-        "probing must leave the global .claude-src tree untouched",
+        "probing must leave the global source-folder tree untouched",
       ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
     },
   );

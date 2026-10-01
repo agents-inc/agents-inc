@@ -8,8 +8,17 @@ import { partialsRenderedBy } from "./helpers/template-partial-renders.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/** The shipped template a compile renders when nothing overrides it. */
-const AGENT_TEMPLATE = path.join(CLI_ROOT, "src/agents/_templates/agent.liquid");
+/**
+ * The shipped template a compile renders when nothing overrides it — both halves.
+ *
+ * C5 split it: `agent.liquid` is the frontmatter and ends by including `agent-body.liquid`, which
+ * is where the prose and every `{% render %}` tag now live. Reading only the frontmatter half
+ * would make the roster below agree with an empty list, which is the failure this file exists to
+ * catch rather than to demonstrate.
+ */
+const AGENT_TEMPLATE_HALVES = ["agent.liquid", "agent-body.liquid"].map((half) =>
+  path.join(CLI_ROOT, "src/agents/_templates", half),
+);
 
 /** The directory `{% render "methodologies/…" %}` resolves against. */
 const METHODOLOGIES_DIR = path.join(CLI_ROOT, "src/agents/_templates/methodologies");
@@ -53,7 +62,8 @@ const UNRENDERED_METHODOLOGY_PARTIALS = [] as const;
  */
 describe("the shipped agent template renders the partials beside it", () => {
   it("renders the methodology partials in the order a compiled sub-agent reads them", async () => {
-    const template = await readFile(AGENT_TEMPLATE, "utf8");
+    const halves = await Promise.all(AGENT_TEMPLATE_HALVES.map((half) => readFile(half, "utf8")));
+    const template = halves.join("");
 
     expect(
       partialsRenderedBy(template),

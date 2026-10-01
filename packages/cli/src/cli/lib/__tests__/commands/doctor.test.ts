@@ -6,9 +6,12 @@ import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { renderAgentMd, renderMetadataYaml, renderSkillMd } from "../content-generators";
 import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
-import { writeTestTsConfig } from "../helpers/config-io.js";
-import { buildAgentConfigs } from "../factories/config-factories.js";
+import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
+import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
+import { saUnflagged } from "../factories/skill-factories.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { CUSTOM_HOUSE_TOOLING_SKILL } from "../mock-data/mock-skills.js";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
@@ -21,9 +24,6 @@ import {
 /** The installed pair a deleted configuration strands: one skill directory, one compiled agent. */
 const ORPHANED_SKILL_ID = "web-framework-react";
 const ORPHANED_AGENT_NAME = "web-developer";
-
-/** A config file the loader cannot evaluate — present on disk, and describing nothing. */
-const UNREADABLE_CONFIG = "export default {{{ not valid typescript";
 
 /**
  * A skill directory in the shared `~/.claude/skills/` tree that this CLI did not put there.
@@ -82,54 +82,97 @@ describe("doctor command", () => {
 
     it("should pass when valid config exists", async () => {
       // Create valid project config
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: [],
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: [],
+          skills: [],
+        }),
+      );
 
-      const { error } = await runCliCommand(["doctor"]);
+      const { stdout, error } = await runCliCommand(["doctor"]);
 
       // Should complete without critical errors when config is valid
-      // (may fail on Source Reachable if no source is available)
-      const output = error?.message || "";
+      // (may fail on Source Reachable if no source is available). Read from stdout, where the
+      // Config Valid row is printed: `error` carries only the exit, so a negation against it alone
+      // held whatever the row said.
+      const output = stdout + (error?.message || "");
+      expect(output).toContain("config.ts is valid");
       expect(output.toLowerCase()).not.toContain("config.ts has errors");
     });
   });
 
+  /**
+   * A config that EXISTS and cannot be loaded, on each folder an installation can be on.
+   *
+   * Both, because these two cases are one sentence apart and only one of them was here. "Doctor
+   * fails on a config with syntax errors" and "doctor fails when there is no config" both exit
+   * ERROR, so a spec that seeds the corrupt file somewhere the resolver does not look reports the
+   * second while reading as the first — and the source-folder rename is exactly the change that
+   * can move where the resolver looks.
+   *
+   * The plan for the source-folder rename predicted this file would become that: "writes an invalid
+   * config at the old path, so the 'syntax errors' case silently becomes the 'not found' case". It
+   * does not, and the reason is the resolver's preference order: `sourceFolderOnDisk` prefers
+   * whichever folder HOLDS a config, so a project with a config only under the old name resolves
+   * there whatever a new install would have been created in. What the flip changes is the
+   * empty-scope answer alone. The second case is here anyway,
+   * because "the case the plan feared is unreachable today" is a fact about this month's resolver
+   * and not a property anything holds.
+   */
   describe("config validation", () => {
-    it("should fail when config.ts has syntax errors", async () => {
-      const claudeSrcDir = path.join(projectDir, ".claude-src");
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(
-        path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-        "invalid typescript content {{",
-      );
+    /**
+     * What doctor says about a config it FOUND and could not read, taken verbatim from a run.
+     * "No config here" is the other way to exit ERROR, and it says nothing of the kind.
+     */
+    const UNREADABLE_CONFIG_ROW = "exists but could not be loaded";
 
-      const { error } = await runCliCommand(["doctor"]);
+    it.each([".claude-src", ".agents-inc/claude"])(
+      "should fail on a config.ts with syntax errors under %s",
+      async (sourceFolder) => {
+        const configPath = await writeRawTestConfig(
+          projectDir,
+          renderUnparseableConfigTs(),
+          sourceFolder,
+        );
 
-      // Should exit with error due to invalid config
-      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-    });
+        const { error, stdout } = await runCliCommand(["doctor"]);
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        // The discriminating half: a project where doctor looked somewhere else exits ERROR too,
+        // reporting a config that is not there — which reads exactly like this one.
+        expect(
+          stdout,
+          `doctor exited ERROR without reporting the config at ${configPath} — it found no config rather than a broken one, so this spec is about the wrong failure`,
+        ).toContain(UNREADABLE_CONFIG_ROW);
+        expect(stdout).toContain(configPath);
+      },
+    );
 
     it("should pass with minimal valid config", async () => {
       await writeTestTsConfig(projectDir, {
         name: "test-project",
       });
 
-      const { error } = await runCliCommand(["doctor"]);
+      const { stdout, error } = await runCliCommand(["doctor"]);
 
       // May still exit with error if source is unreachable,
-      // but should not fail on config parsing
-      const output = error?.message || "";
+      // but should not fail on config parsing — read from stdout, where the row is printed
+      const output = stdout + (error?.message || "");
+      expect(output).toContain("config.ts is valid");
       expect(output.toLowerCase()).not.toContain("config.ts has errors");
     });
 
     it("should name a config that loads and declares nothing rather than calling it missing", async () => {
-      await writeTestTsConfig(projectDir, {
-        name: "declares-nothing",
-        skills: [],
-        agents: [],
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "declares-nothing",
+          skills: [],
+          agents: [],
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -142,11 +185,14 @@ describe("doctor command", () => {
     });
 
     it("should run the operational rows on an empty config instead of skipping them", async () => {
-      await writeTestTsConfig(projectDir, {
-        name: "declares-nothing",
-        skills: [],
-        agents: [],
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "declares-nothing",
+          skills: [],
+          agents: [],
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -168,10 +214,14 @@ describe("doctor command", () => {
       const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
 
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+          skills: [],
+        }),
+      );
 
       // Create the compiled agent file
       await writeFile(
@@ -190,10 +240,14 @@ describe("doctor command", () => {
 
     it("should warn when agents need recompilation", async () => {
       // Create config with agent but no compiled .md file
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+          skills: [],
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
@@ -210,10 +264,14 @@ describe("doctor command", () => {
       await mkdir(agentsDir, { recursive: true });
 
       // Create config with no agents
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: [],
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: [],
+          skills: [],
+        }),
+      );
 
       // Create an orphaned agent file not in config
       await writeFile(
@@ -234,10 +292,14 @@ describe("doctor command", () => {
       await mkdir(agentsDir, { recursive: true });
 
       // Excluded project agent — its .md file is stale
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"], { excluded: true }),
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: buildAgentConfigs(["web-developer"], { excluded: true }),
+          skills: [],
+        }),
+      );
 
       // Stale .md file from before exclusion. It carries real frontmatter because a
       // compile wrote it — a bare heading is content doctor rejects before it ever
@@ -405,9 +467,7 @@ describe("doctor command", () => {
 
     it("still stands down for a config that exists and cannot be read", async () => {
       await installContentWithoutConfig();
-      const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-      await mkdir(claudeSrcDir, { recursive: true });
-      await writeFile(path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS), UNREADABLE_CONFIG);
+      await writeRawTestConfig(projectDir, renderUnparseableConfigTs(), CLAUDE_SRC_DIR);
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -424,11 +484,14 @@ describe("doctor command", () => {
   describe("skills installed check", () => {
     it("should warn when eject-mode skill is missing from disk", async () => {
       // Config lists an eject-mode skill, but no skill directory exists on disk
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: [],
-        skills: buildSkillConfigs(["web-framework-react"]),
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: [],
+          skills: buildSkillConfigs(["web-framework-react"]),
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -440,11 +503,14 @@ describe("doctor command", () => {
 
     it("should pass when eject-mode skill files exist on disk", async () => {
       // Create config listing an eject-mode skill
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: [],
-        skills: buildSkillConfigs(["web-framework-react"]),
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: [],
+          skills: buildSkillConfigs(["web-framework-react"]),
+        }),
+      );
 
       // Create the skill files on disk. Both halves are written: an ejected skill
       // with no metadata.yaml is invalid content, and doctor stops at the content
@@ -477,11 +543,14 @@ describe("doctor command", () => {
 
     it("should not check plugin-mode skills for disk presence", async () => {
       // Config lists a plugin-mode skill (no files needed on disk)
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: [],
-        skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
-      });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: [],
+          skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -492,20 +561,31 @@ describe("doctor command", () => {
     });
   });
 
+  /**
+   * The pair: a stack skill found nowhere is reported, and one found only as the project's own
+   * local skill is not. The local one is a skill the user wrote — an id no marketplace carries —
+   * because `checkSkillsResolved` counts a skill as found when the loaded catalogue holds it OR a
+   * local copy does, so a catalogue id resolves whether or not anything is on disk. The spec here
+   * used `web-framework-react` with a metadata.yaml short of `displayName` and `slug`, which
+   * discovery refuses, and passed with no local skill written at all.
+   */
   describe("broken agent references", () => {
     it("should report skills in stack that cannot be resolved", async () => {
       // Config has a stack referencing a skill that doesn't exist
       // anywhere (not in matrix, not in local skills)
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: [],
-        stack: {
-          "web-developer": {
-            "web-framework": [{ id: "web-framework-nonexistent" }],
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: buildAgentConfigs(["web-developer"]),
+          skills: [],
+          stack: {
+            "web-developer": {
+              "web-framework": [saUnflagged("web-framework-nonexistent")],
+            },
           },
-        },
-      });
+        }),
+      );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
@@ -516,35 +596,48 @@ describe("doctor command", () => {
     });
 
     it("should pass when stack skills exist as local skills", async () => {
-      // Config has a stack referencing a skill
-      await writeTestTsConfig(projectDir, {
-        name: "test-project",
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: buildSkillConfigs(["web-framework-react"]),
-        stack: {
-          "web-developer": {
-            "web-framework": [{ id: "web-framework-react" }],
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          agents: buildAgentConfigs(["web-developer"]),
+          skills: buildSkillConfigs([CUSTOM_HOUSE_TOOLING_SKILL.id]),
+          stack: {
+            "web-developer": {
+              [CUSTOM_HOUSE_TOOLING_SKILL.category]: [saUnflagged(CUSTOM_HOUSE_TOOLING_SKILL.id)],
+            },
           },
-        },
-      });
+        }),
+      );
 
-      // Create the local skill so it resolves
-      const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, "web-framework-react");
+      // The local skill, written whole: `custom: true` is what carries a slug the catalogue
+      // does not, and every field doctor's content layer requires is present, so nothing
+      // upstream of the resolution check stops the run before it.
+      const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, CUSTOM_HOUSE_TOOLING_SKILL.id);
       await mkdir(skillDir, { recursive: true });
       await writeFile(
         path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd("web-framework-react"),
+        renderSkillMd(CUSTOM_HOUSE_TOOLING_SKILL.id, CUSTOM_HOUSE_TOOLING_SKILL.description),
       );
       await writeFile(
         path.join(skillDir, STANDARD_FILES.METADATA_YAML),
-        "name: web-framework-react\ndescription: React framework\ncategory: web-framework\ndomain: web\n",
+        renderMetadataYaml({
+          custom: true,
+          displayName: CUSTOM_HOUSE_TOOLING_SKILL.displayName,
+          category: CUSTOM_HOUSE_TOOLING_SKILL.category,
+          slug: CUSTOM_HOUSE_TOOLING_SKILL.slug,
+          cliDescription: CUSTOM_HOUSE_TOOLING_SKILL.description,
+          usageGuidance: "Use for the tooling conventions this project wrote for itself",
+          contentHash: "b2c3d4e",
+        }),
       );
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
       // The skill should be resolved (found as local skill)
-      expect(output).not.toContain("web-framework-react (not found)");
+      expect(output).toContain("1/1 skills found");
+      expect(output).not.toContain(`${CUSTOM_HOUSE_TOOLING_SKILL.id} (not found)`);
     });
   });
 });

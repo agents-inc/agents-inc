@@ -53,7 +53,7 @@ import "../matchers/setup.js";
  */
 const STACK_DERIVED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
-/** Everything an eject-mode install writes into a `.claude-src/` directory. */
+/** Everything an eject-mode install writes into its source folder. */
 const INSTALLED_CLAUDE_SRC_ENTRIES = ["config-types.ts", "config.ts"];
 
 describe("init wizard — a stack install lands its roster and type-checks", () => {
@@ -126,17 +126,17 @@ describe("init wizard — a stack install lands its roster and type-checks", () 
       // --- Surface 4: the generated type surface the config is checked against.
       // First that the config the CLI just wrote accepts itself — a pair that
       // fails here tells the user their untouched installation is invalid. ---
-      const globalClaudeSrc = path.dirname(configTypesTsPath(globalHome));
-      const projectClaudeSrc = path.dirname(configTypesTsPath(result.project.dir));
+      const globalSourceFolder = path.dirname(configTypesTsPath(globalHome));
+      const projectSourceFolder = path.dirname(configTypesTsPath(result.project.dir));
       expect(await fileExists(configTypesTsPath(globalHome))).toBe(true);
       expect(await fileExists(configTypesTsPath(result.project.dir))).toBe(true);
 
-      const globalTypecheck = await typecheckGeneratedConfig(globalClaudeSrc);
+      const globalTypecheck = await typecheckGeneratedConfig(globalSourceFolder);
       expect(
         globalTypecheck.exitCode,
         `the global config.ts must type-check against its own config-types.ts.\ntsc output:\n${globalTypecheck.output}`,
       ).toBe(EXIT_CODES.SUCCESS);
-      const projectTypecheck = await typecheckGeneratedConfig(projectClaudeSrc);
+      const projectTypecheck = await typecheckGeneratedConfig(projectSourceFolder);
       expect(
         projectTypecheck.exitCode,
         `the project config.ts must type-check against its own config-types.ts.\ntsc output:\n${projectTypecheck.output}`,
@@ -145,29 +145,45 @@ describe("init wizard — a stack install lands its roster and type-checks", () 
       // Then the property the aliases exist for: a value that is not installed
       // must still be a type error. A pair that accepts its own config AND
       // everything else has stopped checking anything.
-      const globalProbe = await probeConfigTypesNarrowing(globalClaudeSrc, STACK_DERIVED_ALIASES);
+      const globalProbe = await probeConfigTypesNarrowing(
+        globalSourceFolder,
+        STACK_DERIVED_ALIASES,
+      );
       expect(
         globalProbe.exitCode,
         `a bogus literal must not type-check against the global config-types.ts.\ntsc output:\n${globalProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(globalProbe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`, which is the degradation this probe exists to catch.
+      expect(
+        globalProbe.rejected,
+        `every stack-derived alias must reject its bogus literal in the global config-types.ts.\ntsc output:\n${globalProbe.output}`,
+      ).toStrictEqual([...STACK_DERIVED_ALIASES]);
 
-      const projectProbe = await probeConfigTypesNarrowing(projectClaudeSrc, STACK_DERIVED_ALIASES);
+      const projectProbe = await probeConfigTypesNarrowing(
+        projectSourceFolder,
+        STACK_DERIVED_ALIASES,
+      );
       expect(
         projectProbe.exitCode,
         `a bogus literal must not type-check against the project config-types.ts.\ntsc output:\n${projectProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(projectProbe.output).toContain(TS_NOT_ASSIGNABLE);
+      expect(
+        projectProbe.rejected,
+        `every stack-derived alias must reject its bogus literal in the project config-types.ts.\ntsc output:\n${projectProbe.output}`,
+      ).toStrictEqual([...STACK_DERIVED_ALIASES]);
 
       // Probing writes a file next to config-types.ts and removes it again, so
       // both trees must be exactly what the install left.
       expect(
-        (await listFiles(globalClaudeSrc)).sort(),
-        "probing must leave the global .claude-src tree untouched",
+        (await listFiles(globalSourceFolder)).sort(),
+        "probing must leave the global source folder untouched",
       ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
       expect(
-        (await listFiles(projectClaudeSrc)).sort(),
-        "probing must leave the project .claude-src tree untouched",
+        (await listFiles(projectSourceFolder)).sort(),
+        "probing must leave the project source folder untouched",
       ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
     },
   );

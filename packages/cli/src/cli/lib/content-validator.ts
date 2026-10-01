@@ -9,15 +9,15 @@ import { readSkillMetadata } from "./loading/index.js";
 import {
   configDirsInPlay,
   findConfigLoadFailures,
-  getProjectConfigPath,
   isLocalSource,
-  loadProjectConfigFromDir,
+  loadInstalledConfig,
   resolvePrimarySourceEntry,
   type ConfigLoadError,
   type LoadedProjectConfig,
   type SourceEntry,
 } from "./configuration/index.js";
 import { isHomeDirectory, resolveInstallPaths } from "./installation/index.js";
+import { getInstalledConfigPath } from "./installation/install-base-dir.js";
 import {
   getInstalledPluginsRegistryPath,
   getProjectPluginsDir,
@@ -32,6 +32,7 @@ import {
 import { splitMetadataValidationIssues, validateSkillMetadata } from "./schemas.js";
 import { readForkedFromMetadata } from "./skills/index.js";
 import { isSourceRepo, validateSource, type MarketplaceReader } from "./source-validator.js";
+import { invalidResult, mergeValidationResults, validResult } from "./validation-result.js";
 import type { ValidationResult } from "../types/index.js";
 
 /** How a source repository under the cwd is labelled when it is not a registered source. */
@@ -122,7 +123,7 @@ function toUnreadableConfigIssue(failure: ConfigLoadError): ContentIssue {
 
 async function countExistingConfigs(projectDir: string): Promise<number> {
   const present = await Promise.all(
-    configDirsInPlay(projectDir).map((dir) => fileExists(getProjectConfigPath(dir))),
+    configDirsInPlay(projectDir).map((dir) => fileExists(getInstalledConfigPath(dir))),
   );
   return present.filter(Boolean).length;
 }
@@ -316,7 +317,9 @@ export async function validateInstalledSkills(projectDir: string): Promise<Conte
 
 /** Every skill id the configs this run reads name, across both scopes and both install modes. */
 async function configuredSkillIds(projectDir: string): Promise<ReadonlySet<string>> {
-  const loaded = await Promise.all(configDirsInPlay(projectDir).map(loadProjectConfigFromDir));
+  const loaded = await Promise.all(
+    configDirsInPlay(projectDir).map((dir) => loadInstalledConfig(dir)),
+  );
   return new Set(loaded.flatMap(configuredIdsOf));
 }
 
@@ -507,28 +510,29 @@ async function validateAgentsDirectory(agentsDir: string): Promise<ContentValida
 }
 
 async function validateInstalledSkill(skillDir: string): Promise<ValidationResult> {
-  const skillMdPath = path.join(skillDir, STANDARD_FILES.SKILL_MD);
-  const metadataPath = path.join(skillDir, STANDARD_FILES.METADATA_YAML);
-  const errors: string[] = [];
-  const warnings: string[] = [];
+  const skillMd = await validateSkillFile(
+    skillDir,
+    STANDARD_FILES.SKILL_MD,
+    validateSkillFrontmatter,
+  );
+  const metadata = await validateSkillFile(
+    skillDir,
+    STANDARD_FILES.METADATA_YAML,
+    validateInstalledSkillMetadata,
+  );
 
-  if (!(await fileExists(skillMdPath))) {
-    errors.push(`Missing ${STANDARD_FILES.SKILL_MD}`);
-  } else {
-    const frontmatterResult = await validateSkillFrontmatter(skillMdPath);
-    errors.push(...frontmatterResult.errors);
-    warnings.push(...frontmatterResult.warnings);
-  }
+  return mergeValidationResults([skillMd, metadata]);
+}
 
-  if (!(await fileExists(metadataPath))) {
-    errors.push(`Missing ${STANDARD_FILES.METADATA_YAML}`);
-  } else {
-    const metadataResult = await validateInstalledSkillMetadata(metadataPath);
-    errors.push(...metadataResult.errors);
-    warnings.push(...metadataResult.warnings);
-  }
-
-  return { valid: errors.length === 0, errors, warnings };
+/** One of an installed skill's files judged by `validate`, or the error of its absence. */
+async function validateSkillFile(
+  skillDir: string,
+  fileName: string,
+  validate: (filePath: string) => Promise<ValidationResult>,
+): Promise<ValidationResult> {
+  const filePath = path.join(skillDir, fileName);
+  if (!(await fileExists(filePath))) return invalidResult(`Missing ${fileName}`);
+  return validate(filePath);
 }
 
 async function validateInstalledSkillMetadata(metadataPath: string): Promise<ValidationResult> {
@@ -538,17 +542,13 @@ async function validateInstalledSkillMetadata(metadataPath: string): Promise<Val
   // it — doctor reports what the other two passes refuse, and then some.
   const read = await readSkillMetadata(metadataPath);
   if (!read.usable) {
-    return {
-      valid: false,
-      errors: [`${STANDARD_FILES.METADATA_YAML}: ${read.reason}`],
-      warnings: [],
-    };
+    return invalidResult(`${STANDARD_FILES.METADATA_YAML}: ${read.reason}`);
   }
 
   const metadata = read.metadata;
   const result = validateSkillMetadata(metadata);
   if (result.success) {
-    return { valid: true, errors: [], warnings: [] };
+    return validResult();
   }
 
   // Over-length cliDescription is advisory — only hard schema violations invalidate the skill

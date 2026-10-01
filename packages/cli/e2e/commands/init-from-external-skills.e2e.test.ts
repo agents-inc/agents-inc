@@ -15,6 +15,7 @@ import {
   readTreeSnapshot,
   renderMetadataYaml,
   skillsPath,
+  sourceFolderIn,
 } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -26,7 +27,7 @@ import {
 } from "../fixtures/seed-config-store.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
+import { EXIT_CODES, FILES } from "../pages/constants.js";
 import {
   UPSTREAM_SKILL_NAME,
   buildSeedExternalSkill,
@@ -112,10 +113,15 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
-          [EXTERNAL_ID]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+          [EXTERNAL_ID]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         external: {
           [EXTERNAL_ID]: buildSeedExternalSkill({
@@ -143,10 +149,9 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
 
     // "eject" is the only origin an added skill can have — nothing serves it as a plugin.
     const config = await loadConfigOrFail(env.projectDir);
-    expect(config.skills).toStrictEqual([
-      ...buildSkillConfigs([E2E_SKILL.react.id]),
-      ...buildSkillConfigs([EXTERNAL_ID]),
-    ]);
+    expect(config.skills).toStrictEqual(
+      buildSkillConfigs([E2E_SKILL.react.id, EXTERNAL_ID], { scope: "project", origin: "eject" }),
+    );
     expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
     // Exhaustive, not "contains": the catalogue skill and the carried one land side by side in
@@ -198,7 +203,11 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       "External2",
       buildSeedPayload({
         skills: {
-          [EXTERNAL_ID]: buildSeedSkill({ scope: "global", assignments: { [WEB_DEV]: "lazy" } }),
+          [EXTERNAL_ID]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         external: {
           [EXTERNAL_ID]: buildSeedExternalSkill({
@@ -271,7 +280,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     expect(flattenCliOutput(output)).toContain("plugin");
     // The refusal fires before anything is written, like every other refusal on this path.
     await expect({ dir: env.projectDir }).toHaveNoLocalSkills();
-    expect(await fileExists(path.join(env.projectDir, DIRS.CLAUDE_SRC, FILES.CONFIG_TS))).toBe(
+    expect(await fileExists(path.join(sourceFolderIn(env.projectDir), FILES.CONFIG_TS))).toBe(
       false,
     );
   });
@@ -283,6 +292,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -353,6 +363,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
         marketplace: sourceDir,
         skills: {
           [CATALOGUE_ID_THE_FIXTURE_LACKS]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -411,7 +422,11 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       "External6",
       buildSeedPayload({
         skills: {
-          [EXTERNAL_ID]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+          [EXTERNAL_ID]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
         },
         external: {
           [EXTERNAL_ID]: buildSeedExternalSkill({

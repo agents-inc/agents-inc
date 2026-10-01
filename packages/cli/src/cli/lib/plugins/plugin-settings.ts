@@ -6,7 +6,7 @@ import { getErrorMessage } from "../../utils/errors";
 import { typedEntries } from "../../utils/typed-object";
 import { CLAUDE_DIR, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../../consts";
 import { formatZodErrors } from "../schema-validator";
-import { getPluginManifestPath, getUserPluginsDir } from "./plugin-finder";
+import { INSTALLED_PLUGINS_FILE } from "../installation/install-layout";
 
 /**
  * Plugin key format: "plugin-name@marketplace"
@@ -64,7 +64,6 @@ const installedPluginsSchema = z
   .passthrough();
 
 const SETTINGS_FILE = STANDARD_FILES.SETTINGS_JSON;
-const INSTALLED_PLUGINS_FILE = "installed_plugins.json";
 
 /** Absolute path of the claude CLI install registry inside a plugins directory. */
 export function getInstalledPluginsRegistryPath(pluginsDir: string): string {
@@ -72,15 +71,15 @@ export function getInstalledPluginsRegistryPath(pluginsDir: string): string {
 }
 
 /**
- * Lists every install recorded in a plugins directory's `installed_plugins.json`
- * (v2 registry — claude CLI >=2.1.220 installs under `cache/<marketplace>/<plugin>/<version>/`),
- * flattened to unique (pluginKey, installPath) pairs across all scopes.
+ * The registry, parsed, keyed by plugin. The one read the two listings below share.
  *
  * Throws when the registry is unreadable or fails schema validation — callers
  * treat the registry as the source of truth for installed plugins, so a broken
  * registry must surface as an error rather than an empty result.
  */
-export async function listRegisteredPluginInstalls(pluginsDir: string): Promise<ResolvedPlugin[]> {
+async function readRegisteredInstallations(
+  pluginsDir: string,
+): Promise<Record<PluginKey, RegisteredInstallation[]>> {
   const registryPath = getInstalledPluginsRegistryPath(pluginsDir);
   const content = await readFileSafe(registryPath, MAX_CONFIG_FILE_SIZE);
   const raw: unknown = JSON.parse(content);
@@ -92,9 +91,52 @@ export async function listRegisteredPluginInstalls(pluginsDir: string): Promise<
     );
   }
 
-  return typedEntries(result.data.plugins).flatMap(([pluginKey, installations]) => {
-    const uniquePaths = [...new Set(installations.map((i) => i.installPath))];
+  return result.data.plugins;
+}
+
+/**
+ * Lists every install recorded in a plugins directory's `installed_plugins.json`
+ * (v2 registry — claude CLI >=2.1.220 installs under `cache/<marketplace>/<plugin>/<version>/`),
+ * flattened to unique (pluginKey, installPath) pairs across all scopes.
+ *
+ * The listing for a reader whose subject is the REGISTRY — `content-validator.ts` validates what
+ * is recorded there, and a record it skipped would be a record it never reported on. A reader
+ * whose subject is a project takes {@link listPluginInstallsForProject} instead.
+ */
+export async function listRegisteredPluginInstalls(pluginsDir: string): Promise<ResolvedPlugin[]> {
+  const installations = await readRegisteredInstallations(pluginsDir);
+
+  return typedEntries(installations).flatMap(([pluginKey, forKey]) => {
+    const uniquePaths = [...new Set(forKey.map((i) => i.installPath))];
     return uniquePaths.map((installPath) => ({ pluginKey, installPath }));
+  });
+}
+
+/**
+ * The same registry read as ONE install per plugin, as seen from `projectDir`.
+ *
+ * A plugin key the registry carries more than once has to be resolved to a single directory
+ * before anything loads a skill out of it, and which one that is depends on who is asking:
+ * this project's own record where there is one, the user-scoped record otherwise, and nothing at
+ * all for a key recorded only under a different project's path. Returning every record instead
+ * would hand a reader another project's install path for a key this project merely has switched
+ * on.
+ *
+ * Throws for a present-but-unreadable registry, like its sibling and for its sibling's reason.
+ */
+export async function listPluginInstallsForProject(
+  pluginsDir: string,
+  projectDir: string,
+): Promise<ResolvedPlugin[]> {
+  const installations = await readRegisteredInstallations(pluginsDir);
+
+  return typedEntries(installations).flatMap(([pluginKey, forKey]) => {
+    const picked = pickInstallation(forKey, projectDir);
+    if (!picked) {
+      verbose(`No installation of '${pluginKey}' belongs to '${projectDir}'`);
+      return [];
+    }
+    return [{ pluginKey, installPath: picked.installPath }];
   });
 }
 
@@ -149,84 +191,4 @@ function pickInstallation(
     installations.find((i) => i.scope === "project" && i.projectPath === projectDir) ??
     installations.find((i) => i.scope === "user")
   );
-}
-
-/**
- * Resolve install paths for the given plugin keys from global registry
- */
-export async function resolvePluginInstallPaths(
-  pluginKeys: PluginKey[],
-  projectDir: string,
-): Promise<ResolvedPlugin[]> {
-  if (pluginKeys.length === 0) {
-    return [];
-  }
-
-  const registryPath = getInstalledPluginsRegistryPath(getUserPluginsDir());
-
-  if (!(await fileExists(registryPath))) {
-    verbose(`Plugin registry not found at '${registryPath}'`);
-    return [];
-  }
-
-  try {
-    const content = await readFileSafe(registryPath, MAX_CONFIG_FILE_SIZE);
-    const raw: unknown = JSON.parse(content);
-    const result = installedPluginsSchema.safeParse(raw);
-
-    if (!result.success) {
-      verbose(`Invalid plugin registry structure: ${getErrorMessage(result.error)}`);
-      return [];
-    }
-
-    const registry = result.data;
-
-    return pluginKeys.flatMap((pluginKey) => {
-      const installations = registry.plugins[pluginKey];
-      if (!installations || installations.length === 0) {
-        verbose(`Plugin '${pluginKey}' not found in registry`);
-        return [];
-      }
-
-      const picked = pickInstallation(installations, projectDir);
-      if (!picked) {
-        verbose(`No matching installation found for '${pluginKey}'`);
-        return [];
-      }
-
-      const scopeSuffix = picked.scope === "user" ? " (user scope)" : "";
-      verbose(`Resolved '${pluginKey}' to '${picked.installPath}'${scopeSuffix}`);
-      return [{ pluginKey, installPath: picked.installPath }];
-    });
-  } catch (error) {
-    verbose(`Failed to read plugin registry: ${getErrorMessage(error)}`);
-    return [];
-  }
-}
-
-/**
- * Get verified plugin install paths for the project
- * Combines settings.json reading, registry lookup, and path verification
- */
-export async function getVerifiedPluginInstallPaths(projectDir: string): Promise<ResolvedPlugin[]> {
-  const enabledKeys = await getEnabledPluginKeys(projectDir);
-  const resolvedPaths = await resolvePluginInstallPaths(enabledKeys, projectDir);
-
-  // Filter out paths that don't exist on disk
-  const checks = await Promise.all(
-    resolvedPaths.map(async ({ pluginKey, installPath }) => {
-      const pluginJsonPath = getPluginManifestPath(installPath);
-      const manifestExists = await fileExists(pluginJsonPath);
-      if (!manifestExists) {
-        verbose(`Plugin '${pluginKey}' manifest does not exist at: '${pluginJsonPath}'`);
-      }
-      return { pluginKey, installPath, manifestExists };
-    }),
-  );
-  const verified: ResolvedPlugin[] = checks
-    .filter((c) => c.manifestExists)
-    .map(({ pluginKey, installPath }) => ({ pluginKey, installPath }));
-
-  verbose(`Verified ${verified.length} plugin install paths`);
-  return verified;
 }

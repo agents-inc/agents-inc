@@ -4,11 +4,11 @@ import { Liquid } from "liquidjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../compiler.js", () => ({
-  compileAgentForPlugin: vi.fn(),
+  compileAgentForHost: vi.fn(),
 }));
 
 import { writeCompiledAgentsByScope } from "./write-compiled-agents";
-import { compileAgentForPlugin } from "../compiler.js";
+import { compileAgentForHost } from "../compiler.js";
 import { resolveInstallPaths } from "../installation/install-base-dir";
 import { createMockAgentConfig } from "../__tests__/factories/agent-factories";
 import { createMockSkillEntry } from "../__tests__/factories/skill-factories";
@@ -19,15 +19,17 @@ import {
   fileExists,
 } from "../__tests__/test-fs-utils";
 import { SKILLS } from "../__tests__/test-fixtures";
+import { renderAgentMd } from "../__tests__/content-generators";
 import { EJECT_SOURCE } from "../../consts";
 import { firstElement } from "../__tests__/helpers/element-at";
 import type { AgentConfig, AgentName, SkillScope } from "../../types";
 
 const PROJECT_AGENT: AgentName = "web-developer";
 const GLOBAL_AGENT: AgentName = "api-developer";
-const COMPILED_BODY = "---\nname: agent\ndescription: compiled\n---\n";
+/** What the mocked compiler answers for every agent. Only where it lands is asserted, never what it says. */
+const COMPILED_BODY = renderAgentMd("agent", "compiled");
 
-const mockCompileAgentForPlugin = vi.mocked(compileAgentForPlugin);
+const mockCompileAgentForHost = vi.mocked(compileAgentForHost);
 
 describe("writeCompiledAgentsByScope", () => {
   let tempDir: string;
@@ -39,7 +41,7 @@ describe("writeCompiledAgentsByScope", () => {
     fakeHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "project");
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
-    mockCompileAgentForPlugin.mockResolvedValue(COMPILED_BODY);
+    mockCompileAgentForHost.mockResolvedValue(COMPILED_BODY);
   });
 
   afterEach(async () => {
@@ -58,6 +60,7 @@ describe("writeCompiledAgentsByScope", () => {
       sourcePath: projectDir,
       engine: new Liquid(),
       projectAgentsDir: projectAgentsDir(),
+      projectDir,
       ...(agentScopeMap !== undefined && { agentScopeMap }),
     });
 
@@ -146,8 +149,8 @@ describe("writeCompiledAgentsByScope", () => {
         [PROJECT_AGENT]: createMockAgentConfig(PROJECT_AGENT, [pluginSkill]),
       });
 
-      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
-      const [name, agent] = firstElement(mockCompileAgentForPlugin.mock.calls);
+      expect(mockCompileAgentForHost).toHaveBeenCalledTimes(1);
+      const [, name, agent] = firstElement(mockCompileAgentForHost.mock.calls);
       expect(name).toBe(PROJECT_AGENT);
       expect(agent.skills).toStrictEqual([pluginSkill]);
     });
@@ -159,8 +162,8 @@ describe("writeCompiledAgentsByScope", () => {
         [PROJECT_AGENT]: createMockAgentConfig(PROJECT_AGENT, [ejectSkill]),
       });
 
-      expect(mockCompileAgentForPlugin).toHaveBeenCalledTimes(1);
-      const [name, agent] = firstElement(mockCompileAgentForPlugin.mock.calls);
+      expect(mockCompileAgentForHost).toHaveBeenCalledTimes(1);
+      const [, name, agent] = firstElement(mockCompileAgentForHost.mock.calls);
       expect(name).toBe(PROJECT_AGENT);
       expect(agent.skills).toStrictEqual([ejectSkill]);
     });

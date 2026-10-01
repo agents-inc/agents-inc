@@ -18,6 +18,27 @@ const AGENTS_DIR = path.join(CLI_ROOT, "src", "agents");
 const TEMPLATES_DIR = "_templates";
 const AGENT_TEMPLATE = path.join(AGENTS_DIR, TEMPLATES_DIR, "agent.liquid");
 
+/**
+ * The half of the template the prose actually lands in.
+ *
+ * `agent.liquid` became the frontmatter alone when C5 split it, because a Codex agent ROLE
+ * DEFINITION has no frontmatter and its `developer_instructions` carries the body on its own. The
+ * wrappers these contracts are about have always been in the body, so the check reads both halves
+ * — one file would now be checking the partials against nothing, which is the failure this
+ * assertion's own message names.
+ */
+const AGENT_BODY_TEMPLATE = path.join(AGENTS_DIR, TEMPLATES_DIR, "agent-body.liquid");
+
+/** Both halves of the shipped agent template, as one string to search. */
+async function wholeAgentTemplate(): Promise<string> {
+  const [frontmatter, body] = await Promise.all([
+    readFile(AGENT_TEMPLATE, "utf8"),
+    readFile(AGENT_BODY_TEMPLATE, "utf8"),
+  ]);
+
+  return `${frontmatter}${body}`;
+}
+
 /** Every agent directory: two levels down, `<group>/<agent>/`. */
 const AGENT_GLOB = "*/*";
 
@@ -221,7 +242,7 @@ describe("every agent partial carries its technique and none carries the templat
     "agent.liquid supplies the wrapper around $file",
     async ({ template }) => {
       expect(
-        await readFile(AGENT_TEMPLATE, "utf8"),
+        await wholeAgentTemplate(),
         "the template no longer adds this wrapper, so the partials below are being checked against nothing",
       ).toContain(template);
     },

@@ -47,7 +47,7 @@ import "../matchers/setup.js";
  *
  * `expectCleanUninstall(dir, { removeConfig: true })` serves as the
  * nothing-was-written assertion for the read-only runs: no installed skills, no
- * compiled-agents dir, no `.claude-src/`.
+ * compiled-agents dir, no source folder.
  */
 
 /** Skills the E2E stack selects by default — every source skill except vue and pinia. */

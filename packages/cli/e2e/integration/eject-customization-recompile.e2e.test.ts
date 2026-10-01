@@ -13,6 +13,7 @@ import {
   getEjectedTemplatePath,
   readCompiledAgents,
   readTestFile,
+  sourceFolderIn,
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -132,18 +133,24 @@ describe("ejected customisations survive a recompile", () => {
 
       // Surface 4: the pass that rewrote the agents rewrote config-types.ts too,
       // and the aliases it wrote must still reject a value that is not installed.
-      const claudeSrcDir = path.dirname(configTypesTsPath(installDir));
-      const typecheck = await typecheckGeneratedConfig(claudeSrcDir);
+      const sourceFolder = path.dirname(configTypesTsPath(installDir));
+      const typecheck = await typecheckGeneratedConfig(sourceFolder);
       expect(
         typecheck.exitCode,
         `config.ts must still type-check after the customised compile.\ntsc output:\n${typecheck.output}`,
       ).toBe(EXIT_CODES.SUCCESS);
-      const probe = await probeConfigTypesNarrowing(claudeSrcDir, GENERATED_ALIASES);
+      const probe = await probeConfigTypesNarrowing(sourceFolder, GENERATED_ALIASES);
       expect(
         probe.exitCode,
         `a bogus literal must not type-check after the customised compile.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`, which is the degradation this probe exists to catch.
+      expect(
+        probe.rejected,
+        `every generated alias must still reject its bogus literal after the customised compile.\ntsc output:\n${probe.output}`,
+      ).toStrictEqual([...GENERATED_ALIASES]);
     },
   );
 
@@ -173,8 +180,7 @@ describe("ejected customisations survive a recompile", () => {
       // `eject agent-partials` writes the CLI's bundled tree, which nests each
       // agent under its category directory.
       const identityPath = path.join(
-        installDir,
-        DIRS.CLAUDE_SRC,
+        sourceFolderIn(installDir),
         DIRS.AGENTS,
         EJECTED_PARTIAL_CATEGORY,
         agentName,
@@ -200,13 +206,19 @@ describe("ejected customisations survive a recompile", () => {
         await readTestFile(configTsPath(installDir)),
         "customising a partial must leave config.ts byte-identical",
       ).toBe(configBefore);
-      const claudeSrcDir = path.dirname(configTypesTsPath(installDir));
-      const probe = await probeConfigTypesNarrowing(claudeSrcDir, GENERATED_ALIASES);
+      const sourceFolder = path.dirname(configTypesTsPath(installDir));
+      const probe = await probeConfigTypesNarrowing(sourceFolder, GENERATED_ALIASES);
       expect(
         probe.exitCode,
         `a bogus literal must not type-check after the customised compile.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`, which is the degradation this probe exists to catch.
+      expect(
+        probe.rejected,
+        `every generated alias must still reject its bogus literal after the customised compile.\ntsc output:\n${probe.output}`,
+      ).toStrictEqual([...GENERATED_ALIASES]);
     },
   );
 });

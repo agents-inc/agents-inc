@@ -3,11 +3,13 @@ import path from "path";
 import type { ProjectConfig, SkillId } from "../../types";
 import type { SkillConfig } from "../../types/config";
 import type { AuthoritativeScope } from "../configuration/config-merger";
-import { CLAUDE_SRC_DIR, CLI_INVOKE_COMMAND } from "../../consts";
+import { CLI_INVOKE_COMMAND } from "../../consts";
 import { ensureDir, writeFile } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { isHomeDirectory } from "../installation/is-home-directory";
-import { getProjectConfigPath } from "../installation/install-base-dir";
+import type { Provider } from "../../consts";
+import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
+import { providerInUse } from "../installation/install-layout";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { isActiveAt } from "../configuration/scope-predicates";
@@ -124,6 +126,7 @@ async function applyConsequences(
   globalConfig: ProjectConfig,
   changes: GlobalChangeSet,
   deps: LoadedGateDeps,
+  provider: Provider,
   currentProjectDir?: string,
 ): Promise<{ propagated: PropagationResult; recompile: PropagatedRecompileSummary }> {
   const tier = consequenceTier(changes);
@@ -134,6 +137,7 @@ async function applyConsequences(
   const propagated = await propagateGlobalChangesToProjects(
     globalConfig,
     deps.agents,
+    provider,
     currentProjectDir,
     { regenerateTypes: tierRegeneratesTypes(tier) },
   );
@@ -195,8 +199,8 @@ export type WizardWriteArgs = {
 /**
  * Writes config.ts and config-types.ts split by scope.
  * When installing into a project directory:
- * - Global config/types go to ~/.claude-src/
- * - Project config/types go to {projectDir}/.claude-src/ (with import from global)
+ * - Global config/types go to the home scope's source folder
+ * - Project config/types go to the project's own (with import from global)
  * When installing from home directory, writes a single standalone config.
  */
 export async function writeScopedFromWizard(args: WizardWriteArgs): Promise<GateReport> {
@@ -211,12 +215,15 @@ export async function writeScopedFromWizard(args: WizardWriteArgs): Promise<Gate
       return writeFromProjectContext(args, homeDir, deps);
     }
 
-    // Installing from ~/ — write directly to global config (no import preamble)
-    const priorGlobal = await loadProjectConfigFromDir(homeDir);
+    // Installing from ~/ — write directly to global config (no import preamble). The provider
+    // is the one the home root's own installation is on: at this scope the project IS the
+    // global installation.
+    const provider = providerInUse(homeDir);
+    const priorGlobal = await loadProjectConfigFromDir(homeDir, provider);
     const changes = classifyGlobalChange(priorGlobal?.config, finalConfig);
     const globalWritten = await writeGlobalPair(finalConfig, projectConfigPath, matrix, agents);
 
-    const { propagated, recompile } = await applyConsequences(finalConfig, changes, deps);
+    const { propagated, recompile } = await applyConsequences(finalConfig, changes, deps, provider);
     return report(globalWritten, changes, propagated, recompile);
   });
 }
@@ -226,17 +233,20 @@ async function writeFromProjectContext(
   homeDir: string,
   deps: LoadedGateDeps,
 ): Promise<GateReport> {
-  const { finalConfig, matrix, agents, projectDir, projectConfigPath } = args;
+  const { finalConfig, projectDir } = args;
 
   // Installing from project — split by scope for project config generation.
   const { global: globalConfig, project: projectSplitConfig } = splitConfigByScope(finalConfig);
-  const globalConfigPath = getProjectConfigPath(homeDir);
+  // The PROJECT's provider decides which global installation this run inherits from and writes
+  // to: each provider family inherits and propagates only within itself.
+  const provider = providerInUse(projectDir);
+  const globalConfigPath = getProjectConfigPath(homeDir, provider);
 
   // Merge new global-scoped items into the existing global config.
   // - Existing items are preserved (never removed from global during project init)
   // - New global items are added
   // - If no existing global config, write the full global split
-  const existingGlobal = await loadProjectConfigFromDir(homeDir);
+  const existingGlobal = await loadProjectConfigFromDir(homeDir, provider);
   const effective = await resolveEffectiveGlobalConfig(
     globalConfig,
     existingGlobal?.config,
@@ -246,20 +256,13 @@ async function writeFromProjectContext(
   const effectiveGlobalConfig = effective.config;
 
   const changes = classifyGlobalChange(existingGlobal?.config, effectiveGlobalConfig);
-
-  let globalWritten = false;
-  if (effective.changed) {
-    await ensureDir(path.dirname(globalConfigPath));
-    globalWritten = await writeGlobalPair(effectiveGlobalConfig, globalConfigPath, matrix, agents);
-    verbose(`Updated global config at ${globalConfigPath}`);
-  } else {
-    verbose("Global config unchanged, skipping write");
-  }
+  const globalWritten = await writeGlobalPairWhenChanged(effective, globalConfigPath, deps);
 
   const { propagated, recompile } = await applyConsequences(
     effectiveGlobalConfig,
     changes,
     deps,
+    provider,
     projectDir,
   );
 
@@ -270,32 +273,76 @@ async function writeFromProjectContext(
   const reconciledProjectConfig = reconcileProjectSplitAgainstGlobal(
     projectSplitConfig,
     effectiveGlobalConfig,
-    matrix,
+    deps.matrix,
+  );
+  await writeProjectPairWhenOwed(
+    args,
+    provider,
+    reconciledProjectConfig,
+    effectiveGlobalConfig,
+    deps,
   );
 
-  // Write project config if the project installation already exists OR if there are project-scoped items.
-  // Skip only when no existing project installation AND no project-scoped items — creating an empty
-  // project config with just `import globalConfig` and `{ ...globalConfig }` is pointless.
-  const hasProjectItems =
-    reconciledProjectConfig.skills.length > 0 || reconciledProjectConfig.agents.length > 0;
+  return report(globalWritten, changes, propagated, recompile);
+}
 
-  if (args.projectInstallationExists || hasProjectItems) {
-    await ensureDir(path.dirname(projectConfigPath));
-    await writeProjectConfigPair(
-      projectDir,
-      reconciledProjectConfig,
-      effectiveGlobalConfig,
-      matrix,
-      agents,
-    );
-    verbose(`Updated project config at ${projectConfigPath}`);
-  } else {
+/** Writes the resolved global pair when resolving it changed anything; answers whether it did. */
+async function writeGlobalPairWhenChanged(
+  effective: { config: ProjectConfig; changed: boolean },
+  globalConfigPath: string,
+  deps: LoadedGateDeps,
+): Promise<boolean> {
+  if (!effective.changed) {
+    verbose("Global config unchanged, skipping write");
+    return false;
+  }
+
+  await ensureDir(path.dirname(globalConfigPath));
+  const written = await writeGlobalPair(
+    effective.config,
+    globalConfigPath,
+    deps.matrix,
+    deps.agents,
+  );
+  verbose(`Updated global config at ${globalConfigPath}`);
+  return written;
+}
+
+/**
+ * Writes the project's own pair if the project installation already exists OR if there is
+ * anything of the project's own to record. Skips only when no existing project installation AND
+ * nothing project-owned — creating an empty project config with just `import globalConfig` and
+ * `{ ...globalConfig }` is pointless.
+ */
+async function writeProjectPairWhenOwed(
+  project: Pick<WizardWriteArgs, "projectDir" | "projectConfigPath" | "projectInstallationExists">,
+  provider: Provider,
+  reconciledProjectConfig: ProjectConfig,
+  effectiveGlobalConfig: ProjectConfig,
+  deps: LoadedGateDeps,
+): Promise<void> {
+  if (!project.projectInstallationExists && !holdsAnythingOfItsOwn(reconciledProjectConfig)) {
     verbose(
       "Skipped project config — no existing project installation and no project-scoped items",
     );
+    return;
   }
 
-  return report(globalWritten, changes, propagated, recompile);
+  await ensureDir(path.dirname(project.projectConfigPath));
+  await writeProjectConfigPair(
+    project.projectDir,
+    provider,
+    reconciledProjectConfig,
+    effectiveGlobalConfig,
+    deps.matrix,
+    deps.agents,
+  );
+  verbose(`Updated project config at ${project.projectConfigPath}`);
+}
+
+/** Whether the project's split carries anything of the project's own to record. */
+function holdsAnythingOfItsOwn(projectConfig: ProjectConfig): boolean {
+  return projectConfig.skills.length > 0 || projectConfig.agents.length > 0;
 }
 
 /**
@@ -319,7 +366,7 @@ export async function writeScopeConfigTypes(
     if (isHomeDirectory(projectDir)) {
       return writeGlobalTypesHalf(
         config,
-        getProjectConfigPath(projectDir),
+        getInstalledConfigPath(projectDir),
         deps.matrix,
         deps.agents,
         extras,
@@ -363,6 +410,7 @@ export async function reconcileTypesFromDisk(
     const propagated = await propagateGlobalChangesToProjects(
       config,
       deps.agents,
+      providerInUse(projectDir),
       options?.currentProjectDir,
     );
     if (propagated.updated.length > 0) {
@@ -477,7 +525,8 @@ export async function mutateGlobal(mutation: GlobalMutation, deps: GateDeps): Pr
     // bare value on the way out, and re-emitting that bare form without
     // normalization drops the category — so a scalar mutation would silently strip
     // every exclusive category from the global stack.
-    const loadedGlobal = await loadProjectConfigFromDir(homeDir);
+    const provider = providerInUse(homeDir);
+    const loadedGlobal = await loadProjectConfigFromDir(homeDir, provider);
     if (!loadedGlobal) return report(false, NO_CHANGES);
 
     const current = loadedGlobal.config;
@@ -488,13 +537,16 @@ export async function mutateGlobal(mutation: GlobalMutation, deps: GateDeps): Pr
     const next = fillRequiredFields(mutated, fallbackNameFor(mutation));
     const changes = classifyGlobalChange(prior, next);
 
-    const globalWritten = await writeGlobalConfigHalf(next, getProjectConfigPath(homeDir));
+    const globalWritten = await writeGlobalConfigHalf(
+      next,
+      getProjectConfigPath(homeDir, provider),
+    );
     if (!next.projects?.length) return report(globalWritten, changes);
 
     const loaded = await resolveGateDeps(deps, consequenceTier(changes));
     if (!loaded) return report(globalWritten, changes);
 
-    const { propagated, recompile } = await applyConsequences(next, changes, loaded);
+    const { propagated, recompile } = await applyConsequences(next, changes, loaded, provider);
     return report(globalWritten, changes, propagated, recompile);
   });
 }
@@ -510,10 +562,15 @@ export async function mutateGlobal(mutation: GlobalMutation, deps: GateDeps): Pr
  * Call AFTER the global manifest has been removed so the regenerated project
  * types fall back to the standalone form instead of importing from the
  * now-deleted global config-types.ts.
+ *
+ * `provider` is the installation that was removed, and it is a parameter rather than a read:
+ * the folder that would answer it has just been deleted, so by the time this runs the disk no
+ * longer records which installation the pruning belongs to.
  */
 export async function propagateGlobalRemoval(
   preRemovalGlobalConfig: ProjectConfig,
   deps: LoadedGateDeps,
+  provider: Provider,
 ): Promise<GateReport> {
   return withGateToken(async () => {
     const changes = classifyGlobalChange(preRemovalGlobalConfig, {
@@ -525,6 +582,7 @@ export async function propagateGlobalRemoval(
     const propagated = await pruneGlobalEntriesFromRegisteredProjects(
       preRemovalGlobalConfig,
       deps.agents,
+      provider,
     );
     const recompile = await recompilePropagated(propagated.updated);
 
@@ -537,8 +595,8 @@ export async function propagateGlobalRemoval(
  * fan-out: the registration list propagation reads lives in the file that was
  * just found absent, so a pair created here has no registered projects.
  */
-export async function ensureBlankPair(): Promise<boolean> {
-  return withGateToken(() => ensureBlankPairInternal());
+export async function ensureBlankPair(provider: Provider): Promise<boolean> {
+  return withGateToken(() => ensureBlankPairInternal(provider));
 }
 
 export type WriteProjectPartialOptions = {
@@ -578,11 +636,11 @@ export async function writeProjectPartial(
   options: WriteProjectPartialOptions = {},
 ): Promise<void> {
   if (isHomeDirectory(projectDir)) {
-    throw new GlobalPairWriteViolation(getProjectConfigPath(projectDir));
+    throw new GlobalPairWriteViolation(getInstalledConfigPath(projectDir));
   }
 
-  const configPath = getProjectConfigPath(projectDir);
-  await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
+  const configPath = getInstalledConfigPath(projectDir);
+  await ensureDir(path.dirname(configPath));
   await writeFile(
     configPath,
     generateConfigSource(

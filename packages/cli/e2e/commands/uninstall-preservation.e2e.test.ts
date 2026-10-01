@@ -2,23 +2,30 @@ import path from "path";
 import { writeFile, mkdir } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import {
+  addForkedFromMetadata,
+  agentsPath,
   cleanupTempDir,
+  configTsPath,
   directoryExists,
   fileExists,
-  readTestFile,
-  writeProjectConfig,
-  agentsPath,
-  skillsPath,
-  addForkedFromMetadata,
-  writeAgentFile,
-  configTsPath,
   getEjectedTemplatePath,
+  readTestFile,
+  renderAgentYaml,
+  skillsPath,
+  sourceFolderIn,
+  writeAgentFile,
+  writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
  * Uninstall preservation E2E tests.
@@ -55,10 +62,10 @@ describe("uninstall preservation behavior", () => {
     expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
     // Verify ejected template exists before uninstall
-    const claudeSrcDir = path.join(projectDir, DIRS.CLAUDE_SRC);
+    const sourceFolder = sourceFolderIn(projectDir);
     const templatePath = getEjectedTemplatePath(projectDir);
     expect(await fileExists(templatePath)).toBe(true);
-    expect(await directoryExists(claudeSrcDir)).toBe(true);
+    expect(await directoryExists(sourceFolder)).toBe(true);
 
     // Run uninstall --yes
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
@@ -75,7 +82,7 @@ describe("uninstall preservation behavior", () => {
     // Ported from the deleted "should keep .claude-src/ when it still holds
     // ejected content": the directory itself survives its manifest, because only
     // an emptied one is removed.
-    expect(await directoryExists(claudeSrcDir)).toBe(true);
+    expect(await directoryExists(sourceFolder)).toBe(true);
 
     // Compiled artifacts should be removed
     const agentsDir = agentsPath(projectDir);
@@ -96,11 +103,14 @@ describe("uninstall preservation behavior", () => {
     await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
     // Create a custom agent source directory in .claude-src/agents/
-    const customAgentSrcDir = path.join(projectDir, DIRS.CLAUDE_SRC, "agents", "my-custom-agent");
+    const customAgentSrcDir = path.join(sourceFolderIn(projectDir), "agents", "my-custom-agent");
     await mkdir(customAgentSrcDir, { recursive: true });
     await writeFile(
       path.join(customAgentSrcDir, FILES.METADATA_YAML),
-      "id: my-custom-agent\ntitle: My Custom Agent\ndescription: A user-defined agent\ntools:\n  - Read\n",
+      renderAgentYaml("my-custom-agent", "A user-defined agent", {
+        title: "My Custom Agent",
+        tools: ["Read"],
+      }),
     );
     await writeFile(
       path.join(customAgentSrcDir, FILES.IDENTITY_MD),
@@ -114,15 +124,23 @@ describe("uninstall preservation behavior", () => {
     });
 
     // Add the custom agent to config so uninstall will track it
-    await writeProjectConfig(projectDir, {
-      name: "test-edit-project",
-      skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
-      agents: [
-        { name: "web-developer", scope: "project" },
-        { name: "my-custom-agent" as AgentName, scope: "project" }, // fabricated E2E test ID
-      ],
-      selectedDomains: ["web"],
-    });
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "test-edit-project",
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
+        agents: buildAgentConfigs(
+          [
+            "web-developer",
+            // A user-defined agent, so its name is outside the generated roster — and the fixture
+            // config type widens skill ids for that case but not agent names.
+            "my-custom-agent" as AgentName,
+          ],
+          { scope: "project" },
+        ),
+        selectedDomains: ["web"],
+      }),
+    );
 
     // Run uninstall --yes
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });

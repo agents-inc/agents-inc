@@ -22,7 +22,8 @@ import {
   buildProjectConfig,
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
-import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../../consts";
+import { sa, saUnflagged } from "../../__tests__/factories/skill-factories.js";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../../consts";
 import type { ProjectConfig, SkillId } from "../../../types";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
 import { TEST_CUSTOM_SOURCE_URL, TEST_SOURCE_URL } from "../../__tests__/test-constants.js";
@@ -148,7 +149,7 @@ describe("generateConfigSource", () => {
       name: "stack-project",
       stack: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [sa("web-framework-react", false)],
         },
       },
     });
@@ -165,7 +166,7 @@ describe("generateConfigSource", () => {
       name: "flagless-assignment-project",
       stack: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react" }],
+          "web-framework": [saUnflagged("web-framework-react")],
         },
       },
     });
@@ -202,15 +203,16 @@ describe("generateConfigSource", () => {
       skills: buildSkillConfigs([...EXPECTED_SKILLS.API_DEFAULT]),
       stack: {
         "api-developer": {
-          "api-api": [{ id: "api-framework-hono", preloaded: true }],
+          "api-api": [sa("api-framework-hono", true)],
         },
       },
     });
     const source = generateConfigSource(config, matrix);
     expect(source).toContain("preloaded: true");
     expect(source).toContain("'api-framework-hono'");
-    // api-api is exclusive: the assignment object stands alone, unwrapped
-    expect(source).not.toMatch(/"api-api":\s*\[/);
+    // api-api is exclusive: the assignment object stands alone, unwrapped. Single-quoted, because
+    // that is how the writer quotes a key — a double-quoted pattern matched nothing it could emit.
+    expect(source).not.toMatch(/'api-api':\s*\[/);
   });
 
   it("keeps a single-skill non-exclusive category as a one-element array", () => {
@@ -219,7 +221,7 @@ describe("generateConfigSource", () => {
       skills: buildSkillConfigs(["web-styling-tailwind"]),
       stack: {
         "web-developer": {
-          "web-styling": [{ id: "web-styling-tailwind", preloaded: false }],
+          "web-styling": [sa("web-styling-tailwind", false)],
         },
       },
     });
@@ -234,10 +236,7 @@ describe("generateConfigSource", () => {
       skills: buildSkillConfigs(["web-framework-react", "web-framework-svelte"]),
       stack: {
         "web-developer": {
-          "web-framework": [
-            { id: "web-framework-react", preloaded: false },
-            { id: "web-framework-svelte", preloaded: false },
-          ],
+          "web-framework": [sa("web-framework-react", false), sa("web-framework-svelte", false)],
         },
       },
     });
@@ -274,7 +273,7 @@ describe("generateConfigSource", () => {
     const config = buildProjectConfig({
       stack: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [sa("web-framework-react", false)],
         },
       },
     });
@@ -287,7 +286,7 @@ describe("generateConfigSource", () => {
     const config = buildProjectConfig({
       stack: {
         "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: false }],
+          "web-framework": [sa("web-framework-react", false)],
         },
       },
     });
@@ -496,7 +495,7 @@ describe("generateConfigSource", () => {
       expect(
         generateConfigSource(config, matrix, {
           isProjectConfig: true,
-          globalImportPath: getGlobalConfigImportPath(),
+          globalImportPath: getGlobalConfigImportPath("claude"),
         }),
         "an import path is one of the two halves the refusal above asks for",
       ).toContain("import globalConfig from");
@@ -513,7 +512,7 @@ describe("generateConfigSource", () => {
       const config = buildProjectConfig();
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source).toContain("import globalConfig from");
       expect(source).toContain("...globalConfig,");
@@ -527,7 +526,7 @@ describe("generateConfigSource", () => {
       });
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source).toContain("...globalConfig.skills,");
       expect(source).toContain("...globalConfig.agents,");
@@ -541,7 +540,7 @@ describe("generateConfigSource", () => {
       });
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source).toContain("const skills: SkillConfig[]");
       expect(source).toContain("const agents: AgentScopeConfig[]");
@@ -558,7 +557,7 @@ describe("generateConfigSource", () => {
       });
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source).toContain("[...(globalConfig.selectedDomains ?? []), 'web']");
       expect(source).toContain("'web'");
@@ -572,7 +571,7 @@ describe("generateConfigSource", () => {
       });
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source).not.toContain("const selectedDomains:");
     });
@@ -585,7 +584,7 @@ describe("generateConfigSource", () => {
       });
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source, "the active agents list is the only record of who is selected").not.toContain(
         "selectedAgents",
@@ -600,7 +599,7 @@ describe("generateConfigSource", () => {
       });
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source).toContain("name: 'agents-inc'");
     });
@@ -833,7 +832,7 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [sa("web-framework-react", false)],
           },
         },
       });
@@ -843,7 +842,7 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["api-developer"]),
         stack: {
           "api-developer": {
-            "api-api": [{ id: "api-framework-hono", preloaded: false }],
+            "api-api": [sa("api-framework-hono", false)],
           },
         },
       });
@@ -855,8 +854,9 @@ describe("generateConfigSource", () => {
       // Project agents should appear in stack
       expect(source).toContain("'api-developer'");
       expect(source).toContain("'api-framework-hono'");
-      // Global agents' stack entries should NOT appear (they live in global config only)
-      expect(source).not.toMatch(/"web-developer":\s*\{/);
+      // Global agents' stack entries should NOT appear (they live in global config only).
+      // Single-quoted, as the writer quotes a key: a double-quoted pattern never matched a leak.
+      expect(source).not.toMatch(/'web-developer':\s*\{/);
     });
 
     it("omits stack when only global agents have stack entries", () => {
@@ -866,7 +866,7 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [sa("web-framework-react", false)],
           },
         },
       });
@@ -927,7 +927,7 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["web-developer"]),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [sa("web-framework-react", false)],
           },
         },
       });
@@ -953,8 +953,8 @@ describe("generateConfigSource", () => {
         stack: {
           "web-developer": {
             "web-styling": [
-              { id: "web-styling-tailwind", preloaded: false },
-              { id: "web-styling-scss-modules", preloaded: false },
+              sa("web-styling-tailwind", false),
+              sa("web-styling-scss-modules", false),
             ],
           },
         },
@@ -981,8 +981,8 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["web-developer"]),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
-            "web-styling": [{ id: "web-styling-tailwind", preloaded: true }],
+            "web-framework": [sa("web-framework-react", false)],
+            "web-styling": [sa("web-styling-tailwind", true)],
           },
         },
       });
@@ -1010,11 +1010,11 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["web-developer", "web-researcher"], { scope: "global" }),
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
-            "web-styling": [{ id: "web-styling-tailwind", preloaded: false }],
+            "web-framework": [sa("web-framework-react", false)],
+            "web-styling": [sa("web-styling-tailwind", false)],
           },
           "web-researcher": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [sa("web-framework-react", false)],
           },
         },
       });
@@ -1024,7 +1024,7 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["api-developer"]),
         stack: {
           "api-developer": {
-            "api-api": [{ id: "api-framework-hono", preloaded: false }],
+            "api-api": [sa("api-framework-hono", false)],
           },
         },
       });
@@ -1041,8 +1041,8 @@ describe("generateConfigSource", () => {
       // Extract stack section to check it doesn't contain global agent entries
       const stackSection = extractNamedSection(source, "stack");
       // Global agent stack entries must NOT be present in stack
-      expect(stackSection).not.toMatch(/"web-developer":\s*\{/);
-      expect(stackSection).not.toMatch(/"web-researcher":\s*\{/);
+      expect(stackSection).not.toMatch(/'web-developer':\s*\{/);
+      expect(stackSection).not.toMatch(/'web-researcher':\s*\{/);
       expect(stackSection).not.toContain("'web-framework-react'");
       expect(stackSection).not.toContain("'web-styling-tailwind'");
     });
@@ -1200,12 +1200,12 @@ describe("generateConfigSource", () => {
         agents: [...buildAgentConfigs(["web-developer"]), ...buildAgentConfigs(["api-developer"])],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
-            "web-styling": [{ id: "web-styling-tailwind", preloaded: true }],
+            "web-framework": [sa("web-framework-react", false)],
+            "web-styling": [sa("web-styling-tailwind", true)],
           },
           "api-developer": {
-            "api-api": [{ id: "api-framework-hono", preloaded: false }],
-            "api-orm": [{ id: "api-database-drizzle", preloaded: false }],
+            "api-api": [sa("api-framework-hono", false)],
+            "api-orm": [sa("api-database-drizzle", false)],
           },
         },
       });
@@ -1239,8 +1239,8 @@ describe("generateConfigSource", () => {
         stack: {
           "web-developer": {
             "web-testing": [
-              { id: "web-testing-vitest", preloaded: false },
-              { id: "web-testing-playwright-e2e", preloaded: false },
+              sa("web-testing-vitest", false),
+              sa("web-testing-playwright-e2e", false),
             ],
           },
         },
@@ -1302,7 +1302,7 @@ describe("generateConfigSource", () => {
         selectedDomains: ["web", "api"],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: false }],
+            "web-framework": [sa("web-framework-react", false)],
           },
         },
       });
@@ -1339,10 +1339,10 @@ describe("generateConfigSource", () => {
         selectedDomains: ["web", "api"],
         stack: {
           "web-developer": {
-            "web-framework": [{ id: "web-framework-react", preloaded: true }],
+            "web-framework": [sa("web-framework-react", true)],
           },
           "api-developer": {
-            "api-api": [{ id: "api-framework-hono", preloaded: false }],
+            "api-api": [sa("api-framework-hono", false)],
           },
         },
       });
@@ -1371,7 +1371,7 @@ describe("generateConfigSource", () => {
       const config = buildProjectConfig();
       const source = generateConfigSource(config, matrix, {
         isProjectConfig: true,
-        globalImportPath: getGlobalConfigImportPath(),
+        globalImportPath: getGlobalConfigImportPath("claude"),
       });
       expect(source).toContain("} satisfies ProjectConfig");
     });
@@ -1495,13 +1495,13 @@ describe("generateConfigSource", () => {
     /** Both sub-agents' curation, with every key in the order the roster declares it. */
     const IN_ROSTER_ORDER = {
       "api-developer": {
-        "api-api": [{ id: "api-framework-hono", preloaded: true }],
-        "api-orm": [{ id: "api-database-drizzle", preloaded: false }],
+        "api-api": [sa("api-framework-hono", true)],
+        "api-orm": [sa("api-database-drizzle", false)],
       },
       "web-developer": {
-        "web-framework": [{ id: "web-framework-react", preloaded: true }],
-        "web-client-state": [{ id: "web-state-zustand", preloaded: false }],
-        "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
+        "web-framework": [sa("web-framework-react", true)],
+        "web-client-state": [sa("web-state-zustand", false)],
+        "web-testing": [sa("web-testing-vitest", false)],
       },
     } satisfies NonNullable<ProjectConfig["stack"]>;
 
@@ -1512,13 +1512,13 @@ describe("generateConfigSource", () => {
      */
     const IN_PAYLOAD_ORDER = {
       "web-developer": {
-        "web-framework": [{ id: "web-framework-react", preloaded: true }],
-        "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
-        "web-client-state": [{ id: "web-state-zustand", preloaded: false }],
+        "web-framework": [sa("web-framework-react", true)],
+        "web-testing": [sa("web-testing-vitest", false)],
+        "web-client-state": [sa("web-state-zustand", false)],
       },
       "api-developer": {
-        "api-orm": [{ id: "api-database-drizzle", preloaded: false }],
-        "api-api": [{ id: "api-framework-hono", preloaded: true }],
+        "api-orm": [sa("api-database-drizzle", false)],
+        "api-api": [sa("api-framework-hono", true)],
       },
     } satisfies NonNullable<ProjectConfig["stack"]>;
 
@@ -1663,17 +1663,20 @@ describe("generateBlankGlobalConfigTypesSource", () => {
 
 describe("getGlobalConfigImportPath", () => {
   it("returns a path under the home directory", () => {
-    const importPath = getGlobalConfigImportPath();
+    const importPath = getGlobalConfigImportPath("claude");
     expect(importPath.startsWith(os.homedir())).toBe(true);
   });
 
-  it("includes the claude-src directory", () => {
-    const importPath = getGlobalConfigImportPath();
-    expect(importPath).toContain(CLAUDE_SRC_DIR);
+  // The home this suite runs under holds neither folder, so the answer is the one a new global
+  // installation is created in. Written as a literal — it is text on a user's disk, and importing
+  // the constant the product writes would make the assertion move with it.
+  it("names the source folder a new global installation is created in", () => {
+    const importPath = getGlobalConfigImportPath("claude");
+    expect(importPath).toContain(path.join(".agents-inc", "claude"));
   });
 
   it("returns an absolute path", () => {
-    const importPath = getGlobalConfigImportPath();
+    const importPath = getGlobalConfigImportPath("claude");
     expect(path.isAbsolute(importPath)).toBe(true);
   });
 });

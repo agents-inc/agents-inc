@@ -3,13 +3,12 @@ import path from "path";
 import os from "os";
 import { BaseCommand } from "../base-command.js";
 import { copy, ensureDir, directoryExists, fileExists, listDirectories } from "../utils/fs.js";
+import { DIRS, LOCAL_SKILLS_PATH, PROJECT_ROOT } from "../consts.js";
 import {
-  CLAUDE_SRC_DIR,
-  DIRS,
-  LOCAL_SKILLS_PATH,
-  PROJECT_ROOT,
-  STANDARD_FILES,
-} from "../consts.js";
+  providerInUse,
+  relativeConfigPath,
+  sourceFolderInUse,
+} from "../lib/installation/install-layout.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { type SourceLoadResult } from "../lib/loading/index.js";
 import { loadSource } from "../lib/operations/index.js";
@@ -26,6 +25,11 @@ import {
   writeProjectPartial,
 } from "../lib/config-gate/index.js";
 import { isHomeDirectory } from "../lib/installation/index.js";
+import {
+  providerFlag,
+  providerNamedBy,
+  refuseAnAmbiguousInstallation,
+} from "../lib/installation/provider-flag.js";
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
 import { INCOMPLETE_WORK_RECOVERY, INFO_MESSAGES } from "../utils/messages.js";
 import { getErrorMessage } from "../utils/errors.js";
@@ -79,6 +83,7 @@ export default class Eject extends BaseCommand {
   };
 
   static flags = {
+    provider: providerFlag(),
     force: Flags.boolean({
       char: "f",
       description: "Overwrite existing files",
@@ -99,6 +104,17 @@ export default class Eject extends BaseCommand {
     const { args, flags } = await this.parse(Eject);
     const projectDir = process.cwd();
 
+    // Above the layout settle, because that refusal is about two FOLDER NAMES of one installation
+    // and this one is about two installations. Both have to be answered before anything is
+    // written, and this one decides which installation the other is even asking about.
+    await refuseAnAmbiguousInstallation(
+      projectDir,
+      "eject",
+      providerNamedBy(flags.provider),
+      (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    );
+
+    await this.settleSourceLayoutBeforeWriting(projectDir);
     const ejectType = this.validateEjectType(args.type);
     const outputBase = await this.resolveOutputBase(flags, projectDir);
 
@@ -164,7 +180,7 @@ export default class Eject extends BaseCommand {
       return outputBase;
     }
 
-    return path.join(projectDir, CLAUDE_SRC_DIR);
+    return sourceFolderInUse(projectDir, providerInUse(projectDir)).dir;
   }
 
   private printHeader(brandingName: string, outputBase?: string): void {
@@ -242,17 +258,21 @@ export default class Eject extends BaseCommand {
     projectDir: string,
     sourceResult: SourceLoadResult | undefined,
   ): Promise<void> {
+    // Named once, before the write, so the success line and the failure line cannot name
+    // different files: the provider is read off the disk and the write may create the folder.
+    const configTsRel = relativeConfigPath(projectDir, providerInUse(projectDir));
+
     try {
       const configResult = await ensureMinimalConfig({
         projectDir,
         ...(sourceResult !== undefined && { sourceResult }),
       });
       if (configResult.created) {
-        this.logSuccess(`Created ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
+        this.logSuccess(`Created ${configTsRel}`);
       }
     } catch (error) {
       this.reportIncompleteWork(
-        `Could not create ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}: ${getErrorMessage(error)}`,
+        `Could not create ${configTsRel}: ${getErrorMessage(error)}`,
         INCOMPLETE_WORK_RECOVERY.INSPECT_INSTALLATION,
       );
     }
@@ -343,14 +363,6 @@ type EjectAgentPartialsResult =
       templatesSkipped: boolean;
     };
 
-/**
- * Copies agent partials or templates from the CLI source to a target directory.
- *
- * When `templatesOnly` is true, copies only the _templates subdirectory.
- * When false, copies the full agents directory (optionally skipping existing templates).
- *
- * Returns structured data — the command decides what to log.
- */
 /** Direct output writes to the base itself; otherwise agents/ (plus templates/ in templates-only mode). */
 function resolveEjectDestDir(
   outputBase: string,
@@ -362,6 +374,14 @@ function resolveEjectDestDir(
   return templatesOnly ? path.join(agentsDir, path.basename(DIRS.templates)) : agentsDir;
 }
 
+/**
+ * Copies agent partials or templates from the CLI source to a target directory.
+ *
+ * When `templatesOnly` is true, copies only the _templates subdirectory.
+ * When false, copies the full agents directory (optionally skipping existing templates).
+ *
+ * Returns structured data — the command decides what to log.
+ */
 async function ejectAgentPartials(
   options: EjectAgentPartialsOptions,
 ): Promise<EjectAgentPartialsResult> {
@@ -534,7 +554,10 @@ async function ensureMinimalConfig(
 ): Promise<EnsureMinimalConfigResult> {
   const { projectDir, sourceResult } = options;
 
-  const tsConfigPath = getProjectConfigPath(projectDir);
+  // One read for the whole function: the config it may invent, and the blank global pair it may
+  // create beside it, belong to the same installation.
+  const provider = providerInUse(projectDir);
+  const tsConfigPath = getProjectConfigPath(projectDir, provider);
 
   if (await fileExists(tsConfigPath)) {
     return { configPath: tsConfigPath, created: false };
@@ -553,7 +576,7 @@ async function ensureMinimalConfig(
   // file it opens with `import type { ProjectConfig } from "./config-types"`
   // cannot resolve its own types without the sibling. The gate writes the pair.
   if (isHomeDirectory(projectDir)) {
-    await ensureBlankPair();
+    await ensureBlankPair(provider);
     if (source) await recordSource(projectDir, source);
     return { configPath: tsConfigPath, created: true };
   }

@@ -44,4 +44,5 @@ todo/*
 !todo/TODO.md
 !todo/TODO-completed.md
 .claude-src/
+.agents-inc/
 .claude/

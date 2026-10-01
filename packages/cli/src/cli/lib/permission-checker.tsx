@@ -4,7 +4,12 @@ import { z } from "zod";
 import { Text, Box } from "ink";
 import path from "path";
 
-import { CLAUDE_DIR, CLI_COLORS, MAX_CONFIG_FILE_SIZE, STANDARD_FILES } from "../consts";
+import { CLI_COLORS, MAX_CONFIG_FILE_SIZE } from "../consts";
+import {
+  advisesOnPermissions,
+  permissionFiles,
+  providerInUse,
+} from "./installation/install-layout.js";
 import { fileExists, readFileSafe } from "../utils/fs";
 import { warn } from "../utils/logger";
 import { settingsFileSchema } from "./schemas";
@@ -33,20 +38,62 @@ async function readSettingsPermissions(filePath: string): Promise<PermissionConf
   }
 }
 
-/** Permissions from the first settings file that defines them — settings.local.json wins. */
-async function loadPermissions(projectRoot: string): Promise<PermissionConfig | undefined> {
-  const settingsPath = path.join(projectRoot, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON);
-  const localSettingsPath = path.join(projectRoot, CLAUDE_DIR, STANDARD_FILES.SETTINGS_LOCAL_JSON);
+/**
+ * The files this host reads permissions from at project scope, in the host's own order: the base
+ * file this CLI writes first, then any overlay that beats it.
+ *
+ * Composed from `CLAUDE_DIR` until 2026-09-22, which is why a Codex install read a `.claude/`
+ * directory it had never written. {@link permissionFiles} is the one answer now, and this is its
+ * first production reader.
+ */
+function settingsFilesFor(projectRoot: string): string[] {
+  return permissionFiles(providerInUse(projectRoot), "project", projectRoot);
+}
 
-  for (const filePath of [localSettingsPath, settingsPath]) {
+/** Permissions from the highest-precedence settings file that defines them — the overlay wins. */
+async function loadPermissions(files: readonly string[]): Promise<PermissionConfig | undefined> {
+  for (const filePath of [...files].reverse()) {
     const permissions = await readSettingsPermissions(filePath);
     if (permissions) return permissions;
   }
   return undefined;
 }
 
+/**
+ * One settings file as the notice names it: relative to the project, POSIX-separated.
+ *
+ * POSIX for `pathUnder`'s reason one module over — what comes back is a NAME shown to a person,
+ * not a path this process opens.
+ */
+function asUserWritesIt(projectRoot: string, file: string): string {
+  return path.relative(projectRoot, file).split(path.sep).join("/");
+}
+
+/**
+ * The notice a run ends on when nothing has granted the agents any permissions — or `null` where
+ * there is nothing true to say.
+ *
+ * **`null` for a host whose permission model this release cannot advise on**, which is
+ * {@link advisesOnPermissions}'s whole subject. Every word below is Claude Code's: a
+ * `permissions.allow` block, in JSON, in `settings.json`. Codex has neither the key nor the file,
+ * and a Codex install printed this verbatim until 2026-09-22 — ending a run that had touched no
+ * `.claude/` directory by telling the user to go and edit one.
+ *
+ * The file is NAMED from the layout rather than spelled, so the notice points at the file it
+ * actually read.
+ */
 export async function checkPermissions(projectRoot: string): Promise<React.ReactElement | null> {
-  const permissions = await loadPermissions(projectRoot);
+  if (!advisesOnPermissions(providerInUse(projectRoot))) return null;
+
+  const files = settingsFilesFor(projectRoot);
+  // The BASE file rather than the overlay: it is the one this CLI writes, and the one a user with
+  // neither is being asked to create. A host with a notice to print has a file to name it in, so
+  // an empty roster is a host that has nothing to say rather than a case to paper over.
+  const [base] = files;
+  if (base === undefined) return null;
+
+  const permissions = await loadPermissions(files);
+  const settingsFile = asUserWritesIt(projectRoot, base);
 
   if (!permissions) {
     return (
@@ -54,10 +101,10 @@ export async function checkPermissions(projectRoot: string): Promise<React.React
         <Text bold color={CLI_COLORS.WARNING}>
           Permission Notice
         </Text>
-        <Text>No permissions configured in .claude/settings.json</Text>
+        <Text>No permissions configured in {settingsFile}</Text>
         <Text>Agents will prompt for approval on each tool use.</Text>
         <Text> </Text>
-        <Text>For autonomous operation, add to .claude/settings.json:</Text>
+        <Text>For autonomous operation, add to {settingsFile}:</Text>
         <Text> </Text>
         <Text color={CLI_COLORS.DIM}>{"{"}</Text>
         <Text color={CLI_COLORS.DIM}>{'  "permissions": {'}</Text>

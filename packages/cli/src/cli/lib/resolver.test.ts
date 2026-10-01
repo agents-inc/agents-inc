@@ -1,7 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import path from "path";
-import { mkdir, writeFile } from "fs/promises";
-import { Liquid } from "liquidjs";
+import { describe, it, expect, beforeEach } from "vitest";
+import type { Liquid } from "liquidjs";
 import { pick } from "remeda";
 import {
   resolveSkillReference,
@@ -10,13 +8,14 @@ import {
   resolveAgentSkillRefs,
   resolveAgents,
 } from "./resolver";
+import { buildAgentTemplateContext, createLiquidEngine } from "./compiler";
 import { expectAgentCompilation } from "./__tests__/assertions/agent-assertions";
 import { parseCompiledAgentSections } from "./__tests__/helpers/compiled-agent-sections.js";
-import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import {
   createMockSkillEntry,
   createMockSkillDefinition,
   sa,
+  saUnflagged,
 } from "./__tests__/factories/skill-factories";
 import { createMockAgentConfig } from "./__tests__/factories/agent-factories";
 import { createMockCompileConfig } from "./__tests__/factories/plugin-factories";
@@ -35,7 +34,6 @@ import type {
   AgentConfig,
   AgentDefinition,
   CompileAgentConfig,
-  CompiledAgentData,
   Skill,
   SkillDefinition,
   SkillId,
@@ -116,7 +114,7 @@ describe("buildSkillRefsFromConfig", () => {
 
   it("should set preloaded to false when not specified", () => {
     const agentStack: StackAgentConfig = {
-      "web-framework": [{ id: "web-framework-react" }],
+      "web-framework": [saUnflagged("web-framework-react")],
     };
 
     const result = buildSkillRefsFromConfig(agentStack);
@@ -307,58 +305,33 @@ describe("resolveSkillReferences", () => {
   });
 });
 
+/**
+ * Rendered through the SHIPPED template, `agent.liquid` and the `agent-body` it includes, with the
+ * context `buildAgentTemplateContext` builds — the two halves a compile runs.
+ *
+ * This block used to render through a template written out in this file to "mirror" the real one,
+ * with the preloaded/dynamic split done by the test itself. Nothing in the product was on that
+ * path, so no change to either half could redden it — and the mirror had already drifted: it still
+ * rendered an "Available Skills" heading, a "Use when:" prefix and a skills note the shipped
+ * template had stopped writing, while every spec here stayed green. The text asserted below is the
+ * shipped template's own, as literals, for the reason `e2e/pages/constants.ts` mirrors product
+ * strings rather than importing them.
+ */
 describe("preloaded vs dynamic skills in compiled agent output", () => {
-  let tempDir: string;
   let engine: Liquid;
 
-  // Minimal agent template that mirrors the real agent.liquid structure
-  const testTemplate = `---
-name: {{ agent.name }}
-description: {{ agent.description }}
-tools: {{ agent.tools | join: ", " }}
-{% if preloadedSkillIds.size > 0 %}skills:
-{% for skillId in preloadedSkillIds %}  - {{ skillId }}
-{% endfor %}{% endif %}---
-
-# {{ agent.title }}
-
-{% if dynamicSkills.size > 0 %}
-<skill_activation_protocol>
-## Available Skills (Require Loading)
-
-{% for skill in dynamicSkills %}
-### {{ skill.id }}
-- Description: {{ skill.description }}
-- Invoke: \`skill: "{{ skill.id }}"\`
-- Use when: {{ skill.usage }}
-
-{% endfor %}
-</skill_activation_protocol>
-{% else %}
-<skills_note>
-All skills for this agent are preloaded via frontmatter. No additional skill activation required.
-</skills_note>
-{% endif %}
-`;
+  /** The agent's own prose. The template renders it; no assertion here reads it. */
+  const AGENT_FILES = {
+    identity: "Test identity content",
+    playbook: "Test playbook content",
+    output: "Test output content",
+    criticalRequirementsTop: "",
+    criticalReminders: "",
+  };
 
   beforeEach(async () => {
-    tempDir = await createTempDir("resolver-test-");
-
-    // Create Liquid engine with test template
-    const templatesDir = path.join(tempDir, "templates");
-    await mkdir(templatesDir, { recursive: true });
-    await writeFile(path.join(templatesDir, "agent.liquid"), testTemplate);
-
-    engine = new Liquid({
-      root: [templatesDir],
-      extname: ".liquid",
-      strictVariables: false,
-      strictFilters: true,
-    });
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
+    // No project directory, so no project-local override can shadow the shipped template.
+    engine = await createLiquidEngine();
   });
 
   function makeSkill(
@@ -373,10 +346,6 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
   }
 
   async function compileAgentWithSkills(skills: Skill[]): Promise<string> {
-    const preloadedSkills = skills.filter((s) => s.preloaded);
-    const dynamicSkills = skills.filter((s) => !s.preloaded);
-    const preloadedSkillIds = preloadedSkills.map((s) => s.id);
-
     const agent = createMockAgentConfig("test-agent", skills, {
       title: "Test Agent",
       description: "A test agent for skill testing",
@@ -384,20 +353,7 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       tools: ["Read", "Write", "Edit"],
     });
 
-    const data: CompiledAgentData = {
-      agent,
-      identity: "Test identity content",
-      playbook: "Test playbook content",
-      output: "Test output content",
-      criticalRequirementsTop: "",
-      criticalReminders: "",
-      skills,
-      preloadedSkills,
-      dynamicSkills,
-      preloadedSkillIds,
-    };
-
-    return engine.renderFile("agent", data);
+    return engine.renderFile("agent", buildAgentTemplateContext(agent.name, agent, AGENT_FILES));
   }
 
   describe("preloaded skills appear in agent frontmatter", () => {
@@ -433,7 +389,7 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
         noDynamicSkills: ["web-framework-react"],
       });
       expect(output).toContain("<skills_note>");
-      expect(output).toContain("All skills for this agent are preloaded via frontmatter");
+      expect(output).toContain("This agent's skills are preloaded through its frontmatter");
     });
 
     it("should include multiple preloaded skills in frontmatter", async () => {
@@ -493,7 +449,7 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       });
     });
 
-    it("should include Use when: guidance for each dynamic skill", async () => {
+    it("should include the usage guidance for each dynamic skill", async () => {
       const skills = [
         makeSkill("web-testing-vitest", false, "when working with vitest"),
         makeSkill("web-build-turborepo" as SkillId, false, "when working with turborepo"),
@@ -501,8 +457,8 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
 
       const output = await compileAgentWithSkills(skills);
 
-      expect(output).toContain("Use when: when working with vitest");
-      expect(output).toContain("Use when: when working with turborepo");
+      expect(output).toContain("- when working with vitest");
+      expect(output).toContain("- when working with turborepo");
     });
 
     it("should include skill_activation_protocol section for dynamic skills", async () => {
@@ -511,7 +467,7 @@ All skills for this agent are preloaded via frontmatter. No additional skill act
       const output = await compileAgentWithSkills(skills);
 
       expect(output).toContain("<skill_activation_protocol>");
-      expect(output).toContain("## Available Skills (Require Loading)");
+      expect(output).toContain("The skills below are available through the Skill tool.");
     });
 
     it("should include description for each dynamic skill", async () => {
@@ -779,7 +735,7 @@ describe("resolveAgents", () => {
    * `isolation` compiled without it, one declaring its own `hooks` silently got the emitted
    * completion gate instead, and `disallowedTools` had never reached a compiled agent at all. The
    * one spec that appeared to cover the pair — `WEB_DEV_TUNED_PERMISSIONS` in `compiler.test.ts` —
-   * hands `compileAgentForPlugin` an `AgentConfig` it built itself, so it enters the pipeline
+   * hands `compileAgentForHost` an `AgentConfig` it built itself, so it enters the pipeline
    * downstream of this function and could not see the gap.
    *
    * A roster rather than a field-by-field check: the subject is which fields survive, and a per-key

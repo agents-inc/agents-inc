@@ -1,13 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 import { buildSourceResult } from "../../__tests__/factories/config-factories.js";
+import { createMockMarketplace } from "../../__tests__/factories/plugin-factories.js";
 import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
-
-vi.mock("../../../utils/exec.js", () => ({
-  claudePluginMarketplaceExists: vi.fn(),
-  claudePluginMarketplaceAdd: vi.fn(),
-  claudePluginMarketplaceUpdate: vi.fn(),
-}));
 
 vi.mock("../../loading/index.js", () => ({
   fetchMarketplace: vi.fn(),
@@ -16,17 +11,19 @@ vi.mock("../../loading/index.js", () => ({
 vi.mock("../../../utils/logger.js");
 
 import { ensureMarketplace } from "./ensure-marketplace";
-import {
-  claudePluginMarketplaceExists,
-  claudePluginMarketplaceAdd,
-  claudePluginMarketplaceUpdate,
-} from "../../../utils/exec.js";
+import { createMockPluginHost } from "../../__tests__/helpers/mock-plugin-host.js";
 import { fetchMarketplace } from "../../loading/index.js";
 import { warn } from "../../../utils/logger.js";
 
-const mockMarketplaceExists = vi.mocked(claudePluginMarketplaceExists);
-const mockMarketplaceAdd = vi.mocked(claudePluginMarketplaceAdd);
-const mockMarketplaceUpdate = vi.mocked(claudePluginMarketplaceUpdate);
+/**
+ * The host handed to the function under test. `ensureMarketplace` is the one plugin operation
+ * that takes a host rather than reading one off a folder — it is handed no directory at all —
+ * so this spec needs no module mock for the seam.
+ */
+const host = createMockPluginHost();
+const mockMarketplaceExists = vi.mocked(host.marketplaceExists);
+const mockMarketplaceAdd = vi.mocked(host.addMarketplace);
+const mockMarketplaceUpdate = vi.mocked(host.refreshMarketplace);
 const mockFetchMarketplace = vi.mocked(fetchMarketplace);
 const mockWarn = vi.mocked(warn);
 
@@ -50,7 +47,7 @@ describe("ensureMarketplace", () => {
     const sourceResult = makeSourceResult("agents-inc");
     mockMarketplaceExists.mockResolvedValue(true);
 
-    const result = await ensureMarketplace(sourceResult);
+    const result = await ensureMarketplace(sourceResult, host);
 
     expect(mockMarketplaceExists).toHaveBeenCalledWith("agents-inc");
     expect(mockMarketplaceAdd).not.toHaveBeenCalled();
@@ -61,7 +58,7 @@ describe("ensureMarketplace", () => {
     const sourceResult = makeSourceResult("agents-inc");
     mockMarketplaceExists.mockResolvedValue(false);
 
-    const result = await ensureMarketplace(sourceResult);
+    const result = await ensureMarketplace(sourceResult, host);
 
     expect(mockMarketplaceAdd).toHaveBeenCalledWith("test/source");
     expect(result).toStrictEqual({ marketplace: "agents-inc", registered: true });
@@ -71,7 +68,7 @@ describe("ensureMarketplace", () => {
     const sourceResult = makeSourceResult(undefined);
     mockFetchMarketplace.mockRejectedValue(new Error(FETCH_FAILURE_CAUSE));
 
-    const result = await ensureMarketplace(sourceResult);
+    const result = await ensureMarketplace(sourceResult, host);
 
     expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source");
     expect(mockMarketplaceExists).not.toHaveBeenCalled();
@@ -82,7 +79,7 @@ describe("ensureMarketplace", () => {
     const sourceResult = makeSourceResult(undefined);
     mockFetchMarketplace.mockRejectedValue(new Error(FETCH_FAILURE_CAUSE));
 
-    await ensureMarketplace(sourceResult);
+    await ensureMarketplace(sourceResult, host);
 
     expect(
       mockWarn,
@@ -97,7 +94,7 @@ describe("ensureMarketplace", () => {
     mockMarketplaceExists.mockResolvedValue(true);
     mockMarketplaceUpdate.mockRejectedValue(new Error("Update failed"));
 
-    const result = await ensureMarketplace(sourceResult);
+    const result = await ensureMarketplace(sourceResult, host);
 
     expect(mockMarketplaceUpdate).toHaveBeenCalledWith("agents-inc");
     expect(mockWarn).toHaveBeenCalledWith(
@@ -109,18 +106,13 @@ describe("ensureMarketplace", () => {
   it("should lazily resolve marketplace name via fetchMarketplace", async () => {
     const sourceResult = makeSourceResult(undefined);
     mockFetchMarketplace.mockResolvedValue({
-      marketplace: {
-        name: "resolved-marketplace",
-        version: "1.0.0",
-        owner: { name: "test" },
-        plugins: [],
-      },
+      marketplace: { ...createMockMarketplace(), name: "resolved-marketplace" },
       sourcePath: "/tmp/resolved",
       fromCache: false,
     });
     mockMarketplaceExists.mockResolvedValue(false);
 
-    const result = await ensureMarketplace(sourceResult);
+    const result = await ensureMarketplace(sourceResult, host);
 
     expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source");
     expect(sourceResult.marketplace).toBe("resolved-marketplace");

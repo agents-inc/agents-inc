@@ -1,38 +1,41 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
+import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildProjectConfig } from "../factories/config-factories.js";
-import { renderConfigTs } from "../content-generators";
-import { CLAUDE_SRC_DIR, EJECT_SOURCE, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_SRC_DIR, EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
+import type { PluginHost } from "../../hosts/plugin-host.js";
 import type { ProjectConfig } from "../../../types";
 
 /**
- * `update` is a wrapper around `claude plugin marketplace update`, and the seam under
- * test is the one directly below it: `claudePluginMarketplaceUpdate` in `utils/exec.js`.
- * Everything above that — reading the installation's config, deciding which marketplaces
- * it actually uses, and refusing to run without the Claude CLI — is real here, which is
- * the whole point: the command's only job is to derive that marketplace list and hand it
- * over once per name.
+ * `update` refreshes every marketplace its installation names, and the seam under test is the one
+ * directly below it: `refreshMarketplace` on the `PluginHost` the folder answers. Everything above
+ * that — reading the installation's config, deciding which marketplaces it actually uses, and
+ * refusing to run without the host's binary — is real here, which is the whole point: the
+ * command's only job is to derive that marketplace list and hand it over once per name.
  *
  * The command class is imported directly rather than driven through `runCliCommand`,
  * because that helper resolves commands out of `dist/` where a module mock cannot reach.
  */
 
-const { mockMarketplaceUpdate, mockIsClaudeCLIAvailable } = vi.hoisted(() => ({
-  mockMarketplaceUpdate: vi.fn(),
-  mockIsClaudeCLIAvailable: vi.fn(),
+const { mockMarketplaceUpdate, mockHostAvailable } = vi.hoisted(() => ({
+  mockMarketplaceUpdate: vi.fn<PluginHost["refreshMarketplace"]>(),
+  mockHostAvailable: vi.fn<PluginHost["isAvailable"]>(),
 }));
 
-vi.mock("../../../utils/exec.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../utils/exec.js")>()),
-  claudePluginMarketplaceUpdate: (...args: unknown[]) => mockMarketplaceUpdate(...(args as [])),
-  isClaudeCLIAvailable: () => mockIsClaudeCLIAvailable(),
-}));
+vi.mock("../../hosts/host-for.js", async () => {
+  const { createMockPluginHost } = await import("../helpers/mock-plugin-host.js");
+  const host = createMockPluginHost({
+    refreshMarketplace: mockMarketplaceUpdate,
+    isAvailable: mockHostAvailable,
+  });
+  return { hostAt: () => host, hostFor: () => host };
+});
 
 const { default: Update } = await import("../../../commands/update.js");
 
@@ -40,9 +43,9 @@ const MARKETPLACE = "agents-inc";
 const OTHER_MARKETPLACE = "acme-skills";
 const MARKETPLACE_FAILURE = "Failed to update marketplace: network unreachable";
 
-/** Marketplace names handed to the Claude CLI wrapper, in call order. */
+/** Marketplace names handed to the host, in call order. */
 function updatedMarketplaces(): string[] {
-  return mockMarketplaceUpdate.mock.calls.map(([name]) => name as string);
+  return mockMarketplaceUpdate.mock.calls.map(([name]) => name);
 }
 
 /** Runs the command, returning the oclif error it threw (or `undefined` on success). */
@@ -68,7 +71,7 @@ describe("update command", () => {
     vi.stubEnv("HOME", tempDir);
     process.chdir(projectDir);
 
-    mockIsClaudeCLIAvailable.mockResolvedValue(true);
+    mockHostAvailable.mockResolvedValue(true);
     mockMarketplaceUpdate.mockResolvedValue(undefined);
   });
 
@@ -78,14 +81,9 @@ describe("update command", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Writes the `config.ts` the command reads its marketplaces out of. */
+  /** Writes the `config.ts` the command reads its marketplaces out of, under the legacy folder. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
-    const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(claudeSrcDir, { recursive: true });
-    await writeFile(
-      path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
-      renderConfigTs(buildProjectConfig(overrides)),
-    );
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
   }
 
   describe("marketplace refresh", () => {
@@ -159,7 +157,7 @@ describe("update command", () => {
       expect(error, "an eject-only install is a successful no-op").toBeUndefined();
       expect(mockMarketplaceUpdate).not.toHaveBeenCalled();
       expect(
-        mockIsClaudeCLIAvailable,
+        mockHostAvailable,
         "nothing needs the Claude CLI, so its absence must not be able to fail the run",
       ).not.toHaveBeenCalled();
     });
@@ -177,7 +175,7 @@ describe("update command", () => {
       await installConfig({
         skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
       });
-      mockIsClaudeCLIAvailable.mockResolvedValue(false);
+      mockHostAvailable.mockResolvedValue(false);
 
       const error = await runUpdate();
 

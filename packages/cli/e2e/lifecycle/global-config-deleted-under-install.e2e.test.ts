@@ -18,7 +18,7 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { UI_SYMBOLS } from "../../src/cli/consts.js";
 
 /**
- * The user deletes `~/.claude-src/config.ts` and the installation it described is
+ * The user deletes the global `config.ts` and the installation it described is
  * still on disk.
  *
  * The suite covered a config that cannot be READ (`commands/{edit,compile,doctor,

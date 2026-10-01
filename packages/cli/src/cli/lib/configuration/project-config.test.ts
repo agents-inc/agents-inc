@@ -13,7 +13,7 @@ import type { AgentName } from "../../types";
 import { initializeMatrix, matrix } from "../matrix/matrix-provider";
 import { setVerbose } from "../../utils/logger";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
+import { writeRawTestConfig, writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
 import {
   buildAgentConfigs,
@@ -24,7 +24,9 @@ import {
 import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { SINGLE_REACT_MATRIX, WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts";
+import { STANDARD_FILES } from "../../consts";
+import { getProjectConfigPath } from "../installation/install-base-dir.js";
+import { sourceFolderInUse } from "../installation/install-layout.js";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import type { SkillId, StackAgentConfig } from "../../types";
@@ -113,12 +115,9 @@ describe("project-config", () => {
         stack: {
           "web-developer": {
             "web-framework": "web-framework-react",
-            "meta-reviewing": [{ id: "meta-reviewing-reviewing", preloaded: true }],
-            "meta-methodology": [{ id: "meta-methodology-research-methodology", preloaded: true }],
-            "web-styling": {
-              id: "web-styling-scss-modules",
-              preloaded: true,
-            },
+            "meta-reviewing": [sa("meta-reviewing-reviewing", true)],
+            "meta-methodology": [sa("meta-methodology-research-methodology", true)],
+            "web-styling": sa("web-styling-scss-modules", true),
           },
         },
       } satisfies Record<string, unknown>);
@@ -145,7 +144,7 @@ describe("project-config", () => {
         ...buildProjectConfig({ name: "my-project" }),
         stack: {
           "web-developer": {
-            [STALE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }],
+            [STALE_CATEGORY_KEY]: [sa(MOVED_SKILL, true)],
           },
         },
       } satisfies Record<string, unknown>);
@@ -161,12 +160,12 @@ describe("project-config", () => {
       });
     });
 
-    it("should load config with extra fields (passthrough)", async () => {
-      const inputConfig = {
-        ...buildProjectConfig({ name: "my-stack" }),
+    it("should load config with its optional author and description", async () => {
+      const inputConfig = buildProjectConfig({
+        name: "my-stack",
         author: "@vince",
-        description: "A config with extra fields",
-      };
+        description: "A config with its optional fields",
+      });
       await writeTestTsConfig(tempDir, inputConfig);
 
       const result = await loadProjectConfig(tempDir);
@@ -176,12 +175,7 @@ describe("project-config", () => {
     });
 
     it("should throw for a config file that exists but is unparseable", async () => {
-      const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        "invalid typescript content {{",
-      );
+      await writeRawTestConfig(tempDir, "invalid typescript content {{");
 
       // A file that exists but cannot load is corrupt, not "missing" — it must
       // surface, never collapse into null.
@@ -189,12 +183,7 @@ describe("project-config", () => {
     });
 
     it("should throw for a config whose default export is not an object", async () => {
-      const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(
-        path.join(configDir, STANDARD_FILES.CONFIG_TS),
-        'export default "just a string";',
-      );
+      await writeRawTestConfig(tempDir, 'export default "just a string";');
 
       await expect(loadProjectConfig(tempDir)).rejects.toThrow("could not be loaded");
     });
@@ -223,7 +212,7 @@ describe("project-config", () => {
     it("should announce a config loaded from the home root as the global one", async () => {
       await writeTestTsConfig(homeDir, buildProjectConfig());
 
-      const result = await loadProjectConfigFromDir(homeDir);
+      const result = await loadProjectConfigFromDir(homeDir, "claude");
 
       expect(result).not.toBeNull();
       expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/global config/i));
@@ -234,7 +223,7 @@ describe("project-config", () => {
     });
 
     it("should announce a config missing from the home root as the global one", async () => {
-      const result = await loadProjectConfigFromDir(homeDir);
+      const result = await loadProjectConfigFromDir(homeDir, "claude");
 
       expect(result).toBeNull();
       expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/global config/i));
@@ -247,14 +236,14 @@ describe("project-config", () => {
     it("should announce a config loaded from a project as the project one", async () => {
       await writeTestTsConfig(tempDir, buildProjectConfig());
 
-      const result = await loadProjectConfigFromDir(tempDir);
+      const result = await loadProjectConfigFromDir(tempDir, "claude");
 
       expect(result).not.toBeNull();
       expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/project config/i));
     });
 
     it("should announce a config missing from a project as the project one", async () => {
-      const result = await loadProjectConfigFromDir(tempDir);
+      const result = await loadProjectConfigFromDir(tempDir, "claude");
 
       expect(result).toBeNull();
       expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringMatching(/project config/i));
@@ -343,7 +332,7 @@ describe("round-trip tests", () => {
     );
 
     // Write to temp dir as config
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    const configDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
@@ -377,7 +366,7 @@ describe("round-trip tests", () => {
     await writeTestTsConfig(tempDir, {
       ...buildProjectConfig({ name: "test-project" }),
       stack: {
-        "web-developer": { [STALE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }] },
+        "web-developer": { [STALE_CATEGORY_KEY]: [sa(MOVED_SKILL, true)] },
       },
     } satisfies Record<string, unknown>);
 
@@ -393,7 +382,7 @@ describe("round-trip tests", () => {
       newlyAddedSkillIds: [],
     });
     await writeFile(
-      path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+      getProjectConfigPath(tempDir, "claude"),
       generateConfigSource(regenerated, matrix),
     );
 
@@ -416,7 +405,7 @@ describe("round-trip tests", () => {
     it("refuses to load when the project-level source ref sits under the old key", async () => {
       await writeTestTsConfig(tempDir, buildPreRenameProjectConfig());
 
-      const load = loadProjectConfigFromDir(tempDir);
+      const load = loadProjectConfigFromDir(tempDir, "claude");
 
       await expect(load).rejects.toBeInstanceOf(ConfigLoadError);
       await expect(load).rejects.toThrow(/source/);
@@ -426,7 +415,7 @@ describe("round-trip tests", () => {
     it("refuses to load when a skill entry's provenance sits under the old key", async () => {
       await writeTestTsConfig(tempDir, buildPreRenameSkillEntryConfig());
 
-      const load = loadProjectConfigFromDir(tempDir);
+      const load = loadProjectConfigFromDir(tempDir, "claude");
 
       await expect(load).rejects.toBeInstanceOf(ConfigLoadError);
       await expect(load).rejects.toThrow(/source/);
@@ -452,7 +441,7 @@ describe("round-trip tests", () => {
     );
 
     // Write to temp dir as config
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    const configDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),

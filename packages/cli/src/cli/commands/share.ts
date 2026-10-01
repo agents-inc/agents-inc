@@ -2,6 +2,7 @@ import { Flags } from "@oclif/core";
 
 import { BaseCommand } from "../base-command.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
+import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
 import { seedPayloadForInstallation } from "../lib/seed/installation-payload.js";
 import { publishSeedConfig } from "../lib/seed/publish-seed.js";
 import {
@@ -9,6 +10,11 @@ import {
   STDIN_IS_A_TERMINAL,
   type PipedPayload,
 } from "../lib/seed/read-piped-payload.js";
+import {
+  providerFlag,
+  providerNamedBy,
+  refuseAnAmbiguousInstallation,
+} from "../lib/installation/provider-flag.js";
 import { readAllOf } from "../utils/read-stream.js";
 import { sharedConfigDestinations } from "../utils/messages.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
@@ -25,6 +31,7 @@ export default class Share extends BaseCommand {
         "Share a configuration piped in on standard input instead of the one installed here",
       default: false,
     }),
+    provider: providerFlag(),
   };
 
   static examples = [
@@ -45,6 +52,20 @@ export default class Share extends BaseCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(Share);
 
+    // Only the installation path reads a directory. A piped payload is the CALLER's configuration
+    // and no folder on this machine decides anything about it, so neither a scope holding two
+    // installations nor a placement this host cannot fill is this run's problem — asking anyway
+    // would refuse a `--stdin` share for the state of a directory it never opens.
+    if (!flags.stdin) {
+      await refuseAnAmbiguousInstallation(
+        process.cwd(),
+        "share",
+        providerNamedBy(flags.provider),
+        (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+      );
+      await this.refuseUnofferablePlacements(process.cwd());
+    }
+
     const payload = flags.stdin
       ? await this.payloadFromPipe()
       : await this.payloadFromInstallation();
@@ -55,6 +76,31 @@ export default class Share extends BaseCommand {
     }
 
     this.reportShared(published.id);
+  }
+
+  /**
+   * Refuses a configuration asking for a mode/scope cell its own host does not offer, before the
+   * payload is built and long before the POST.
+   *
+   * **`share` is a read path, and the roster that names them missed it.** The list this refusal
+   * was built against reads "`compile`, `edit`, `update` and `doctor`" and claims to be every
+   * command that acts on a configuration it did not just write — while `share` sits beside them
+   * reading the same file through `seedPayloadForInstallation`. What it publishes is described as
+   * "the skills, sub-agents and per-agent curation installed HERE", and a row the host could not
+   * place was never installed here at all, so the id would describe an installation that does not
+   * exist. `refuseAnAmbiguousInstallation` above is this finding's sibling and was already asked;
+   * the two are the pair `doctor`'s Placements row reports together.
+   *
+   * A refusal rather than a row, like the other three writers, and for a reason of its own: the
+   * store's write is the scarce half, and one spent on an installation nothing on this machine
+   * will act on buys a link to a misdescription.
+   *
+   * `uninstall` reads the same file and is deliberately NOT on this roster: a refusal there would
+   * make an unofferable installation unremovable, which is a guard that has swallowed its domain.
+   */
+  private async refuseUnofferablePlacements(cwd: string): Promise<void> {
+    const [finding] = await unofferablePlacementsFound(cwd);
+    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
   /** The installation in this directory, mapped and announced. */

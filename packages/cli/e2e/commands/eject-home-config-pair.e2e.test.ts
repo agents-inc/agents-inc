@@ -13,7 +13,7 @@ import {
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 
 /**
- * `eject` invents a `.claude-src/config.ts` when the directory has none. The
+ * `eject` invents a `config.ts` when the directory has none. The
  * generated file opens with `import type { ProjectConfig } from "./config-types"`
  * — so writing it alone hands the user a config that cannot resolve its own
  * types. `config.ts` and `config-types.ts` are one artifact and every write of

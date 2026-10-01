@@ -41,8 +41,8 @@ describe("copyLocalSkills", () => {
       agentsDir: scope === "global" ? "/home/user/.claude/agents" : `${PROJECT_DIR}/.claude/agents`,
       configPath:
         scope === "global"
-          ? "/home/user/.claude-src/config.ts"
-          : `${PROJECT_DIR}/.claude-src/config.ts`,
+          ? "/home/user/.agents-inc/claude/config.ts"
+          : `${PROJECT_DIR}/.agents-inc/claude/config.ts`,
     }));
     mockCopySkillsToLocalFlattened.mockResolvedValue([]);
   });

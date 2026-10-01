@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { Installation } from "../../installation/index.js";
-import type { ProjectConfig } from "../../../types/index.js";
+import { buildProjectConfig } from "../../__tests__/factories/config-factories.js";
+import { buildInstallation } from "../../__tests__/factories/installation-factories.js";
 
 vi.mock("../../installation/index.js", () => ({
   detectInstallation: vi.fn(),
@@ -17,19 +17,14 @@ import { loadProjectConfig } from "../../configuration/index.js";
 const mockDetectInstallation = vi.mocked(detectInstallation);
 const mockLoadProjectConfig = vi.mocked(loadProjectConfig);
 
-const MOCK_INSTALLATION: Installation = {
-  mode: "eject",
-  configPath: "/tmp/project/.claude-src/config.ts",
-  agentsDir: "/tmp/project/.claude/agents",
-  skillsDir: "/tmp/project/.claude/skills",
-  projectDir: "/tmp/project",
-};
+/** What `detectInstallation` answers — handed back whole, so any installation serves. */
+const MOCK_INSTALLATION = buildInstallation();
 
-const MOCK_CONFIG: ProjectConfig = {
-  name: "test-project",
-  skills: [],
-  agents: [],
-};
+/** What `loadProjectConfig` answers — handed back whole, so any config serves. */
+const MOCK_CONFIG = buildProjectConfig();
+
+/** Where the loaded config says it was read from — the path `detectProject` reports. */
+const LOADED_CONFIG_PATH = "/tmp/project/.claude-src/config.ts";
 
 describe("detectProject", () => {
   beforeEach(() => {
@@ -49,7 +44,8 @@ describe("detectProject", () => {
     mockDetectInstallation.mockResolvedValue(MOCK_INSTALLATION);
     mockLoadProjectConfig.mockResolvedValue({
       config: MOCK_CONFIG,
-      configPath: "/tmp/project/.claude-src/config.ts",
+      configPath: LOADED_CONFIG_PATH,
+      provider: "claude",
     });
 
     const result = await detectProject("/tmp/project");
@@ -57,7 +53,7 @@ describe("detectProject", () => {
     expect(result).toStrictEqual({
       installation: MOCK_INSTALLATION,
       config: MOCK_CONFIG,
-      configPath: "/tmp/project/.claude-src/config.ts",
+      configPath: LOADED_CONFIG_PATH,
     });
   });
 

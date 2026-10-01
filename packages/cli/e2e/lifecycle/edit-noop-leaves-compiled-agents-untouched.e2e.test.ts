@@ -1,4 +1,3 @@
-import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { finishWizard } from "../fixtures/dual-scope-helpers.js";
 import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
@@ -9,9 +8,10 @@ import {
   completeWithLocalSources,
   createTempDir,
   readTreeSnapshot,
+  sourceFolderIn,
 } from "../helpers/test-utils.js";
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 
@@ -39,9 +39,6 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
  * a tree the CLI wrote, not one a fixture described.
  */
 
-/** Where the generated config lives, relative to the installed scope. */
-const CONFIG_SOURCES = DIRS.CLAUDE_SRC;
-
 /** What a compiled sub-agent is called on disk: its name, and this. */
 const COMPILED_AGENT_SUFFIX = ".md";
 
@@ -67,7 +64,7 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     expect(install.exitCode, `the install failed: ${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
     compiledBefore = await readTreeSnapshot(agentsPath(globalHome));
-    configBefore = await readTreeSnapshot(path.join(globalHome, CONFIG_SOURCES));
+    configBefore = await readTreeSnapshot(sourceFolderIn(globalHome));
 
     // Phase B — the same wizard, walked end to end with no key that selects, deselects or
     // rescopes anything: Build through every domain, Sources untouched, Agents on defaults.
@@ -90,7 +87,7 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     }
 
     compiledAfter = await readTreeSnapshot(agentsPath(globalHome));
-    configAfter = await readTreeSnapshot(path.join(globalHome, CONFIG_SOURCES));
+    configAfter = await readTreeSnapshot(sourceFolderIn(globalHome));
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {

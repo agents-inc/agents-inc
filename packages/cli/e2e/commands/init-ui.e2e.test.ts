@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
 import { cleanupTempDir, createTempDir, directoryExists } from "../helpers/test-utils.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
@@ -36,7 +37,7 @@ describe("init --ui", () => {
   });
 
   /**
-   * The subject guard. Opening the editor is not a setup, so a run that leaves `.claude-src/`
+   * The subject guard. Opening the editor is not a setup, so a run that leaves a source folder
    * behind has done something this flag never promised — and the assertion above cannot tell the
    * difference on its own, since a completed install prints a link too.
    */
@@ -45,7 +46,10 @@ describe("init --ui", () => {
 
     await CLI.run(["init", "--ui"], { dir: tempDir });
 
-    expect(await directoryExists(`${tempDir}/${DIRS.CLAUDE_SRC}`)).toBe(false);
+    await expectNoSourceFolder(
+      tempDir,
+      "opening the editor is not a setup, so init --ui installs nothing",
+    );
     expect(await directoryExists(`${tempDir}/${DIRS.CLAUDE}`)).toBe(false);
   });
 
@@ -74,7 +78,10 @@ describe("init --ui", () => {
 
     await CLI.run(["init", "--ui", "--from", "se_ABC123"], { dir: tempDir });
 
-    expect(await directoryExists(`${tempDir}/${DIRS.CLAUDE_SRC}`)).toBe(false);
+    await expectNoSourceFolder(
+      tempDir,
+      "opening an id in the editor is not a setup, so init --ui installs nothing",
+    );
   });
 
   it("is listed in the command's own help", async () => {

@@ -22,7 +22,7 @@ import type { Marketplace } from "../../src/cli/types/index.js";
  *
  * These tests verify that `claude plugin install`, `claude plugin marketplace add`,
  * and `claude plugin uninstall` work in the test environment. They call the real
- * `claude` binary via the exec utilities in src/cli/utils/exec.ts.
+ * `claude` binary via the Claude host in src/cli/lib/hosts/claude-host.ts.
  *
  * Every call is pinned to a per-test config dir. The marketplace add below used
  * to land in the machine's own installation under a name outside
@@ -141,13 +141,14 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       const claudeDir = path.join(projectDir, DIRS.CLAUDE);
       await mkdir(claudeDir, { recursive: true });
 
-      // Uninstalling a nonexistent plugin should succeed silently (the exec
-      // wrapper treats "not installed" / "not found" as non-errors)
+      // Uninstalling a nonexistent plugin does not throw: the host reads Claude's own
+      // "not installed" / "not found" message and answers `absent`. It answered nothing at all
+      // until C3, which is why `uninstall` could report a removal it had not performed.
       await expect(
         claudePluginUninstall("nonexistent-plugin@nonexistent-marketplace", "project", projectDir, {
           configDir: isolated.configDir,
         }),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe("absent");
     });
   });
 

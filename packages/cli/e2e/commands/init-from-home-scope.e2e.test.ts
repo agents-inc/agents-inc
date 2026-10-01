@@ -8,6 +8,7 @@ import {
   loadConfigOrFail,
   skillsPath,
 } from "../helpers/test-utils.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
@@ -17,7 +18,7 @@ import {
 } from "../fixtures/seed-config-store.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -79,6 +80,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -108,7 +110,10 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     expect(said).not.toContain(STEP_TEXT.INIT_SUCCESS);
 
     // Nothing written, on every surface a home install writes to.
-    expect(await listFiles(env.fakeHome)).not.toContain(DIRS.CLAUDE_SRC);
+    await expectNoSourceFolder(
+      env.fakeHome,
+      "the refusal lands before the install, so the home holds nothing",
+    );
     expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([]);
     expect(await listFiles(agentsPath(env.fakeHome))).toStrictEqual([]);
   });
@@ -120,10 +125,12 @@ describe("init --from <id>: project-scoped content at the global root", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.vitest.id]: buildSeedSkill({
+            install: "eject",
             scope: "global",
             assignments: { [WEB_DEV]: "lazy" },
           }),
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -147,7 +154,10 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     // moves it to fix this message has been sent to change the wrong entry.
     expect(said).not.toContain(`skill ${E2E_SKILL.vitest.id}`);
 
-    expect(await listFiles(env.fakeHome)).not.toContain(DIRS.CLAUDE_SRC);
+    await expectNoSourceFolder(
+      env.fakeHome,
+      "the refusal lands before the install, so the home holds nothing",
+    );
     expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([]);
   });
 
@@ -161,6 +171,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "global",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -181,7 +192,10 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
     expect(said).toContain(`sub-agent ${WEB_DEV}`);
 
-    expect(await listFiles(env.fakeHome)).not.toContain(DIRS.CLAUDE_SRC);
+    await expectNoSourceFolder(
+      env.fakeHome,
+      "the refusal lands before the install, so the home holds nothing",
+    );
     expect(await listFiles(agentsPath(env.fakeHome))).toStrictEqual([]);
   });
 
@@ -194,6 +208,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "global",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -211,7 +226,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
 
     const homeConfig = await loadConfigOrFail(env.fakeHome);
     expect(homeConfig.skills).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
+      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
     );
     expect(homeConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "global" }));
     expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([E2E_SKILL.react.id]);
@@ -227,6 +242,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
       buildSeedPayload({
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
             scope: "project",
             assignments: { [WEB_DEV]: "lazy" },
           }),
@@ -244,7 +260,9 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     expect(exitCode, `project install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
     const projectConfig = await loadConfigOrFail(env.projectDir);
-    expect(projectConfig.skills).toStrictEqual(buildSkillConfigs([E2E_SKILL.react.id]));
+    expect(projectConfig.skills).toStrictEqual(
+      buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
+    );
     expect(projectConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
     expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([E2E_SKILL.react.id]);
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual([`${WEB_DEV}.md`]);

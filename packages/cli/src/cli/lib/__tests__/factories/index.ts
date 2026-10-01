@@ -36,7 +36,14 @@ export {
   buildSourceResult,
   initMatrixAndSource,
   buildTestProjectConfig,
+  buildConfigWriteResult,
 } from "./config-factories.js";
+
+export {
+  renderUnparseableConfigTs,
+  renderConfigTsWithoutDefaultExport,
+  renderSchemaViolatingConfigTs,
+} from "./unloadable-config-factories.js";
 
 export {
   createMockResolvedStack,
@@ -52,4 +59,24 @@ export {
   createMockMarketplacePlugin,
 } from "./plugin-factories.js";
 
+export {
+  buildUserPluginInstallation,
+  buildProjectPluginInstallation,
+  renderInstalledPluginsRegistry,
+  renderEnabledPluginsSettings,
+} from "./plugin-registry-factories.js";
+
+export { buildClaudeSettings } from "./claude-settings-factories.js";
+
 export { createMockCategory } from "./category-factories.js";
+
+export { buildInstallation, buildPluginInstallation } from "./installation-factories.js";
+
+export {
+  buildLoadedSource,
+  buildDiscoveredSkills,
+  buildCompilationResult,
+  buildSkillCopyResult,
+} from "./operation-result-factories.js";
+
+export { buildRecompileAgentsResult } from "./recompile-factories.js";

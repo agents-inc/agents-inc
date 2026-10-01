@@ -7,6 +7,7 @@ import type {
   CompileAgentConfig,
   ProjectConfig,
   SkillId,
+  SkillReference,
   Stack,
   StackAgentConfig,
 } from "../../types";
@@ -18,7 +19,7 @@ import {
   type AuthoritativeScope,
   mergeWithExistingConfig,
   loadProjectConfig,
-  loadProjectConfigFromDir,
+  loadInstalledConfig,
 } from "../configuration";
 import { type SourceLoadResult } from "../loading";
 import { loadStackById, stackNotOfferedMessage } from "../stacks";
@@ -75,28 +76,34 @@ function computeScopeEligibilityGained(
 ): ReadonlySet<string> {
   const priorSkillScope = activeSkillScopeMap(priorSkills);
   const priorAgentScope = activeAgentScopeMap(priorAgents);
+  const gainedCompatibility = (skill: SkillConfig, agent: AgentScopeConfig): boolean =>
+    isScopePairCompatible(skill.scope, agent.scope) &&
+    !wereScopeCompatible(priorSkillScope.get(skill.id), priorAgentScope.get(agent.name));
 
-  const gained = new Set<string>();
   const activeCurrentSkills = currentSkills.filter((s) => !s.excluded);
   const activeCurrentAgents = currentAgents.filter((a) => !a.excluded);
 
-  for (const agent of activeCurrentAgents) {
-    for (const skill of activeCurrentSkills) {
-      if (!isScopePairCompatible(skill.scope, agent.scope)) continue;
+  const gainedKeys = activeCurrentAgents.flatMap((agent) =>
+    activeCurrentSkills
+      .filter((skill) => gainedCompatibility(skill, agent))
+      .map((skill) => scopeEligibilityKey(agent.name, skill.id)),
+  );
+  return new Set(gainedKeys);
+}
 
-      const priorSkillScopeValue = priorSkillScope.get(skill.id);
-      const priorAgentScopeValue = priorAgentScope.get(agent.name);
-      const wasCompatiblePreviously =
-        priorSkillScopeValue !== undefined &&
-        priorAgentScopeValue !== undefined &&
-        isScopePairCompatible(priorSkillScopeValue, priorAgentScopeValue);
-
-      if (!wasCompatiblePreviously) {
-        gained.add(scopeEligibilityKey(agent.name, skill.id));
-      }
-    }
-  }
-  return gained;
+/**
+ * Whether a pair was scope-compatible in the persisted config — which it cannot have been where
+ * either half was absent from it, or excluded there.
+ */
+function wereScopeCompatible(
+  priorSkillScope: SkillScope | undefined,
+  priorAgentScope: SkillScope | undefined,
+): boolean {
+  return (
+    priorSkillScope !== undefined &&
+    priorAgentScope !== undefined &&
+    isScopePairCompatible(priorSkillScope, priorAgentScope)
+  );
 }
 
 /**
@@ -189,7 +196,7 @@ async function loadCuratedStack(
 
 /** The global install's per-agent stack, absent until a global config exists. */
 async function loadGlobalStack(): Promise<ProjectConfig["stack"]> {
-  return (await loadProjectConfigFromDir(os.homedir()))?.config.stack;
+  return (await loadInstalledConfig(os.homedir()))?.config.stack;
 }
 
 async function buildInstallConfig(
@@ -204,84 +211,16 @@ async function buildInstallConfig(
       `selectedAgents=[${wizardResult.selectedAgents.join(", ")}]`,
   );
 
-  const { source } = sourceResult.sourceConfig;
-  const loadedStack = wizardResult.selectedStackId
-    ? await loadStackById(wizardResult.selectedStackId, sourceResult.sourcePath, source)
-    : null;
-  if (wizardResult.selectedStackId) {
-    verbose(
-      `buildInstallConfig: loadedStack=${loadedStack ? `found (id='${loadedStack.id}')` : "NOT FOUND"}`,
-    );
-    if (!loadedStack) {
-      throw new Error(stackNotOfferedMessage(wizardResult.selectedStackId, source));
-    }
-  }
-
+  const loadedStack = await loadSelectedStack(wizardResult.selectedStackId, sourceResult);
   const existing = await loadProjectConfig(projectDir);
   const existingStack = await loadCuratedStack(projectDir, existing?.config.stack);
 
-  // Per-agent curation delta: skills that are new to this session's top-level selection
-  // relative to the persisted config. The diff is filtered to active (non-excluded)
-  // skills on BOTH sides — excluded entries are not "present" from the perspective
-  // of stack membership, so flipping an exclusion back to active should register
-  // as a newly-added skill. `existing === null` (first init) collapses to "every
-  // skill is new this session", which the generator's seeding branch tolerates.
-  const newlyAddedSkillIds = computeNewlyAddedSkillIds(
-    wizardResult.skills,
-    existing?.config.skills,
+  const options = generatorOptionsFor(
+    wizardResult,
+    existing?.config,
+    stackToPreserve(loadedStack, existingStack),
   );
-
-  // Scope-eligibility delta: `(agent, skillId)` pairs that are scope-compatible
-  // NOW but were not scope-compatible in the persisted config (either the skill's
-  // scope was flipped, the agent's scope was flipped, or one of them was absent
-  // before). Admits the scope-flip case that a skill-id-only diff would miss.
-  const scopeEligibilityGained = computeScopeEligibilityGained(
-    wizardResult.skills,
-    wizardResult.agentConfigs,
-    existing?.config.skills,
-    existing?.config.agents,
-  );
-
-  // Pass user's agent selection and skill configs to config generator.
-  // Both skillConfigs and agentConfigs are always passed when selectedAgents is
-  // set — the config generator enforces that invariant to prevent silent
-  // "project" scope defaults on missing lookups.
-  const agentOptions: {
-    selectedAgents?: AgentName[];
-    skillConfigs: SkillConfig[];
-    agentConfigs: AgentScopeConfig[];
-    existingStack: Partial<Record<AgentName, StackAgentConfig>>;
-    newlyAddedSkillIds: readonly SkillId[];
-    scopeEligibilityGained: ReadonlySet<string>;
-  } = {
-    skillConfigs: wizardResult.skills,
-    agentConfigs: wizardResult.agentConfigs,
-    existingStack,
-    newlyAddedSkillIds,
-    scopeEligibilityGained,
-    ...(wizardResult.selectedAgents.length > 0 && {
-      selectedAgents: wizardResult.selectedAgents,
-    }),
-  };
-
-  // With a stack: overlay the stack as `existingStack` so its (agent, category, skill)
-  // triples reach the ownership-based builder with a load already decided — the
-  // author's flag where a third-party stacks file wrote one, and the shared mapping's
-  // verdict where none was written, which is every entry of a built-in stack.
-  // `buildStackProperty` is where that decision is made, so applying a stack is a NEW
-  // selection: it never arrives flagless and is never read as a curated lazy.
-  // The on-disk stack spreads LAST and wins per agent, so re-running over an installed
-  // config preserves what the user saved. Ownership rules still govern which agents and
-  // categories land in the final stack, so Phase A (init) and Phase B (edit) produce
-  // equivalent stacks for the same selection.
-  const effectiveOptions = loadedStack
-    ? { ...agentOptions, existingStack: { ...buildStackProperty(loadedStack), ...existingStack } }
-    : agentOptions;
-  const generated = generateProjectConfigFromSkills(
-    configNameFor(projectDir),
-    skillIds,
-    effectiveOptions,
-  );
+  const generated = generateProjectConfigFromSkills(configNameFor(projectDir), skillIds, options);
   const stack = resolveStackProperty(generated.stack, wizardResult.assignedStack);
   const description = resolveDescription(loadedStack, wizardResult.description);
   const localConfig: ProjectConfig = {
@@ -291,11 +230,102 @@ async function buildInstallConfig(
   };
 
   verbose(
-    `buildInstallConfig result: stack=${localConfig.stack ? Object.keys(localConfig.stack).length + " agents" : "UNDEFINED"}, ` +
+    `buildInstallConfig result: stack=${stackSizeForLog(localConfig.stack)}, ` +
       `agents=[${localConfig.agents.map((a) => a.name).join(", ")}], skills=${localConfig.skills.length}`,
   );
 
   return { config: localConfig, loadedStack };
+}
+
+/**
+ * The stack the wizard selected, loaded from the source — `null` where none was selected, and a
+ * refusal naming the source where one was selected that the source does not offer.
+ */
+async function loadSelectedStack(
+  stackId: WizardResultV2["selectedStackId"],
+  sourceResult: SourceLoadResult,
+): Promise<Stack | null> {
+  if (!stackId) return null;
+
+  const { source } = sourceResult.sourceConfig;
+  const loadedStack = await loadStackById(stackId, sourceResult.sourcePath, source);
+  verbose(
+    `buildInstallConfig: loadedStack=${loadedStack ? `found (id='${loadedStack.id}')` : "NOT FOUND"}`,
+  );
+  if (!loadedStack) throw new Error(stackNotOfferedMessage(stackId, source));
+
+  return loadedStack;
+}
+
+/**
+ * The per-agent stack the generator must preserve: the curated one on disk, over any stack this
+ * install applies.
+ *
+ * With a stack, it is overlaid so its (agent, category, skill) triples reach the ownership-based
+ * builder with a load already decided — the author's flag where a third-party stacks file wrote
+ * one, and the shared mapping's verdict where none was written, which is every entry of a built-in
+ * stack. `buildStackProperty` is where that decision is made, so applying a stack is a NEW
+ * selection: it never arrives flagless and is never read as a curated lazy.
+ *
+ * The on-disk stack spreads LAST and wins per agent, so re-running over an installed config
+ * preserves what the user saved. Ownership rules still govern which agents and categories land in
+ * the final stack, so Phase A (init) and Phase B (edit) produce equivalent stacks for the same
+ * selection.
+ */
+function stackToPreserve(
+  loadedStack: Stack | null,
+  curatedStack: Partial<Record<AgentName, StackAgentConfig>>,
+): Partial<Record<AgentName, StackAgentConfig>> {
+  if (loadedStack === null) return curatedStack;
+  return { ...buildStackProperty(loadedStack), ...curatedStack };
+}
+
+/**
+ * Everything the generator is told beyond the skill ids: the user's agent selection, the skill
+ * and agent configs that carry each one's scope, the stack to preserve, and what this session
+ * changed relative to the persisted config.
+ *
+ * Both `skillConfigs` and `agentConfigs` are always passed when `selectedAgents` is set — the
+ * config generator enforces that invariant to prevent silent "project" scope defaults on missing
+ * lookups.
+ *
+ * The two deltas are what per-agent curation turns on: the skills new to this session's selection,
+ * and the `(agent, skillId)` pairs that became scope-compatible, which admits the scope-flip case a
+ * skill-id-only diff would miss. With no persisted config (first init) both collapse to
+ * "everything is new this session", which the generator's seeding branch tolerates.
+ */
+function generatorOptionsFor(
+  wizardResult: WizardResultV2,
+  persisted: ProjectConfig | undefined,
+  existingStack: Partial<Record<AgentName, StackAgentConfig>>,
+): {
+  selectedAgents?: AgentName[];
+  skillConfigs: SkillConfig[];
+  agentConfigs: AgentScopeConfig[];
+  existingStack: Partial<Record<AgentName, StackAgentConfig>>;
+  newlyAddedSkillIds: readonly SkillId[];
+  scopeEligibilityGained: ReadonlySet<string>;
+} {
+  return {
+    skillConfigs: wizardResult.skills,
+    agentConfigs: wizardResult.agentConfigs,
+    existingStack,
+    newlyAddedSkillIds: computeNewlyAddedSkillIds(wizardResult.skills, persisted?.skills),
+    scopeEligibilityGained: computeScopeEligibilityGained(
+      wizardResult.skills,
+      wizardResult.agentConfigs,
+      persisted?.skills,
+      persisted?.agents,
+    ),
+    ...(wizardResult.selectedAgents.length > 0 && {
+      selectedAgents: wizardResult.selectedAgents,
+    }),
+  };
+}
+
+/** How many agents a stack carries, as the verbose lines spell it. */
+function stackSizeForLog(stack: ProjectConfig["stack"]): string {
+  return stack ? `${Object.keys(stack).length} agents` : "UNDEFINED";
 }
 
 export function setConfigMetadata(
@@ -332,16 +362,14 @@ export async function buildAndMergeConfig(
   authoritativeScope?: AuthoritativeScope,
 ): Promise<MergeResult> {
   const { config } = await buildInstallConfig(wizardResult, sourceResult, projectDir);
-  verbose(
-    `buildAndMergeConfig: before merge — stack=${config.stack ? Object.keys(config.stack).length + " agents" : "UNDEFINED"}`,
-  );
+  verbose(`buildAndMergeConfig: before merge — stack=${stackSizeForLog(config.stack)}`);
   const configWithMetadata = setConfigMetadata(config, wizardResult, sourceResult, sourceFlag);
   const result = await mergeWithExistingConfig(configWithMetadata, {
     projectDir,
     ...(authoritativeScope !== undefined && { authoritativeScope }),
   });
   verbose(
-    `buildAndMergeConfig: after merge — stack=${result.config.stack ? Object.keys(result.config.stack).length + " agents" : "UNDEFINED"}, merged=${result.merged}`,
+    `buildAndMergeConfig: after merge — stack=${stackSizeForLog(result.config.stack)}, merged=${result.merged}`,
   );
   return result;
 }
@@ -352,17 +380,26 @@ export function buildCompileAgents(
 ): Partial<Record<AgentName, CompileAgentConfig>> {
   const activeAgents = config.agents.filter((a) => !a.excluded);
   const excludedSkillIds = effectivelyExcludedSkillIds(config.skills);
-
-  // D7 cross-scope safety net: build set of global skill IDs so global agents only see global skills
   const globalSkillIds = new Set(
     config.skills.filter((s) => isActiveAt(s, "global")).map((s) => s.id),
   );
-
-  // Attach each skill's `origin` to its SkillReference so the compiler can
-  // decide between `${id}:${id}` (plugin) and bare id (eject) on a per-skill
-  // basis. Missing entries are intentional — user-authored local skills have no
-  // SkillConfig and legitimately carry no origin.
   const sourceById = new Map<SkillId, string>(config.skills.map((s) => [s.id, s.origin]));
+
+  // An effectively excluded skill compiles into no agent, and a global agent takes only the skills
+  // active at global scope — the D7 cross-scope safety net.
+  const compilesInto = (ref: SkillReference, agentConfig: AgentScopeConfig): boolean => {
+    if (excludedSkillIds.has(ref.id)) return false;
+    if (agentConfig.scope === "global") return globalSkillIds.has(ref.id);
+    return true;
+  };
+
+  // The skill's `origin`, carried as `source`, is what lets the compiler choose per skill between
+  // `${id}:${id}` (plugin) and a bare id (eject). A skill with no SkillConfig — a user-authored
+  // local one — legitimately has none, so the ref goes through without it.
+  const withItsOrigin = (ref: SkillReference): SkillReference => {
+    const source = sourceById.get(ref.id);
+    return { ...ref, ...(source !== undefined && { source }) };
+  };
 
   const buildAgentCompileEntry = (agentConfig: AgentScopeConfig): CompileAgentConfig => {
     // Model/effort are the agent's own settings, not its skills' — a bare agent with no stack
@@ -374,17 +411,10 @@ export function buildCompileAgents(
 
     const agentStack = config.stack?.[agentConfig.name];
     if (!agentStack) return tuning;
-    // Filter out excluded skills; global agents only see global skills (cross-scope safety net)
+
     const filteredRefs = buildSkillRefsFromConfig(agentStack)
-      .filter(
-        (ref) =>
-          !excludedSkillIds.has(ref.id) &&
-          (agentConfig.scope !== "global" || globalSkillIds.has(ref.id)),
-      )
-      .map((ref) => {
-        const source = sourceById.get(ref.id);
-        return { ...ref, ...(source !== undefined && { source }) };
-      });
+      .filter((ref) => compilesInto(ref, agentConfig))
+      .map(withItsOrigin);
     return { ...tuning, skills: filteredRefs };
   };
 

@@ -50,7 +50,8 @@ function addAvailableSource(
  * 1. **Primary** -- tags every skill the marketplace CARRIES with it (public or private),
  *    skipping the ids in `unbackedSkillIds`
  * 2. **Local** -- tags skills with `local: true` as installed via local source
- * 3. **Plugin** -- detects plugin-installed skills via `settings.json` and global cache
+ * 3. **Plugin** -- detects skills in the plugins the host reports installed and enabled, at the
+ *    project and, from a project, at the home directory
  * 4. **Active source** -- sets `activeSource` to the installed variant, or first available
  *
  * After this function completes, each skill in the matrix has `availableSources` -- at most
@@ -151,29 +152,45 @@ async function tagPluginSkills(
     const skill = matrix.skills[skillId];
     if (!skill) continue;
 
-    skill.availableSources = skill.availableSources ?? [];
-
-    const existingSource = skill.availableSources.find((s) => s.name === primarySourceName);
-    if (existingSource && !existingSource.installMode) {
-      existingSource.installed = true;
-      existingSource.installMode = "plugin";
-    } else if (!skill.availableSources.some((s) => s.installMode === "plugin")) {
-      skill.availableSources.push({
-        name: primarySourceName,
-        type: primarySourceType,
-        installed: true,
-        installMode: "plugin",
-        primary: true,
-      });
-    }
+    markInstalledAsPlugin(skill, primarySourceName, primarySourceType);
   }
 
   verbose(`Tagged ${allPluginSkillIds.length} plugin-installed skills`);
 }
 
 /**
- * Collects skill IDs from all enabled plugins via settings.json and global cache.
- * Uses {@link discoverAllPluginSkills} to find skills from the plugin registry.
+ * Records that a skill is installed as a plugin. The primary marketplace's entry, where the
+ * primary pass left one with no install mode yet, becomes the installed plugin; otherwise a
+ * plugin entry is added under the primary source — unless the skill already carries one.
+ */
+function markInstalledAsPlugin(
+  skill: ResolvedSkill,
+  primarySourceName: string,
+  primarySourceType: SkillSourceType,
+): void {
+  skill.availableSources = skill.availableSources ?? [];
+
+  const existingSource = skill.availableSources.find((s) => s.name === primarySourceName);
+  if (existingSource && !existingSource.installMode) {
+    existingSource.installed = true;
+    existingSource.installMode = "plugin";
+    return;
+  }
+  if (skill.availableSources.some((s) => s.installMode === "plugin")) return;
+
+  addAvailableSource(skill, {
+    name: primarySourceName,
+    type: primarySourceType,
+    installed: true,
+    installMode: "plugin",
+    primary: true,
+  });
+}
+
+/**
+ * Collects skill IDs from every plugin the host reports installed and enabled, at the project and,
+ * from a project, at the home directory. Uses {@link discoverAllPluginSkills}, which reads each
+ * plugin's cache directory.
  */
 async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   const pluginSkills = await discoverAllPluginSkills(projectDir);

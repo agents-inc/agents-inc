@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
 import { cleanupTempDir, createTempDir, directoryExists } from "../helpers/test-utils.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { DIRS, EXIT_CODES } from "../pages/constants.js";
 
 /**
@@ -47,7 +48,10 @@ describe("edit --ui --from", () => {
     const { exitCode } = await CLI.run(["edit", "--ui", "--from", "se_XYZ789"], { dir: tempDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(await directoryExists(`${tempDir}/${DIRS.CLAUDE_SRC}`)).toBe(false);
+    await expectNoSourceFolder(
+      tempDir,
+      "opening an id in the editor is not a setup, so edit --ui installs nothing",
+    );
   });
 
   /** Applying is what `--from` does WITHOUT `--ui`; naming an id to look at must change nothing. */

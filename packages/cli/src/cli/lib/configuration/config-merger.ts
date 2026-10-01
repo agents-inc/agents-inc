@@ -45,15 +45,21 @@ const agentKey = (a: AgentScopeConfig): string =>
  */
 const skillKey = (s: SkillConfig): string => `${s.id}:${s.scope}${s.excluded ? ":excluded" : ""}`;
 
-/** Names of agents carrying a global tombstone — i.e. dual-scope entries the project owns. */
-function agentTombstoneNames(agents: AgentScopeConfig[]): Set<string> {
-  return new Set(agents.filter(isGlobalTombstone).map((a) => a.name));
-}
+/** How one roster's entries are told apart: the compound key, and the name or id it extends. */
+type RosterIdentity<Entry> = {
+  keyOf: (entry: Entry) => string;
+  identityOf: (entry: Entry) => string;
+};
 
-/** Ids of skills carrying a global tombstone — i.e. dual-scope entries the project owns. */
-function skillTombstoneIds(skills: SkillConfig[]): Set<string> {
-  return new Set(skills.filter(isGlobalTombstone).map((s) => s.id));
-}
+const AGENT_IDENTITY: RosterIdentity<AgentScopeConfig> = {
+  keyOf: agentKey,
+  identityOf: (agent) => agent.name,
+};
+
+const SKILL_IDENTITY: RosterIdentity<SkillConfig> = {
+  keyOf: skillKey,
+  identityOf: (skill) => skill.id,
+};
 
 /**
  * True when an existing entry is within the current edit session's authority, so its absence
@@ -67,6 +73,49 @@ function isWithinSessionAuthority(entry: ScopedEntry, scope: AuthoritativeScope)
   if (scope === "all") return true;
   return isProjectOwned(entry);
 }
+
+/**
+ * One roster — agents or skills — merged by the rules {@link mergeConfigs} states: an existing
+ * entry is replaced by the incoming entry with its compound key, dropped when the incoming roster
+ * manages its name/id under another key, dropped when it was the project's dual-scope entry and
+ * the incoming roster carries nothing for it, dropped when an authoritative session left it out,
+ * and otherwise preserved. Incoming entries with new keys are appended, and the result is deduped
+ * by compound key, keeping the first occurrence.
+ */
+function mergeRoster<Entry extends ScopedEntry>(
+  incoming: Entry[],
+  existing: Entry[],
+  identity: RosterIdentity<Entry>,
+  authoritativeScope: AuthoritativeScope | undefined,
+): Entry[] {
+  const incomingByKey = indexBy(incoming, identity.keyOf);
+  const incomingIdentities = new Set(incoming.map(identity.identityOf));
+  const existingKeys = new Set(existing.map(identity.keyOf));
+  // Names/ids the project managed as dual-scope this session: a global tombstone in the existing
+  // config marks an entry whose global install the project actively overrode. When the incoming
+  // roster carries NO entry for such a name, the user fully deselected the dual-scope row — both
+  // the lingering active project entry and the stale tombstone must drop together, not be
+  // preserved — the full-deselect case.
+  const dualScopeIdentities = new Set(existing.filter(isGlobalTombstone).map(identity.identityOf));
+
+  const updatedExisting = existing.flatMap((entry) => {
+    const matching = incomingByKey[identity.keyOf(entry)];
+    if (matching !== undefined) return [matching];
+    // Name is actively managed by the incoming roster but this exact (scope, excluded) slot is
+    // NOT in it → the wizard intentionally dropped this row (scope migration or tombstone
+    // cleanup). Drop it.
+    if (incomingIdentities.has(identity.identityOf(entry))) return [];
+    if (dualScopeIdentities.has(identity.identityOf(entry))) return [];
+    // Authoritative edit: an in-authority entry absent from the incoming roster (even a plain
+    // active one with no tombstone) was deselected and must be dropped.
+    if (authoritativeScope && isWithinSessionAuthority(entry, authoritativeScope)) return [];
+    return [entry];
+  });
+  const added = incoming.filter((entry) => !existingKeys.has(identity.keyOf(entry)));
+  return uniqueBy([...updatedExisting, ...added], identity.keyOf);
+}
+
+type MergeOptions = Pick<MergeContext, "authoritativeScope">;
 
 /**
  * Pure merge logic: existing values take precedence for identity fields;
@@ -108,8 +157,6 @@ function isWithinSessionAuthority(entry: ScopedEntry, scope: AuthoritativeScope)
  * block. Exempting it used to keep an entry in `config.ts` that the same run's summary announced as
  * gone and the compiled agent no longer carried — three surfaces, three answers about one skill.
  */
-type MergeOptions = Pick<MergeContext, "authoritativeScope">;
-
 export function mergeConfigs(
   newConfig: ProjectConfig,
   existingConfig: ProjectConfig,
@@ -129,63 +176,18 @@ export function mergeConfigs(
     merged.marketplace = existingConfig.marketplace;
   }
 
-  if (existingConfig.agents.length > 0) {
-    const newAgentsByKey = indexBy(merged.agents, agentKey);
-    const newAgentNames = new Set(merged.agents.map((a) => a.name));
-    const existingKeys = new Set(existingConfig.agents.map(agentKey));
-    // Names the project managed as dual-scope this session: a global tombstone in the
-    // existing config marks an agent whose global install the project actively overrode.
-    // When newConfig carries NO entry for such a name, the user fully deselected the
-    // dual-scope row — both the lingering active project entry and the stale tombstone
-    // must drop together, not be preserved — the full-deselect case.
-    const dualScopeAgentNames = agentTombstoneNames(existingConfig.agents);
-    const updatedExisting = existingConfig.agents.flatMap((existing) => {
-      const matching = newAgentsByKey[agentKey(existing)];
-      if (matching) return [matching];
-      // Name is actively managed by newConfig but this exact (scope, excluded)
-      // slot is NOT in new → the wizard intentionally dropped this row
-      // (scope migration or tombstone cleanup). Drop it.
-      if (newAgentNames.has(existing.name)) return [];
-      if (dualScopeAgentNames.has(existing.name)) return [];
-      // Authoritative edit: an in-authority agent absent from newConfig (even a plain active
-      // one with no tombstone) was deselected and must be dropped.
-      if (
-        options?.authoritativeScope &&
-        isWithinSessionAuthority(existing, options.authoritativeScope)
-      )
-        return [];
-      return [existing];
-    });
-    const addedAgents = merged.agents.filter((a) => !existingKeys.has(agentKey(a)));
-    merged.agents = uniqueBy([...updatedExisting, ...addedAgents], agentKey);
-  } else {
-    merged.agents = uniqueBy(merged.agents, agentKey);
-  }
-
-  if (existingConfig.skills.length > 0) {
-    const newSkillsByKey = indexBy(merged.skills, skillKey);
-    const newSkillIds = new Set(merged.skills.map((s) => s.id));
-    const existingKeys = new Set(existingConfig.skills.map(skillKey));
-    // Skill-side twin of dualScopeAgentNames — see the agent branch above.
-    const dualScopeSkillIds = skillTombstoneIds(existingConfig.skills);
-    const updatedExisting = existingConfig.skills.flatMap((existing) => {
-      const matching = newSkillsByKey[skillKey(existing)];
-      if (matching) return [matching];
-      if (newSkillIds.has(existing.id)) return [];
-      if (dualScopeSkillIds.has(existing.id)) return [];
-      // Skill-side twin — see the agent branch above.
-      if (
-        options?.authoritativeScope &&
-        isWithinSessionAuthority(existing, options.authoritativeScope)
-      )
-        return [];
-      return [existing];
-    });
-    const addedSkills = merged.skills.filter((s) => !existingKeys.has(skillKey(s)));
-    merged.skills = uniqueBy([...updatedExisting, ...addedSkills], skillKey);
-  } else {
-    merged.skills = uniqueBy(merged.skills, skillKey);
-  }
+  merged.agents = mergeRoster(
+    merged.agents,
+    existingConfig.agents,
+    AGENT_IDENTITY,
+    options?.authoritativeScope,
+  );
+  merged.skills = mergeRoster(
+    merged.skills,
+    existingConfig.skills,
+    SKILL_IDENTITY,
+    options?.authoritativeScope,
+  );
 
   // Stack is the pure output of the mutator — trust newConfig.stack whenever it
   // is defined. Only fall back to existingConfig.stack when the new config has
@@ -235,7 +237,9 @@ function existingConfigForMerge(
   projectDir: string,
   ownName: string,
 ): ProjectConfig {
-  const isProjectsOwnFile = loaded.configPath === getProjectConfigPath(projectDir);
+  // Against the SAME installation's path: the load says which provider it came out of, and a
+  // comparison against another provider's file would read a project's own config as inherited.
+  const isProjectsOwnFile = loaded.configPath === getProjectConfigPath(projectDir, loaded.provider);
   return isProjectsOwnFile ? loaded.config : { ...loaded.config, name: ownName };
 }
 

@@ -229,18 +229,24 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
       // neither file would look wrong on its own — which is why both are probed
       // rather than just the scope this flow's assertions above are about.
       for (const scopeDir of [fakeHome, projectDir]) {
-        const claudeSrcDir = path.dirname(configTypesTsPath(scopeDir));
-        const typecheck = await typecheckGeneratedConfig(claudeSrcDir);
+        const sourceFolder = path.dirname(configTypesTsPath(scopeDir));
+        const typecheck = await typecheckGeneratedConfig(sourceFolder);
         expect(
           typecheck.exitCode,
           `the config written at ${scopeDir} must type-check against its own types.\ntsc output:\n${typecheck.output}`,
         ).toBe(EXIT_CODES.SUCCESS);
-        const probe = await probeConfigTypesNarrowing(claudeSrcDir, SPLIT_INSTALL_ALIASES);
+        const probe = await probeConfigTypesNarrowing(sourceFolder, SPLIT_INSTALL_ALIASES);
         expect(
           probe.exitCode,
           `a bogus literal must not type-check at ${scopeDir}.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
         ).not.toBe(EXIT_CODES.SUCCESS);
         expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
+        // EACH alias, not any: the two above hold while one alias rejects and the others have
+        // collapsed to `string`.
+        expect(
+          probe.rejected,
+          `every alias asked for must reject its bogus literal.\ntsc output:\n${probe.output}`,
+        ).toStrictEqual([...SPLIT_INSTALL_ALIASES]);
       }
 
       await result.destroy();

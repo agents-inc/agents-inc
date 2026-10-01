@@ -1,16 +1,17 @@
 import path from "path";
 import { chmod, mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
+  cleanupTempDir,
   configTsPath,
   createTempDir,
-  cleanupTempDir,
   directoryExists,
   fileExists,
   listFiles,
   readTestFile,
   skillsPath,
+  sourceFolderIn,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -18,6 +19,7 @@ import { CLI } from "../fixtures/cli.js";
 import type { ProjectHandle } from "../pages/wizard-result.js";
 import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
+import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
@@ -68,7 +70,10 @@ describe("eject command", () => {
   ): Promise<ProjectHandle> {
     const globalHome = path.join(dir, "home");
     await mkdir(globalHome, { recursive: true });
-    await writeProjectConfig(globalHome, { name: "global-install", marketplace: source });
+    await writeProjectConfig(
+      globalHome,
+      buildProjectConfig({ name: "global-install", marketplace: source, skills: [], agents: [] }),
+    );
     return { dir, globalHome };
   }
 
@@ -100,7 +105,7 @@ describe("eject command", () => {
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
     // Verify agent partials directory was created with content
-    const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
+    const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(agentsDir)).toBe(true);
     // Name the partial that must be there rather than counting anything. The
     // top level holds CATEGORY directories, so the old `entries.length > 0` plus
@@ -127,13 +132,7 @@ describe("eject command", () => {
 
     // Verify the template file was actually created with liquid content
     await expect({ dir: tempDir }).toHaveEjectedTemplate();
-    const templatePath = path.join(
-      tempDir,
-      DIRS.CLAUDE_SRC,
-      "agents",
-      "_templates",
-      "agent.liquid",
-    );
+    const templatePath = path.join(sourceFolderIn(tempDir), "agents", "_templates", "agent.liquid");
     const templateContent = await readTestFile(templatePath);
     expect(templateContent).toContain("---");
 
@@ -165,7 +164,7 @@ describe("eject command", () => {
     expect(partialFiles.length).toBeGreaterThan(0);
 
     // Default .claude-src/agents should NOT exist (output was redirected)
-    const defaultAgentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
+    const defaultAgentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(defaultAgentsDir)).toBe(false);
   });
 
@@ -233,7 +232,7 @@ describe("eject command", () => {
     expect(await readTestFile(configTsPath(tempDir))).toContain(sourceDir);
 
     // `eject skills` ejects skills only — agent partials stay bundled.
-    expect(await directoryExists(path.join(tempDir, DIRS.CLAUDE_SRC, "agents"))).toBe(false);
+    expect(await directoryExists(path.join(sourceFolderIn(tempDir), "agents"))).toBe(false);
   });
 
   it("should eject all phases from a local source", async () => {
@@ -249,7 +248,7 @@ describe("eject command", () => {
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
     // Verify agent partials were created with content
-    const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
+    const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(agentsDir)).toBe(true);
     const agentEntries = await listFiles(agentsDir);
     expect(agentEntries.length).toBeGreaterThan(1); // At least _templates + agent partials
@@ -350,7 +349,7 @@ describe("eject command", () => {
     await expect({ dir: tempDir }).toHaveEjectedTemplate();
 
     // Agent partial directories (e.g., developer, reviewer) should NOT exist
-    const agentsDir = path.join(tempDir, DIRS.CLAUDE_SRC, "agents");
+    const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
     const contents = await listFiles(agentsDir);
     // Only _templates should be present, not individual agent dirs
     expect(contents).toContain("_templates");
@@ -430,7 +429,7 @@ describe("eject command", () => {
     expect(templateContent).toContain("---");
 
     // Default template location should NOT exist (output was redirected)
-    const defaultTemplatePath = path.join(tempDir, DIRS.CLAUDE_SRC, "agents", "_templates");
+    const defaultTemplatePath = path.join(sourceFolderIn(tempDir), "agents", "_templates");
     expect(await directoryExists(defaultTemplatePath)).toBe(false);
   });
 

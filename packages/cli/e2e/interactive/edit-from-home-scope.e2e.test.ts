@@ -13,6 +13,7 @@ import {
   loadConfigOrFail,
   readTreeSnapshot,
   skillsPath,
+  sourceFolderIn,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
@@ -120,7 +121,7 @@ describe("edit --from <id> at the global root", () => {
    */
   async function installedTrees(home: string): Promise<Record<string, unknown>> {
     return {
-      configPair: await readTreeSnapshot(path.join(home, DIRS.CLAUDE_SRC)),
+      configPair: await readTreeSnapshot(sourceFolderIn(home)),
       claude: await readTreeSnapshot(path.join(home, DIRS.CLAUDE)),
     };
   }

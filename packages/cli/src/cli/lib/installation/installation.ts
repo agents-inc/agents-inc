@@ -2,9 +2,10 @@ import os from "os";
 import path from "path";
 import { fileExists } from "../../utils/fs";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
-import { CLAUDE_DIR, PLUGINS_SUBDIR, STANDARD_DIRS, EJECT_SOURCE } from "../../consts";
+import { CLAUDE_DIR, PLUGINS_SUBDIR, EJECT_SOURCE } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir";
-import type { ProjectConfig, SkillConfig } from "../../types/config";
+import { agentsDir, providerInUse } from "./install-layout";
+import type { ProjectConfig, SkillConfig, SkillScope } from "../../types/config";
 import type { InstallMode } from "../../types/matrix";
 
 // Re-exported from types/matrix.ts for existing importers of the installation barrel
@@ -26,10 +27,19 @@ export const INSTALL_MODE_LABELS = {
  * `mixed` is absent by construction. Nothing is switched TO mixed — it is a shape a
  * whole selection can have, described with per-mode counts only the install plan
  * holds, so `init` composes that one line itself.
+ *
+ * **Neither description names a DIRECTORY, and the eject one read `(copy to .claude/skills/)`
+ * until 2026-09-22.** A constant cannot name one truthfully: the directory is the host's and
+ * the scope's — `.claude/skills`, `$CODEX_HOME/skills`, `<repo>/.agents/skills` — and one
+ * selection routinely spans two of them, so any single answer misnames at least one. It is also
+ * said before anything is copied, where the run has nothing to report yet; `reportSkillsCopied`
+ * in `commands/init.tsx` names the real directories afterwards, one block per non-empty scope.
+ * The `COPIED_LOCAL_SKILLS_*` note in `e2e/pages/constants.ts` had already reached this
+ * conclusion for `edit`'s copy count and stopped one line short of this constant.
  */
 export const INSTALL_MODE_DESCRIPTIONS = {
   plugin: `${INSTALL_MODE_LABELS.plugin} (native install)`,
-  eject: `${INSTALL_MODE_LABELS.eject} (copy to .claude/skills/)`,
+  eject: `${INSTALL_MODE_LABELS.eject} (local copy)`,
 } as const satisfies Record<Exclude<InstallMode, "mixed">, string>;
 
 export type Installation = {
@@ -64,8 +74,15 @@ export function deriveInstallMode(skills: SkillConfig[]): InstallMode {
 
 // Use loadProjectConfigFromDir directly (not detectInstallation) to avoid the
 // project→global fallback recursing back into this detection.
-async function detectInstallationInDir(dir: string): Promise<Installation | null> {
-  const configPath = getProjectConfigPath(dir);
+async function detectInstallationInDir(
+  dir: string,
+  scope: SkillScope,
+): Promise<Installation | null> {
+  // The provider is read off the directory, because an installation's folder is the only record
+  // of one — the same read the existence check and the load below both have to make, or they
+  // would be asking about two different installations in one function.
+  const provider = providerInUse(dir);
+  const configPath = getProjectConfigPath(dir, provider);
 
   if (!(await fileExists(configPath))) {
     return null;
@@ -75,7 +92,7 @@ async function detectInstallationInDir(dir: string): Promise<Installation | null
   // corrupt config, so a returned value is always a usable config — a corrupt
   // config surfaces to the caller (compile reports it) instead of silently
   // becoming a phantom eject installation that resurrects every built-in agent.
-  const loaded = await loadProjectConfigFromDir(dir);
+  const loaded = await loadProjectConfigFromDir(dir, provider);
   if (!loaded) {
     // The file vanished between the fileExists check and the load.
     return null;
@@ -96,7 +113,12 @@ async function detectInstallationInDir(dir: string): Promise<Installation | null
   return {
     mode,
     configPath,
-    agentsDir: path.join(dir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
+    // The HOST's, per scope, and a `.claude/agents` literal until C5. `compile` hands this
+    // straight to the pass as its `outputDir`, so a Codex installation compiled agent ROLE
+    // definitions into `<project>/.claude/agents/` — Codex's format in Claude's directory, the
+    // inverse of the defect the whole host funnel exists against, and invisible while
+    // `compilesSubAgents` was short-circuiting every Codex compile before it got here.
+    agentsDir: agentsDir(provider, scope, dir),
     // Mixed mode has local skills in .claude/skills/ and plugins in cache;
     // use .claude/skills/ as the primary skillsDir (same as eject mode)
     skillsDir: path.join(dir, CLAUDE_DIR, mode === "plugin" ? PLUGINS_SUBDIR : "skills"),
@@ -106,12 +128,12 @@ async function detectInstallationInDir(dir: string): Promise<Installation | null
 
 /** Detect installation in a specific directory only (no global fallback). */
 export async function detectProjectInstallation(projectDir: string): Promise<Installation | null> {
-  return detectInstallationInDir(projectDir);
+  return detectInstallationInDir(projectDir, "project");
 }
 
 /** Detect installation in the home directory (global scope). */
 export async function detectGlobalInstallation(): Promise<Installation | null> {
-  return detectInstallationInDir(os.homedir());
+  return detectInstallationInDir(os.homedir(), "global");
 }
 
 /**

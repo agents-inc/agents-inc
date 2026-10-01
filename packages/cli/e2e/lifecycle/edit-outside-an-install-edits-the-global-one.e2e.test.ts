@@ -32,7 +32,7 @@ import type { SkillConfig } from "../../src/cli/types/index.js";
  * `$HOME` when the working directory has no config of its own, so a bare `cc edit` in an
  * unrelated checkout is a request to edit the GLOBAL install. `edit` used to read that
  * directory as a project anyway: the wizard offered the project/global scope toggle over a
- * project that did not exist, the write path split by scope and wrote a `.claude-src/` pair
+ * project that did not exist, the write path split by scope and wrote a source-folder pair
  * into the directory, and the compile ran twice, dropping `.claude/agents/` beside it.
  *
  * Both halves are asserted, and neither means anything alone. A hidden scope toggle cannot

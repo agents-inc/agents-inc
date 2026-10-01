@@ -35,28 +35,42 @@ import {
   detectGlobalInstallation,
   detectProjectInstallation,
   deriveInstallMode,
+  installBaseDir,
   resolveInstallPaths,
   buildAgentScopeMap,
   isHomeDirectory,
   INSTALL_MODE_LABELS,
   INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
+import { hostAt } from "../lib/hosts/host-for.js";
+import { refuseUnofferedPlacements } from "../lib/hosts/offered-placements.js";
+import {
+  agentCodec,
+  chooseProviderForThisRun,
+  providerInUse,
+  relativeConfigPath,
+  skillsPathPrefix,
+} from "../lib/installation/install-layout.js";
+import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
+import {
+  providerFlag,
+  providerNamedBy,
+  providerNeedsAConfigurationToInstall,
+} from "../lib/installation/provider-flag.js";
 import { checkPermissions } from "../lib/permission-checker.js";
 import {
   ASCII_LOGO,
-  CLAUDE_SRC_DIR,
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   EDITOR_URL,
   EDIT_PROJECT_SETUP_FLAG,
   EJECT_SOURCE,
-  STANDARD_FILES,
   editorConfigUrl,
 } from "../consts.js";
 import { clearTerminalScreen } from "../utils/terminal.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
 import { promptValue } from "../components/common/prompt-confirm.js";
-import { Spinner } from "../components/common/spinner.js";
+import { awaitUnderSpinner } from "../components/common/spinner.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { openUrl } from "../utils/open-url.js";
@@ -246,11 +260,6 @@ export async function runDashboardFlow(
 }
 
 /**
- * What `init` decided to install, and the little each producer knows that the shared spine does
- * not. Keeping these on the value rather than branching on a flag downstream is what stops the
- * two paths growing separate copies of the install sequence.
- */
-/**
  * The marketplace this run was pointed at, as oclif hands it over.
  *
  * `marketplace` is a required key holding `string | undefined` rather than
@@ -261,6 +270,11 @@ export async function runDashboardFlow(
  */
 type SourceFlags = { marketplace: string | undefined };
 
+/**
+ * What `init` decided to install, and the little each producer knows that the shared spine does
+ * not. Keeping these on the value rather than branching on a flag downstream is what stops the
+ * two paths growing separate copies of the install sequence.
+ */
 type Selection = {
   result: WizardResultV2;
   sourceResult: SourceLoadResult;
@@ -343,6 +357,7 @@ export default class Init extends BaseCommand {
         "Open agentsinc.sh/editor instead of the terminal — the id --from names, or the catalogue",
       default: false,
     }),
+    provider: providerFlag(),
   };
 
   /**
@@ -402,6 +417,12 @@ export default class Init extends BaseCommand {
     const { flags } = await this.parse(Init);
     const projectDir = process.cwd();
 
+    // Above everything, including `--ui`: `--provider` names which installation this run creates,
+    // and a run that creates none has nothing for it to name. Refusing here is what leaves the
+    // filesystem untouched at both scopes — an installation half-created by a run that then
+    // refused is the state every later command has to guess about.
+    this.settleTheProviderForThisRun(flags);
+
     // Above `ensureConfigReadable`, and above every read below it, because this route touches no
     // installation at all. A config too broken to load must not stop someone reaching the other
     // front door, and an id somebody shared is not this directory's business either.
@@ -411,6 +432,7 @@ export default class Init extends BaseCommand {
     // to inline the global one. One that exists but cannot be read is recreated, not installed
     // over, and saying so here is what keeps the raw loader error off the screen.
     await this.ensureConfigReadable(projectDir);
+    await this.settleSourceLayoutBeforeWriting(projectDir);
 
     // Read once on the spine, because the closing line is printed several calls below it. The
     // degrade arm of `resolveBrandingName` cannot fire here: the line above has already refused
@@ -450,6 +472,32 @@ export default class Init extends BaseCommand {
     );
   }
 
+  /**
+   * Commits this run to the provider `--provider` named, or refuses a flag with nothing to name.
+   *
+   * **`--provider` is a LOCATION parameter, not a feature switch**, and the control that proves it
+   * is `--provider claude`: naming the default out loud installs byte-for-byte what no flag
+   * installs, because all the flag decides is which folder this run creates. Without that half
+   * "the flag selects an installation" would be indistinguishable from "the flag means Codex".
+   *
+   * **And it is meaningless without `--from` (D15).** The provider is chosen in the web app, so
+   * the only run that can be told one is the run that installs what the app produced. There is no
+   * wizard step to choose a provider in and none is planned — which is what makes "the interactive
+   * flow is Claude-only" provable rather than conventional. It also gives the placement refusal
+   * something to refuse BEFORE anything is written: with `--from` required, a provider always
+   * arrives beside a payload the pre-flight can read.
+   */
+  private settleTheProviderForThisRun(flags: Interfaces.InferredFlags<typeof Init.flags>): void {
+    const named = providerNamedBy(flags.provider);
+    if (named === undefined) return;
+
+    if (flags.from === undefined) {
+      this.error(providerNeedsAConfigurationToInstall(), { exit: EXIT_CODES.INVALID_ARGS });
+    }
+
+    chooseProviderForThisRun(named);
+  }
+
   /** The interactive producer: load the source, run the wizard, return what was chosen. */
   private async selectionFromWizard(
     flags: SourceFlags,
@@ -477,26 +525,13 @@ export default class Init extends BaseCommand {
 
   /**
    * Everything the wizard needs, loaded behind a spinner that comes down whichever way the
-   * await ends.
-   *
-   * The cleanup is a `finally` because a source that cannot be loaded refuses the run from
-   * inside this await, and oclif would otherwise paint its error under an Ink tree still
-   * repainting over it. Never a `catch`: the throw reaches oclif untouched, or both the
-   * error rendering and the exit code change with it.
+   * await ends — a source that cannot be loaded refuses the run from inside it.
    */
   private async loadWizardInputsUnderSpinner(flags: SourceFlags): Promise<{
     sourceResult: SourceLoadResult;
     startupMessages: StartupMessage[];
   }> {
-    const { unmount, clear: clearSpinner } = render(
-      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
-    );
-    try {
-      return await this.loadSourceOrFail(flags);
-    } finally {
-      clearSpinner();
-      unmount();
-    }
+    return awaitUnderSpinner(STATUS_MESSAGES.LOADING_SKILLS, () => this.loadSourceOrFail(flags));
   }
 
   /**
@@ -543,8 +578,9 @@ export default class Init extends BaseCommand {
     this.refuseProjectScopedContentAtHome(result, projectDir);
     await this.refuseBlockingGlobalInstall(result);
 
-    // After the refusals and before the install: every refusal on this path fires with nothing
-    // written, and the copy step that follows finds these skills already where they belong.
+    // After the refusals and before the install: every refusal this producer makes fires with
+    // nothing written, and the copy step that follows finds these skills already where they
+    // belong. The spine's placement refusal in `handleInstallation` still runs after this.
     await this.writeCarriedSkills(carriedSkills);
 
     // Named, not counted. "3 skills were skipped" cannot be acted on; the ids can, and this is the
@@ -709,6 +745,7 @@ export default class Init extends BaseCommand {
     const ejectedSkills = activeSkills.filter((s) => s.origin === EJECT_SOURCE);
     const pluginSkills = activeSkills.filter((s) => s.origin !== EJECT_SOURCE);
 
+    this.refuseUnofferablePlacementsBeforeWriting(activeSkills, projectDir);
     this.logInstallPlan(installMode, ejectedSkills, pluginSkills);
 
     // Resolve marketplace up front — BEFORE any filesystem mutation. If
@@ -720,6 +757,7 @@ export default class Init extends BaseCommand {
         ? await this.requireMarketplaceOrExit(
             sourceResult,
             "install plugin skills",
+            hostAt(projectDir),
             (marketplace) => this.log(`Registering marketplace "${marketplace}"...`),
           )
         : null;
@@ -763,6 +801,41 @@ export default class Init extends BaseCommand {
   }
 
   /**
+   * Refuses a SELECTION asking for a mode/scope cell this host does not offer, before the run has
+   * touched anything.
+   *
+   * **`bindsItsOfferedPlacements` is not a pre-flight and cannot be made into one.** It refuses
+   * at `installPlugin`, which `installPluginSkills` calls once per skill inside a loop that
+   * collects per-skill failures — so a payload whose first plugin row is offerable and whose
+   * second is not installed a real plugin into the user's Codex registry and only then stopped,
+   * on a message ending "Nothing has been changed." Nothing removed it afterwards: no `config.ts`
+   * was written, so `uninstall` had no row naming it and `doctor` had no configuration to check
+   * it against — an orphan in the host's own registry that no command in this CLI can see. The
+   * single-row case cannot show it, because with one unofferable row the loop's first iteration
+   * IS the refusal.
+   *
+   * It reads the whole selection — ejected rows included — because the roster is about CELLS
+   * rather than about plugins: a host that stopped offering `eject+project` would owe the same
+   * refusal, and a guard that only looked at plugin rows would go on writing files for it.
+   *
+   * The same function the read path calls (`refuseUnofferedPlacements`, off the same host
+   * roster), so `init`'s sentence and `compile`'s are one sentence rather than two that agree
+   * today. The per-call guard stays where it is: it is the backstop for a caller that did not
+   * come through here, and for the one host this release ships every cell is offered, so a
+   * backstop that never fires is what a deleted one would look like.
+   */
+  private refuseUnofferablePlacementsBeforeWriting(
+    activeSkills: WizardResultV2["skills"],
+    projectDir: string,
+  ): void {
+    try {
+      refuseUnofferedPlacements(activeSkills, hostAt(projectDir));
+    } catch (error) {
+      this.error(getErrorMessage(error), { exit: EXIT_CODES.ERROR });
+    }
+  }
+
+  /**
    * The permission notice, where there is one to show. It is an Ink app with no exit of its own,
    * so `waitUntilExit()` only ever resolves because a person is there to end it — which is fine
    * after the wizard and a hang everywhere else. Without a terminal to hold, one frame is
@@ -799,6 +872,10 @@ export default class Init extends BaseCommand {
     );
   }
 
+  /**
+   * Copies the ejected skills and says how many landed at each scope, in the words
+   * {@link skillsCopiedLine} chooses.
+   */
   private async copyEjectSkillsStep(
     localSkills: WizardResultV2["skills"],
     projectDir: string,
@@ -807,21 +884,7 @@ export default class Init extends BaseCommand {
   ): Promise<SkillCopyResult> {
     this.log("Copying skills to local directory...");
     const copyResult = await copyLocalSkills(localSkills, projectDir, sourceResult);
-
-    if (installMode === "mixed") {
-      if (copyResult.projectCopied.length > 0 && copyResult.globalCopied.length > 0) {
-        this.log(
-          `Copied ${copyResult.totalCopied} local skills (${copyResult.projectCopied.length} project, ${copyResult.globalCopied.length} global)`,
-        );
-      } else if (copyResult.globalCopied.length > 0) {
-        this.log(`Copied ${copyResult.globalCopied.length} local skills to ~/.claude/skills/`);
-      } else {
-        this.log(`Copied ${copyResult.projectCopied.length} local skills to .claude/skills/`);
-      }
-    } else {
-      this.log(`Copied ${copyResult.totalCopied} skills to .claude/skills/\n`);
-    }
-
+    this.log(skillsCopiedLine(copyResult, installMode, projectDir));
     return copyResult;
   }
 
@@ -861,10 +924,29 @@ export default class Init extends BaseCommand {
       agentScopeMap,
     });
     this.reportCompilation(compileResult);
+    await this.reportWhatThisHostCannotCarry(cwd);
 
     this.reportPropagatedRecompile(configResult.propagation);
 
     return { configResult, compileResult, agentScopeMap };
+  }
+
+  /**
+   * What this host could not carry, after the compile summary and once per run.
+   *
+   * `init --from` is the door a configuration somebody ELSE wrote arrives through, so it is
+   * precisely the run that must not be silent about the parts of it that did not survive the
+   * translation. `compile` prints the same lines in the same order — see
+   * {@link hostCompileNotices}, which is the one place either of them gets them from.
+   *
+   * A Claude install expresses every setting and carries every sub-agent, so it gets one line at
+   * most: the trust dialog, while its project sub-agents' completion gate cannot run in this
+   * folder.
+   */
+  private async reportWhatThisHostCannotCarry(cwd: string): Promise<void> {
+    for (const notice of await hostCompileNotices(providerInUse(cwd), cwd)) {
+      this.log(notice);
+    }
   }
 
   /**
@@ -950,7 +1032,7 @@ export default class Init extends BaseCommand {
     this.log("");
 
     this.log("To customize agent-skill assignments:");
-    for (const [index, step] of customizationSteps(split, paths.global).entries()) {
+    for (const [index, step] of customizationSteps(split, paths.global, cwd).entries()) {
       this.log(`  ${index + 1}. ${step}`);
     }
     this.log("");
@@ -995,6 +1077,11 @@ export default class Init extends BaseCommand {
    * Reports where the agents actually landed, mirroring the scope split
    * `compileAgentsAllScopes` performs: one pass at the home root, otherwise a
    * global pass under HOME and a project pass under the project directory.
+   *
+   * **The EXTENSION is the host's, per scope, and was Claude's literal `.md` until C5.** This
+   * block describes the filesystem, so every line under a path header has to be a name a user can
+   * copy out and open — and a Codex install printed `web-developer.md` above a directory holding
+   * `web-developer.toml`. The two scopes are read separately because they can be on two hosts.
    */
   private reportAgentsCompiled(
     compiled: AgentName[],
@@ -1002,14 +1089,14 @@ export default class Init extends BaseCommand {
   ): void {
     const cwd = process.cwd();
     const groups = isHomeDirectory(cwd)
-      ? [{ dir: resolveInstallPaths(cwd, "project").agentsDir, agents: compiled }]
+      ? [{ ...compiledInto(cwd, "project"), agents: compiled }]
       : [
           {
-            dir: resolveInstallPaths(cwd, "global").agentsDir,
+            ...compiledInto(cwd, "global"),
             agents: compiled.filter((name) => agentScopeMap.get(name) === "global"),
           },
           {
-            dir: resolveInstallPaths(cwd, "project").agentsDir,
+            ...compiledInto(cwd, "project"),
             agents: compiled.filter((name) => agentScopeMap.get(name) !== "global"),
           },
         ].filter((group) => group.agents.length > 0);
@@ -1018,11 +1105,67 @@ export default class Init extends BaseCommand {
       this.log("Agents compiled to:");
       this.log(`  ${group.dir}`);
       for (const agentName of group.agents) {
-        this.log(`    ${agentName}.md`);
+        this.log(`    ${agentName}${group.extension}`);
       }
       this.log("");
     }
   }
+}
+
+/**
+ * The line an eject copy ends on: how many skills landed, and where.
+ *
+ * **Three of its four lines spelled `.claude/skills/` for every provider until 2026-09-22**,
+ * so a Codex install narrated a directory it does not have — six lines above the
+ * `reportSkillsCopied` block that reads the layout and names the real one. The single-scope lines
+ * now take the destination from {@link copiedSkillsDir}, which is that same read; the both-scopes
+ * lines name no directory, because two scopes have two and a single answer there would be the
+ * defect one layer along.
+ */
+function skillsCopiedLine(
+  copyResult: SkillCopyResult,
+  installMode: InstallMode,
+  projectDir: string,
+): string {
+  const { totalCopied } = copyResult;
+  const projectCount = copyResult.projectCopied.length;
+  const globalCount = copyResult.globalCopied.length;
+  const landedAtBothScopes = projectCount > 0 && globalCount > 0;
+
+  if (installMode === "mixed") {
+    if (landedAtBothScopes) {
+      return `Copied ${totalCopied} local skills (${projectCount} project, ${globalCount} global)`;
+    }
+    if (globalCount > 0) {
+      return `Copied ${globalCount} local skills to ${copiedSkillsDir(projectDir, "global")}/`;
+    }
+    return `Copied ${projectCount} local skills to ${copiedSkillsDir(projectDir, "project")}/`;
+  }
+
+  if (landedAtBothScopes) {
+    return `Copied ${totalCopied} skills (${projectCount} project, ${globalCount} global)\n`;
+  }
+  const scope: SkillScope = globalCount > 0 ? "global" : "project";
+  return `Copied ${totalCopied} skills to ${copiedSkillsDir(projectDir, scope)}/\n`;
+}
+
+/** The skills directory one scope's copies landed in, as its own host's layout names it. */
+function copiedSkillsDir(projectDir: string, scope: SkillScope): string {
+  return skillsPathPrefix(providerInUse(installBaseDir(projectDir, scope)), scope, projectDir);
+}
+
+/**
+ * Where one scope's sub-agents landed, and the extension the host that reads them writes.
+ *
+ * One read per scope, exactly as `resolveInstallPaths` reads one beside it: a project on Codex
+ * under a global on Claude puts `.toml` in one block and `.md` in the other, and one answer for
+ * both is how a path block names a file that is not there.
+ */
+function compiledInto(cwd: string, scope: SkillScope): { dir: string; extension: string } {
+  return {
+    dir: resolveInstallPaths(cwd, scope).agentsDir,
+    extension: agentCodec(providerInUse(installBaseDir(cwd, scope))).extension,
+  };
 }
 
 /** The two config files an install can write, as the closing block refers to them. */
@@ -1064,13 +1207,17 @@ function configsHoldingAssignments(split: AgentScopeSplit, paths: ConfigPaths): 
  * only, so it recompiles no global agent — which `globalScopedAgentsHint` already says, in
  * the words `compile` itself says it in when it lands in the mirror image of this state.
  */
-function customizationSteps(split: AgentScopeSplit, globalConfigPath: string): string[] {
+function customizationSteps(
+  split: AgentScopeSplit,
+  globalConfigPath: string,
+  projectDir: string,
+): string[] {
   if (split.isGlobalOnly) {
     return [`Edit ${globalConfigPath}`, globalScopedAgentsHint(split.globalAgentCount)];
   }
 
   return [
-    `Edit ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`,
+    `Edit ${relativeConfigPath(projectDir, providerInUse(projectDir))}`,
     `Run '${CLI_INVOKE_COMMAND} compile' to regenerate agents`,
     ...(split.globalAgentCount > 0 ? [globalScopedAgentsHint(split.globalAgentCount)] : []),
   ];

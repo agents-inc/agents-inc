@@ -4,7 +4,7 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import {
-  writeCorruptTestConfig,
+  writeRawTestConfig,
   writeTestPackageJson,
   writeTestTsConfig,
 } from "../__tests__/helpers/config-io.js";
@@ -27,11 +27,11 @@ import {
   resolveSource,
   validateSourceFormat,
 } from "./config";
-import { CLAUDE_SRC_DIR, DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
+import { DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
 
 /** A source named by the config that lives at the home root — i.e. the global one. */
 const HOME_CONFIG_SOURCE = "github:home/skills";
-/** A source named by a project's own `.claude-src/config.ts`. */
+/** A source named by a project's own `config.ts`. */
 const PROJECT_CONFIG_SOURCE = "github:project-of-its-own/skills";
 
 /**
@@ -128,9 +128,13 @@ describe("config", () => {
   });
 
   describe("getProjectConfigPath", () => {
-    it("should return path in project .claude-src directory", () => {
-      const configPath = getProjectConfigPath("/my/project");
-      expect(configPath).toBe(`/my/project/${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`);
+    // The folder a project with neither name on disk gets its config CREATED in, written as a
+    // literal: it is text on people's disks, and an assertion importing the constant the product
+    // writes would move with it and could never fail. A project already on `.claude-src/` is
+    // answered for in `installation/install-layout.test.ts`, which owns the preference order.
+    it("should return path in the folder a new installation is created in", () => {
+      const configPath = getProjectConfigPath("/my/project", "claude");
+      expect(configPath).toBe(`/my/project/.agents-inc/claude/${STANDARD_FILES.CONFIG_TS}`);
     });
   });
 
@@ -519,7 +523,7 @@ describe("config", () => {
       expect(config).toBeNull();
     });
 
-    it("should load config from .claude-src/config.ts", async () => {
+    it("should load config from the source folder the project is on", async () => {
       await writeTestTsConfig(
         tempDir,
         buildSourceConfig({ marketplace: "github:mycompany/skills" }),
@@ -553,31 +557,31 @@ describe("config", () => {
      */
     describe("a config that exists and cannot be evaluated", () => {
       it("refuses rather than reporting the file absent", async () => {
-        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+        await writeRawTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
         await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow();
       });
 
       it("names the file it could not read", async () => {
-        const configPath = await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+        const configPath = await writeRawTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
         await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow(configPath);
       });
 
       it("carries the parser's own reason rather than saying only that something failed", async () => {
-        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+        await writeRawTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
         await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow(UNEVALUATABLE_CONFIG_CAUSE);
       });
 
       it("offers the route that actually clears an unreadable config", async () => {
-        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+        await writeRawTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
         await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow(RECREATE_CONFIG_ROUTE);
       });
 
       it("refuses without calling it a source config", async () => {
-        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+        await writeRawTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
         await expect(loadProjectSourceConfig(tempDir)).rejects.not.toThrow(WITHDRAWN_NOUN);
       });
@@ -591,7 +595,7 @@ describe("config", () => {
     beforeEach(async () => {
       savedHome = process.env.HOME ?? "";
       // Point HOME inside the temp dir so resolveSource doesn't fall back to real
-      // ~/.claude-src/ — and keep it a DIFFERENT directory from `tempDir`, which
+      // the home root's own source folder — and keep it a DIFFERENT directory from `tempDir`, which
       // stands in for the project. Collapsed into one directory there is only one
       // config file, and the project rung cannot be told apart from the global one.
       homeDir = path.join(tempDir, "home");
@@ -650,11 +654,11 @@ describe("config", () => {
      *
      * Both rungs are covered because both are read on the way through, and the global one is the
      * half nothing else would catch — a project may have no config of its own and still be
-     * repointed by an unreadable `~/.claude-src/config.ts`.
+     * repointed by an unreadable global config.
      */
     describe("a config that exists and cannot be evaluated", () => {
       it("refuses rather than walking past the project rung to the default marketplace", async () => {
-        await writeCorruptTestConfig(tempDir, UNEVALUATABLE_CONFIG);
+        await writeRawTestConfig(tempDir, UNEVALUATABLE_CONFIG);
 
         const resolution = resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -662,7 +666,7 @@ describe("config", () => {
       });
 
       it("refuses rather than walking past the global rung to the default marketplace", async () => {
-        await writeCorruptTestConfig(homeDir, UNEVALUATABLE_CONFIG);
+        await writeRawTestConfig(homeDir, UNEVALUATABLE_CONFIG);
 
         const resolution = resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -670,7 +674,7 @@ describe("config", () => {
       });
 
       it("still names the marketplace an intact project config carries", async () => {
-        await writeCorruptTestConfig(homeDir, UNEVALUATABLE_CONFIG);
+        await writeRawTestConfig(homeDir, UNEVALUATABLE_CONFIG);
         await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: PROJECT_CONFIG_SOURCE }));
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
@@ -981,7 +985,7 @@ describe("config", () => {
         expect(result.source).toBe(HOME_CONFIG_SOURCE);
         expect(
           result.sourceOrigin,
-          "~/.claude-src/config.ts is the global config — running from the home root does not make it a project's",
+          "the home root's own config.ts is the global config — running from the home root does not make it a project's",
         ).toBe("global");
       });
 
@@ -996,13 +1000,14 @@ describe("config", () => {
       });
 
       it("should label a project config carrying only global-scoped entries as project", async () => {
-        await writeTestTsConfig(tempDir, {
-          ...buildProjectConfig({
+        await writeTestTsConfig(
+          tempDir,
+          buildProjectConfig({
             skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
             agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+            marketplace: PROJECT_CONFIG_SOURCE,
           }),
-          marketplace: PROJECT_CONFIG_SOURCE,
-        });
+        );
 
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
@@ -1175,7 +1180,7 @@ describe("config", () => {
   describe("resolveBranding", () => {
     // `resolveBranding` falls through a project config to the GLOBAL one, which
     // `loadGlobalSourceConfig` locates with `os.homedir()`. Without both halves of
-    // this stub these cases read the developer's own `~/.claude-src/config.ts` and
+    // this stub these cases read the developer's own global config and
     // pass only for as long as nobody puts a `branding` block in it. The env var
     // alone is not enough: `os.homedir()` re-reads `$HOME` under node but is fixed
     // at startup under bun, and this suite runs under both.

@@ -164,7 +164,7 @@ describe("dual-scope in-session space-collapse → s-restore → blocked-space �
       ]);
 
       // Run last, after the byte-identity assertion above: the narrowing probe writes and then
-      // removes a file inside `.claude-src`, so it must not precede a claim about that tree.
+      // removes a file inside the source folder, so it must not precede a claim about that tree.
       // The pair the setup save wrote is what the aborted session had to leave standing.
       await expectFourSurfaces(projectDir, { globalHome: fakeHome });
       await expectFourSurfaces(fakeHome);

@@ -113,18 +113,24 @@ describe("project edit drops the project half of a dual-scope pair", () => {
       // regenerated — and a regeneration that degraded them would leave a
       // config.ts nothing checks. The global half's type surface is asserted the
       // same way its config is: byte-identical, because nothing at that scope moved.
-      const projectClaudeSrc = path.dirname(configTypesTsPath(projectDir));
-      const projectTypecheck = await typecheckGeneratedConfig(projectClaudeSrc);
+      const projectSourceFolder = path.dirname(configTypesTsPath(projectDir));
+      const projectTypecheck = await typecheckGeneratedConfig(projectSourceFolder);
       expect(
         projectTypecheck.exitCode,
         `the project config must still type-check after dropping its half.\ntsc output:\n${projectTypecheck.output}`,
       ).toBe(EXIT_CODES.SUCCESS);
-      const projectProbe = await probeConfigTypesNarrowing(projectClaudeSrc, SCOPED_ALIASES);
+      const projectProbe = await probeConfigTypesNarrowing(projectSourceFolder, SCOPED_ALIASES);
       expect(
         projectProbe.exitCode,
         `a bogus literal must not type-check against the regenerated project types.\ntsc output:\n${projectProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(projectProbe.output).toContain(TS_NOT_ASSIGNABLE);
+      // EACH alias, not any: the two above hold while one alias rejects and the others have
+      // collapsed to `string`.
+      expect(
+        projectProbe.rejected,
+        `every alias asked for must reject its bogus literal.\ntsc output:\n${projectProbe.output}`,
+      ).toStrictEqual([...SCOPED_ALIASES]);
       expect(
         await readTestFile(configTypesTsPath(fakeHome)),
         "a project-scope removal must not rewrite the global config-types.ts",

@@ -4,7 +4,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { createPermissionsFile, readTreeSnapshot, runCLI } from "../helpers/test-utils.js";
+import {
+  createPermissionsFile,
+  readTreeSnapshot,
+  runCLI,
+  sourceFolderIn,
+} from "../helpers/test-utils.js";
 import { createGlobalOnlyEnv, initProjectAllGlobal } from "../fixtures/dual-scope-helpers.js";
 import type { DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
 
@@ -47,9 +52,9 @@ describe("compile inside a project is contained to that project", () => {
       );
 
       const globalClaudeBefore = await readTreeSnapshot(path.join(fakeHome, DIRS.CLAUDE));
-      const globalSrcBefore = await readTreeSnapshot(path.join(fakeHome, DIRS.CLAUDE_SRC));
+      const globalSrcBefore = await readTreeSnapshot(sourceFolderIn(fakeHome));
       const secondClaudeBefore = await readTreeSnapshot(path.join(secondProjectDir, DIRS.CLAUDE));
-      const secondSrcBefore = await readTreeSnapshot(path.join(secondProjectDir, DIRS.CLAUDE_SRC));
+      const secondSrcBefore = await readTreeSnapshot(sourceFolderIn(secondProjectDir));
       expect(
         Object.keys(globalClaudeBefore).length,
         "the global scope must hold installed content, or its unchanged-ness is vacuous",
@@ -73,7 +78,7 @@ describe("compile inside a project is contained to that project", () => {
         "a project-scope compile must not write into the global install",
       ).toStrictEqual(globalClaudeBefore);
       expect(
-        await readTreeSnapshot(path.join(fakeHome, DIRS.CLAUDE_SRC)),
+        await readTreeSnapshot(sourceFolderIn(fakeHome)),
         "a project-scope compile must not write into the global config pair",
       ).toStrictEqual(globalSrcBefore);
       expect(
@@ -81,7 +86,7 @@ describe("compile inside a project is contained to that project", () => {
         "a project-scope compile must not write into another project's install",
       ).toStrictEqual(secondClaudeBefore);
       expect(
-        await readTreeSnapshot(path.join(secondProjectDir, DIRS.CLAUDE_SRC)),
+        await readTreeSnapshot(sourceFolderIn(secondProjectDir)),
         "a project-scope compile must not write into another project's config pair",
       ).toStrictEqual(secondSrcBefore);
 

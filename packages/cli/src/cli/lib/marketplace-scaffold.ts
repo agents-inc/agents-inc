@@ -77,7 +77,7 @@ export function exampleSkillId(marketplaceName: string): string {
  * wrote, relative to that directory.
  *
  * What it writes is exactly what `docs/guides/creating-a-marketplace.md` promises a
- * marketplace holds — no more. It deliberately writes no `.claude-src/` pair: a
+ * marketplace holds — no more. It deliberately writes no config pair: a
  * marketplace is a repository of skills, and a config manifest there would make
  * `doctor` diagnose an installation that does not exist.
  */

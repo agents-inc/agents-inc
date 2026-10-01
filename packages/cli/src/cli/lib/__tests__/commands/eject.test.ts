@@ -18,12 +18,13 @@ import { copySkillsToLocalFlattened } from "../../skills/skill-copier";
 import Eject from "../../../commands/eject";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DIRS,
   LOCAL_SKILLS_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../../consts";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
+import { sourceFolderInUse } from "../../installation/install-layout.js";
 import { EXIT_CODES } from "../../exit-codes";
 import { glob } from "../../../utils/fs";
 import { typedKeys } from "../../../utils/typed-object";
@@ -64,11 +65,15 @@ const EJECTED_AGENT_PARTIAL_FILES = [
 ];
 
 /**
- * Everything `eject templates` copies out of `src/agents/_templates/` — the template
- * itself and the methodology partials directory beside it. Named rather than counted:
- * a count is green whichever two entries land there.
+ * Everything `eject templates` copies out of `src/agents/_templates/` — both halves of the agent
+ * template and the methodology partials directory beside them. Named rather than counted: a count
+ * is green whichever entries land there.
+ *
+ * `agent-body.liquid` joined the list with C5's split. It has to be ejected WITH `agent.liquid`,
+ * because the frontmatter half ends by including it: eject one and a project's own template
+ * renders the shipped body, which is the opposite of what ejecting a template is for.
  */
-const EJECTED_TEMPLATE_ENTRIES = ["agent.liquid", "methodologies"].sort();
+const EJECTED_TEMPLATE_ENTRIES = ["agent.liquid", "agent-body.liquid", "methodologies"].sort();
 
 /** A promise of a default, in a help text belonging to a flag that has none. */
 const DEFAULT_PROMISE = /\bdefaults?\b/i;
@@ -76,10 +81,11 @@ const DEFAULT_PROMISE = /\bdefaults?\b/i;
 describe("eject command", () => {
   let tempDir: string;
   let projectDir: string;
+  let fakeHome: string;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
-    ({ tempDir, projectDir, cleanup } = await setupIsolatedHome("cc-eject-test-"));
+    ({ tempDir, projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-eject-test-"));
   });
 
   afterEach(async () => {
@@ -191,27 +197,33 @@ describe("eject command", () => {
     });
 
     it("names no destination, because the three eject types have three", () => {
-      // Every destination this command writes to without `--output` — `.claude-src/agents`,
-      // `.claude-src/agents/_templates` and `.claude/skills` — starts with this directory
+      // Every destination this command writes to without `--output` — the source folder's
+      // `agents/` and `agents/_templates`, and `.claude/skills` — starts with this directory
       // name, so a description that spells one of them out spells this out first.
       expect(Eject.flags.output.description).not.toContain(CLAUDE_DIR);
     });
   });
 
   describe("eject agent-partials", () => {
-    it("should eject agent partials to .claude/agents/_partials by default", async () => {
+    it("should eject agent partials into the source folder's agents/ by default", async () => {
       const { stdout } = await runCliCommand(["eject", "agent-partials"]);
 
       expect(stdout).toContain("Agent partials ejected");
 
-      const partialsDir = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
+      const partialsDir = path.join(
+        sourceFolderInUse(projectDir, "claude").dir,
+        STANDARD_DIRS.AGENTS,
+      );
       expect(await directoryExists(partialsDir)).toBe(true);
     });
 
     it("should name in its success log only partials it put on disk", async () => {
       const { stdout } = await runCliCommand(["eject", "agent-partials"]);
 
-      const partialsDir = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
+      const partialsDir = path.join(
+        sourceFolderInUse(projectDir, "claude").dir,
+        STANDARD_DIRS.AGENTS,
+      );
       const ejectedNames = (await glob("**/*.md", partialsDir)).map((file) => path.basename(file));
 
       for (const partial of EJECTED_AGENT_PARTIAL_FILES) {
@@ -223,8 +235,14 @@ describe("eject command", () => {
     it("should create config.ts if it does not exist", async () => {
       await runCliCommand(["eject", "agent-partials"]);
 
-      const configPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(projectDir, "claude");
       expect(await fileExists(configPath)).toBe(true);
+      // The resolver prefers whichever folder holds a config, so reading the path back through it
+      // finds the file under either name. A fresh project's eject creates the NEW folder, and only
+      // a literal says which — a folder name is text on a user's disk, not a constant to import.
+      expect(configPath).toBe(
+        path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS),
+      );
 
       const content = await readFile(configPath, "utf-8");
       expect(content).toContain("export default");
@@ -233,7 +251,7 @@ describe("eject command", () => {
 
     it("should not overwrite existing config.yaml", async () => {
       // Create existing config with custom YAML content (eject checks both .ts and .yaml)
-      const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      const configDir = sourceFolderInUse(projectDir, "claude").dir;
       await mkdir(configDir, { recursive: true });
       const configPath = path.join(configDir, "config.yaml");
       const customContent = "name: my-custom-project\nauthor: test-author\n";
@@ -251,17 +269,24 @@ describe("eject command", () => {
 
       await runCliCommand(["eject", "agent-partials", "--output", outputDir]);
 
-      const configPath = path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(projectDir, "claude");
       expect(await fileExists(configPath)).toBe(true);
     });
 
     it("should eject agent partials to custom output with --output", async () => {
       const outputDir = path.join(tempDir, "custom-partials");
 
-      const { error } = await runCliCommand(["eject", "agent-partials", "--output", outputDir]);
+      const { stdout, error } = await runCliCommand([
+        "eject",
+        "agent-partials",
+        "--output",
+        outputDir,
+      ]);
 
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--output"));
+      expect(stdout).toContain("Agent partials ejected");
+      expect(await directoryExists(outputDir)).toBe(true);
     });
 
     /**
@@ -292,7 +317,10 @@ describe("eject command", () => {
     });
 
     it("should preserve existing templates when ejecting agent-partials", async () => {
-      const agentsDir = path.join(projectDir, CLAUDE_SRC_DIR, path.basename(DIRS.agents));
+      const agentsDir = path.join(
+        sourceFolderInUse(projectDir, "claude").dir,
+        path.basename(DIRS.agents),
+      );
       const templatesDir = path.join(agentsDir, path.basename(DIRS.templates));
 
       await mkdir(templatesDir, { recursive: true });
@@ -309,7 +337,10 @@ describe("eject command", () => {
     });
 
     it("should block agent-partials eject when agents/ contains actual agent dirs", async () => {
-      const agentsDir = path.join(projectDir, CLAUDE_SRC_DIR, path.basename(DIRS.agents));
+      const agentsDir = path.join(
+        sourceFolderInUse(projectDir, "claude").dir,
+        path.basename(DIRS.agents),
+      );
 
       // Manually create agents/ with an actual agent subdir to simulate a prior full eject
       await mkdir(path.join(agentsDir, "developer"), { recursive: true });
@@ -333,8 +364,7 @@ describe("eject command", () => {
       expect(stdout).toContain("Agent templates ejected");
 
       const templatesDir = path.join(
-        projectDir,
-        CLAUDE_SRC_DIR,
+        sourceFolderInUse(projectDir, "claude").dir,
         path.basename(DIRS.agents),
         path.basename(DIRS.templates),
       );
@@ -349,7 +379,10 @@ describe("eject command", () => {
     it("should not eject other agent partials", async () => {
       await runCliCommand(["eject", "templates"]);
 
-      const agentsDir = path.join(projectDir, CLAUDE_SRC_DIR, path.basename(DIRS.agents));
+      const agentsDir = path.join(
+        sourceFolderInUse(projectDir, "claude").dir,
+        path.basename(DIRS.agents),
+      );
       const entries = await readdir(agentsDir);
 
       // Only _templates should exist, not developer/, reviewer/, etc.
@@ -372,8 +405,7 @@ describe("eject command", () => {
       await runCliCommand(["eject", "templates"]);
 
       const templatesDir = path.join(
-        projectDir,
-        CLAUDE_SRC_DIR,
+        sourceFolderInUse(projectDir, "claude").dir,
         path.basename(DIRS.agents),
         path.basename(DIRS.templates),
       );
@@ -395,8 +427,7 @@ describe("eject command", () => {
       await runCliCommand(["eject", "templates"]);
 
       const templatesDir = path.join(
-        projectDir,
-        CLAUDE_SRC_DIR,
+        sourceFolderInUse(projectDir, "claude").dir,
         path.basename(DIRS.agents),
         path.basename(DIRS.templates),
       );
@@ -489,7 +520,10 @@ describe("eject command", () => {
       expect(stdout).toContain("Agent partials ejected");
       expect(stdout).toContain("Agent templates ejected");
 
-      const agentsDir = path.join(projectDir, CLAUDE_SRC_DIR, path.basename(DIRS.agents));
+      const agentsDir = path.join(
+        sourceFolderInUse(projectDir, "claude").dir,
+        path.basename(DIRS.agents),
+      );
       const templatesDir = path.join(agentsDir, path.basename(DIRS.templates));
       expect(await directoryExists(templatesDir)).toBe(true);
 
@@ -510,14 +544,25 @@ describe("eject command", () => {
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
 
+    /**
+     * Where the files land is the claim. The negation below reads a phrase no code path prints, so
+     * on its own it held whether or not the tilde was expanded; the directory under HOME, and the
+     * absence of a literal `~` beside the project, are what an unexpanded path would get wrong.
+     */
     it("should expand tilde in output path", async () => {
-      const { error } = await runCliCommand([
+      const { stdout, error } = await runCliCommand([
         "eject",
         "agent-partials",
         "--output",
         "~/test-eject",
       ]);
 
+      expect(stdout).toContain("Agent partials ejected");
+      expect(await directoryExists(path.join(fakeHome, "test-eject"))).toBe(true);
+      expect(
+        await directoryExists(path.join(projectDir, "~")),
+        "an unexpanded tilde resolves against the project and writes a directory named `~`",
+      ).toBe(false);
       const output = error?.message || "";
       expect(output.toLowerCase()).not.toContain("invalid path");
     });
@@ -675,7 +720,10 @@ describe("eject skills from initialized project", () => {
 
     expect(stdout).toContain("Agent partials ejected");
 
-    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
+    const partialsDir = path.join(
+      sourceFolderInUse(dirs.projectDir, "claude").dir,
+      STANDARD_DIRS.AGENTS,
+    );
     expect(await directoryExists(partialsDir)).toBe(true);
   });
 
@@ -684,7 +732,10 @@ describe("eject skills from initialized project", () => {
 
     expect(stdout).toContain("Agent partials ejected");
 
-    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
+    const partialsDir = path.join(
+      sourceFolderInUse(dirs.projectDir, "claude").dir,
+      STANDARD_DIRS.AGENTS,
+    );
     const entries = await readdir(partialsDir);
     expect([...entries].sort()).toStrictEqual(EJECTED_AGENT_DIRS);
   });
@@ -723,7 +774,7 @@ describe("eject in plugin mode", () => {
   });
 
   it("should have plugin-sourced skills in config after init", async () => {
-    const configPath = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const configPath = getProjectConfigPath(dirs.projectDir, "claude");
     expect(await fileExists(configPath)).toBe(true);
 
     const config = await readTestTsConfig<ProjectConfig>(configPath);
@@ -807,7 +858,10 @@ describe("eject in plugin mode", () => {
     // Partials eject from CLI source, not project source
     expect(stdout).toContain("Agent partials ejected");
 
-    const partialsDir = path.join(dirs.projectDir, CLAUDE_SRC_DIR, STANDARD_DIRS.AGENTS);
+    const partialsDir = path.join(
+      sourceFolderInUse(dirs.projectDir, "claude").dir,
+      STANDARD_DIRS.AGENTS,
+    );
     expect(await directoryExists(partialsDir)).toBe(true);
 
     const entries = await readdir(partialsDir);

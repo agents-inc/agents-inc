@@ -9,36 +9,30 @@ import { fileExists, directoryExists } from "../test-fs-utils";
 import { writeTestSkill, writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { createMockSkill } from "../factories/skill-factories.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
-import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+  buildSourceConfig,
+} from "../factories/config-factories.js";
+import { buildSkillConfigs, type FixtureSkillConfig } from "../helpers/wizard-simulation.js";
 import { SKILLS } from "../test-fixtures";
 import { AGENT_DEFS } from "../mock-data/mock-agents.js";
 import { initializeMatrix } from "../../matrix/matrix-provider";
-import {
-  DEFAULT_BRANDING,
-  STANDARD_FILES,
-  STANDARD_DIRS,
-  CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
-} from "../../../consts";
-import type {
-  AgentScopeConfig,
-  BrandingConfig,
-  ProjectConfig,
-  SkillConfig,
-  SkillId,
-} from "../../../types";
+import { DEFAULT_BRANDING, STANDARD_FILES, STANDARD_DIRS, CLAUDE_DIR } from "../../../consts";
+import { sourceFolderInUse } from "../../installation/install-layout.js";
+import type { AgentScopeConfig, BrandingConfig, ProjectConfig, SkillId } from "../../../types";
 import { getCliInstalledPluginKeys } from "../../../commands/uninstall";
+import { hostAt } from "../../hosts/host-for.js";
 import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { renderAgentMd } from "../content-generators.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { firstElement } from "../helpers/element-at.js";
 
-vi.mock("../../../utils/exec.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../utils/exec.js")>()),
-  claudePluginUninstall: vi.fn(),
-  isClaudeCLIAvailable: vi.fn().mockResolvedValue(true),
-}));
+vi.mock("../../hosts/host-for.js", async () => {
+  const { createMockPluginHost } = await import("../helpers/mock-plugin-host.js");
+  const host = createMockPluginHost();
+  return { hostAt: () => host, hostFor: () => host };
+});
 
 /**
  * The removal plan's compiled-agents item, the section header it sits under, and the statement
@@ -62,6 +56,33 @@ const NOTHING_TO_UNINSTALL = "Nothing to uninstall";
 const UNINSTALL_COMPLETE = "Uninstall complete";
 
 const TEST_PLUGIN_NAME = "test-plugin@marketplace";
+
+/**
+ * The line `uninstall` prints for each plugin it really deregistered, written out here for the
+ * reason every other string in this file is: an assertion that imported the product's own wording
+ * would move with it and could never fail.
+ *
+ * The count is what a run OBSERVED, never what its plan named. Every spec here that stages a
+ * plugin DIRECTORY registers nothing with a host, so the host finds nothing to deregister and the
+ * run must stay silent about a removal it did not make — which is why those specs assert this
+ * line's ABSENCE, beside the directory assertion that carries their subject. That negative is also
+ * satisfied by a command that never counts anything. What stops it being free is the counting
+ * half: `uninstallPlugins` answering `totalUninstalled: 1` when the host reports `removed`, in
+ * "should uninstall re-scoped plugins by trying both scopes" below; the operation's own
+ * `absent`/`removed` pair in `uninstall-plugin-skills.test.ts`; and the printed line itself, which
+ * only the e2e `codex-uninstall-reports-what-it-observed` asserts present.
+ */
+const PLUGIN_COUNT_LINE = "Uninstalled 1 plugin";
+
+/** Why a spec that staged only a plugin directory must not print {@link PLUGIN_COUNT_LINE}. */
+const NOTHING_REGISTERED_TO_COUNT =
+  "no host held a registration for the staged plugin, so a count claims a removal the run never observed";
+
+/**
+ * The skill the staged plugin is keyed on — `<skill>@<origin>` is {@link TEST_PLUGIN_NAME} — and
+ * no catalogue skill, so a config naming it is written as the plain string it is.
+ */
+const TEST_PLUGIN_SKILL = "test-plugin";
 const PLUGIN_SUBPATH = path.join(CLAUDE_DIR, "plugins", TEST_PLUGIN_NAME);
 const TEST_SOURCE = TEST_SOURCE_URL;
 const TEST_EXTRA_SOURCE = "github:acme-corp/skills";
@@ -72,6 +93,15 @@ const TEST_EXTRA_SOURCE = "github:acme-corp/skills";
  */
 const MARKETPLACE_NAME = "agents-inc";
 const OTHER_MARKETPLACE_NAME = "custom-source";
+
+/**
+ * A catalogue skill staged as a plugin, for the specs that hand `uninstallPlugins` a
+ * `ProjectConfig` directly rather than writing one to disk. That parameter is typed to the
+ * catalogue union, so {@link TEST_PLUGIN_SKILL} could only reach it through a cast — an id
+ * production can never pass there.
+ */
+const CATALOGUE_PLUGIN_SKILL = "web-framework-react" satisfies SkillId;
+const CATALOGUE_PLUGIN_NAME = `${CATALOGUE_PLUGIN_SKILL}@marketplace`;
 
 /**
  * A `branding.name` a project config supplies, sharing no substring with
@@ -86,44 +116,35 @@ function notCreatedBy(brandingName: string): string {
 }
 
 /**
- * Creates a .claude-src/config.ts with source configuration.
+ * Creates a `config.ts` with source configuration, in the folder the project is on.
+ *
+ * `skills` takes fixture ids as well as catalogue ones: the config is written to disk, which is
+ * the boundary the product reads it back through, so a staged plugin's non-catalogue skill needs
+ * no cast to get there.
  */
 async function createProjectConfig(
   projectDir: string,
-  options?: {
+  {
+    marketplace = TEST_SOURCE,
+    extraSources,
+    ...fields
+  }: {
     marketplace?: string;
     marketplaceName?: string;
     extraSources?: Array<{ name: string; url: string }>;
     agents?: AgentScopeConfig[];
-    skills?: SkillConfig[];
+    skills?: FixtureSkillConfig[];
     branding?: BrandingConfig;
-  },
+  } = {},
 ): Promise<string> {
-  const config: Record<string, unknown> = {
-    marketplace: options?.marketplace ?? TEST_SOURCE,
-  };
-
-  if (options?.branding) {
-    config.branding = options.branding;
-  }
-
-  if (options?.marketplaceName) {
-    config.marketplaceName = options.marketplaceName;
-  }
-
-  if (options?.extraSources) {
-    config.sources = options.extraSources;
-  }
-
-  if (options?.agents) {
-    config.agents = options.agents;
-  }
-
-  if (options?.skills) {
-    config.skills = options.skills;
-  }
-
-  return writeTestTsConfig(projectDir, config);
+  return writeTestTsConfig(
+    projectDir,
+    buildSourceConfig({
+      marketplace,
+      ...fields,
+      ...(extraSources !== undefined && { sources: extraSources }),
+    }),
+  );
 }
 
 /**
@@ -629,16 +650,21 @@ describe("uninstall command", () => {
     });
   });
 
-  describe(".claude-src/ config manifest removal", () => {
+  describe("source-folder config manifest removal", () => {
     it("should remove the config manifest by default", async () => {
       await createProjectConfig(projectDir);
-      const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      const sourceFolder = sourceFolderInUse(projectDir, "claude").dir;
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      // config.ts was the only .claude-src content, so the emptied dir is removed too
-      expect(await directoryExists(claudeSrcDir)).toBe(false);
-      expect(stdout).toContain(`Removed ${CLAUDE_SRC_DIR}/`);
+      // config.ts was the only content, so the emptied provider folder goes — and so does the
+      // `.agents-inc/` parent, which is this product's own name and means nothing left empty.
+      // Asserting the parent is not decoration: the provider folder's absence is satisfied by an
+      // install that left `.agents-inc/` sitting there with nothing in it.
+      expect(await directoryExists(sourceFolder)).toBe(false);
+      expect(await directoryExists(path.join(projectDir, ".agents-inc"))).toBe(false);
+      expect(stdout).toContain("Removed .agents-inc/claude/");
+      expect(stdout).toContain("Removed .agents-inc/");
     });
   });
 
@@ -677,7 +703,7 @@ describe("uninstall command", () => {
   describe("plugin removal", () => {
     it("should remove plugin directory", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
+        skills: buildSkillConfigs([TEST_PLUGIN_SKILL], { scope: "project", origin: "marketplace" }),
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -686,12 +712,12 @@ describe("uninstall command", () => {
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
       expect(await directoryExists(pluginDir)).toBe(false);
-      expect(stdout).toContain("Uninstalled 1 plugin");
+      expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
     });
 
     it("should show what will be removed", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
+        skills: buildSkillConfigs([TEST_PLUGIN_SKILL], { scope: "project", origin: "marketplace" }),
       });
       await createPluginDir(projectDir, fakeHome);
 
@@ -703,7 +729,7 @@ describe("uninstall command", () => {
 
     it("should show uninstall complete message", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
+        skills: buildSkillConfigs([TEST_PLUGIN_SKILL], { scope: "project", origin: "marketplace" }),
       });
       await createPluginDir(projectDir, fakeHome);
 
@@ -721,7 +747,10 @@ describe("uninstall command", () => {
       // Without the marketplace fallback, the key won't match
       await createProjectConfig(projectDir, {
         marketplaceName: "marketplace",
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "re-scoped-source" }],
+        skills: buildSkillConfigs([TEST_PLUGIN_SKILL], {
+          scope: "project",
+          origin: "re-scoped-source",
+        }),
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -730,7 +759,7 @@ describe("uninstall command", () => {
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
       expect(await directoryExists(pluginDir)).toBe(false);
-      expect(stdout).toContain("Uninstalled 1 plugin");
+      expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
     });
 
     it("should include marketplace variant keys for non-eject skills", () => {
@@ -784,35 +813,41 @@ describe("uninstall command", () => {
     });
 
     it("should uninstall re-scoped plugins by trying both scopes", async () => {
-      const execModule = await import("../../../utils/exec");
-      const spy = vi.spyOn(execModule, "claudePluginUninstallBestEffort").mockResolvedValue();
-      const cliSpy = vi.spyOn(execModule, "isClaudeCLIAvailable").mockResolvedValue(true);
+      const uninstallPlugin = vi.mocked(hostAt(projectDir).uninstallPlugin);
+      uninstallPlugin.mockClear();
 
       // Import the exported uninstallPlugins function
       const { uninstallPlugins: uninstallPluginsFn } = await import("../../../commands/uninstall");
 
       const pluginsDir = path.join(projectDir, CLAUDE_DIR, "plugins");
       await mkdir(pluginsDir, { recursive: true });
-      const pluginPath = path.join(pluginsDir, "test-plugin@marketplace");
+      const pluginPath = path.join(pluginsDir, CATALOGUE_PLUGIN_NAME);
       await mkdir(pluginPath, { recursive: true });
 
       const config = buildProjectConfig({
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
+        skills: buildSkillConfigs([CATALOGUE_PLUGIN_SKILL], {
+          scope: "project",
+          origin: "marketplace",
+        }),
       });
 
       const result = await uninstallPluginsFn(
-        { kind: "plugins", pluginsDir, names: ["test-plugin@marketplace"] },
+        { kind: "plugins", pluginsDir, names: [CATALOGUE_PLUGIN_NAME] },
         config,
         projectDir,
       );
 
       expect(result.totalUninstalled).toBe(1);
 
-      // Helper encapsulates the dual-scope attempt; assert primary scope passed for "project" config.
-      expect(spy).toHaveBeenCalledWith("test-plugin@marketplace", "project", projectDir);
-
-      spy.mockRestore();
-      cliSpy.mockRestore();
+      // A re-scoped plugin is filed under the scope it was INSTALLED at, so every scope the host
+      // installs plugins at is swept — the config's own answer first.
+      expect(
+        uninstallPlugin.mock.calls.map(([ref, scope, dir]) => [ref, scope, dir]),
+        "one scope alone leaves a re-scoped plugin registered, and the wrong scope first removes the one the config does not name",
+      ).toStrictEqual([
+        [CATALOGUE_PLUGIN_NAME, "project", projectDir],
+        [CATALOGUE_PLUGIN_NAME, "global", projectDir],
+      ]);
     });
 
     it("should uninstall project-scoped plugin that was re-scoped from global during init", async () => {
@@ -821,7 +856,10 @@ describe("uninstall command", () => {
       // The marketplace name in config differs from the skill origin
       await createProjectConfig(projectDir, {
         marketplaceName: "marketplace",
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "custom-source" }],
+        skills: buildSkillConfigs([TEST_PLUGIN_SKILL], {
+          scope: "project",
+          origin: "custom-source",
+        }),
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
 
@@ -831,40 +869,46 @@ describe("uninstall command", () => {
 
       // Plugin should be detected via marketplace fallback key and removed
       expect(await directoryExists(pluginDir)).toBe(false);
-      expect(stdout).toContain("Uninstalled 1 plugin");
+      expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
     });
 
     it("should uninstall global-scoped plugin that was re-scoped from project during edit", async () => {
       // Scenario: skill was originally project, re-scoped to global during edit
       // Config says scope: "global" but plugin registry may have "project" scope entry
-      const execModule = await import("../../../utils/exec");
-      const spy = vi.spyOn(execModule, "claudePluginUninstallBestEffort").mockResolvedValue();
-      const cliSpy = vi.spyOn(execModule, "isClaudeCLIAvailable").mockResolvedValue(true);
+      const uninstallPlugin = vi.mocked(hostAt(projectDir).uninstallPlugin);
+      uninstallPlugin.mockClear();
 
       const { uninstallPlugins: uninstallPluginsFn } = await import("../../../commands/uninstall");
 
       const pluginsDir = path.join(projectDir, CLAUDE_DIR, "plugins");
       await mkdir(pluginsDir, { recursive: true });
-      const pluginPath = path.join(pluginsDir, "test-plugin@marketplace");
+      const pluginPath = path.join(pluginsDir, CATALOGUE_PLUGIN_NAME);
       await mkdir(pluginPath, { recursive: true });
 
       const config = buildProjectConfig({
-        skills: [{ id: "test-plugin" as SkillId, scope: "global", origin: "marketplace" }],
+        skills: buildSkillConfigs([CATALOGUE_PLUGIN_SKILL], {
+          scope: "global",
+          origin: "marketplace",
+        }),
       });
 
       const result = await uninstallPluginsFn(
-        { kind: "plugins", pluginsDir, names: ["test-plugin@marketplace"] },
+        { kind: "plugins", pluginsDir, names: [CATALOGUE_PLUGIN_NAME] },
         config,
         projectDir,
       );
 
       expect(result.totalUninstalled).toBe(1);
 
-      // Helper encapsulates the dual-scope attempt; assert primary scope passed for "global" config ("user" for plugins).
-      expect(spy).toHaveBeenCalledWith("test-plugin@marketplace", "user", projectDir);
-
-      spy.mockRestore();
-      cliSpy.mockRestore();
+      // The paired case: a global config entry is asked at global scope first, and the project
+      // scope is swept after it rather than instead of it.
+      expect(
+        uninstallPlugin.mock.calls.map(([ref, scope, dir]) => [ref, scope, dir]),
+        "with the order reversed this passes while removing the registration the config does not name first",
+      ).toStrictEqual([
+        [CATALOGUE_PLUGIN_NAME, "global", projectDir],
+        [CATALOGUE_PLUGIN_NAME, "project", projectDir],
+      ]);
     });
   });
 
@@ -947,7 +991,7 @@ describe("uninstall command", () => {
   describe("combined plugin and local removal", () => {
     it("should remove both plugins and CLI-managed local artifacts", async () => {
       await createProjectConfig(projectDir, {
-        skills: [{ id: "test-plugin" as SkillId, scope: "project", origin: "marketplace" }],
+        skills: buildSkillConfigs([TEST_PLUGIN_SKILL], { scope: "project", origin: "marketplace" }),
       });
       const pluginDir = await createPluginDir(projectDir, fakeHome);
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
@@ -960,7 +1004,7 @@ describe("uninstall command", () => {
 
       expect(await directoryExists(pluginDir)).toBe(false);
       expect(await directoryExists(cliSkillDir)).toBe(false);
-      expect(stdout).toContain("Uninstalled 1 plugin");
+      expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
       expect(stdout).toContain("Removed 1 CLI-installed skill");
     });
 
@@ -969,7 +1013,7 @@ describe("uninstall command", () => {
         agents: buildAgentConfigs(["web-developer"]),
       });
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
-      const claudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
+      const sourceFolder = sourceFolderInUse(projectDir, "claude").dir;
 
       const skillsDir = path.join(claudeDir, STANDARD_DIRS.SKILLS);
       await mkdir(skillsDir, { recursive: true });
@@ -982,10 +1026,12 @@ describe("uninstall command", () => {
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
       expect(await directoryExists(claudeDir)).toBe(false);
-      expect(await directoryExists(claudeSrcDir)).toBe(false);
+      expect(await directoryExists(sourceFolder)).toBe(false);
+      expect(await directoryExists(path.join(projectDir, ".agents-inc"))).toBe(false);
       expect(stdout).toContain("Removed 1 CLI-installed skill");
       expect(stdout).toContain("Removed 1 compiled agent");
-      expect(stdout).toContain(`Removed ${CLAUDE_SRC_DIR}/`);
+      expect(stdout).toContain("Removed .agents-inc/claude/");
+      expect(stdout).toContain("Removed .agents-inc/");
       expect(stdout).toContain(`Removed ${CLAUDE_DIR}/`);
     });
   });

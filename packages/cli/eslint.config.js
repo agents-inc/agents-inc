@@ -163,6 +163,267 @@ const VACUOUS_COUNT_MESSAGE =
  * `count` was measured and left out: it names no builtin, so a `count` field is
  * whatever its owner made it and a signed one is not a contradiction.
  */
+/**
+ * A task ID written where it will outlive the tracker row it names. Two surfaces a linter can see:
+ * a test's own name, and an assertion message. Declared once and spread into both blocks that set
+ * `no-restricted-syntax` for a spec, for the same reason `VACUOUS_COMPARISONS` is — the rule's
+ * options do not merge, so a zone keeps only what it restates.
+ */
+const TASK_ID_SHAPES = [
+  {
+    selector:
+      "CallExpression[callee.name=/^(describe|it|test)$/] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
+    message:
+      "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name=/^(describe|it|test)$/] > TemplateLiteral TemplateElement[value.raw=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
+    message:
+      "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
+  },
+  {
+    selector:
+      "CallExpression[callee.name='expect'] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
+    message: "Task IDs do not belong in assertion messages — state the invariant instead.",
+  },
+];
+
+/**
+ * The source folder's name, written anywhere but the funnel that resolves it.
+ *
+ * `.claude-src/` is becoming `.agents-inc/<provider>/`, and for as long as both names are live
+ * every path under one is resolved by `lib/installation/install-layout.ts` — fourteen sites join a
+ * directory from a root and seven print one at a user, and a single one of them left on a literal
+ * gives a project that writes into a folder the CLI is no longer reading, with every test green.
+ * A census grep finds today's sites; only a rule stops tomorrow's from being written.
+ *
+ * The regex demands a boundary on both sides, because the names this repository is full of are one
+ * character away from the banned ones: `github:agents-inc/skills` is the default marketplace,
+ * `agents-inc` is the package, `.claude-plugin/plugin.json` is a plugin manifest and `.claude/skills`
+ * is where ejected skills land. A rule condemning any of those would be turned off within the hour,
+ * so `src/cli/lib/__tests__/source-folder-literals-are-funnelled.test.ts` feeds each of them to this
+ * config and requires silence, alongside the four banned spellings it requires a report for.
+ *
+ * Both halves are needed: a bare string literal and a template's static text are two node types,
+ * and a selector for one says nothing about the other. Neither needs a `/`, which is fortunate —
+ * esquery ends a regex at the first raw slash, and `\u002F` is the escape the config-gate selector
+ * above already spells it with.
+ */
+const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](claude-src|agents-inc)([^\\w-]|$)/";
+
+const SOURCE_FOLDER_MESSAGE =
+  "The source folder's name is resolved, not written: call sourceFolderInUse/sourceDir from src/cli/lib/installation/install-layout.ts, or relativeConfigPath for a message. Both names are live and only that module knows which one a scope is on.";
+
+const SOURCE_FOLDER_LITERALS = [
+  {
+    selector: `Literal[value=${SOURCE_FOLDER_NAME}]`,
+    message: SOURCE_FOLDER_MESSAGE,
+  },
+  {
+    selector: `TemplateElement[value.raw=${SOURCE_FOLDER_NAME}]`,
+    message: SOURCE_FOLDER_MESSAGE,
+  },
+];
+
+/**
+ * The source folder's ROOT NAMES, imported by symbol anywhere but the four modules that own one.
+ *
+ * The literal ban above cannot see this half, and that is not a gap in its regex: the sites that
+ * matter write no banned spelling at all. `path.join(root, SOURCE_ROOT_DIR, provider)` writes
+ * nothing, and `sourceDirName("claude")` writes a bare provider name that no boundary-anchored
+ * regex could condemn without condemning the word "claude". So the two selectors are the same ban
+ * reaching the two ways a folder name arrives, and `todo/plans/CLI-source-folder-rename-plan.md`
+ * :145 asks for exactly this pairing.
+ *
+ * `no-restricted-imports` rather than another `no-restricted-syntax` selector, deliberately: that
+ * rule's options do not merge, so a file exempt from one of its selectors is exempt from ALL of
+ * them — and three of the four modules below must keep the literal ban while losing this one.
+ *
+ * Specs need no exemption and are given none: no block sets `no-restricted-imports` for a file in
+ * `TEST_FILES`, so the rule has never reached one.
+ */
+const SOURCE_FOLDER_SYMBOLS = ["SOURCE_ROOT_DIR", "LEGACY_SOURCE_DIR", "CLAUDE_SRC_DIR"];
+
+const SOURCE_FOLDER_SYMBOL_MESSAGE =
+  "The source folder's name is resolved, not composed: call sourceDir/sourceFolderInUse from src/cli/lib/installation/install-layout.ts, or relativeConfigPath for a message. Both names are live and only that module knows which one a scope is on.";
+
+/**
+ * Both specifiers the names are reachable through: the CLI's own barrel, and the package the
+ * barrel re-exports them from. Naming only the barrel would leave a direct `@workspace/compile`
+ * import as the bypass — which is the shape that already cost `CONFIG_WRITER_IMPORTS` a rule.
+ */
+const SOURCE_FOLDER_SYMBOL_IMPORTS = {
+  group: ["**/consts", "**/consts.js", "@workspace/compile", "@workspace/compile/paths"],
+  importNames: SOURCE_FOLDER_SYMBOLS,
+  message: SOURCE_FOLDER_SYMBOL_MESSAGE,
+};
+
+/**
+ * One host's plugin COMMANDS reached from anywhere but the seam they now live behind.
+ *
+ * The sibling of the two bans above and the class neither of them can see: those guard a folder
+ * NAME and a host DIRECTORY, both of which are written as a path, while a caller of
+ * `claudePluginInstall` writes no path at all. What it does instead is decide which host this CLI
+ * is talking to, one call site at a time, which is the thing C3 exists to stop — a Codex
+ * installation cannot be served by a caller that has already named Claude's binary.
+ *
+ * The availability probe is in the list for the same reason the census in
+ * `lib/hosts/__tests__/the-claude-vocabulary-stays-behind-the-seam.test.ts` gives: a caller
+ * holding `isClaudeCLIAvailable` has decided which host it is talking to just as firmly as one
+ * installing a plugin. A bare `claude` prefix is NOT the rule, because the provider's own name is
+ * a legitimate value everywhere.
+ *
+ * `no-restricted-imports` rather than a `no-restricted-syntax` selector, for the reason the
+ * source-folder symbol ban already gives: that rule's options do not merge across flat-config
+ * blocks, so a file exempt from one selector is exempt from ALL of them — and `lib/hosts/` must
+ * keep every other restriction while losing this one.
+ *
+ * Both specifiers because both spellings are live in this package, and the group reads
+ * `export … from` exactly as it reads `import`, so a re-export cannot be the way around it.
+ */
+const CLAUDE_HOST_FUNCTIONS = [
+  "claudePluginInstall",
+  "claudePluginUninstall",
+  "claudePluginUninstallBestEffort",
+  "claudePluginMarketplaceAdd",
+  "claudePluginMarketplaceExists",
+  "claudePluginMarketplaceList",
+  "claudePluginMarketplaceRemove",
+  "claudePluginMarketplaceUpdate",
+  "isClaudeCLIAvailable",
+];
+
+const CLAUDE_HOST_MESSAGE =
+  "The host's plugin commands are reached through a host, not by name: call hostFor(provider) or hostAt(root) from src/cli/lib/hosts/host-for.js and use the PluginHost it answers. Claude and Codex spell every one of these verbs differently, so a call site naming one of them is a call site that works on one host only.";
+
+const CLAUDE_HOST_IMPORTS = {
+  group: ["**/utils/exec", "**/utils/exec.js", "**/hosts/claude-host", "**/hosts/claude-host.js"],
+  importNames: CLAUDE_HOST_FUNCTIONS,
+  message: CLAUDE_HOST_MESSAGE,
+};
+
+/**
+ * A HOST path written anywhere but the module that answers where an installation puts things.
+ *
+ * The same shape as the source-folder ban above, one layer out: that one guards the folder this
+ * product OWNS, this one guards the directories the HOSTS own. `install-layout.ts` answers them per
+ * provider — `.claude/agents` on Claude against `<repo>/.codex/agents` or `$CODEX_HOME/agents` on
+ * Codex; `.claude/skills` on Claude, `.agents/skills` in a Codex repo and `$CODEX_HOME/skills`
+ * globally — so a path composed from a literal is a path that is right on one host and silently
+ * wrong on the other. The Codex step's own risk register calls that a half-routed path: it writes a
+ * directory the host never reads, exits 0, and every test stays green. The Codex project agents
+ * directory carries a CONDITION as well as a place — the user's global config has to trust that
+ * exact path — which is one more reason the answer is a role's and not a call site's.
+ *
+ * The regex demands a boundary on both sides for the reason the source-folder one does: the names
+ * here are a character away from names this repository is full of. `.claude-plugin/plugin.json` is
+ * a plugin manifest and `.claude-src` is the legacy source folder — both end the match on a `-`,
+ * which `[^\w-]` excludes — and the bare word `claude` is a provider name rather than a directory.
+ * `src/cli/lib/__tests__/host-path-literals-are-funnelled.test.ts` feeds each of those to this
+ * config and requires silence beside the spellings it requires a report for.
+ *
+ * **`.claude.json` and its lock are BANNED, ruled 2026-09-21, and the message below is what that
+ * ruling changed.** The trailing `[^\w-]` is satisfied by the `.`, so the selector already reported
+ * them — while every role the message named answered something else, leaving an author condemned
+ * with nowhere to go. Kept banned rather than carved out, on two counts: `~/.claude.json` is
+ * Claude Code's own state file and Codex keeps its equivalent in `$CODEX_HOME/config.toml`, which
+ * is this ban's class exactly; and excluding it needs a `/` after the name, which would license
+ * `.claude.<anything>` for good. What the ruling owes it is a FUNNEL, so the message now says what
+ * to do when no role answers the path — add one here.
+ *
+ * Both halves again: a bare string literal and a template's static text are two node types, and
+ * neither needs a raw `/` — esquery ends a regex at the first one, so the separator is `/`.
+ */
+const HOST_DIRECTORY_NAME =
+  "/(^|[^\\w.-])[.](claude|codex)([^\\w-]|$)|(^|[^\\w.-])[.]agents\\u002Fskills([^\\w-]|$)/";
+
+const HOST_DIRECTORY_MESSAGE =
+  "A host path is resolved, not written: call userConfigRoot/agentsDir/skillsDir/pluginsDir/permissionFiles/ownedRoots from src/cli/lib/installation/install-layout.ts. Claude and Codex keep these in different places, and only that module knows which host a scope is on. Where no role above answers the path you need, add the role there rather than composing it here.";
+
+/**
+ * The compiled agent's EXTENSION, which is the same class reached through a filename rather than a
+ * directory: Claude reads `.md` and Codex reads `.toml`, so a literal extension decides which host
+ * a file is legible on. `agentCodec(provider)` in the same module answers it, with the `listGlob`
+ * beside it.
+ *
+ * Anchored to the WHOLE literal rather than boundary-matched, because an extension is a suffix of
+ * every filename that carries it: an unanchored `.toml` condemns `config.toml`, and an unanchored
+ * `.md` condemns every `SKILL.md` in a message. So the two spellings a codec answers with —
+ * `.toml` and `*.toml` — are what this refuses, and nothing that merely ends in one.
+ *
+ * **`.md` and `*.md` are deliberately NOT here, and the omission is measured rather than an
+ * oversight.** The census below answers six files; one is the layout module's own `agentCodec` and
+ * is exempt, so FIVE product modules outside it still name the extension themselves, and a ban
+ * landing before they move through `agentCodec` turns `npm run lint` red on files this step does
+ * not own:
+ *
+ *     grep -rn '"\(\*\)\?\.md"' src --include='*.ts' --include='*.tsx' \
+ *       | grep -v '\.test\.' | grep -v __tests__
+ *
+ * The Codex half can lead because nothing outside the layout module writes it yet, and a rule that
+ * guards the new host from the day it exists is the half worth having first.
+ */
+const HOST_AGENT_EXTENSION = "/^[*]?[.]toml$/";
+
+const HOST_AGENT_EXTENSION_MESSAGE =
+  "A compiled agent's extension is the host's, not a constant: call agentCodec(provider) from src/cli/lib/installation/install-layout.ts for the extension and the glob that lists them. Claude compiles to .md and Codex to .toml.";
+
+const HOST_PATH_LITERALS = [
+  {
+    selector: `Literal[value=${HOST_DIRECTORY_NAME}]`,
+    message: HOST_DIRECTORY_MESSAGE,
+  },
+  {
+    selector: `TemplateElement[value.raw=${HOST_DIRECTORY_NAME}]`,
+    message: HOST_DIRECTORY_MESSAGE,
+  },
+  {
+    selector: `Literal[value=${HOST_AGENT_EXTENSION}]`,
+    message: HOST_AGENT_EXTENSION_MESSAGE,
+  },
+];
+
+/**
+ * A host's directory reached through the CONSTANT that spells it, which is the half the literal
+ * ban above cannot see and never could.
+ *
+ * **This is the source-folder ban's two-halves discipline arriving at the host paths, and it
+ * arrived late.** `SOURCE_FOLDER_SYMBOL_IMPORTS` says it in full for the folder this product owns:
+ * "the sites that matter write no banned spelling at all". The same is true one layer out, and it
+ * was measured rather than argued — two of the four Claude leaks found by driving the Codex lane
+ * on 2026-09-22 were invisible to every selector above, for exactly this reason:
+ *
+ *   - `doctor`'s Skills Installed row: `path.join(baseDir, LOCAL_SKILLS_PATH, id, "SKILL.md")`,
+ *     which reported every skill of a healthy Codex installation missing and named a directory
+ *     that installation does not have.
+ *   - the permission notice: `path.join(projectRoot, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON)`,
+ *     which ended a Codex install by telling the user to go and edit a Claude settings file.
+ *
+ * Neither writes a banned spelling. `CLAUDE_DIR` is an identifier and `path.join` composes the
+ * path at run time, so no regex over literals or template text can reach either — and both passed
+ * `npm run lint` on the day they were written.
+ *
+ * `no-restricted-imports` rather than another selector, for the reason the two symbol bans before
+ * it give: that rule's options do not merge, so a file exempt from one of its groups is exempt
+ * from ALL of them — and `install-layout.ts` must keep every other restriction while losing this
+ * one, because it is the module that declares the roles these constants feed.
+ *
+ * Both specifiers, because both spellings are live: the CLI's own barrel re-exports the names from
+ * `@workspace/compile`, and naming only the barrel would leave the direct import as the bypass.
+ * The rule reads `export … from` the same way, so the barrel itself needs its own exemption.
+ */
+const HOST_PATH_SYMBOLS = ["CLAUDE_DIR", "LOCAL_SKILLS_PATH"];
+
+const HOST_PATH_SYMBOL_MESSAGE =
+  "A host path is resolved, not composed: call userConfigRoot/agentsDir/skillsDir/pluginsDir/pluginRegistry/permissionFiles/skillsPathPrefix/ownedRoots from src/cli/lib/installation/install-layout.ts. These constants spell ONE host's directories, so a path joined out of them is right on Claude and silently wrong on Codex -- which no literal ban can see, because the composition writes no banned spelling at all. Where no role above answers the path you need, add the role there rather than composing it here.";
+
+const HOST_PATH_SYMBOL_IMPORTS = {
+  group: ["**/consts", "**/consts.js", "@workspace/compile", "@workspace/compile/paths"],
+  importNames: HOST_PATH_SYMBOLS,
+  message: HOST_PATH_SYMBOL_MESSAGE,
+};
+
 const VACUOUS_COMPARISONS = [
   {
     selector: `BinaryExpression[operator=/^(>=|<)$/][left.property.name=${NEVER_NEGATIVE_COUNT}][right.value=0]`,
@@ -339,28 +600,22 @@ export default defineConfig(
     // behaviour; assertion messages state the invariant. File-level JSDoc is
     // the one sanctioned home for an ID, and comments are out of a linter's
     // reach — this guards the two surfaces it can see (CLI-357).
+    //
+    // `HOST_PATH_LITERALS` is deliberately NOT here, and the asymmetry with the line above it is
+    // the whole of the reason. The SOURCE folder's name is changing under everyone, so a fixture
+    // that spells it has to be found; a HOST's directory name is fixed by Claude Code and by Codex,
+    // and a fixture that spells `.claude/agents` is recording what the host does rather than
+    // deciding where this CLI writes. Every hit measured in this zone is that shape — the
+    // golden-tree fixtures, `mock-stacks.ts`'s recorded `path:` field, and the hand-run harness
+    // reading back what an install left on disk. The risk the ban exists for is a PRODUCT path that
+    // is right on one host and silently wrong on the other, and no fixture ships.
     files: TEST_FILES,
     rules: {
       "no-restricted-syntax": [
         "error",
-        {
-          selector:
-            "CallExpression[callee.name=/^(describe|it|test)$/] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
-          message:
-            "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
-        },
-        {
-          selector:
-            "CallExpression[callee.name=/^(describe|it|test)$/] > TemplateLiteral TemplateElement[value.raw=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
-          message:
-            "Task IDs do not belong in test names — describe the behaviour instead. IDs go in file-level JSDoc only.",
-        },
-        {
-          selector:
-            "CallExpression[callee.name='expect'] > Literal[value=/\\b(D|R|P\\d*|CLI|REPO|WWW|ED|SRV)-\\d+\\b/]",
-          message: "Task IDs do not belong in assertion messages — state the invariant instead.",
-        },
+        ...TASK_ID_SHAPES,
         ...VACUOUS_COMPARISONS,
+        ...SOURCE_FOLDER_LITERALS,
       ],
     },
   },
@@ -402,8 +657,58 @@ export default defineConfig(
     files: TYPESCRIPT_SOURCES,
     ignores: [...TEST_FILES, "src/cli/lib/config-gate/**"],
     rules: {
-      ...restrictedImports({ patterns: [CONFIG_GATE_PRIVATE_IMPORTS] }),
-      "no-restricted-syntax": ["error", CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT, ...VACUOUS_COMPARISONS],
+      ...restrictedImports({
+        patterns: [
+          CONFIG_GATE_PRIVATE_IMPORTS,
+          SOURCE_FOLDER_SYMBOL_IMPORTS,
+          HOST_PATH_SYMBOL_IMPORTS,
+          CLAUDE_HOST_IMPORTS,
+        ],
+      }),
+      "no-restricted-syntax": [
+        "error",
+        CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT,
+        ...VACUOUS_COMPARISONS,
+        ...SOURCE_FOLDER_LITERALS,
+        ...HOST_PATH_LITERALS,
+      ],
+    },
+  },
+
+  {
+    // The product files that still spell a host directory themselves, rostered rather than
+    // tolerated: the ban above reaches every other file in the zone from the day it lands, and
+    // this list may only shrink. Each site is USER-FACING PROSE — a command description, a log
+    // line, a `verbose` line — rather than a path composition, which is why none of them is a
+    // half-routed write today and why all of them are wrong the moment a Codex installation prints
+    // one: `skillsPathPrefix(provider, scope, projectDir)` is the role that answers `.claude/skills`
+    // on Claude, `.codex/skills` on a Codex global and `.agents/skills` in a Codex repo, and it
+    // exists precisely to be the spelling a message shows.
+    //
+    // **It shrank from three files to one on 2026-09-22**, which is the only direction it moves.
+    // `installation.ts` was the entry this list said needed more than a call — its
+    // `INSTALL_MODE_DESCRIPTIONS` is a module-level const — and the answer turned out to be that a
+    // const cannot name the directory truthfully at all: the eject destination is the host's AND
+    // the scope's, and one selection routinely spans two of them, so the parenthetical went rather
+    // than being routed. `discover-skills.ts` came off with the read path it documents.
+    // `init.tsx` stays for its command DESCRIPTION, which oclif reads at module load and prints in
+    // `--help` with no installation in hand, so there is no scope to resolve a path against.
+    //
+    // Re-derive the roster rather than trusting this list — the rule prints it, with this block
+    // removed:
+    //
+    //     npx eslint src --ext .ts,.tsx | grep 'A host path is resolved, not written'
+    //
+    // Everything the zone above still owes is restated, because `no-restricted-syntax` does not
+    // merge and the last block naming the rule for a file owns all of its options.
+    files: ["src/cli/commands/init.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT,
+        ...VACUOUS_COMPARISONS,
+        ...SOURCE_FOLDER_LITERALS,
+      ],
     },
   },
 
@@ -413,7 +718,61 @@ export default defineConfig(
     ignores: [...TEST_FILES, "src/cli/lib/config-gate/**"],
     rules: restrictedImports({
       paths: FS_WRITE_PATHS,
-      patterns: [CONFIG_GATE_PRIVATE_IMPORTS, ...CONFIG_WRITER_IMPORTS],
+      patterns: [
+        CONFIG_GATE_PRIVATE_IMPORTS,
+        ...CONFIG_WRITER_IMPORTS,
+        SOURCE_FOLDER_SYMBOL_IMPORTS,
+        HOST_PATH_SYMBOL_IMPORTS,
+        CLAUDE_HOST_IMPORTS,
+      ],
+    }),
+  },
+
+  {
+    // The product files that still COMPOSE a host path out of `CLAUDE_DIR` or `LOCAL_SKILLS_PATH`,
+    // rostered rather than tolerated: `HOST_PATH_SYMBOL_IMPORTS` reaches every other file in the
+    // zone from the day it lands, and this list may only shrink. It is the symbol ban's twin of
+    // the literal roster above, and it is longer for the reason the ban exists — a composition
+    // hides, so these sites accumulated while `npm run lint` stayed green over every one of them.
+    //
+    // Each is a real answer owed, not prose: `installation.ts` and `layout-findings.ts` compose an
+    // agents or skills directory that is Claude's on a Codex installation; `plugin-finder.ts` and
+    // `plugin-settings.ts` compose Claude's plugin tree, which `pluginsDir`/`pluginRegistry` now
+    // answer per host; `local-skill-loader.ts`, `local-skill-mover.ts`, `external-skills.ts` and
+    // `eject.ts` read and write ejected skills where only Claude keeps them; `messages.ts` and
+    // `uninstall.tsx` put one host's directory into a sentence every host's user reads; and
+    // `compiler.ts` names a legacy templates directory. None is a one-line repoint — several need
+    // a scope before they can ask for a path at all, which is why they are a backlog and not this
+    // step's diff.
+    //
+    // Re-derive the roster rather than trusting this list — the rule prints it, with this block
+    // removed:
+    //
+    //     npx eslint src --ext .ts,.tsx | grep 'A host path is resolved, not composed'
+    //
+    // Everything the CLI zone still owes is restated, because `no-restricted-imports` takes one
+    // options object per file and the last block naming the rule owns all of it.
+    files: [
+      "src/cli/commands/eject.ts",
+      "src/cli/commands/uninstall.tsx",
+      "src/cli/lib/compiler.ts",
+      "src/cli/lib/installation/installation.ts",
+      "src/cli/lib/installation/layout-findings.ts",
+      "src/cli/lib/plugins/plugin-finder.ts",
+      "src/cli/lib/plugins/plugin-settings.ts",
+      "src/cli/lib/seed/external-skills.ts",
+      "src/cli/lib/skills/local-skill-loader.ts",
+      "src/cli/lib/skills/local-skill-mover.ts",
+      "src/cli/utils/messages.ts",
+    ],
+    rules: restrictedImports({
+      paths: FS_WRITE_PATHS,
+      patterns: [
+        CONFIG_GATE_PRIVATE_IMPORTS,
+        ...CONFIG_WRITER_IMPORTS,
+        SOURCE_FOLDER_SYMBOL_IMPORTS,
+        CLAUDE_HOST_IMPORTS,
+      ],
     }),
   },
 
@@ -424,7 +783,12 @@ export default defineConfig(
     ignores: TEST_FILES,
     rules: restrictedImports({
       paths: FS_WRITE_PATHS,
-      patterns: [CONFIG_GATE_PRIVATE_IMPORTS],
+      patterns: [
+        CONFIG_GATE_PRIVATE_IMPORTS,
+        SOURCE_FOLDER_SYMBOL_IMPORTS,
+        HOST_PATH_SYMBOL_IMPORTS,
+        CLAUDE_HOST_IMPORTS,
+      ],
     }),
   },
 
@@ -437,7 +801,10 @@ export default defineConfig(
     // `@workspace/compile`; that module is now a re-export facade and the half that
     // probes disk and writes is this one.
     files: ["src/cli/lib/configuration/config-types-io.ts"],
-    rules: restrictedImports({ paths: FS_WRITE_PATHS }),
+    rules: restrictedImports({
+      paths: FS_WRITE_PATHS,
+      patterns: [SOURCE_FOLDER_SYMBOL_IMPORTS, HOST_PATH_SYMBOL_IMPORTS, CLAUDE_HOST_IMPORTS],
+    }),
   },
 
   {
@@ -451,8 +818,16 @@ export default defineConfig(
     files: ["src/cli/lib/config-gate/**/*.ts"],
     ignores: TEST_FILES,
     rules: {
-      ...restrictedImports({ paths: FS_WRITE_PATHS }),
-      "no-restricted-syntax": ["error", ...VACUOUS_COMPARISONS],
+      ...restrictedImports({
+        paths: FS_WRITE_PATHS,
+        patterns: [SOURCE_FOLDER_SYMBOL_IMPORTS, HOST_PATH_SYMBOL_IMPORTS, CLAUDE_HOST_IMPORTS],
+      }),
+      "no-restricted-syntax": [
+        "error",
+        ...VACUOUS_COMPARISONS,
+        ...SOURCE_FOLDER_LITERALS,
+        ...HOST_PATH_LITERALS,
+      ],
     },
   },
 
@@ -461,6 +836,124 @@ export default defineConfig(
     // wrapper, and it holds the runtime tripwire, which needs the gate's token.
     files: ["src/cli/utils/fs.ts"],
     rules: { "no-restricted-imports": "off" },
+  },
+
+  {
+    // The seam, and the one directory a host's plugin functions may be named in. It IS the module
+    // the ban's own message points every other caller at, so the ban cannot condemn it — the
+    // Claude host is built out of exactly the names the group refuses everywhere else.
+    //
+    // A narrower exemption than turning the rule off, on the same terms as the two blocks below:
+    // `no-restricted-imports` takes one options object per file and the last block naming the rule
+    // wins all of it, so everything the CLI zone still owes is restated with only this group
+    // dropped. The LITERAL bans are untouched — this block does not name `no-restricted-syntax`,
+    // so the host-path and source-folder selectors go on reaching these files from the product
+    // zone above, which is what stops a host module composing `.claude/plugins` by hand.
+    files: ["src/cli/lib/hosts/**/*.ts"],
+    ignores: TEST_FILES,
+    rules: restrictedImports({
+      paths: FS_WRITE_PATHS,
+      patterns: [
+        CONFIG_GATE_PRIVATE_IMPORTS,
+        ...CONFIG_WRITER_IMPORTS,
+        SOURCE_FOLDER_SYMBOL_IMPORTS,
+        HOST_PATH_SYMBOL_IMPORTS,
+      ],
+    }),
+  },
+
+  {
+    // A SPEC may write the folder names, and its shared infrastructure may not.
+    //
+    // This is the repository's existing ruling about rendering assertions arriving at the rename:
+    // `.claude-src` is text already written into directories on people's disks, so an assertion
+    // that imported the constant the product writes would move with it and could never fail. Every
+    // spec in the rename's own suite pins both names as literals for exactly that reason.
+    //
+    // What stays banned in the spec zone is everything that is not a spec — page objects,
+    // assertion modules, fixtures and helpers. Those are shared vocabulary rather than a single
+    // test's subject, and `e2e/pages/constants.ts` is where the e2e tree keeps one copy of it.
+    // That is the line the ban draws here: one mirror, not one literal per helper.
+    files: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "no-restricted-syntax": ["error", ...TASK_ID_SHAPES, ...VACUOUS_COMPARISONS],
+    },
+  },
+
+  {
+    // The funnel itself, and the mirror the e2e tree keeps of the product's path vocabulary.
+    // These are the three files the source folder's name is ALLOWED to be written in: two declare
+    // it and one deliberately copies it, because `e2e/pages/constants.ts` exists to MIRROR the
+    // product's strings rather than import them — an assertion that imported the constant the
+    // product writes would move with it and could never fail.
+    //
+    // A narrower exemption than turning the rule off: every other selector each of these files
+    // owes is restated, because `no-restricted-syntax` does not merge and the last block naming
+    // the rule for a file owns all of its options. `install-layout.ts` is in the product zone and
+    // `constants.ts` is in the spec zone, so each gets its own zone's set back minus this one.
+    //
+    // `install-layout.ts` is also the module BOTH symbol bans point every other caller AT —
+    // `SOURCE_FOLDER_SYMBOL_IMPORTS` and `HOST_PATH_SYMBOL_IMPORTS` — so it is the one place
+    // either set of symbols is imported, and its import rules are its zone's minus those two
+    // groups, restated for the same reason and on the same terms. It is `CLAUDE_DIR`'s single
+    // reader: the whole point of the host-path symbol ban is that this module turns it into a
+    // role and nobody else joins a path out of it.
+    files: ["src/cli/lib/installation/install-layout.ts"],
+    rules: {
+      ...restrictedImports({
+        paths: FS_WRITE_PATHS,
+        patterns: [CONFIG_GATE_PRIVATE_IMPORTS, ...CONFIG_WRITER_IMPORTS, CLAUDE_HOST_IMPORTS],
+      }),
+      "no-restricted-syntax": ["error", CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT, ...VACUOUS_COMPARISONS],
+    },
+  },
+
+  {
+    // The barrel that re-exports the path vocabulary from `@workspace/compile`. It is the reason
+    // those names are reachable in this package at all, so neither symbol ban can condemn it — and
+    // `no-restricted-imports` reads `export … from` exactly as it reads `import`, so a re-export
+    // is reported unless it is named here. That applies to `CLAUDE_DIR` and `LOCAL_SKILLS_PATH`
+    // exactly as it does to the source-folder names.
+    //
+    // The LITERAL ban is deliberately NOT lifted: this file re-exports the names, it does not
+    // write them, and its `no-restricted-syntax` goes on coming from the product zone above.
+    files: ["src/cli/consts.ts"],
+    rules: restrictedImports({
+      paths: FS_WRITE_PATHS,
+      patterns: [CONFIG_GATE_PRIVATE_IMPORTS, ...CONFIG_WRITER_IMPORTS, CLAUDE_HOST_IMPORTS],
+    }),
+  },
+
+  {
+    // The SOURCE-REPO door, which is a different question from the installation funnel and is why
+    // `loadSourceRepoConfig` exists: a marketplace repo declares its layout in either folder and
+    // always will, while an installation is on exactly one and `install-layout.ts` says which.
+    // `SOURCE_REPO_CONFIG_FOLDERS` is that "either" written down, so it holds both names by
+    // design. The other side of the pair is `utils/fs.ts`, whose global-pair tripwire must know
+    // every folder a write could land in rather than the one in use — its rule is already off.
+    //
+    // Its zone is the configuration block above, so that block's set comes back minus this group —
+    // the SOURCE-folder one alone. `HOST_PATH_SYMBOL_IMPORTS` is a different subject and is
+    // restated: this file's business is which folder a marketplace REPO declares its layout in,
+    // which says nothing about where a host keeps a user's state.
+    files: ["src/cli/lib/configuration/config.ts"],
+    rules: restrictedImports({
+      paths: FS_WRITE_PATHS,
+      patterns: [CONFIG_GATE_PRIVATE_IMPORTS, HOST_PATH_SYMBOL_IMPORTS, CLAUDE_HOST_IMPORTS],
+    }),
+  },
+
+  {
+    // The e2e half of the exemption above, and the block the sentence "each gets its own zone's
+    // set back minus this one" is about. `constants.ts` is in the SPEC zone, so what it owes back
+    // is that zone's pair — the task-ID shapes and the vacuous comparisons — with only the
+    // source-folder selectors dropped. Stating `VACUOUS_COMPARISONS` alone dropped `TASK_ID_SHAPES`
+    // with it, and no gate could see it: the roster in `spec-gates.test.ts` measures this zone
+    // against the vacuous shapes and nothing measures it against a task ID.
+    files: ["e2e/pages/constants.ts"],
+    rules: {
+      "no-restricted-syntax": ["error", ...TASK_ID_SHAPES, ...VACUOUS_COMPARISONS],
+    },
   },
 
   // Must stay last: turns off every rule that would fight prettier.config.mjs.

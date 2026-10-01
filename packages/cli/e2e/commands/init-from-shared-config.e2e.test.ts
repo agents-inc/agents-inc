@@ -13,6 +13,7 @@ import {
   readAgentEntriesFor,
   skillsPath,
 } from "../helpers/test-utils.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
 import {
@@ -20,10 +21,12 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
+import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
@@ -34,35 +37,6 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
  * per-agent curation, preload fidelity, model/effort, install modes and scopes — lives in the
  * `init-from-scenarios-*` specs.
  */
-
-/**
- * A payload as the web app builds it.
- *
- * The version is a literal rather than the vendored `SEED_VERSION`: these specs pin the wire
- * contract, so they have to fail while the CLI is still on the old one instead of following it.
- */
-function seedPayload(
-  skills: Record<string, unknown>,
-  agents: Record<string, unknown> = {},
-  stackId: string | null = null,
-) {
-  return { v: 5, matrixVersion: "1.0.0", stackId, skills, agents };
-}
-
-/** One skill row. Model and effort live on the sub-agent now, never here. */
-function skillEntry(overrides: Record<string, unknown> = {}) {
-  return {
-    // Eject, because the E2E source is local and has no marketplace — plugin mode legitimately
-    // refuses that, which is its own (correct) error rather than anything this path controls.
-    install: "eject",
-    // Global, because no payload in this file pins its sub-agent: every one of them rests at the
-    // shared selection default, and a project-scoped skill assigned to a sub-agent resting there
-    // is a pair the config model cannot express — the decode refuses it outright.
-    scope: "global",
-    assignments: { "web-developer": "lazy" },
-    ...overrides,
-  };
-}
 
 describe("init --from <id>", () => {
   let tempDir: string;
@@ -94,9 +68,14 @@ describe("init --from <id>", () => {
     tempDir = await createTempDir();
     store.publish(
       "Ab3xY9_Q",
-      seedPayload({
-        [E2E_SKILL.react.id]: skillEntry(),
-        [E2E_SKILL.vitest.id]: skillEntry({ assignments: { "web-developer": "preloaded" } }),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: {
+          [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+          [E2E_SKILL.vitest.id]: ejectedGlobalSkill({
+            assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
+          }),
+        },
       }),
     );
 
@@ -125,10 +104,14 @@ describe("init --from <id>", () => {
 
   it("installs from the marketplace the payload names, with no flag to say so", async () => {
     tempDir = await createTempDir();
-    store.publish("Market01", {
-      ...seedPayload({ [E2E_SKILL.react.id]: skillEntry() }),
-      marketplace: sourceDir,
-    });
+    store.publish(
+      "Market01",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        marketplace: sourceDir,
+      }),
+    );
 
     // Deliberately not `runInit`, which always passes `--marketplace`: the whole of what this
     // pins is that the ref on the wire reaches the loader on its own. Without it the walk ends
@@ -154,10 +137,14 @@ describe("init --from <id>", () => {
   it("lets an explicit marketplace outrank the one the payload names", async () => {
     tempDir = await createTempDir();
     // A ref that resolves to nothing, so the run can only succeed on the flag's.
-    store.publish("Market02", {
-      ...seedPayload({ [E2E_SKILL.react.id]: skillEntry() }),
-      marketplace: path.join(tempDir, "no-such-marketplace"),
-    });
+    store.publish(
+      "Market02",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        marketplace: path.join(tempDir, "no-such-marketplace"),
+      }),
+    );
 
     // Naming one is an instruction about THIS install; the payload's ref is a record of where
     // the sharer's skills came from, and an install may legitimately be pointed elsewhere.
@@ -171,7 +158,13 @@ describe("init --from <id>", () => {
 
   it("identifies itself as the CLI, so installs are distinguishable from share-link opens", async () => {
     tempDir = await createTempDir();
-    store.publish("UAcheck1", seedPayload({ [E2E_SKILL.react.id]: skillEntry() }));
+    store.publish(
+      "UAcheck1",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+      }),
+    );
 
     await runInit("UAcheck1");
 
@@ -184,9 +177,12 @@ describe("init --from <id>", () => {
     tempDir = await createTempDir();
     store.publish(
       "Mixed001",
-      seedPayload({
-        [E2E_SKILL.react.id]: skillEntry(),
-        "web-framework-does-not-exist": skillEntry(),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: {
+          [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+          "web-framework-does-not-exist": ejectedGlobalSkill(),
+        },
       }),
     );
 
@@ -197,7 +193,7 @@ describe("init --from <id>", () => {
     expect(flattenCliOutput(output)).toContain("web-framework-does-not-exist");
     expect(output).toContain("Installing 1 skill(s)");
 
-    const config = await readFile(path.join(tempDir, ".claude-src", "config.ts"), "utf8");
+    const config = await readFile(configTsPath(tempDir), "utf8");
     expect(config).toContain(E2E_SKILL.react.id);
     expect(config).not.toContain("web-framework-does-not-exist");
   });
@@ -210,12 +206,17 @@ describe("init --from <id>", () => {
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain("No configuration found for id 'NoSuchId'");
     // Nothing partially installed: the fetch fails before the pipeline starts.
-    expect(await listFiles(tempDir)).not.toContain(DIRS.CLAUDE_SRC);
+    await expectNoSourceFolder(
+      tempDir,
+      "the fetch fails before the pipeline starts, so nothing was installed",
+    );
   });
 
   it("refuses a payload that does not match the contract", async () => {
     tempDir = await createTempDir();
-    store.publish("BadShape", { v: 5, matrixVersion: "1.0.0", stackId: null, skills: "nope" });
+    // A payload the current contract accepts, with one field broken: `skills` is a string where
+    // the contract wants a map, so that is the only thing the refusal can be about.
+    store.publish("BadShape", { ...buildSeedPayload({ v: PINNED_WIRE_VERSION }), skills: "nope" });
 
     const { exitCode, output } = await runInit("BadShape");
 
@@ -254,17 +255,21 @@ describe("init --from <id>", () => {
     // the case this refusal exists for in bulk — and the remedy for it always exists. A message
     // that only diagnoses "a newer version" sends the reader to an upgrade that cannot help.
     expect(flattenCliOutput(output)).toContain("re-share the configuration");
-    expect(await listFiles(tempDir)).not.toContain(DIRS.CLAUDE_SRC);
+    await expectNoSourceFolder(
+      tempDir,
+      "an id minted before a version bump is refused before anything is installed",
+    );
   });
 
   it("applies a sub-agent's model and effort to both the compiled agent and the config", async () => {
     tempDir = await createTempDir();
     store.publish(
       "Tuned001",
-      seedPayload(
-        { [E2E_SKILL.react.id]: skillEntry() },
-        { [E2E_AGENT["web-developer"].name]: { model: "haiku", effort: "xhigh" } },
-      ),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        agents: { [E2E_AGENT["web-developer"].name]: { model: "haiku", effort: "xhigh" } },
+      }),
     );
 
     const { exitCode } = await runInit("Tuned001");
@@ -290,10 +295,11 @@ describe("init --from <id>", () => {
     tempDir = await createTempDir();
     store.publish(
       "Fable001",
-      seedPayload(
-        { [E2E_SKILL.react.id]: skillEntry() },
-        { [E2E_AGENT["web-developer"].name]: { model: "fable" } },
-      ),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        agents: { [E2E_AGENT["web-developer"].name]: { model: "fable" } },
+      }),
     );
 
     const { exitCode } = await runInit("Fable001");
@@ -308,10 +314,11 @@ describe("init --from <id>", () => {
     tempDir = await createTempDir();
     store.publish(
       "Bare0001",
-      seedPayload(
-        { [E2E_SKILL.react.id]: skillEntry() },
-        { [E2E_AGENT["api-developer"].name]: { on: true } },
-      ),
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+        agents: { [E2E_AGENT["api-developer"].name]: { on: true } },
+      }),
     );
 
     const { exitCode } = await runInit("Bare0001");
@@ -327,7 +334,13 @@ describe("init --from <id>", () => {
 
   it("errors when nothing in the payload is installable", async () => {
     tempDir = await createTempDir();
-    store.publish("AllUnknown", seedPayload({ "totally-unknown-skill": skillEntry() }));
+    store.publish(
+      "AllUnknown",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { "totally-unknown-skill": ejectedGlobalSkill() },
+      }),
+    );
 
     const { exitCode, output } = await runInit("AllUnknown");
 
@@ -337,8 +350,20 @@ describe("init --from <id>", () => {
 
   it("refuses an existing installation rather than showing the dashboard", async () => {
     tempDir = await createTempDir();
-    store.publish("First001", seedPayload({ [E2E_SKILL.react.id]: skillEntry() }));
-    store.publish("Second02", seedPayload({ [E2E_SKILL.hono.id]: skillEntry() }));
+    store.publish(
+      "First001",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+      }),
+    );
+    store.publish(
+      "Second02",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.hono.id]: ejectedGlobalSkill() },
+      }),
+    );
 
     const first = await runInit("First001");
     expect(first.exitCode, `first install failed: ${first.output}`).toBe(EXIT_CODES.SUCCESS);

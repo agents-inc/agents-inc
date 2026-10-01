@@ -19,11 +19,57 @@
 
 export const DIRS = {
   CLAUDE: ".claude",
+  /**
+   * The folder every installation made BEFORE the rename carries, and goes on carrying: it is
+   * read and written in place indefinitely, and nothing in the CLI moves one. Mirrors
+   * `LEGACY_SOURCE_DIR` and has a row in `scripts/check-mirrored-constants.ts`.
+   *
+   * Keep it out of any assertion about what a FRESH install creates — those are `SOURCE_CLAUDE`
+   * below. While both names are live, a spec asserting the absence of this one says nothing about
+   * the folder the CLI now writes.
+   */
   CLAUDE_SRC: ".claude-src",
+  /**
+   * The parent every provider's source folder sits under, so `.agents-inc/claude/` and
+   * `.agents-inc/codex/` are two folders of one product. Mirrors `SOURCE_ROOT_DIR`.
+   *
+   * Named on its own because three things name the parent with no provider after it: detection,
+   * uninstall's cleanup once the last provider folder goes, and a `.gitignore` entry.
+   *
+   * Has a row in `scripts/check-mirrored-constants.ts`, added 2026-09-20 — the sentence above
+   * claimed the mirror while only `CLAUDE_SRC` was registered.
+   */
+  SOURCE_ROOT: ".agents-inc",
+  /**
+   * Where a fresh Claude installation keeps its source after the rename — two segments, which is
+   * what makes it unusable with `listFiles`, a top-level readdir that can only ever see the first.
+   *
+   * No row in `scripts/check-mirrored-constants.ts` and none is possible: the production value is
+   * `sourceDirName(provider)` in `packages/compile/src/source-layout.ts`, a function, and that
+   * check compares literals. `SOURCE_ROOT` above is the literal half of the same path.
+   */
+  SOURCE_CLAUDE: ".agents-inc/claude",
+  /**
+   * The twin of `SOURCE_CLAUDE` for a Codex installation, and the folder that SAYS the
+   * installation is one — nothing inside `config.ts` records the provider.
+   *
+   * No row in `scripts/check-mirrored-constants.ts`, for `SOURCE_CLAUDE`'s reason: the production
+   * value is `sourceDirName(provider)`, a function, and that check compares literals.
+   */
+  SOURCE_CODEX: ".agents-inc/codex",
   SKILLS: "skills",
   AGENTS: "agents",
   PLUGINS: "plugins",
   PLUGIN_MANIFEST: "plugin-manifest",
+  // The Codex target's directories. No `src/` value mirrors them yet — the install layout that
+  // will name them is a later step — so neither has a row in `scripts/check-mirrored-constants.ts`
+  // until that value exists. `CODEX` is where Codex keeps its state under a HOME (what
+  // `CODEX_HOME` names) and holds the project's `.codex/agents`; `CODEX_PROJECT_SKILLS` is where a
+  // project's skills live for Codex, which cannot scope a plugin to one project.
+  CODEX: ".codex",
+  CODEX_PROJECT_SKILLS: ".agents/skills",
+  // Where the Claude CLI keeps backups of its own session state under its config dir.
+  CLAUDE_BACKUPS: "backups",
 } as const;
 
 export const FILES = {
@@ -39,6 +85,15 @@ export const FILES = {
   MARKETPLACE_JSON: "marketplace.json",
   CATALOG_JSON: "catalog.json",
   PACKAGE_JSON: "package.json",
+  // The extension a sub-agent compiled for the Codex target carries — a TOML file under
+  // `.codex/agents`, where the Claude target writes `.md`. Unmirrored for the reason `DIRS.CODEX`
+  // gives.
+  CODEX_AGENT_EXTENSION: ".toml",
+  // The Claude CLI's record of its OWN sessions under its config dir — a first-start time, a
+  // machine id, the Claude version that wrote it — and the lock it takes on that record. Named so
+  // a golden tree can say which files it leaves unpinned: nothing this CLI does can move them.
+  CLAUDE_SESSION_JSON: ".claude.json",
+  CLAUDE_SESSION_LOCK: ".claude.json.lock",
 } as const;
 
 /** Text that identifies each wizard step. Centralized so UI changes update one place. */
@@ -74,6 +129,11 @@ export const STEP_TEXT = {
   INIT_SUCCESS: "initialized successfully",
   EDIT_SUCCESS: "Done",
   EDIT_UNCHANGED: "No changes made",
+  // The heading `logChangeSummary` prints over what an edit is about to do, and the only line
+  // that separates a run which found something from one which did not. Its counterpart above is
+  // a negative in every spec that reads it, and a negative on its own is satisfied by a run that
+  // crashed before reaching either.
+  EDIT_CHANGES_HEADING: "Changes:",
   // The third ending, beside the two above: the run finished, the changes landed, and part of
   // what it set out to do did not. The sentinel is the disputable half of the lead-in — that
   // the changes ABOVE landed is exactly what separates this from a refusal, and a match on
@@ -238,6 +298,14 @@ export const STEP_TEXT = {
   UNINSTALL_AGENTS_KEPT_ONE: "Kept 1 agent in",
   UNINSTALL_AGENTS_KEPT_TWO: "Kept 2 agents in",
   UNINSTALL_AGENTS_KEPT_REASON: "no agents-inc marker",
+  // What uninstall says about the source folder's PARENT once the provider folder under it is
+  // gone. `.agents-inc/` groups one product's provider folders, so a repository keeping its own
+  // state beside them — gate state, a lock file — keeps the parent, and uninstall says which of
+  // the two happened rather than leaving a directory behind in silence. The wording follows
+  // `Kept .claude/ (contains user content)`, which is the same decision about a different
+  // directory; both halves are mirrored here rather than imported, for this file's own reason.
+  UNINSTALL_SOURCE_ROOT_REMOVED: "Removed .agents-inc/",
+  UNINSTALL_SOURCE_ROOT_KEPT: "Kept .agents-inc/ (contains user content)",
 
   // The two cells of the Sources grid's install-mode control. They are the cells' OWN captions —
   // there is no pinned header repeating them, because with two fixed states the caption row would
@@ -294,6 +362,12 @@ export const STEP_TEXT = {
    * negative matching nothing and passing for a reason it does not state.
    */
   DOCTOR_STATUS_SKIP: "\u2013",
+  /**
+   * The row that says whether any command will act on this installation at all — the placement
+   * refusal and the two-installations finding, as a ROW rather than a stop. Mirrored here rather
+   * than imported for the reason every other row name is.
+   */
+  DOCTOR_ROW_PLACEMENTS: "Placements Offered",
   DOCTOR_ROW_SKILLS_RESOLVED: "Skills Resolved",
   DOCTOR_ROW_AGENTS_COMPILED: "Agents Compiled",
   DOCTOR_ROW_NO_ORPHANS: "No Orphans",
@@ -422,7 +496,11 @@ export const STEP_TEXT = {
   // so a spec asserting a switch to plugin mode asserts the string a plugin install
   // announces itself with anywhere.
   PLUGIN_NATIVE: "Plugin (native install)",
-  EJECT_LOCAL_COPY: "Eject (copy to .claude/skills/)",
+  // Neither description names a directory, and this one read "(copy to .claude/skills/)" until
+  // 2026-09-22: the eject destination is the host's and the scope's, and one selection routinely
+  // spans two of them. The `COPIED_LOCAL_SKILLS_*` note below had already reached that conclusion
+  // for `edit`'s copy count.
+  EJECT_LOCAL_COPY: "Eject (local copy)",
   // `edit`'s mode-switch narration (`logModeSwitch`), split at the count the caller
   // composes: "Switching <n> skill(s) to <mode description>". Compose the whole line
   // per-spec as `${SWITCHING_SKILLS_PREFIX} ${n} ${SWITCHING_SKILLS_SUFFIX} ${MODE}`
@@ -573,6 +651,49 @@ export const STEP_TEXT = {
   // provenance. Named here so the Sources grid can be asserted NOT to use it: the grid captions
   // an install MODE, and "Eject" is a source value, not a mode.
   SOURCE_DISPLAY_EJECT: "Eject",
+
+  // --- The source folder rename: the two surfaces that name a scope's layout ---
+  //
+  // These sentinels MIRROR the product's strings rather than importing them. An assertion built
+  // from the constant the product prints moves with it and can never fail, which is the rule
+  // `e2e/pages/constants.ts` exists for.
+  //
+  // Each sits in the clause a reader would dispute rather than in the lead-in introducing it.
+  //
+  // Nothing here names a command that moves a source folder: there is none, and the messages say
+  // so — the way out of two folders is a move the user makes by hand.
+
+  // Which of the two the resolver actually picked — the clause a user in this state acts on, and
+  // the half of the sentence that is not settled by the folder names in front of it. The
+  // preference order takes whichever folder holds a config.ts, so the live folder is the OLD one
+  // whenever the config is still under it.
+  LAYOUT_LEGACY_IS_READ: "are on disk — .claude-src/ is the one being read",
+  LAYOUT_CURRENT_IS_READ: "are on disk — .agents-inc/claude/ is the one being read",
+  // doctor's Layout row, one per scope in play.
+  DOCTOR_ROW_LAYOUT: "Layout",
+  DOCTOR_LAYOUT_LEGACY: "is on .claude-src/, which this CLI goes on reading and writing",
+  DOCTOR_LAYOUT_LEGACY_MANUAL_MOVE: "move its contents into .agents-inc/claude/ by hand",
+  DOCTOR_LAYOUT_CURRENT: "on .agents-inc/claude/",
+  DOCTOR_LAYOUT_BOTH_FOLDERS: "both .claude-src/ and .agents-inc/claude/ are on disk",
+  DOCTOR_LAYOUT_STALE_COMPILED_AGENT: "names a source folder this installation does not use",
+  DOCTOR_REGISTRY_IS_NOT_AN_INVENTORY:
+    "this list is the registry, not an inventory of this machine",
+  // What a Codex project install prints once it has trusted the project in the user's global Codex
+  // config (`codexProjectTrustMessage`, CLI-893), and what it prints when the user's own answer
+  // there says otherwise and is left alone.
+  CODEX_PROJECT_TRUSTED: "Trusted this project in your Codex configuration",
+  CODEX_PROJECT_TRUST_LEFT: "Left as you set it",
+  // What a Claude install prints while a project's writing sub-agents, whose completion-gate Stop
+  // hook Claude Code drops in an untrusted folder, sit in a folder it has no record of the user
+  // trusting (`claudeProjectNeedsTrustMessage`, 2026-09-26).
+  CLAUDE_FOLDER_UNTRUSTED: "only once you trust the folder",
+  // What a write command says instead of writing, while a scope in play holds two of them. The
+  // long half goes through the logger unwrapped and the short half is the line oclif ends on, so
+  // a spec asserting the explanation and one asserting the refusal are asserting two things.
+  RIVAL_FOLDERS_REFUSE_WRITES: "is the one being read, so anything under",
+  // The remedy, which is a manual operation because no command performs it.
+  RIVAL_FOLDERS_MANUAL_REMEDY: "No command merges them: move what you want to keep from",
+  WRITE_REFUSED_RIVAL_FOLDERS: "Refusing to write while two source folders are on disk",
 } as const;
 
 /**

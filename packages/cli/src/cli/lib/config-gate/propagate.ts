@@ -11,8 +11,10 @@ import type {
   StackAgentConfig,
 } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
-import { getProjectConfigPath } from "../installation/install-base-dir";
-import { loadProjectConfigFromDir } from "../configuration/project-config";
+import type { Provider } from "../../consts";
+import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
+import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
+import { loadInstalledConfig } from "../configuration/project-config";
 import { mergeConfigs, type AuthoritativeScope } from "../configuration/config-merger";
 import {
   activeProjectAgentNames,
@@ -113,14 +115,30 @@ function mergeAgentCategories(
       continue;
     }
 
-    const existingIds = new Set(existingAssignments.map((a) => a.id));
-    for (const assignment of incomingAssignments) {
-      if (!existingIds.has(assignment.id)) {
-        existingAssignments.push({ ...assignment });
-        existingIds.add(assignment.id);
-        changed = true;
-      }
+    if (appendMissingAssignments(existingAssignments, incomingAssignments)) {
+      changed = true;
     }
+  }
+  return changed;
+}
+
+/**
+ * Mutates `existingAssignments` in place by appending a copy of each incoming assignment whose id
+ * it does not already hold — an id repeated within `incomingAssignments` is appended once. Returns
+ * true if anything was appended. Called on the merged copy only, like
+ * {@link mergeAgentCategories}.
+ */
+function appendMissingAssignments(
+  existingAssignments: SkillAssignment[],
+  incomingAssignments: SkillAssignment[],
+): boolean {
+  const existingIds = new Set(existingAssignments.map((a) => a.id));
+  let changed = false;
+  for (const assignment of incomingAssignments) {
+    if (existingIds.has(assignment.id)) continue;
+    existingAssignments.push({ ...assignment });
+    existingIds.add(assignment.id);
+    changed = true;
   }
   return changed;
 }
@@ -188,7 +206,7 @@ export function mergeGlobalConfigs(
   const mergedMarketplace = existing.marketplace ?? incoming.marketplace;
 
   // Newly-filled marketplace identity must mark the merge dirty: this flag becomes
-  // `resolveEffectiveGlobalConfig`'s `changed`, which is the condition `writeFromProjectContext`
+  // `resolveEffectiveGlobalConfig`'s `changed`, which is the condition `writeGlobalPairWhenChanged`
   // (lib/config-gate/index.ts) tests before calling `writeGlobalPair`, so a run whose only delta
   // is the now-known marketplace would otherwise skip the global write and drop the field again.
   const changed =
@@ -248,7 +266,7 @@ async function registerProjectPath(
   const staleChecks = await Promise.all(
     existing.map(async (p) => ({
       path: p,
-      hasConfig: await fileExists(getProjectConfigPath(p)),
+      hasConfig: await fileExists(getInstalledConfigPath(p)),
     })),
   );
   const valid = staleChecks.filter((c) => c.hasConfig).map((c) => c.path);
@@ -563,18 +581,30 @@ function retainReconciledStack(
 
   const reconciled: Record<string, StackAgentConfig> = {};
   for (const [agent, agentStack] of Object.entries(stack)) {
-    const reconciledAgentStack: StackAgentConfig = {};
-    for (const [category, assignments] of typedEntries<Category, SkillAssignment[]>(agentStack)) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
-      if (!assignments) continue;
-      const kept = assignments.filter((assignment) => !removedGlobalSkillIds.has(assignment.id));
-      if (kept.length > 0) reconciledAgentStack[category] = kept;
-    }
+    const reconciledAgentStack = withoutRemovedAssignments(agentStack, removedGlobalSkillIds);
     if (typedKeys<Category>(reconciledAgentStack).length > 0) {
       reconciled[agent] = reconciledAgentStack;
     }
   }
   return reconciled;
+}
+
+/**
+ * One agent's stack with the removed ids' assignments dropped, keeping every other assignment in
+ * order. A category the pruning empties is left out.
+ */
+function withoutRemovedAssignments(
+  agentStack: StackAgentConfig,
+  removedGlobalSkillIds: Set<SkillId>,
+): StackAgentConfig {
+  const reconciledAgentStack: StackAgentConfig = {};
+  for (const [category, assignments] of typedEntries<Category, SkillAssignment[]>(agentStack)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    if (!assignments) continue;
+    const kept = assignments.filter((assignment) => !removedGlobalSkillIds.has(assignment.id));
+    if (kept.length > 0) reconciledAgentStack[category] = kept;
+  }
+  return reconciledAgentStack;
 }
 
 /** The registered projects one fan-out rewrote, and the ones it could not reach. */
@@ -605,16 +635,19 @@ export type PropagationOptions = {
  */
 export async function writeProjectConfigPair(
   projectDir: string,
+  provider: Provider,
   reconciledSplit: ProjectConfig,
   effectiveGlobal: ProjectConfig,
   matrix: MergedSkillsMatrix,
   agents: Partial<Record<AgentName, AgentDefinition>>,
   options: PropagationOptions = {},
 ): Promise<void> {
+  const configPath = refuseAWriteOutsideTheInstallation(projectDir, provider);
+
   // Reconcile-before-both-writes: the two halves are derived from the same
   // reconciled data in the same call, so neither can describe a config the other
   // does not.
-  await writeConfigFile(reconciledSplit, getProjectConfigPath(projectDir), {
+  await writeConfigFile(reconciledSplit, configPath, {
     isProjectConfig: true,
     globalConfig: effectiveGlobal,
   });
@@ -691,6 +724,37 @@ function reconcileAgainstGlobal(
 }
 
 /**
+ * The config path this project's pair is written to, checked against the installation that is
+ * actually in that directory.
+ *
+ * C2's compile-time proof does not reach here. Propagation resolves its destination from a
+ * config-derived STRING — a path out of the global config's `projects` array — so deleting the
+ * provider default finds every typed caller and none of these. The assertion is the runtime half
+ * of the same guarantee: a pair written into the source folder of a provider the directory does
+ * not hold is a write into another installation, and the one thing this step must never do
+ * quietly.
+ *
+ * **The two sides are two independent reads, and that is the whole of the fix.** It compared
+ * `getInstalledConfigPath(projectDir)` against `sourceFolderInUse(projectDir, providerInUse(...))`
+ * until 2026-09-21 — one `providerInUse` answer joined with `config.ts` on one side and left bare
+ * on the other, so the comparison was `join(folder, "config.ts").startsWith(folder)` and no disk
+ * state could make it fail. What the caller BELIEVES now arrives as `provider`; what the
+ * installation IS is read here.
+ */
+function refuseAWriteOutsideTheInstallation(projectDir: string, provider: Provider): string {
+  const installed = providerInUse(projectDir);
+  const configPath = getProjectConfigPath(projectDir, provider);
+
+  if (installed !== provider) {
+    throw new Error(
+      `Refusing to write ${configPath}: ${projectDir} holds the ${installed} installation at ` +
+        `${sourceFolderInUse(projectDir, installed).dir}, not a ${provider} one.`,
+    );
+  }
+  return configPath;
+}
+
+/**
  * Rewrites ONE registered project's pair against the now-current global config.
  * Answers false when the project has a config file the loader returns nothing for,
  * which is the caller's cue to record it as unreached.
@@ -707,19 +771,26 @@ function reconcileAgainstGlobal(
  */
 async function propagateToProject(
   projectPath: string,
+  provider: Provider,
   globalConfig: ProjectConfig,
   agents: Partial<Record<AgentName, AgentDefinition>>,
   options: PropagationOptions,
 ): Promise<boolean> {
   return withCatalogueSeatedFor(projectPath, async (catalogue) => {
-    const existingProject = await loadProjectConfigFromDir(projectPath);
+    const existingProject = await loadInstalledConfig(projectPath);
     if (!existingProject?.config) return false;
 
     const projectSplit = reconcileAgainstGlobal(existingProject.config, globalConfig, catalogue);
 
-    await writeProjectConfigPair(projectPath, projectSplit, globalConfig, catalogue, agents, {
-      regenerateTypes: options.regenerateTypes ?? true,
-    });
+    await writeProjectConfigPair(
+      projectPath,
+      provider,
+      projectSplit,
+      globalConfig,
+      catalogue,
+      agents,
+      { regenerateTypes: options.regenerateTypes ?? true },
+    );
     return true;
   });
 }
@@ -727,7 +798,8 @@ async function propagateToProject(
 /**
  * Propagates global config changes to all registered project configs.
  * Updates each project's config-types.ts (type unions) and config.ts (inlined global data).
- * Skips stale project paths and the current project being installed.
+ * Skips stale project paths, the current project being installed, and any registered project
+ * that belongs to a DIFFERENT provider's installation.
  *
  * There is deliberately NO catalogue parameter. Each project's own is loaded per project by
  * {@link propagateToProject}, and a parameter beside that could only ever be the wrong one —
@@ -739,6 +811,7 @@ async function propagateToProject(
 export async function propagateGlobalChangesToProjects(
   globalConfig: ProjectConfig,
   agents: Partial<Record<AgentName, AgentDefinition>>,
+  provider: Provider,
   currentProjectDir?: string,
   options: PropagationOptions = {},
 ): Promise<PropagationResult> {
@@ -749,31 +822,84 @@ export async function propagateGlobalChangesToProjects(
   const updated: string[] = [];
   const skipped: string[] = [];
 
+  // One project at a time, never `Promise.all`: each propagation seats its project's catalogue
+  // in the module-wide matrix singleton and restores the previous one after, so two in flight
+  // would render against each other's.
   for (const projectPath of projects) {
     // Skip the project currently being installed (it's already being written)
     if (currentNormalized && projectPath === currentNormalized) continue;
 
-    const projectConfigPath = getProjectConfigPath(projectPath);
-    if (!(await fileExists(projectConfigPath))) {
-      skipped.push(projectPath);
-      verbose(`Skipped propagation to ${projectPath} (config not found)`);
-      continue;
-    }
-
-    try {
-      if (await propagateToProject(projectPath, globalConfig, agents, options)) {
-        updated.push(projectPath);
-        verbose(`Propagated global changes to ${projectPath}`);
-      } else {
-        skipped.push(projectPath);
-      }
-    } catch (error) {
-      skipped.push(projectPath);
-      verbose(`Failed to propagate to ${projectPath}: ${getErrorMessage(error)}`);
-    }
+    const outcome = await propagateToRegisteredProject(
+      projectPath,
+      provider,
+      globalConfig,
+      agents,
+      options,
+    );
+    if (outcome === "updated") updated.push(projectPath);
+    else skipped.push(projectPath);
   }
 
   return { updated, skipped };
+}
+
+/**
+ * Brings one registered project's pair up to date with the global config, or leaves it alone: a
+ * project on another installation, one whose config is gone, one the loader returns nothing for,
+ * or one whose propagation threw — loading its catalogue as much as writing its pair. None of them
+ * stops the fan-out.
+ */
+async function propagateToRegisteredProject(
+  projectPath: string,
+  provider: Provider,
+  globalConfig: ProjectConfig,
+  agents: Partial<Record<AgentName, AgentDefinition>>,
+  options: PropagationOptions,
+): Promise<"updated" | "skipped"> {
+  const notOurs = whyThisProjectIsNotOurs(projectPath, provider);
+  if (notOurs !== null) {
+    verbose(`Skipped propagation to ${projectPath} (${notOurs})`);
+    return "skipped";
+  }
+
+  if (!(await fileExists(getProjectConfigPath(projectPath, provider)))) {
+    verbose(`Skipped propagation to ${projectPath} (config not found)`);
+    return "skipped";
+  }
+
+  try {
+    if (!(await propagateToProject(projectPath, provider, globalConfig, agents, options))) {
+      return "skipped";
+    }
+    verbose(`Propagated global changes to ${projectPath}`);
+    return "updated";
+  } catch (error) {
+    verbose(`Failed to propagate to ${projectPath}: ${getErrorMessage(error)}`);
+    return "skipped";
+  }
+}
+
+/**
+ * Why a registered project is not this fan-out's to rewrite, or `null` when it is.
+ *
+ * A global installation fans out only within its own provider family: `projects[]` is a list of
+ * directories with nothing in it saying which installation each belongs to, so a project on the
+ * other provider is a different installation that happens to be registered here, and rewriting
+ * its pair from this global's data is the cross-installation write the folders exist to prevent.
+ *
+ * **A refusal is a reason to skip, never a reason to abort the fan-out.** `providerInUse` refuses
+ * a root whose installation this release has no host for, and a registered project it cannot act
+ * on is one to leave alone — exactly as a project on the other provider is. The refusal's own
+ * sentence becomes the reason, so the folder that produced it reaches the verbose log rather than
+ * being replaced by a summary of it.
+ */
+function whyThisProjectIsNotOurs(projectPath: string, provider: Provider): string | null {
+  try {
+    const installed = providerInUse(projectPath);
+    return installed === provider ? null : `not a ${provider} installation`;
+  } catch (error) {
+    return getErrorMessage(error);
+  }
 }
 
 /**
@@ -798,16 +924,17 @@ export async function propagateGlobalChangesToProjects(
 export async function pruneGlobalEntriesFromRegisteredProjects(
   globalConfig: ProjectConfig,
   agents: Partial<Record<AgentName, AgentDefinition>>,
+  provider: Provider,
 ): Promise<{ updated: string[]; skipped: string[] }> {
   const emptiedGlobal: ProjectConfig = {
     ...globalConfig,
     skills: [],
     agents: [],
   };
-  return propagateGlobalChangesToProjects(emptiedGlobal, agents);
+  return propagateGlobalChangesToProjects(emptiedGlobal, agents, provider);
 }
 
-/** What one resolution decided: the config to commit, and the two flags that gate the write. */
+/** What one resolution decided: the config to commit, and whether the global data changed. */
 type ResolvedGlobalConfig = { config: ProjectConfig; changed: boolean };
 
 /**

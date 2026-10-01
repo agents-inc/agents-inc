@@ -6,9 +6,9 @@ import {
   loadConfigOrFail,
   parseCompiledAgentSections,
   readCompiledAgents,
+  sourceFolderIn,
 } from "../helpers/test-utils.js";
 import {
-  TS_NOT_ASSIGNABLE,
   typecheckGeneratedConfig,
   probeConfigTypesNarrowing,
 } from "../helpers/type-check-probe.js";
@@ -104,7 +104,12 @@ export async function inspectFourSurfaces(
 ): Promise<SurfaceReading> {
   const globalHome = globalHomeFor({ dir, globalHome: options?.globalHome });
   const expectEmpty = options?.expectEmpty ?? false;
-  const claudeSrc = path.join(dir, ".claude-src");
+  // The generated pair lives wherever this scope's source folder is, which is what the two tsc
+  // probes below have to be pointed at. Naming one folder was `path.join(dir, DIRS.CLAUDE_SRC)`
+  // until 2026-09-20: for any project this release created that directory is not there, so the
+  // narrowing probe's `writeFile` died on ENOENT and the typecheck ran over a file that did not
+  // exist — neither of them asking anything about the pair the install actually wrote.
+  const sourceFolder = sourceFolderIn(dir);
 
   // One load, not three: every claim below reads the same config snapshot, so no
   // two of them can disagree about what this scope declares.
@@ -161,8 +166,9 @@ export async function inspectFourSurfaces(
   );
   const placementDrift = placementDifference(assignedPlacements, writtenPlacements);
 
-  const typecheck = await typecheckGeneratedConfig(claudeSrc);
-  const narrowing = await probeConfigTypesNarrowing(claudeSrc, GENERATED_ALIASES);
+  const typecheck = await typecheckGeneratedConfig(sourceFolder);
+  const narrowing = await probeConfigTypesNarrowing(sourceFolder, GENERATED_ALIASES);
+  const aliasesAccepting = GENERATED_ALIASES.filter((alias) => !narrowing.rejected.includes(alias));
 
   const findings: SurfaceFinding[] = expectEmpty
     ? [
@@ -236,10 +242,18 @@ export async function inspectFourSurfaces(
           // verdict is the DIAGNOSTIC, not the exit code: tsc exits non-zero for
           // a malformed probe too, and a probe that never compiled has asked
           // nothing about the unions.
-          claim: "config-types.ts still rejects a literal outside its union",
-          held: narrowing.output.includes(TS_NOT_ASSIGNABLE),
-          ...(!narrowing.output.includes(TS_NOT_ASSIGNABLE) && {
-            detail: narrowing.output.slice(0, 400) || "no diagnostics — the unions accept anything",
+          //
+          // And it is asked of EACH alias. `output.includes(TS_NOT_ASSIGNABLE)`
+          // was satisfied by any one of the three rejecting, so `SkillId`
+          // narrowing covered for an `AgentName` and a `Category` collapsed all
+          // the way to `string` — the exact defect the probe exists to catch,
+          // masked by its neighbours. `rejected` names them one by one.
+          claim: "config-types.ts still rejects a literal outside its union, alias by alias",
+          held: aliasesAccepting.length === 0,
+          ...(aliasesAccepting.length > 0 && {
+            detail: `${aliasesAccepting.join(", ")} accepted the bogus literal — ${
+              narrowing.output.slice(0, 400) || "no diagnostics at all"
+            }`,
           }),
         },
       ];

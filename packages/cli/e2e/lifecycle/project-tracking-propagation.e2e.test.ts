@@ -9,7 +9,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, DIRS, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
 import { E2E_CUSTOM_SKILL, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
@@ -23,6 +23,7 @@ import {
   isClaudeCLIAvailable,
   readTestFile,
   renderMetadataYaml,
+  sourceFolderIn,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
@@ -451,7 +452,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
       expect(p1.exitCode, "Project-1 init should succeed").toBe(EXIT_CODES.SUCCESS);
 
       // Phase C: Delete project-1's .claude-src/ directory to make it stale
-      const project1ConfigDir = path.join(project1Dir, DIRS.CLAUDE_SRC);
+      const project1ConfigDir = sourceFolderIn(project1Dir);
       await rm(project1ConfigDir, { recursive: true, force: true });
 
       // Phase D: Init project-2 via dashboard → Edit (triggers registration + stale filtering)

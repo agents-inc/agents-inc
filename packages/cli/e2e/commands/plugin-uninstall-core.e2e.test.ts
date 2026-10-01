@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   createE2EPluginSource,
@@ -15,18 +15,22 @@ import {
   cleanupIsolatedClaudeHome,
   cleanupTempDir,
   createIsolatedClaudeHome,
+  createLocalSkill,
   createTempDir,
-  directoryExists,
   isClaudeCLIAvailable,
-  renderSkillMd,
-  skillsPath,
   writeAgentFile,
   writeProjectConfig,
   type IsolatedClaudeHome,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
  * Plugin-mode uninstall E2E tests — core cleanup with Claude CLI.
@@ -71,27 +75,25 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     });
 
     // Step 5: Create config.ts referencing the installed plugin
-    await writeProjectConfig(projectDir, {
-      name: "plugin-uninstall-test",
-      skills: [
-        {
-          id: E2E_SKILL.react.id,
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "plugin-uninstall-test",
+        skills: buildSkillConfigs([E2E_SKILL.react.id], {
           scope: "project",
           origin: fixture.marketplaceName,
-        },
-      ],
-      agents: [{ name: "web-developer", scope: "project" }],
-      selectedDomains: ["web"],
-    });
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        selectedDomains: ["web"],
+      }),
+    );
 
     // Step 6: Create local skill with forkedFrom metadata (so skill uninstall works)
-    const skillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(
-      path.join(skillDir, FILES.SKILL_MD),
-      renderSkillMd(E2E_SKILL.react.id, "React framework", "# React\n\nTest content."),
-    );
-    await writeFile(path.join(skillDir, FILES.METADATA_YAML), FORKED_FROM_METADATA);
+    await createLocalSkill(projectDir, E2E_SKILL.react.id, {
+      description: "React framework",
+      body: "# React\n\nTest content.",
+      metadata: FORKED_FROM_METADATA,
+    });
 
     // Step 7: Create agents directory
     await writeAgentFile(projectDir, "web-developer", { frontmatter: true, body: "" });
@@ -152,7 +154,10 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     });
 
     it("should remove the config manifest directory by default", async () => {
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(false);
+      await expectNoSourceFolder(
+        projectDir,
+        "uninstall removes the config manifest's folder by default",
+      );
     });
   });
 });

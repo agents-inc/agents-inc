@@ -20,12 +20,14 @@ import type {
   CategoryDefinition,
   CategoryMap,
   CategoryPath,
+  Domain,
   ExtractedSkillMetadata,
   MergedSkillsMatrix,
   ResolvedSkill,
   ResolvedStack,
   SkillAssignment,
   SkillId,
+  SkillRulesConfig,
   SkillScope,
   Stack,
   Category,
@@ -39,7 +41,7 @@ import {
   isDefaultSource,
   isLocalSource,
   isPublicCatalogueCheckout,
-  loadProjectSourceConfig,
+  loadSourceRepoConfig,
   offersBuiltInStacks,
   resolveSource,
   type ResolvedConfig,
@@ -417,12 +419,52 @@ async function loadAndMergeFromBasePath(
   // ABORT on an unreadable config. This file is where a marketplace declares which directories
   // its skills and stacks live in, so falling back to the defaults would walk a tree the
   // marketplace says is somewhere else and report the catalogue as empty.
-  const sourceProjectConfig = await loadProjectSourceConfig(basePath);
+  const sourceProjectConfig = await loadSourceRepoConfig(basePath);
 
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
   const stacksRelFile = sourceProjectConfig?.stacksFile;
 
-  // Load source categories and rules (if they exist)
+  const { categories, sourceRules } = await loadSourceTaxonomy(basePath);
+
+  const skillsDir = path.join(basePath, skillsDirRelPath);
+  verbose(`Skills from source: ${skillsDir}`);
+
+  const skills = await extractAllSkills(skillsDir);
+  await refuseCatalogueCollisions(basePath, source, skills);
+
+  const relationships = relationshipsForSource(skills, sourceRules);
+  const mergedMatrix = mergeMatrixWithSkills(categories, relationships, skills);
+  initializeMatrix(mergedMatrix);
+
+  // Assigned unconditionally: a source offering no stacks is a matrix carrying
+  // none, which is the whole of what the wizard needs to skip the stack step.
+  const stacks = await resolveOfferedStacks(basePath, stacksRelFile, source);
+  mergedMatrix.suggestedStacks = stacks.map((stack) => convertStackToResolvedStack(stack));
+
+  const agentDefinedDomains = domainsDeclaredBy(await loadAllAgents(basePath));
+  const domainCount = typedKeys(agentDefinedDomains).length;
+  if (domainCount > 0) {
+    mergedMatrix.agentDefinedDomains = agentDefinedDomains;
+    verbose(`Loaded ${domainCount} agent domain definition(s)`);
+  }
+
+  return mergedMatrix;
+}
+
+/** What a source declares about its skills' taxonomy, beside the CLI's own. */
+type SourceTaxonomy = {
+  /** The CLI's built-in categories, with the source's own layered over them where it has any. */
+  categories: CategoryMap;
+  /** The source's own relationship rules, for {@link relationshipsForSource} to merge. */
+  sourceRules: SkillRulesConfig | undefined;
+};
+
+/**
+ * Reads a source's categories file and rules file, either of which it may leave out. Its
+ * categories are layered over the CLI's built-in ones; its rules come back as they are, and
+ * undefined when it ships none.
+ */
+async function loadSourceTaxonomy(basePath: string): Promise<SourceTaxonomy> {
   const sourceCategoriesPath = path.join(basePath, SKILL_CATEGORIES_PATH);
   const sourceRulesPath = path.join(basePath, SKILL_RULES_PATH);
   const hasSourceCategories = await fileExists(sourceCategoriesPath);
@@ -451,35 +493,18 @@ async function loadAndMergeFromBasePath(
     verbose(`Matrix from CLI only (source has no categories/rules files)`);
   }
 
-  const skillsDir = path.join(basePath, skillsDirRelPath);
-  verbose(`Skills from source: ${skillsDir}`);
+  return { categories, sourceRules };
+}
 
-  const skills = await extractAllSkills(skillsDir);
-  await refuseCatalogueCollisions(basePath, source, skills);
-
-  const relationships = relationshipsForSource(skills, sourceRules);
-  const mergedMatrix = mergeMatrixWithSkills(categories, relationships, skills);
-  initializeMatrix(mergedMatrix);
-
-  // Assigned unconditionally: a source offering no stacks is a matrix carrying
-  // none, which is the whole of what the wizard needs to skip the stack step.
-  const stacks = await resolveOfferedStacks(basePath, stacksRelFile, source);
-  mergedMatrix.suggestedStacks = stacks.map((stack) => convertStackToResolvedStack(stack));
-
-  // Collect explicit domain definitions from agent metadata.yaml files
-  const agents = await loadAllAgents(basePath);
-  const agentDefinedDomains = typedFromEntries(
+/** The domain each agent's own metadata.yaml declares, for the agents that declare one. */
+function domainsDeclaredBy(
+  agents: Partial<Record<AgentName, AgentDefinition>>,
+): Partial<Record<AgentName, Domain>> {
+  return typedFromEntries(
     typedEntries<AgentName, AgentDefinition>(agents).flatMap(([agentId, agentDef]) =>
       agentDef.domain ? [[agentId, agentDef.domain] as const] : [],
     ),
   );
-  const domainCount = typedKeys(agentDefinedDomains).length;
-  if (domainCount > 0) {
-    mergedMatrix.agentDefinedDomains = agentDefinedDomains;
-    verbose(`Loaded ${domainCount} agent domain definition(s)`);
-  }
-
-  return mergedMatrix;
 }
 
 /** Every skill id the shipped catalogue owns — the ids no other marketplace may take. */
@@ -726,8 +751,6 @@ export function mergeLocalSkillsIntoMatrix(
     // If overwriting an existing remote skill, inherit its category unconditionally.
     // Otherwise, use whatever the local skill declared in its metadata.yaml.
     const category = existingSkill?.category ?? metadata.category;
-    const slug = existingSkill?.slug ?? metadata.slug;
-    const displayName = existingSkill?.displayName ?? metadata.displayName;
 
     // A custom skill is PLACED in the taxonomy — its category is picked from the
     // ones that exist, never invented — so one naming a category nothing declares
@@ -740,53 +763,82 @@ export function mergeLocalSkillsIntoMatrix(
       continue;
     }
 
-    const resolvedSkill: ResolvedSkill = {
-      id: metadata.id,
-      slug,
-      displayName,
-      description: metadata.description,
-      ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
-
-      category,
-
-      author: LOCAL_DEFAULTS.AUTHOR,
-
-      conflictsWith: existingSkill?.conflictsWith ?? [],
-      requires: existingSkill?.requires ?? [],
-      alternatives: existingSkill?.alternatives ?? [],
-      discourages: existingSkill?.discourages ?? [],
-
-      path: metadata.path,
-
-      local: true,
-      ...(metadata.localPath !== undefined && { localPath: metadata.localPath }),
-      ...(metadata.custom !== undefined && { custom: metadata.custom }),
-    };
-
+    const resolvedSkill = toLocalResolvedSkill(metadata, existingSkill, category);
     matrix.skills[metadata.id] = resolvedSkill;
 
     // Completes the map over the matrix this merge is building: the skill went
     // into `matrix.skills` and the slug map stayed as the source left it, so every
     // slug a user had written themselves resolved to nothing.
-    claimSlug(matrix.slugMap, slug, metadata.id);
+    claimSlug(matrix.slugMap, resolvedSkill.slug, metadata.id);
 
-    // Ensure the skill's category exists in matrix.categories so that
-    // config-types generation can discover its domain and category.
-    // Skip "local" — it is a pseudo-category, not a real Category union member.
-    if (category !== LOCAL_PSEUDO_CATEGORY && !matrix.categories[category]) {
-      matrix.categories[category] = {
-        id: category,
-        displayName: category,
-        description: `Local skill category`,
-        domain: metadata.domain,
-        exclusive: false,
-        order: 0,
-      };
-      verbose(`Added local category: ${category} (domain: ${metadata.domain})`);
-    }
+    ensureCategoryDefined(matrix, category, metadata.domain);
 
     verbose(`Added local skill: ${metadata.id} (category: ${category})`);
   }
 
   return matrix;
+}
+
+/**
+ * A local skill as the matrix holds it. One that overrides a skill the source already carries
+ * inherits that skill's slug, display name and relationships; one new to the matrix takes its
+ * slug and display name from its own metadata and relates to nothing. The category arrives
+ * already resolved, because the caller needs it first to refuse a custom skill placed nowhere.
+ */
+function toLocalResolvedSkill(
+  metadata: ExtractedSkillMetadata,
+  existingSkill: ResolvedSkill | undefined,
+  category: CategoryPath,
+): ResolvedSkill {
+  return {
+    id: metadata.id,
+    slug: existingSkill?.slug ?? metadata.slug,
+    displayName: existingSkill?.displayName ?? metadata.displayName,
+    description: metadata.description,
+    ...(metadata.activationDescription !== undefined && {
+      activationDescription: metadata.activationDescription,
+    }),
+    ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
+
+    category,
+
+    author: LOCAL_DEFAULTS.AUTHOR,
+
+    conflictsWith: existingSkill?.conflictsWith ?? [],
+    requires: existingSkill?.requires ?? [],
+    alternatives: existingSkill?.alternatives ?? [],
+    discourages: existingSkill?.discourages ?? [],
+
+    path: metadata.path,
+
+    local: true,
+    ...(metadata.localPath !== undefined && { localPath: metadata.localPath }),
+    ...(metadata.custom !== undefined && { custom: metadata.custom }),
+  };
+}
+
+/**
+ * Gives a local skill's category a definition in the matrix when it has none, so config-types
+ * generation can discover its domain and category. Unlike the custom-skill refusal above, this
+ * never judges the category: a non-custom local skill may name one nothing declares, and gets a
+ * synthesized definition here.
+ */
+function ensureCategoryDefined(
+  matrix: MergedSkillsMatrix,
+  category: CategoryPath,
+  domain: Domain,
+): void {
+  // `local` is a pseudo-category, not a real Category union member, so it is never defined.
+  if (category === LOCAL_PSEUDO_CATEGORY) return;
+  if (matrix.categories[category]) return;
+
+  matrix.categories[category] = {
+    id: category,
+    displayName: category,
+    description: `Local skill category`,
+    domain,
+    exclusive: false,
+    order: 0,
+  };
+  verbose(`Added local category: ${category} (domain: ${domain})`);
 }

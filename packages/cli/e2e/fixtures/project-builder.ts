@@ -4,17 +4,24 @@ import {
   createTempDir,
   createLocalSkill,
   createPermissionsFile,
+  sourceFolderIn,
   writeProjectConfig,
   writeAgentStubs,
   renderMetadataYaml,
   renderSkillMd,
   FORKED_FROM_METADATA,
 } from "../helpers/test-utils.js";
-import type {
-  FixtureProjectConfig,
-  FixtureSkillConfig,
-  FixtureStackAgentConfig,
-} from "../helpers/test-utils.js";
+import type { FixtureSkillConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  buildSkillConfig,
+  buildSkillConfigs,
+} from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildClaudeSettings } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
+import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { E2E_SKILL } from "./expected-values.js";
 import { pluginKeyFor } from "./plugin-install-state.js";
 import { DIRS, FILES } from "../pages/constants.js";
@@ -238,21 +245,22 @@ export function metadataFieldsFor(skillId: string): SkillIdentityFields {
 }
 
 /**
- * Enables a set of plugin keys in the project's `.claude/settings.json` — the one file
- * `toHavePlugin` reads, and therefore the only place a plugin's presence or departure is
- * observable.
+ * Writes the project's `.claude/settings.json` as a plugin install leaves it — each key enabled,
+ * beside the `Read(*)` grant every E2E project carries. It is the one file `toHavePlugin` reads,
+ * and therefore the only place a plugin's presence or departure is observable.
  *
  * Writes rather than merges, because the only caller runs it on a directory it has just
- * created and nothing has put a settings.json there yet. `createPermissionsFile` runs
- * after and DOES merge, so the permissions block lands on top of these keys rather than
- * replacing them.
+ * created and nothing has put a settings.json there yet.
  */
-async function enablePluginsInSettings(projectDir: string, pluginKeys: string[]): Promise<void> {
+async function writePluginInstallSettings(
+  projectDir: string,
+  pluginKeys: readonly string[],
+): Promise<void> {
   const claudeDir = path.join(projectDir, DIRS.CLAUDE);
   await mkdir(claudeDir, { recursive: true });
   await writeFile(
     path.join(claudeDir, FILES.SETTINGS_JSON),
-    JSON.stringify({ enabledPlugins: Object.fromEntries(pluginKeys.map((key) => [key, true])) }),
+    JSON.stringify(buildClaudeSettings(pluginKeys)),
   );
 }
 
@@ -282,7 +290,7 @@ export class ProjectBuilder {
    *
    * Structure:
    *   <projectDir>/
-   *     .claude-src/
+   *     .agents-inc/claude/
    *       config.ts
    *     .claude/
    *       skills/
@@ -305,13 +313,17 @@ export class ProjectBuilder {
       }),
     });
 
-    const config: FixtureProjectConfig = {
-      name: "e2e-compile-test",
-      skills: [{ id: MINIMAL_PROJECT_SKILL_ID, scope: "project", origin: "eject" }],
-      agents: MINIMAL_PROJECT_AGENT_NAMES.map((name) => ({ name, scope: "project" })),
-    };
-
-    await writeProjectConfig(projectDir, config);
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "e2e-compile-test",
+        skills: buildSkillConfigs([MINIMAL_PROJECT_SKILL_ID], {
+          scope: "project",
+          origin: "eject",
+        }),
+        agents: buildAgentConfigs([...MINIMAL_PROJECT_AGENT_NAMES], { scope: "project" }),
+      }),
+    );
 
     return { dir: projectDir };
   }
@@ -322,7 +334,7 @@ export class ProjectBuilder {
    *
    * Structure:
    *   <projectDir>/
-   *     .claude-src/
+   *     .agents-inc/claude/
    *       config.ts
    *     .claude/
    *       skills/
@@ -346,29 +358,27 @@ export class ProjectBuilder {
 
     const globalSkills = options?.globalSkills ?? [];
     const unresolvableSkills = options?.unresolvableSkills ?? [];
-    const projectSkillConfigs = [...skills, ...unresolvableSkills].map((id) => ({
-      id,
-      scope: "project" as const,
-      origin: "eject",
-    }));
-    const globalSkillConfigs = globalSkills.map((id) => ({
-      id,
-      scope: "global" as const,
-      origin: options?.globalSkillsSource ?? "eject",
-    }));
-    const skillConfigs = [...projectSkillConfigs, ...globalSkillConfigs];
-    const agentConfigs = agents.map((name) => ({ name, scope: "project" as const }));
 
-    const config: FixtureProjectConfig = {
-      name: "test-edit-project",
-      skills: skillConfigs,
-      agents: agentConfigs,
-      selectedDomains: domains,
-      ...(options?.marketplace !== undefined && { marketplace: options.marketplace }),
-      ...(options?.stack && { stack: options.stack }),
-    };
-
-    await writeProjectConfig(projectDir, config);
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "test-edit-project",
+        skills: [
+          ...buildSkillConfigs([...skills, ...unresolvableSkills], {
+            scope: "project",
+            origin: "eject",
+          }),
+          ...buildSkillConfigs(globalSkills, {
+            scope: "global",
+            origin: options?.globalSkillsSource ?? "eject",
+          }),
+        ],
+        agents: buildAgentConfigs(agents, { scope: "project" }),
+        selectedDomains: domains,
+        ...(options?.marketplace !== undefined && { marketplace: options.marketplace }),
+        ...(options?.stack && { stack: options.stack }),
+      }),
+    );
 
     for (const skillId of skills) {
       await createLocalSkill(projectDir, skillId, {
@@ -394,10 +404,10 @@ export class ProjectBuilder {
    * Structure:
    *   <tempDir>/
    *     global-home/                        <- fake HOME
-   *       .claude-src/config.ts             <- global config
+   *       .agents-inc/claude/config.ts       <- global config
    *       .claude/skills/web-testing-cypress-e2e/
    *     project/                            <- project dir (cwd)
-   *       .claude-src/config.ts             <- project config
+   *       .agents-inc/claude/config.ts       <- project config
    *       .claude/skills/web-mocks-msw/
    */
   static async dualScope(options?: DualScopeOptions): Promise<DualScopeHandle> {
@@ -406,21 +416,26 @@ export class ProjectBuilder {
     const projectDir = path.join(tempDir, "project");
 
     // --- Global installation ---
-    const globalConfig: FixtureProjectConfig = {
-      name: "global-test",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
-      agents: [{ name: "web-developer", scope: "global" }],
-      selectedDomains: ["web"],
-      stack: {
-        "web-developer": {
-          // The category the CATALOGUE declares for this id, looked up rather than derived from
-          // its `web-testing-` prefix — `metadataFieldsFor` beside this writes the same answer
-          // into the skill's metadata.yaml, and the two disagreed until 2026-08-24.
-          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
+    await writeProjectConfig(
+      globalHome,
+      buildProjectConfig({
+        name: "global-test",
+        skills: buildSkillConfigs(["web-testing-cypress-e2e"], {
+          scope: "global",
+          origin: "eject",
+        }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        selectedDomains: ["web"],
+        stack: {
+          "web-developer": {
+            // The category the CATALOGUE declares for this id, looked up rather than derived from
+            // its `web-testing-` prefix — `metadataFieldsFor` beside this writes the same answer
+            // into the skill's metadata.yaml, and the two disagreed until 2026-08-24.
+            "web-e2e": [sa("web-testing-cypress-e2e", true)],
+          },
         },
-      },
-    };
-    await writeProjectConfig(globalHome, globalConfig);
+      }),
+    );
 
     await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
       description: options?.globalSkill?.description ?? "Global E2E skill for dual-scope testing",
@@ -435,29 +450,31 @@ export class ProjectBuilder {
     });
 
     // --- Project installation ---
-    const projectConfig: FixtureProjectConfig = {
-      name: "project-test",
-      skills: options?.projectSkills ?? [
-        { id: "web-mocks-msw", scope: "project", origin: "eject" },
-        { id: "web-testing-cypress-e2e", scope: "global", origin: "eject" },
-      ],
-      agents: [{ name: "api-developer", scope: "project" }],
-      selectedDomains: ["web"],
-      stack: {
-        "api-developer": options?.projectStack ?? {
-          // Two skills in two DIFFERENT categories, which is what this fixture always meant: one
-          // agent holding a global-scoped skill and a project-scoped one. It used to say
-          // `web-testing` and `web-mocking` for two skills the catalogue both puts in `web-e2e`,
-          // and `web-e2e` is EXCLUSIVE — so once the categories were read from the catalogue
-          // instead of from the id prefix, the pair became a config the writer refuses to emit.
-          // `web-mocks-msw` is a real `web-mocking` skill, so the second key is now true of the
-          // id under it rather than of the id the author reached for.
-          "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
-          "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "project-test",
+        skills: options?.projectSkills ?? [
+          buildSkillConfig("web-mocks-msw", { scope: "project", origin: "eject" }),
+          buildSkillConfig("web-testing-cypress-e2e", { scope: "global", origin: "eject" }),
+        ],
+        agents: buildAgentConfigs(["api-developer"], { scope: "project" }),
+        selectedDomains: ["web"],
+        stack: {
+          "api-developer": options?.projectStack ?? {
+            // Two skills in two DIFFERENT categories, which is what this fixture always meant: one
+            // agent holding a global-scoped skill and a project-scoped one. It used to say
+            // `web-testing` and `web-mocking` for two skills the catalogue both puts in `web-e2e`,
+            // and `web-e2e` is EXCLUSIVE — so once the categories were read from the catalogue
+            // instead of from the id prefix, the pair became a config the writer refuses to emit.
+            // `web-mocks-msw` is a real `web-mocking` skill, so the second key is now true of the
+            // id under it rather than of the id the author reached for.
+            "web-e2e": [sa("web-testing-cypress-e2e", true)],
+            "web-mocking": [sa("web-mocks-msw", true)],
+          },
         },
-      },
-    };
-    await writeProjectConfig(projectDir, projectConfig);
+      }),
+    );
 
     await createLocalSkill(projectDir, "web-mocks-msw", {
       description:
@@ -485,12 +502,12 @@ export class ProjectBuilder {
    * Structure:
    *   <tempDir>/
    *     fake-home/                             <- fake HOME (globalHome)
-   *       .claude-src/
+   *       .agents-inc/claude/
    *         config.ts                          <- global config
    *         config-types.ts                    <- shared types
    *       .claude/skills/web-framework-react/
    *     project/                               <- project dir (cwd)
-   *       .claude-src/
+   *       .agents-inc/claude/
    *         config.ts                          <- imports globalHome config
    *         config-types.ts                    <- shared types
    *       .claude/skills/web-testing-vitest/
@@ -501,17 +518,20 @@ export class ProjectBuilder {
     const projectDir = path.join(tempDir, "project");
 
     // --- Global installation ---
-    await writeProjectConfig(globalHome, {
-      name: "global",
-      skills: [{ id: "web-framework-react", scope: "global", origin: "eject" }],
-      agents: [{ name: "web-developer", scope: "global" }],
-      selectedDomains: ["web"],
-      stack: {
-        "web-developer": {
-          "web-framework": [{ id: "web-framework-react", preloaded: true }],
+    await writeProjectConfig(
+      globalHome,
+      buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        selectedDomains: ["web"],
+        stack: {
+          "web-developer": {
+            "web-framework": [sa("web-framework-react", true)],
+          },
         },
-      },
-    });
+      }),
+    );
 
     await createLocalSkill(globalHome, "web-framework-react", {
       description: "React framework skill for global scope testing",
@@ -546,8 +566,8 @@ export interface ProjectConfig {
   selectedDomains?: Domain[];
 }
 `;
-    const globalConfigDir = path.join(globalHome, DIRS.CLAUDE_SRC);
-    const projectConfigDir = path.join(projectDir, DIRS.CLAUDE_SRC);
+    const globalConfigDir = sourceFolderIn(globalHome);
+    const projectConfigDir = sourceFolderIn(projectDir);
     await mkdir(projectConfigDir, { recursive: true });
 
     await writeFile(path.join(globalConfigDir, FILES.CONFIG_TYPES_TS), configTypesContent);
@@ -608,7 +628,7 @@ export default {
    *
    * Structure:
    *   <projectDir>/
-   *     .claude-src/
+   *     .agents-inc/claude/
    *       config-types.ts   (auto-generated types including the custom ID)
    *       config.ts         (imports config-types, uses satisfies ProjectConfig)
    *     .claude/
@@ -621,7 +641,7 @@ export default {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
-    const configDir = path.join(projectDir, DIRS.CLAUDE_SRC);
+    const configDir = sourceFolderIn(projectDir);
     const skillDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS, CUSTOM_PROJECT_SKILL_ID);
 
     await mkdir(configDir, { recursive: true });
@@ -747,18 +767,20 @@ export default {
     const agents = options.agents ?? ["web-developer"];
     const domains = options.domains ?? ["web"];
 
-    await writeProjectConfig(projectDir, {
-      name: "plugin-edit-test",
-      ...(options.marketplace !== undefined && { marketplace: options.marketplace }),
-      ...(options.omitMarketplaceField ? {} : { marketplaceName: options.marketplaceName }),
-      skills: [...skills, ...(options.unresolvableSkills ?? [])].map((id) => ({
-        id,
-        scope: "project" as const,
-        origin: options.marketplaceName,
-      })),
-      agents: agents.map((name) => ({ name, scope: "project" as const })),
-      selectedDomains: domains,
-    });
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "plugin-edit-test",
+        ...(options.marketplace !== undefined && { marketplace: options.marketplace }),
+        ...(options.omitMarketplaceField ? {} : { marketplaceName: options.marketplaceName }),
+        skills: buildSkillConfigs([...skills, ...(options.unresolvableSkills ?? [])], {
+          scope: "project",
+          origin: options.marketplaceName,
+        }),
+        agents: buildAgentConfigs(agents, { scope: "project" }),
+        selectedDomains: domains,
+      }),
+    );
 
     for (const skillId of skills) {
       await createLocalSkill(projectDir, skillId, {
@@ -772,11 +794,10 @@ export default {
 
     await writeAgentStubs(projectDir, agents);
 
-    await enablePluginsInSettings(
+    await writePluginInstallSettings(
       projectDir,
       skills.map((id) => pluginKeyFor(id, options.marketplaceName)),
     );
-    await createPermissionsFile(projectDir);
 
     return { dir: projectDir };
   }
@@ -792,18 +813,17 @@ export default {
     const agents = options.agents ?? ["web-developer"];
     const domains = options.domains ?? ["web"];
 
-    await writeProjectConfig(projectDir, {
-      name: "local-edit-test",
-      ...(options.marketplace !== undefined && { marketplace: options.marketplace }),
-      marketplaceName: options.marketplaceName,
-      skills: skills.map((id) => ({
-        id,
-        scope: "project" as const,
-        origin: "eject",
-      })),
-      agents: agents.map((name) => ({ name, scope: "project" as const })),
-      selectedDomains: domains,
-    });
+    await writeProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "local-edit-test",
+        ...(options.marketplace !== undefined && { marketplace: options.marketplace }),
+        marketplaceName: options.marketplaceName,
+        skills: buildSkillConfigs(skills, { scope: "project", origin: "eject" }),
+        agents: buildAgentConfigs(agents, { scope: "project" }),
+        selectedDomains: domains,
+      }),
+    );
 
     for (const skillId of skills) {
       await createLocalSkill(projectDir, skillId, {
@@ -829,7 +849,7 @@ export default {
    *
    * Structure:
    *   <tempDir>/
-   *     .claude-src/config.ts         <- global config
+   *     .agents-inc/claude/config.ts   <- global config
    *     .claude/skills/web-framework-react/
    *       SKILL.md
    *       metadata.yaml
@@ -838,12 +858,15 @@ export default {
   static async globalWithSubproject(): Promise<{ globalHome: ProjectHandle; subDir: string }> {
     const tempDir = await createTempDir();
 
-    await writeProjectConfig(tempDir, {
-      name: "global-test",
-      skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
-      agents: [{ name: "web-developer", scope: "project" }],
-      selectedDomains: ["web"],
-    });
+    await writeProjectConfig(
+      tempDir,
+      buildProjectConfig({
+        name: "global-test",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        selectedDomains: ["web"],
+      }),
+    );
 
     await createLocalSkill(tempDir, "web-framework-react", {
       description: "React",
@@ -863,7 +886,7 @@ export default {
   }
 
   /**
-   * Creates a minimal `.claude-src/config.ts` installation in the given directory.
+   * Creates a minimal installation — a `config.ts` in the folder that directory is on.
    * This satisfies `detectInstallation()` for commands that require an existing
    * installation (e.g., `new skill` when no `--output` flag is provided).
    *
@@ -873,11 +896,16 @@ export default {
   static async installation(dir: string): Promise<void> {
     // Declares a skill so the config is a real installation: a config that
     // declares neither skills nor agents is content-less and does not count as
-    // an installation.
-    await writeProjectConfig(dir, {
-      name: "test",
-      skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
-      selectedDomains: [],
-    });
+    // an installation. The empty `agents` is stated, because the factory's default
+    // roster would otherwise add one.
+    await writeProjectConfig(
+      dir,
+      buildProjectConfig({
+        name: "test",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
+        agents: [],
+        selectedDomains: [],
+      }),
+    );
   }
 }

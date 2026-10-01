@@ -5,9 +5,10 @@ import type { SourceLoadResult } from "../loading";
 // this one, and the shape a plugin install reports is defined where installs live.
 import type { PluginInstallResult } from "../operations/skills/install-plugin-skills";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
-import { claudePluginInstall, claudePluginUninstall } from "../../utils/exec";
-import { buildMarketplacePluginRef, toClaudePluginScope } from "../plugins/plugin-ref";
-import { installBaseDir, resolveInstallPaths } from "./install-base-dir";
+import { hostAt } from "../hosts/host-for";
+import type { PluginHost } from "../hosts/plugin-host";
+import { buildMarketplacePluginRef } from "../plugins/plugin-ref";
+import { resolveInstallPaths } from "./install-base-dir";
 import { verbose } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
 import { CLI_INVOKE_COMMAND, EJECT_SOURCE } from "../../consts";
@@ -75,40 +76,54 @@ export function detectMigrations(
   oldSkills: SkillConfig[],
   newSkills: SkillConfig[],
 ): MigrationPlan {
-  const toEject: SkillMigration[] = [];
-  const toPlugin: SkillMigration[] = [];
-  const scopeChanges: SkillMigration[] = [];
-
   const oldById = new Map(oldSkills.map((s) => [s.id, s]));
-
-  for (const newSkill of newSkills) {
+  const migrations = newSkills.flatMap((newSkill) => {
     const oldSkill = oldById.get(newSkill.id);
-    if (!oldSkill) continue;
+    return oldSkill ? [migrationBetween(oldSkill, newSkill)] : [];
+  });
 
-    const migration: SkillMigration = {
-      id: newSkill.id,
-      oldSource: oldSkill.origin,
-      newSource: newSkill.origin,
-      oldScope: oldSkill.scope,
-      newScope: newSkill.scope,
-    };
+  return {
+    toEject: migrations.filter(switchesToEject),
+    toPlugin: migrations.filter(switchesToPlugin),
+    scopeChanges: migrations.filter(movesScopeWithoutSwitchingMode),
+  };
+}
 
-    const wasEject = oldSkill.origin === EJECT_SOURCE;
-    const isEject = newSkill.origin === EJECT_SOURCE;
+/** One skill's before and after, as the migration that takes it from one to the other. */
+function migrationBetween(oldSkill: SkillConfig, newSkill: SkillConfig): SkillMigration {
+  return {
+    id: newSkill.id,
+    oldSource: oldSkill.origin,
+    newSource: newSkill.origin,
+    oldScope: oldSkill.scope,
+    newScope: newSkill.scope,
+  };
+}
 
-    if (wasEject && !isEject) {
-      toPlugin.push(migration);
-    } else if (!wasEject && isEject) {
-      toEject.push(migration);
-    }
+function wasEjected(migration: SkillMigration): boolean {
+  return migration.oldSource === EJECT_SOURCE;
+}
 
-    // Detect scope changes (independent of source changes)
-    if (oldSkill.scope !== newSkill.scope && wasEject === isEject) {
-      scopeChanges.push(migration);
-    }
-  }
+function isEjected(migration: SkillMigration): boolean {
+  return migration.newSource === EJECT_SOURCE;
+}
 
-  return { toEject, toPlugin, scopeChanges };
+function switchesToEject(migration: SkillMigration): boolean {
+  return !wasEjected(migration) && isEjected(migration);
+}
+
+function switchesToPlugin(migration: SkillMigration): boolean {
+  return wasEjected(migration) && !isEjected(migration);
+}
+
+/**
+ * A scope change on a skill that stays in its mode. A skill that switches mode is planned as
+ * `toEject` or `toPlugin` instead, and never as a scope change as well.
+ */
+function movesScopeWithoutSwitchingMode(migration: SkillMigration): boolean {
+  return (
+    migration.oldScope !== migration.newScope && wasEjected(migration) === isEjected(migration)
+  );
 }
 
 /**
@@ -121,10 +136,10 @@ export async function executeMigration(
   projectDir: string,
   sourceResult: SourceLoadResult,
 ): Promise<MigrationResult> {
-  const pluginInstalls: PluginInstallResult = { installed: [], failed: [] };
+  const host = hostAt(projectDir);
 
   const ejectCopies = await copyMigratedSkillsToLocal(plan.toEject, projectDir, sourceResult);
-  // Only the skills whose copy LANDED, which is the toPlugin rule below read the other way
+  // Only the skills whose copy LANDED, which is `installMigratedPlugins`' rule read the other way
   // round. Dropping the plugin registration of a skill that has no local copy would leave it
   // installed nowhere, so a working install must survive a failed migration exactly as the
   // ejected working copy survives a failed plugin install.
@@ -132,53 +147,74 @@ export async function executeMigration(
     migrationsWhoseCopyLanded(plan.toEject, ejectCopies),
     projectDir,
     sourceResult,
+    host,
+  );
+  const pluginInstalls = await installMigratedPlugins(
+    plan.toPlugin,
+    projectDir,
+    sourceResult,
+    host,
   );
 
-  // Migrate skills from eject to plugin
-  if (plan.toPlugin.length > 0) {
-    // Plugin install intent is inviolable: without a marketplace NO migration in
-    // this list can be installed, so fail before anything is deleted. Deleting
-    // first and downgrading to a warning destroys the user's editable working
-    // copy and leaves config entries claiming a plugin that was never installed.
-    if (!sourceResult.marketplace) {
-      throw new Error(
-        `Cannot install skills as plugins: marketplace could not be resolved from ` +
-          `'${sourceResult.sourceConfig.source}'. Plugin install mode requires a marketplace — ` +
-          `fix the marketplace or switch the affected skills to eject mode.`,
-      );
-    }
+  return { ejectCopies, pluginInstalls, warnings };
+}
 
-    // The same rule applies per skill: install FIRST and delete the ejected working
-    // copy only once THAT skill's plugin is registered. A failed install then leaves
-    // the skill exactly as it was, and the caller hard-errors on
-    // `pluginInstalls.failed` before any config claims the plugin source.
-    for (const migration of plan.toPlugin) {
-      const pluginScope = toClaudePluginScope(migration.newScope);
-      const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
-      try {
-        await claudePluginInstall(pluginRef, pluginScope, projectDir);
-      } catch (error) {
-        pluginInstalls.failed.push({ id: migration.id, error: getErrorMessage(error) });
-        continue;
-      }
-      pluginInstalls.installed.push({ id: migration.id, ref: pluginRef });
-      verbose(`Installed plugin for ${migration.id}`);
-      await deleteEjectedWorkingCopy(migration, projectDir);
-    }
+/**
+ * Installs the plugin each newly-pluginized skill becomes, and names every one it could not
+ * install.
+ *
+ * Plugin install intent is inviolable: without a marketplace NO migration in this list can be
+ * installed, so the whole list fails before anything is deleted. Deleting first and downgrading
+ * to a warning destroys the user's editable working copy and leaves config entries claiming a
+ * plugin that was never installed.
+ *
+ * The same rule applies per skill: install FIRST and delete the ejected working copy only once
+ * THAT skill's plugin is registered. A failed install then leaves the skill exactly as it was,
+ * and the caller hard-errors on `pluginInstalls.failed` before any config claims the plugin
+ * source.
+ */
+async function installMigratedPlugins(
+  migrations: SkillMigration[],
+  projectDir: string,
+  sourceResult: SourceLoadResult,
+  host: PluginHost,
+): Promise<PluginInstallResult> {
+  const installs: PluginInstallResult = { installed: [], failed: [] };
+  if (migrations.length === 0) return installs;
+
+  if (!sourceResult.marketplace) {
+    throw new Error(
+      `Cannot install skills as plugins: marketplace could not be resolved from ` +
+        `'${sourceResult.sourceConfig.source}'. Plugin install mode requires a marketplace — ` +
+        `fix the marketplace or switch the affected skills to eject mode.`,
+    );
   }
 
-  return { ejectCopies, pluginInstalls, warnings };
+  for (const migration of migrations) {
+    const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
+    try {
+      await host.installPlugin(pluginRef, migration.newScope, projectDir);
+    } catch (error) {
+      installs.failed.push({ id: migration.id, error: getErrorMessage(error) });
+      continue;
+    }
+    installs.installed.push({ id: migration.id, ref: pluginRef });
+    verbose(`Installed plugin for ${migration.id}`);
+    await deleteEjectedWorkingCopy(migration, projectDir);
+  }
+
+  return installs;
 }
 
 /**
  * Writes the local copy each newly-ejected skill becomes, and names every one it could not
  * write.
  *
- * The mirror of the toPlugin loop in {@link executeMigration}, and per-skill for the same
- * reasons. Each migration resolves its OWN destination from its own scope, so the two scopes
- * are independent by construction rather than by pass ordering — a refused write under $HOME
- * says nothing about the project tree, and one batched `try` around both once let a single
- * project-scope failure cancel every global copy behind one warning line.
+ * The mirror of {@link installMigratedPlugins}, and per-skill for the same reasons. Each
+ * migration resolves its OWN destination from its own scope, so the two scopes are independent
+ * by construction rather than by pass ordering — a refused write under $HOME says nothing about
+ * the project tree, and one batched `try` around both once let a single project-scope failure
+ * cancel every global copy behind one warning line.
  *
  * Failures are COLLECTED rather than aborted on. The caller hard-errors on any of them before
  * writing config, so stopping at the first buys no safety and costs the user the rest of the
@@ -238,6 +274,7 @@ async function uninstallMigratedPlugins(
   migrations: SkillMigration[],
   projectDir: string,
   sourceResult: SourceLoadResult,
+  host: PluginHost,
 ): Promise<string[]> {
   const warnings: string[] = [];
 
@@ -255,11 +292,11 @@ async function uninstallMigratedPlugins(
     // both-scopes sweep would also drop a same-id plugin registered at the OTHER Claude
     // scope (e.g. a project→eject switch uninstalling the still-needed global/user-scope
     // plugin). The registered scope is unambiguous here, so target it exactly.
-    // claudePluginUninstall still swallows "not installed" / "not found".
-    const pluginScope = toClaudePluginScope(migration.oldScope);
+    // A removal still answers `absent` rather than throwing for a plugin the host does not
+    // have, so an already-gone registration is not a warning.
     const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
     try {
-      await claudePluginUninstall(pluginRef, pluginScope, projectDir);
+      await host.uninstallPlugin(pluginRef, migration.oldScope, projectDir);
     } catch (error) {
       warnings.push(`Could not uninstall plugin for ${migration.id}: ${getErrorMessage(error)}`);
       continue;
@@ -283,5 +320,5 @@ async function deleteEjectedWorkingCopy(
     verbose(`Keeping global local skill for ${migration.id} (migrated to project-plugin)`);
     return;
   }
-  await deleteLocalSkill(installBaseDir(projectDir, migration.oldScope), migration.id);
+  await deleteLocalSkill(projectDir, migration.id, migration.oldScope);
 }

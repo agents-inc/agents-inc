@@ -4,14 +4,16 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
-import { writeCorruptTestConfig, writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
+import { writeRawTestConfig, writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { buildProjectConfig } from "../../__tests__/factories/config-factories.js";
 import * as configModule from "../config.js";
 import * as projectConfigModule from "../project-config.js";
 
 /**
- * The contract every reader of `.claude-src/config.ts` owes, held here rather than in a table in a
- * report nobody re-reads.
+ * The contract every reader of an agents-inc `config.ts` owes, held here rather than in a table in
+ * a report nobody re-reads. Four of the five read an INSTALLATION's config, wherever the scope
+ * keeps it; the fifth reads a marketplace source repo's own declaration, which is a different file
+ * and is why `sourceFolder` is a field of the roster below rather than one fixture path for all.
  *
  * Two states, and telling them apart is the whole of it. A file that is NOT THERE is the legitimate
  * state `init` exists for, and answers `null`. A file that IS there and cannot be loaded is a fault,
@@ -26,7 +28,7 @@ import * as projectConfigModule from "../project-config.js";
  * compared the two. The roster below is asserted against what the two modules actually export, so a
  * fifth reader cannot land without reddening this file and forcing its author to choose.
  */
-describe("every reader of .claude-src/config.ts", () => {
+describe("every reader of an agents-inc config.ts", () => {
   /**
    * A config file that exists and cannot be EVALUATED — the state every reader below used to
    * disagree about, and the one this file exists to hold them to.
@@ -64,6 +66,16 @@ describe("every reader of .claude-src/config.ts", () => {
   type ConfigReader = {
     name: string;
     locate: "argument" | "home";
+    /**
+     * The folder under the scope root this reader's file lives in, or `undefined` for the four
+     * that read an INSTALLATION's config and therefore take whichever folder the scope is on.
+     *
+     * Stated per reader rather than assumed shared, because one of the five is not: a marketplace
+     * source repo declares its layout at `.agents-inc/config.ts`, with no provider folder after
+     * it, and a fixture written where an installation's config goes is a file it never opens — so
+     * both of its fault cases would answer `null` and read as the absent case passing.
+     */
+    sourceFolder?: string;
     read: (dir: string) => Promise<unknown>;
   };
 
@@ -81,12 +93,32 @@ describe("every reader of .claude-src/config.ts", () => {
     {
       name: "loadProjectConfigFromDir",
       locate: "argument",
-      read: (dir) => projectConfigModule.loadProjectConfigFromDir(dir),
+      read: (dir) => projectConfigModule.loadProjectConfigFromDir(dir, "claude"),
     },
     {
       name: "loadProjectConfig",
       locate: "argument",
       read: (dir) => projectConfigModule.loadProjectConfig(dir),
+    },
+    {
+      // The sibling of `loadProjectConfigFromDir` that READS the provider off the directory
+      // rather than being told one. It owes the same two answers, and its absent case is the
+      // one that would hide a resolution bug: a directory holding no installation at all still
+      // has to answer `null` rather than a config out of some other folder.
+      name: "loadInstalledConfig",
+      locate: "argument",
+      read: (dir) => projectConfigModule.loadInstalledConfig(dir),
+    },
+    {
+      // A marketplace source repo's own declaration, which reads a DIFFERENT file from the four
+      // above — `<dir>/.agents-inc/config.ts` before `<dir>/.claude-src/config.ts`, neither
+      // inside a provider folder — and owes the same two answers about it.
+      name: "loadSourceRepoConfig",
+      locate: "argument",
+      // A literal: the folder is text on a marketplace author's disk, and an assertion that
+      // imported the constant the product reads would move with it and could never fail.
+      sourceFolder: ".agents-inc",
+      read: (dir) => configModule.loadSourceRepoConfig(dir),
     },
   ] as const satisfies readonly ConfigReader[];
 
@@ -98,7 +130,7 @@ describe("every reader of .claude-src/config.ts", () => {
     vi.spyOn(os, "homedir").mockReturnValue(reader.locate === "home" ? readDir : emptyHome);
   }
 
-  it("is one of the four this file holds, so a fifth cannot land untested", () => {
+  it("is one of the six this file holds, so a seventh cannot land untested", () => {
     const exportedReaders = [
       ...Object.keys(configModule),
       ...Object.keys(projectConfigModule),
@@ -110,7 +142,7 @@ describe("every reader of .claude-src/config.ts", () => {
     ).toStrictEqual(READERS.map((reader) => reader.name).sort());
   });
 
-  describe.each(READERS)("$name", (reader) => {
+  describe.each<ConfigReader>(READERS)("$name", (reader) => {
     it("answers null for a config that is not there, which is what init exists for", async () => {
       isolate(reader);
 
@@ -118,7 +150,11 @@ describe("every reader of .claude-src/config.ts", () => {
     });
 
     it("raises for a config that is there and cannot be evaluated", async () => {
-      const configPath = await writeCorruptTestConfig(readDir, UNEVALUATABLE_CONFIG);
+      const configPath = await writeRawTestConfig(
+        readDir,
+        UNEVALUATABLE_CONFIG,
+        reader.sourceFolder,
+      );
       isolate(reader);
 
       await expect(reader.read(readDir)).rejects.toThrow(configPath);
@@ -128,6 +164,7 @@ describe("every reader of .claude-src/config.ts", () => {
       await writeTestTsConfig(
         readDir,
         buildProjectConfig({ name: "config-readers-fixture", marketplace: "github:acme/skills" }),
+        reader.sourceFolder,
       );
       isolate(reader);
 

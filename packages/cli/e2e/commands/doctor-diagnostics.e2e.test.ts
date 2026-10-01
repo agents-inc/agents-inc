@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
   agentsPath,
+  createLocalSkill,
   createTempDir,
   cleanupTempDir,
   configTsPath,
@@ -19,13 +20,22 @@ import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js
 import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
 import { UI_SYMBOLS } from "../../src/cli/consts.js";
-import type { SkillId } from "../../src/cli/types/index.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /** `checkSourceReachable` reports the whole matrix, which the E2E source defines. */
 const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}`;
 
-/** A skill id the E2E source does not define, so `Skills Resolved` must fail on it. */
-const UNKNOWN_SKILL_ID = "web-framework-nonexistent" as SkillId;
+/**
+ * A skill id the E2E source does not define, so `Skills Resolved` must fail on it. A `string`
+ * rather than a `SkillId`: a hand-written config is unvalidated input, and the fixture config type
+ * takes any id for exactly that reason.
+ */
+const UNKNOWN_SKILL_ID = "web-framework-nonexistent";
 
 /**
  * A directory in the shared `.claude/skills/` tree that this CLI did not put there — no
@@ -68,7 +78,15 @@ describe("doctor diagnostics", () => {
       // one under HOME — the machine-wide install a bare directory still inherits.
       const home = path.join(tempDir, "home");
       await mkdir(home, { recursive: true });
-      await writeProjectConfig(home, { name: "global", marketplace: source.sourceDir });
+      await writeProjectConfig(
+        home,
+        buildProjectConfig({
+          name: "global",
+          marketplace: source.sourceDir,
+          skills: [],
+          agents: [],
+        }),
+      );
 
       const projectWithoutConfig = path.join(tempDir, "project-without-config");
       await mkdir(projectWithoutConfig, { recursive: true });
@@ -99,10 +117,15 @@ describe("doctor diagnostics", () => {
       try {
         const home = path.join(tempDir, "home");
         await mkdir(home, { recursive: true });
-        await writeProjectConfig(home, {
-          name: "global",
-          marketplace: oneSkillSource.sourceDir,
-        });
+        await writeProjectConfig(
+          home,
+          buildProjectConfig({
+            name: "global",
+            marketplace: oneSkillSource.sourceDir,
+            skills: [],
+            agents: [],
+          }),
+        );
 
         const projectDir = path.join(tempDir, "project");
         await mkdir(projectDir, { recursive: true });
@@ -144,9 +167,19 @@ describe("doctor diagnostics", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_SOURCE_LOCAL);
       expect(stdout).toContain(SOURCE_SKILL_COUNT_LINE);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_LAYOUT);
+      expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_PLACEMENTS);
       // The counts, not the word "errors": every content and operational row above
       // passed, so a warn or a failure anywhere in the report reddens this line.
-      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 12 passed, 0 warnings, 0 errors`);
+      //
+      // The count is a roster assertion written as a number, and it is kept as one because it
+      // sees the thing the `toContain`s above cannot: a row this spec has never heard of. It went
+      // from 12 to 13 when the Layout row landed and to 14 with Placements Offered, which is
+      // exactly the event it is for — the lines above name both rows now, so they move together
+      // and the number can no longer be "corrected" without someone saying which row it counts.
+      // What it still cannot see is a SWAP, one row removed and another added, and the named rows
+      // are what cover that.
+      expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 14 passed, 0 warnings, 0 errors`);
     });
   });
 
@@ -270,15 +303,19 @@ describe("doctor diagnostics", () => {
     it("should fail Skills Resolved, name the skill and tip at checking skill IDs", async () => {
       tempDir = await createTempDir();
 
-      await writeProjectConfig(tempDir, {
-        name: "test-project",
-        agents: [{ name: "web-developer", scope: "project" }],
-        stack: {
-          "web-developer": {
-            "web-framework": [{ id: UNKNOWN_SKILL_ID, preloaded: true }],
+      await writeProjectConfig(
+        tempDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+          stack: {
+            "web-developer": {
+              "web-framework": [createMockSkillAssignment(UNKNOWN_SKILL_ID, true)],
+            },
           },
-        },
-      });
+        }),
+      );
 
       // Do NOT create .claude/skills/ — the skill is absent from the source AND
       // from disk, which is what makes the check fail rather than warn.
@@ -306,11 +343,9 @@ describe("doctor diagnostics", () => {
       });
       tempDir = path.dirname(project.dir);
 
-      // Manual mkdir+writeFile: fabricated orphan skill ID not in SkillId union,
-      // so createLocalSkill() cannot be used without a type cast.
-      const orphanDir = path.join(skillsPath(project.dir), "web-testing-orphan-extra");
-      await mkdir(orphanDir, { recursive: true });
-      await writeFile(path.join(orphanDir, FILES.SKILL_MD), "# Orphan Skill\n");
+      // No `metadata` option, so the directory holds a SKILL.md and no metadata.yaml — nothing in
+      // it can carry the `forkedFrom` marker, and no config names its id.
+      await createLocalSkill(project.dir, "web-testing-orphan-extra", { body: "# Orphan Skill" });
 
       // Create the compiled agent so checkAgentsCompiled passes
       await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
@@ -429,11 +464,14 @@ describe("doctor diagnostics", () => {
       const projectDir = project.dir;
 
       // Overwrite config to register an eject-mode skill whose disk files are missing
-      await writeProjectConfig(projectDir, {
-        name: "installed-skill-missing",
-        skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
-        agents: [{ name: "web-developer", scope: "project" }],
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "installed-skill-missing",
+          skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
+          agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        }),
+      );
 
       // Make agents compile check pass so the only warn is from checkSkillsInstalled
       await writeAgentFile(projectDir, "web-developer", { frontmatter: true });

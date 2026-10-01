@@ -8,7 +8,7 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import type { DashboardSession } from "../pages/dashboard-session.js";
 import type { ConfirmStep } from "../pages/steps/confirm-step.js";
 import type { WizardResult } from "../pages/wizard-result.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import { loadInstalledConfig } from "../../src/cli/lib/configuration/project-config.js";
 import { activeAgentNames } from "../../src/cli/lib/configuration/scope-predicates.js";
 import { E2E_SKILL } from "./expected-values.js";
 import type { E2ESource } from "../helpers/create-e2e-source.js";
@@ -29,7 +29,7 @@ export async function readSkillEntries(
   projectDir: string,
   skillId: string,
 ): Promise<SkillConfig[]> {
-  const loaded = await loadProjectConfigFromDir(projectDir);
+  const loaded = await loadInstalledConfig(projectDir);
   expect(loaded, `project config.ts must exist at ${projectDir}`).not.toBeNull();
   if (!loaded) return [];
   return loaded.config.skills
@@ -43,21 +43,21 @@ export async function readSkillEntries(
 
 /** Load a scope's config.ts structurally and return its agents array. */
 export async function readAgentEntries(dir: string): Promise<AgentScopeConfig[]> {
-  const loaded = await loadProjectConfigFromDir(dir);
+  const loaded = await loadInstalledConfig(dir);
   expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
   return loaded ? loaded.config.agents : [];
 }
 
 /** Load a scope's config.ts structurally and return the names of its active agents. */
 export async function readActiveAgentNames(dir: string): Promise<AgentName[]> {
-  const loaded = await loadProjectConfigFromDir(dir);
+  const loaded = await loadInstalledConfig(dir);
   expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
   return activeAgentNames(loaded?.config.agents ?? []);
 }
 
 /** Load a scope's config.ts structurally and return its full skills array. */
 export async function readAllSkillEntries(dir: string): Promise<SkillConfig[]> {
-  const loaded = await loadProjectConfigFromDir(dir);
+  const loaded = await loadInstalledConfig(dir);
   expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
   return loaded ? loaded.config.skills : [];
 }

@@ -4,6 +4,7 @@ import {
   removeSharedSource,
 } from "../src/cli/lib/__tests__/helpers/shared-source.js";
 import { buildPluginSourceInto } from "./helpers/create-e2e-plugin-source.js";
+import { installCodexOnPath } from "./fixtures/codex-on-path.js";
 import { buildSharedE2ESourceInto } from "./helpers/create-e2e-source.js";
 import { fileURLToPath } from "url";
 
@@ -11,7 +12,7 @@ import { assertDistIsFresh } from "../src/cli/lib/testing/dist-staleness.js";
 import {
   claudePluginMarketplaceList,
   claudePluginMarketplaceRemove,
-} from "../src/cli/utils/exec.js";
+} from "../src/cli/lib/hosts/claude-host.js";
 import { getErrorMessage } from "../src/cli/utils/errors.js";
 import { E2E_MARKETPLACE_PREFIX } from "./pages/constants.js";
 
@@ -60,6 +61,11 @@ const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
  */
 export default async function setup() {
   await assertDistIsFresh(CLI_ROOT);
+
+  // The `codex` a SPAWNED CLI resolves by name. Here rather than in a spec because it is written
+  // once per run and read by every `CLI.run`, and because a spec that built its own would be the
+  // second writer of a fixed machine path — the rule `shared-source.ts` states.
+  await installCodexOnPath();
 
   // The two shared fixtures, built once here and frozen together: the plugin-capable tree at
   // `fixture/` and the plain, marketplace-less one at `plain/` ({@link E2E_SOURCE}). One root, one

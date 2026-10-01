@@ -3,7 +3,7 @@ import { directoryExists } from "../../utils/fs";
 import { verbose } from "../../utils/logger";
 import { PROJECT_ROOT, DIRS } from "../../consts";
 import { fetchFromSource, type FetchOptions } from "../loading";
-import { loadProjectSourceConfig } from "../configuration";
+import { loadSourceRepoConfig } from "../configuration";
 import type { AgentSourcePaths } from "../../types";
 
 export async function getAgentDefinitions(remoteSource?: string): Promise<AgentSourcePaths> {
@@ -43,7 +43,7 @@ export async function fetchAgentDefinitionsFromRemote(
   // or reports partials missing from a repository that has them.
   const sourceProjectConfig = options.agentsDir
     ? undefined
-    : await loadProjectSourceConfig(result.path);
+    : await loadSourceRepoConfig(result.path);
   if (sourceProjectConfig?.agentsDir) {
     verbose(`Using agentsDir from source config: ${sourceProjectConfig.agentsDir}`);
   }

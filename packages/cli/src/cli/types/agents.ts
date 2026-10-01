@@ -83,7 +83,7 @@ export type AgentDefinition = BaseAgentFields & {
   path?: string;
   /** Root path where this agent was loaded from (for template resolution) */
   sourceRoot?: string;
-  /** Base directory for agent files relative to sourceRoot (e.g., "src/agents" or ".claude-src/agents") */
+  /** Base directory for agent files relative to sourceRoot (e.g., "src/agents" or ".agents-inc/claude/agents") */
   agentBaseDir?: string;
   /** Domain for wizard grouping */
   domain?: Domain;

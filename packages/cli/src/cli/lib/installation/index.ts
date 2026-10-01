@@ -23,7 +23,14 @@ export {
 } from "./local-installer";
 
 export { isHomeDirectory } from "./is-home-directory";
-export { installBaseDir, resolveInstallPaths, type InstallPaths } from "./install-base-dir";
+export {
+  getInstalledConfigPath,
+  installBaseDir,
+  resolveInstallPaths,
+  type InstallPaths,
+} from "./install-base-dir";
+
+export { detectInstallations, type DetectedInstallation } from "./detect-installations";
 
 export {
   type EjectCopyResult,

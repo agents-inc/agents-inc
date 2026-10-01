@@ -3,7 +3,8 @@ import { fileURLToPath } from "url";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { parse as parseYaml } from "yaml";
 import { createJiti } from "jiti";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { STANDARD_FILES } from "../../../consts";
+import { sourceFolderInUse } from "../../installation/install-layout";
 import { renderConfigTs } from "../content-generators";
 import { VALID_PACKAGE_JSON_FILE } from "../mock-data/mock-source-files.js";
 
@@ -43,13 +44,19 @@ export async function readTestTsConfig<T>(filePath: string): Promise<T> {
 }
 
 /**
- * Writes a config file with the given object into the given subdirectory
- * (defaults to CLAUDE_SRC_DIR). Returns the absolute path of the written config.ts.
+ * Writes a config file with the given object into the given subdirectory.
+ *
+ * The default is the folder `projectDir` is ON — `sourceFolderInUse`'s answer, which is the legacy
+ * name for a directory already holding one and the folder this release installs into for every
+ * other. A fixture whose subject IS one of the two layouts passes `configSubdir` outright; that is
+ * how `install-layout.test.ts` plants each rung of the preference order.
+ *
+ * Returns the absolute path of the written config.ts.
  */
 export async function writeTestTsConfig(
   projectDir: string,
   config: Record<string, unknown>,
-  configSubdir: string = CLAUDE_SRC_DIR,
+  configSubdir: string = sourceFolderInUse(projectDir, "claude").relName,
 ): Promise<string> {
   const configDir = path.join(projectDir, configSubdir);
   await mkdir(configDir, { recursive: true });
@@ -61,11 +68,27 @@ export async function writeTestTsConfig(
 /**
  * Writes `source` verbatim as the project's `config.ts` — the raw-text sibling of
  * {@link writeTestTsConfig}, for the corruption cases a config object cannot express (a
- * syntax error, a missing default export, a shape the loader schema rejects). Returns the
- * absolute path of the written file.
+ * syntax error, a missing default export, a shape the loader schema rejects) and for the one
+ * config no object renders: an EMPTY file, which is not corrupt. Returns the absolute path of the
+ * written file. _Named `writeCorruptTestConfig` until 2026-09-26, which made the empty-file caller
+ * read as testing corruption._
+ *
+ * `configSubdir` defaults to the folder `projectDir` is ON, as {@link writeTestTsConfig}'s does. It
+ * is a parameter for a fixture whose subject IS one layout — a corrupt config on the legacy folder
+ * and on the new one are separate cases, and only one of them is where a fresh project resolves —
+ * and for the one reader that reads a DIFFERENT file: a marketplace source repo declares its layout
+ * at `<dir>/.agents-inc/config.ts`, with no provider folder, so a fixture for it cannot be written
+ * where an installation's config goes.
  */
-export async function writeCorruptTestConfig(projectDir: string, source: string): Promise<string> {
-  const configDir = path.join(projectDir, CLAUDE_SRC_DIR);
+export async function writeRawTestConfig(
+  projectDir: string,
+  source: string,
+  configSubdir?: string,
+): Promise<string> {
+  const configDir =
+    configSubdir === undefined
+      ? sourceFolderInUse(projectDir, "claude").dir
+      : path.join(projectDir, configSubdir);
   await mkdir(configDir, { recursive: true });
   const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
   await writeFile(configPath, source);

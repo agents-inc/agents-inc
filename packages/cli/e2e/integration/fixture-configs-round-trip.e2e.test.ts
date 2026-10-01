@@ -3,9 +3,24 @@ import { describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { generateConfigSource } from "../../src/cli/lib/configuration/config-writer.js";
 import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
-import { cleanupTempDir, createTempDir, writeProjectConfig } from "../helpers/test-utils.js";
+import { loadInstalledConfig } from "../../src/cli/lib/configuration/project-config.js";
+import {
+  cleanupTempDir,
+  configTsPath,
+  createTempDir,
+  readTestFile,
+  writeProjectConfig,
+} from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { saUnflagged } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
+
+/** A skill the catalogue declares under `web-e2e`, which is the category the control files it in. */
+const CYPRESS_E2E_SKILL = "web-testing-cypress-e2e";
 
 /**
  * Every configuration a fixture writes must be one the CLI would have written.
@@ -29,7 +44,7 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
     const { project, globalHome } = await ProjectBuilder.dualScope();
 
     for (const dir of [project.dir, globalHome.dir]) {
-      const reread = await loadProjectConfigFromDir(dir);
+      const reread = await loadInstalledConfig(dir);
       expect(reread, `no config at ${dir}`).not.toBeNull();
       if (!reread) continue;
 
@@ -37,7 +52,7 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
       expect(
         rewritten,
         `${dir} holds a configuration the CLI would not have written — the fixture and the product disagree about it`,
-      ).toBe(await readConfigSource(dir));
+      ).toBe(await readTestFile(configTsPath(dir)));
     }
 
     await cleanupTempDir(project.dir);
@@ -46,24 +61,23 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
   /** The control: a fixture built from the catalogue's own categories must pass trivially. */
   it("round-trips a config whose stack names each skill's declared category", async () => {
     const dir = await createTempDir();
-    await writeProjectConfig(dir, {
-      name: "declared-categories",
-      skills: [{ id: "web-testing-cypress-e2e", scope: "project", origin: "eject" }],
-      agents: [{ name: "web-developer", scope: "project" }],
-      stack: { "web-developer": { "web-e2e": [{ id: "web-testing-cypress-e2e" }] } },
-    });
+    await writeProjectConfig(
+      dir,
+      buildProjectConfig({
+        name: "declared-categories",
+        skills: buildSkillConfigs([CYPRESS_E2E_SKILL], { scope: "project", origin: "eject" }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        stack: { "web-developer": { "web-e2e": [saUnflagged(CYPRESS_E2E_SKILL)] } },
+      }),
+    );
 
-    const reread = await loadProjectConfigFromDir(dir);
+    const reread = await loadInstalledConfig(dir);
     expect(reread).not.toBeNull();
     if (reread)
-      expect(generateConfigSource(reread.config, matrix)).toBe(await readConfigSource(dir));
+      expect(generateConfigSource(reread.config, matrix)).toBe(
+        await readTestFile(configTsPath(dir)),
+      );
 
     await cleanupTempDir(dir);
   });
 });
-
-async function readConfigSource(dir: string): Promise<string> {
-  const { readFile } = await import("fs/promises");
-  const path = await import("path");
-  return readFile(path.join(dir, ".claude-src", "config.ts"), "utf-8");
-}

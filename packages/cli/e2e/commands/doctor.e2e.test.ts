@@ -1,9 +1,19 @@
 import path from "path";
-import { writeFile, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
-import { EXIT_CODES, DIRS, FILES, STEP_TEXT } from "../pages/constants.js";
-import { createTempDir, cleanupTempDir, writeProjectConfig } from "../helpers/test-utils.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import {
+  cleanupTempDir,
+  createTempDir,
+  writeCorruptConfig,
+  writeProjectConfig,
+} from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
 /**
  * The operational rows whose every check needs a loadable config. `doctor` skips
@@ -51,16 +61,25 @@ describe("doctor command", () => {
 
     // The count, not the word: `toContain("error")` matches any text carrying it,
     // including a skill id or a path.
-    expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 6 passed, 0 warnings, 1 error`);
+    //
+    // It went from 6 to 7 with the Placements Offered row, which is deliberately NOT among the
+    // config-dependent rows above: a directory with no config has nothing configured that no host
+    // can place, so the row answers truthfully rather than standing down. A config that exists and
+    // cannot be PARSED is the case it degrades on, and that is the Config row's finding.
+    expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 7 passed, 0 warnings, 1 error`);
     expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_CREATE_CONFIG);
   });
 
   it("should pass config check with valid config file", async () => {
     tempDir = await createTempDir();
-    await writeProjectConfig(tempDir, {
-      name: "test-project",
-      agents: [{ name: "web-developer", scope: "project" }],
-    });
+    await writeProjectConfig(
+      tempDir,
+      buildProjectConfig({
+        name: "test-project",
+        skills: [],
+        agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+      }),
+    );
 
     const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
@@ -88,12 +107,9 @@ describe("doctor command", () => {
     it("should not crash and should report config error with corrupt config.ts", async () => {
       tempDir = await createTempDir();
 
-      // Manual writeFile: intentionally creating a corrupt config.ts with invalid
-      // JavaScript syntax. writeProjectConfig() generates valid configs, so manual
-      // construction is required to test the error-handling path.
-      const configDir = path.join(tempDir, DIRS.CLAUDE_SRC);
-      await mkdir(configDir, { recursive: true });
-      await writeFile(path.join(configDir, FILES.CONFIG_TS), "export default {{{CORRUPT SYNTAX!!!");
+      // writeProjectConfig() can only emit a config the product would have written, so the
+      // unparseable one goes through the error-path writer instead.
+      await writeCorruptConfig(tempDir, renderUnparseableConfigTs());
 
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
@@ -111,10 +127,14 @@ describe("doctor command", () => {
 
       // Create a "global home" directory with valid .claude-src/config.ts
       const globalHome = path.join(tempDir, "global-home");
-      await writeProjectConfig(globalHome, {
-        name: "global-test",
-        agents: [{ name: "web-developer", scope: "project" }],
-      });
+      await writeProjectConfig(
+        globalHome,
+        buildProjectConfig({
+          name: "global-test",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
+        }),
+      );
 
       // Create a project directory WITHOUT config
       const projectDir = path.join(tempDir, "project");

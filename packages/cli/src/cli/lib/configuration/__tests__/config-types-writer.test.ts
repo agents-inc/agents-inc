@@ -20,6 +20,10 @@ import {
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
+import {
+  readGeneratedUnion,
+  readGeneratedUnionMembers,
+} from "../../__tests__/helpers/generated-types.js";
 import { SKILLS, TEST_CATEGORIES } from "../../__tests__/test-fixtures";
 import {
   EMPTY_MATRIX,
@@ -30,7 +34,8 @@ import {
 } from "../../__tests__/mock-data/mock-matrices";
 import { createMockAgent } from "../../__tests__/factories/agent-factories.js";
 import { AGENT_DEFS } from "../../__tests__/mock-data/mock-agents.js";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { STANDARD_FILES } from "../../../consts";
+import { sourceFolderInUse } from "../../installation/install-layout.js";
 import { generateConfigSource } from "../config-writer";
 import { glob } from "../../../utils/fs";
 import { bytewise } from "../../../utils/string";
@@ -165,8 +170,8 @@ describe("generateConfigTypesSource", () => {
   });
 
   /**
-   * These two interfaces are emitted as literal TEXT into every user's
-   * `.claude-src/config-types.ts`, which is what their own `config.ts` is checked against. A
+   * These two interfaces are emitted as literal TEXT into every user's generated
+   * `config-types.ts`, which is what their own `config.ts` is checked against. A
    * field renamed in the type but not here type-errors the file the CLI just wrote.
    */
   it("declares a skill entry's provenance as origin", () => {
@@ -265,8 +270,8 @@ describe("generateConfigTypesSource", () => {
       "web-framework": { ...TEST_CATEGORIES.framework, exclusive: false },
     });
     const matrix = createMockMatrix(
-      createMockSkill("web-framework-react"),
-      createMockSkill("web-framework-vue-composition-api"),
+      SKILLS.react,
+      SKILLS.vue,
       // Boundary casts: fictional skill IDs for testing multi-line union generation
       createMockSkill("web-framework-original" as SkillId),
       createMockSkill("web-framework-simple" as SkillId),
@@ -286,8 +291,8 @@ describe("generateConfigTypesSource", () => {
       "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },
     });
     const matrix = createMockMatrix(
-      createMockSkill("web-framework-react"),
-      createMockSkill("web-framework-vue-composition-api"),
+      SKILLS.react,
+      SKILLS.vue,
       // Boundary casts: fictional skill IDs for testing multi-line union generation
       createMockSkill("web-framework-original" as SkillId),
       createMockSkill("web-framework-simple" as SkillId),
@@ -493,12 +498,10 @@ describe("generateConfigTypesSource", () => {
         extraSkillIds: ["web-framework-react"],
       });
 
-      const skillStart = source.indexOf("export type SkillId =");
-      const skillEnd = source.indexOf(";", skillStart);
-      const skillSection = source.slice(skillStart, skillEnd);
+      const skillUnion = readGeneratedUnion(source, "SkillId");
 
-      expect(skillSection).not.toContain("// Custom");
-      expect(skillSection).toContain("'web-framework-react'");
+      expect(skillUnion).not.toContain("// Custom");
+      expect(skillUnion).toContain("'web-framework-react'");
     });
 
     it("omits comments when no custom skills exist", () => {
@@ -571,12 +574,10 @@ describe("generateConfigTypesSource", () => {
         extraAgentNames: ["web-developer"],
       });
 
-      const agentStart = source.indexOf("export type AgentName =");
-      const agentEnd = source.indexOf(";", agentStart);
-      const agentSection = source.slice(agentStart, agentEnd);
+      const agentUnion = readGeneratedUnion(source, "AgentName");
 
-      expect(agentSection).not.toContain("// Custom");
-      expect(agentSection).toContain("'web-developer'");
+      expect(agentUnion).not.toContain("// Custom");
+      expect(agentUnion).toContain("'web-developer'");
     });
 
     it("leaves a declared domain out of the custom section when it arrives as an extra", () => {
@@ -584,12 +585,10 @@ describe("generateConfigTypesSource", () => {
       const matrix = createMockMatrix(SKILLS.react, { categories });
       const source = generateConfigTypesSource(matrix, [], [], { extraDomains: ["web"] });
 
-      const domainStart = source.indexOf("export type Domain =");
-      const domainEnd = source.indexOf(";", domainStart);
-      const domainSection = source.slice(domainStart, domainEnd);
+      const domainUnion = readGeneratedUnion(source, "Domain");
 
-      expect(domainSection).not.toContain("// Custom");
-      expect(domainSection).toContain("'web'");
+      expect(domainUnion).not.toContain("// Custom");
+      expect(domainUnion).toContain("'web'");
     });
 
     it("labels nothing custom when the extras name the whole configuration", () => {
@@ -630,14 +629,12 @@ describe("generateConfigTypesSource", () => {
       );
       const source = generateConfigTypesSource(matrix, []);
 
-      const categoryStart = source.indexOf("export type Category =");
-      const categoryEnd = source.indexOf(";", categoryStart);
-      const categorySection = source.slice(categoryStart, categoryEnd);
+      const categoryUnion = readGeneratedUnion(source, "Category");
 
       // Both categories are the catalogue's — it declares them — however custom their skills are.
-      expect(categorySection).not.toContain("// Custom");
-      expect(categorySection).toContain("'acme-deploy'");
-      expect(categorySection).toContain("'web-framework'");
+      expect(categoryUnion).not.toContain("// Custom");
+      expect(categoryUnion).toContain("'acme-deploy'");
+      expect(categoryUnion).toContain("'web-framework'");
     });
 
     it("leaves a declared category out of the custom section when it arrives as an extra", () => {
@@ -650,12 +647,10 @@ describe("generateConfigTypesSource", () => {
         extraCategories: ["web-framework", "web-styling"],
       });
 
-      const categoryStart = source.indexOf("export type Category =");
-      const categoryEnd = source.indexOf(";", categoryStart);
-      const categorySection = source.slice(categoryStart, categoryEnd);
+      const categoryUnion = readGeneratedUnion(source, "Category");
 
-      expect(categorySection).not.toContain("// Custom");
-      expect(categorySection).toContain("'web-framework'");
+      expect(categoryUnion).not.toContain("// Custom");
+      expect(categoryUnion).toContain("'web-framework'");
     });
 
     it("marks a category no declaration covers as custom", () => {
@@ -665,17 +660,16 @@ describe("generateConfigTypesSource", () => {
         extraCategories: ["acme-deploy"],
       });
 
-      const categoryStart = source.indexOf("export type Category =");
-      const categoryEnd = source.indexOf(";", categoryStart);
-      const categorySection = source.slice(categoryStart, categoryEnd);
+      const categoryUnion = readGeneratedUnion(source, "Category");
+      expect(categoryUnion, "the generated types must declare a Category alias").toBeDefined();
 
-      expect(categorySection).toContain("// Custom");
-      expect(categorySection).toContain("// Marketplace");
-      const customIdx = categorySection.indexOf("// Custom");
-      const marketplaceIdx = categorySection.indexOf("// Marketplace");
-      expect(categorySection.indexOf("'acme-deploy'")).toBeGreaterThan(customIdx);
-      expect(categorySection.indexOf("'acme-deploy'")).toBeLessThan(marketplaceIdx);
-      expect(categorySection.indexOf("'web-framework'")).toBeGreaterThan(marketplaceIdx);
+      expect(categoryUnion).toContain("// Custom");
+      expect(categoryUnion).toContain("// Marketplace");
+      const customIdx = categoryUnion!.indexOf("// Custom");
+      const marketplaceIdx = categoryUnion!.indexOf("// Marketplace");
+      expect(categoryUnion!.indexOf("'acme-deploy'")).toBeGreaterThan(customIdx);
+      expect(categoryUnion!.indexOf("'acme-deploy'")).toBeLessThan(marketplaceIdx);
+      expect(categoryUnion!.indexOf("'web-framework'")).toBeGreaterThan(marketplaceIdx);
     });
 
     it("does not mark a domain custom because a custom skill's category carries it", () => {
@@ -698,13 +692,11 @@ describe("generateConfigTypesSource", () => {
       );
       const source = generateConfigTypesSource(matrix, []);
 
-      const domainStart = source.indexOf("export type Domain =");
-      const domainEnd = source.indexOf(";", domainStart);
-      const domainSection = source.slice(domainStart, domainEnd);
+      const domainUnion = readGeneratedUnion(source, "Domain");
 
-      expect(domainSection).not.toContain("// Custom");
-      expect(domainSection).toContain("'devops'");
-      expect(domainSection).toContain("'web'");
+      expect(domainUnion).not.toContain("// Custom");
+      expect(domainUnion).toContain("'devops'");
+      expect(domainUnion).toContain("'web'");
     });
 
     it("treats extra domains as custom", () => {
@@ -712,16 +704,15 @@ describe("generateConfigTypesSource", () => {
       const matrix = createMockMatrix(SKILLS.react, { categories });
       const source = generateConfigTypesSource(matrix, [], [], { extraDomains: ["devops"] });
 
-      const domainStart = source.indexOf("export type Domain =");
-      const domainEnd = source.indexOf(";", domainStart);
-      const domainSection = source.slice(domainStart, domainEnd);
+      const domainUnion = readGeneratedUnion(source, "Domain");
+      expect(domainUnion, "the generated types must declare a Domain alias").toBeDefined();
 
-      expect(domainSection).toContain("// Custom");
-      expect(domainSection).toContain("// Marketplace");
-      const customIdx = domainSection.indexOf("// Custom");
-      const marketplaceIdx = domainSection.indexOf("// Marketplace");
-      expect(domainSection.indexOf("'devops'")).toBeGreaterThan(customIdx);
-      expect(domainSection.indexOf("'devops'")).toBeLessThan(marketplaceIdx);
+      expect(domainUnion).toContain("// Custom");
+      expect(domainUnion).toContain("// Marketplace");
+      const customIdx = domainUnion!.indexOf("// Custom");
+      const marketplaceIdx = domainUnion!.indexOf("// Marketplace");
+      expect(domainUnion!.indexOf("'devops'")).toBeGreaterThan(customIdx);
+      expect(domainUnion!.indexOf("'devops'")).toBeLessThan(marketplaceIdx);
     });
 
     it("does not mark domain as custom if it appears on both custom and non-custom categories", () => {
@@ -745,12 +736,10 @@ describe("generateConfigTypesSource", () => {
       const source = generateConfigTypesSource(matrix, []);
 
       // "web" domain appears on both custom and non-custom categories, so no section comments
-      const domainStart = source.indexOf("export type Domain =");
-      const domainEnd = source.indexOf(";", domainStart);
-      const domainSection = source.slice(domainStart, domainEnd);
+      const domainUnion = readGeneratedUnion(source, "Domain");
 
-      expect(domainSection).not.toContain("// Custom");
-      expect(domainSection).not.toContain("// Marketplace");
+      expect(domainUnion).not.toContain("// Custom");
+      expect(domainUnion).not.toContain("// Marketplace");
     });
 
     it("uses multi-line format when section comments are present even with few members", () => {
@@ -784,8 +773,8 @@ describe("regenerateConfigTypes", () => {
     await cleanupTempDir(tempDir);
   });
 
-  it("writes config-types.ts when .claude-src/ exists", async () => {
-    const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+  it("writes config-types.ts into a source folder that already exists", async () => {
+    const claudeSrcDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(claudeSrcDir, { recursive: true });
 
     const data = makeBackgroundData({
@@ -800,21 +789,28 @@ describe("regenerateConfigTypes", () => {
     expect(content).toContain("'web-framework-react'");
   });
 
-  it("creates .claude-src/ and writes config-types.ts when data is provided", async () => {
-    // When background data is non-null, writeFile creates directories as needed
+  it("creates the source folder and writes config-types.ts when data is provided", async () => {
+    // When background data is non-null, writeFile creates directories as needed. Nothing is on
+    // disk yet, so the folder created is the one a new installation gets — written as a literal
+    // because it is the subject: an assertion importing the constant could not fail when it moved.
     const data = makeBackgroundData({
       "web-framework-react": SKILLS.react,
     });
 
     await regenerateConfigTypes(tempDir, data);
 
-    const configTypesPath = path.join(tempDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS);
+    const configTypesPath = path.join(
+      tempDir,
+      ".agents-inc",
+      "claude",
+      STANDARD_FILES.CONFIG_TYPES_TS,
+    );
     const content = await readFile(configTypesPath, "utf-8");
     expect(content).toContain("'web-framework-react'");
   });
 
   it("includes extra skill IDs in the generated output", async () => {
-    const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    const claudeSrcDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(claudeSrcDir, { recursive: true });
 
     const data = makeBackgroundData({
@@ -832,7 +828,7 @@ describe("regenerateConfigTypes", () => {
   });
 
   it("does not duplicate extra skill IDs already in the matrix", async () => {
-    const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    const claudeSrcDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(claudeSrcDir, { recursive: true });
 
     const data = makeBackgroundData({
@@ -845,14 +841,16 @@ describe("regenerateConfigTypes", () => {
 
     const configTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
-    const matches = content.match(/'web-framework-react'/g);
-    // Should appear in SkillId union only once (plus possibly in other type references)
-    expect(matches).not.toBeNull();
-    expect(matches!.length).toBeGreaterThanOrEqual(1);
+    // The matrix holds SKILLS.react alone, so its one member is the whole union — read as members
+    // of SkillId because the id legitimately appears elsewhere in the file.
+    expect(
+      readGeneratedUnionMembers(content, "SkillId"),
+      "an extra already in the matrix must not be declared twice",
+    ).toStrictEqual(["web-framework-react"]);
   });
 
   it("includes extra agent names in the generated output", async () => {
-    const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    const claudeSrcDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(claudeSrcDir, { recursive: true });
 
     const data = makeBackgroundData({}, ["web-developer"]);
@@ -868,7 +866,7 @@ describe("regenerateConfigTypes", () => {
   });
 
   it("does not duplicate extra agent names already in the data", async () => {
-    const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    const claudeSrcDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(claudeSrcDir, { recursive: true });
 
     const data = makeBackgroundData({}, ["web-developer"]);
@@ -879,13 +877,11 @@ describe("regenerateConfigTypes", () => {
 
     const configTypesPath = path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TYPES_TS);
     const content = await readFile(configTypesPath, "utf-8");
-    // Count occurrences of "web-developer" in the AgentName union section
-    // (may span multiple lines due to section comments)
-    const agentSectionStart = content.indexOf("export type AgentName =");
-    const agentSectionEnd = content.indexOf(";", agentSectionStart);
-    const agentSection = content.slice(agentSectionStart, agentSectionEnd);
-    const matches = agentSection.match(/'web-developer'/g);
-    expect(matches).toHaveLength(1);
+    // Read as members of AgentName alone: SelectedAgentName can list the same name.
+    expect(
+      readGeneratedUnionMembers(content, "AgentName"),
+      "an extra already in the agent data must not be declared twice",
+    ).toStrictEqual(["web-developer"]);
   });
 
   it("propagates errors when background data promise rejects", async () => {
@@ -900,13 +896,13 @@ describe("regenerateConfigTypes", () => {
 describe("generateProjectConfigTypesSource", () => {
   it("generates import statement from global config-types", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: [],
       projectDomains: [],
     });
     expect(source).toContain("// AUTO-GENERATED by agents-inc — DO NOT EDIT");
-    expect(source).toContain("from '../../.claude-src/config-types'");
+    expect(source).toContain("from '../../../.agents-inc/claude/config-types'");
     expect(source).toContain("SkillId as GlobalSkillId");
     expect(source).toContain("AgentName as GlobalAgentName");
     expect(source).toContain("Domain as GlobalDomain");
@@ -915,7 +911,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("extends global types with project-only skill IDs", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: ["acme-deploy-pipeline"],
       projectAgentNames: [],
       projectDomains: [],
@@ -925,7 +921,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("extends global types with project-only agent names", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: ["custom-reviewer"],
       projectDomains: [],
@@ -935,7 +931,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("extends global types with project-only domains", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: [],
       projectDomains: ["devops"],
@@ -945,7 +941,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("uses bare global type when no project members exist", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: [],
       projectDomains: [],
@@ -958,7 +954,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("generates SelectedAgentName for project config with selectedAgentNames", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: ["custom-reviewer", "project-deployer"],
       projectDomains: [],
@@ -971,7 +967,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("generates SelectedAgentName = AgentName for project config without selectedAgentNames", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: [],
       projectDomains: [],
@@ -981,7 +977,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("re-exports GlobalCategory when no project categories exist", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: [],
       projectDomains: [],
@@ -992,7 +988,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("extends GlobalCategory with project-specific categories", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: [],
       projectDomains: [],
@@ -1004,7 +1000,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("includes ProjectConfig interface template", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: [],
       projectAgentNames: [],
       projectDomains: [],
@@ -1015,7 +1011,7 @@ describe("generateProjectConfigTypesSource", () => {
 
   it("sorts multiple project members alphabetically", () => {
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: ["z-custom-tool", "a-custom-tool"],
       projectAgentNames: [],
       projectDomains: [],
@@ -1029,7 +1025,7 @@ describe("generateProjectConfigTypesSource", () => {
     // When writeProjectConfigTypes receives the full config instead of just project split,
     // global-scoped items should appear as explicit union extensions
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: ["web-framework-react", "web-testing-vitest"],
       projectAgentNames: ["web-developer", "web-researcher"],
       projectDomains: ["web"],
@@ -1051,7 +1047,7 @@ describe("generateProjectConfigTypesSource", () => {
     // When the full config includes both global and project-scoped items,
     // all items should appear as explicit union extensions
     const source = generateProjectConfigTypesSource({
-      globalTypesImportPath: "../../.claude-src",
+      globalTypesImportPath: "../../../.agents-inc/claude",
       projectSkillIds: ["web-framework-react", "project-custom-skill"],
       projectAgentNames: ["web-developer", "custom-reviewer"],
       projectDomains: ["web"],
@@ -1092,13 +1088,13 @@ describe("regenerateConfigTypes with global install", () => {
 
   it("generates project-import config-types when global exists", async () => {
     // Create the global config-types.ts so detection succeeds
-    const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
+    const globalClaudeSrc = sourceFolderInUse(globalDir, "claude").dir;
     await mkdir(globalClaudeSrc, { recursive: true });
     const globalTypesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
     await writeFile(globalTypesPath, "// global types");
 
-    // Create project .claude-src/
-    const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
+    // Create the project source folder
+    const projectClaudeSrc = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(projectClaudeSrc, { recursive: true });
 
     const data = makeBackgroundData({
@@ -1119,11 +1115,11 @@ describe("regenerateConfigTypes with global install", () => {
   });
 
   it("includes project-only extras when global exists", async () => {
-    const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
+    const globalClaudeSrc = sourceFolderInUse(globalDir, "claude").dir;
     await mkdir(globalClaudeSrc, { recursive: true });
     await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
-    const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
+    const projectClaudeSrc = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(projectClaudeSrc, { recursive: true });
 
     const data = makeBackgroundData({});
@@ -1143,12 +1139,12 @@ describe("regenerateConfigTypes with global install", () => {
 
   it("narrows SelectedAgentName from the project config's agents", async () => {
     // Create global config-types.ts
-    const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
+    const globalClaudeSrc = sourceFolderInUse(globalDir, "claude").dir;
     await mkdir(globalClaudeSrc, { recursive: true });
     await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
-    // Create project .claude-src/ with a config whose agents are the selection
-    const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
+    // Create the project source folder with a config whose agents are the selection
+    const projectClaudeSrc = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(projectClaudeSrc, { recursive: true });
 
     const configContent = generateConfigSource(
@@ -1172,11 +1168,11 @@ describe("regenerateConfigTypes with global install", () => {
   });
 
   it("narrows ProjectAgentName to project-scoped agents from loaded config", async () => {
-    const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
+    const globalClaudeSrc = sourceFolderInUse(globalDir, "claude").dir;
     await mkdir(globalClaudeSrc, { recursive: true });
     await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
-    const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
+    const projectClaudeSrc = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(projectClaudeSrc, { recursive: true });
 
     // Config with mixed scopes: web-developer global, api-developer project
@@ -1206,11 +1202,11 @@ describe("regenerateConfigTypes with global install", () => {
   });
 
   it("falls back ProjectAgentName to SelectedAgentName when all agents are global", async () => {
-    const globalClaudeSrc = path.join(globalDir, CLAUDE_SRC_DIR);
+    const globalClaudeSrc = sourceFolderInUse(globalDir, "claude").dir;
     await mkdir(globalClaudeSrc, { recursive: true });
     await writeFile(path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS), "// global types");
 
-    const projectClaudeSrc = path.join(tempDir, CLAUDE_SRC_DIR);
+    const projectClaudeSrc = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(projectClaudeSrc, { recursive: true });
 
     // Config with all global-scoped agents (simulates global init)
@@ -1237,27 +1233,12 @@ describe("regenerateConfigTypes with global install", () => {
  * The standalone branch of `regenerateConfigTypes` must narrow its unions to the
  * config sitting beside the file it is writing.
  *
- * This is the branch the `new skill` and `new agent` home legs take: at $HOME
- * `isProjectScope` is false, so no global config-types.ts is looked for and the
- * writer falls straight through to `generateConfigTypesSource(matrix, ...)` —
- * called WITHOUT the `config` argument that exists precisely to narrow the
- * unions. The result is a global `config-types.ts` whose `SkillId` union is the
- * entire marketplace matrix rather than the skills actually installed, so the
- * generated types accept ids that resolve to nothing and stop being the
- * hand-edit guard they exist to be.
- *
  * These specs drive that branch by leaving HOME alone: the setup file points
- * `os.homedir()` at an empty per-file temp directory, so `getGlobalConfigTypesPath()`
- * finds no global config-types.ts, returns null, and the writer takes the identical
- * `else` branch a $HOME call takes. Everything from `generateConfigTypesSource`
- * onward is byte-for-byte the same code.
+ * `os.homedir()` at an empty per-file temp directory, so `getGlobalConfigTypesPath("claude")`
+ * finds no global config-types.ts and returns null.
  *
- * The `extras` assertions are not decoration: `new skill` / `new agent` pass the
- * just-created id as an extra precisely because it is not in the config yet, so
- * narrowing must keep extras and drop only what neither the config nor the
- * extras name.
- *
- * CURRENTLY RED, deliberately.
+ * The `extras` assertions are not decoration: narrowing must keep extras and drop
+ * only what neither the config nor the extras name.
  */
 describe("regenerateConfigTypes — standalone unions narrow to the on-disk config", () => {
   let tempDir: string;
@@ -1270,8 +1251,8 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
     await cleanupTempDir(tempDir);
   });
 
-  it("omits a matrix skill the on-disk config does not install, and keeps the just-created one", async () => {
-    const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+  it("omits a matrix skill the on-disk config does not install, and keeps the one handed in as an extra", async () => {
+    const claudeSrcDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(claudeSrcDir, { recursive: true });
     await writeFile(
       path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
@@ -1298,8 +1279,13 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
       "utf-8",
     );
 
-    expect(content, "an installed skill must stay in the union").toContain("'web-framework-react'");
-    expect(content, "the just-created skill must be added to the union").toContain(
+    // Read from SkillId itself: StackAgentConfig names an installed skill too, so a whole-file
+    // match would hold with the id gone from the union. The absence stays whole-file.
+    const skillUnion = readGeneratedUnion(content, "SkillId");
+    expect(skillUnion, "an installed skill must stay in the union").toContain(
+      "'web-framework-react'",
+    );
+    expect(skillUnion, "a skill handed in as an extra must be added to the union").toContain(
       "'acme-deploy-pipeline'",
     );
     expect(
@@ -1308,8 +1294,8 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
     ).not.toContain("'api-framework-hono'");
   });
 
-  it("omits an agent definition the on-disk config does not install, and keeps the just-created one", async () => {
-    const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
+  it("omits an agent definition the on-disk config does not install, and keeps the one handed in as an extra", async () => {
+    const claudeSrcDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(claudeSrcDir, { recursive: true });
     await writeFile(
       path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
@@ -1335,8 +1321,11 @@ describe("regenerateConfigTypes — standalone unions narrow to the on-disk conf
       "utf-8",
     );
 
-    expect(content, "an installed agent must stay in the union").toContain("'web-developer'");
-    expect(content, "the just-created agent must be added to the union").toContain(
+    // Read from AgentName itself: SelectedAgentName lists an installed agent too, so a whole-file
+    // match would hold with the name gone from the union. The absence stays whole-file.
+    const agentUnion = readGeneratedUnion(content, "AgentName");
+    expect(agentUnion, "an installed agent must stay in the union").toContain("'web-developer'");
+    expect(agentUnion, "an agent handed in as an extra must be added to the union").toContain(
       "'custom-reviewer'",
     );
     expect(

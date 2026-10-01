@@ -3,18 +3,19 @@ import { writeFile } from "fs/promises";
 import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
-  CLI_ROOT,
-  createTempDir,
   cleanupTempDir,
-  fileExists,
+  CLI_ROOT,
+  createLocalSkill,
+  createTempDir,
   directoryExists,
+  fileExists,
   getEjectedTemplatePath,
   listFiles,
   readCompiledAgents,
   readTestFile,
   renderMetadataYaml,
+  sourceFolderIn,
   writeProjectConfig,
-  createLocalSkill,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
 import {
@@ -23,12 +24,17 @@ import {
   metadataFieldsFor,
 } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
-import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
-import type { SkillId } from "../../src/cli/types/index.js";
+import { EXIT_CODES, FILES } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
-const E2E_FIRST_SKILL = "web-testing-e2e-first" as SkillId;
-const E2E_SECOND_SKILL = "web-testing-e2e-second" as SkillId;
+/** Local skills this spec writes itself, so their ids are its own rather than the catalogue's. */
+const E2E_FIRST_SKILL = "web-testing-e2e-first";
+const E2E_SECOND_SKILL = "web-testing-e2e-second";
 
 const CUSTOM_TEMPLATE_MARKER = "<!-- E2E-CUSTOM-TEMPLATE-MARKER -->";
 const CUSTOM_INTRO_MARKER = "E2E-CUSTOM-INTRO-CONTENT";
@@ -104,7 +110,7 @@ describe("template ejection + custom compilation", () => {
       expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Step 2: Verify ejected agent partials exist
-      const ejectedAgentsDir = path.join(projectDir, DIRS.CLAUDE_SRC, "agents");
+      const ejectedAgentsDir = path.join(sourceFolderIn(projectDir), "agents");
       expect(await directoryExists(ejectedAgentsDir)).toBe(true);
 
       // Step 3: Modify web-developer's identity.md at its deterministic ejected
@@ -120,7 +126,7 @@ describe("template ejection + custom compilation", () => {
       await writeFile(webDevIntroPath, `# Custom Web Developer\n\n${CUSTOM_INTRO_MARKER}\n`);
 
       // Step 4: Compile — the ejected agent-partials should take precedence
-      // because loadProjectAgents() reads .claude-src/agents/ and overrides built-in agents
+      // because loadProjectAgents() reads the source folder's agents/ and overrides built-in agents
       const compileResult = await CLI.run(["compile"], { dir: projectDir });
       expect(compileResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
@@ -141,17 +147,20 @@ describe("template ejection + custom compilation", () => {
       const projectDir = path.join(tempDir, "project");
 
       // Create project with multiple skills and agents
-      await writeProjectConfig(projectDir, {
-        name: "multi-skill-test",
-        skills: [
-          { id: E2E_FIRST_SKILL, scope: "project", origin: "eject" },
-          { id: E2E_SECOND_SKILL, scope: "project", origin: "eject" },
-        ],
-        agents: [
-          { name: E2E_AGENT["web-developer"].name, scope: "project" },
-          { name: E2E_AGENT["api-developer"].name, scope: "project" },
-        ],
-      });
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "multi-skill-test",
+          skills: buildSkillConfigs([E2E_FIRST_SKILL, E2E_SECOND_SKILL], {
+            scope: "project",
+            origin: "eject",
+          }),
+          agents: buildAgentConfigs(
+            [E2E_AGENT["web-developer"].name, E2E_AGENT["api-developer"].name],
+            { scope: "project" },
+          ),
+        }),
+      );
 
       await createLocalSkill(projectDir, E2E_FIRST_SKILL, {
         description: "First test skill",
@@ -233,7 +242,7 @@ describe("template ejection + custom compilation", () => {
       expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // Verify the file exists at the exact path createLiquidEngine() checks:
-      // .claude-src/agents/_templates/agent.liquid
+      // <source folder>/agents/_templates/agent.liquid
       await expect({ dir: projectDir }).toHaveEjectedTemplate();
 
       // `eject` copies this file byte-for-byte (`ejectAgentPartials` -> `copy(sourceDir,

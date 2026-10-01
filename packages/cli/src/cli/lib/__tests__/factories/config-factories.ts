@@ -10,6 +10,7 @@ import type { WizardResultV2 } from "../../../components/wizard/wizard";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import type { ResolvedConfig } from "../../configuration/config";
 import type { GateReport } from "../../config-gate/index.js";
+import type { ConfigWriteResult } from "../../operations/index.js";
 import type { TestProjectConfig } from "../fixtures/create-test-source";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { NO_CHANGES } from "../../config-gate/classify.js";
@@ -45,6 +46,24 @@ export function buildGateReport(
     recompile: { ...NOTHING_RECOMPILED, rewrittenCount: propagatedTo.length },
     ...overrides,
   };
+}
+
+/**
+ * What `writeProjectConfig` answers, for a spec that stubs it: a fresh write, not a merge, whose
+ * gate reached nobody.
+ *
+ * `config` and `configPath` have no default, because a command reads both back after the write —
+ * the agent count it reports, the skills it warns are unassigned, the path it names — so a caller
+ * states the config the command will believe it wrote. Typed against `ConfigWriteResult`, which is
+ * the point: when the product retired `filesWritten`, three hand-written results kept returning it
+ * and nothing noticed.
+ */
+export function buildConfigWriteResult(
+  config: ProjectConfig,
+  configPath: string,
+  overrides?: Partial<ConfigWriteResult>,
+): ConfigWriteResult {
+  return { config, configPath, wasMerged: false, propagation: buildGateReport(), ...overrides };
 }
 
 /**

@@ -11,6 +11,7 @@ import type {
   CompileConfig,
   ProjectConfig,
   SkillDefinitionMap,
+  SkillId,
   SkillScope,
 } from "../../types";
 
@@ -118,26 +119,35 @@ export function filterExcludedEntries(config: ProjectConfig): ProjectConfig {
   const activeSkills = config.skills.filter((s) => !s.excluded);
   const activeAgents = config.agents.filter((a) => !a.excluded);
 
-  // Also remove excluded skill refs from stack assignments. A config with no stack keeps
-  // none — the key stays absent rather than becoming an explicit `undefined`.
+  // A config with no stack keeps none — the key stays absent rather than becoming an
+  // explicit `undefined`.
   const filteredStack =
     config.stack === undefined
       ? {}
-      : {
-          stack: Object.fromEntries(
-            typedEntries(config.stack).map(([agentName, agentStack]) => [
-              agentName,
-              Object.fromEntries(
-                typedEntries(agentStack).map(([category, assignments]) => [
-                  category,
-                  assignments.filter((a) => !excludedIds.has(a.id)),
-                ]),
-              ),
-            ]),
-          ),
-        };
+      : { stack: withoutExcludedAssignments(config.stack, excludedIds) };
 
   return { ...config, skills: activeSkills, agents: activeAgents, ...filteredStack };
+}
+
+/**
+ * The stack with every excluded skill's assignment taken out. Each agent and category keeps its
+ * key, even where that leaves a category with no assignments.
+ */
+function withoutExcludedAssignments(
+  stack: NonNullable<ProjectConfig["stack"]>,
+  excludedIds: ReadonlySet<SkillId>,
+): NonNullable<ProjectConfig["stack"]> {
+  return Object.fromEntries(
+    typedEntries(stack).map(([agentName, agentStack]) => [
+      agentName,
+      Object.fromEntries(
+        typedEntries(agentStack).map(([category, assignments]) => [
+          category,
+          assignments.filter((assignment) => !excludedIds.has(assignment.id)),
+        ]),
+      ),
+    ]),
+  );
 }
 
 export async function recompileAgents(
@@ -179,22 +189,10 @@ export async function recompileAgents(
   const pluginSkills: SkillDefinitionMap =
     providedSkills ?? (await discoverAllPluginSkills(projectDir ?? pluginDir));
 
-  const allConfigAgents = filteredConfig ? buildCompileAgents(filteredConfig, allAgents) : {};
-
-  // Restrict to only the agents we're compiling (agentNames).
-  // buildCompileAgents returns entries for ALL agents in the config, but when
-  // scopeFilter is active, we only want the agents matching that scope.
-  // Without this filter, a project pass would compile global agents without
-  // their stack (since the project config omits global agent stack entries)
-  // and overwrite correctly compiled global agent files.
-  const [knownAgents, missingAgents] = partition(agentNames, (name) =>
-    Boolean(allConfigAgents[name] || allAgents[name]),
-  );
-  const missingWarnings = missingAgents.map(
-    (name) => `Agent "${name}" not found in source definitions`,
-  );
-  const configAgents = typedFromEntries<AgentName, CompileAgentConfig>(
-    knownAgents.map((name) => [name, allConfigAgents[name] ?? {}]),
+  const { configAgents, missingWarnings } = compileEntriesFor(
+    agentNames,
+    filteredConfig,
+    allAgents,
   );
 
   const compileConfig: CompileConfig = {
@@ -214,7 +212,38 @@ export async function recompileAgents(
     sourcePath,
     engine,
     projectAgentsDir: agentsDir,
+    // The same root this pass loaded its config from, so the provider that decides the FORMAT
+    // and the provider that decided the configuration are read off one installation.
+    projectDir: configDir,
     ...(options.agentScopeMap !== undefined && { agentScopeMap: options.agentScopeMap }),
   });
   return buildRecompileResult(outcomes, missingWarnings);
+}
+
+/**
+ * The compile entries for exactly the agents this pass compiles, and a warning for each named
+ * agent that neither the config nor the source defines.
+ *
+ * `buildCompileAgents` returns entries for ALL agents in the config, but when scopeFilter is
+ * active, we only want the agents matching that scope. Without this restriction, a project pass
+ * would compile global agents without their stack (since the project config omits global agent
+ * stack entries) and overwrite correctly compiled global agent files.
+ */
+function compileEntriesFor(
+  agentNames: AgentName[],
+  config: ProjectConfig | null,
+  allAgents: Partial<Record<AgentName, AgentDefinition>>,
+): { configAgents: Partial<Record<AgentName, CompileAgentConfig>>; missingWarnings: string[] } {
+  const allConfigAgents = config ? buildCompileAgents(config, allAgents) : {};
+
+  const [knownAgents, missingAgents] = partition(agentNames, (name) =>
+    Boolean(allConfigAgents[name] || allAgents[name]),
+  );
+
+  return {
+    configAgents: typedFromEntries<AgentName, CompileAgentConfig>(
+      knownAgents.map((name) => [name, allConfigAgents[name] ?? {}]),
+    ),
+    missingWarnings: missingAgents.map((name) => `Agent "${name}" not found in source definitions`),
+  };
 }

@@ -9,14 +9,18 @@ import {
   configTsPath,
   configTypesTsPath,
   createTempDir,
-  directoryExists,
   fileExists,
   listFiles,
   readTestFile,
   writeConfigTypes,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import {
+  renderSchemaViolatingConfigTs,
+  renderUnparseableConfigTs,
+} from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import "../matchers/setup.js";
 
 /**
@@ -32,19 +36,13 @@ import "../matchers/setup.js";
  */
 
 /** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
-const SYNTAX_ERROR = `export default {{{ not valid typescript`;
+const SYNTAX_ERROR = renderUnparseableConfigTs();
 
 /** A file that parses cleanly but exports nothing, so the loader gets no config object at all. */
 const NO_DEFAULT_EXPORT = "";
 
 /** Valid TypeScript whose shape the loader schema rejects (`skills` must be an array). */
-const SCHEMA_VIOLATION = [
-  `export default {`,
-  `  name: "schema-violation-fixture",`,
-  `  skills: "nope",`,
-  `  agents: [],`,
-  `};`,
-].join("\n");
+const SCHEMA_VIOLATION = renderSchemaViolatingConfigTs();
 
 describe("edit with an unreadable config", () => {
   let tempDir: string;
@@ -159,7 +157,10 @@ describe("edit with an unreadable config", () => {
 
     expect(await fileExists(configTsPath(project.dir))).toBe(false);
     expect(await fileExists(configTypesTsPath(project.dir))).toBe(false);
-    expect(await directoryExists(path.join(project.dir, DIRS.CLAUDE_SRC))).toBe(false);
+    await expectNoSourceFolder(
+      project.dir,
+      "uninstall removed the manifest it could not read, and left no source folder behind",
+    );
     await expect(project).toHaveNoLocalSkills();
   });
 

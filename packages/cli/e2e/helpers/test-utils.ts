@@ -5,13 +5,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   PLUGIN_MANIFEST_DIR,
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../src/cli/consts.js";
+import { providerInUse, sourceFolderInUse } from "../../src/cli/lib/installation/install-layout.js";
 import { stampProvenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
-import { loadProjectConfigFromDir } from "../../src/cli/lib/configuration/project-config.js";
+import { loadInstalledConfig } from "../../src/cli/lib/configuration/project-config.js";
 import { matrix } from "../../src/cli/lib/matrix/matrix-provider.js";
 import {
   generateConfigSource,
@@ -32,6 +32,10 @@ import {
 } from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
 import { compactedStackIn } from "../../src/cli/lib/__tests__/helpers/compacted-stack.js";
 import { parseCompiledAgentSections } from "../../src/cli/lib/__tests__/helpers/compiled-agent-sections.js";
+import {
+  normalizeInstallTree,
+  readInstallTree,
+} from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
 import {
   cleanupTempDir,
@@ -48,7 +52,7 @@ import type {
   ProjectConfig,
 } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import { e2eSkillId } from "../pages/constants.js";
+import { DIRS, e2eSkillId } from "../pages/constants.js";
 import type { InitWizard } from "../pages/wizards/init-wizard.js";
 import type { WizardResult } from "../pages/wizard-result.js";
 
@@ -71,6 +75,28 @@ export const MONOREPO_ROOT = path.resolve(CLI_ROOT, "../..");
 
 /** Absolute path to the built binary (requires `bun run build` first) */
 export const BIN_RUN = path.join(CLI_ROOT, "bin", "run.js");
+
+/**
+ * The source folder a scope is ON, resolved the way the product resolves it.
+ *
+ * Every helper below that has to name a file inside a source folder asks this rather than naming
+ * one of the two spellings. That is what lets a fixture on the legacy name and a fixture this
+ * release created be described by the SAME helper: `sourceFolderInUse` prefers whichever folder
+ * holds a config and falls back to the folder a new installation is created in, so a helper built
+ * on it answers before the install exists and goes on answering after it.
+ *
+ * A fixture whose subject IS one of the two layouts must not go through here — it names the folder
+ * outright, through {@link writeProjectConfigIn} or `DIRS.CLAUDE_SRC` / `DIRS.SOURCE_CLAUDE`. A
+ * resolver-routed helper cannot state which layout it found, so it can neither seed nor pin one.
+ */
+export function sourceFolderIn(dir: string): string {
+  return sourceFolderInUse(dir, providerInUse(dir)).dir;
+}
+
+/** The same folder as a user writes it, relative to `dir`: `.claude-src`, or `.agents-inc/claude`. */
+export function sourceFolderRelIn(dir: string): string {
+  return sourceFolderInUse(dir, providerInUse(dir)).relName;
+}
 
 /**
  * The environment that stops a spawned CLI leaving a background writer behind it.
@@ -135,6 +161,7 @@ export type {
   FixtureSkillConfig,
   FixtureStackAgentConfig,
 } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+export type { InstallTree } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 
 export async function createTempDir(): Promise<string> {
   return createTempDirBase(E2E_TEMP_PREFIX);
@@ -171,6 +198,18 @@ export async function createIsolatedClaudeHome(): Promise<IsolatedClaudeHome> {
 /** The Claude CLI config tree belonging to a HOME. */
 export function claudeConfigDir(home: string): string {
   return path.join(home, CLAUDE_DIR);
+}
+
+/**
+ * The Codex CLI state tree belonging to a HOME — what `CODEX_HOME` names.
+ *
+ * {@link claudeConfigDir}'s twin, for the same reason: `CODEX_HOME` beats `HOME` in Codex, so a
+ * developer's exported value sends every Codex call a spawned binary makes into their real
+ * installation, past the fake HOME entirely. Every door pins it to this after the caller's own
+ * environment, and `e2e/fixtures/codex.ts` hands it to the Codex binary it starts directly.
+ */
+export function codexHome(home: string): string {
+  return path.join(home, DIRS.CODEX);
 }
 
 /** Wait for the given number of milliseconds. Shared delay utility for PTY-based tests. */
@@ -234,7 +273,9 @@ export {
   fileExists,
   normalizeConfigPreservingOrder,
   normalizeGlobalConfig,
+  normalizeInstallTree,
   parseCompiledAgentSections,
+  readInstallTree,
   renderAgentMd,
   renderAgentYaml,
   renderConfigTs,
@@ -263,7 +304,7 @@ export {
  */
 export async function recordInstallSource(baseDirs: string[], source: string): Promise<void> {
   for (const baseDir of baseDirs) {
-    const loaded = await loadProjectConfigFromDir(baseDir);
+    const loaded = await loadInstalledConfig(baseDir);
     if (!loaded) continue;
     if (loaded.config.marketplace === undefined) {
       const { name = "e2e-project", ...rest } = loaded.config;
@@ -278,8 +319,13 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
 }
 
 /**
- * Write a `config.ts` into the `.claude-src/` of the given base dir, **through the product's own
+ * Write a `config.ts` into the source folder the given base dir is ON, **through the product's own
  * writer**.
+ *
+ * The folder comes from {@link sourceFolderIn} rather than from a constant, so a fixture built on
+ * the legacy name is seeded there and everything else is seeded where this release installs. A
+ * fixture whose subject IS one of the two layouts names it outright with
+ * {@link writeProjectConfigIn}.
  *
  * `generateConfigSource` rather than `renderConfigTs`, and that is the whole point: a fixture that
  * renders its own JSON writes a file shape the CLI never produces, and every assertion over it is
@@ -304,12 +350,37 @@ export async function writeProjectConfig(
   config: Partial<FixtureProjectConfig> & Pick<FixtureProjectConfig, "name">,
   options?: ConfigSourceOptions,
 ): Promise<void> {
+  await writeProjectConfigIn(baseDir, sourceFolderRelIn(baseDir), config, options);
+}
+
+/**
+ * The same config, written into a source folder the caller NAMES.
+ *
+ * Two folders are live while the rename is in flight — the one every installation made before it
+ * carries, and the one a new install is created in — and a fixture that can only seed one of them
+ * can only describe one of the two states the resolver has to handle. The folder is a parameter
+ * rather than a second hard-coded constant because which one a spec wants is the spec's subject:
+ * `sourceFolder` is a relative name as a user writes it, one segment or two.
+ *
+ * Callers pass `DIRS.SOURCE_CLAUDE` for an install on the new layout and `DIRS.CLAUDE_SRC` for one
+ * that predates the rename. {@link writeProjectConfig} is NEITHER of those: it binds the folder
+ * `sourceFolderRelIn` RESOLVES for its `baseDir`, so a fixture seeded through it lands wherever
+ * that base dir already is. Come through here only when which of the two folders gets the config
+ * is the spec's own claim.
+ */
+export async function writeProjectConfigIn(
+  baseDir: string,
+  sourceFolder: string,
+  config: Partial<FixtureProjectConfig> & Pick<FixtureProjectConfig, "name">,
+  options?: ConfigSourceOptions,
+): Promise<void> {
   const resolved: FixtureProjectConfig = { skills: [], agents: [], ...config };
-  const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
+  const configDir = path.join(baseDir, sourceFolder);
   await mkdir(configDir, { recursive: true });
   const source = generateConfigSource(resolved as ProjectConfig, matrix, options);
-  await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
-  await refuseUnreachableConfig(baseDir, source, options);
+  const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
+  await writeFile(configPath, source);
+  await refuseUnreachableConfig(baseDir, configPath, source, options);
 }
 
 /**
@@ -330,14 +401,25 @@ export async function writeProjectConfig(
  * asserted a compiled sub-agent body no CLI-written configuration can produce.
  *
  * Measured at zero cost: the full E2E suite runs in the same 318s with this on as without it.
+ *
+ * **It asks its question of the file it WROTE, and the product's own answer is what says which
+ * that is.** A scope with both source folders on disk has a config under each name and the
+ * resolver reads exactly one of them, so a guard that re-read "this scope's config" after seeding
+ * the other one compared two different files and refused the fixture for the difference between
+ * them — reporting a normalisation nobody had performed, with the other file's `name` quoted back
+ * as the drift. Where the file just written is not the one the product reads, there is nothing to
+ * read it back through and this proves nothing about it; the SPEC seeding a rival folder is
+ * asserting that the product ignores it, which is a claim about the resolver rather than about
+ * the writer.
  */
 async function refuseUnreachableConfig(
   baseDir: string,
+  configPath: string,
   source: string,
   options: ConfigSourceOptions | undefined,
 ): Promise<void> {
-  const reread = await loadProjectConfigFromDir(baseDir);
-  if (!reread) return;
+  const reread = await loadInstalledConfig(baseDir);
+  if (!reread || reread.configPath !== configPath) return;
 
   const again = generateConfigSource(reread.config, matrix, options);
   if (again === source) return;
@@ -351,12 +433,17 @@ async function refuseUnreachableConfig(
 }
 
 /**
- * Write a minimal config-types.ts stub to the .claude-src/ directory of the given
- * base dir. `writeProjectConfig` emits only config.ts; tests that assert on the
- * companion config-types.ts (e.g. uninstall manifest removal) seed it with this.
+ * Write a minimal config-types.ts stub to the source folder the given base dir is ON.
+ * `writeProjectConfig` emits only config.ts; tests that assert on the companion config-types.ts
+ * (e.g. uninstall manifest removal) seed it with this.
+ *
+ * `sourceFolder` is still a parameter, for the fixture that is building one layout on purpose.
  */
-export async function writeConfigTypes(baseDir: string): Promise<void> {
-  const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
+export async function writeConfigTypes(
+  baseDir: string,
+  sourceFolder: string = sourceFolderRelIn(baseDir),
+): Promise<void> {
+  const configDir = path.join(baseDir, sourceFolder);
   await mkdir(configDir, { recursive: true });
   await writeFile(
     path.join(configDir, STANDARD_FILES.CONFIG_TYPES_TS),
@@ -365,13 +452,19 @@ export async function writeConfigTypes(baseDir: string): Promise<void> {
 }
 
 /**
- * Write arbitrary text as `.claude-src/config.ts` — the error-path counterpart of
- * {@link writeProjectConfig}, which can only emit a well-formed config. Used to reproduce a config
- * file that EXISTS but cannot be loaded (syntax error, no default export, schema violation), the
- * state the loader reports as `ConfigLoadError` rather than as a missing file.
+ * Write arbitrary text as the config.ts of whichever source folder `baseDir` is on — the
+ * error-path counterpart of {@link writeProjectConfig}, which can only emit a well-formed config.
+ * Used to reproduce a config file that EXISTS but cannot be loaded (syntax error, no default
+ * export, schema violation), the state the loader reports as `ConfigLoadError` rather than as a
+ * missing file.
+ *
+ * The folder is resolved rather than named, because writing an unloadable config at a folder the
+ * CLI does not read turns every one of those specs into the MISSING-file case while their names
+ * and their assertions go on saying "corrupt" — a whole file of specs that pass having exercised
+ * the other branch.
  */
 export async function writeCorruptConfig(baseDir: string, source: string): Promise<void> {
-  const configDir = path.join(baseDir, CLAUDE_SRC_DIR);
+  const configDir = sourceFolderIn(baseDir);
   await mkdir(configDir, { recursive: true });
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
 }
@@ -413,7 +506,8 @@ export function stripAnsi(text: string): string {
  * Claude CLI's own config override, it BEATS `HOME`, and a developer's exported
  * value would send every `claude plugin` call this command makes into their real
  * installation. A value disagreeing with the effective HOME is the bug, not a
- * configuration.
+ * configuration. `CODEX_HOME` is pinned beside it for the same reason — Codex's own state
+ * override, which beats `HOME` in the same way.
  */
 export async function runCLI(
   args: string[],
@@ -440,6 +534,7 @@ export async function runCLI(
         ...options?.env,
         HOME: home,
         CLAUDE_CONFIG_DIR: claudeConfigDir(home),
+        CODEX_HOME: codexHome(home),
       },
     });
     return {
@@ -527,18 +622,49 @@ export async function readPluginVersions(
   return Object.fromEntries(entries);
 }
 
+/** What a fixture says about the local skill it is planting. */
+type LocalSkillOptions = { description?: string; body?: string; metadata?: string };
+
 /**
  * Creates a local skill directory under `<projectDir>/.claude/skills/<skillId>/`
  * with SKILL.md and optional metadata.yaml.
  *
  * Returns the absolute path to the skill directory.
+ *
+ * Claude's layout, by its `.claude/skills` name: a fixture on another provider's layout — where
+ * an ejected PROJECT skill is `<repo>/.agents/skills` rather than this — passes that directory to
+ * {@link createLocalSkillIn} instead of composing `.claude/skills` for every host.
  */
 export async function createLocalSkill(
   projectDir: string,
   skillId: string,
-  options?: { description?: string; body?: string; metadata?: string },
+  options?: LocalSkillOptions,
 ): Promise<string> {
-  const skillDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId);
+  return createLocalSkillIn(
+    path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS),
+    skillId,
+    options,
+  );
+}
+
+/**
+ * The same skill, in a skills directory the caller NAMES.
+ *
+ * Every byte {@link createLocalSkill} writes, with the one thing that is not a fact about the
+ * skill — where the host reads it — moved to the call site. `createLocalSkill` composes
+ * `.claude/skills` and therefore describes a Claude installation only, which is the same
+ * host-blindness the product's own read path was carrying until the layout answered it: on Codex
+ * an ejected project skill lives at `<repo>/.agents/skills/<id>/`, so a fixture that reaches for
+ * the Claude helper plants a skill no run will discover and reads as an empty installation.
+ *
+ * Returns the absolute path to the skill directory.
+ */
+export async function createLocalSkillIn(
+  skillsDir: string,
+  skillId: string,
+  options?: LocalSkillOptions,
+): Promise<string> {
+  const skillDir = path.join(skillsDir, skillId);
   await mkdir(skillDir, { recursive: true });
 
   const description = options?.description ?? `A test skill`;
@@ -563,7 +689,10 @@ type AgentFileOptions = {
    * newlines themselves.
    */
   body?: string;
-  /** Prefix the body with a `---\nname: <agentName>\n---\n` block. */
+  /**
+   * Prefix the body with a `---\nname: <agentName>\ndescription: Test <agentName> agent\n---\n`
+   * block.
+   */
   frontmatter?: boolean;
   /**
    * Stamp the provenance marker the compiler writes into every agent it produces. Frontmatter
@@ -601,7 +730,7 @@ export async function writeAgentFile(
 }
 
 /**
- * Writes minimal compiled-agent stubs (frontmatter with name only) into
+ * Writes minimal compiled-agent stubs (frontmatter carrying `name` and `description`) into
  * `<projectDir>/.claude/agents/`, as left behind by a prior compile.
  */
 export async function writeAgentStubs(projectDir: string, agents: string[]): Promise<void> {
@@ -722,14 +851,17 @@ export async function readTreeSnapshot(dir: string): Promise<Record<string, Tree
   return Object.fromEntries(snapshot);
 }
 
-/** Returns the path to config.ts in a project or global scope dir. */
+/**
+ * Returns the path to config.ts in a project or global scope dir, inside whichever source folder
+ * that scope is on — the same answer `getProjectConfigPath` gives the product.
+ */
 export function configTsPath(dir: string): string {
-  return path.join(dir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+  return path.join(sourceFolderIn(dir), STANDARD_FILES.CONFIG_TS);
 }
 
-/** Returns the path to config-types.ts in a project or global scope dir. */
+/** Returns the path to config-types.ts in a project or global scope dir, resolved the same way. */
 export function configTypesTsPath(dir: string): string {
-  return path.join(dir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS);
+  return path.join(sourceFolderIn(dir), STANDARD_FILES.CONFIG_TYPES_TS);
 }
 
 /**
@@ -738,7 +870,7 @@ export function configTypesTsPath(dir: string): string {
  * a test bug — never silently substitute an empty config.
  */
 export async function loadConfigOrFail(dir: string): Promise<ProjectConfig> {
-  const loaded = await loadProjectConfigFromDir(dir);
+  const loaded = await loadInstalledConfig(dir);
   if (!loaded) {
     throw new Error(`config.ts must exist and be loadable at ${dir}`);
   }
@@ -804,7 +936,7 @@ export async function injectMarketplaceIntoConfig(
   baseDir: string,
   marketplaceName: string,
 ): Promise<void> {
-  const configPath = path.join(baseDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+  const configPath = configTsPath(baseDir);
   const content = await readFile(configPath, "utf-8");
 
   const marker = "export default {";
@@ -825,7 +957,7 @@ export async function injectMarketplaceIntoConfig(
 
 /** Returns the path to the ejected agent.liquid template in a project. */
 export function getEjectedTemplatePath(projectDir: string): string {
-  return path.join(projectDir, CLAUDE_SRC_DIR, "agents", "_templates", "agent.liquid");
+  return path.join(sourceFolderIn(projectDir), "agents", "_templates", "agent.liquid");
 }
 
 // The list an E2E spec runs against the real binary, held against every message in `src/cli/`
@@ -837,6 +969,17 @@ export { flattenCliOutput } from "../../src/cli/lib/__tests__/helpers/flatten-cl
 export { createE2ESource, E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "./create-e2e-source.js";
 export type { E2ESource } from "./create-e2e-source.js";
 
+/**
+ * The Claude host's own functions, which the harness drives DIRECTLY rather than through
+ * `PluginHost`.
+ *
+ * That is deliberate and is the one place the seam is stepped around: the suite registers and
+ * sweeps marketplaces of its own, and `claudePluginMarketplaceList` and
+ * `claudePluginMarketplaceRemove` are on no host interface — no command removes a marketplace,
+ * because a marketplace is user-level state shared across every project under one HOME. A spec
+ * about what the CLI does through the seam uses `hostFor("claude")` instead;
+ * `e2e/smoke/plugin-host-contract.smoke.test.ts` is the one that does.
+ */
 export {
   isClaudeCLIAvailable,
   claudePluginMarketplaceAdd,
@@ -844,6 +987,6 @@ export {
   claudePluginMarketplaceRemove,
   claudePluginInstall,
   claudePluginUninstall,
-  execCommand,
-} from "../../src/cli/utils/exec.js";
-export type { ClaudeConfigOptions, MarketplaceInfo } from "../../src/cli/utils/exec.js";
+} from "../../src/cli/lib/hosts/claude-host.js";
+export type { ClaudeConfigOptions, MarketplaceInfo } from "../../src/cli/lib/hosts/claude-host.js";
+export { execCommand } from "../../src/cli/utils/exec.js";

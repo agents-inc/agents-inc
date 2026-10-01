@@ -3,7 +3,6 @@ import path from "path";
 
 import chalk from "chalk";
 import { Flags } from "@oclif/core";
-import { render } from "../components/render.js";
 
 import { difference, indexBy, partition } from "remeda";
 
@@ -32,7 +31,7 @@ import {
   removeCompiledAgents,
   type RemoveCompiledAgentsOptions,
 } from "../lib/operations/index.js";
-import { Spinner } from "../components/common/spinner.js";
+import { awaitUnderSpinner } from "../components/common/spinner.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import {
   type EjectCopyResult,
@@ -41,7 +40,6 @@ import {
   ejectCopyFailureError,
   executeMigration,
   isHomeDirectory,
-  installBaseDir,
   resolveInstallPaths,
   INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
@@ -51,18 +49,14 @@ import {
   normalizeProjectPath,
 } from "../lib/config-gate/index.js";
 import { matrix, getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
-import { type AuthoritativeScope, loadProjectConfigFromDir } from "../lib/configuration/index.js";
+import { type AuthoritativeScope, loadInstalledConfig } from "../lib/configuration/index.js";
 import {
   activeAgentNames,
   activeAgentScopeMap,
   isActiveAt,
 } from "../lib/configuration/scope-predicates.js";
 import type { SourceLoadResult } from "../lib/loading/index.js";
-import {
-  discoverAllPluginSkills,
-  buildMarketplacePluginRef,
-  toClaudePluginScope,
-} from "../lib/plugins/index.js";
+import { discoverAllPluginSkills, buildMarketplacePluginRef } from "../lib/plugins/index.js";
 import {
   deleteLocalSkill,
   migrateLocalSkillScope,
@@ -95,7 +89,13 @@ import {
   type RemovalPlanSection,
 } from "../components/common/removal-plan-confirm.js";
 import { promptConfirm } from "../components/common/prompt-confirm.js";
-import { claudePluginInstall, claudePluginUninstall } from "../utils/exec.js";
+import { hostAt } from "../lib/hosts/host-for.js";
+import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
+import {
+  providerFlag,
+  providerNamedBy,
+  refuseAnAmbiguousInstallation,
+} from "../lib/installation/provider-flag.js";
 import { openUrl } from "../utils/open-url.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { type StartupMessage } from "../utils/logger.js";
@@ -192,6 +192,21 @@ function formatAgentScopeChangeLine(
 /** The ` ([P] → [G])` half both lines above end with, in the tags the wizard writes scopes as. */
 function scopeArrow(change: ScopeChange): string {
   return ` (${formatScopeTag(change.from)} \u2192 ${formatScopeTag(change.to)})`;
+}
+
+/**
+ * A `~ subject (kind: before \u2192 after)` line, for the changes that rewrite a setting rather than
+ * move a file.
+ *
+ * Both halves are spelled out rather than only the new one: a retune leaves nothing on disk for
+ * the person reading this to compare against, so the line is the only account there is of what it
+ * replaced.
+ */
+function formatValueChangeLine(subject: string, change: ValueChange, kind: string): string {
+  return (
+    chalk.hex(CLI_COLORS.WARNING)(`  ~ ${subject}`) +
+    chalk.hex(CLI_COLORS.NEUTRAL)(` (${kind}: ${change.from} \u2192 ${change.to})`)
+  );
 }
 
 /**
@@ -480,6 +495,7 @@ export default class Edit extends BaseCommand {
       default: false,
       hidden: true,
     }),
+    provider: providerFlag(),
   };
 
   /**
@@ -507,10 +523,19 @@ export default class Edit extends BaseCommand {
     // what says so: `edit` refuses an empty directory on every other path.
     if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from);
 
+    // Beside the config-readability refusal and for the same reason: past this point the wizard
+    // has copied skills and installed plugins, so a run that cannot tell WHICH installation it is
+    // editing has to stop while the answer still costs nothing.
+    await refuseAnAmbiguousInstallation(cwd, "edit", providerNamedBy(flags.provider), (message) =>
+      this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
+    );
+
     // Before anything renders: a config that cannot be read is recreated, not edited, and
     // refusing here is what keeps the refusal clean — past this point the wizard has already
     // copied skills and installed plugins by the time a config read fails.
     await this.ensureConfigReadable(cwd);
+    await this.refuseUnofferablePlacements(cwd);
+    await this.settleSourceLayoutBeforeWriting(cwd);
 
     // The browser is the other editor, so it replaces the wizard rather than preceding it —
     // above the source load, which exists to fill screens this run will never paint.
@@ -841,13 +866,26 @@ export default class Edit extends BaseCommand {
    */
   private async otherRegisteredProjects(editRoot: string): Promise<string[]> {
     try {
-      const global = await loadProjectConfigFromDir(os.homedir());
+      const global = await loadInstalledConfig(os.homedir());
       const here = normalizeProjectPath(editRoot);
       return (global?.config.projects ?? []).filter((projectDir) => projectDir !== here);
     } catch (error) {
       this.warn(`Could not tell which projects share this install: ${getErrorMessage(error)}`);
       return [];
     }
+  }
+
+  /**
+   * Refuses a configuration whose own host cannot place what it asks for, before the wizard runs.
+   *
+   * `compile` asks the same question of the same roster and `update` asks it too. `edit` is the
+   * command that REWRITES the file, so letting it through would mean a user curating a
+   * configuration no command will act on — and then saving it back, with the unofferable row
+   * carried forward because nothing on the edit path had any reason to drop it.
+   */
+  private async refuseUnofferablePlacements(cwd: string): Promise<void> {
+    const [finding] = await unofferablePlacementsFound(cwd);
+    if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
   /**
@@ -862,6 +900,22 @@ export default class Edit extends BaseCommand {
    * Nothing on disk is touched. A configuration is read, not rewritten, so a run that changed
    * anything here would be editing the project on the way to offering to edit it.
    */
+  private async openInEditor(projectDir: string): Promise<void> {
+    const prepared = await seedPayloadForInstallation(projectDir);
+    if (!prepared.ok) {
+      this.error(prepared.error, { exit: EXIT_CODES.ERROR });
+    }
+
+    this.log(`Opening ${prepared.skills} skill(s) across ${prepared.agents} sub-agent(s)...`);
+
+    const published = await publishSeedConfig(prepared.payload);
+    if (!published.ok) {
+      this.error(published.error, { exit: EXIT_CODES.ERROR });
+    }
+
+    await this.handToBrowser(published.id);
+  }
+
   /**
    * An id somebody shared, opened rather than applied.
    *
@@ -883,22 +937,6 @@ export default class Edit extends BaseCommand {
 
     const opened = await openUrl(url);
     if (!opened.ok) this.warn(opened.error);
-  }
-
-  private async openInEditor(projectDir: string): Promise<void> {
-    const prepared = await seedPayloadForInstallation(projectDir);
-    if (!prepared.ok) {
-      this.error(prepared.error, { exit: EXIT_CODES.ERROR });
-    }
-
-    this.log(`Opening ${prepared.skills} skill(s) across ${prepared.agents} sub-agent(s)...`);
-
-    const published = await publishSeedConfig(prepared.payload);
-    if (!published.ok) {
-      this.error(published.error, { exit: EXIT_CODES.ERROR });
-    }
-
-    await this.handToBrowser(published.id);
   }
 
   /**
@@ -926,23 +964,11 @@ export default class Edit extends BaseCommand {
   }
 
   /**
-   * The load below, behind a spinner that comes down whichever way the await ends.
-   *
-   * The cleanup is a `finally` because all three of `loadContext`'s refusals are raised
-   * while this spinner is mounted, and oclif would otherwise paint its error under an Ink
-   * tree still repainting over it. Never a `catch`: the throw reaches oclif untouched, or
-   * both the error rendering and the pinned exit codes change with it.
+   * The load below, behind a spinner that comes down whichever way the await ends — all
+   * three of `loadContext`'s refusals are raised while it is mounted.
    */
   private async loadContextUnderSpinner(): Promise<EditContext> {
-    const { unmount, clear: clearSpinner } = render(
-      <Spinner label={STATUS_MESSAGES.LOADING_SKILLS} />,
-    );
-    try {
-      return await this.loadContext();
-    } finally {
-      clearSpinner();
-      unmount();
-    }
+    return awaitUnderSpinner(STATUS_MESSAGES.LOADING_SKILLS, () => this.loadContext());
   }
 
   private async loadContext(): Promise<EditContext> {
@@ -1137,6 +1163,7 @@ export default class Edit extends BaseCommand {
       agentScopeChanges,
       dualScopeSkillTransitions,
       dualScopeAgentTransitions,
+      tuningChanges,
     } = changes;
 
     this.log(`\n${chalk.hex(CLI_COLORS.WHITE).bold("Changes:")}`);
@@ -1182,6 +1209,11 @@ export default class Edit extends BaseCommand {
     for (const [agentName, change] of agentScopeChanges) {
       this.log(formatAgentScopeChangeLine(agentName, change, dualScopeAgentTransitions));
     }
+    // A retune moves no file, so without a line of its own it is a run that reports a heading and
+    // nothing under it — which reads as the command having found nothing to do.
+    for (const [agentName, change] of tuningChanges) {
+      this.log(formatValueChangeLine(agentName, change, "agent"));
+    }
     this.log("");
   }
 
@@ -1210,7 +1242,11 @@ export default class Edit extends BaseCommand {
       // local copy. Runs before `executeMigration` so an unresolvable marketplace exits
       // while the ejected working copies are still intact. Eject-side plugin uninstalls
       // are diagnostic-only, so only plugin-install work demands this.
-      await this.requireMarketplaceOrExit(context.sourceResult, "migrate skills to plugin mode");
+      await this.requireMarketplaceOrExit(
+        context.sourceResult,
+        "migrate skills to plugin mode",
+        hostAt(editRoot.dir),
+      );
       // The install itself happens inside `executeMigration`, which deletes each skill's
       // working copy the moment that skill's plugin is registered — so the banner is
       // announced here and the outcome reported below, through the same surface `init`
@@ -1303,6 +1339,7 @@ export default class Edit extends BaseCommand {
     const marketplace = await this.requireMarketplaceOrExit(
       context.sourceResult,
       "migrate plugin skill scopes",
+      hostAt(editRoot.dir),
     );
 
     const pluginScopeResult = await migratePluginSkillScopes(
@@ -1338,8 +1375,7 @@ export default class Edit extends BaseCommand {
       }
       if (change.from === EJECT_SOURCE) {
         const oldSkill = activeOldSkills.find((s) => s.id === skillId);
-        const deleteDir = installBaseDir(editRoot.dir, oldSkill?.scope);
-        await deleteLocalSkill(deleteDir, skillId);
+        await deleteLocalSkill(editRoot.dir, skillId, oldSkill?.scope);
       }
     }
   }
@@ -1366,6 +1402,7 @@ export default class Edit extends BaseCommand {
     const marketplace = await this.requireMarketplaceOrExit(
       context.sourceResult,
       "install or uninstall plugin skills",
+      hostAt(editRoot.dir),
     );
 
     if (addedPluginSkills.length > 0) {
@@ -1426,15 +1463,14 @@ export default class Edit extends BaseCommand {
     const { removedSkills } = changes;
 
     // A fully-deselected eject-mode skill is a genuine uninstall — its copied directory under
-    // .claude/skills/<id>/ must be removed from the scope it was installed at. Plugin
+    // the host's skills directory must be removed from the scope it was installed at. Plugin
     // removals are handled by applyPluginChanges; source-change (eject->marketplace) deletions by
     // applySourceChanges. deleteLocalSkill is a no-op when the directory is absent.
     for (const skillId of removedSkills) {
       const oldSkill = activeOldSkills.find((s) => s.id === skillId);
       if (oldSkill?.origin !== EJECT_SOURCE) continue;
 
-      const deleteDir = installBaseDir(editRoot.dir, oldSkill.scope);
-      await deleteLocalSkill(deleteDir, skillId);
+      await deleteLocalSkill(editRoot.dir, skillId, oldSkill.scope);
     }
   }
 
@@ -1577,7 +1613,22 @@ export type ConfigChanges = {
   dualScopeSkillTransitions: Set<SkillId>;
   /** Agent equivalent of `dualScopeSkillTransitions`. */
   dualScopeAgentTransitions: Set<AgentName>;
+  /**
+   * Sub-agents whose TUNING changed — the model it runs on and the effort it reasons at — where
+   * the roster itself is unchanged.
+   *
+   * Its own field rather than folded into `addedAgents`, because nothing downstream acts on it:
+   * a retuned sub-agent installs nothing, uninstalls nothing and moves no file. It is recompiled,
+   * which `writeConfigAndCompile` already does for the whole roster. What it changes is whether
+   * this run believes it has anything to do at all — and a shared configuration whose entire
+   * content is a retune used to read as no change, so the command reported none, wrote nothing,
+   * and left both ends believing the retune had travelled.
+   */
+  tuningChanges: Map<AgentName, ValueChange>;
 };
+
+/** One field's before and after, as the summary prints them. */
+type ValueChange = { from: string; to: string };
 
 /** Full (tombstone-inclusive) entry lists used to classify dual-scope transitions. */
 type FullScopeEntries = {
@@ -1647,7 +1698,33 @@ export function detectConfigChanges(
       fullEntries?.oldAgents ?? [],
       (a) => a.name,
     ),
+    tuningChanges: detectPropertyChanges(
+      wizardResult.agentConfigs,
+      oldAgentsByName,
+      (a) => a.name,
+      describeTuning,
+    ),
   };
+}
+
+/** A sub-agent that names no model and no effort, which is most of them. */
+const RESTING_TUNING = "defaults";
+
+/**
+ * One sub-agent's tuning as a single line: everything about it that is neither its identity nor
+ * its scope, in the order a reader meets it.
+ *
+ * Rendered to a sentence and compared as one, rather than field by field, because the diff and
+ * the summary want the same answer — and a diff that can see a change it has no words for is a
+ * change the person applying it is told nothing about.
+ */
+function describeTuning(agent: AgentScopeConfig): string {
+  const settings = [
+    agent.model === undefined ? undefined : `model ${agent.model}`,
+    agent.effort === undefined ? undefined : `effort ${agent.effort}`,
+  ].filter((setting) => setting !== undefined);
+
+  return settings.length === 0 ? RESTING_TUNING : settings.join(", ");
 }
 
 function detectPropertyChanges<T, K extends string, V>(
@@ -1751,7 +1828,8 @@ function hasAnyChanges(changes: ConfigChanges): boolean {
     changes.removedAgents.length > 0 ||
     changes.sourceChanges.size > 0 ||
     changes.scopeChanges.size > 0 ||
-    changes.agentScopeChanges.size > 0
+    changes.agentScopeChanges.size > 0 ||
+    changes.tuningChanges.size > 0
   );
 }
 
@@ -1768,6 +1846,7 @@ export async function migratePluginSkillScopes(
   marketplace: string,
   projectDir: string,
 ): Promise<PluginScopeMigrationResult> {
+  const host = hostAt(projectDir);
   const migrated: SkillId[] = [];
   const failed: PluginScopeMigrationResult["failed"] = [];
 
@@ -1777,7 +1856,6 @@ export async function migratePluginSkillScopes(
       continue;
     }
 
-    const newPluginScope = toClaudePluginScope(change.to);
     const pluginRef = buildMarketplacePluginRef(skillId, marketplace);
 
     try {
@@ -1785,9 +1863,9 @@ export async function migratePluginSkillScopes(
       // The global plugin must remain for other projects.
       // project→global: uninstall the project-scope registration, install global.
       if (change.from === "project") {
-        await claudePluginUninstall(pluginRef, "project", projectDir);
+        await host.uninstallPlugin(pluginRef, "project", projectDir);
       }
-      await claudePluginInstall(pluginRef, newPluginScope, projectDir);
+      await host.installPlugin(pluginRef, change.to, projectDir);
       migrated.push(skillId);
     } catch (error) {
       failed.push({ id: skillId, error: getErrorMessage(error) });

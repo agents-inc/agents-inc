@@ -26,7 +26,7 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  * formats in the same `.claude/agents/<name>.md`.
  *
  * Pre-D-217 the install path applied `installMode` at the whole-agent level
- * via `compileAgentForPlugin`'s 5th arg, so a mixed-mode agent got either
+ * via `compileAgentForHost`'s 5th arg, so a mixed-mode agent got either
  * all-plugin form OR all-bare form — never both. This breaks Claude Code's
  * plugin resolver when the agent reaches into a plugin-installed skill but
  * the frontmatter says bare id.

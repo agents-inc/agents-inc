@@ -15,7 +15,6 @@ import {
   cleanupTempDir,
   configTsPath,
   configTypesTsPath,
-  directoryExists,
   fileExists,
   listFiles,
   loadConfigOrFail,
@@ -25,7 +24,8 @@ import {
   writeAgentFile,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 
 /**
  * `uninstall` from an installation this suite actually made.
@@ -141,7 +141,7 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       // The project half is gone on every surface.
       await expectCleanUninstall(projectDir, { removeConfig: true });
       expect(await fileExists(configTypesTsPath(projectDir))).toBe(false);
-      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE_SRC))).toBe(false);
+      await expectNoSourceFolder(projectDir, "the project half is gone on every surface");
 
       // The global half is untouched on every surface. Byte comparisons, not
       // existence checks: a rewrite that kept the files but changed what they
@@ -210,7 +210,10 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       // the command tolerates the fault instead of aborting.
       expect(await fileExists(configTsPath(fakeHome))).toBe(false);
       expect(await fileExists(configTypesTsPath(fakeHome))).toBe(false);
-      expect(await directoryExists(path.join(fakeHome, DIRS.CLAUDE_SRC))).toBe(false);
+      await expectNoSourceFolder(
+        fakeHome,
+        "the manifest goes even when uninstall tolerates a fault, so nothing of it is left",
+      );
       await expect({ dir: fakeHome }).toHaveNoLocalSkills();
 
       // And so do the compiled agents, which the config is no longer needed to name: `init`

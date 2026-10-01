@@ -9,6 +9,7 @@ import {
   createTempDir,
   directoryExists,
   fileExists,
+  flattenCliOutput,
   listFiles,
   readTestFile,
   renderMetadataYaml,
@@ -19,9 +20,18 @@ import {
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  renderConfigTsWithoutDefaultExport,
+  renderUnparseableConfigTs,
+} from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
- * D-273 — a corrupt `.claude-src/config.ts` (a file that exists but cannot be
+ * D-273 — a corrupt `config.ts` (a file that exists but cannot be
  * loaded/parsed) must not let `cc compile` run.
  *
  * Before the fix, `loadProjectConfigFromDir` collapsed BOTH "file missing" and
@@ -40,29 +50,25 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 const SKILL_ID = E2E_SKILL.react.id;
 
-/** Config body with the `export default` removed — a valid-TS file that exports nothing. */
-const MISSING_EXPORT_DEFAULT = [
-  `const config = {`,
-  `  name: "corrupt-repro",`,
-  `  skills: [{ id: "${SKILL_ID}", scope: "global", origin: "eject" }],`,
-  `  agents: [{ name: "web-developer", scope: "global" }],`,
-  `};`,
-  `// the \`export default config;\` line was removed to reproduce the corruption`,
-].join("\n");
+/** The valid global install every case seeds, before the case corrupts it. */
+const GLOBAL_INSTALL = buildProjectConfig({
+  name: "corrupt-config-fixture",
+  skills: buildSkillConfigs([SKILL_ID], { scope: "global", origin: "eject" }),
+  agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+});
+
+/** That install with its `export default` removed — a valid-TS file that exports nothing. */
+const MISSING_EXPORT_DEFAULT = renderConfigTsWithoutDefaultExport(GLOBAL_INSTALL);
 
 /** A genuine TypeScript syntax error — the loader throws while evaluating it. */
-const SYNTAX_ERROR = `export default {{{ not valid typescript`;
+const SYNTAX_ERROR = renderUnparseableConfigTs();
 
 /**
  * Seed a valid global install (config + discoverable local skill) under
  * `fakeHome`, then leave the config ready to be corrupted by the caller.
  */
 async function seedGlobalInstall(fakeHome: string): Promise<void> {
-  await writeProjectConfig(fakeHome, {
-    name: "corrupt-config-fixture",
-    skills: [{ id: SKILL_ID, scope: "global", origin: "eject" }],
-    agents: [{ name: "web-developer", scope: "global" }],
-  });
+  await writeProjectConfig(fakeHome, GLOBAL_INSTALL);
   await createLocalSkill(fakeHome, SKILL_ID, {
     description: "Global local skill so the compile pass has a skill to discover",
     metadata: renderMetadataYaml({
@@ -95,9 +101,13 @@ describe("compile with a corrupt config", () => {
     expect(exitCode, `compile must reject a corrupt config; output:\n${combined}`).toBe(
       EXIT_CODES.ERROR,
     );
-    // The error must name the offending file so the user can fix it.
-    expect(combined).toContain(configTsPath(fakeHome));
-    expect(combined).toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
+    // The error must name the offending file so the user can fix it. Flattened first: oclif wraps
+    // at the terminal width and prefixes each continuation with ` › `, and the folder rename made
+    // the path long enough to push "could not be loaded" across a line break — a passing
+    // assertion turned red by the WRAP rather than by the message.
+    const flattened = flattenCliOutput(combined);
+    expect(flattened).toContain(configTsPath(fakeHome));
+    expect(flattened).toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
     // It must NOT claim success.
     expect(combined).not.toContain(STEP_TEXT.COMPILE_COMPLETE);
   });
@@ -140,7 +150,7 @@ describe("compile with a corrupt config", () => {
     expect(exitCode, `compile must reject a corrupt project config; output:\n${combined}`).toBe(
       EXIT_CODES.ERROR,
     );
-    expect(combined).toContain(configTsPath(projectDir));
+    expect(flattenCliOutput(combined)).toContain(configTsPath(projectDir));
     expect(combined).not.toContain(STEP_TEXT.COMPILE_COMPLETE);
 
     // No agents written to the project scope.

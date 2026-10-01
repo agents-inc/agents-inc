@@ -11,6 +11,7 @@ import {
   writeScopedFromWizard,
   type GateReport,
 } from "../../config-gate/index.js";
+import { providerInUse } from "../../installation/install-layout.js";
 import { loadAgentDefs, type AgentDefs } from "./load-agent-defs.js";
 import { ensureDir } from "../../../utils/fs.js";
 import type { ProjectConfig } from "../../../types/index.js";
@@ -48,7 +49,6 @@ export type ConfigWriteResult = {
   configPath: string;
   wasMerged: boolean;
   existingConfigPath?: string;
-  filesWritten: number;
   /**
    * What the gated write did: what moved in the global config, which registered
    * projects it fanned out to, and the recompile it drove in them. The caller
@@ -93,7 +93,10 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
   const isProjectContext = !isHomeDirectory(projectDir);
 
   if (isProjectContext) {
-    await ensureBlankPair();
+    // The blank global pair belongs to the installation THIS project is on: a project
+    // inherits only from the global of its own provider, so creating the other provider's
+    // pair would leave the one it actually reads absent.
+    await ensureBlankPair(providerInUse(projectDir));
   }
 
   const propagation = await writeScopedFromWizard({
@@ -118,7 +121,6 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     ...(mergeResult.existingConfigPath !== undefined && {
       existingConfigPath: mergeResult.existingConfigPath,
     }),
-    filesWritten: isProjectContext ? 4 : 2,
     propagation,
   };
 }

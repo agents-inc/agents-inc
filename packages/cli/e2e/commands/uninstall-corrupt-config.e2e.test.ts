@@ -11,7 +11,6 @@ import {
   configTypesTsPath,
   createLocalSkill,
   createTempDir,
-  directoryExists,
   fileExists,
   readTestFile,
   writeAgentFile,
@@ -20,7 +19,17 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  renderSchemaViolatingConfigTs,
+  renderUnparseableConfigTs,
+} from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import "../matchers/setup.js";
 
 /**
@@ -35,19 +44,13 @@ import "../matchers/setup.js";
  */
 
 /** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
-const SYNTAX_ERROR = `export default {{{ not valid typescript`;
+const SYNTAX_ERROR = renderUnparseableConfigTs();
 
 /** A file that parses cleanly but exports nothing, so the loader gets no config object at all. */
 const NO_DEFAULT_EXPORT = "";
 
 /** Valid TypeScript whose shape the loader schema rejects (`skills` must be an array). */
-const SCHEMA_VIOLATION = [
-  `export default {`,
-  `  name: "schema-violation-fixture",`,
-  `  skills: "nope",`,
-  `  agents: [],`,
-  `};`,
-].join("\n");
+const SCHEMA_VIOLATION = renderSchemaViolatingConfigTs();
 
 describe("uninstall with an unreadable config", () => {
   let tempDir: string;
@@ -94,7 +97,10 @@ describe("uninstall with an unreadable config", () => {
 
     expect(await fileExists(configTsPath(project.dir))).toBe(false);
     expect(await fileExists(configTypesTsPath(project.dir))).toBe(false);
-    expect(await directoryExists(path.join(project.dir, DIRS.CLAUDE_SRC))).toBe(false);
+    await expectNoSourceFolder(
+      project.dir,
+      "uninstall removed the manifest it could not read, and left no source folder behind",
+    );
     await expect(project).toHaveNoLocalSkills();
   }
 
@@ -209,11 +215,14 @@ describe("uninstall with an unreadable config", () => {
 
     await writeConfigTypes(globalHome);
     await writeCorruptConfig(globalHome, SYNTAX_ERROR);
-    await writeProjectConfig(otherProject, {
-      name: "bystander-project",
-      skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
-      agents: [{ name: "web-developer", scope: "global" }],
-    });
+    await writeProjectConfig(
+      otherProject,
+      buildProjectConfig({
+        name: "bystander-project",
+        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
+        agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
+      }),
+    );
     const otherConfigBefore = await readTestFile(configTsPath(otherProject));
 
     const { exitCode, output } = await CLI.run(
@@ -228,7 +237,10 @@ describe("uninstall with an unreadable config", () => {
 
     expect(await fileExists(configTsPath(globalHome))).toBe(false);
     expect(await fileExists(configTypesTsPath(globalHome))).toBe(false);
-    expect(await directoryExists(path.join(globalHome, DIRS.CLAUDE_SRC))).toBe(false);
+    await expectNoSourceFolder(
+      globalHome,
+      "the global uninstall removed the manifest it could not read, and left no source folder behind",
+    );
 
     // No registry could be read, so nothing may be reported as pruned and the bystander project's
     // config must come out byte-identical.
