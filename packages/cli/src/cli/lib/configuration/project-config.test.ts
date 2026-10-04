@@ -8,7 +8,7 @@ import {
   validateProjectConfig,
 } from "./project-config";
 import { generateProjectConfigFromSkills } from "./config-generator";
-import { generateConfigSource } from "./config-writer";
+import { generateBlankGlobalConfigSource, generateConfigSource } from "./config-writer";
 import type { AgentName } from "../../types";
 import { initializeMatrix, matrix } from "../matrix/matrix-provider";
 import { setVerbose } from "../../utils/logger";
@@ -25,6 +25,7 @@ import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { SINGLE_REACT_MATRIX, WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { STANDARD_FILES } from "../../consts";
+import { blankGlobalConfig } from "@workspace/compile/global-config";
 import { getProjectConfigPath } from "../installation/install-base-dir.js";
 import { sourceFolderInUse } from "../installation/install-layout.js";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
@@ -172,6 +173,21 @@ describe("project-config", () => {
 
       expect(result).not.toBeNull();
       expect(result!.config).toStrictEqual(inputConfig);
+    });
+
+    /**
+     * The blank global pair `ensureBlankPair` writes is what a project install on a clean machine
+     * merges its global half into, and the editor's output preview has no file to read it from —
+     * so it starts from `blankGlobalConfig()` instead. The two are one claim only while loading
+     * the template answers exactly that object.
+     */
+    it("should load the blank global config template as the blank global config", async () => {
+      await writeRawTestConfig(tempDir, generateBlankGlobalConfigSource());
+
+      const result = await loadProjectConfig(tempDir);
+
+      expect(result).not.toBeNull();
+      expect(result!.config).toStrictEqual(blankGlobalConfig());
     });
 
     it("should throw for a config file that exists but is unparseable", async () => {

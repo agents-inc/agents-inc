@@ -20,10 +20,10 @@ const MARKETPLACE_NAME = "acme";
 
 /**
  * The names no marketplace may publish under. Spelled out rather than imported:
- * the rule is these three strings, and a test that read the module's own list
+ * the rule is these four strings, and a test that read the module's own list
  * would agree with any list it grew.
  */
-const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local"] as const;
+const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local", "eject"] as const;
 
 /** Every file the published guide promises a marketplace directory holds. */
 const PROMISED_FILES = [

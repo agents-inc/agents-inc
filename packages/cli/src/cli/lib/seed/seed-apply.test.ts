@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { reconcileSharedConfig, type KeptFromRoundTrip } from "./seed-apply";
+import {
+  holdInstalledGlobal,
+  installPlanLines,
+  notInstalledGlobally,
+  reconcileSharedConfig,
+  restoreInstalledGlobal,
+  withUnplaceableAssignees,
+  type InstalledGlobal,
+  type KeptFromRoundTrip,
+} from "./seed-apply";
 import { seedToWizardResult } from "./seed-to-wizard";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import {
@@ -11,10 +20,15 @@ import {
 import { buildSeedPayload, buildSeedSkill } from "../__tests__/factories/seed-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
-import { REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX } from "../__tests__/mock-data/mock-matrices.js";
+import {
+  CATEGORY_EXCLUSIVITY_MATRIX,
+  HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX,
+  HEALTH_AUDIT_UNIVERSAL_IN_OPEN_MATRIX,
+  REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+} from "../__tests__/mock-data/mock-matrices.js";
 import { SKILLS } from "../__tests__/test-fixtures.js";
 
-import type { SkillId } from "../../types/index.js";
+import type { MergedSkillsMatrix, SkillId } from "../../types/index.js";
 
 /**
  * What `edit --from` may not remove, and what it therefore has to say.
@@ -28,11 +42,10 @@ import type { SkillId } from "../../types/index.js";
  * payload asked for that skill, so its absence from the decode is this catalogue's limit rather
  * than an instruction.
  *
- * SCOPE IS NOT ONE OF THEM. A globally installed entry is removable through `edit --from`, from
- * a project as well as from the home directory: the command already shows what it takes away and
- * a project run additionally says which other projects that reaches, so the user removing it has
- * chosen to. What this module decides is only what a removal may never be INFERRED from, and an
- * entry's scope infers nothing — which is why `reconcileSharedConfig` takes no authority word.
+ * Scope is not one of them HERE, which is why `reconcileSharedConfig` takes no authority word and a
+ * global entry the payload omits stays in its removal set. From a project the global install is
+ * put back whole afterwards, by `restoreInstalledGlobal` — a project run only ADDS to the global
+ * install — and its own describe block below is where that is held.
  *
  * Both reasons are put BACK into the decoded result rather than merely excused at the config
  * writer. `authoritativeScope` decides whether the WRITER preserves a row; it is not the
@@ -52,6 +65,10 @@ const NOTHING_KEPT: KeptFromRoundTrip = { authoredSkillIds: [], unplaceableSkill
 const REACT = SKILLS.react.id;
 const ZUSTAND = SKILLS.zustand.id;
 const HONO = SKILLS.hono.id;
+const PINIA = SKILLS.pinia.id;
+const VUE = SKILLS.vue.id;
+const SCSS = SKILLS.scss.id;
+const TAILWIND = SKILLS.tailwind.id;
 const WEB_DEV = "web-developer";
 const API_DEV = "api-developer";
 
@@ -74,6 +91,32 @@ function payloadFor(skillId: SkillId, scope: "project" | "global" = "project") {
 function decodedFor(skillId: SkillId, scope: "project" | "global" = "project") {
   return seedToWizardResult(payloadFor(skillId, scope), REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX)
     .result;
+}
+
+/**
+ * {@link decodedFor}, against a catalogue that declares which of its categories hold one skill —
+ * the one the reconcile is then asked about, so the matrix is named rather than defaulted.
+ */
+function decodedAgainst(skillId: SkillId, catalogue: MergedSkillsMatrix) {
+  return seedToWizardResult(payloadFor(skillId), catalogue).result;
+}
+
+/**
+ * Tailwind and SCSS on the one sub-agent, decoded against a catalogue carrying Tailwind alone — so
+ * SCSS is the id the configuration names and this catalogue cannot place. Returned whole, for the
+ * reason {@link decodedAlsoNaming} gives.
+ */
+function decodedAlsoNamingScss(catalogue: MergedSkillsMatrix) {
+  return seedToWizardResult(
+    buildSeedPayload({
+      skills: {
+        [TAILWIND]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+        [SCSS]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+      },
+      agents: { [WEB_DEV]: { scope: "project" } },
+    }),
+    catalogue,
+  );
 }
 
 /**
@@ -135,10 +178,9 @@ describe("reconcileSharedConfig", () => {
         unplaceable: new Set(),
       });
 
-      // Scope buys an entry nothing here. `edit --from` states a whole roster and the person
-      // applying it is shown what goes, so a global entry the payload omits is an omission
-      // somebody made rather than one this module has to second-guess. What the SCOPE decides
-      // is who else the removal reaches, which the confirm says and this does not.
+      // Scope buys an entry nothing HERE: this module answers authorship and placement only.
+      // From a project the global install is put back whole afterwards, by
+      // `restoreInstalledGlobal`, so the removal set this leaves is not the one `edit` acts on.
       expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
       expect(kept).toStrictEqual(NOTHING_KEPT);
     });
@@ -160,7 +202,7 @@ describe("reconcileSharedConfig", () => {
       });
 
       // The sub-agent mirror, and the whole of it: authorship is a property of a skill
-      // directory, so with scope gone there is nothing left that can keep a sub-agent.
+      // directory, so with scope answered elsewhere there is nothing here that can keep one.
       expect(result.agentConfigs).toStrictEqual(decodedFor(REACT).agentConfigs);
       expect(result.selectedAgents).toStrictEqual([WEB_DEV]);
       expect(kept).toStrictEqual(NOTHING_KEPT);
@@ -381,6 +423,123 @@ describe("reconcileSharedConfig", () => {
       });
     });
 
+    it("joins a kept skill written here to the payload's own row under a category that holds several", () => {
+      // Declared open by this matrix. `createMockCategory` makes a category exclusive unless told
+      // otherwise, so a category this spec does not declare open holds one skill.
+      initializeMatrix(CATEGORY_EXCLUSIVITY_MATRIX);
+      const installed = buildProjectConfig({
+        skills: buildSkillConfigs([SCSS, TAILWIND], { scope: "project" }),
+        agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
+        stack: { [WEB_DEV]: { "web-styling": [sa(SCSS), sa(TAILWIND)] } },
+      });
+
+      const { result, kept } = reconcileSharedConfig({
+        decoded: decodedAgainst(SCSS, CATEGORY_EXCLUSIVITY_MATRIX),
+        installed,
+        authoredHere: new Set<SkillId>([TAILWIND]),
+        unplaceable: new Set(),
+      });
+
+      // The subject guard: the kept skill is kept for authorship, so its row is the one carried.
+      expect(kept.authoredSkillIds).toStrictEqual([TAILWIND]);
+      // The payload assigns SCSS to this sub-agent and the user's own skill sits in the same
+      // category. A kept row that REPLACES the category's array leaves SCSS installed and loaded
+      // by nobody, which the plan never said; joined, both stay assigned, the payload's first.
+      expect(result.assignedStack).toStrictEqual({
+        [WEB_DEV]: { "web-styling": [sa(SCSS), sa(TAILWIND)] },
+      });
+    });
+
+    it("joins a kept skill this catalogue cannot place to the payload's own row under a category that holds several", () => {
+      initializeMatrix(HEALTH_AUDIT_UNIVERSAL_IN_OPEN_MATRIX);
+      const installed = buildProjectConfig({
+        skills: buildSkillConfigs([TAILWIND, SCSS], { scope: "project" }),
+        agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
+        stack: { [WEB_DEV]: { "web-styling": [sa(TAILWIND), sa(SCSS)] } },
+      });
+      const { result: decoded, skippedSkillIds } = decodedAlsoNamingScss(
+        HEALTH_AUDIT_UNIVERSAL_IN_OPEN_MATRIX,
+      );
+      // The subject guard: the matrix carries Tailwind and not SCSS, so the decode places one
+      // and skips the other.
+      expect(skippedSkillIds).toStrictEqual([SCSS]);
+
+      const { result, kept } = reconcileSharedConfig({
+        decoded,
+        installed,
+        authoredHere: new Set(),
+        unplaceable: new Set(skippedSkillIds),
+      });
+
+      expect(kept.unplaceableSkillIds).toStrictEqual([SCSS]);
+      // The same join for the catalogue's reason: the payload named both skills on this
+      // sub-agent, and keeping the one it could not place must not cost it the one it did.
+      expect(result.assignedStack).toStrictEqual({
+        [WEB_DEV]: { "web-styling": [sa(TAILWIND), sa(SCSS)] },
+      });
+    });
+
+    it("gives a category that holds one skill to the payload's own, and keeps the skill written here unassigned there", () => {
+      initializeMatrix(CATEGORY_EXCLUSIVITY_MATRIX);
+      // The user swapped React for their own framework skill, which is the row installed.
+      const installed = buildProjectConfig({
+        skills: buildSkillConfigs([REACT, VUE], { scope: "project" }),
+        agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
+        stack: { [WEB_DEV]: { "web-framework": [sa(VUE)] } },
+      });
+
+      const { result, kept } = reconcileSharedConfig({
+        decoded: decodedAgainst(REACT, CATEGORY_EXCLUSIVITY_MATRIX),
+        installed,
+        authoredHere: new Set<SkillId>([VUE]),
+        unplaceable: new Set(),
+      });
+
+      // Kept, files and entry both: nothing about a slot makes the user's own skill this run's
+      // to remove.
+      expect(kept.authoredSkillIds).toStrictEqual([VUE]);
+      expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT, VUE]);
+      // The category holds one skill, and the payload names React for it. Joined, the row holds
+      // two, which the config writer refuses — after the question, with the removals already
+      // made. The payload's skill takes the slot, and the kept one is assigned nowhere in it.
+      expect(
+        result.assignedStack,
+        "a kept row must not join a category that holds one skill and the payload already fills",
+      ).toStrictEqual({
+        [WEB_DEV]: { "web-framework": [sa(REACT)] },
+      });
+    });
+
+    it("gives a category that holds one skill to the payload's own, and keeps the skill it cannot place unassigned there", () => {
+      initializeMatrix(HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX);
+      const installed = buildProjectConfig({
+        skills: buildSkillConfigs([TAILWIND, SCSS], { scope: "project" }),
+        agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
+        stack: { [WEB_DEV]: { "web-styling": [sa(SCSS)] } },
+      });
+      const { result: decoded, skippedSkillIds } = decodedAlsoNamingScss(
+        HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX,
+      );
+      expect(skippedSkillIds).toStrictEqual([SCSS]);
+
+      const { result, kept } = reconcileSharedConfig({
+        decoded,
+        installed,
+        authoredHere: new Set(),
+        unplaceable: new Set(skippedSkillIds),
+      });
+
+      expect(kept.unplaceableSkillIds).toStrictEqual([SCSS]);
+      expect(result.skills.map((skill) => skill.id)).toStrictEqual([TAILWIND, SCSS]);
+      // The same slot for the catalogue's reason: the skill this catalogue could place takes it.
+      expect(
+        result.assignedStack,
+        "a kept row must not join a category that holds one skill and the payload already fills",
+      ).toStrictEqual({
+        [WEB_DEV]: { "web-styling": [sa(TAILWIND)] },
+      });
+    });
+
     it("drops a kept skill's row under a sub-agent this configuration removes", () => {
       const installed = buildProjectConfig({
         skills: buildSkillConfigs([REACT, ZUSTAND], { scope: "project" }),
@@ -485,5 +644,300 @@ describe("reconcileSharedConfig", () => {
       // with the one row this reconcile happens to know about.
       expect(result.assignedStack).toBeUndefined();
     });
+  });
+});
+
+/**
+ * A sub-agent the decode left out only because the one skill carrying it in was skipped. The
+ * payload named it, so a destructive apply keeps it — and one the payload did not name, or switched
+ * off, it does not.
+ */
+describe("withUnplaceableAssignees", () => {
+  beforeEach(() => {
+    initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
+  });
+
+  /** React on web-developer, and the unplaceable id alone on api-developer. */
+  const installed = buildProjectConfig({
+    skills: buildSkillConfigs([REACT, UNPLACEABLE], { scope: "project" }),
+    agents: buildAgentConfigs([WEB_DEV, API_DEV], { scope: "project" }),
+    stack: {
+      [WEB_DEV]: { "web-framework": [sa(REACT)] },
+      [API_DEV]: { "web-testing": [sa(UNPLACEABLE)] },
+    },
+  });
+
+  /** React on web-developer, the unplaceable id on whichever sub-agents are named. */
+  function payloadAssigningUnplaceableTo(
+    agentNames: string[],
+    apiDeveloper: { on?: boolean } = {},
+  ) {
+    return buildSeedPayload({
+      skills: {
+        [REACT]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+        [UNPLACEABLE]: buildSeedSkill({
+          scope: "project",
+          assignments: Object.fromEntries(agentNames.map((name) => [name, "lazy"])),
+        }),
+      },
+      agents: {
+        [WEB_DEV]: { scope: "project" },
+        [API_DEV]: { scope: "project", ...apiDeveloper },
+      },
+    });
+  }
+
+  function decodeAndKeep(payload: ReturnType<typeof buildSeedPayload>) {
+    const { result, skippedSkillIds } = seedToWizardResult(
+      payload,
+      REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+    );
+    return withUnplaceableAssignees(result, installed, payload, new Set(skippedSkillIds));
+  }
+
+  it("keeps an installed sub-agent the payload assigns an unplaceable skill to", () => {
+    const kept = decodeAndKeep(payloadAssigningUnplaceableTo([API_DEV]));
+
+    expect(kept.selectedAgents).toStrictEqual([WEB_DEV, API_DEV]);
+    expect(kept.agentConfigs).toStrictEqual(
+      buildAgentConfigs([WEB_DEV, API_DEV], { scope: "project" }),
+    );
+  });
+
+  it("leaves out a sub-agent the payload does not assign it to, or switches off", () => {
+    const notAssigned = decodeAndKeep(payloadAssigningUnplaceableTo([WEB_DEV]));
+    const switchedOff = decodeAndKeep(payloadAssigningUnplaceableTo([API_DEV], { on: false }));
+
+    expect(notAssigned.selectedAgents).toStrictEqual([WEB_DEV]);
+    expect(switchedOff.selectedAgents).toStrictEqual([WEB_DEV]);
+  });
+});
+
+/**
+ * From a project, `--from` only ADDS to the global install above it: every global entry it
+ * already holds stays as installed — the skill's install mode, the sub-agent's tuning, and the
+ * rows that sub-agent already has — and only what it lacks arrives, a skill together with its
+ * rows. `edit --from` additionally puts back the global entries a configuration leaves out,
+ * because its apply removes whatever is absent.
+ */
+describe("holding the global install as installed", () => {
+  beforeEach(() => {
+    initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
+  });
+
+  /** The global installation above the project: Zustand, on a global api-developer. */
+  const installedGlobal: InstalledGlobal = buildProjectConfig({
+    skills: buildSkillConfigs([ZUSTAND], { scope: "global" }),
+    agents: buildAgentConfigs([API_DEV], { scope: "global" }),
+    stack: { [API_DEV]: { "web-client-state": [sa(ZUSTAND)] } },
+  });
+
+  /** A configuration with React in the project, and `global` entries on api-developer. */
+  function decodedWithGlobal(
+    global: Record<string, ReturnType<typeof buildSeedSkill>>,
+    apiDeveloper: { model?: "haiku" } = {},
+  ) {
+    return seedToWizardResult(
+      buildSeedPayload({
+        skills: {
+          [REACT]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+          ...global,
+        },
+        agents: {
+          [WEB_DEV]: { scope: "project" },
+          [API_DEV]: { scope: "global", ...apiDeveloper },
+        },
+      }),
+      REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+    ).result;
+  }
+
+  const onApiDeveloper = (load: "lazy" | "preloaded" = "lazy") =>
+    buildSeedSkill({ scope: "global", assignments: { [API_DEV]: load } });
+
+  it("names nothing kept where the configuration states the global install exactly", () => {
+    const decoded = decodedWithGlobal({ [ZUSTAND]: onApiDeveloper() });
+
+    const held = holdInstalledGlobal(decoded, installedGlobal);
+
+    expect(held.result).toStrictEqual(decoded);
+    expect(held.installed).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [API_DEV] });
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [] });
+  });
+
+  it("keeps a held sub-agent's rows and tuning as installed, and names it", () => {
+    const decoded = decodedWithGlobal(
+      { [ZUSTAND]: onApiDeveloper("preloaded") },
+      { model: "haiku" },
+    );
+
+    const held = holdInstalledGlobal(decoded, installedGlobal);
+
+    expect(held.result.agentConfigs).toStrictEqual([
+      ...buildAgentConfigs([WEB_DEV], { scope: "project" }),
+      ...buildAgentConfigs([API_DEV], { scope: "global" }),
+    ]);
+    expect(held.result.assignedStack).toStrictEqual({
+      [WEB_DEV]: { "web-framework": [sa(REACT)] },
+      [API_DEV]: { "web-client-state": [sa(ZUSTAND)] },
+    });
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [API_DEV] });
+  });
+
+  it("keeps a held skill's install mode as installed, and names it", () => {
+    const pluginInstalled: InstalledGlobal = {
+      ...installedGlobal,
+      skills: buildSkillConfigs([ZUSTAND], { scope: "global", origin: "agents-inc" }),
+    };
+
+    const held = holdInstalledGlobal(
+      decodedWithGlobal({ [ZUSTAND]: onApiDeveloper() }),
+      pluginInstalled,
+    );
+
+    expect(held.result.skills).toStrictEqual([
+      buildSkillConfig(REACT, { scope: "project" }),
+      buildSkillConfig(ZUSTAND, { scope: "global", origin: "agents-inc" }),
+    ]);
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [] });
+  });
+
+  it("adds a global skill the install lacks together with its row on a held sub-agent", () => {
+    const decoded = decodedWithGlobal({
+      [ZUSTAND]: onApiDeveloper(),
+      [HONO]: onApiDeveloper(),
+    });
+
+    const held = holdInstalledGlobal(decoded, installedGlobal);
+
+    // Hono arrives as the configuration states it, assignment and all: api-developer is the
+    // global install's, so it keeps the row it has and gains Hono's. That is exactly what the
+    // configuration states for it, so nothing about it is named as kept.
+    expect(held.result.skills).toContainEqual(buildSkillConfig(HONO, { scope: "global" }));
+    expect(held.installed.skillIds).toStrictEqual([ZUSTAND]);
+    expect(held.result.assignedStack?.[API_DEV]).toStrictEqual({
+      "web-client-state": [sa(ZUSTAND)],
+      "api-api": [sa(HONO)],
+    });
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [] });
+  });
+
+  it("keeps a held sub-agent's own rows beside a new skill's, and names it", () => {
+    // The configuration gives api-developer Hono alone, and leaves out the Zustand row the global
+    // install gives it. A project run removes nothing global, so that row stays — and the
+    // sub-agent is named, because it is not the one the configuration describes.
+    const decoded = decodedWithGlobal({ [HONO]: onApiDeveloper() });
+
+    const held = holdInstalledGlobal(decoded, installedGlobal);
+
+    expect(held.result.assignedStack?.[API_DEV]).toStrictEqual({
+      "web-client-state": [sa(ZUSTAND)],
+      "api-api": [sa(HONO)],
+    });
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [API_DEV] });
+  });
+
+  it("adds no row a held sub-agent's exclusive category has no room for, and names it", () => {
+    // Zustand and Pinia share a category that holds one skill. api-developer already loads
+    // Zustand there, and that row stays — so Pinia arrives in the global install, but not on
+    // api-developer, and the sub-agent is named because the configuration describes it otherwise.
+    initializeMatrix(CATEGORY_EXCLUSIVITY_MATRIX);
+    const decoded = seedToWizardResult(
+      buildSeedPayload({
+        skills: { [PINIA]: onApiDeveloper() },
+        agents: { [API_DEV]: { scope: "global" } },
+      }),
+      CATEGORY_EXCLUSIVITY_MATRIX,
+    ).result;
+
+    const held = holdInstalledGlobal(decoded, installedGlobal);
+
+    expect(held.result.skills).toStrictEqual([buildSkillConfig(PINIA, { scope: "global" })]);
+    expect(held.result.assignedStack?.[API_DEV]).toStrictEqual({
+      "web-client-state": [sa(ZUSTAND)],
+    });
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [API_DEV] });
+  });
+
+  it("leaves a project-scoped entry alone where it names a global one", () => {
+    // A project copy over a global one is the project's own override, not a change to the
+    // global install, so nothing about it is held.
+    const decoded = decodedFor(ZUSTAND, "project");
+
+    const held = holdInstalledGlobal(decoded, installedGlobal);
+
+    expect(held.result).toStrictEqual(decoded);
+    expect(held.installed).toStrictEqual({ skillIds: [], agentNames: [] });
+  });
+
+  it("holds nothing where there is no global install to hold", () => {
+    const decoded = decodedWithGlobal({ [ZUSTAND]: onApiDeveloper("preloaded") });
+
+    const held = holdInstalledGlobal(decoded, null);
+
+    expect(held.result).toStrictEqual(decoded);
+    expect(held.installed).toStrictEqual({ skillIds: [], agentNames: [] });
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [] });
+  });
+
+  it("puts back, for a destructive apply, every global entry the configuration leaves out", () => {
+    const decoded = decodedFor(REACT);
+
+    const { result } = restoreInstalledGlobal(decoded, installedGlobal);
+
+    expect(result.skills).toStrictEqual([
+      ...decoded.skills,
+      buildSkillConfig(ZUSTAND, { scope: "global" }),
+    ]);
+    expect(result.agentConfigs).toStrictEqual([
+      ...decoded.agentConfigs,
+      ...buildAgentConfigs([API_DEV], { scope: "global" }),
+    ]);
+    expect(result.selectedAgents).toStrictEqual([WEB_DEV, API_DEV]);
+    expect(result.assignedStack).toStrictEqual({
+      ...decoded.assignedStack,
+      [API_DEV]: { "web-client-state": [sa(ZUSTAND)] },
+    });
+  });
+
+  it("names every global entry it puts back as kept, sub-agents as well as skills", () => {
+    const { keptAsInstalled } = restoreInstalledGlobal(decodedFor(REACT), installedGlobal);
+
+    expect(
+      keptAsInstalled,
+      "a global sub-agent the configuration leaves out is kept, so the plan must name it",
+    ).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [API_DEV] });
+  });
+
+  it("writes no carried bytes over a skill the global install holds", () => {
+    const held = holdInstalledGlobal(
+      decodedWithGlobal({ [ZUSTAND]: onApiDeveloper() }),
+      installedGlobal,
+    );
+
+    expect(notInstalledGlobally([{ id: ZUSTAND }, { id: HONO }], held)).toStrictEqual([
+      { id: HONO },
+    ]);
+  });
+
+  it("lists what arrives where, then the global skills it skips as already installed", () => {
+    const held = holdInstalledGlobal(
+      decodedWithGlobal({ [ZUSTAND]: onApiDeveloper(), [HONO]: onApiDeveloper() }),
+      installedGlobal,
+    );
+
+    expect(installPlanLines(held)).toStrictEqual([
+      "Into this project:",
+      "  Skills:",
+      `    ${SKILLS.react.displayName} (${REACT})`,
+      "  Sub-agents:",
+      `    ${WEB_DEV}`,
+      "Into the global install:",
+      "  Skills:",
+      `    ${SKILLS.hono.displayName} (${HONO})`,
+      "Skipped, already in the global install:",
+      "  Skills:",
+      `    ${SKILLS.zustand.displayName} (${ZUSTAND})`,
+    ]);
   });
 });

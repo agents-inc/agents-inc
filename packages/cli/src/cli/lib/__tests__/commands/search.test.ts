@@ -8,6 +8,7 @@ import {
   createTestSource,
   cleanupTestSource,
   inTestMarketplace,
+  TEST_MARKETPLACE_NAME,
   type TestDirs,
 } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
@@ -54,6 +55,19 @@ const HOSTILE_DESCRIPTION = `Browser automation${ERASE_LINE}${CARRIAGE_RETURN} k
 /** The same strings once the terminal can no longer act on them. */
 const INERT_DISPLAY_NAME = "Playwright ›   VERIFIED PUBLISHER";
 const INERT_DESCRIPTION = "Browser automation kept on disk";
+
+/**
+ * The Origin cell a skill the test marketplace carries is printed with: the name its manifest
+ * publishes under. Asserted as a cell, because every id the marketplace ships starts with that
+ * same name, so a bare substring is answered by the ID column.
+ */
+const TEST_MARKETPLACE_ORIGIN_CELL = `│ ${TEST_MARKETPLACE_NAME} │`;
+
+/**
+ * The two builds a refusal of a marketplace with no manifest names, in the order an author runs
+ * them — `build plugins` writes what `build marketplace` lists.
+ */
+const BUILDS_IN_ORDER = /build plugins[\s\S]*build marketplace/;
 
 describe("search command", () => {
   let projectDir: string;
@@ -138,7 +152,8 @@ describe("search command", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain(`Found 1 skill matching "${SKILLS.react.slug}"`);
-      expect(stdout).toContain(DEFAULT_PUBLIC_SOURCE_NAME);
+      expect(stdout).toContain(TEST_MARKETPLACE_ORIGIN_CELL);
+      expect(stdout).not.toContain(`│ ${DEFAULT_PUBLIC_SOURCE_NAME} │`);
       expect(stdout).not.toContain("marketplace");
     });
 
@@ -150,6 +165,45 @@ describe("search command", () => {
       // this.warn() writes to stderr in oclif
       const output = stdout + stderr;
       expect(output.toLowerCase()).toContain("no skills found");
+    });
+  });
+
+  /**
+   * A custom marketplace must carry a `.claude-plugin/marketplace.json`, and `search` refuses one
+   * that does not rather than answering out of it under a label nobody chose. "with test source"
+   * above is the permitted twin: the same skills, published.
+   */
+  describe("with a marketplace nobody has built", () => {
+    let sourceDirs: TestDirs;
+
+    beforeEach(async () => {
+      sourceDirs = await createTestSource({
+        skills: inTestMarketplace(DEFAULT_TEST_SKILLS),
+        unbuilt: true,
+      });
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: [],
+        agents: [],
+        marketplace: sourceDirs.sourceDir,
+      });
+    });
+
+    afterEach(async () => {
+      await cleanupTestSource(sourceDirs);
+    });
+
+    it("refuses rather than answering out of it, naming the builds that publish it", async () => {
+      const { stdout, error } = await runCliCommand(["search", SKILLS.react.slug]);
+
+      expect(error, "a marketplace with no marketplace.json must be refused").toBeDefined();
+      expect(
+        error?.message,
+        "the refusal must name `build plugins` and then `build marketplace`",
+      ).toMatch(BUILDS_IN_ORDER);
+      expect(stdout, "a refused marketplace must not answer the query").not.toContain(
+        `Found 1 skill matching "${SKILLS.react.slug}"`,
+      );
     });
   });
 
@@ -207,7 +261,7 @@ describe("search command", () => {
       expect(error).toBeUndefined();
       expect(stdout).toContain(`Found 1 skill matching "${EJECTED_SKILL.slug}"`);
       expect(stdout.toLowerCase()).toContain(EJECT_SOURCE);
-      expect(stdout).not.toContain(DEFAULT_PUBLIC_SOURCE_NAME);
+      expect(stdout).not.toContain(TEST_MARKETPLACE_ORIGIN_CELL);
     });
   });
 
@@ -283,7 +337,7 @@ describe("search command", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain(SKILLS.react.displayName);
-      expect(stdout).toContain(DEFAULT_PUBLIC_SOURCE_NAME);
+      expect(stdout).toContain(TEST_MARKETPLACE_ORIGIN_CELL);
     });
   });
 });

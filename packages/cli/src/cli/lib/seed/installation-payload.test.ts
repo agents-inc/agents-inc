@@ -14,6 +14,7 @@ import {
   STANDARD_DIRS,
   STANDARD_FILES,
 } from "../../consts.js";
+import { sourceFolderInUse } from "../installation/install-layout.js";
 import { initializeMatrix } from "../matrix/matrix-provider.js";
 import { injectForkedFromMetadata } from "../skills/skill-metadata.js";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories.js";
@@ -30,7 +31,7 @@ import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
 import { ERROR_MESSAGES } from "../../utils/messages.js";
 
-import type { SkillId } from "../../types/index.js";
+import type { SkillConfig, SkillId, SkillScope } from "../../types/index.js";
 import type { FixtureProjectConfig } from "../__tests__/helpers/wizard-simulation.js";
 import type { SeedExternalSkill } from "@workspace/matrix/seed";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
@@ -132,6 +133,166 @@ describe("seedPayloadForInstallation", () => {
   });
 
   /**
+   * The writer splits curation by scope. A global sub-agent is compiled from the global config,
+   * so its row is written there and nowhere else, while a project's own file inlines the global
+   * skills and sub-agents without their rows (`partitionInlinedConfigEntries` in
+   * `@workspace/compile`). Every spec here writes the two files in that shape.
+   */
+  describe("the curation a project inherits from HOME", () => {
+    const WEB_TESTER = "web-tester";
+    const ZUSTAND_ID = SKILLS.zustand.id;
+    const ZUSTAND_CATEGORY = SKILLS.zustand.category;
+
+    /** HOME's own configuration — the only file holding a global sub-agent's row. */
+    async function installGlobalConfig(overrides: Partial<FixtureProjectConfig>): Promise<void> {
+      await writeTestTsConfig(tempDir, buildProjectConfig(overrides));
+    }
+
+    /** A plugin from the public catalogue, so no spec here has a directory on disk to judge. */
+    function publicSkill(id: SkillId, scope: SkillScope): SkillConfig {
+      return buildSkillConfig(id, { scope, origin: DEFAULT_PUBLIC_SOURCE_NAME });
+    }
+
+    it("carries a global sub-agent's row, which only HOME's config records", async () => {
+      const globalEntries = {
+        skills: [publicSkill(REACT_ID, "global")],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+      };
+      await installGlobalConfig({
+        ...globalEntries,
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID, true)] } },
+      });
+      await installConfig(globalEntries);
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && prepared.payload.skills).toStrictEqual({
+        [REACT_ID]: { install: "plugin", scope: "global", assignments: { [WEB_DEV]: "preloaded" } },
+      });
+    });
+
+    it("leaves HOME's row for a skill the project masks with its own half, and still mints", async () => {
+      // The `[P][G]` skill pair: the global React masked here by a tombstone, with the project's
+      // own React beside it. HOME's row names the global install, which this project does not
+      // use, and read through it would put a project skill on a global sub-agent.
+      await installGlobalConfig({
+        skills: [publicSkill(REACT_ID, "global"), publicSkill(ZUSTAND_ID, "global")],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+        stack: {
+          [WEB_DEV]: {
+            [REACT_CATEGORY]: [sa(REACT_ID, true)],
+            [ZUSTAND_CATEGORY]: [sa(ZUSTAND_ID, true)],
+          },
+        },
+      });
+      await installConfig({
+        skills: [
+          publicSkill(ZUSTAND_ID, "global"),
+          { ...publicSkill(REACT_ID, "global"), excluded: true },
+          publicSkill(REACT_ID, "project"),
+        ],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+      });
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && prepared.payload.skills).toStrictEqual({
+        [ZUSTAND_ID]: {
+          install: "plugin",
+          scope: "global",
+          assignments: { [WEB_DEV]: "preloaded" },
+        },
+        [REACT_ID]: { install: "plugin", scope: "project", assignments: {} },
+      });
+    });
+
+    it("keeps HOME's row off a sub-agent the project masks with a half of its own", async () => {
+      // The `[P][G]` sub-agent pair: the global web-developer masked here by a tombstone, and the
+      // project's own web-developer beside it, holding no skill and so no row. HOME still has a
+      // row for the global one, which compiles nothing in this project. web-tester is the
+      // control: it rests at global scope here, so its row is HOME's to carry.
+      await installGlobalConfig({
+        skills: [publicSkill(REACT_ID, "global")],
+        agents: buildAgentConfigs([WEB_DEV, WEB_TESTER], { scope: "global" }),
+        stack: {
+          [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID, true)] },
+          [WEB_TESTER]: { [REACT_CATEGORY]: [sa(REACT_ID)] },
+        },
+      });
+      await installConfig({
+        skills: [publicSkill(REACT_ID, "global")],
+        agents: [
+          ...buildAgentConfigs([WEB_TESTER], { scope: "global" }),
+          ...buildAgentConfigs([WEB_DEV], { scope: "global", excluded: true }),
+          ...buildAgentConfigs([WEB_DEV], { scope: "project" }),
+        ],
+      });
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && prepared.payload.skills).toStrictEqual({
+        [REACT_ID]: { install: "plugin", scope: "global", assignments: { [WEB_TESTER]: "lazy" } },
+      });
+    });
+
+    it("takes a global sub-agent's row from HOME's config, which is the one that compiles it", async () => {
+      // A row for a global sub-agent written into the project's own file by hand. A compile in
+      // this project leaves global sub-agents to HOME's config, so that row loads nothing, and
+      // carrying it would rebuild the sub-agent with a load it never had.
+      const globalEntries = {
+        skills: [publicSkill(REACT_ID, "global")],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+      };
+      await installGlobalConfig({
+        ...globalEntries,
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID, true)] } },
+      });
+      await installConfig({
+        ...globalEntries,
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID)] } },
+      });
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && prepared.payload.skills[REACT_ID]?.assignments).toStrictEqual({
+        [WEB_DEV]: "preloaded",
+      });
+    });
+
+    it("inherits from its own provider's global config, never from another provider's", async () => {
+      // Two global installations side by side, curating web-developer differently. The project
+      // is a Codex one, and each provider family inherits only within itself.
+      const globalEntries = {
+        skills: [publicSkill(REACT_ID, "global")],
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+      };
+      await installGlobalConfig({
+        ...globalEntries,
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID, true)] } },
+      });
+      await writeTestTsConfig(
+        tempDir,
+        buildProjectConfig({
+          ...globalEntries,
+          stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID)] } },
+        }),
+        sourceFolderInUse(tempDir, "codex").relName,
+      );
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig(globalEntries),
+        sourceFolderInUse(projectDir, "codex").relName,
+      );
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && prepared.payload.skills[REACT_ID]?.assignments).toStrictEqual({
+        [WEB_DEV]: "lazy",
+      });
+    });
+  });
+
+  /**
    * `forkedFrom` decides who owns a skill, and the round trip leaves what it does not own alone.
    *
    * The CLI stamps that key into every skill it ejects; a skill the user wrote by hand into
@@ -229,6 +390,14 @@ describe("seedPayloadForInstallation", () => {
     const CARRIED_REPO = "obra/superpowers";
     const CARRIED_PATH = "skills/brainstorming";
     const CARRIED_CATEGORY = "web-framework";
+    /**
+     * Longer than the label `doctor` accepts, so the install writes a shortened `cliDescription`
+     * beside the SKILL.md that states it whole.
+     */
+    const LONG_DESCRIPTION =
+      "Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes";
+    /** What a user rewrote the skill's own description to after it was installed. */
+    const EDITED_DESCRIPTION = "Use when a fix has failed twice and the cause is still unknown";
 
     /** Where the install below puts it: project scope, so under this project's own skills. */
     function carriedSkillDir(): string {
@@ -272,7 +441,14 @@ describe("seedPayloadForInstallation", () => {
     }
 
     it("carries an added skill's own bytes back, rebuilt from the directory the install wrote", async () => {
-      const external = await installCarriedSkill();
+      // The editor reads an added skill's description off its SKILL.md frontmatter, so the entry
+      // and the manifest state the same sentence.
+      const external = await installCarriedSkill({
+        description: "Structured brainstorming",
+        files: {
+          [STANDARD_FILES.SKILL_MD]: renderSkillMd("brainstorming", "Structured brainstorming"),
+        },
+      });
       await installCarriedConfig();
 
       const prepared = await seedPayloadForInstallation(projectDir);
@@ -297,6 +473,49 @@ describe("seedPayloadForInstallation", () => {
       // And the skill row still names it, because content is where the bytes are and presence in
       // `skills` is still what selects them.
       expect(prepared.ok && Object.keys(prepared.payload.skills)).toStrictEqual([CARRIED_ID]);
+    });
+
+    it("carries an added skill's whole description back, though its short label was cut", async () => {
+      await installCarriedSkill({
+        description: LONG_DESCRIPTION,
+        files: { [STANDARD_FILES.SKILL_MD]: renderSkillMd("brainstorming", LONG_DESCRIPTION) },
+      });
+      await installCarriedConfig();
+      // The subject guard: the install cut the label it wrote for the wizard, so a re-read of that
+      // label cannot be where the whole sentence comes back from.
+      expect(
+        await readFile(path.join(carriedSkillDir(), STANDARD_FILES.METADATA_YAML), "utf8"),
+      ).not.toContain(LONG_DESCRIPTION);
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok).toBe(true);
+      // The label is the wizard's; the description is the skill's own, and it is what the next
+      // receiver installs the skill with. A re-share that sent the label would shorten the skill
+      // once per round trip.
+      expect(prepared.ok && prepared.payload.external?.[CARRIED_ID]?.description).toBe(
+        LONG_DESCRIPTION,
+      );
+    });
+
+    it("carries the description the skill's SKILL.md states now, edited since install", async () => {
+      await installCarriedSkill({
+        description: LONG_DESCRIPTION,
+        files: { [STANDARD_FILES.SKILL_MD]: renderSkillMd("brainstorming", LONG_DESCRIPTION) },
+      });
+      await installCarriedConfig();
+      await writeFile(
+        path.join(carriedSkillDir(), STANDARD_FILES.SKILL_MD),
+        renderSkillMd(CARRIED_ID, EDITED_DESCRIPTION),
+      );
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      // The bytes as they stand, which is what a share carries: the manifest's own frontmatter is
+      // the description's source, whatever the install recorded beside it.
+      expect(prepared.ok && prepared.payload.external?.[CARRIED_ID]?.description).toBe(
+        EDITED_DESCRIPTION,
+      );
     });
 
     it("carries every file under the skill, not the manifest alone", async () => {

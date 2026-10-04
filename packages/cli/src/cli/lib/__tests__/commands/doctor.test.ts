@@ -232,7 +232,7 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       const output = stdout + (error?.message || "");
-      expect(output).toContain("1/1 agents compiled");
+      expect(output).toContain("1/1 agent compiled");
       expect(output, "an agent whose file is on disk is not missing").not.toContain(
         `- ${CONFIGURED_AGENT_NAME} (missing)`,
       );
@@ -538,7 +538,7 @@ describe("doctor command", () => {
 
       // Should NOT report missing skills
       expect(output).not.toContain("missing from disk");
-      expect(output).toContain("eject-mode skills installed");
+      expect(output).toContain("1/1 eject-mode skill installed");
     });
 
     it("should not check plugin-mode skills for disk presence", async () => {
@@ -636,7 +636,7 @@ describe("doctor command", () => {
       const output = stdout + (error?.message || "");
 
       // The skill should be resolved (found as local skill)
-      expect(output).toContain("1/1 skills found");
+      expect(output).toContain("1/1 skill found");
       expect(output).not.toContain(`${CUSTOM_HOUSE_TOOLING_SKILL.id} (not found)`);
     });
   });

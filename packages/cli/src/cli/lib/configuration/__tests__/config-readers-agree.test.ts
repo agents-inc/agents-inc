@@ -6,14 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
 import { writeRawTestConfig, writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { buildProjectConfig } from "../../__tests__/factories/config-factories.js";
+import { renderSchemaViolatingConfigTs } from "../../__tests__/factories/unloadable-config-factories.js";
 import * as configModule from "../config.js";
 import * as projectConfigModule from "../project-config.js";
 
 /**
  * The contract every reader of an agents-inc `config.ts` owes, held here rather than in a table in
- * a report nobody re-reads. Four of the five read an INSTALLATION's config, wherever the scope
- * keeps it; the fifth reads a marketplace source repo's own declaration, which is a different file
- * and is why `sourceFolder` is a field of the roster below rather than one fixture path for all.
+ * a report nobody re-reads. All but one read an INSTALLATION's config, wherever the scope keeps
+ * it; that one reads a marketplace source repo's own declaration, which is a different file and is
+ * why `sourceFolder` is a field of the roster below rather than one fixture path for all.
  *
  * Two states, and telling them apart is the whole of it. A file that is NOT THERE is the legitimate
  * state `init` exists for, and answers `null`. A file that IS there and cannot be loaded is a fault,
@@ -22,11 +23,11 @@ import * as projectConfigModule from "../project-config.js";
  * and what let `eject` replace a config it could not read with a two-field one under an invented
  * name, reporting success (owner ruling 2026-08-20).
  *
- * **A per-reader roster is what makes this a gate rather than four specs.** The defect closed in
- * 2026-08-20 was closed once before, at `loadProjectConfigFromDir` under D-273, and re-opened
- * because a SECOND reader of the same file was written beside it with the old posture and nothing
- * compared the two. The roster below is asserted against what the two modules actually export, so a
- * fifth reader cannot land without reddening this file and forcing its author to choose.
+ * **A per-reader roster is what makes this a gate rather than a spec per reader.** The defect
+ * closed in 2026-08-20 was closed once before, at `loadProjectConfigFromDir` under D-273, and
+ * re-opened because a SECOND reader of the same file was written beside it with the old posture and
+ * nothing compared the two. The roster below is asserted against what the two modules actually
+ * export, so a new reader cannot land without reddening this file and forcing its author to choose.
  */
 describe("every reader of an agents-inc config.ts", () => {
   /**
@@ -67,10 +68,10 @@ describe("every reader of an agents-inc config.ts", () => {
     name: string;
     locate: "argument" | "home";
     /**
-     * The folder under the scope root this reader's file lives in, or `undefined` for the four
-     * that read an INSTALLATION's config and therefore take whichever folder the scope is on.
+     * The folder under the scope root this reader's file lives in, or `undefined` for those that
+     * read an INSTALLATION's config and therefore take whichever folder the scope is on.
      *
-     * Stated per reader rather than assumed shared, because one of the five is not: a marketplace
+     * Stated per reader rather than assumed shared, because one of them is not: a marketplace
      * source repo declares its layout at `.agents-inc/config.ts`, with no provider folder after
      * it, and a fixture written where an installation's config goes is a file it never opens — so
      * both of its fault cases would answer `null` and read as the absent case passing.
@@ -110,7 +111,21 @@ describe("every reader of an agents-inc config.ts", () => {
       read: (dir) => projectConfigModule.loadInstalledConfig(dir),
     },
     {
-      // A marketplace source repo's own declaration, which reads a DIFFERENT file from the four
+      // `loadProjectConfigFromDir` at a path the caller names: the second of a scope's two source
+      // folders, which the resolver never picks — so the fixture goes in the legacy folder, the
+      // one an uninstall over both names has to read beside the folder being read.
+      name: "loadProjectConfigAt",
+      locate: "argument",
+      sourceFolder: ".claude-src",
+      read: (dir) =>
+        projectConfigModule.loadProjectConfigAt(
+          path.join(dir, ".claude-src", "config.ts"),
+          dir,
+          "claude",
+        ),
+    },
+    {
+      // A marketplace source repo's own declaration, which reads a DIFFERENT file from the readers
       // above — `<dir>/.agents-inc/config.ts` before `<dir>/.claude-src/config.ts`, neither
       // inside a provider folder — and owes the same two answers about it.
       name: "loadSourceRepoConfig",
@@ -130,7 +145,7 @@ describe("every reader of an agents-inc config.ts", () => {
     vi.spyOn(os, "homedir").mockReturnValue(reader.locate === "home" ? readDir : emptyHome);
   }
 
-  it("is one of the six this file holds, so a seventh cannot land untested", () => {
+  it("is one of the readers this file holds, so a new one cannot land untested", () => {
     const exportedReaders = [
       ...Object.keys(configModule),
       ...Object.keys(projectConfigModule),
@@ -169,6 +184,41 @@ describe("every reader of an agents-inc config.ts", () => {
       isolate(reader);
 
       expect(await reader.read(readDir)).not.toBeNull();
+    });
+  });
+
+  /**
+   * The two other ways an installation's config can be there and unusable, held for every reader
+   * of an INSTALLATION's config. The source repo's declaration is left out: it is a different file
+   * read against a different schema, and whether these shapes are faults there is its own question.
+   *
+   * Both pass the settings schema, which declares only the settings fields and lets the rest
+   * through — so a reader judging the file by that schema alone reads the empty one as absence and
+   * the other as a usable marketplace, while the installation loader refuses both.
+   */
+  const INSTALLATION_READERS = READERS.filter(
+    (reader: ConfigReader) => reader.sourceFolder === undefined,
+  );
+
+  /** A config that exports nothing at all — what `: > config.ts` leaves behind. */
+  const EXPORTS_NOTHING = "";
+
+  describe.each<ConfigReader>(INSTALLATION_READERS)("$name, reading an installation", (reader) => {
+    it("raises for a config that is there and exports nothing, which is not the same as absent", async () => {
+      const configPath = await writeRawTestConfig(readDir, EXPORTS_NOTHING);
+      isolate(reader);
+
+      await expect(reader.read(readDir)).rejects.toThrow(configPath);
+    });
+
+    it("raises for a config naming a marketplace beside a field the installation schema refuses", async () => {
+      const configPath = await writeRawTestConfig(
+        readDir,
+        renderSchemaViolatingConfigTs("github:acme/skills"),
+      );
+      isolate(reader);
+
+      await expect(reader.read(readDir)).rejects.toThrow(configPath);
     });
   });
 });

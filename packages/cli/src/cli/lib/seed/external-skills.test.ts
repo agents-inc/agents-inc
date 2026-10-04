@@ -1,16 +1,19 @@
 import path from "path";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "fs/promises";
 import { parse as parseYaml } from "yaml";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+
+import { installedSkillTree } from "@workspace/compile/carried-skill";
 
 import { registerExternalSkills, writeExternalSkills } from "./external-skills.js";
 import { seedToWizardResult } from "./seed-to-wizard.js";
 import { STANDARD_FILES } from "../../consts.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
 import { parseFrontmatter } from "../loading/loader.js";
-import { initializeMatrix } from "../matrix/matrix-provider.js";
+import { getCategoryDomain, initializeMatrix } from "../matrix/matrix-provider.js";
 import { validateSkillMetadata } from "../schemas.js";
+import { defaultUsageGuidance } from "../stacks/stacks-loader.js";
 import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import {
   UPSTREAM_SKILL_NAME,
@@ -19,7 +22,12 @@ import {
   buildSeedSkill,
 } from "../__tests__/factories/seed-factories.js";
 import { createMockSkill, sa } from "../__tests__/factories/skill-factories.js";
-import { renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators.js";
+import {
+  renderMetadataYaml,
+  renderMetadataYamlWithUnreadableProvenance,
+  renderSkillMd,
+  renderUnparseableMetadataYaml,
+} from "../__tests__/content-generators.js";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 import { FALLBACK_USAGE } from "../__tests__/mock-data/mock-skills.js";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures.js";
@@ -590,6 +598,40 @@ describe("writeExternalSkills", () => {
     );
   });
 
+  it("answers with a re-written skill only where what a load reads of it changed", async () => {
+    const write = (external: SeedExternalSkill) =>
+      writeExternalSkills(
+        registerExternalSkills(
+          buildSeedPayload({
+            skills: { [EXTERNAL_ID]: buildSeedSkill({ scope: "project" }) },
+            external: { [EXTERNAL_ID]: external },
+          }),
+          matrix,
+          projectDir,
+        ),
+      );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+    const first = await write(buildSeedExternalSkill());
+    // A day later, the same bytes: the stamp's date moves and its place in the file does too, and
+    // neither is anything a load reads.
+    vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
+    const same = await write(buildSeedExternalSkill());
+    const revised = await write(
+      buildSeedExternalSkill({
+        files: { "SKILL.md": renderSkillMd(UPSTREAM_SKILL_NAME, "Revised upstream") },
+      }),
+    );
+
+    expect(first).toStrictEqual([EXTERNAL_ID]);
+    expect(same).toStrictEqual([]);
+    expect(revised).toStrictEqual([EXTERNAL_ID]);
+  });
+
   it("refuses a file path that escapes the skill's own directory", async () => {
     const payload = buildSeedPayload({
       skills: { [EXTERNAL_ID]: buildSeedSkill() },
@@ -607,5 +649,82 @@ describe("writeExternalSkills", () => {
     // The keys come off the wire, so a payload can ask for any path it likes. The same guard the
     // skill copier applies to a marketplace's own paths applies to these.
     await expect(writeExternalSkills(installs)).rejects.toThrow("escaped.md");
+  });
+
+  /**
+   * The editor's output preview draws a carried skill's directory with `installedSkillTree`,
+   * which composes the two writes this file shares through `@workspace/compile` with the half
+   * this CLI keeps because it needs a disk — reading the shipped metadata.yaml back, and stamping
+   * `forkedFrom`. This holds that composition against the directory a real install leaves, byte
+   * for byte, so the preview cannot drift from the install without a red here. The install date
+   * is the one input only the machine knows, so it is pinned rather than read back.
+   */
+  describe("the directory the output preview draws for it", () => {
+    const INSTALL_DAY = "2026-10-01";
+    const SHIPPED_FIELDS = {
+      author: "@jesse",
+      category: "web-framework",
+      contentHash: "abc1234",
+      usageGuidance: "Use when a decision has more than one defensible answer",
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(`${INSTALL_DAY}T12:00:00Z`));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const SHIPPED_CASES = [
+      { shipping: "no metadata.yaml", metadata: undefined },
+      { shipping: "a metadata.yaml of its own", metadata: renderMetadataYaml(SHIPPED_FIELDS) },
+      // A copy somebody ejected and committed: its provenance is replaced, and the CLI's read-back
+      // puts the replacement first.
+      { shipping: "a metadata.yaml with provenance of its own", metadata: EJECTED_SKILL_METADATA },
+      { shipping: "a metadata.yaml no parser can read", metadata: renderUnparseableMetadataYaml() },
+      {
+        shipping: "a metadata.yaml whose provenance the schema refuses",
+        metadata: renderMetadataYamlWithUnreadableProvenance(SHIPPED_FIELDS),
+      },
+    ] as const;
+
+    for (const { shipping, metadata } of SHIPPED_CASES) {
+      it(`is the directory the install writes, for a skill shipping ${shipping}`, async () => {
+        const external = buildSeedExternalSkill({
+          files: {
+            "SKILL.md": renderSkillMd(UPSTREAM_SKILL_NAME, "Structured brainstorming"),
+            "visual-companion.md": "# Visual companion\n",
+            ...(metadata !== undefined && { "metadata.yaml": metadata }),
+          },
+        });
+        // The domain the install files the skill under is the one the seated catalogue declares
+        // for its category, read through the lookup the install itself makes.
+        const domain = getCategoryDomain(external.categoryId);
+        if (domain === undefined) {
+          throw new Error(`the test catalogue places ${external.categoryId} in no domain`);
+        }
+
+        const skillDir = await install(external, "project");
+        const drawn = await installedSkillTree({
+          id: EXTERNAL_ID,
+          skill: external,
+          domain,
+          usageGuidance: defaultUsageGuidance(external.categoryId),
+          date: INSTALL_DAY,
+        });
+        const written = Object.fromEntries(
+          await Promise.all(
+            Object.keys(drawn).map(
+              async (file) => [file, await readFile(path.join(skillDir, file), "utf8")] as const,
+            ),
+          ),
+        );
+
+        expect((await readdir(skillDir)).sort()).toStrictEqual(Object.keys(drawn).sort());
+        expect(written).toStrictEqual(drawn);
+      });
+    }
   });
 });

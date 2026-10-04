@@ -69,6 +69,7 @@ describe("multi-source-loader", () => {
         source: "github:private-org/skills",
         sourceOrigin: "flag",
         marketplace: "Acme Corp",
+        marketplaceRecordedIn: "/tmp/test/.agents-inc/claude/config.ts",
       };
 
       const matrix = createMockMatrix({ ...SKILLS.react }, { ...SKILLS.vitest });
@@ -124,6 +125,7 @@ describe("multi-source-loader", () => {
         source: TEST_SOURCE_URL,
         sourceOrigin: "default",
         marketplace: "SomeMarketplace",
+        marketplaceRecordedIn: "/tmp/test/.agents-inc/claude/config.ts",
       };
 
       const matrix = createMockMatrix({ ...SKILLS.react });
@@ -272,6 +274,44 @@ describe("multi-source-loader", () => {
   });
 
   describe("plugin skill tagging", () => {
+    it("marks a skill carried under another marketplace's name installed there, not under the loaded one", async () => {
+      // A global installation's skill the loaded marketplace does not carry, seated by the source
+      // loader from the marketplace that installation was made from — and so outside this one.
+      const otherMarketplace = "global-marketplace";
+      mockDiscoverAllPluginSkills.mockResolvedValue({
+        "web-state-zustand": {
+          id: "web-state-zustand",
+          description: "Zustand",
+          path: "/global/cache/zustand/skills/web/state/zustand",
+        },
+        // Boundary cast: test fixture covers a subset of all SkillIds
+      } satisfies Partial<Record<SkillId, SkillDefinition>>);
+      const matrix = createMockMatrix({
+        ...SKILLS.zustand,
+        availableSources: [
+          { name: otherMarketplace, type: "private", installed: false, primary: true },
+        ],
+      });
+
+      await loadSkillsFromAllSources(
+        matrix,
+        DEFAULT_SOURCE_CONFIG,
+        "/tmp/test",
+        undefined,
+        new Set<SkillId>(["web-state-zustand"]),
+      );
+
+      expect(matrix.skills["web-state-zustand"]!.availableSources).toStrictEqual([
+        {
+          name: otherMarketplace,
+          type: "private",
+          installed: true,
+          installMode: "plugin",
+          primary: true,
+        },
+      ]);
+    });
+
     it("should tag plugin-installed skills", async () => {
       // Mock discoverAllPluginSkills to return skills from global cache
       mockDiscoverAllPluginSkills.mockResolvedValue({

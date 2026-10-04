@@ -21,6 +21,7 @@ import {
   getProjectConfigPath,
   isLocalSource,
   isPublicCatalogueCheckout,
+  isSameMarketplace,
   loadProjectSourceConfig,
   resolveBranding,
   resolvePrimarySourceEntry,
@@ -33,6 +34,11 @@ import { DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
 const HOME_CONFIG_SOURCE = "github:home/skills";
 /** A source named by a project's own `config.ts`. */
 const PROJECT_CONFIG_SOURCE = "github:project-of-its-own/skills";
+
+/** A marketplace a config recorded, the name recorded beside it, and one it did not record. */
+const STORED_MARKETPLACE = "github:acme/skills";
+const STORED_NAME = "acme";
+const OTHER_MARKETPLACE = "github:plain/skills";
 
 /**
  * The environment rung, mirrored as a LITERAL rather than imported from `./config`.
@@ -188,6 +194,32 @@ describe("config", () => {
       // Paths starting with . are recognized as relative and allowed
       expect(isLocalSource("../../../other-project/skills")).toBe(true);
       expect(isLocalSource("../skills")).toBe(true);
+    });
+  });
+
+  describe("isSameMarketplace", () => {
+    const FROM = "/home/user/project";
+
+    it("takes a folder on disk for one marketplace however its path is spelled", () => {
+      expect(isSameMarketplace("/home/user/skills", "/home/user/skills", FROM)).toBe(true);
+      expect(isSameMarketplace("/home/user/skills/", "/home/user/skills", FROM)).toBe(true);
+      expect(isSameMarketplace("../skills", "/home/user/skills", FROM)).toBe(true);
+      expect(isSameMarketplace("./../skills/", "../skills", FROM)).toBe(true);
+    });
+
+    it("tells two folders apart", () => {
+      expect(isSameMarketplace("/home/user/skills", "/home/user/other-skills", FROM)).toBe(false);
+      expect(isSameMarketplace("./skills", "/home/user/skills", FROM)).toBe(false);
+    });
+
+    it("compares remote marketplaces as written", () => {
+      expect(isSameMarketplace("github:acme/skills", "github:acme/skills", FROM)).toBe(true);
+      expect(isSameMarketplace("github:acme/skills", "gh:acme/skills", FROM)).toBe(false);
+      expect(isSameMarketplace("github:acme/skills/", "github:acme/skills", FROM)).toBe(false);
+    });
+
+    it("never takes a remote marketplace for a folder", () => {
+      expect(isSameMarketplace("github:acme/skills", "/home/user/skills", FROM)).toBe(false);
     });
   });
 
@@ -973,6 +1005,47 @@ describe("config", () => {
         const result = await resolveSource({ caller: "stored", projectDir: tempDir });
 
         expect(result.marketplace).toBeUndefined();
+      });
+
+      /**
+       * The stored name labels the marketplace it was recorded beside. A project set up from
+       * another — `init --marketplace` under a global installation, or a shared configuration
+       * naming its own — read the stored name as its own, and installed its plugins against a
+       * marketplace Claude Code registered under a different name. The case below is the control.
+       */
+      it("does not label a marketplace this run names with the name stored beside another", async () => {
+        await writeTestTsConfig(
+          tempDir,
+          buildSourceConfig({ marketplace: STORED_MARKETPLACE, marketplaceName: STORED_NAME }),
+        );
+
+        const result = await resolveSource({
+          caller: "init",
+          flag: OTHER_MARKETPLACE,
+          projectDir: tempDir,
+        });
+
+        expect(result.source).toBe(OTHER_MARKETPLACE);
+        expect(
+          result.marketplace,
+          "the stored name belongs to the marketplace it was recorded beside, and to no other",
+        ).toBeUndefined();
+      });
+
+      it("keeps the stored name for the stored marketplace named back", async () => {
+        await writeTestTsConfig(
+          tempDir,
+          buildSourceConfig({ marketplace: STORED_MARKETPLACE, marketplaceName: STORED_NAME }),
+        );
+
+        const result = await resolveSource({
+          caller: "init",
+          flag: STORED_MARKETPLACE,
+          projectDir: tempDir,
+        });
+
+        expect(result.source).toBe(STORED_MARKETPLACE);
+        expect(result.marketplace).toBe(STORED_NAME);
       });
     });
 

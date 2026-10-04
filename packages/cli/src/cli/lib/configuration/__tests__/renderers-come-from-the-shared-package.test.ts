@@ -29,6 +29,7 @@ import { describe, expect, it } from "vitest";
 import * as agentSource from "@workspace/compile/agent-source";
 import * as configSource from "@workspace/compile/config-source";
 import * as configTypesSource from "@workspace/compile/config-types-source";
+import * as globalConfig from "@workspace/compile/global-config";
 import * as seedToConfig from "@workspace/compile/seed-to-config";
 import * as sharedRoot from "@workspace/compile";
 
@@ -62,6 +63,8 @@ import {
   STACK_AGENT_CONFIG_LOOSE_LINE,
 } from "../config-types-writer.js";
 import { generateConfigSource } from "../config-writer.js";
+import { DEFAULT_SOURCE } from "../config.js";
+import { mergeGlobalConfigs } from "../../config-gate/propagate.js";
 
 const CLI_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -122,6 +125,10 @@ const RE_EXPORTED: readonly (readonly [string, unknown, unknown])[] = [
   ["buildStackProperty", buildStackProperty, seedToConfig.buildStackProperty],
   ["isScopePairCompatible", isScopePairCompatible, seedToConfig.isScopePairCompatible],
   ["seedToWizardResult", seedToWizardResult, seedToConfig.seedToWizardResult],
+  ["mergeGlobalConfigs", mergeGlobalConfigs, globalConfig.mergeGlobalConfigs],
+  // A string, so this pair alone compares values; the declaration check on config.ts below is
+  // what holds it to one home.
+  ["DEFAULT_SOURCE", DEFAULT_SOURCE, sharedRoot.DEFAULT_SOURCE],
   // The pure half of consts.ts. Objects, so identity means something here — a
   // copied `STANDARD_FILES` compares equal by value and fails this.
   ["STANDARD_FILES", STANDARD_FILES, sharedRoot.STANDARD_FILES],
@@ -185,6 +192,35 @@ const EMPTIED_MODULES: readonly { file: string; symbols: readonly string[] }[] =
     symbols: ["provenanceMarker", "hasProvenanceMarker", "stampProvenanceMarker"],
   },
   { file: "utils/string.ts", symbols: ["bytewise"] },
+  {
+    // The merge a project install resolves the global config through — the output preview draws
+    // the global `config.ts` with it, so a private copy here would answer for the install alone.
+    file: "lib/config-gate/propagate.ts",
+    symbols: [
+      "mergeGlobalConfigs",
+      "addSessionToGlobal",
+      "additiveMergeStack",
+      "mergeAgentCategories",
+      "appendMissingAssignments",
+    ],
+  },
+  {
+    // What an install does to a carried skill's files, which the preview draws that directory with.
+    file: "lib/seed/external-skills.ts",
+    symbols: [
+      "withInstalledName",
+      "externalSkillMetadata",
+      "skillAuthor",
+      "FRONTMATTER_BLOCK",
+      "NAME_FIELD",
+    ],
+  },
+  {
+    // The marketplace an install records for a configuration naming none — the output preview
+    // draws the same line, so a second declaration here would let the two records drift.
+    file: "lib/configuration/config.ts",
+    symbols: ["DEFAULT_SOURCE"],
+  },
   {
     // consts.ts is the root blocker: it derives PROJECT_ROOT with
     // `fileURLToPath(import.meta.url)` at module load and every renderer

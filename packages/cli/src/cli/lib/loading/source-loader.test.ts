@@ -27,6 +27,7 @@ import {
   convertStackToResolvedStack,
   mergeLocalSkillsIntoMatrix,
 } from "./source-loader";
+import { MarketplaceNameRefusedError } from "./source-fetcher";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import {
   createMockSkill,
@@ -37,6 +38,8 @@ import {
 import { buildCategoryMap, createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../__tests__/factories/category-factories.js";
 import { createMockStack } from "../__tests__/factories/stack-factories.js";
+import { buildProjectConfig } from "../__tests__/factories/config-factories.js";
+import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import {
   createMockMarketplace,
   createMockMarketplacePlugin,
@@ -56,6 +59,7 @@ import {
   cleanupTestSource,
   inTestMarketplace,
   testMarketplaceSkillId,
+  TEST_MARKETPLACE_NAME,
   type TestDirs,
   type TestSkill,
   type TestStack,
@@ -75,7 +79,7 @@ import type {
 } from "../../types";
 import { renderConfigTs, renderSkillMd } from "../__tests__/content-generators";
 import { getErrorMessage } from "../../utils/errors";
-import { disableBuffering, drainBuffer, enableBuffering, setVerbose } from "../../utils/logger";
+import { disableBuffering, drainBuffer, enableBuffering } from "../../utils/logger";
 import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
@@ -90,6 +94,7 @@ import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { typedKeys } from "../../utils/typed-object";
+import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
 
 /**
  * What the fixture marketplace ships, published in its own namespace: a custom
@@ -141,53 +146,64 @@ const MANIFEST_WITH_UNNAMED_OWNER = {
   owner: { name: "" },
 };
 
-/** The field {@link MANIFEST_WITH_UNNAMED_OWNER} breaks, which the diagnostic has to name. */
+/** The field {@link MANIFEST_WITH_UNNAMED_OWNER} breaks, which the refusal has to name. */
 const UNREADABLE_MANIFEST_FIELD = "owner.name";
 
 /**
- * What a load said about a marketplace's manifest, split by the channel it said it on.
- * The two states pinned below are told apart by the channel as much as by the words, so
- * a capture reading one channel cannot see the difference.
+ * The two builds a refusal of a marketplace with no valid manifest names, in the order an author
+ * runs them — `build plugins` writes what `build marketplace` lists.
  */
-type ManifestReport = {
-  diagnostics: string[];
-  warnings: string[];
-};
+const BUILDS_IN_ORDER = /build plugins[\s\S]*build marketplace/;
 
-/** {@link ManifestReport} for one load of `sourceFlag`. */
-async function reportOnManifest(sourceFlag: string, projectDir: string): Promise<ManifestReport> {
-  const logged: string[] = [];
-  const logSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
-    logged.push(args.map(String).join(" "));
-  });
-  setVerbose(true);
-  enableBuffering();
-  try {
-    await loadSkillsMatrixFromSource({ sourceFlag, projectDir, skipExtraSources: true });
-    const warnings = drainBuffer().map((message) => message.text);
-    return {
-      diagnostics: [...logged, ...warnings].filter(mentionsManifest),
-      warnings: warnings.filter(mentionsManifest),
-    };
-  } finally {
-    disableBuffering();
-    setVerbose(false);
-    logSpy.mockRestore();
-  }
-}
+/**
+ * The three ways a marketplace can lack a valid `marketplace.json`, each reached by a different
+ * route through the loader: no file, a file that is not JSON, and JSON the schema refuses.
+ */
+const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
 
-function mentionsManifest(text: string): boolean {
-  return text.includes(MARKETPLACE_JSON);
-}
+type ManifestDefect = (typeof MANIFEST_DEFECTS)[number];
+
+/** A manifest that does not parse at all. */
+const UNPARSEABLE_MANIFEST = "{ this is not json";
 
 /** A marketplace on disk whose manifest is present and refused by the loader's own schema. */
 async function writeMarketplaceWithUnreadableManifest(tempDir: string): Promise<string> {
-  const sourceDir = path.join(tempDir, "unreadable-manifest-marketplace");
+  return writeMarketplaceWithManifestDefect(tempDir, "refused by the schema");
+}
+
+/** A marketplace on disk, shipping the fixture's skills, whose manifest is in the state `defect` names. */
+async function writeMarketplaceWithManifestDefect(
+  tempDir: string,
+  defect: ManifestDefect,
+): Promise<string> {
+  const sourceDir = path.join(tempDir, `${defect.replaceAll(" ", "-")}-manifest-marketplace`);
   await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+  if (defect === "absent") return sourceDir;
+
   const manifestPath = marketplaceManifestPath(sourceDir);
   await mkdir(path.dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, JSON.stringify(MANIFEST_WITH_UNNAMED_OWNER));
+  await writeFile(
+    manifestPath,
+    defect === "unparseable" ? UNPARSEABLE_MANIFEST : JSON.stringify(MANIFEST_WITH_UNNAMED_OWNER),
+  );
   return sourceDir;
+}
+
+/**
+ * Publishes a marketplace a test wrote by hand: the manifest every load of a custom marketplace
+ * requires, so what the load reads is the test's subject — its paths, stacks or skills — rather
+ * than a refusal of the missing file.
+ */
+async function publishMarketplace(sourceDir: string): Promise<void> {
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      ...createMockMarketplace([createMockMarketplacePlugin(FIXTURE_REACT_ID)]),
+      name: TEST_MARKETPLACE_NAME,
+    }),
+  );
 }
 
 /**
@@ -431,37 +447,100 @@ describe("source-loader", () => {
         expect(result.marketplace).toBe("test-marketplace");
       });
 
-      it("should leave marketplace undefined when the local source has no marketplace.json", async () => {
+      it("should name a local marketplace after the manifest its builds wrote", async () => {
         const result = await loadSkillsMatrixFromSource({
           sourceFlag: fixtureDirs.sourceDir,
           projectDir: tempDir,
           skipExtraSources: true,
         });
 
-        expect(result.marketplace).toBeUndefined();
+        expect(result.marketplace).toBe(TEST_MARKETPLACE_NAME);
       });
     });
 
-    describe("a marketplace.json that is absent and one that cannot be read", () => {
-      it("should not describe a manifest it could not read the way it describes an absent one", async () => {
-        const absent = await reportOnManifest(fixtureDirs.sourceDir, tempDir);
-        const unreadable = await reportOnManifest(
+    /**
+     * A custom marketplace must carry a valid manifest, and a load of one that does not is
+     * refused rather than labelled by whatever the config recorded. The refusal is the remedy as
+     * well as the fault: the two builds that write the file, in the order an author runs them.
+     * The fixture loads above are this describe's permitted twin — the same loader, a manifest
+     * its builds wrote.
+     */
+    describe("a custom marketplace with no valid marketplace.json", () => {
+      it.each(MANIFEST_DEFECTS)(
+        "should refuse the load when the manifest is %s, naming the builds that write one",
+        async (defect) => {
+          const sourceDir = await writeMarketplaceWithManifestDefect(tempDir, defect);
+
+          const refusal = await refusalLoading(sourceDir, tempDir);
+
+          expect(
+            refusal,
+            "a marketplace with no valid marketplace.json must not load at all",
+          ).not.toBeNull();
+          expect(
+            refusal,
+            "the refusal must name `build plugins` and then `build marketplace`",
+          ).toMatch(BUILDS_IN_ORDER);
+        },
+      );
+
+      it("should name the field that failed when the manifest is there and the schema refuses it", async () => {
+        const refusal = await refusalLoading(
           await writeMarketplaceWithUnreadableManifest(tempDir),
           tempDir,
         );
 
-        expect(unreadable.diagnostics).not.toStrictEqual(absent.diagnostics);
+        expect(refusal, "an invalid manifest must be refused").not.toBeNull();
+        expect(refusal, "the refusal must say what in the file is wrong").toContain(
+          UNREADABLE_MANIFEST_FIELD,
+        );
       });
 
-      it("should warn, naming the field that failed, only when the manifest is there and invalid", async () => {
-        const absent = await reportOnManifest(fixtureDirs.sourceDir, tempDir);
-        const unreadable = await reportOnManifest(
-          await writeMarketplaceWithUnreadableManifest(tempDir),
-          tempDir,
+      /**
+       * The ruling's other half: a load that only keeps an existing installation in step — a
+       * global uninstall pruning the projects registered under it, a fan-out rewriting one — is
+       * not refused, because everything it touches is already installed. Both specs read the
+       * marketplace through the installation's own config, as those loads do, so the only thing
+       * between the load that goes on and the one refused is what the load is for.
+       */
+      describe("read for the upkeep of an installation that names it", () => {
+        async function installationNaming(sourceDir: string): Promise<void> {
+          await writeTestTsConfig(
+            tempDir,
+            buildProjectConfig({ marketplace: sourceDir, marketplaceName: TEST_MARKETPLACE_NAME }),
+          );
+        }
+
+        it.each(MANIFEST_DEFECTS)(
+          "should load when the manifest is %s, under the name the installation recorded",
+          async (defect) => {
+            const sourceDir = await writeMarketplaceWithManifestDefect(tempDir, defect);
+            await installationNaming(sourceDir);
+
+            const result = await loadSkillsMatrixFromSource({
+              projectDir: tempDir,
+              skipExtraSources: true,
+              matrixOnly: true,
+              purpose: "upkeep",
+            });
+
+            expect(result.sourceConfig.source).toBe(sourceDir);
+            expect(result.marketplace).toBe(TEST_MARKETPLACE_NAME);
+          },
         );
 
-        expect(absent.warnings).toStrictEqual([]);
-        expect(firstElement(unreadable.warnings)).toContain(UNREADABLE_MANIFEST_FIELD);
+        it("should still refuse the same installation's load for anything else", async () => {
+          const sourceDir = await writeMarketplaceWithManifestDefect(tempDir, "absent");
+          await installationNaming(sourceDir);
+
+          await expect(
+            loadSkillsMatrixFromSource({
+              projectDir: tempDir,
+              skipExtraSources: true,
+              matrixOnly: true,
+            }),
+          ).rejects.toThrow(BUILDS_IN_ORDER);
+        });
       });
     });
 
@@ -486,6 +565,58 @@ describe("source-loader", () => {
           sourceFlag: sourceDir,
           projectDir: tempDir,
           skipExtraSources: true,
+        });
+
+        expect(result.marketplace).toBe(MANIFEST_NAME_ACCEPTED);
+      });
+    });
+
+    /**
+     * The name an installation recorded outranks its manifest's, so an install made before
+     * `eject` was reserved, or a config edited by hand, carries the reserved name past the
+     * manifest's own check — and every plugin it installs is recorded as an ejected copy. It is
+     * refused as a manifest carrying the name is. The last spec is the permitted twin: the same
+     * installation, differing in the name it recorded alone.
+     */
+    describe("an installation that recorded a reserved marketplace name", () => {
+      async function installationRecording(marketplaceName: string): Promise<void> {
+        const sourceDir = await writeMarketplaceNamed(tempDir, "recorded", MANIFEST_NAME_ACCEPTED);
+        await writeTestTsConfig(
+          tempDir,
+          buildProjectConfig({ marketplace: sourceDir, marketplaceName }),
+        );
+      }
+
+      function loadInstallation(): Promise<unknown> {
+        return loadSkillsMatrixFromSource({
+          projectDir: tempDir,
+          skipExtraSources: true,
+          matrixOnly: true,
+        });
+      }
+
+      it("should refuse the load in the words a reserved manifest name is refused in", async () => {
+        await installationRecording(EJECT_SOURCE);
+
+        const refusal = loadInstallation();
+
+        await expect(refusal).rejects.toBeInstanceOf(MarketplaceNameRefusedError);
+        await expect(refusal).rejects.toThrow(`Marketplace name '${EJECT_SOURCE}' is reserved`);
+      });
+
+      it("should refuse it over the public catalogue too, which is read without a manifest", async () => {
+        await writeTestTsConfig(tempDir, buildProjectConfig({ marketplaceName: EJECT_SOURCE }));
+
+        await expect(loadInstallation()).rejects.toBeInstanceOf(MarketplaceNameRefusedError);
+      });
+
+      it("should load the same installation under the name it recorded when the name is its own", async () => {
+        await installationRecording(MANIFEST_NAME_ACCEPTED);
+
+        const result = await loadSkillsMatrixFromSource({
+          projectDir: tempDir,
+          skipExtraSources: true,
+          matrixOnly: true,
         });
 
         expect(result.marketplace).toBe(MANIFEST_NAME_ACCEPTED);
@@ -526,9 +657,10 @@ describe("source-loader", () => {
       });
 
       it("should return empty skills if skills directory is missing", async () => {
-        // Create a directory without src/skills/
+        // Create a directory without src/skills/ — published, so the manifest is not the subject
         const emptySource = path.join(tempDir, "empty-source");
         await mkdir(emptySource, { recursive: true });
+        await publishMarketplace(emptySource);
 
         // With new architecture: matrix loads from CLI repo (always succeeds)
         // Skills extraction gracefully returns empty for missing src/skills/
@@ -841,6 +973,8 @@ describe("source-loader local skills integration", () => {
     );
 
     // Load skills from source to verify marketplace skill is present
+    await publishMarketplace(sourceDir);
+
     const initialResult = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
       projectDir: tempDir,
@@ -994,6 +1128,8 @@ describe("source-loader config-driven paths", () => {
       'category: web-framework\nauthor: "@test"\ndisplayName: React\ncliDescription: React framework\nusageGuidance: Use React for building UIs\ncontentHash: abc1234\ndomain: web\nslug: react\n',
     );
 
+    await publishMarketplace(sourceDir);
+
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
       projectDir: tempDir,
@@ -1019,6 +1155,8 @@ describe("source-loader config-driven paths", () => {
     // Do NOT create categories at data/categories.yaml — loader should fall back to CLI categories
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
 
+    await publishMarketplace(sourceDir);
+
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
       projectDir: tempDir,
@@ -1041,6 +1179,8 @@ describe("source-loader config-driven paths", () => {
     );
 
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+
+    await publishMarketplace(sourceDir);
 
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
@@ -1082,6 +1222,8 @@ describe("source-loader config-driven paths", () => {
     // Create empty skills dir
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
 
+    await publishMarketplace(sourceDir);
+
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
       projectDir: tempDir,
@@ -1096,6 +1238,8 @@ describe("source-loader config-driven paths", () => {
 
     // No .claude-src/config.ts — just create conventional paths
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+
+    await publishMarketplace(sourceDir);
 
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
@@ -1119,6 +1263,8 @@ describe("source-loader config-driven paths", () => {
     );
 
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+
+    await publishMarketplace(sourceDir);
 
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
@@ -1205,6 +1351,8 @@ describe("source-loader integration", () => {
     // Create an empty src/skills dir so extractAllSkills doesn't fail
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
 
+    await publishMarketplace(sourceDir);
+
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
       projectDir: tempDir,
@@ -1220,6 +1368,8 @@ describe("source-loader integration", () => {
     // Create a source directory without stacks.ts
     const sourceDir = path.join(tempDir, "no-stacks-source");
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
+
+    await publishMarketplace(sourceDir);
 
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
@@ -1560,10 +1710,12 @@ describe("mergeLocalSkillsIntoMatrix slug map", () => {
     expect(result.slugMap.slugToId[LOCAL_ONLY_SLUG]).toBe("web-tooling-custom");
   });
 
-  it("leaves a slug the matrix already maps with the skill holding it", () => {
+  it("leaves a slug the matrix already maps with the skill holding it, and warns about nothing", () => {
     // Ids are namespaced by their author; slugs are not, so a user's own
     // skill can spell one the catalogue already uses. Letting it win would reroute
-    // every rule naming that slug to the local skill, silently.
+    // every rule naming that slug to the local skill, silently. Sharing the slug is
+    // legal for the same reason — both skills are installed and both work — so nothing
+    // is "ignored" and nothing is said.
     const incumbent = createMockSkill("web-framework-react");
     const localResult: LocalSkillDiscoveryResult = {
       skills: [
@@ -1583,9 +1735,9 @@ describe("mergeLocalSkillsIntoMatrix slug map", () => {
 
     expect(matrix.slugMap.slugToId[incumbent.slug]).toBe("web-framework-react");
     expect(
-      warnings.filter((text) => text.includes(`Duplicate slug '${incumbent.slug}'`)),
-      "the refused claim is named, not silently dropped",
-    ).toHaveLength(1);
+      warnings,
+      "a slug an installed skill shares with the loaded catalogue is legal, since only ids carry a namespace, and nothing is ignored",
+    ).toStrictEqual([]);
     expect(
       matrix.skills["web-tooling-custom" as SkillId],
       "the local skill is still in the matrix — only its slug claim was refused",
@@ -2158,5 +2310,128 @@ describe("source-loader public catalogue collision guard", () => {
       Object.keys(result.matrix.skills),
       "the source every default install uses must not be refused by its own ids",
     ).toStrictEqual(Object.keys(BUILT_IN_MATRIX.skills));
+  });
+});
+
+/**
+ * A global installation of plugins from one marketplace, under a project loading another that
+ * does not carry its skill.
+ *
+ * An ejected global skill reaches a project's matrix through the global local-skill merge; a
+ * plugin leaves nothing of its catalogue entry on disk, so the load seats it from the marketplace
+ * the global installation was made from, under that marketplace's name. That the seated entry is
+ * the one a global sub-agent compiles to the same bytes from is the e2e
+ * `lifecycle/init-marketplace-over-an-installation`'s to show: this fixture writes no usage
+ * sentence to compare. The two controls are the cases that must read nothing more: an ejected
+ * entry, and a global installation on the very marketplace the project loads.
+ */
+describe("source-loader: a global plugin installation from another marketplace", () => {
+  const GLOBAL_MARKETPLACE_NAME = "global-marketplace";
+  const GLOBAL_SKILL = firstElement(
+    inTestMarketplace([createTestSkill("web-state-zustand", "Bear necessities state management")]),
+  );
+  const GLOBAL_SKILL_ID = GLOBAL_SKILL.id;
+
+  let globalSource: TestDirs;
+  let projectSource: TestDirs;
+  let projectDir: string;
+
+  beforeAll(async () => {
+    globalSource = await createTestSource({ skills: [GLOBAL_SKILL] });
+    projectSource = await createTestSource({
+      skills: FIXTURE_SKILLS.filter((skill) => skill.id !== GLOBAL_SKILL_ID),
+    });
+  });
+
+  afterAll(async () => {
+    await cleanupTestSource(globalSource);
+    await cleanupTestSource(projectSource);
+  });
+
+  beforeEach(async () => {
+    projectDir = await createTempDir("cc-source-loader-project-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(projectDir);
+  });
+
+  async function installGloballyFrom(marketplaceDir: string, origin: string): Promise<void> {
+    await writeTestTsConfig(
+      fakeHome,
+      buildProjectConfig({
+        skills: buildSkillConfigs([GLOBAL_SKILL_ID], { scope: "global", origin }),
+        marketplace: marketplaceDir,
+        marketplaceName: GLOBAL_MARKETPLACE_NAME,
+      }),
+    );
+  }
+
+  it("seats the global skill as the global installation's own marketplace describes it", async () => {
+    await installGloballyFrom(globalSource.sourceDir, GLOBAL_MARKETPLACE_NAME);
+
+    const { matrix: loaded } = await loadSkillsMatrixFromSource({
+      sourceFlag: projectSource.sourceDir,
+      projectDir,
+    });
+
+    expect(
+      loadedSkill(loaded, GLOBAL_SKILL_ID),
+      "seated as its own catalogue places it, under its own marketplace's name",
+    ).toStrictEqual(
+      expect.objectContaining({
+        id: GLOBAL_SKILL_ID,
+        category: GLOBAL_SKILL.category,
+        availableSources: [
+          { name: GLOBAL_MARKETPLACE_NAME, type: "private", installed: false, primary: true },
+        ],
+        activeSource: {
+          name: GLOBAL_MARKETPLACE_NAME,
+          type: "private",
+          installed: false,
+          primary: true,
+        },
+      }),
+    );
+  });
+
+  it("does not count the seated skill among the loaded marketplace's own, whose folder holds none of its files", async () => {
+    await installGloballyFrom(globalSource.sourceDir, GLOBAL_MARKETPLACE_NAME);
+
+    const { marketplaceSkillIds } = await loadSkillsMatrixFromSource({
+      sourceFlag: projectSource.sourceDir,
+      projectDir,
+    });
+
+    expect([...marketplaceSkillIds].sort()).toStrictEqual(
+      FIXTURE_SKILLS.map((skill) => skill.id)
+        .filter((id) => id !== GLOBAL_SKILL_ID)
+        .sort(),
+    );
+  });
+
+  it("leaves an ejected global skill to the local-skill merge, which finds no copy here", async () => {
+    await installGloballyFrom(globalSource.sourceDir, EJECT_SOURCE);
+
+    const { matrix: loaded } = await loadSkillsMatrixFromSource({
+      sourceFlag: projectSource.sourceDir,
+      projectDir,
+    });
+
+    expect(loadedSkill(loaded, GLOBAL_SKILL_ID)).toBeUndefined();
+  });
+
+  it("seats nothing when the global installation's marketplace is the one loaded", async () => {
+    await installGloballyFrom(projectSource.sourceDir, GLOBAL_MARKETPLACE_NAME);
+
+    const { matrix: loaded } = await loadSkillsMatrixFromSource({
+      sourceFlag: projectSource.sourceDir,
+      projectDir,
+    });
+
+    expect(
+      loadedSkill(loaded, GLOBAL_SKILL_ID),
+      "a skill the global's own marketplace no longer carries stays absent",
+    ).toBeUndefined();
   });
 });

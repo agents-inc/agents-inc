@@ -1,5 +1,6 @@
 import path from "path";
 import { mkdir } from "fs/promises";
+import { captureOutput } from "@oclif/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
@@ -42,6 +43,14 @@ const { default: Update } = await import("../../../commands/update.js");
 const MARKETPLACE = "agents-inc";
 const OTHER_MARKETPLACE = "acme-skills";
 const MARKETPLACE_FAILURE = "Failed to update marketplace: network unreachable";
+
+/**
+ * The refresh summary's two halves. `claude plugin marketplace update` re-reads a marketplace's
+ * listing and leaves every installed plugin at the version it was installed at, so the summary may
+ * not claim the update is complete, and says the plugins were left as they were.
+ */
+const FALSE_COMPLETION_CLAIM = "Update complete!";
+const PLUGINS_UNCHANGED = "Installed plugins were not changed";
 
 /** Marketplace names handed to the host, in call order. */
 function updatedMarketplaces(): string[] {
@@ -131,6 +140,22 @@ describe("update command", () => {
       await runUpdate();
 
       expect(updatedMarketplaces()).toStrictEqual([MARKETPLACE]);
+    });
+
+    it("says the listings were refreshed and the installed plugins were not changed", async () => {
+      await installConfig({
+        skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
+      });
+
+      const { stdout, error } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
+
+      expect(error).toBeUndefined();
+      expect(updatedMarketplaces()).toStrictEqual([MARKETPLACE]);
+      expect(
+        stdout,
+        "a marketplace refresh leaves every installed plugin at its version, so nothing is complete",
+      ).not.toContain(FALSE_COMPLETION_CLAIM);
+      expect(stdout).toContain(PLUGINS_UNCHANGED);
     });
 
     it("exits non-zero when a marketplace refresh fails", async () => {

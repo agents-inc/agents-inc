@@ -69,7 +69,7 @@ export async function writeTestTsConfig(
  * Writes `source` verbatim as the project's `config.ts` — the raw-text sibling of
  * {@link writeTestTsConfig}, for the corruption cases a config object cannot express (a
  * syntax error, a missing default export, a shape the loader schema rejects) and for the one
- * config no object renders: an EMPTY file, which is not corrupt. Returns the absolute path of the
+ * config no object renders: an EMPTY file. Returns the absolute path of the
  * written file. _Named `writeCorruptTestConfig` until 2026-09-26, which made the empty-file caller
  * read as testing corruption._
  *

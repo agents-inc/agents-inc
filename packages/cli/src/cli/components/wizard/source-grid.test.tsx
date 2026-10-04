@@ -390,6 +390,27 @@ describe("SourceGrid component", () => {
       expect(onSelect).toHaveBeenCalledWith("web-framework-react", "eject");
     });
 
+    /**
+     * A move and a Space in one chunk are handled with no render between them, so the Space
+     * must choose the cell the move landed on. The spec below, focused there from the start, is
+     * the paced twin.
+     */
+    it("should report the cell a right-arrow moved to when the two keys arrive in one burst", async () => {
+      const onSelect = vi.fn();
+      const { stdin, unmount } = renderGrid({
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+        onSelect,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write(ARROW_RIGHT + SPACE);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onSelect).toHaveBeenLastCalledWith("web-framework-react", "plugin");
+    });
+
     it("should report the plugin cell when it is the focused one", async () => {
       const onSelect = vi.fn();
       const { stdin, unmount } = renderGrid({

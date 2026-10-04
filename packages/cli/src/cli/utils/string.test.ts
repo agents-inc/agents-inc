@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { bytewise, stripTerminalControls, truncateText } from "./string";
+import { bytewise, plural, stripTerminalControls, truncateText } from "./string";
 
 /**
  * A locale whose collation orders two ordinary kebab-case names against their code units, which
@@ -150,5 +150,13 @@ describe("truncateText", () => {
     // The assertion that fails if the order is ever reversed: a cut inside `ESC [ 2 K` leaves an
     // escape holding the ellipsis and whatever the caller prints next.
     expect(clipped).not.toContain("\u001B");
+  });
+});
+
+describe("plural", () => {
+  it("keeps the noun singular at one and only at one", () => {
+    expect(plural(1, "skill")).toBe("1 skill");
+    expect(plural(0, "skill")).toBe("0 skills");
+    expect(plural(2, "skill plugin")).toBe("2 skill plugins");
   });
 });

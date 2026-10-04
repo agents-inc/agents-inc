@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, readdir, realpath, symlink } from "fs/promises";
+import { chmod, mkdir, writeFile, readFile, readdir, realpath, symlink } from "fs/promises";
 import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -223,6 +223,9 @@ const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).lo
 
 /** A shipped stack, read as the wizard reads it — the built-in tier under test. */
 const BUILT_IN_STACK_ID = "nextjs-fullstack";
+
+/** Denies the write bit on a file whose directory stays writable, so cleanup still removes it. */
+const READ_ONLY_FILE = 0o444;
 
 describe("local-installer", () => {
   let tempDir: string;
@@ -1672,20 +1675,18 @@ describe("local-installer", () => {
 
     it("records the incoming marketplace and source when the global config has none", () => {
       // Project init: ensureBlankGlobalConfig() creates `existing` moments earlier, so it
-      // carries no source identity. The global config is the only record tying globally
-      // installed plugins back to their marketplace — uninstall builds its `<id>@<marketplace>`
-      // registry key from it.
-      const sharedSkills = buildSkillConfigs(["web-framework-react"], { scope: "global" });
-      const sharedAgents = buildAgentConfigs(["web-developer"], { scope: "global" });
+      // carries no source identity and none of the entries arriving. The global config is the
+      // only record tying globally installed plugins back to their marketplace — uninstall
+      // builds its `<id>@<marketplace>` registry key from it.
       const existing: ProjectConfig = buildProjectConfig({
         name: "global",
-        skills: sharedSkills,
-        agents: sharedAgents,
+        skills: [],
+        agents: [],
       });
       const incoming: ProjectConfig = buildProjectConfig({
         name: "global",
-        skills: sharedSkills,
-        agents: sharedAgents,
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
         marketplaceName: "e2e-test-marketplace",
         marketplace: "/path/to/skills",
       });
@@ -1698,6 +1699,35 @@ describe("local-installer", () => {
       // `resolveEffectiveGlobalConfig`'s `changed`, which gates the global write, so a false
       // here would skip that write and drop the fields again.
       expect(changed, "newly recorded source identity must trigger the global write").toBe(true);
+    });
+
+    it("leaves the global config unnamed when the incoming adds no entry it lacks", () => {
+      // A project session inlines every global entry it holds, so its global half names the
+      // project's marketplace even when each entry in it is the global install's own. Nothing
+      // in the global config came from that marketplace, so it is not the one to record.
+      const sharedSkills = buildSkillConfigs(["web-framework-react"], { scope: "global" });
+      const sharedAgents = buildAgentConfigs(["web-developer"], { scope: "global" });
+      // The stack and domains a written global config holds, so the whole merged config can be
+      // held against it: any field the merge filled would show here.
+      const existing: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: sharedSkills,
+        agents: sharedAgents,
+        stack: {},
+        selectedDomains: [],
+      });
+      const incoming: ProjectConfig = buildProjectConfig({
+        name: "global",
+        skills: sharedSkills,
+        agents: sharedAgents,
+        marketplaceName: "e2e-test-marketplace",
+        marketplace: "/path/to/skills",
+      });
+
+      const { config, changed } = mergeGlobalConfigs(existing, incoming);
+
+      expect(config).toStrictEqual(existing);
+      expect(changed, "an identical merge must not rewrite the global config").toBe(false);
     });
 
     it("keeps the existing marketplace and source when the incoming init came from a different one", () => {
@@ -2544,10 +2574,16 @@ describe("local-installer", () => {
 
       const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents, "claude");
 
-      expect(result).toStrictEqual({ updated: [], skipped: [] });
+      expect(result).toStrictEqual({
+        updated: [],
+        unreadable: [],
+        gone: [],
+        notOurs: [],
+        failed: [],
+      });
     });
 
-    it("should skip stale project paths", async () => {
+    it("reports a stale project path as gone", async () => {
       const stalePath = path.join(tempDir, "nonexistent-project");
 
       const globalConfig = buildProjectConfig({
@@ -2559,7 +2595,49 @@ describe("local-installer", () => {
 
       const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents, "claude");
 
-      expect(result).toStrictEqual({ updated: [], skipped: [stalePath] });
+      expect(result).toStrictEqual({
+        updated: [],
+        unreadable: [],
+        gone: [stalePath],
+        notOurs: [],
+        failed: [],
+      });
+    });
+
+    it("reports a project whose rewrite fails as failed, and still reaches the next", async () => {
+      async function plantProject(name: string): Promise<string> {
+        const dir = path.join(tempDir, name);
+        const configDir = sourceFolderInUse(dir, "claude").dir;
+        await mkdir(configDir, { recursive: true });
+        await writeConfigFile(
+          buildProjectConfig({ name, skills: [], agents: [] }),
+          path.join(configDir, STANDARD_FILES.CONFIG_TS),
+        );
+        return dir;
+      }
+      const unwritable = await plantProject("unwritable-project");
+      const reached = await plantProject("reached-project");
+      await chmod(getProjectConfigPath(unwritable, "claude"), READ_ONLY_FILE);
+
+      const globalConfig = buildProjectConfig({
+        name: "global",
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: "agents-inc",
+        }),
+        agents: [],
+        projects: [unwritable, reached],
+      });
+
+      const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents, "claude");
+
+      expect(result).toStrictEqual({
+        updated: [reached],
+        unreadable: [],
+        gone: [],
+        notOurs: [],
+        failed: [unwritable],
+      });
     });
 
     it("should skip current project dir", async () => {
@@ -2596,8 +2674,13 @@ describe("local-installer", () => {
         projectA,
       );
 
-      expect(result.updated).toStrictEqual([projectB]);
-      expect(result.skipped).toStrictEqual([]);
+      expect(result).toStrictEqual({
+        updated: [projectB],
+        unreadable: [],
+        gone: [],
+        notOurs: [],
+        failed: [],
+      });
     });
 
     it("should update config-types.ts in registered projects", async () => {
@@ -2678,7 +2761,13 @@ describe("local-installer", () => {
 
       const result = await propagateGlobalChangesToProjects(globalConfig, emptyAgents, "claude");
 
-      expect(result).toStrictEqual({ updated: [], skipped: [] });
+      expect(result).toStrictEqual({
+        updated: [],
+        unreadable: [],
+        gone: [],
+        notOurs: [],
+        failed: [],
+      });
     });
 
     it("drops a skill tombstone when the global skill has been removed", async () => {
@@ -2950,7 +3039,13 @@ describe("local-installer", () => {
         "claude",
       );
 
-      expect(result).toStrictEqual({ updated: [projectDir], skipped: [] });
+      expect(result).toStrictEqual({
+        updated: [projectDir],
+        unreadable: [],
+        gone: [],
+        notOurs: [],
+        failed: [],
+      });
 
       const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
       expect(parsedConfig.skills).toStrictEqual([
@@ -3014,7 +3109,7 @@ describe("local-installer", () => {
       ]);
     });
 
-    it("reports unreachable registered project dirs as skipped", async () => {
+    it("reports a deleted registered project dir as gone", async () => {
       const ghostDir = path.join(tempDir, "deleted-project");
 
       const globalConfig = buildProjectConfig({
@@ -3033,7 +3128,13 @@ describe("local-installer", () => {
         "claude",
       );
 
-      expect(result).toStrictEqual({ updated: [], skipped: [ghostDir] });
+      expect(result).toStrictEqual({
+        updated: [],
+        unreadable: [],
+        gone: [ghostDir],
+        notOurs: [],
+        failed: [],
+      });
     });
   });
 

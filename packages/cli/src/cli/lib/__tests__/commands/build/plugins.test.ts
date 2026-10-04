@@ -242,6 +242,16 @@ describe("build:plugins command", () => {
       expect(await directoryExists(path.join(outputDir, "api-framework-hono"))).toBe(true);
     });
 
+    it("should count a single compiled skill plugin in the singular", async () => {
+      await writeSkill(skillsDir, "web-framework-react");
+
+      const { stdout, error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain("Compiled 1 skill plugin");
+      expect(stdout).not.toContain("Compiled 1 skill plugins");
+    });
+
     it("should compile a specific skill with --skill flag", async () => {
       // Create two skills but only compile one
       for (const name of ["web-framework-react", "api-framework-hono"]) {

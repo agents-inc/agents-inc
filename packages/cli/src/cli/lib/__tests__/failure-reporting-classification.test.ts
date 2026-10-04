@@ -68,12 +68,6 @@ const EDIT_ADVISORY_WARNS = [
     why: "A degraded READ, and one that only ever protects: an unanswered question makes the entry the CLI's own, which is what every other command already assumes. Its consequence is a removal the user is then shown and asked to approve.",
   },
   {
-    line:
-      "this.warn(`Could not tell which projects share this install: " +
-      "${getErrorMessage(error)}`);",
-    why: "A diagnostic about the DISCLOSURE rather than about the apply. The list exists to be named in the confirm; a home directory that cannot be read leaves it counting nobody.",
-  },
-  {
     line: "if (!opened.ok) this.warn(opened.error);",
     why: "`openSharedInEditor`'s half of the same site — the one that opens an id `--from` named rather than this installation. Identical reasoning and identical line, which is why the roster carries it twice: the scan reads source order, and two paths each print a link before trying to open one.",
   },
@@ -90,12 +84,20 @@ const EDIT_ADVISORY_WARNS = [
     why: "Not warn-only at all — `reportEjectCopies` hard-errors on the same `failed` two statements below, so this line is the detail beside a refusal.",
   },
   {
+    line: "this.warn(`Could not uninstall this project's plugin for ${half.id}: no marketplace`);",
+    why: 'The project half of a collapsed `[P][G]` pair, removed: the config no longer names it, so a project-scope registration a source with no marketplace cannot address is untidy rather than wrong. CLAUDE.md: "Uninstall failures are diagnostic-only."',
+  },
+  {
+    line: "this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);",
+    why: "The same collapsed half, where the uninstall itself failed — the reason the site beside `applyPluginChanges` gives below, one removal earlier in the run.",
+  },
+  {
     line: "this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);",
     why: 'CLAUDE.md: "Uninstall failures are diagnostic-only." The skill is gone from the config and from disk; a stale registration in a registry this run could not reach is not work this run failed to do.',
   },
   {
     line: "this.warn(warning);",
-    why: "The compiler's own reason per failed sub-agent. The FAILURE is recorded one statement below off `failed`, because `warnings` also carries entries that are not failures — a scope with nothing to compile contributes one on every project-context run.",
+    why: "The compiler's own reason per failed sub-agent. The FAILURE is recorded one statement below off `failed`, because `warnings` also carries entries that are not failures.",
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
@@ -122,7 +124,7 @@ const INIT_ADVISORY_WARNS = [
   },
   {
     line: "this.warn(warning);",
-    why: "The compiler's own reason per failed sub-agent, printed where it is explicable. The FAILURE is recorded one statement below off `failed`, for the reason `edit` records off `failed`: `warnings` also carries entries that are not failures — a scope with nothing to compile contributes one on every project-context run.",
+    why: "The compiler's own reason per failed sub-agent, printed where it is explicable. The FAILURE is recorded one statement below off `failed`, for the reason `edit` records off `failed`: `warnings` also carries entries that are not failures.",
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
@@ -164,6 +166,18 @@ const BASE_COMMAND_ADVISORY_WARNS = [
   {
     line: "this.warn(`Failed to install plugin ${item.id}: ${item.error}`);",
     why: "Detail beside a refusal — `reportPluginInstalls` hard-errors on the same `failed` two statements below, before any config records a marketplace origin.",
+  },
+  {
+    line: "this.warn(registeredProjectConfigUnreadable(projectPath));",
+    why: "`reportFanOut` — a registered project the fan-out left alone because its config.ts cannot be loaded. The global change this run made has landed; the project is another installation, left as it was, and a run from inside it catches it up. `compile` and `uninstall` always warned about a skipped project and exited 0, and this keeps that posture for `init`, `edit` and `compile`, which share the method.",
+  },
+  {
+    line: "this.warn(registeredProjectGone(projectPath));",
+    why: "`reportProjectsOutOfReach` — a registered project with nothing installed at its path any more. Nothing there could hold what this run changed, so no work is left undone, and `compile` and `uninstall`, the two that print it, always exited 0 past it.",
+  },
+  {
+    line: "this.warn(registeredProjectOnAnotherProvider(projectPath));",
+    why: "`reportProjectsOutOfReach` — a registered project on the other provider: a different installation this run must not write, so leaving it alone is the correct outcome rather than an incomplete one.",
   },
   {
     line: "this.warn(warning);",

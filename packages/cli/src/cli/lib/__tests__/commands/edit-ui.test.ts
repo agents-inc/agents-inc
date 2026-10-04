@@ -21,6 +21,7 @@ import { EXIT_CODES } from "../../exit-codes";
 import { STATUS_MESSAGES } from "../../../utils/messages";
 import type { ProjectConfig } from "../../../types";
 import { writeTestTsConfig } from "../helpers/config-io.js";
+import { standAtTerminal } from "../helpers/terminal-input.js";
 
 /**
  * `edit --ui` is the outbound half of the editor round trip: it mints an id for the
@@ -137,13 +138,27 @@ describe("edit --ui", () => {
   });
 
   describe("handing the link to a browser", () => {
-    it("opens the printed link when there is a terminal to open one from", async () => {
-      process.stdin.isTTY = true;
-      await installConfig(installedOverrides());
+    describe("at a terminal", () => {
+      standAtTerminal();
 
-      await runEditUi();
+      it("opens the printed link when there is a terminal to open one from", async () => {
+        await installConfig(installedOverrides());
 
-      expect(mockOpenUrl).toHaveBeenCalledWith(`${EDITOR_URL}/?fromId=${STORED_ID}`);
+        await runEditUi();
+
+        expect(mockOpenUrl).toHaveBeenCalledWith(`${EDITOR_URL}/?fromId=${STORED_ID}`);
+      });
+
+      it("leaves the link standing when the browser could not be opened", async () => {
+        mockOpenUrl.mockResolvedValue({ ok: false, error: OPENER_FAILURE });
+        await installConfig(installedOverrides());
+
+        const error = await runEditUi();
+
+        // The id was minted and printed; a machine with no browser has lost nothing.
+        expect(error).toBeUndefined();
+        expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
+      });
     });
 
     it("opens nothing without a terminal, and prints the link instead", async () => {
@@ -154,18 +169,6 @@ describe("edit --ui", () => {
       // Piped or in CI there is nobody whose browser this would be. The link is the whole of
       // what such a run can offer, and it is printed either way.
       expect(mockOpenUrl).not.toHaveBeenCalled();
-      expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
-    });
-
-    it("leaves the link standing when the browser could not be opened", async () => {
-      process.stdin.isTTY = true;
-      mockOpenUrl.mockResolvedValue({ ok: false, error: OPENER_FAILURE });
-      await installConfig(installedOverrides());
-
-      const error = await runEditUi();
-
-      // The id was minted and printed; a machine with no browser has lost nothing.
-      expect(error).toBeUndefined();
       expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
     });
   });

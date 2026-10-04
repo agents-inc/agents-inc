@@ -6,6 +6,7 @@ import { mkdir, writeFile } from "fs/promises";
 import {
   fetchFromSource,
   fetchMarketplace,
+  MarketplaceNameRefusedError,
   sanitizeSourceForCache,
   getGigetCacheDir,
 } from "./source-fetcher";
@@ -224,6 +225,59 @@ describe("source-fetcher", () => {
 
       expect(result.marketplace.name).toBe("test-marketplace");
       expect(result.marketplace.plugins).toHaveLength(1);
+    });
+
+    /**
+     * `eject` is the `origin` a config records for a skill copied into the installation, so a
+     * marketplace published under it has every skill it installs read back as an ejected copy:
+     * a plugin install turned into a silent local copy. The refusal is the name-refusal TYPE,
+     * because nothing in such a marketplace can be installed as what it claims to be.
+     * The accepted twin is "should parse a valid marketplace.json" above, which differs from
+     * this manifest only in its name.
+     */
+    it("should refuse a manifest naming the marketplace after the ejected-copy marker", async () => {
+      const source = await writeMarketplace(
+        JSON.stringify(createValidMarketplace({ name: "eject" })),
+      );
+
+      const refusal = fetchMarketplace(source);
+
+      await expect(refusal).rejects.toBeInstanceOf(MarketplaceNameRefusedError);
+      await expect(refusal).rejects.toThrow(/Marketplace name 'eject' is reserved/);
+    });
+
+    /**
+     * `external` and `local` hold the skills that belong to no marketplace, so a marketplace
+     * under either is read back as something it is not — the names `build marketplace` and
+     * `new marketplace` refuse, refused again where a manifest built before that, or written by
+     * hand, is read.
+     */
+    it.each(["external", "local"])(
+      "should refuse a manifest naming the marketplace '%s', which holds skills from no marketplace",
+      async (name) => {
+        const source = await writeMarketplace(JSON.stringify(createValidMarketplace({ name })));
+
+        const refusal = fetchMarketplace(source);
+
+        await expect(refusal).rejects.toBeInstanceOf(MarketplaceNameRefusedError);
+        await expect(refusal).rejects.toThrow(`Marketplace name '${name}' is reserved`);
+      },
+    );
+
+    /**
+     * The one reserved name a manifest may carry: the public catalogue publishes under it, and so
+     * does a checkout of the catalogue read as a local marketplace. The refusals above are only
+     * worth anything beside this — a check that refused every reserved name would refuse the
+     * catalogue itself.
+     */
+    it("should load a manifest naming the marketplace after the public catalogue", async () => {
+      const source = await writeMarketplace(
+        JSON.stringify(createValidMarketplace({ name: "agents-inc" })),
+      );
+
+      const result = await fetchMarketplace(source);
+
+      expect(result.marketplace.name).toBe("agents-inc");
     });
 
     it("should reject oversized marketplace.json files", async () => {

@@ -2,6 +2,7 @@ import path from "path";
 import { mkdir } from "fs/promises";
 import { afterEach, beforeEach } from "vitest";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
+import { CLAUDE_CONFIG_DIR_VAR } from "../../installation/install-layout.js";
 import { linkSharedCache } from "./shared-marketplace-checkout.js";
 
 export type IsolatedHome = {
@@ -51,11 +52,23 @@ function overrideEnv(name: string, value: string): RestoreEnv {
 }
 
 /**
+ * Takes away `CLAUDE_CONFIG_DIR` for the life of a fake home. Claude Code's state file follows that
+ * variable before HOME, and so does `claudeStateFile()`, so while a developer's shell exports it a
+ * spec recording a trust answer under a fake home would write it into their real state file.
+ */
+function clearClaudeConfigDir(): RestoreEnv {
+  const restore = captureEnv(CLAUDE_CONFIG_DIR_VAR);
+  delete process.env[CLAUDE_CONFIG_DIR_VAR];
+  return restore;
+}
+
+/**
  * Creates a temp directory with an isolated `projectDir` and `fakeHome`,
  * chdirs into `projectDir`, and points `process.env.HOME` at `fakeHome`.
  *
- * The returned `cleanup` restores the original cwd, HOME and update-check setting (or
- * unsets each when it was originally undefined) and removes the temp directory.
+ * The returned `cleanup` restores the original cwd, HOME, update-check setting and
+ * `CLAUDE_CONFIG_DIR` (or unsets each when it was originally undefined) and removes the temp
+ * directory.
  *
  * Call in `beforeEach` and invoke `cleanup` in `afterEach`.
  *
@@ -93,6 +106,7 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   const restoreEnv = [
     overrideEnv("HOME", fakeHome),
     overrideEnv(OCLIF_SKIP_VERSION_CHECK.name, OCLIF_SKIP_VERSION_CHECK.value),
+    clearClaudeConfigDir(),
   ];
 
   const cleanup = async () => {
@@ -133,6 +147,7 @@ export function useFakeHome(
     restoreEnv = [
       options?.setHome === false ? captureEnv("HOME") : overrideEnv("HOME", fakeHome),
       overrideEnv(OCLIF_SKIP_VERSION_CHECK.name, OCLIF_SKIP_VERSION_CHECK.value),
+      clearClaudeConfigDir(),
     ];
   });
 

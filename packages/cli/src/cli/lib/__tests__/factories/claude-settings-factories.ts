@@ -12,3 +12,19 @@ export function buildClaudeSettings(enabledPluginKeys: readonly string[]) {
     enabledPlugins: Object.fromEntries(enabledPluginKeys.map((key) => [key, true])),
   };
 }
+
+/**
+ * `~/.claude.json` as Claude Code leaves it once the user has accepted its trust prompt in each of
+ * `trustedProjectDirs`, which are absolute paths spelled the way a process started in that folder
+ * reports its working directory.
+ *
+ * Only the field a trust check reads is modelled. Claude Code runs a project sub-agent's hooks,
+ * its completion gate among them, only in a folder this record trusts.
+ */
+export function buildClaudeTrustState(trustedProjectDirs: readonly string[]) {
+  return {
+    projects: Object.fromEntries(
+      trustedProjectDirs.map((dir) => [dir, { hasTrustDialogAccepted: true }]),
+    ),
+  };
+}

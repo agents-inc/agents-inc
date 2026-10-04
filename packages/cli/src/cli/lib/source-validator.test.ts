@@ -65,6 +65,32 @@ const OTHER_MARKETPLACE_OWN_SLUG = "acme-vue";
  */
 const A_CATALOGUE_SLUG: string = firstElement(SKILL_SLUGS);
 
+/**
+ * The two builds a finding about a missing or broken manifest names, in the order an author runs
+ * them — `build plugins` writes what `build marketplace` lists.
+ */
+const BUILDS_IN_ORDER = /build plugins[\s\S]*build marketplace/;
+
+/** The three ways a marketplace can lack a valid manifest, each a different route through the load. */
+const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
+
+/**
+ * Leaves `sourceDir` without a valid manifest, in the way `defect` names. A source starts with none,
+ * so "absent" writes nothing; a marketplace listing no plugin is the shape the schema refuses.
+ */
+async function writeManifestDefect(
+  sourceDir: string,
+  defect: (typeof MANIFEST_DEFECTS)[number],
+): Promise<void> {
+  if (defect === "absent") return;
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    defect === "unparseable" ? "{ this is not json" : JSON.stringify(createMockMarketplace([])),
+  );
+}
+
 /** Gives a source a `.claude-plugin/marketplace.json` publishing under `name`. */
 async function writeMarketplaceManifest(sourceDir: string, name: string): Promise<void> {
   const manifestPath = marketplaceManifestPath(sourceDir);
@@ -828,6 +854,47 @@ describe("source-validator", () => {
 
         expect(result.issues.filter((i) => i.file === MARKETPLACE_MANIFEST_PATH)).toStrictEqual([]);
         expect(result.errorCount).toBe(0);
+      });
+    });
+
+    /**
+     * A custom marketplace must carry a valid manifest. One that does not cannot be loaded, so the
+     * cross-reference pass cannot run, and the finding is the manifest's — filed against the file a
+     * reader opens, not the categories file the pass happened to be reading when the load stopped.
+     * Who is reading sets how loud it is: the author is one build away from the fix, and a consumer
+     * cannot load the marketplace at all. The accepted-name spec above is the permitted twin.
+     */
+    describe("whether marketplace.json is there and valid", () => {
+      it.each(MANIFEST_DEFECTS)(
+        "should be an error against the manifest for a consumer when it is %s",
+        async (defect) => {
+          await writeManifestDefect(sourceDir, defect);
+
+          const result = await validateSource(sourceDir, "consumer");
+
+          const manifestIssues = result.issues.filter((i) => i.file === MARKETPLACE_MANIFEST_PATH);
+          expect(
+            manifestIssues.map((i) => i.severity),
+            "a marketplace a consumer cannot load is one error, against its manifest",
+          ).toStrictEqual(["error"]);
+          expect(
+            firstElement(manifestIssues).message,
+            "the finding must name the builds that write the file",
+          ).toMatch(BUILDS_IN_ORDER);
+          expect(
+            result.issues.map((i) => i.file),
+            "no other file may be blamed for a defect that is the manifest's",
+          ).not.toContain(SKILL_CATEGORIES_PATH);
+        },
+      );
+
+      it("should be a warning against the manifest for the author of a repository nobody has built", async () => {
+        const result = await validateSource(sourceDir);
+
+        expect(
+          result.issues.filter((i) => i.file === MARKETPLACE_MANIFEST_PATH).map((i) => i.severity),
+          "an author's unbuilt repository is one build from fixed, which is a warning",
+        ).toStrictEqual(["warning"]);
       });
     });
   });

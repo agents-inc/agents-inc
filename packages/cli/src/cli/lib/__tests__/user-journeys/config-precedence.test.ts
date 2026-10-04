@@ -280,13 +280,15 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
       expect(result.marketplace).toBeUndefined();
     });
 
-    it("should preserve marketplace when using flag source", async () => {
+    it("should not carry the stored marketplace name onto a marketplace the flag names", async () => {
       await createProjectConfig(projectDir, {
         marketplace: "github:project/source",
         marketplaceName: "https://marketplace.example.com",
       });
 
-      // Flag overrides source but marketplace from config is preserved
+      // The flag overrides the source, and the name stored beside the config's own marketplace
+      // labels that marketplace only — carried onto the flag's, it named plugins after a
+      // marketplace Claude Code had registered under a different name.
       const result = await resolveSource({
         caller: "init",
         flag: "github:flag/source",
@@ -295,7 +297,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
       expect(result.source).toBe("github:flag/source");
       expect(result.sourceOrigin).toBe("flag");
-      expect(result.marketplace).toBe("https://marketplace.example.com");
+      expect(result.marketplace).toBeUndefined();
     });
   });
 
@@ -539,14 +541,11 @@ describe("User Journey: Config Edge Cases", () => {
     expect(result.marketplace).toBe("https://marketplace.example.com");
   });
 
-  it("should handle empty config file gracefully", async () => {
+  it("refuses a config file that is there and declares nothing, rather than reading it as absent", async () => {
     const projectDir = path.join(tempDir, "project");
-    await writeTestTsConfig(projectDir, {});
+    const configPath = await writeTestTsConfig(projectDir, {});
 
-    const config = await loadProjectSourceConfig(projectDir);
-    // Empty config (zero keys) is treated as "not installed" — loadConfig returns null
-    // for empty module objects since they are indistinguishable from files with no default export.
-    expect(config).toBeNull();
+    await expect(loadProjectSourceConfig(projectDir)).rejects.toThrow(configPath);
   });
 
   it("should allow extra unknown fields (passthrough schema)", async () => {

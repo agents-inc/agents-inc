@@ -228,6 +228,17 @@ describe("skill-copier", () => {
       ).toContain("web-framework-react: ENOENT");
       expect(failure).toContain("web-styling-tailwind: ENOENT");
       expect(failure).toContain("web-testing-vitest: ENOENT");
+      expect(failure).toContain("Could not copy 3 of 3 skills:");
+    });
+
+    it("counts one skill it could not copy, out of one, in the singular", async () => {
+      const localSkillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      await mkdir(localSkillsDir, { recursive: true });
+      const sourceResult = initSourceResult(createMockMatrix(SKILLS.react), projectDir);
+
+      await expect(
+        copySkillsToLocalFlattened(["web-framework-react"], localSkillsDir, sourceResult),
+      ).rejects.toThrow("Could not copy 1 of 1 skill:");
     });
 
     it("copies skills to flattened structure using normalized ID", async () => {

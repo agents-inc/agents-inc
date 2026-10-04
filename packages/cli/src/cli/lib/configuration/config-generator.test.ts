@@ -6,13 +6,16 @@ vi.mock("../../utils/logger", async (importOriginal) => ({
   warn: vi.fn(),
 }));
 
+import { pick } from "remeda";
+
 import { verbose, warn } from "../../utils/logger";
+import { typedKeys } from "../../utils/typed-object";
 import {
   generateProjectConfigFromSkills,
   buildStackProperty,
   splitConfigByScope,
 } from "./config-generator";
-import type { AgentName, SkillId, StackAgentConfig } from "../../types";
+import type { AgentName, ProjectConfig, SkillId, StackAgentConfig } from "../../types";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
@@ -56,6 +59,15 @@ import {
   REACT_SCSS_HONO_MATRIX,
   MULTI_STYLING_MATRIX,
 } from "../__tests__/mock-data/mock-matrices.js";
+
+/** The five fields a source repository declares its own layout with, each set off its default. */
+const SOURCE_LAYOUT = {
+  skillsDir: "catalogue/skills",
+  agentsDir: "catalogue/agents",
+  stacksFile: "catalogue/stacks.ts",
+  categoriesFile: "catalogue/skill-categories.ts",
+  rulesFile: "catalogue/skill-rules.ts",
+} satisfies Partial<ProjectConfig>;
 
 describe("config-generator", () => {
   describe("generateProjectConfigFromSkills", () => {
@@ -303,36 +315,21 @@ describe("config-generator", () => {
       it("names the skill and what to do about it", () => {
         generateWithAbsentSkill();
 
-        expect(warn).toHaveBeenCalledWith(
-          expect.stringContaining(ABSENT_SKILL_ID),
-          expect.anything(),
-        );
-        expect(warn).toHaveBeenCalledWith(
-          expect.stringContaining(`${CLI_INVOKE_COMMAND} update`),
-          expect.anything(),
-        );
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(ABSENT_SKILL_ID));
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining(`${CLI_INVOKE_COMMAND} update`));
       });
 
       it("says the skill stays in the configuration rather than that it was not found", () => {
         generateWithAbsentSkill();
 
-        expect(warn).toHaveBeenCalledWith(
-          expect.stringContaining("marketplace"),
-          expect.anything(),
-        );
-        expect(warn).not.toHaveBeenCalledWith(
-          expect.stringContaining("NOT FOUND"),
-          expect.anything(),
-        );
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("marketplace"));
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("NOT FOUND"));
       });
 
       it("keeps the matrix key sample in verbose diagnostics, out of the warning", () => {
         generateWithAbsentSkill();
 
-        expect(warn).not.toHaveBeenCalledWith(
-          expect.stringContaining(MATRIX_SAMPLE_LABEL),
-          expect.anything(),
-        );
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining(MATRIX_SAMPLE_LABEL));
         expect(verbose).toHaveBeenCalledWith(expect.stringContaining(MATRIX_SAMPLE_LABEL));
       });
 
@@ -1995,6 +1992,59 @@ describe("config-generator", () => {
         result.project.selectedDomains,
         "the project partition keeps its OWN selection — it does not inherit global's",
       ).toEqual(["web"]);
+    });
+
+    /**
+     * The ruling this pins (owner, 2026-10-02): a project's `branding` stays on the project
+     * half. The global partition becomes the machine's own config, so a name carried into it
+     * would rename every installation that declares none of its own.
+     */
+    it("keeps a project's branding on the project partition and off the global one", () => {
+      const config = buildProjectConfig({
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
+          ...buildSkillConfigs(["web-testing-vitest"]),
+        ],
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        branding: { name: "Northwind" },
+      });
+
+      const result = splitConfigByScope(config);
+
+      expect(result.project.branding, "the project partition keeps its own name").toStrictEqual({
+        name: "Northwind",
+      });
+      expect(
+        result.global,
+        "the global partition must not take the project's name",
+      ).not.toHaveProperty("branding");
+    });
+
+    /**
+     * The same ruling for the five fields a source repository declares its own layout with: they
+     * stay in the file that carried them, so the global partition, which becomes the machine's own
+     * config, takes none of them.
+     */
+    it("keeps a project's source-layout fields on the project partition and off the global one", () => {
+      const config = buildProjectConfig({
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
+          ...buildSkillConfigs(["web-testing-vitest"]),
+        ],
+        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        ...SOURCE_LAYOUT,
+      });
+
+      const result = splitConfigByScope(config);
+
+      expect(
+        pick(result.project, typedKeys(SOURCE_LAYOUT)),
+        "the project partition keeps its own layout",
+      ).toStrictEqual(SOURCE_LAYOUT);
+      expect(
+        pick(result.global, typedKeys(SOURCE_LAYOUT)),
+        "the global partition must not take the project's layout",
+      ).toStrictEqual({});
     });
   });
 

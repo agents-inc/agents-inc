@@ -8,6 +8,7 @@ import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { stubInkInstance } from "../helpers/stub-ink-instance.js";
+import { standAtTerminal } from "../helpers/terminal-input.js";
 import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { buildAgentDefs } from "../factories/agent-factories.js";
 import {
@@ -153,6 +154,11 @@ describe("init and edit report a rejected selection identically", () => {
   let initProjectDir: string;
   let editProjectDir: string;
   let originalCwd: string;
+
+  // Both runs drive the wizard through a stubbed completion, which stands in for a person at a
+  // terminal — and both commands refuse to mount a wizard where stdin is not one. Stated rather
+  // than inherited from whatever the runner was started from.
+  standAtTerminal();
 
   beforeEach(async () => {
     originalCwd = process.cwd();

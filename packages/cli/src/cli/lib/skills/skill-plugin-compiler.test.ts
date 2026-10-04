@@ -451,7 +451,7 @@ describe("skill-plugin-compiler", () => {
 
       printCompilationSummary(results);
 
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Compiled 1 skill plugins"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Compiled 1 skill plugin:"));
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("react"));
     });
   });

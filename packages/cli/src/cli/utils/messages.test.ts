@@ -4,10 +4,14 @@ import {
   SUCCESS_MESSAGES,
   STATUS_MESSAGES,
   INFO_MESSAGES,
+  globalScopedAgentsHint,
   hostCliNotFound,
   initSucceeded,
   localSkillsRemoval,
   notInstalledHere,
+  pluginsInstalled,
+  propagatedRecompileSummary,
+  recompileSummary,
   sourceUnreachableUsingCache,
 } from "./messages";
 import { DEFAULT_BRANDING, PROVIDERS } from "../consts";
@@ -202,5 +206,39 @@ describe("INFO_MESSAGES", () => {
       expect(value, `${key} should be a non-empty string`).toBeTypeOf("string");
       expect(value, `${key} should not be empty`).not.toBe("");
     }
+  });
+});
+
+/**
+ * The count lines an install or a recompile ends on, each at one and at more than one: a line that
+ * pluralises its noun unconditionally reads "1 skills", and only the count of one can show it.
+ */
+describe("the count lines an install and a recompile end on", () => {
+  it("counts installed skill plugins in the singular at one", () => {
+    expect(pluginsInstalled(1)).toBe("Installed 1 skill plugin");
+    expect(pluginsInstalled(3)).toBe("Installed 3 skill plugins");
+  });
+
+  it("counts rewritten sub-agents in the singular at one, in whichever noun the caller counts", () => {
+    expect(recompileSummary(1, 6, "agent")).toBe("1 agent rewritten, 6 unchanged");
+    expect(recompileSummary(2, 0, "global agent")).toBe("2 global agents rewritten, 0 unchanged");
+  });
+
+  it("counts the registered projects a fan-out rewrote in the singular at one", () => {
+    expect(propagatedRecompileSummary(1, 0, 0)).toBe(
+      "Recompiled agents in 1 registered project, 0 unchanged",
+    );
+    expect(propagatedRecompileSummary(2, 1, 1)).toBe(
+      "Recompiled agents in 2 registered projects, 1 unchanged (1 failed)",
+    );
+  });
+
+  it("refers to one global-scoped agent as it, and to more than one as them", () => {
+    expect(globalScopedAgentsHint(1)).toBe(
+      "1 agent is global-scoped — run 'npx agents-inc compile' from your home directory, or edit from this project, to recompile it.",
+    );
+    expect(globalScopedAgentsHint(2)).toBe(
+      "2 agents are global-scoped — run 'npx agents-inc compile' from your home directory, or edit from this project, to recompile them.",
+    );
   });
 });

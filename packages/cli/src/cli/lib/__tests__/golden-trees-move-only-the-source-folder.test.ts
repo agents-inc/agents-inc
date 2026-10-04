@@ -158,18 +158,31 @@ const IMPORT_REWRITES = {
  *
  * One row per step, so a reader can see which claim moved:
  *
- * | Step            | dual-scope-edit-compile-uninstall | global-eject | project-plugin |
- * | --------------- | --------------------------------- | ------------ | -------------- |
- * | Before the flip | `4815a9bb…`                       | `9a622d14…`  | `42e52148…`    |
+ * | Step                                         | dual-scope-edit-compile-uninstall | global-eject | project-plugin |
+ * | -------------------------------------------- | --------------------------------- | ------------ | -------------- |
+ * | Before the flip                              | `4815a9bb…`                       | `9a622d14…`  | `42e52148…`    |
+ * | `ProjectConfig` declares hand-written fields | `7fd3487b…`                       | `9d8f0dd1…`  | `3e64dc8a…`    |
+ * | The shared E2E source is published           | `9899db85…`                       | `41902cdd…`  | `3e64dc8a…`    |
+ *
+ * The second row moved every recorded `config-types.ts` and nothing else — 7, 1 and 2 of them —
+ * by the six fields its `ProjectConfig` interface now declares (`branding` and the five layout
+ * fields), so a `config.ts` that keeps them type-checks against the types written beside it.
+ *
+ * The third row: a custom marketplace must carry a valid `marketplace.json`, so `E2E_SOURCE` is
+ * now built like the plugin fixture, and an install from a built marketplace records the name its
+ * manifest publishes under. Predicted and found: one `marketplaceName: 'e2e-test-fixture'` line
+ * after `marketplace` in every `config.ts` the two journeys installing from `E2E_SOURCE` record —
+ * one in global-eject, seven across the dual-scope journey — and nothing in project-plugin, which
+ * already installed from a built marketplace.
  *
  * A step after the flip that changes an installed tree owes this treatment: predict the diff,
  * check the `-u` against the prediction, then move the constant and say what moved it.
  */
 const BEFORE_THE_MOVE_DIGESTS = {
   "dual-scope-edit-compile-uninstall.json":
-    "4815a9bbdc05eb6fe38f643ca4f70a567ce4da306d120581ce4474401424be82",
-  "global-eject.json": "9a622d14056c9b12b54a3908282ce3cbf43a23581a01bae5f825f24df2216cd1",
-  "project-plugin.json": "42e52148a7ee58c85d11090a5737726867e131762d36598d9426cee4511d6a39",
+    "9899db85ddaf43865e27e6e90950cc7084d0fdb38b2535e609426ef13bce1e44",
+  "global-eject.json": "41902cdd9a6dc377327e29b6ae9d657a59678fc1d0e9cb78bb58a9313e49dc40",
+  "project-plugin.json": "3e64dc8add5899f211b7909470140b8eaf488200131a200f97f8a86c65fdad05",
 } as const satisfies Record<(typeof GOLDEN_TREES)[number], string>;
 
 /**

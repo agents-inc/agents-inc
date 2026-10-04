@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, rm, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import {
@@ -22,6 +22,7 @@ import { validateSource } from "../../source-validator";
 import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";
 import { validatePlugin } from "../../plugins/plugin-validator";
 import {
+  DEFAULT_PUBLIC_SOURCE_NAME,
   MARKETPLACE_JSON,
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
@@ -40,7 +41,11 @@ import {
   createMockMarketplacePlugin,
 } from "../factories/plugin-factories.js";
 import type { RelationshipDefinitions } from "../../../types";
-import { testMarketplaceSkillId, type TestSkill } from "../fixtures/create-test-source";
+import {
+  TEST_MARKETPLACE_NAME,
+  testMarketplaceSkillId,
+  type TestSkill,
+} from "../fixtures/create-test-source";
 import { renderAgentMd, renderConfigTs, renderSkillMd } from "../content-generators";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
@@ -111,6 +116,33 @@ const MANIFEST_NAME_ACCEPTED = "acme-skills";
 
 /** The Marketplaces row's clean verdict — the tick a refused manifest must not earn. */
 const MARKETPLACES_ROW_CLEAN = "1 marketplace validated";
+
+/** The report's closing line, which a run that finished prints and an aborted one does not. */
+const SUMMARY_LINE = "Summary:";
+
+/** The manifest as a reader of the report has to type it — the location half of a finding. */
+const MARKETPLACE_MANIFEST_FILE = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
+
+/** The three ways a marketplace can lack a valid manifest, each a different route through the load. */
+const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
+
+/** Leaves a source's manifest in the state `defect` names. */
+async function breakMarketplaceManifest(
+  sourceDir: string,
+  defect: (typeof MANIFEST_DEFECTS)[number],
+): Promise<void> {
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  if (defect === "absent") {
+    await rm(manifestPath, { force: true });
+    return;
+  }
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    // A marketplace listing no plugin is the one manifest shape the schema refuses outright.
+    defect === "unparseable" ? "{ this is not json" : JSON.stringify(createMockMarketplace([])),
+  );
+}
 
 /** Gives a source a `.claude-plugin/marketplace.json` publishing under `name`. */
 async function writeMarketplaceManifest(sourceDir: string, name: string): Promise<void> {
@@ -342,6 +374,7 @@ async function buildValidSource(sourceDir: string): Promise<void> {
   await writeTestMatrix(configDir, {
     "web-framework": { domain: "web", displayName: "Framework" },
   });
+  await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 }
 
 /** Build an otherwise valid marketplace whose own relationship rules name a slug it never ships. */
@@ -357,6 +390,7 @@ async function buildSourceWithDanglingRuleSlug(sourceDir: string): Promise<void>
     { "web-framework": { domain: "web", displayName: "Framework" } },
     RULES_WITH_DANGLING_SLUG,
   );
+  await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 }
 
 /**
@@ -385,6 +419,7 @@ async function buildSourceWithDanglingSlugAndAuditContradiction(sourceDir: strin
     },
     RULES_WITH_DANGLING_SLUG,
   );
+  await writeMarketplaceManifest(sourceDir, DEFAULT_PUBLIC_SOURCE_NAME);
 }
 
 /** Build a source with a metadata schema violation (missing required fields). */
@@ -403,6 +438,7 @@ async function buildInvalidSource(sourceDir: string): Promise<void> {
     path.join(skillDir, STANDARD_FILES.METADATA_YAML),
     stringifyYaml({ category: "web-framework", author: "@test" }),
   );
+  await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 }
 
 /**
@@ -535,6 +571,20 @@ describe("doctor content checks", () => {
       expect(stdout).toContain(primarySourceDir);
     });
 
+    /** `— 1 skill` is a prefix of `— 1 skills`, so the singular is pinned from both sides. */
+    it("should count the one skill a validated marketplace holds in the singular", async () => {
+      const sourceDir = await setupValidatedProject(tempDir, projectDir);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout, "the Marketplaces row names what it counted").toContain(
+        `(${sourceDir}) — 1 skill`,
+      );
+      expect(stdout, "one skill is not counted as skills").not.toContain(
+        `(${sourceDir}) — 1 skills`,
+      );
+    });
+
     /**
      * A green tick printed under a warning about the same file is worse than no row at all —
      * the row is the summary a reader trusts, and it contradicts the line above it. The
@@ -565,6 +615,51 @@ describe("doctor content checks", () => {
 
         expect(error).toBeUndefined();
         expect(stdout).toContain(MARKETPLACES_ROW_CLEAN);
+      });
+    });
+
+    /**
+     * A custom marketplace must carry a valid manifest, so `doctor` reports one that does not —
+     * against the file itself, the one the reader opens — and still finishes its report. Over an
+     * installation reading from it nothing can load, which is an error. In its author's own
+     * repository before the build it is the next step rather than a fault, which is a warning.
+     * The first spec of this describe is the permitted twin: the same marketplace, published.
+     */
+    describe("a marketplace with no valid marketplace.json", () => {
+      it.each(MANIFEST_DEFECTS)(
+        "should fail the marketplace an installation reads from when its manifest is %s",
+        async (defect) => {
+          const sourceDir = await setupValidatedProject(tempDir, projectDir);
+          await breakMarketplaceManifest(sourceDir, defect);
+
+          const { stdout, error } = await runCliCommand(["doctor"]);
+
+          expect(
+            stdout,
+            "the finding must be filed against the manifest, as an error over an installation",
+          ).toContain(`[ERROR] ${MARKETPLACE_MANIFEST_FILE}`);
+          expect(
+            stdout,
+            "a marketplace nothing can load must not be counted as validated",
+          ).not.toContain(MARKETPLACES_ROW_CLEAN);
+          expect(stdout, "doctor must finish its report rather than abort on it").toContain(
+            SUMMARY_LINE,
+          );
+          expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        },
+      );
+
+      it("should warn its author, against the manifest, in a repository nobody has built", async () => {
+        await buildValidSource(projectDir);
+        await breakMarketplaceManifest(projectDir, "absent");
+
+        const { stdout, error } = await runCliCommand(["doctor"]);
+
+        expect(
+          stdout,
+          "an unbuilt repository's own author is told about the manifest as a warning against the file",
+        ).toContain(`[WARN] ${MARKETPLACE_MANIFEST_FILE}`);
+        expect(error, "the author's half-built repository is not a failed run").toBeUndefined();
       });
     });
 
@@ -688,7 +783,7 @@ describe("doctor content checks", () => {
       expect(stdout, "a warning disables nothing — the skills row still answers").not.toMatch(
         skippedRow(ROW_SKILLS_RESOLVED),
       );
-      expect(stdout).toContain("1/1 skills found");
+      expect(stdout).toContain("1/1 skill found");
     });
   });
 
@@ -1302,7 +1397,7 @@ describe("doctor content checks", () => {
       const { stdout } = await runCliCommand(["doctor"]);
 
       expect(stdout).toContain(ROW_AGENTS_COMPILED);
-      expect(stdout).toContain("1/1 agents compiled");
+      expect(stdout).toContain("1/1 agent compiled");
       expect(stdout).toContain(ROW_SKILLS_INSTALLED);
       expect(stdout).toContain("1 skill missing from disk");
       expect(stdout).toContain(CONFIGURED_SKILL_ID);
@@ -1392,7 +1487,7 @@ describe("doctor content checks", () => {
       expect(
         stdout,
         "the matrix resolves the configured skill whatever the registry holds",
-      ).toContain("1/1 skills found");
+      ).toContain("1/1 skill found");
     });
 
     /**
@@ -1413,8 +1508,8 @@ describe("doctor content checks", () => {
       expect(stdout).toContain("Missing or invalid YAML frontmatter");
       expect(stdout).not.toContain(SKIP_AFTER_CONTENT_ERRORS);
       expect(stdout).toContain(`.agents-inc/claude/${STANDARD_FILES.CONFIG_TS} is valid`);
-      expect(stdout).toContain("1/1 skills found");
-      expect(stdout).toContain("1/1 agents compiled");
+      expect(stdout).toContain("1/1 skill found");
+      expect(stdout).toContain("1/1 agent compiled");
       expect(stdout).toContain("2 orphaned agent files");
       expect(stdout).toContain("- bad-agent.md (not in config)");
       expect(stdout).toContain("1 skill missing from disk");
@@ -1740,6 +1835,7 @@ describe("source validation (validateSource)", () => {
     await writeTestMatrix(configDir, {
       "web-framework": { domain: "web", displayName: "Framework" },
     });
+    await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 
     const result = await validateSource(sourceDir);
 
@@ -1764,6 +1860,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
     await writeFile(path.join(configDir, "skill-categories.ts"), "export default INVALID;");
+    await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 
     const result = await validateSource(sourceDir);
 
@@ -1921,6 +2018,7 @@ describe("source validation (validateSource)", () => {
 
       await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
       await writeTestMatrix(configDir, { "web-framework": { displayName: "Framework" } });
+      await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 
       const result = await validateSource(sourceDir, "author");
 

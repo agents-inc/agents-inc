@@ -174,6 +174,43 @@ describe("resolveEffectiveGlobalConfig", () => {
         [WEB_DEV, API_DEV].sort(),
       );
     });
+
+    /**
+     * A session's split carries its whole domain selection, project half included, so a project
+     * that picked an API skill for itself named `api` on the global half too. The global config's
+     * domains are the global install's: a domain joins them only with a global skill from it.
+     */
+    it("keeps the global domains when the session's global skills are all installed already", async () => {
+      const { config, globalDataChanged } = await resolveEffectiveGlobalConfig(
+        { ...sessionGlobalSplit(), selectedDomains: ["web", "api"] },
+        { ...installedGlobal(), selectedDomains: ["web"] },
+        projectDir,
+      );
+
+      expect(
+        config.selectedDomains,
+        "a domain only the project's own skills come from is the project's",
+      ).toStrictEqual(["web"]);
+      expect(globalDataChanged, "nothing global arrived, so nothing global changed").toBe(false);
+    });
+
+    it("widens the global domains by the domain of a global skill that arrives, and no other", async () => {
+      const { config, globalDataChanged } = await resolveEffectiveGlobalConfig(
+        {
+          ...sessionGlobalSplit(),
+          skills: [
+            buildSkillConfig(REACT, { scope: "global" }),
+            buildSkillConfig(HONO, { scope: "global" }),
+          ],
+          selectedDomains: ["web", "api", "cli"],
+        },
+        { ...installedGlobal(), selectedDomains: ["web"] },
+        projectDir,
+      );
+
+      expect(config.selectedDomains).toStrictEqual(["web", "api"]);
+      expect(globalDataChanged).toBe(true);
+    });
   });
 
   describe("when the session owns every scope", () => {

@@ -1,8 +1,10 @@
 import os from "os";
 import path from "path";
 import { mkdir } from "fs/promises";
+import { pick } from "remeda";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeConfigs, mergeWithExistingConfig } from "./config-merger";
+import { typedKeys } from "../../utils/typed-object";
 import type { ProjectConfig, SkillAssignment, SkillId } from "../../types";
 import { DEFAULT_PLUGIN_NAME } from "../../consts";
 import { getProjectConfigPath } from "../installation/install-base-dir.js";
@@ -16,6 +18,18 @@ import {
 } from "../__tests__/factories/config-factories.js";
 import { expectAgentConfigs } from "../__tests__/assertions/index.js";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+
+/** A `branding` a config declares by hand — no wizard step and no shared configuration sets one. */
+const WHITE_LABEL = { name: "Northwind" };
+
+/** The five fields a source repository declares its own layout with, each set off its default. */
+const SOURCE_LAYOUT = {
+  skillsDir: "catalogue/skills",
+  agentsDir: "catalogue/agents",
+  stacksFile: "catalogue/stacks.ts",
+  categoriesFile: "catalogue/skill-categories.ts",
+  rulesFile: "catalogue/skill-rules.ts",
+} satisfies Partial<ProjectConfig>;
 
 describe("config-merger", () => {
   let tempDir: string;
@@ -192,6 +206,34 @@ describe("config-merger", () => {
         );
 
         expect(result.config.name).toBe(PROJECT_NAME);
+      });
+
+      it("lends the project none of the global config's branding", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({ name: GLOBAL_INSTALL_NAME, skills: [], branding: WHITE_LABEL }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [] }),
+          { projectDir },
+        );
+
+        expect(result.config).not.toHaveProperty("branding");
+      });
+
+      it("lends the project none of the global config's source-layout fields", async () => {
+        await writeTestTsConfig(
+          fakeHome,
+          buildProjectConfig({ name: GLOBAL_INSTALL_NAME, skills: [], ...SOURCE_LAYOUT }),
+        );
+
+        const result = await mergeWithExistingConfig(
+          buildProjectConfig({ name: PROJECT_NAME, skills: [] }),
+          { projectDir },
+        );
+
+        expect(pick(result.config, typedKeys(SOURCE_LAYOUT))).toStrictEqual({});
       });
 
       it("still adopts the name recorded in the project's OWN config when it has one", async () => {
@@ -623,6 +665,34 @@ describe("config-merger", () => {
         });
       });
 
+      /**
+       * The existing name labels the marketplace it was recorded beside. A project set up from
+       * another marketplace under a global installation merges over the GLOBAL config, whose name
+       * would otherwise be written into the project's as its own. The case above is the control.
+       */
+      it("does not carry an existing marketplace name onto a config made from another marketplace", () => {
+        const newConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+          marketplace: "github:plain/skills",
+          marketplaceName: "plain",
+        });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+          marketplace: "github:acme/skills",
+          marketplaceName: "acme",
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(result.marketplace).toBe("github:plain/skills");
+        expect(
+          result.marketplaceName,
+          "the name recorded beside one marketplace does not label another",
+        ).toBe("plain");
+      });
+
       it("should use existing agentsSource when present", () => {
         const newConfig = buildProjectConfig({
           name: "project",
@@ -640,6 +710,42 @@ describe("config-merger", () => {
         expect(result).toStrictEqual({
           name: "project",
           agentsSource: "github:existing/agents",
+          agents: buildAgentConfigs(["web-developer"]),
+          skills: [],
+        });
+      });
+
+      it("keeps the branding the existing config carried", () => {
+        const newConfig = buildProjectConfig({ name: "project", skills: [] });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+          branding: WHITE_LABEL,
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(result).toStrictEqual({
+          name: "project",
+          branding: WHITE_LABEL,
+          agents: buildAgentConfigs(["web-developer"]),
+          skills: [],
+        });
+      });
+
+      it("keeps the source-layout fields the existing config carried", () => {
+        const newConfig = buildProjectConfig({ name: "project", skills: [] });
+        const existingConfig = buildProjectConfig({
+          name: "project",
+          skills: [],
+          ...SOURCE_LAYOUT,
+        });
+
+        const result = mergeConfigs(newConfig, existingConfig);
+
+        expect(result).toStrictEqual({
+          name: "project",
+          ...SOURCE_LAYOUT,
           agents: buildAgentConfigs(["web-developer"]),
           skills: [],
         });

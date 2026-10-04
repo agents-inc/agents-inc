@@ -13,6 +13,7 @@ import {
   ARROW_LEFT,
   ARROW_RIGHT,
   TAB,
+  SPACE,
   RENDER_DELAY_MS,
   INPUT_DELAY_MS,
   delay,
@@ -713,6 +714,31 @@ describe("CategoryGrid component", () => {
   });
 
   describe("selection toggle", () => {
+    /**
+     * A move and a Space in one chunk — a fast typist, or a paste — are handled one after the
+     * other with no render between them, so the Space must toggle the cell the move landed on
+     * rather than the one the last render focused. The paced twin is the spec below, which starts
+     * on that same cell.
+     */
+    it("should toggle the cell a right-arrow moved to when the two keys arrive in one burst", async () => {
+      const onToggle = vi.fn();
+      const { stdin, unmount } = renderGrid({
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+        onToggle,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write(ARROW_RIGHT + SPACE);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onToggle).toHaveBeenLastCalledWith(
+        "web-framework",
+        "web-framework-vue-composition-api",
+      );
+    });
+
     it("should call onToggle when pressing space on a normal option", async () => {
       const onToggle = vi.fn();
       const { stdin, unmount } = renderGrid({
@@ -901,6 +927,23 @@ describe("CategoryGrid component", () => {
   });
 
   describe("tab navigation", () => {
+    /** Tab after a move in the same chunk jumps on from where the move landed, not from row 0. */
+    it("should jump on from the row a down-arrow moved to when the two keys arrive in one burst", async () => {
+      const onFocusChange = vi.fn();
+      const { stdin, unmount } = renderGrid({
+        defaultFocusedRow: 0,
+        defaultFocusedCol: 0,
+        onFocusChange,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write(ARROW_DOWN + TAB);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onFocusChange).toHaveBeenLastCalledWith(2, 0);
+    });
+
     it("should jump to next section when pressing Tab", async () => {
       const onFocusChange = vi.fn();
       const { stdin, unmount } = renderGrid({
@@ -1378,6 +1421,27 @@ describe("CategoryGrid component", () => {
         expect(output).toContain(category.displayName);
       }
       expect(output).not.toContain("more categories");
+    });
+
+    /**
+     * Two moves in one chunk, as a fast typist's or a paste's keys arrive: Ink hands them over one
+     * after another with no render between them, so the second move must start where the first
+     * one left the focus rather than where the last render did. The walk above is the paced twin.
+     */
+    it("should land two rows down when two down-arrows arrive in one burst", async () => {
+      const onFocusChange = vi.fn();
+      const { stdin, unmount } = renderGrid({
+        categories: navCategories,
+        defaultFocusedRow: 0,
+        onFocusChange,
+      });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write(ARROW_DOWN + ARROW_DOWN);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onFocusChange).toHaveBeenLastCalledWith(2, 0);
     });
 
     it("should keep focused category visible when navigating down", async () => {

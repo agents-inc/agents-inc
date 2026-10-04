@@ -1,9 +1,15 @@
 import { render } from "ink-testing-library";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Dashboard, dashboardCountLines, formatDashboardText, type DashboardData } from "./init";
 import { DEFAULT_BRANDING } from "../consts";
-import { delay, RENDER_DELAY_MS } from "../lib/__tests__/test-constants";
+import {
+  ARROW_DOWN,
+  delay,
+  ENTER,
+  INPUT_DELAY_MS,
+  RENDER_DELAY_MS,
+} from "../lib/__tests__/test-constants";
 
 /**
  * The interactive dashboard against the piped one, on the counts block they are meant to share.
@@ -94,5 +100,52 @@ describe("the dashboard a person sits in front of", () => {
     expect(frame).toContain("Compile");
     expect(frame).toContain("Doctor");
     expect(frame).toContain("List");
+  });
+});
+
+/**
+ * Keys a fast typist or a paste delivers reach Ink as one chunk, and Ink hands them to the menu one
+ * after another with no frame painted between them — so a handler that reads the focus a render
+ * left behind acts on the option before the last move. The paced twin is the control: the same
+ * three keys, a frame apart, which any reading of the focus gets right.
+ */
+describe("the dashboard's keys", () => {
+  function dashboardChoosing(): {
+    stdin: { write: (data: string) => void };
+    chosen: () => unknown;
+  } {
+    const onSelect = vi.fn();
+    const { stdin } = render(
+      <Dashboard
+        data={WITH_MARKETPLACE}
+        onSelect={onSelect}
+        onCancel={() => {
+          /* not exercised here */
+        }}
+      />,
+    );
+    return { stdin, chosen: () => onSelect.mock.lastCall?.[0] };
+  }
+
+  it("runs the option Down, Down, Enter lands on when the keys arrive in one burst", async () => {
+    const { stdin, chosen } = dashboardChoosing();
+    await delay(RENDER_DELAY_MS);
+
+    stdin.write(ARROW_DOWN + ARROW_DOWN + ENTER);
+    await delay(RENDER_DELAY_MS);
+
+    expect(chosen(), "two moves down from Edit is Doctor, however fast they came").toBe("doctor");
+  });
+
+  it("runs the same option when the keys arrive a frame apart", async () => {
+    const { stdin, chosen } = dashboardChoosing();
+    await delay(RENDER_DELAY_MS);
+
+    for (const key of [ARROW_DOWN, ARROW_DOWN, ENTER]) {
+      stdin.write(key);
+      await delay(INPUT_DELAY_MS);
+    }
+
+    expect(chosen()).toBe("doctor");
   });
 });

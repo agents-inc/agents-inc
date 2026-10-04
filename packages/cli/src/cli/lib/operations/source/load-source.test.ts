@@ -27,6 +27,7 @@ const MOCK_SOURCE_RESULT = {
   },
   sourcePath: "/tmp/test-source",
   isLocal: false,
+  marketplaceSkillIds: new Set(),
 } satisfies SourceLoadResult;
 
 describe("loadSource", () => {

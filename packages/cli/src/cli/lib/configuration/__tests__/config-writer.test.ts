@@ -40,6 +40,18 @@ import {
 // Boundary cast: a skill outside every marketplace is outside the generated union by construction
 const EXTERNAL_SKILL_ID = "external-web-tooling-house" as SkillId;
 
+/** The folder every path of {@link SOURCE_LAYOUT} sits under. */
+const SOURCE_LAYOUT_ROOT = "catalogue/";
+
+/** The five fields a source repository declares its own layout with, each set off its default. */
+const SOURCE_LAYOUT = {
+  skillsDir: `${SOURCE_LAYOUT_ROOT}skills`,
+  agentsDir: `${SOURCE_LAYOUT_ROOT}agents`,
+  stacksFile: `${SOURCE_LAYOUT_ROOT}stacks.ts`,
+  categoriesFile: `${SOURCE_LAYOUT_ROOT}skill-categories.ts`,
+  rulesFile: `${SOURCE_LAYOUT_ROOT}skill-rules.ts`,
+} satisfies Partial<ProjectConfig>;
+
 describe("generateConfigSource", () => {
   it("produces valid TypeScript with import type, export default, and named variables", () => {
     const config = buildProjectConfig();
@@ -714,6 +726,52 @@ describe("generateConfigSource", () => {
       });
       expect(source).toContain("name: 'my-project'");
       expect(source).not.toContain("name: 'global'");
+    });
+
+    /**
+     * A project that declares no name or layout of its own reads the global's at run time, so a
+     * copy inlined here would become the project's own declaration and keep the old value after
+     * the global changed.
+     */
+    it("inlines none of the global config's hand-written fields", () => {
+      const brandedGlobal = buildProjectConfig({
+        ...globalConfig,
+        branding: { name: "Northwind" },
+        ...SOURCE_LAYOUT,
+      });
+      const projectConfig = buildProjectConfig({ name: "my-project", skills: [], agents: [] });
+
+      const source = generateConfigSource(projectConfig, matrix, {
+        isProjectConfig: true,
+        globalConfig: brandedGlobal,
+      });
+
+      expect(source, "the global's name must stay in the global config").not.toContain("Northwind");
+      expect(source, "the global's layout must stay in the global config").not.toContain(
+        SOURCE_LAYOUT_ROOT,
+      );
+    });
+
+    it("keeps the project's own hand-written fields beside an inlined global", () => {
+      const projectConfig = buildProjectConfig({
+        name: "my-project",
+        skills: [],
+        agents: [],
+        branding: { name: "Northwind" },
+        ...SOURCE_LAYOUT,
+      });
+
+      const source = generateConfigSource(projectConfig, matrix, {
+        isProjectConfig: true,
+        globalConfig,
+      });
+
+      expect(source).toContain("name: 'Northwind'");
+      expect(source).toContain("skillsDir: 'catalogue/skills'");
+      expect(source).toContain("agentsDir: 'catalogue/agents'");
+      expect(source).toContain("stacksFile: 'catalogue/stacks.ts'");
+      expect(source).toContain("categoriesFile: 'catalogue/skill-categories.ts'");
+      expect(source).toContain("rulesFile: 'catalogue/skill-rules.ts'");
     });
 
     it("uses default plugin name when project name is 'global'", () => {

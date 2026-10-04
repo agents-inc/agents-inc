@@ -9,27 +9,30 @@ const EDIT_COMMAND = path.join(CLI_ROOT, "src", "cli", "commands", "edit.tsx");
 
 /**
  * The three ways a layer of `edit` can decide for itself which directory it is acting on, each
- * paired with the ONE site the command is allowed to use it at.
+ * paired with the sites the command is allowed to use it at — one, or none.
  *
  * `resolveEditRoot` answers "which installation is this run editing, and is it the global one"
  * once, and every layer below takes that answer as a parameter. These counts are what stops a
  * layer computing it again: a seventh layer inventing a seventh criterion has to reach for one
- * of these three, and each is pinned to the single site that legitimately holds it.
+ * of these three, and each is pinned to the sites that legitimately hold it.
  */
 const SCOPE_CRITERIA = [
   {
     token: "isHomeDirectory(",
+    sites: 1,
     sanctionedSite: "resolveEditRoot, which is the only place the criterion is computed",
   },
   {
     token: "process.cwd()",
+    sites: 1,
     sanctionedSite:
       "applyEdit, which hands it to resolveEditRoot and to the two pre-detection guards",
   },
   {
     token: "os.homedir()",
+    sites: 0,
     sanctionedSite:
-      "otherRegisteredProjects, which READS the global config rather than comparing against it",
+      "none — the global config a project run holds as installed is read by readInstalledGlobal in lib/seed/seed-apply.ts",
   },
 ] as const;
 
@@ -54,14 +57,14 @@ function occurrences(source: string, token: string): number {
  */
 describe("the edit command decides which installation it is editing once", () => {
   it.each(SCOPE_CRITERIA)(
-    "reads `$token` at one site only — $sanctionedSite",
-    async ({ token, sanctionedSite }) => {
+    "reads `$token` at $sites site(s) only — $sanctionedSite",
+    async ({ token, sites, sanctionedSite }) => {
       const source = await readFile(EDIT_COMMAND, "utf8");
 
       expect(
         occurrences(source, token),
-        `every scope decision in edit.tsx reads EditRoot; the only sanctioned '${token}' is in ${sanctionedSite}`,
-      ).toBe(1);
+        `every scope decision in edit.tsx reads EditRoot; the sanctioned '${token}' sites are: ${sanctionedSite}`,
+      ).toBe(sites);
     },
   );
 });

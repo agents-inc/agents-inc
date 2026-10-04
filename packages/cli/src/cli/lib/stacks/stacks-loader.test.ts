@@ -477,7 +477,7 @@ describe("stacks-loader", () => {
       expect(firstElement(skills).usage).toContain("api-orm");
     });
 
-    it("passes through unknown skill IDs for downstream validation and warns", () => {
+    it("passes through unknown skill IDs for downstream validation, and says nothing", () => {
       // Boundary cast: intentionally invalid skill ID to verify pass-through
       const agentConfig = {
         "web-framework": [{ id: "Not-A-Valid-Id", preloaded: false }],
@@ -487,9 +487,10 @@ describe("stacks-loader", () => {
 
       expect(skills).toHaveLength(1);
       expect(firstElement(skills).id).toBe("Not-A-Valid-Id");
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Not-A-Valid-Id"), {
-        suppressInTest: true,
-      });
+      expect(
+        warn,
+        "a stack id this matrix lacks is reported where it is dropped, never here as a possible custom or local skill",
+      ).not.toHaveBeenCalled();
     });
 
     it("handles empty agent config", () => {
@@ -584,7 +585,7 @@ describe("stacks-loader", () => {
       expect(skills).toStrictEqual([]);
     });
 
-    it("passes through all skill IDs within arrays including unknown ones and warns", () => {
+    it("passes through all skill IDs within arrays including unknown ones, and says nothing", () => {
       // Boundary cast: intentionally invalid skill ID within array to verify pass-through
       const agentConfig = {
         "meta-reviewing": [
@@ -610,11 +611,10 @@ describe("stacks-loader", () => {
           preloaded: true,
         },
       ]);
-      // Only warns for the unknown ID, not the valid ones
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Not-A-Valid-Id"), {
-        suppressInTest: true,
-      });
+      expect(
+        warn,
+        "a stack id this matrix lacks is reported where it is dropped, never here as a possible custom or local skill",
+      ).not.toHaveBeenCalled();
     });
 
     it("reads preloaded from each assignment individually", () => {
@@ -641,7 +641,7 @@ describe("stacks-loader", () => {
       ]);
     });
 
-    it("passes through skill IDs not found in the matrix for downstream handling and warns", () => {
+    it("passes through skill IDs not found in the matrix for downstream handling, and says nothing", () => {
       // Boundary cast: intentionally unknown skill ID to verify pass-through
       const agentConfig = {
         "web-framework": [{ id: "acme-pipeline-deploy", preloaded: true }],
@@ -652,9 +652,10 @@ describe("stacks-loader", () => {
       expect(skills).toHaveLength(1);
       expect(firstElement(skills).id).toBe("acme-pipeline-deploy");
       expect(firstElement(skills).preloaded).toBe(true);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("acme-pipeline-deploy"), {
-        suppressInTest: true,
-      });
+      expect(
+        warn,
+        "a stack id this matrix lacks is reported where it is dropped, never here as a possible custom or local skill",
+      ).not.toHaveBeenCalled();
     });
 
     /**
@@ -724,7 +725,7 @@ describe("stacks-loader", () => {
        * says nothing, and a throw would refuse to install any payload naming a skill this
        * catalogue does not carry, which is consumption failing. The category key is the only word
        * available, exactly as `liveCategoryOf` one function above already rules for the same
-       * absence. `externalSkillMetadata` in `seed/external-skills.ts` writes the identical
+       * absence. `registerSkillOnDisk` in `seed/external-skills.ts` writes the identical
        * sentence for a carried skill by CALLING `defaultUsageGuidance` rather than spelling it —
        * it spelled its own until 2026-09-03 and had drifted on both the word and the punctuation.
        */
@@ -738,9 +739,6 @@ describe("stacks-loader", () => {
         expect(skills).toStrictEqual([
           { id: CUSTOM_HOUSE_TOOLING_ID, usage: FALLBACK_USAGE["web-tooling"], preloaded: false },
         ]);
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining(CUSTOM_HOUSE_TOOLING_ID), {
-          suppressInTest: true,
-        });
       });
 
       it("falls back to the category when the skill it carries states an empty guidance", () => {

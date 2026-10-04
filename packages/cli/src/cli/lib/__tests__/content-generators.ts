@@ -185,6 +185,25 @@ export function renderUnparseableMetadataYaml(): string {
   return `{{{ this is not: valid: yaml: "at all\n`;
 }
 
+/**
+ * Renders a complete metadata.yaml whose `forkedFrom` is a bare string rather than a mapping —
+ * the third way a file describes nothing to `readLocalSkillMetadata`, which refuses the WHOLE
+ * file when `localSkillMetadataSchema` refuses its provenance, every other field with it.
+ */
+export function renderMetadataYamlWithUnreadableProvenance(fields: SkillMetadataFields): string {
+  return `${renderMetadataYaml(fields)}forkedFrom: not a mapping\n`;
+}
+
+/**
+ * Renders a SKILL.md whose frontmatter no YAML parser can read — the SKILL.md half of
+ * {@link renderUnparseableMetadataYaml}. The fences and the `name:` line are there, so the file
+ * still reads as a skill to whoever opens it; the `description:` value opens a flow sequence it
+ * never closes, which is a syntax error rather than a schema one.
+ */
+export function renderUnparseableSkillMd(id: string): string {
+  return `---\nname: ${id}\ndescription: [never closed\n---\n\n# ${id}\n`;
+}
+
 function emitMetadataYaml(fields: EmittedMetadataFields): string {
   const lines = [
     ...(fields.custom ? ["custom: true"] : []),

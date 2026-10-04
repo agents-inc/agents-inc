@@ -204,6 +204,22 @@ describe("CheckboxGrid component", () => {
       expect(onToggle).toHaveBeenCalledWith("alpha");
     });
 
+    /**
+     * The paced spec below, with the two keys in one chunk: handled one after the other with no
+     * render between them, so the Space must toggle the item the move landed on.
+     */
+    it("should toggle the item a down-arrow moved to when the two keys arrive in one burst", async () => {
+      const onToggle = vi.fn();
+      const { stdin, unmount } = renderCheckboxGrid({ onToggle });
+      cleanup = unmount;
+
+      await delay(RENDER_DELAY_MS);
+      stdin.write(ARROW_DOWN + SPACE);
+      await delay(INPUT_DELAY_MS);
+
+      expect(onToggle).toHaveBeenLastCalledWith("beta");
+    });
+
     it("should toggle correct item after navigation", async () => {
       const onToggle = vi.fn();
       const { stdin, unmount } = renderCheckboxGrid({ onToggle });

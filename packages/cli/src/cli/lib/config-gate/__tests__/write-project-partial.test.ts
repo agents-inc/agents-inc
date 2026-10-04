@@ -122,10 +122,9 @@ describe("writeProjectPartial", () => {
    * replaced the whole file with a two-field one under an invented name, and reported success. It
    * refuses now (owner ruling 2026-08-20): a file nobody can read is not a file to overwrite.
    *
-   * The empty-file case below is the control this refusal is meaningless without. An empty
-   * `config.ts` declares no exports to have opinions about, loads as absence, and is still
-   * recovered under the fallback name — so the guard is scoped to unreadable rather than to
-   * "anything already on disk".
+   * The control this refusal is meaningless without is "preserves existing config fields when
+   * adding source" above: a config on disk that loads is overlaid rather than refused, so the guard
+   * is scoped to unreadable rather than to "anything already on disk".
    */
   it("refuses to overwrite a config file it cannot read, rather than inventing a fresh one", async () => {
     const corruptSource = "invalid typescript content {{";
@@ -141,22 +140,18 @@ describe("writeProjectPartial", () => {
     ).toBe(corruptSource);
   });
 
-  it("uses the fallback name when the config file is empty", async () => {
-    // The allowed half of the pair above, not a second corrupt case: an empty config.ts loads as
-    // absence. The raw writer is used only because no config object renders to zero bytes.
-    await writeRawTestConfig(tempDir, "");
+  it("refuses to overwrite a config file that is there and declares nothing", async () => {
+    // The raw writer is used only because no config object renders to zero bytes.
+    const configPath = await writeRawTestConfig(tempDir, "");
 
-    await saveSource(tempDir, "github:my-org/skills", "empty-project");
+    await expect(saveSource(tempDir, "github:my-org/skills", "empty-project")).rejects.toThrow(
+      configPath,
+    );
 
-    const configPath = getProjectConfigPath(tempDir, "claude");
-    const config = await readTestTsConfig<Record<string, unknown>>(configPath);
-
-    expect(config).toStrictEqual({
-      name: "empty-project",
-      skills: [],
-      agents: [],
-      marketplace: "github:my-org/skills",
-    });
+    expect(
+      await readFile(configPath, "utf-8"),
+      "an empty file is still there, so it is not the absence `?? {}` stands in for",
+    ).toBe("");
   });
 
   it("throws when the partial has no name and no fallback is offered", async () => {

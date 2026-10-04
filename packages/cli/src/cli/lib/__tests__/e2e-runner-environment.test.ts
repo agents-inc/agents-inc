@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { check, clearances } from "../../../../scripts/check-spawn-doors.js";
 import { typedEntries } from "../../utils/typed-object.js";
 import { SOURCE_ENV_VAR } from "../configuration/config.js";
-import { CODEX_HOME_VAR } from "../installation/install-layout.js";
+import { CLAUDE_CONFIG_DIR_VAR, CODEX_HOME_VAR } from "../installation/install-layout.js";
 import { envReadsIn } from "./helpers/env-reads.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -188,14 +188,10 @@ async function loadRunner(runner: string): Promise<unknown> {
 /**
  * Every environment variable `src/cli/` reads by NAME, which is the roster every runner answers
  * for below. Held against the scan rather than beside it: a new read that nobody clears is the
- * defect, and this is the line that has to move before it can ship.
- *
- * `VITEST` is the one the class was found through. It is the HARNESS's variable, not the
- * product's, and `warn({ suppressInTest: true })` reads it — so a spawned binary that inherits it
- * silences the very warnings a spec was written to assert, and the spec passes by not looking.
- * The others are the product's own overrides, each a knob a developer's shell may carry.
+ * defect, and this is the line that has to move before it can ship. Each is one of the product's
+ * own overrides, a knob a developer's shell may carry.
  */
-const NAMED_ENV_READS = ["AGENTS_INC_API_URL", "GIGET_AUTH", "VITEST", "XDG_CACHE_HOME"];
+const NAMED_ENV_READS = ["AGENTS_INC_API_URL", "GIGET_AUTH", "XDG_CACHE_HOME"];
 
 /**
  * The constants a bracket read goes through, whose VALUES name variables just as directly.
@@ -205,9 +201,10 @@ const NAMED_ENV_READS = ["AGENTS_INC_API_URL", "GIGET_AUTH", "VITEST", "XDG_CACH
  * `CODEX_HOME_VAR` is the layout module's read: the host roles hang a Codex installation off
  * whichever root the variable names, so the product now reads a variable the doors were already
  * pinning. It is answered by that pin rather than by a clearance — see
- * {@link EVERY_PRODUCT_ENV_VAR}.
+ * {@link EVERY_PRODUCT_ENV_VAR}. `CLAUDE_CONFIG_DIR_VAR` is the same module's read of where Claude
+ * Code keeps its state file, answered the same way.
  */
-const ENV_READS_BY_CONSTANT = { CODEX_HOME_VAR, SOURCE_ENV_VAR };
+const ENV_READS_BY_CONSTANT = { CLAUDE_CONFIG_DIR_VAR, CODEX_HOME_VAR, SOURCE_ENV_VAR };
 
 /**
  * The one place forwarding the WHOLE environment is the point rather than a leak: `execCommand`

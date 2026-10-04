@@ -20,10 +20,10 @@ const { author: _fixtureAuthor, ...PACKAGE_IDENTITY_WITHOUT_AUTHOR } = VALID_PAC
 
 /**
  * The names no marketplace may publish under. Spelled out rather than imported:
- * the rule is these three strings, and a test that read the module's own list
+ * the rule is these four strings, and a test that read the module's own list
  * would agree with any list it grew.
  */
-const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local"] as const;
+const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local", "eject"] as const;
 
 /** The npm package the public catalogue publishes from — the sole holder of its name. */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
@@ -372,7 +372,8 @@ describe("build:marketplace command", () => {
       const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
-      expect(stdout).toContain("1 plugins");
+      expect(stdout).toContain("Found 1 plugin\n");
+      expect(stdout).toContain("Marketplace generated with 1 plugin!");
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
@@ -399,7 +400,8 @@ describe("build:marketplace command", () => {
       const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
-      expect(stdout).toContain("1 plugins");
+      expect(stdout).toContain("Found 1 plugin\n");
+      expect(stdout).toContain("Marketplace generated with 1 plugin!");
 
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.plugins).toHaveLength(1);
@@ -424,7 +426,8 @@ describe("build:marketplace command", () => {
       const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
-      expect(stdout).toContain("1 plugins");
+      expect(stdout).toContain("Found 1 plugin\n");
+      expect(stdout).toContain("Marketplace generated with 1 plugin!");
       expect(await fileExists(outputPath)).toBe(true);
 
       const marketplace = await readMarketplaceJson(outputPath);

@@ -67,6 +67,7 @@ describe("SummaryPanel component", () => {
       isInitMode: false,
       selectedStackId: null,
       skillConfigs: [],
+      setupMarketplace: null,
     });
   });
 
@@ -185,6 +186,28 @@ describe("SummaryPanel component", () => {
       cleanup = unmount;
 
       expect(lastFrame()).toContain(`Marketplace ${CUSTOM_MARKETPLACE}`);
+    });
+
+    /**
+     * A project set up from a marketplace named for it, under a global install from another: with
+     * nothing picked yet, every skill the summary holds is the global install's, so the skills'
+     * marketplaces name the one the setup is NOT made from.
+     */
+    it("should name the marketplace a project setup was named from, over the global install's", () => {
+      useWizardStore.setState({
+        setupMarketplace: OTHER_MARKETPLACE,
+        skillConfigs: buildSkillConfigs([SKILLS.react.id], {
+          scope: "global",
+          origin: CUSTOM_MARKETPLACE,
+        }),
+      });
+
+      const { lastFrame, unmount } = render(<SummaryPanel />);
+      cleanup = unmount;
+
+      const output = lastFrame();
+      expect(output).toContain(`Marketplace ${OTHER_MARKETPLACE}`);
+      expect(output).not.toContain(`Marketplace ${CUSTOM_MARKETPLACE}`);
     });
 
     it("should resolve the selected stack id to its display name", () => {

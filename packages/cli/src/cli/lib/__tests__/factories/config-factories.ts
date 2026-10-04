@@ -17,6 +17,7 @@ import { NO_CHANGES } from "../../config-gate/classify.js";
 import { NOTHING_RECOMPILED } from "../../config-gate/recompile.js";
 import { EJECT_SOURCE } from "../../../consts";
 import { TEST_CUSTOM_SOURCE_URL } from "../test-constants.js";
+import { typedKeys } from "../../../utils/typed-object";
 import { buildSkillConfigs, FACTORY_DEFAULT_SCOPE } from "../helpers/wizard-simulation.js";
 import type { FixtureProjectConfig } from "../helpers/wizard-simulation.js";
 
@@ -42,7 +43,7 @@ export function buildGateReport(
   return {
     globalWritten: true,
     changes: NO_CHANGES,
-    propagated: { updated: propagatedTo, skipped: [] },
+    propagated: { updated: propagatedTo, unreadable: [], gone: [], notOurs: [], failed: [] },
     recompile: { ...NOTHING_RECOMPILED, rewrittenCount: propagatedTo.length },
     ...overrides,
   };
@@ -166,6 +167,8 @@ export function buildSourceResult(
     sourceConfig,
     sourcePath,
     isLocal: true,
+    // A load with nothing merged or seated on top: the marketplace carries every skill it holds.
+    marketplaceSkillIds: new Set(typedKeys<SkillId>(matrix.skills)),
     ...overrides,
   };
 }

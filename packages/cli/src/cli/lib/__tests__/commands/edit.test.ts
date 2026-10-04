@@ -26,6 +26,7 @@ import { EXIT_CODES } from "../../exit-codes";
 import {
   CLAUDE_DIR,
   CLAUDE_SRC_DIR,
+  DEFAULT_PUBLIC_SOURCE_NAME,
   EDITOR_URL,
   EJECT_SOURCE,
   STANDARD_DIRS,
@@ -46,6 +47,7 @@ import type { copySkillsToLocalFlattened, deleteLocalSkill } from "../../skills/
 import type { ensureDir } from "../../../utils/fs.js";
 import { firstElement } from "../helpers/element-at.js";
 import { stubInkInstance } from "../helpers/stub-ink-instance.js";
+import { standAtTerminal } from "../helpers/terminal-input.js";
 import Edit, {
   applyMigratedGlobalSources,
   migratePluginSkillScopes,
@@ -227,6 +229,13 @@ const CONFIG_LOAD_FAILED_PHRASE = "could not be loaded";
 
 /** The instruction that separates an unreadable config from a missing one. */
 const RECREATE_PHRASE = "recreate the configuration";
+
+/**
+ * The terminal every wizard run in this file stands at. The mocked render stands in for one, and
+ * `edit` refuses to mount its wizard where stdin is not a terminal — so the file states it rather
+ * than inheriting whatever the runner was started from, and means the same in CI as at a desk.
+ */
+standAtTerminal();
 
 describe("edit command", () => {
   let tempDir: string;
@@ -1688,6 +1697,120 @@ describe("detectConfigChanges", () => {
       to: "global",
     });
     expect(changes.dualScopeSkillTransitions.has("web-framework-react")).toBe(true);
+  });
+
+  /**
+   * A collapsed pair removes the project's half and leaves the global install it masked, so its
+   * origin is measured against that install. Against the removed half, a project plugin dropped
+   * over a global copy read as a switch to eject, and the edit announced a mode change and a copy
+   * that never happened.
+   */
+  it("measures a collapsed pair's origin against the global install it masked", () => {
+    const projectHalf = buildSkillConfigs(["web-framework-react"], {
+      scope: "project",
+      origin: DEFAULT_PUBLIC_SOURCE_NAME,
+    });
+    const maskedGlobal = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      origin: EJECT_SOURCE,
+      excluded: true,
+    });
+    const resurfaced = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      origin: EJECT_SOURCE,
+    });
+    const oldConfig = buildProjectConfig({ skills: projectHalf, agents: [] });
+    const fullEntries = {
+      newSkills: resurfaced,
+      oldSkills: [...projectHalf, ...maskedGlobal],
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(oldConfig, buildWizardResult(resurfaced), fullEntries);
+
+    expect(changes.collapsedPairs).toStrictEqual([
+      {
+        projectHalf: firstElement(projectHalf),
+        maskedGlobal: firstElement(maskedGlobal),
+        folded: false,
+      },
+    ]);
+    expect(
+      changes.sourceChanges,
+      "the global install keeps its mode, so nothing switched",
+    ).toStrictEqual(new Map());
+  });
+
+  /**
+   * `s` and the selection key collapse a pair into the same config entry when its halves share a
+   * mode, so the entry cannot say which was pressed. The wizard result can, and a fold is the one
+   * collapse that writes the project's copy into the global install.
+   */
+  it("marks a collapsed pair folded when the wizard result says `s` folded it", () => {
+    const projectHalf = buildSkillConfigs(["web-framework-react"], {
+      scope: "project",
+      origin: EJECT_SOURCE,
+    });
+    const maskedGlobal = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      origin: EJECT_SOURCE,
+      excluded: true,
+    });
+    const folded = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      origin: EJECT_SOURCE,
+    });
+    const oldConfig = buildProjectConfig({ skills: projectHalf, agents: [] });
+    const fullEntries = {
+      newSkills: folded,
+      oldSkills: [...projectHalf, ...maskedGlobal],
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(
+      oldConfig,
+      buildWizardResult(folded, { foldedSkillIds: ["web-framework-react"] }),
+      fullEntries,
+    );
+
+    expect(changes.collapsedPairs).toStrictEqual([
+      {
+        projectHalf: firstElement(projectHalf),
+        maskedGlobal: firstElement(maskedGlobal),
+        folded: true,
+      },
+    ]);
+  });
+
+  it("reports a collapse that carries a new install mode as the global install's source change", () => {
+    const projectHalf = buildSkillConfigs(["web-framework-react"], {
+      scope: "project",
+      origin: DEFAULT_PUBLIC_SOURCE_NAME,
+    });
+    const maskedGlobal = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      origin: EJECT_SOURCE,
+      excluded: true,
+    });
+    const folded = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      origin: DEFAULT_PUBLIC_SOURCE_NAME,
+    });
+    const oldConfig = buildProjectConfig({ skills: projectHalf, agents: [] });
+    const fullEntries = {
+      newSkills: folded,
+      oldSkills: [...projectHalf, ...maskedGlobal],
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(oldConfig, buildWizardResult(folded), fullEntries);
+
+    expect(changes.sourceChanges).toStrictEqual(
+      new Map([["web-framework-react", { from: EJECT_SOURCE, to: DEFAULT_PUBLIC_SOURCE_NAME }]]),
+    );
   });
 
   it("keeps a genuine G→P migration (no tombstone) out of the dual-scope set", () => {

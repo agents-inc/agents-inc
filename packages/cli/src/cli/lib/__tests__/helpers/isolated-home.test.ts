@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cacheRoot } from "../../../consts.js";
 import { DEFAULT_SOURCE } from "../../configuration/config.js";
 import { fetchRecordPath, sanitizeSourceForCache } from "../../loading/source-fetcher.js";
+import { claudeStateFile } from "../../installation/install-layout.js";
 import { CLI_ROOT } from "./cli-runner.js";
 import { setupIsolatedHome, useFakeHome } from "./isolated-home.js";
 import { createTempDir, cleanupTempDir, directoryExists, fileExists } from "../test-fs-utils.js";
@@ -19,6 +20,9 @@ import { createTempDir, cleanupTempDir, directoryExists, fileExists } from "../t
 function defaultCheckoutUnder(cacheDir: string): string {
   return path.join(cacheDir, "sources", sanitizeSourceForCache(DEFAULT_SOURCE));
 }
+
+/** A `CLAUDE_CONFIG_DIR` a developer's shell exports, naming their real Claude Code state. */
+const EXPORTED_CLAUDE_CONFIG_DIR = path.join(os.tmpdir(), "a-developers-claude-config");
 
 /**
  * What an isolated home is FOR, held here rather than in each of the thirteen files that
@@ -136,6 +140,22 @@ describe("setupIsolatedHome cleanup", () => {
   });
 
   /**
+   * Claude Code's state file follows `CLAUDE_CONFIG_DIR` before HOME, so while a developer's shell
+   * exports the variable a fake home is no home for that file — and a spec recording a trust
+   * answer would write it into their real one.
+   */
+  it("keeps Claude Code's state file in the fake home under an exported CLAUDE_CONFIG_DIR, and puts it back", async () => {
+    vi.stubEnv("CLAUDE_CONFIG_DIR", EXPORTED_CLAUDE_CONFIG_DIR);
+
+    const home = await setupIsolatedHome("cc-isolated-home-spec-");
+    const stateFile = claudeStateFile();
+    await home.cleanup();
+
+    expect(path.dirname(stateFile)).toBe(home.fakeHome);
+    expect(process.env.CLAUDE_CONFIG_DIR).toBe(EXPORTED_CLAUDE_CONFIG_DIR);
+  });
+
+  /**
    * The victim, and the reason its POSITION carries the assertion: it runs after the two specs
    * above, which is the only vantage point from which their handling of the process-wide pin is
    * visible at all. `vitest.setup.ts` sets `AGENTS_INC_SKIP_NEW_VERSION_CHECK` once per file, so a
@@ -186,5 +206,26 @@ describe("useFakeHome", () => {
 
     expect(await directoryExists(checkout)).toBe(true);
     expect(await fileExists(fetchRecordPath(checkout))).toBe(true);
+  });
+});
+
+describe("useFakeHome under an exported CLAUDE_CONFIG_DIR", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-fake-home-spec-");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", EXPORTED_CLAUDE_CONFIG_DIR);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await cleanupTempDir(tempDir);
+  });
+
+  const fakeHome = useFakeHome(() => tempDir);
+
+  /** {@link setupIsolatedHome}'s guarantee, for the same reason. */
+  it("keeps Claude Code's state file in the fake home", () => {
+    expect(path.dirname(claudeStateFile())).toBe(fakeHome.dir);
   });
 });

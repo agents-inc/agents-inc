@@ -66,7 +66,7 @@ export {
   renderEnabledPluginsSettings,
 } from "./plugin-registry-factories.js";
 
-export { buildClaudeSettings } from "./claude-settings-factories.js";
+export { buildClaudeSettings, buildClaudeTrustState } from "./claude-settings-factories.js";
 
 export { createMockCategory } from "./category-factories.js";
 

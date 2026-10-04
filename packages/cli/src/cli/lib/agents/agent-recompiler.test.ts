@@ -15,6 +15,7 @@ import { initializeMatrix } from "../matrix/matrix-provider";
 import type { AgentName, SkillDefinitionMap } from "../../types";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories";
+import { buildRecompileAgentsResult } from "../__tests__/factories/recompile-factories";
 import { createMockSkillDefinition, sa } from "../__tests__/factories/skill-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
 import { renderAgentMd } from "../__tests__/content-generators";
@@ -52,14 +53,17 @@ describe("agent-recompiler", () => {
   });
 
   describe("recompileAgents", () => {
-    it("returns empty compiled list when no agents exist", async () => {
+    // A pass with no sub-agent to compile is not a warning. Every caller already reports an empty
+    // pass off `compiled`, so a warning here only ever surfaced merged into ANOTHER pass's failure
+    // report — `init` and `edit` printed "No agents found to recompile" right after compiling
+    // every sub-agent but the one that failed.
+    it("answers an empty pass with no warning when no agents exist", async () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
       });
 
-      expect(result.compiled).toStrictEqual([]);
-      expect(result.warnings).toContain("No agents found to recompile");
+      expect(result).toStrictEqual(buildRecompileAgentsResult());
     });
 
     it("recompiles a single agent specified in options", async () => {

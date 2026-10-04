@@ -15,6 +15,7 @@ import { EXIT_CODES } from "../../exit-codes";
 import { STATUS_MESSAGES } from "../../../utils/messages";
 import type { ProjectConfig } from "../../../types";
 import { writeTestTsConfig } from "../helpers/config-io.js";
+import { standAtTerminal } from "../helpers/terminal-input.js";
 
 /**
  * `edit --from <id>` is the inbound half of the editor round trip, and the half that DELETES:
@@ -184,9 +185,7 @@ describe("edit --from", () => {
   });
 
   describe("with a terminal to confirm at", () => {
-    beforeEach(() => {
-      process.stdin.isTTY = true;
-    });
+    standAtTerminal();
 
     it("reports an id the store does not have, in the store's own words", async () => {
       await installConfig(installed());

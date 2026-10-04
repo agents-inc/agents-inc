@@ -29,6 +29,9 @@ const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 /** The name the public catalogue publishes its marketplace under. */
 const PUBLIC_CATALOGUE_NAME = "agents-inc";
 
+/** The way out a caller hands the reserved-name refusal — each command has its own. */
+const NAME_WAY_OUT = "pick another name";
+
 /** How many offending ids a namespace refusal spells out before summarising. */
 const LISTED_VIOLATIONS = 10;
 
@@ -457,38 +460,65 @@ describe("marketplace-generator", () => {
 
   describe("validateMarketplaceName", () => {
     it("accepts a name no other namespace owns", () => {
-      expect(validateMarketplaceName("acme", AUTHOR_PACKAGE_NAME)).toBeNull();
+      expect(validateMarketplaceName("acme", AUTHOR_PACKAGE_NAME, NAME_WAY_OUT)).toBeNull();
     });
 
     it("refuses the public catalogue's name from any other package", () => {
-      const error = validateMarketplaceName(PUBLIC_CATALOGUE_NAME, AUTHOR_PACKAGE_NAME);
+      const error = validateMarketplaceName(
+        PUBLIC_CATALOGUE_NAME,
+        AUTHOR_PACKAGE_NAME,
+        NAME_WAY_OUT,
+      );
 
       expect(error).not.toBeNull();
       expect(error).toContain(PUBLIC_CATALOGUE_NAME);
       expect(error).toContain("reserved");
     });
 
+    it("ends on the way out its caller names, since only the caller knows where the name came from", () => {
+      const error = validateMarketplaceName("local", AUTHOR_PACKAGE_NAME, NAME_WAY_OUT);
+
+      expect(error).toContain(`Choose a name of your own: ${NAME_WAY_OUT}.`);
+    });
+
     it("refuses the namespace held by skills that have no marketplace", () => {
-      const error = validateMarketplaceName("external", AUTHOR_PACKAGE_NAME);
+      const error = validateMarketplaceName("external", AUTHOR_PACKAGE_NAME, NAME_WAY_OUT);
 
       expect(error).not.toBeNull();
       expect(error).toContain("external");
     });
 
     it("refuses the namespace held by locally created skills", () => {
-      const error = validateMarketplaceName("local", AUTHOR_PACKAGE_NAME);
+      const error = validateMarketplaceName("local", AUTHOR_PACKAGE_NAME, NAME_WAY_OUT);
 
       expect(error).not.toBeNull();
       expect(error).toContain("local");
     });
 
+    it("refuses the name an installation records for a skill copied into it", () => {
+      const error = validateMarketplaceName("eject", AUTHOR_PACKAGE_NAME, NAME_WAY_OUT);
+
+      expect(error, "a skill from it would be recorded as an ejected copy").not.toBeNull();
+      expect(error).toContain("'eject' is reserved");
+      expect(error).toContain(`Choose a name of your own: ${NAME_WAY_OUT}.`);
+    });
+
     it("lets the public catalogue's own package publish under the name it owns", () => {
-      expect(validateMarketplaceName(PUBLIC_CATALOGUE_NAME, PUBLIC_CATALOGUE_PACKAGE)).toBeNull();
+      expect(
+        validateMarketplaceName(PUBLIC_CATALOGUE_NAME, PUBLIC_CATALOGUE_PACKAGE, NAME_WAY_OUT),
+      ).toBeNull();
     });
 
     it("refuses the marketplace-less namespaces even to the public catalogue's package", () => {
-      expect(validateMarketplaceName("external", PUBLIC_CATALOGUE_PACKAGE)).not.toBeNull();
-      expect(validateMarketplaceName("local", PUBLIC_CATALOGUE_PACKAGE)).not.toBeNull();
+      expect(
+        validateMarketplaceName("external", PUBLIC_CATALOGUE_PACKAGE, NAME_WAY_OUT),
+      ).not.toBeNull();
+      expect(
+        validateMarketplaceName("local", PUBLIC_CATALOGUE_PACKAGE, NAME_WAY_OUT),
+      ).not.toBeNull();
+      expect(
+        validateMarketplaceName("eject", PUBLIC_CATALOGUE_PACKAGE, NAME_WAY_OUT),
+      ).not.toBeNull();
     });
   });
 

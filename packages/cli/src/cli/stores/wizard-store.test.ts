@@ -1552,6 +1552,56 @@ describe("WizardStore", () => {
       expect(useWizardStore.getState().skillConfigs).toStrictEqual(dualScope());
     });
 
+    /**
+     * The two keys collapse a `[P][G]` pair into a config entry nobody can tell apart, and they
+     * mean different things: the selection key drops the project's copy, `s` folds it into the
+     * global install. So the store says which pairs `s` folded, and forgets one the moment `s`
+     * restores it — or a later drop of the same pair would be taken for a fold.
+     */
+    it("records which [P][G] pairs `s` folded into global, and only those", () => {
+      const dualScope = (): SkillConfig[] => [
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: EJECT_SOURCE }),
+        ...buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: EJECT_SOURCE,
+          excluded: true,
+        }),
+      ];
+      const store = useWizardStore.getState();
+      useWizardStore.setState({
+        domainSelections: { web: { "web-framework": ["web-framework-react"] } },
+        skillConfigs: dualScope(),
+        installedSkillConfigs: dualScope(),
+        isEditingFromGlobalScope: false,
+        isInitMode: false,
+        toastMessage: null,
+      });
+
+      store.toggleTechnology("web", "web-framework", "web-framework-react", true);
+      expect(
+        useWizardStore.getState().foldedSkillIds,
+        "the selection key drops the project's copy, which folds nothing",
+      ).toStrictEqual([]);
+
+      store.toggleSkillScope("web-framework-react");
+      expect(
+        useWizardStore.getState().foldedSkillIds,
+        "`s` rebuilding the pair the drop collapsed folds nothing either",
+      ).toStrictEqual([]);
+
+      store.toggleSkillScope("web-framework-react");
+      expect(
+        useWizardStore.getState().foldedSkillIds,
+        "`s` on the live pair folds the project's copy into the global install",
+      ).toStrictEqual(["web-framework-react"]);
+
+      store.toggleSkillScope("web-framework-react");
+      expect(
+        useWizardStore.getState().foldedSkillIds,
+        "`s` restoring the pair takes the fold back",
+      ).toStrictEqual([]);
+    });
+
     it("writes no tombstone when a project skill re-scoped to global in-session is then deselected", () => {
       // The snapshot holds the skill at PROJECT scope only — nothing is installed globally.
       // `s` rescopes it to global in-session, so the live entry now reads `scope: "global"`

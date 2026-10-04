@@ -174,12 +174,12 @@ describe("a global installation writes only into its own", () => {
 
       expect({
         updated: result.updated,
-        skipped: result.skipped,
+        notOurs: result.notOurs,
         after: {
           codex: await readFile(codexConfigPath, "utf-8"),
           claude: await readFile(claudeConfigPath, "utf-8"),
         },
-      }).toStrictEqual({ updated: [], skipped: [project], after: before });
+      }).toStrictEqual({ updated: [], notOurs: [project], after: before });
     });
 
     /**
@@ -203,11 +203,11 @@ describe("a global installation writes only into its own", () => {
 
       expect({
         updated: result.updated,
-        skipped: result.skipped,
+        notOurs: result.notOurs,
         codexConfig: await readFile(codexConfigPath, "utf-8"),
       }).toStrictEqual({
         updated: [claudeProject],
-        skipped: [codexProject],
+        notOurs: [codexProject],
         codexConfig: before,
       });
     });
@@ -225,7 +225,39 @@ describe("a global installation writes only into its own", () => {
       expect(
         result,
         "without this, a fan-out that skipped everything would satisfy both skips above and rewrite nothing on the machine",
-      ).toStrictEqual({ updated: [first, second], skipped: [] });
+      ).toStrictEqual({
+        updated: [first, second],
+        unreadable: [],
+        gone: [],
+        notOurs: [],
+        failed: [],
+      });
     });
+
+    /**
+     * A registered folder holding nothing is gone whichever provider asks. The layout answers a
+     * folder with nothing in it with the provider a NEW installation is made under, so read
+     * through the provider policy alone, a Codex global would call it another provider's.
+     */
+    it.each(["claude", "codex"] as const)(
+      "reports a registered folder holding nothing as gone to a %s global",
+      async (provider) => {
+        const deleted = path.join(tempDir, "deleted-project");
+
+        const result = await propagateGlobalChangesToProjects(
+          installedGlobal([deleted]),
+          NO_AGENTS,
+          provider,
+        );
+
+        expect(result).toStrictEqual({
+          updated: [],
+          unreadable: [],
+          gone: [deleted],
+          notOurs: [],
+          failed: [],
+        });
+      },
+    );
   });
 });

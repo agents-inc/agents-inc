@@ -38,6 +38,7 @@ export const HANDED_OUT_INVOCATIONS: readonly Invocation[] = [
   ["doctor"],
   ["edit"],
   ["init"],
+  ["new", "marketplace"],
   ["uninstall"],
   ["update"],
 ];

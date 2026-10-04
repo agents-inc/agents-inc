@@ -8,6 +8,7 @@ import {
   PLUGINS_SUBDIR,
   STANDARD_DIRS,
   STANDARD_FILES,
+  marketplaceManifestPath,
 } from "../../../consts";
 import type {
   AgentScopeConfig,
@@ -22,6 +23,7 @@ import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../t
 import { readTestYaml } from "../helpers/config-io.js";
 import { writeSourceAgent, writeTestPluginManifest } from "../helpers/disk-writers.js";
 import { renderSkillMd, renderConfigTs } from "../content-generators";
+import { createMockMarketplace, createMockMarketplacePlugin } from "../factories/plugin-factories";
 import type { SkillRulesFile } from "../content-generators";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { DEFAULT_TEST_AGENTS } from "../mock-data/mock-agents";
@@ -93,6 +95,15 @@ export type TestSourceOptions = {
   localSkills?: TestSkill[];
   /** Create config/stacks.ts with these stack definitions */
   stacks?: TestStack[];
+  /**
+   * Write no `.claude-plugin/marketplace.json` — the source as its author's checkout stands before
+   * `build marketplace`.
+   *
+   * Every load of a custom marketplace refuses one in that state, so a source is published under
+   * {@link TEST_MARKETPLACE_NAME} unless a test's subject is that refusal or the author's side of
+   * the build.
+   */
+  unbuilt?: boolean;
 };
 
 export type TestDirs = {
@@ -235,8 +246,9 @@ export function testMarketplaceSkillId(bareId: string): string {
 
 /**
  * Creates a complete test source directory structure with skills, agents,
- * categories/rules config, and optionally a plugin layout. Sets up temp
- * directories that must be cleaned up via cleanupTestSource.
+ * categories/rules config, the `.claude-plugin/marketplace.json` a custom
+ * marketplace must carry (unless `unbuilt`), and optionally a plugin layout. Sets
+ * up temp directories that must be cleaned up via cleanupTestSource.
  * @returns TestDirs containing all created directory paths for assertions
  */
 export async function createTestSource(options: TestSourceOptions = {}): Promise<TestDirs> {
@@ -261,6 +273,10 @@ export async function createTestSource(options: TestSourceOptions = {}): Promise
 
   if (options.stacks && options.stacks.length > 0) {
     await writeFile(path.join(configDir, "stacks.ts"), renderConfigTs({ stacks: options.stacks }));
+  }
+
+  if (!options.unbuilt) {
+    await writeMarketplaceManifest(sourceDir, skills);
   }
 
   for (const skill of skills) {
@@ -401,6 +417,23 @@ permissionMode: {{ agent.permissionMode }}
   }
 
   return dirs;
+}
+
+/**
+ * Writes the `.claude-plugin/marketplace.json` a custom marketplace must carry for any command to
+ * load it: published under {@link TEST_MARKETPLACE_NAME}, listing one plugin per skill the source
+ * ships — the shape `build marketplace` writes, since the schema refuses a marketplace listing none.
+ */
+async function writeMarketplaceManifest(sourceDir: string, skills: TestSkill[]): Promise<void> {
+  const manifestPath = marketplaceManifestPath(sourceDir);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      ...createMockMarketplace(skills.map((skill) => createMockMarketplacePlugin(skill.id))),
+      name: TEST_MARKETPLACE_NAME,
+    }),
+  );
 }
 
 /**

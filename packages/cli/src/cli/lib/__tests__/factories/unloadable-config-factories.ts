@@ -29,7 +29,16 @@ export function renderConfigTsWithoutDefaultExport(config: Record<string, unknow
  * A `config.ts` that loads and whose shape the loader schema rejects: `skills` is a string where
  * the schema requires an array. Everything else about it is valid, so the refusal can only be the
  * schema's.
+ *
+ * `marketplace`, when given, is written beside the fault. It is the one field here that a reader
+ * judging the file by its settings alone would find usable, so it is how a fixture asks whether
+ * such a reader still takes a marketplace out of a file the installation loader refuses.
  */
-export function renderSchemaViolatingConfigTs(): string {
-  return renderConfigTs({ name: "schema-violation-fixture", skills: "nope", agents: [] });
+export function renderSchemaViolatingConfigTs(marketplace?: string): string {
+  return renderConfigTs({
+    name: "schema-violation-fixture",
+    ...(marketplace !== undefined && { marketplace }),
+    skills: "nope",
+    agents: [],
+  });
 }

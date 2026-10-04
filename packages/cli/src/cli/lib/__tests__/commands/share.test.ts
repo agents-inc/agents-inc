@@ -13,7 +13,12 @@ import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { sa } from "../factories/skill-factories.js";
-import { CLAUDE_SRC_DIR, EDITOR_URL, EJECT_SOURCE } from "../../../consts";
+import {
+  CLAUDE_SRC_DIR,
+  DEFAULT_PUBLIC_SOURCE_NAME,
+  EDITOR_URL,
+  EJECT_SOURCE,
+} from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import type { ProjectConfig } from "../../../types";
 import { writeTestTsConfig } from "../helpers/config-io.js";
@@ -84,10 +89,13 @@ describe("share command", () => {
     await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
   }
 
-  /** The one installed configuration these specs share, unless a spec varies it. */
+  /**
+   * The one installed configuration these specs share, unless a spec varies it: a plugin from the
+   * public catalogue, because a share carries plugins only and refuses an ejected skill.
+   */
   function installedOverrides(overrides?: Partial<ProjectConfig>): Partial<ProjectConfig> {
     return {
-      skills: [buildSkillConfig(REACT_ID, { scope: "global", origin: EJECT_SOURCE })],
+      skills: [buildSkillConfig(REACT_ID, { scope: "global", origin: DEFAULT_PUBLIC_SOURCE_NAME })],
       agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
       stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID)] } },
       ...overrides,
@@ -123,7 +131,7 @@ describe("share command", () => {
         matrixVersion: MATRIX_VERSION,
         stackId: null,
         skills: {
-          [REACT_ID]: { install: "eject", scope: "global", assignments: { [WEB_DEV]: "lazy" } },
+          [REACT_ID]: { install: "plugin", scope: "global", assignments: { [WEB_DEV]: "lazy" } },
         },
         agents: { [WEB_DEV]: { on: true, scope: "global" } },
       });
