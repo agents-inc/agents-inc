@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { summarize } from "@/features/configure/lib/derive"
 import { toSeedPayload } from "@/features/configure/lib/seed"
+import { useCatalogStore } from "@/stores/catalog-store"
 import { useUiStore } from "@/stores/ui-store"
 
 import type { ConfigSelection } from "@/features/configure/lib/derive"
@@ -225,7 +226,22 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
 
   useWarmPreview(live)
 
-  const payload = useMemo(() => toSeedPayload(config), [config])
+  // The seated catalogue, subscribed rather than read once. Loading a
+  // marketplace that carries every picked skill moves nothing in `config`, yet
+  // the payload is stamped with the marketplace and the preview is drawn
+  // against the catalogue — so without this the preview built before the load
+  // is the one shown after it.
+  const seated = useCatalogStore((state) => state.matrix)
+  const payload = useMemo(
+    () => toSeedPayload(config),
+    // `seated` is load-bearing and is deliberately not read here.
+    // `toSeedPayload` and the preview both read the seat themselves, as every
+    // derivation that touches a catalogue does, so this dependency is what
+    // mints a new payload — and with it a new preview — when the catalogue
+    // underneath an unchanged selection is swapped.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [config, seated]
+  )
   // Beside the payload rather than inside it: the provider decides which tree
   // an install writes and never travels on the wire.
   const provider = useUiStore((state) => state.provider)
@@ -596,14 +612,17 @@ function TokenRun({ token }: { token: PreviewToken }) {
 /**
  * The stat line, and the sentence that says what the whole sheet is a preview OF.
  *
- * None of the five things a preview cannot know is papered over here. It cannot
- * see the disk it would install onto, so it is scoped to a clean machine and
- * says so as a claim rather than a hedge; it cannot know the project directory
- * or the relative import to the global source folder, so both are named rather
- * than guessed; it draws against the catalogue on screen, which a machine carrying
- * locally-authored skills does not have; and a compiled sub-agent's first body
- * line is stamped with the release the corpus was vendored at, which is a real
- * difference for a visitor on an older CLI rather than one to hide.
+ * None of the things a preview cannot know is papered over here. It cannot see
+ * the disk it would install onto, so it is scoped to a clean machine and says so
+ * as a claim rather than a hedge; it cannot know whether the install runs from a
+ * project directory or from `$HOME`, which write different pairs, so it draws
+ * the first — where the Install dialog sends the visitor — and says so; it
+ * cannot know the project directory or the relative import to the global source
+ * folder, so both are named rather than guessed; it draws against the catalogue
+ * on screen, which a machine carrying locally-authored skills does not have; and
+ * a compiled sub-agent's first body line is stamped with the release the corpus
+ * was vendored at, which is a real difference for a visitor on an older CLI
+ * rather than one to hide.
  */
 function Stats({ preview }: { preview: OutputPreview | null }) {
   if (!preview) return null
@@ -623,10 +642,11 @@ function Stats({ preview }: { preview: OutputPreview | null }) {
       </span>
       <p className="pt-1">
         what installing this configuration on a machine with no existing
-        agents-inc installation writes. The project directory&apos;s name, and
-        its relative import to the global config, are computed on that machine —
-        named here rather than guessed. Drawn against the catalogue on screen,
-        which a machine carrying its own local skills does not have.
+        agents-inc installation writes, when it is run from a project directory.
+        The project directory&apos;s name, and its relative import to the global
+        config, are computed on that machine — named here rather than guessed.
+        Drawn against the catalogue on screen, which a machine carrying its own
+        local skills does not have.
       </p>
     </>
   )

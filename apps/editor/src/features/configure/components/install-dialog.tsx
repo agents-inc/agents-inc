@@ -16,7 +16,7 @@ import {
   DialogRule,
 } from "@workspace/ui/components/dialog"
 
-import { useEffect } from "react"
+import { Fragment, useEffect } from "react"
 
 import {
   PUBLIC_MARKETPLACE,
@@ -34,6 +34,7 @@ import { useInstallCommand } from "@/features/configure/lib/use-install-command"
 import { track } from "@/lib/analytics/track"
 import type { ConfigSelection } from "@/features/configure/lib/derive"
 import { useCatalogStore } from "@/stores/catalog-store"
+import { SKILL_SCOPES } from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
 
 /**
@@ -83,8 +84,15 @@ import { useUiStore } from "@/stores/ui-store"
 type InstalledPaths = {
   /** The config pair's own file, inside the source folder a fresh install creates. */
   configTs: string
-  /** Where an ejected skill's directory is copied to. */
-  ejectedSkills: string
+  /**
+   * Where an ejected skill's directory is copied to, by the skill's scope.
+   *
+   * ONE FOLDER PER SCOPE, and it was one folder for both until this change: the step sent every
+   * ejected skill to the project's `.claude/skills/`, while the CLI copies a global one under the
+   * home directory — and every skill rests at global, so the folder named was wrong for the
+   * configuration nobody had touched.
+   */
+  ejectedSkills: Record<(typeof SKILL_SCOPES)[number], string>
   /** The root everything not in the project goes under. */
   globalRoot: string
   /**
@@ -105,18 +113,61 @@ const INSTALLED_PATHS = {
   claude: {
     // eslint-disable-next-line no-restricted-syntax -- importing the name from @workspace/compile puts its 124.7 KB chunk on the first-paint path and fails scripts/first-paint-budget.ts at 490.0 KB against 344.0 KB; the docblock above carries the measurement
     configTs: ".agents-inc/claude/config.ts",
-    ejectedSkills: ".claude/skills/",
+    ejectedSkills: { project: ".claude/skills/", global: "~/.claude/skills/" },
     globalRoot: "~/.claude",
     agentFiles: "sub-agent front-matter",
   },
   codex: {
     // eslint-disable-next-line no-restricted-syntax -- the same measurement, and the same reason: this file is on the static graph
     configTs: ".agents-inc/codex/config.ts",
-    ejectedSkills: ".agents/skills/",
+    ejectedSkills: { project: ".agents/skills/", global: "~/.codex/skills/" },
     globalRoot: "~/.codex",
     agentFiles: "sub-agent role files",
   },
 } as const satisfies Record<Provider, InstalledPaths>
+
+/** A count and its noun, which is singular for one: `1 skill`, `2 skills`. */
+const counted = (count: number, noun: string) =>
+  `${count} ${noun}${count === 1 ? "" : "s"}`
+
+type EjectedCopy = { count: number; folder: string }
+
+const isEjected = (skill: InventorySkill) => skill.install === "eject"
+
+/**
+ * What step 2 says is copied rather than linked: one copy per scope that ejects anything, each to
+ * its own scope's folder, in the order the panes above list the scopes.
+ */
+const ejectedCopies = (
+  inventory: InstallInventory,
+  folders: InstalledPaths["ejectedSkills"]
+): EjectedCopy[] =>
+  SKILL_SCOPES.map((scope) => ({
+    count: inventory[scope].filter(isEjected).length,
+    folder: folders[scope],
+  })).filter((copy) => copy.count > 0)
+
+/**
+ * `ejects 1 skill into ~/.claude/skills/`, and a second copy joined on with `and` when both scopes
+ * eject. A configuration that ejects nothing names no folder at all: `0 skills into
+ * .claude/skills/` was a sentence about a folder nothing is copied to.
+ */
+function EjectClause({ copies }: { copies: EjectedCopy[] }) {
+  if (copies.length === 0) return "ejects no skills"
+
+  return (
+    <>
+      ejects{" "}
+      {copies.map(({ count, folder }, index) => (
+        <Fragment key={folder}>
+          {index > 0 && " and "}
+          {counted(count, "skill")} into{" "}
+          <em className="font-mono text-10 text-ink not-italic">{folder}</em>
+        </Fragment>
+      ))}
+    </>
+  )
+}
 
 // A skill's name in the inventory. An added one's is a button, because this is
 // the list of what is about to be written to the reader's disk and an added
@@ -396,11 +447,10 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                   <em className="font-mono text-10 text-ink not-italic">
                     {paths.configTs}
                   </em>{" "}
-                  and {paths.agentFiles}, ejects {stats.ejectedCount} skills
-                  into{" "}
-                  <em className="font-mono text-10 text-ink not-italic">
-                    {paths.ejectedSkills}
-                  </em>
+                  and {paths.agentFiles},{" "}
+                  <EjectClause
+                    copies={ejectedCopies(inventory, paths.ejectedSkills)}
+                  />
                   , and links the rest as plugins. Global skills land in{" "}
                   <em className="font-mono text-10 text-ink not-italic">
                     {paths.globalRoot}
@@ -464,9 +514,15 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                 `summarize`'s: the pane above lists what this provider writes,
                 and a footer counting the configuration instead said eleven over
                 a list of nine. One derivation, read twice. */}
-            {stats.skillCount} skills · {inventory.agents.length} sub-agents ·{" "}
+            {counted(stats.skillCount, "skill")} ·{" "}
+            {counted(inventory.agents.length, "sub-agent")} ·{" "}
             {stats.ejectedCount} ejected · change it later with{" "}
-            <em className="text-ink not-italic">npx agents-inc edit</em>
+            {/* Whole, because a command is read and typed whole: wrapped, it
+                left `edit` on a line of its own. The prose before it wraps
+                instead. */}
+            <em className="whitespace-nowrap text-ink not-italic">
+              npx agents-inc edit
+            </em>
           </DialogFooterNote>
           <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
         </DialogFooter>

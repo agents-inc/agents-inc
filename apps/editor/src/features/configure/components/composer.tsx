@@ -4,6 +4,8 @@ import { useId, useLayoutEffect, useRef, useState } from "react"
 
 import { composeProposal, type ComposeRefusal } from "@/lib/api/compose"
 import { groupsFor } from "../lib/compose-proposal"
+import { useScrollClearance } from "../lib/use-scroll-clearance"
+import { useAccountStore } from "@/stores/account-store"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 
@@ -131,13 +133,22 @@ const FIELD_HEIGHT_CAP = "max-h-[calc(0.9375rem+7.125rem+var(--composer-tail))]"
 // It sat under `refused` until EDITOR-69 and was therefore drawn as "The model
 // did not answer" — false as well as unhelpful, since both of the worker's 400
 // guards run before the model is called.
+//
+// `signed-out` is the worker's 401 to a page that believed it was signed in —
+// the session ended while the tab was open — so the request WAS sent, and the
+// sentence may not say otherwise.
 const REFUSAL_COPY: Record<ComposeRefusal, string> = {
-  "signed-out": "Sign in to use the composer — nothing was sent.",
+  "signed-out": "Your session ended. Sign in again — nothing changed.",
   "too-many": "Too many requests in a minute. Try again shortly.",
   "too-long": "That is too long to send. Shorten it and try again.",
   refused: "The model did not answer. Nothing changed.",
   unreachable: "Could not reach the composer. Nothing changed.",
 }
+
+// What a submit says while nobody is signed in. Answered HERE rather than by
+// the worker: the route is signed-in only, so a request could only be refused,
+// and sending one anyway made "nothing was sent" a lie.
+const SIGNED_OUT_REASON = "Sign in to use the composer — nothing was sent."
 
 const THINKING_REASON = "Choosing skills…"
 
@@ -152,6 +163,7 @@ export function Composer() {
   const skillById = useCatalogStore((state) => state.skillById)
   const selected = useConfigStore((state) => state.skills)
   const toggleSkill = useConfigStore((state) => state.toggleSkill)
+  const account = useAccountStore((state) => state.session)
   // Mounted for as long as the composer is, and every handler that reads it is
   // an event handler on one of its own siblings — so the guards below are the
   // ref type's rather than a state this app can be in.
@@ -166,6 +178,9 @@ export function Composer() {
   // right on one machine.
   const tailRef = useRef<HTMLDivElement>(null)
   const [tail, setTail] = useState(0)
+
+  // The dock's root, measured for the page rather than for the band.
+  const dockRef = useRef<HTMLDivElement>(null)
 
   // A LAYOUT effect, so the first paint already reserves the room: a passive
   // one would draw the field over its own control row for a frame, and the
@@ -191,6 +206,10 @@ export function Composer() {
     observer.observe(row)
     return () => observer.disconnect()
   }, [])
+
+  // THE CONTROL THE KEYBOARD IS ON STAYS CLEAR OF THE DOCK, which sits over
+  // the foot of the column. Its top margin is the air kept above it.
+  useScrollClearance(dockRef, "bottom")
 
   // `trim` rather than `=== ""`, so a field holding three spaces is the empty
   // state it looks like: the button stays out of reach and the chord's own
@@ -226,6 +245,11 @@ export function Composer() {
     if (blank || pending) return
 
     const sentence = draft
+    // The same gate Save keeps in `roster-panel.tsx`: the account store's
+    // session, which is the only answer this app has to who is signed in.
+    if (!account)
+      return setProposal({ sentence, groups: [], reason: SIGNED_OUT_REASON })
+
     // Ahead of the state that disables the button, because a disabled control
     // cannot hold focus: a press from the button itself would otherwise drop
     // the caret to `<body>`. The field is where `Discard` hands it back for the
@@ -299,6 +323,7 @@ export function Composer() {
 
   return (
     <div
+      ref={dockRef}
       data-slot="composer-dock"
       // `pointer-events-auto` against the sticky wrapper's `none`, so the
       // full-bleed strip beside the dock falls through to the grid underneath.

@@ -9,7 +9,7 @@ import {
 } from "@workspace/ui/components/dialog"
 import { MATRIX } from "@workspace/matrix"
 import { Input } from "@workspace/ui/components/input"
-import { useState, type ReactNode } from "react"
+import { useRef, useState, type ReactNode, type RefObject } from "react"
 
 import {
   dropsSelection,
@@ -174,9 +174,27 @@ export function MarketplaceDialog({
   const open = dialog === "marketplace"
   const close = () => setDialog("none")
 
+  // Where the caret goes as the dialog opens: whichever field is the open
+  // question. Handed to the dialog rather than taken with `autoFocus`, and that
+  // is the whole of the way back — a field focused as it MOUNTS is focused
+  // before the dialog records what had focus, so the dialog recorded the field,
+  // gone by the time it closes, and dropped focus to `<body>` instead of
+  // handing it back to the rail.
+  const openQuestion = useRef<HTMLInputElement>(null)
+  // Whether the dialog has finished opening, which is what lets a field that
+  // ARRIVES afterwards still take the caret on mount: the token, once a load
+  // says one might reach the repository, or a form rebuilt around a recovery
+  // that landed while it was open. By then the dialog has recorded where focus
+  // goes back to, so a mount cannot overwrite it.
+  const [opened, setOpened] = useState(false)
+
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => !next && close()}
+      onOpenChangeComplete={setOpened}
+    >
+      <DialogContent initialFocus={openQuestion}>
         <DialogHeader title="Marketplace" subtitle="load a skill catalogue" />
         {/* Keyed on the recovery, so a form that was opened by hand while an
             import was still fetching its catalogue is rebuilt around the
@@ -187,6 +205,8 @@ export function MarketplaceDialog({
             key={recovery?.marketplace ?? ""}
             recovery={recovery}
             onDone={close}
+            openQuestion={openQuestion}
+            focusOnArrival={opened}
           />
         )}
       </DialogContent>
@@ -197,9 +217,13 @@ export function MarketplaceDialog({
 function MarketplaceForm({
   recovery,
   onDone,
+  openQuestion,
+  focusOnArrival,
 }: {
   recovery: MarketplaceRecovery | null
   onDone: () => void
+  openQuestion: RefObject<HTMLInputElement | null>
+  focusOnArrival: boolean
 }) {
   const remember = useMarketplaceStore((state) => state.remember)
   const choosePublic = useMarketplaceStore((state) => state.choosePublic)
@@ -377,7 +401,8 @@ function MarketplaceForm({
             // the repository is that question until an answer says a token
             // might reach it — and for a recovery it never is, because the
             // payload already named it.
-            autoFocus={!showToken}
+            ref={showToken ? undefined : openQuestion}
+            autoFocus={focusOnArrival && !showToken}
             value={marketplace}
             placeholder="owner/repo"
             aria-label="Marketplace"
@@ -393,7 +418,8 @@ function MarketplaceForm({
               // Focused the moment it appears, because by then it is the only
               // thing left to supply — the repository is already named, and on
               // a recovery it was never asked for.
-              autoFocus
+              ref={openQuestion}
+              autoFocus={focusOnArrival}
               // A credential, so the browser must not offer it back as an
               // autofill suggestion in some other field.
               type="password"

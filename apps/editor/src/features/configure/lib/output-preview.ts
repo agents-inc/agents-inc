@@ -1,4 +1,5 @@
 import { compilesForCodex, pluginRefFor } from "@workspace/compile/agent-source"
+import { installedSkillTree } from "@workspace/compile/carried-skill"
 import { generateConfigSource } from "@workspace/compile/config-source"
 import {
   deriveCategories,
@@ -6,6 +7,10 @@ import {
   generateConfigTypesSource,
   generateProjectConfigTypesSource,
 } from "@workspace/compile/config-types-source"
+import {
+  addSessionToGlobal,
+  blankGlobalConfig,
+} from "@workspace/compile/global-config"
 import {
   generateProjectConfigFromSkills,
   isScopePairCompatible,
@@ -16,12 +21,14 @@ import {
 import {
   CLAUDE_DIR,
   DEFAULT_PUBLIC_SOURCE_NAME,
+  DEFAULT_SOURCE,
   EJECT_SOURCE,
   SKILLS_DIR_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
   activeProjectAgentNames,
   bytewise,
+  categoryDomain,
   effectivelyExcludedSkillIds,
   isActiveAt,
   seatCatalog,
@@ -29,6 +36,7 @@ import {
 } from "@workspace/compile"
 import type { Provider } from "@workspace/compile"
 import { AGENT_DEFINITIONS, AGENT_NAMES } from "@workspace/matrix"
+import { ACTIVATION_DESCRIPTIONS } from "@workspace/matrix/activation-descriptions"
 
 import {
   activeMarketplace,
@@ -40,7 +48,9 @@ import type {
   AgentConfig,
   AgentName,
   AgentScopeConfig,
+  CatalogSkill,
   Category,
+  CompileCatalog,
   ProjectConfig,
   Skill,
   SkillAssignment,
@@ -75,20 +85,23 @@ import { COMPUTED_AT_INSTALL, type PreviewLang } from "./render-tokens"
  * Every byte in the tree below comes out of `@workspace/compile` — the same
  * renderers the CLI's write path calls — because a preview is worth building
  * only if it can be diffed against reality and survive it. Nothing here
- * transcribes a template, and the two values a browser genuinely cannot know
- * are named as placeholders rather than guessed at.
+ * transcribes a template, and the values a browser genuinely cannot know are
+ * named as placeholders rather than guessed at.
  *
- * The pipeline mirrors `init --from` on a machine with nothing installed:
+ * The pipeline mirrors `init --from` run from a project directory — where the
+ * Install dialog sends the visitor first — on a machine with nothing installed:
  *
  *   seedToWizardResult            the payload's own decode
  *   generateProjectConfigFromSkills + the assigned stack   (`buildInstallConfig`)
  *   splitConfigByScope            one config, two roots
+ *   addSessionToGlobal            the global half, over the blank pair `ensureBlankPair` writes
  *   generateConfigSource          standalone for `~/`, inlining for `./`
  *   generateConfigTypesSource     / generateProjectConfigTypesSource
  *   renderAgentFromCorpus         the real Liquid render, off the vendored corpus
+ *   installedSkillTree            a carried skill's directory, renamed and registered
  *
- * The steps it deliberately does NOT mirror are the ones that read a disk:
- * `mergeWithExistingConfig`, `resolveEffectiveGlobalConfig` and the reconcile
+ * The steps it deliberately does NOT mirror are the ones that read a disk the
+ * install did not just write: `mergeWithExistingConfig` and the reconcile
  * against a global config already installed. That is what makes this a preview
  * of a CLEAN machine, and the dialog's footer says so rather than hiding it.
  */
@@ -161,7 +174,9 @@ const SCOPE_OF: Record<PreviewBase, SkillScope> = {
 // disk to probe for either, and a ready-made `../../../…` is exactly the
 // plausible-looking lie the whole phase exists to remove — the more so now that
 // the specifier's own depth depends on which layout each scope is on, which is
-// a second thing about that string only the CLI can know.
+// a second thing about that string only the CLI can know. It also stands in for
+// the name a marketplace's own manifest gives it, which the install reads and
+// this app never fetches — see `recordedMarketplaceName`.
 //
 // It is declared in `./render-tokens` rather than here, because a placeholder
 // the ink ramp paints like every other chosen value is only half-refused — that
@@ -223,6 +238,31 @@ const resolveDescription = (
   shared
 
 /**
+ * The name `setConfigMetadata` records beside the ref, or none.
+ *
+ * Two different reads put it there, and they are why the public catalogue is
+ * the one conditional case. A marketplace other than it is named by its own
+ * manifest on every load — `resolveMarketplaceLabels` in the CLI's source
+ * loader refuses a fetch without one — so its install records a name whatever
+ * it installs. This app fetches `catalog.json` and never that manifest, so the
+ * name is drawn as the placeholder rather than guessed. The public catalogue's
+ * load reads no manifest at all; only registering it for a plugin does
+ * (`ensureMarketplace`), so an install holding no plugin records no name, and
+ * one holding any records the name the public manifest gives.
+ */
+const recordedMarketplaceName = (
+  marketplace: string,
+  skills: readonly SkillConfig[]
+): string | undefined => {
+  if (marketplace !== DEFAULT_SOURCE) return COMPUTED_AT_INSTALL
+
+  const registersAPlugin = skills.some(
+    (skill) => !skill.excluded && isPluginSkill(skill)
+  )
+  return registersAPlugin ? DEFAULT_PUBLIC_SOURCE_NAME : undefined
+}
+
+/**
  * The configuration `init --from` would build from this payload, minus every
  * step that reads a disk.
  *
@@ -264,6 +304,15 @@ function buildConfig(payload: SeedPayload): ProjectConfig {
     result.description
   )
 
+  // `setConfigMetadata` records the marketplace the install read: the
+  // payload's own, which `init --from` passes straight through as its source
+  // flag, or — for a payload naming none, which is every one minted on the
+  // public catalogue — `DEFAULT_SOURCE`, where `resolveSource` lands on the
+  // clean machine this preview is drawn for (no `CC_MARKETPLACE`, no saved
+  // config).
+  const marketplace = payload.marketplace ?? DEFAULT_SOURCE
+  const marketplaceName = recordedMarketplaceName(marketplace, result.skills)
+
   return {
     ...generated,
     ...(stack && { stack }),
@@ -271,17 +320,8 @@ function buildConfig(payload: SeedPayload): ProjectConfig {
     ...(result.selectedDomains.length > 0 && {
       selectedDomains: result.selectedDomains,
     }),
-    // KNOWN GAP, named rather than left as an absence: `setConfigMetadata` also
-    // writes `marketplace` and `marketplaceName`. The first is reproducible only
-    // when the payload carries one — `init --from` passes `payload.marketplace`
-    // straight through as its source flag — and otherwise resolves against the
-    // machine's own `CC_MARKETPLACE`, its saved config, or the CLI's default.
-    // The second is read out of the fetched marketplace manifest. Neither is
-    // guessed here; a fabricated marketplace ref is the same defect as a
-    // fabricated import path.
-    ...(payload.marketplace !== undefined && {
-      marketplace: payload.marketplace,
-    }),
+    marketplace,
+    ...(marketplaceName !== undefined && { marketplaceName }),
   }
 }
 
@@ -398,10 +438,17 @@ const resolveSkill = (
     // template renders it nowhere, and a browser has no disk — so it is empty
     // rather than reconstructed from the id.
     path: "",
-    // The SKILL.md description compile reads, where the catalogue carries it:
-    // `description` is the wizard's short label, which no install writes
-    // (CLI-898). An older catalogue carries only the label.
-    description: described.activationDescription ?? described.description,
+    // The SKILL.md description compile reads: `description` is the wizard's
+    // short label, which no install writes (CLI-898). A fetched catalogue built
+    // since then carries the sentence as a field; the vendored one does not, so
+    // the vendored table answers for the public catalogue's ids, which no other
+    // marketplace may ship (`refuseCatalogueCollisions` in the CLI). A
+    // catalogue built before then, for an id the table does not hold, is left
+    // with the label.
+    description:
+      described.activationDescription ??
+      ACTIVATION_DESCRIPTIONS[reference.id] ??
+      described.description,
     usage: reference.usage,
     preloaded: reference.preloaded,
     ...(origin !== undefined && { source: origin }),
@@ -569,16 +616,16 @@ function agentConfigFor(
  */
 function projectTypesExtras(
   projectSplit: ProjectConfig,
-  globalSplit: ProjectConfig,
-  catalog: Matrix
+  globalConfig: ProjectConfig,
+  catalog: CompileCatalog
 ) {
-  const skills = [...globalSplit.skills, ...projectSplit.skills].filter(
+  const skills = [...globalConfig.skills, ...projectSplit.skills].filter(
     (skill) => !skill.excluded
   )
-  const agents = [...globalSplit.agents, ...projectSplit.agents].filter(
+  const agents = [...globalConfig.agents, ...projectSplit.agents].filter(
     (agent) => !agent.excluded
   )
-  const stack = { ...globalSplit.stack, ...projectSplit.stack }
+  const stack = { ...globalConfig.stack, ...projectSplit.stack }
 
   const extraSkillIds = [...new Set(skills.map((skill) => skill.id))]
   const stackCategories = Object.values(stack).flatMap((agentStack) =>
@@ -600,7 +647,7 @@ function projectTypesExtras(
       ...new Set([
         ...deriveDomains(extraCategories, catalog),
         ...(projectSplit.selectedDomains ?? []),
-        ...(globalSplit.selectedDomains ?? []),
+        ...(globalConfig.selectedDomains ?? []),
       ]),
     ],
   }
@@ -612,7 +659,7 @@ function projectTypesExtras(
  * `config-gate/pair-writer.ts`, with the CLI's whole sub-agent roster as the
  * name source and no custom agents, because nothing the CLI ships declares one.
  */
-const globalPair = (config: ProjectConfig, catalog: Matrix) => ({
+const globalPair = (config: ProjectConfig, catalog: CompileCatalog) => ({
   configTs: generateConfigSource(config, catalog),
   configTypesTs: generateConfigTypesSource(
     catalog,
@@ -630,11 +677,12 @@ const globalPair = (config: ProjectConfig, catalog: Matrix) => ({
  * the only production site that passes `isProjectConfig`, and it always passes
  * a `globalConfig` beside it, empty or not.
  *
- * `config-types.ts` branches on whether a global `config-types.ts` exists on
- * disk, which here is whether the preview drew a global root at all. The import
- * form is where the one unknowable specifier lives; the standalone form has
- * none, so showing a placeholder there would be hedging about something the
- * preview knows.
+ * `config-types.ts` takes the IMPORT form, always, and that is the CLI's own
+ * branch answered rather than skipped: `regenerateConfigTypes` imports from the
+ * global `config-types.ts` whenever one exists on disk, and a project install
+ * finds one every time, because `ensureBlankPair` writes the global pair before
+ * the project's. The import form is where the one unknowable specifier lives,
+ * so it is drawn as a placeholder.
  *
  * `SelectedAgentName` IS OVER THE INLINED ROWS, GLOBAL FIRST, which is why
  * every agent field below reads `extras` rather than the project split.
@@ -654,42 +702,33 @@ const globalPair = (config: ProjectConfig, catalog: Matrix) => ({
  */
 const projectPair = (
   projectSplit: ProjectConfig,
-  globalSplit: ProjectConfig,
-  hasGlobalRoot: boolean,
-  catalog: Matrix
+  globalConfig: ProjectConfig,
+  catalog: CompileCatalog
 ) => {
-  const extras = projectTypesExtras(projectSplit, globalSplit, catalog)
+  const extras = projectTypesExtras(projectSplit, globalConfig, catalog)
   const projectScopedAgentNames = activeProjectAgentNames(projectSplit.agents)
 
   return {
     configTs: generateConfigSource(projectSplit, catalog, {
       isProjectConfig: true,
-      globalConfig: globalSplit,
+      globalConfig,
     }),
-    configTypesTs: hasGlobalRoot
-      ? generateProjectConfigTypesSource({
-          globalTypesImportPath: COMPUTED_AT_INSTALL,
-          projectSkillIds: extras.extraSkillIds,
-          projectAgentNames: extras.extraAgentNames,
-          projectDomains: extras.extraDomains,
-          projectCategories: extras.extraCategories,
-          // The SAME extras the fields above take, deliberately: this union is
-          // over the inlined file's own rows, and `extras` is the inlined view.
-          // See the note on `SelectedAgentName` in this function's docblock.
-          ...(extras.extraAgentNames.length > 0 && {
-            selectedAgentNames: extras.extraAgentNames,
-          }),
-          ...(projectScopedAgentNames.length > 0 && {
-            projectScopedAgentNames,
-          }),
-        })
-      : generateConfigTypesSource(
-          catalog,
-          [...AGENT_NAMES],
-          [],
-          extras,
-          projectSplit
-        ),
+    configTypesTs: generateProjectConfigTypesSource({
+      globalTypesImportPath: COMPUTED_AT_INSTALL,
+      projectSkillIds: extras.extraSkillIds,
+      projectAgentNames: extras.extraAgentNames,
+      projectDomains: extras.extraDomains,
+      projectCategories: extras.extraCategories,
+      // The SAME extras the fields above take, deliberately: this union is
+      // over the inlined file's own rows, and `extras` is the inlined view.
+      // See the note on `SelectedAgentName` in this function's docblock.
+      ...(extras.extraAgentNames.length > 0 && {
+        selectedAgentNames: extras.extraAgentNames,
+      }),
+      ...(projectScopedAgentNames.length > 0 && {
+        projectScopedAgentNames,
+      }),
+    }),
   }
 }
 
@@ -1090,8 +1129,9 @@ const PLUGIN_GROUP = "plugin skills"
 /**
  * An ejected skill's directory, and its children when the preview honestly has
  * any: an EXTERNAL skill's bytes travel inside the payload and are already
- * seated, so listing them is reporting rather than inventing. A catalogue
- * skill's are in a marketplace nobody has fetched.
+ * seated, so listing them is reporting rather than inventing — as the install
+ * leaves them, which {@link carriedAsInstalled} resolves before the tree is
+ * drawn. A catalogue skill's are in a marketplace nobody has fetched.
  */
 function ejectedSkillNodes(
   skillsDir: DirRow,
@@ -1127,10 +1167,109 @@ function ejectedSkillNodes(
   ]
 }
 
+/**
+ * The global config a project-directory install writes on a machine with
+ * nothing installed.
+ *
+ * `ensureBlankPair` writes the blank pair before anything else, and
+ * `resolveEffectiveGlobalConfig` resolves the global config from that file
+ * through `addSessionToGlobal` — the session's global half ADDED to the blank
+ * config, carrying across only what `mergeGlobalConfigs` carries. That is why a
+ * stack's `description` lands in the project's `config.ts` and not in this one,
+ * why a configuration holding nothing global leaves the pair blank, and why a
+ * domain only its project half comes from stays out of it.
+ * `registerProjectPath` then records the project under `projects`, which is the
+ * machine's own and is not drawn.
+ */
+const globalConfigOnCleanMachine = (
+  globalSplit: ProjectConfig,
+  catalog: CompileCatalog
+): ProjectConfig =>
+  addSessionToGlobal(globalSplit, blankGlobalConfig(), catalog).config
+
+/**
+ * The catalogue the install renders the config pair against: the seated one,
+ * with every skill the configuration carries seated as the user's own.
+ *
+ * `externalCatalogueEntry` in the CLI's `seed/external-skills.ts` seats each
+ * carried skill `custom: true`, which is what files it under `// Custom` in the
+ * global `config-types.ts`. The editor's seat is the wire `MatrixSkill`, which
+ * has no such field, so the flag is set here, on the catalogue the pair is
+ * rendered against.
+ */
+const catalogueAsInstalled = (
+  catalog: Matrix,
+  carriedIds: readonly string[]
+): CompileCatalog => ({
+  categories: catalog.categories,
+  skills: {
+    ...catalog.skills,
+    ...Object.fromEntries(
+      carriedIds.flatMap((id) => seatedAsCustom(catalog, id))
+    ),
+  },
+})
+
+const seatedAsCustom = (
+  catalog: Matrix,
+  id: string
+): [string, CatalogSkill][] => {
+  const seated = catalog.skills[id]
+  return seated === undefined ? [] : [[id, { ...seated, custom: true }]]
+}
+
+/**
+ * Every skill the configuration carries, with the directory its install leaves
+ * rather than the one the payload holds: `writeExternalSkills` renames the
+ * manifest to the id the skill installs under, and registers it in a
+ * `metadata.yaml` beside the files it carried.
+ */
+async function carriedAsInstalled(
+  external: Readonly<Record<string, SeedExternalSkill>>,
+  catalog: Matrix
+): Promise<Record<string, SeedExternalSkill>> {
+  return Object.fromEntries(
+    await Promise.all(
+      Object.entries(external).map(([id, skill]) =>
+        carriedSkillAsInstalled(id, skill, catalog)
+      )
+    )
+  )
+}
+
+/**
+ * One carried skill's directory as its install leaves it. A skill stating no
+ * usage line of its own is given the category sentence every such skill gets,
+ * and the date its provenance records is the install's own, so it is named
+ * rather than guessed.
+ */
+async function carriedSkillAsInstalled(
+  id: string,
+  skill: SeedExternalSkill,
+  catalog: Matrix
+): Promise<[string, SeedExternalSkill]> {
+  const domain = categoryDomain(catalog, skill.categoryId)
+
+  // KNOWN GAP, named rather than left as an absence: `seatExternalSkill`
+  // installs nothing for a skill whose category this catalogue places in no
+  // domain, and the preview still draws its directory — as the payload holds
+  // it, since there is no install of it to mirror.
+  if (domain === undefined) return [id, skill]
+
+  const files = await installedSkillTree({
+    id,
+    skill,
+    domain,
+    usageGuidance: statedUsageFor(undefined, skill.categoryId),
+    date: COMPUTED_AT_INSTALL,
+  })
+  return [id, { ...skill, files }]
+}
+
 // ── The whole preview ────────────────────────────────────────────────────
 
 /**
- * Files an install actually writes: the config pair per emitted root, one per
+ * Files an install actually writes: the config pair per root, one per
  * compiled sub-agent, and an external ejected skill's real files.
  *
  * `new` is precisely that set and nothing else, which is why the count reads it
@@ -1159,6 +1298,7 @@ export async function buildOutputPreview(
   const config = buildConfig(payload)
   const { global: globalSplit, project: projectSplit } =
     splitConfigByScope(config)
+  const globalConfig = globalConfigOnCleanMachine(globalSplit, catalog)
   // A Codex sub-agent is a different FILE, so the provider picks the renderer
   // rather than being passed to one: markdown with frontmatter on Claude, an
   // agent role definition in TOML on Codex — both off the same corpus and the
@@ -1177,48 +1317,43 @@ export async function buildOutputPreview(
     provider
   )
   const external = payload.external ?? {}
+  const carried = await carriedAsInstalled(external, catalog)
+  const pairCatalog = catalogueAsInstalled(catalog, Object.keys(external))
 
-  const holdsSomething = (split: ProjectConfig) =>
-    split.agents.length > 0 || split.skills.length > 0
-
-  const hasGlobalRoot = holdsSomething(globalSplit)
-  const hasProjectRoot = holdsSomething(projectSplit)
-
+  // BOTH ROOTS, ALWAYS. Run from a project directory, `writeProjectConfig`
+  // writes both pairs whatever the configuration holds: `ensureBlankPair` writes
+  // the global one before anything else, and `projectInstallationExists:
+  // isProjectContext` has `writeProjectPairWhenOwed` write the project one. A
+  // root holding no sub-agent and no skill is its config pair alone, never
+  // absent. Installed from `$HOME` instead, the configuration writes a single
+  // standalone pair — which is why the footer names the project directory.
   const roots: PreviewRoot[] = [
-    ...(hasGlobalRoot
-      ? [
-          {
-            base: GLOBAL_BASE,
-            config: globalSplit,
-            nodes: rootNodes(
-              GLOBAL_BASE,
-              layoutFor(provider, GLOBAL_BASE),
-              globalPair(globalSplit, catalog),
-              agents.filter((agent) => agent.scope === "global"),
-              globalSplit.skills,
-              external,
-              catalog
-            ),
-          } satisfies PreviewRoot,
-        ]
-      : []),
-    ...(hasProjectRoot
-      ? [
-          {
-            base: PROJECT_BASE,
-            config: projectSplit,
-            nodes: rootNodes(
-              PROJECT_BASE,
-              layoutFor(provider, PROJECT_BASE),
-              projectPair(projectSplit, globalSplit, hasGlobalRoot, catalog),
-              agents.filter((agent) => agent.scope !== "global"),
-              projectSplit.skills,
-              external,
-              catalog
-            ),
-          } satisfies PreviewRoot,
-        ]
-      : []),
+    {
+      base: GLOBAL_BASE,
+      config: globalConfig,
+      nodes: rootNodes(
+        GLOBAL_BASE,
+        layoutFor(provider, GLOBAL_BASE),
+        globalPair(globalConfig, pairCatalog),
+        agents.filter((agent) => agent.scope === "global"),
+        globalConfig.skills,
+        carried,
+        catalog
+      ),
+    },
+    {
+      base: PROJECT_BASE,
+      config: projectSplit,
+      nodes: rootNodes(
+        PROJECT_BASE,
+        layoutFor(provider, PROJECT_BASE),
+        projectPair(projectSplit, globalConfig, pairCatalog),
+        agents.filter((agent) => agent.scope !== "global"),
+        projectSplit.skills,
+        carried,
+        catalog
+      ),
+    },
   ]
 
   return {

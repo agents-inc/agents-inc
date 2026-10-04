@@ -15,6 +15,7 @@ import {
   summarize,
 } from "@/features/configure/lib/derive"
 import { useCatalogFirst } from "@/features/configure/lib/use-catalog-first"
+import { PANEL_ROOM } from "@/features/configure/lib/use-panel-room"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 import { useUiStore } from "@/stores/ui-store"
@@ -210,6 +211,13 @@ export function ConfigureScreen() {
             <DomainSection key={view.id} view={view} first={index === 0} />
           ))
         )}
+
+        {/* Empty, and zero high until an options panel hangs past the end of
+            the catalogue — then exactly as high as it hangs, so the column
+            holds the panel and the frame never has to. `use-panel-room.ts`
+            sizes it. Ahead of the dock rather than under it, for the reason
+            the note below gives about anything reserved below the dock. */}
+        <div {...{ [PANEL_ROOM]: "" }} />
 
         {/* ONE FLOATING CONTROL, AND THE STICKY THAT CARRIES IT.
 

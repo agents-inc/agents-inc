@@ -134,6 +134,30 @@ const installButtonLabel = (
   return installLabel(installedAgentCount, stats)
 }
 
+/**
+ * INSTALL, REFUSED: unfilled with a hairline, like the Save, Share and Preview
+ * cells above it, rather than the ink fill faded to 40%.
+ *
+ * The label is the refusal and the only place it is written — a disabled
+ * button suppresses pointer events, so no tooltip on it ever opens — and faded
+ * ink on the panel read at 2.4:1, with no inset, one pixel wider than the
+ * button. Unfilled, it reads in the cells' own ink at full opacity, and it may
+ * wrap: the reason drops under the word when the two do not fit on one line,
+ * which a sentence naming how many sub-agents are left usually does not.
+ *
+ * Composed here rather than as a variant of `full`, which has this one call
+ * site — the reasoning the composer gives for composing from `block`.
+ */
+const REFUSED_INSTALL_CLASS =
+  "flex-wrap gap-x-1 border border-divider bg-transparent px-3 text-center whitespace-normal text-track-ink disabled:opacity-100"
+
+// The reason after the word. At rest it is the quiet count on the ink fill,
+// held off the word by its own padding; refused it takes the button's ink, and
+// the row gap spaces it instead, so a reason that wraps under the word is
+// centred rather than nudged right by a padding meant for one line.
+const installReasonClass = (refused: boolean) =>
+  cn("font-normal tracking-[.06em]", refused ? undefined : "pl-1 text-faint")
+
 // The domain band is exactly this tall, and each pinned header offsets by one
 // band per index — that is what makes them stack while scrolling.
 const BAND_REM = 1.625
@@ -1072,6 +1096,9 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
     blocked,
   } = useShareLink(config)
   const flashed = new Set(flashedAgentIds)
+  // Either refusal closes the Install door — sub-agents left at global, or
+  // skills placed where this provider cannot install them.
+  const refused = blocked || unoffered.length > 0
 
   // The endings that report rather than instruct clear themselves. The
   // narration is a member of the table above, so this re-runs when the ending
@@ -1269,11 +1296,12 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
             pointer events and a tooltip on one never opens. */}
         <Button
           variant="full"
-          disabled={blocked || unoffered.length > 0}
+          disabled={refused}
+          className={refused ? REFUSED_INSTALL_CLASS : undefined}
           onClick={() => setDialog("install")}
         >
           Install{" "}
-          <span className="pl-1 font-normal tracking-[.06em] text-faint">
+          <span className={installReasonClass(refused)}>
             {installButtonLabel(
               stats,
               installedAgentCount,

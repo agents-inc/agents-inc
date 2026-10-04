@@ -65,7 +65,8 @@ const KIBIBYTE = 1024
  * does; a raise that lands exactly on the measurement makes the next one-line
  * change somebody else's build failure.
  */
-const FIRST_PAINT_BUDGET_BYTES = 344 * KIBIBYTE
+// Owner raised 344 → 352 on 2026-10-03, at 343.9 KB first paint under node.
+const FIRST_PAINT_BUDGET_BYTES = 352 * KIBIBYTE
 
 /** Matches the level a CDN compresses static assets at. */
 const GZIP_LEVEL = 9

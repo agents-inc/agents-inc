@@ -530,10 +530,15 @@ export function NavRail() {
       </Link>
 
       <div className="mt-8 flex flex-col items-end gap-[0.6875rem]">
+        {/* Current on the PATH alone. The screen's search params say what you
+            are looking at there — a query, a domain anchor, the selected-only
+            filter — and none of them is a different page; compared against
+            the defaults this link carries, every one of them took the rail's
+            current page away. */}
         <Link
           to="/"
           search={CONFIGURE_SEARCH_DEFAULTS}
-          activeOptions={{ exact: true }}
+          activeOptions={{ exact: true, includeSearch: false }}
           className={NAV_ITEM_CLASS}
         >
           Editor

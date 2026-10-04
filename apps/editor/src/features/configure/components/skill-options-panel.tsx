@@ -11,7 +11,7 @@ import {
   SegmentedItem,
 } from "@workspace/ui/components/segmented"
 import { cn } from "@workspace/ui/lib/utils"
-import { useState } from "react"
+import { useRef, useState } from "react"
 
 import {
   ROLE_COLUMNS,
@@ -21,6 +21,7 @@ import {
   type RoleColumn,
 } from "@/features/configure/lib/agent-placement"
 import { placementRefusal } from "@/features/configure/lib/provider"
+import { usePanelRoom } from "@/features/configure/lib/use-panel-room"
 import { isEjectOnly, useConfigStore } from "@/stores/config-store"
 import type {
   LoadState,
@@ -134,6 +135,11 @@ export function SkillOptionsPanel({
   const provider = useUiStore((state) => state.provider)
   const [metaOpen, setMetaOpen] = useState(false)
 
+  // Hung from the top of its cell, so on the last rows it reaches past the
+  // end of the column — which makes room for it rather than leave the page to.
+  const panelRef = useRef<HTMLDivElement>(null)
+  usePanelRoom(panelRef)
+
   const ejectOnly = isEjectOnly(skillId)
 
   // The panel is the SECOND door onto the two values the cell's butted pairs
@@ -173,6 +179,7 @@ export function SkillOptionsPanel({
 
   return (
     <div
+      ref={panelRef}
       role="group"
       aria-label="Skill options"
       // Kept, and no longer for the reason it was written. The panel used to sit

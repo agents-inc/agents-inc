@@ -11,7 +11,7 @@ import {
 import { Glyph } from "@workspace/ui/components/glyph"
 import { Input } from "@workspace/ui/components/input"
 import { LatticeRow, LatticeRows } from "@workspace/ui/components/lattice"
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { track } from "@/lib/analytics/track"
 import {
@@ -259,6 +259,12 @@ export function AddSkillDialog() {
   const [staged, setStaged] = useState<StagedSkill[]>([])
   const [index, setIndex] = useState<IndexState>({ status: "loading" })
   const [commit, setCommit] = useState<CommitState>({ status: "idle" })
+  // Where the caret goes as the dialog opens. Handed to the dialog rather than
+  // taken by the field with `autoFocus`, and that is the whole of the way back:
+  // a field focused as it MOUNTS is focused before the dialog records what had
+  // focus, so the dialog recorded the field — gone by the time it closes — and
+  // dropped focus to `<body>` instead of handing it back to Add skill.
+  const searchField = useRef<HTMLInputElement>(null)
 
   const open = dialog === "add"
   const trimmed = query.trim()
@@ -386,7 +392,7 @@ export function AddSkillDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent>
+      <DialogContent initialFocus={searchField}>
         <DialogHeader title="Add skill" subtitle="from github" />
 
         <DialogBody scroll>
@@ -423,7 +429,7 @@ export function AddSkillDialog() {
             <Input
               variant="dialog"
               className="py-2.5"
-              autoFocus
+              ref={searchField}
               value={query}
               placeholder="search external skills"
               aria-label="Search external skills"

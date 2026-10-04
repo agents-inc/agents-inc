@@ -58,6 +58,14 @@ const CHUNK_GROUPS = [
     priority: 40,
     entriesAware: true,
   },
+  // Each skill's SKILL.md description, which only the output preview reads,
+  // and the preview is reached through `import()`. Ranked above `catalog`,
+  // whose test matches this file too and would put it on the first-paint path.
+  {
+    name: "activation-descriptions",
+    test: /packages[\\/]matrix[\\/]src[\\/](vendor[\\/]generated[\\/])?activation-descriptions\./,
+    priority: 15,
+  },
   // Then the generated catalogue itself, which changes when the marketplace
   // does rather than when this app does.
   {
@@ -152,6 +160,11 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "dist/editor",
       sourcemap: uploadSourceMaps ? "hidden" : false,
+      // Off to keep first paint under FIRST_PAINT_BUDGET_BYTES — the owner's
+      // choice on 2026-10-03. Browsers without native `modulepreload` (Safari
+      // before 17, Firefox before 115) still load every chunk, just without
+      // preloading, so they fetch a little later rather than failing.
+      modulePreload: { polyfill: false },
       rolldownOptions: {
         output: { codeSplitting: { groups: CHUNK_GROUPS } },
       },

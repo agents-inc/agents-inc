@@ -11,12 +11,13 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   activeMatrix,
   activeStacks,
+  externalSkillId,
   useCatalogStore,
 } from "@/stores/catalog-store"
 
 import { buildOutputPreview } from "./output-preview"
 
-import type { SeedPayload } from "@workspace/matrix"
+import type { SeedExternalSkill, SeedPayload } from "@workspace/matrix"
 
 /**
  * WHAT THIS FILE IS FOR, IN ONE SENTENCE: the preview must not invent bytes.
@@ -66,6 +67,30 @@ const PROJECT_BASE = "./"
 const CONFIG_TS = "config.ts"
 const CONFIG_TYPES_TS = "config-types.ts"
 
+// The source folder the config pair is written into, mirrored rather than
+// imported: it is text the preview renders and a path on people's disks, so an
+// assertion reading the constant the product writes would move with it.
+const SOURCE_DIR = ".agents-inc/claude/"
+
+/**
+ * THE PREMISE EVERY ROOT BELOW IS DRAWN UNDER: `init --from` run from a project
+ * directory on a machine with nothing installed. The Install dialog sends the
+ * visitor there first (`cd ~/code/your-project`), and §B3.5 rule 1 has the
+ * footer say the project root is drawn as an install into a project directory.
+ *
+ * From there `writeProjectConfig` in the CLI writes BOTH pairs, whatever the
+ * configuration holds: `ensureBlankPair` writes the global one before anything
+ * else, and `projectInstallationExists: isProjectContext` makes
+ * `writeProjectPairWhenOwed` write the project one. So a root's config pair is
+ * owed whether or not the root holds an agent or a skill — measured by running
+ * `agents-inc init --from` over the payloads this file builds, from a project
+ * directory in a fresh HOME.
+ */
+const configPairIn = (base: string) => [
+  `${base}${SOURCE_DIR}${CONFIG_TS}`,
+  `${base}${SOURCE_DIR}${CONFIG_TYPES_TS}`,
+]
+
 /**
  * A payload holding exactly these skills and sub-agent entries — no sub-agent
  * entry unless a spec names one. Built on `seedPayload` rather than driven
@@ -104,6 +129,15 @@ const bodyOf = (
   base: string,
   file: string
 ) => rootOf(preview, base)?.nodes.find((node) => node.id.endsWith(file))?.body
+
+/** The paths of the files one root says an install writes — its `new` rows. */
+const writtenIn = (
+  preview: Awaited<ReturnType<typeof buildOutputPreview>>,
+  base: string
+) =>
+  (rootOf(preview, base)?.nodes ?? [])
+    .filter((node) => node.marker === "new")
+    .map((node) => node.id)
 
 describe("the bytes the output preview draws", () => {
   /**
@@ -205,8 +239,14 @@ describe("the bytes the output preview draws", () => {
    * The expected sentence is read off the SEATED catalogue rather than typed
    * out, for this file's stated reason: a transcribed literal would be a second
    * copy of a stack's own metadata, and a marketplace ships its own stacks.
+   *
+   * THE PROJECT'S `config.ts` IS WHERE THE LINE LANDS, for a configuration
+   * that is wholly global too. Run from a project directory, the CLI writes the
+   * project pair whatever the project holds (see {@link configPairIn}), and the
+   * description travels on the project split into that file — the global one
+   * is rebuilt without it, which the spec below holds.
    */
-  it("carries the applied stack's description, which the CLI writes for one", async () => {
+  it("carries the applied stack's description into the project config.ts, where the CLI writes it", async () => {
     const [stack] = activeStacks()
 
     expect(
@@ -221,10 +261,63 @@ describe("the bytes the output preview draws", () => {
       },
       "claude"
     )
-    const configTs = bodyOf(preview, GLOBAL_BASE, CONFIG_TS)
+    const configTs = bodyOf(preview, PROJECT_BASE, CONFIG_TS)
 
-    expect(configTs, "the preview drew no global config.ts").toBeTruthy()
+    expect(configTs, "the preview drew no project config.ts").toBeTruthy()
     expect(configTs).toContain(stack!.description)
+  })
+
+  /**
+   * THE GLOBAL `config.ts` CARRIES NO DESCRIPTION, because the CLI never
+   * writes the global split as it stands. A project install resolves the
+   * global config through `resolveEffectiveGlobalConfig`, and on a clean
+   * machine that is `mergeGlobalConfigs` over the blank pair `ensureBlankPair`
+   * has just written: the merge spreads the EXISTING config and carries only
+   * skills, agents, stack, domains and the marketplace identity across, so the
+   * split's `description` never reaches the file. Installing this very payload
+   * from a project directory wrote the stack's sentence into the project
+   * `config.ts` and no `description` line into the global one.
+   *
+   * A mixed configuration on purpose: both roots are drawn already, so the
+   * only thing that can make this red is the line itself — the subject guard
+   * says the sentence reached the configuration at all, which is what stops
+   * the absence below passing on a preview that lost it everywhere.
+   *
+   * `description:` is written out rather than imported from the writer, for
+   * the reason the spec below gives: it is TEXT the product emits.
+   */
+  it("leaves the description out of the global config.ts, which the CLI rebuilds from the blank pair", async () => {
+    const [stack] = activeStacks()
+
+    expect(
+      stack,
+      "the seated catalogue offers no stack, so this assertion has no subject"
+    ).toBeDefined()
+
+    const preview = await buildOutputPreview(
+      {
+        ...payload(
+          {
+            [REACT]: skill("global", "plugin"),
+            [TAILWIND]: skill("project", "plugin"),
+          },
+          { [WEB_DEVELOPER]: { on: true, scope: "project" } }
+        ),
+        stackId: stack!.id,
+      },
+      "claude"
+    )
+    const globalConfigTs = bodyOf(preview, GLOBAL_BASE, CONFIG_TS)
+
+    expect(
+      bodyOf(preview, PROJECT_BASE, CONFIG_TS),
+      "the stack's description reached no config.ts, so its absence below has no subject"
+    ).toContain(stack!.description)
+    expect(globalConfigTs, "the preview drew no global config.ts").toBeTruthy()
+    expect(
+      globalConfigTs,
+      "the global config.ts carries a description the install writes only into the project's"
+    ).not.toContain("description:")
   })
 
   /**
@@ -246,6 +339,155 @@ describe("the bytes the output preview draws", () => {
 
     expect(configTs, "the preview drew no global config.ts").toBeTruthy()
     expect(configTs).not.toContain("description:")
+  })
+})
+
+/**
+ * THE MARKETPLACE A CONFIGURATION NAMING NONE IS INSTALLED FROM — which is
+ * every configuration minted on the public catalogue, because `toSeedPayload`
+ * stamps a marketplace only once one is loaded. `init --from` hands
+ * `payload.marketplace` to the install as its flag; with none, `resolveSource`
+ * falls through to the CLI's default on a machine that sets no
+ * `CC_MARKETPLACE` and holds no config, which is the premise every root here is
+ * drawn under. `setConfigMetadata` records it in the project's `config.ts`,
+ * and the global merge carries it into the global one whenever the global
+ * holds anything — measured by `init --from` from a project directory in a
+ * fresh HOME, which wrote this line into both.
+ *
+ * The line is written out rather than built from the CLI's constant, because
+ * it is TEXT the install wrote: an expectation reading the value under test
+ * would move with it.
+ */
+describe("the marketplace a configuration naming none records", () => {
+  const DEFAULT_MARKETPLACE_LINE =
+    "\n  marketplace: 'github:agents-inc/skills',\n"
+
+  it("records the public catalogue in both config.ts files, as the install does", async () => {
+    const preview = await buildOutputPreview(
+      payload(
+        {
+          [REACT]: skill("global", "plugin"),
+          [TAILWIND]: skill("project", "plugin"),
+        },
+        { [WEB_DEVELOPER]: { on: true, scope: "project" } }
+      ),
+      "claude"
+    )
+
+    expect(
+      bodyOf(preview, PROJECT_BASE, CONFIG_TS),
+      "the project config.ts names no marketplace, though the install records the one it read"
+    ).toContain(DEFAULT_MARKETPLACE_LINE)
+    expect(
+      bodyOf(preview, GLOBAL_BASE, CONFIG_TS),
+      "the global config.ts names no marketplace, though the install records the one it read"
+    ).toContain(DEFAULT_MARKETPLACE_LINE)
+  })
+
+  /**
+   * The other half, which keeps the one above honest: a configuration holding
+   * nothing global leaves the blank global pair exactly as `ensureBlankPair`
+   * wrote it, so an unconditional line would pass above and draw a field the
+   * install does not write here.
+   */
+  it("leaves the blank global config.ts without one, as the install does", async () => {
+    const preview = await buildOutputPreview(
+      payload(
+        { [REACT]: skill("project", "plugin") },
+        { [WEB_DEVELOPER]: { on: true, scope: "project" } }
+      ),
+      "claude"
+    )
+
+    expect(
+      bodyOf(preview, PROJECT_BASE, CONFIG_TS),
+      "the project config.ts names no marketplace, so the absence below has no subject"
+    ).toContain(DEFAULT_MARKETPLACE_LINE)
+    expect(bodyOf(preview, GLOBAL_BASE, CONFIG_TS)).not.toContain(
+      "marketplace:"
+    )
+    // A separate needle, because `marketplace:` is not a substring of
+    // `marketplaceName:` — a project install leaves the global name alone too.
+    expect(bodyOf(preview, GLOBAL_BASE, CONFIG_TS)).not.toContain(
+      "marketplaceName:"
+    )
+  })
+
+  /**
+   * An install holding a plugin registers the marketplace with Claude Code,
+   * reading the name its manifest gives it, and `setConfigMetadata` records
+   * that name beside the ref — in both files, as `init --from` writes them on
+   * a clean machine. Held to the line after the ref, because that is where the
+   * writer puts it and a line drawn anywhere else is a different file.
+   */
+  it("names the public catalogue as its manifest does, on the line after the ref", async () => {
+    const preview = await buildOutputPreview(
+      payload(
+        {
+          [REACT]: skill("global", "plugin"),
+          [TAILWIND]: skill("project", "plugin"),
+        },
+        { [WEB_DEVELOPER]: { on: true, scope: "project" } }
+      ),
+      "claude"
+    )
+    const namedBesideTheRef = `${DEFAULT_MARKETPLACE_LINE}  marketplaceName: 'agents-inc',\n`
+
+    expect(
+      bodyOf(preview, PROJECT_BASE, CONFIG_TS),
+      "the project config.ts leaves out the marketplace name the install records"
+    ).toContain(namedBesideTheRef)
+    expect(
+      bodyOf(preview, GLOBAL_BASE, CONFIG_TS),
+      "the global config.ts leaves out the marketplace name the install records"
+    ).toContain(namedBesideTheRef)
+  })
+})
+
+/**
+ * An install from a marketplace other than the public one reads that
+ * marketplace's manifest whatever it installs — `resolveMarketplaceLabels` in
+ * the CLI's source loader refuses a fetch without a named one — and records
+ * the name beside the ref. The seat here is a catalogue and nothing else, so
+ * no name is readable: the line is drawn with the placeholder, as the
+ * project's name is, and never left out.
+ *
+ * `MARKETPLACE_CANONICAL_REF` is bound rather than written out because it is
+ * this test's own input: the store is seated with it and the payload names it.
+ */
+describe("the name a seated marketplace is recorded under", () => {
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  it("names it as computed at install time, on the line after the ref, in both config.ts files", async () => {
+    useCatalogStore
+      .getState()
+      .load(MARKETPLACE_CATALOG, MARKETPLACE_CANONICAL_REF)
+
+    const preview = await buildOutputPreview(
+      seedPayload({
+        marketplace: MARKETPLACE_CANONICAL_REF,
+        skills: { [ACME_SKILL]: skill("global", "plugin") },
+        agents: { [WEB_DEVELOPER]: { on: true, scope: "project" } },
+      }),
+      "claude"
+    )
+    const refLine = `\n  marketplace: '${MARKETPLACE_CANONICAL_REF}',\n`
+    const namedBesideTheRef = `${refLine}  marketplaceName: '<computed at install time>',\n`
+
+    for (const base of [PROJECT_BASE, GLOBAL_BASE]) {
+      const config = bodyOf(preview, base, CONFIG_TS)
+
+      expect(
+        config,
+        `the ${base} config.ts records no seated marketplace, so the line after it has no subject`
+      ).toContain(refLine)
+      expect(
+        config,
+        `the ${base} config.ts leaves out the marketplace name the install records`
+      ).toContain(namedBesideTheRef)
+    }
   })
 })
 
@@ -288,13 +530,15 @@ describe("the one line a browser cannot know", () => {
   })
 
   /**
-   * The other branch, and the one where the preview is exactly right: with no
-   * global-scoped item there is no global root, so the project `config-types.ts`
-   * takes the standalone form and has no import specifier to be unsure about.
-   * A preview that showed the placeholder here would be hedging about something
-   * it knows.
+   * The branch §B3.5 rule 2 called exactly right, and it is not: with no
+   * global-scoped item the CLI still writes the global pair first —
+   * `ensureBlankPair` runs before the project write — so the project
+   * `config-types.ts` finds a global one on disk and takes the IMPORT form, the
+   * placeholder's line included. Installing this very payload from a project
+   * directory wrote `SkillId as GlobalSkillId` and a relative specifier into
+   * it; the standalone form drawn for it is a file no install writes.
    */
-  it("shows no placeholder when there is no global root to import from", async () => {
+  it("imports the global unions for a configuration holding nothing global, as the install does", async () => {
     const preview = await buildOutputPreview(
       payload(
         { [REACT]: skill("project", "plugin") },
@@ -305,12 +549,16 @@ describe("the one line a browser cannot know", () => {
 
     const types = bodyOf(preview, PROJECT_BASE, CONFIG_TYPES_TS)
 
-    expect(
-      rootOf(preview, GLOBAL_BASE),
-      "a global root was emitted for a configuration holding nothing global"
-    ).toBeUndefined()
     expect(types, "the preview drew no project config-types.ts").toBeTruthy()
-    expect(types).not.toContain("<computed at install time>")
+    expect(
+      types,
+      "the project config-types.ts takes the standalone form, though the install writes a global one for it to import"
+    ).toContain("SkillId as GlobalSkillId")
+    expect(types).toContain("<computed at install time>")
+    expect(
+      types,
+      "the preview invented a relative path to the global source folder instead of naming it as computed"
+    ).not.toContain("../")
   })
 })
 
@@ -658,6 +906,60 @@ describe("the description a skill is listed under", () => {
 
     expect(await acmeBody()).toContain(WIZARD_LABEL)
   })
+
+  /**
+   * The vendored catalogue is the seat every visitor starts on, and the specs
+   * above cannot reach it: they seat a marketplace that carries the field,
+   * while the vendored one is read at import and asks the network for nothing,
+   * so no rebuilt catalog.json changes what it says. Its `description` is the
+   * wizard's label and an install writes the skill's SKILL.md sentence there
+   * instead, so the label is read off the seat rather than typed here, and the
+   * negative is held to the one row whose presence the line before it proves.
+   *
+   * The positive half is the sentence the vendored table holds for THIS id:
+   * `generate:types` copies it out of the skill's own SKILL.md, so it is what
+   * an install of the public catalogue writes. A row merely differing from the
+   * label would pass on a lookup that answered some other skill's sentence.
+   * The table is imported only once the negative has held, so a tree that
+   * predates it fails on the label it draws rather than on the import.
+   */
+  it("draws no wizard label on the vendored catalogue, the seat every visitor starts on", async () => {
+    useCatalogStore.getState().reset()
+    const label = activeMatrix().skills[REACT]?.description
+
+    expect(
+      label,
+      "the vendored catalogue no longer carries the skill this reads"
+    ).toBeDefined()
+
+    const body = bodyOf(
+      await buildOutputPreview(
+        payload({ [REACT]: skill("global", "plugin") }),
+        "claude"
+      ),
+      GLOBAL_BASE,
+      `${WEB_DEVELOPER}.md`
+    )
+
+    expect(body, "the preview drew no activation row for the skill").toContain(
+      `### ${REACT}\n- Description: `
+    )
+    expect(body).not.toContain(`### ${REACT}\n- Description: ${label}\n`)
+
+    const { ACTIVATION_DESCRIPTIONS } =
+      await import("@workspace/matrix/activation-descriptions")
+    const sentence = ACTIVATION_DESCRIPTIONS[REACT]
+
+    expect(
+      sentence,
+      "the vendored table holds no SKILL.md sentence for the skill this reads"
+    ).toBeDefined()
+    expect(
+      sentence,
+      "the skill's SKILL.md sentence is its label, so nothing here can tell them apart"
+    ).not.toBe(label)
+    expect(body).toContain(`### ${REACT}\n- Description: ${sentence}\n`)
+  })
 })
 
 describe("what the tree says about plugin skills", () => {
@@ -913,19 +1215,236 @@ describe("what the tree says about plugin skills", () => {
   })
 })
 
+/**
+ * A SKILL THE CONFIGURATION CARRIES rather than names — added in the editor, so
+ * its whole directory travels inside the payload — is the one ejected directory
+ * whose files the preview can list, and it listed them as the payload holds
+ * them. The install does not write them that way. `writeExternalSkills` in the
+ * CLI's `seed/external-skills.ts` renames the manifest to the id the skill
+ * installs under (`withInstalledName`), writes a `metadata.yaml` beside it
+ * (`registerSkillOnDisk`), and seats the skill `custom: true`
+ * (`externalCatalogueEntry`), which is what files it under `// Custom` in the
+ * global `config-types.ts`.
+ *
+ * Every expected line below is TEXT the install wrote to disk for this very
+ * payload, run from a project directory, so it is written out rather than
+ * rendered here — the date and the content hash in its `forkedFrom` are the
+ * install's own and are deliberately not asserted.
+ */
+describe("a skill the configuration carries", () => {
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  const CARRIED_CATEGORY = "meta-methodology"
+  const CARRIED_ID = externalSkillId(CARRIED_CATEGORY, "brainstorming")
+  const CARRIED_DIR = `${GLOBAL_BASE}.claude/skills/${CARRIED_ID}/`
+  const PM = "pm"
+
+  // As its repository wrote it: a manifest naming the skill the way upstream
+  // knows it, one more file, and NO metadata.yaml — which is the case the
+  // obra/superpowers skill in the lane's run is.
+  const CARRIED: SeedExternalSkill = {
+    displayName: "brainstorming",
+    description: "Explores user intent before implementation.",
+    categoryId: CARRIED_CATEGORY,
+    repo: "obra/superpowers",
+    path: "skills/brainstorming",
+    files: {
+      "SKILL.md":
+        "---\nname: brainstorming\ndescription: Explores user intent before implementation.\n---\n\n# Brainstorming\n",
+      "visual-companion.md": "# Visual companion\n",
+    },
+  }
+
+  // Seated the way `adoptSeedPayload` seats a payload's carried skills, which
+  // is where the add-skill dialog leaves one too: in the catalogue, before the
+  // decode reads the selection that names it.
+  const carriedPreview = () => {
+    useCatalogStore.getState().addExternal([{ id: CARRIED_ID, ...CARRIED }])
+
+    return buildOutputPreview(
+      seedPayload({
+        skills: {
+          [REACT]: skill("global", "plugin"),
+          [CARRIED_ID]: skill("global", "eject", [PM]),
+        },
+        agents: {},
+        external: { [CARRIED_ID]: CARRIED },
+      }),
+      "claude"
+    )
+  }
+
+  /**
+   * Every loader reads a skill's id off this one line, and every compiled
+   * sub-agent references the minted id — so a manifest still naming the
+   * upstream `brainstorming` describes a skill nothing installed. Only the
+   * name moves; the rest of the file is the author's and travels untouched.
+   */
+  it("names its SKILL.md by the id it installs under", async () => {
+    expect(
+      bodyOf(await carriedPreview(), GLOBAL_BASE, `${CARRIED_DIR}SKILL.md`)
+    ).toStrictEqual(
+      `---\nname: ${CARRIED_ID}\ndescription: Explores user intent before implementation.\n---\n\n# Brainstorming\n`
+    )
+  })
+
+  /**
+   * The file the tree left out. Named rather than counted, and sorted on both
+   * sides, because the claim is which files the install leaves in the
+   * directory — not the order the tree lists them in.
+   */
+  it("lists the metadata.yaml the install writes beside the files it carried", async () => {
+    const written = writtenIn(await carriedPreview(), GLOBAL_BASE).filter(
+      (path) => path.startsWith(CARRIED_DIR)
+    )
+
+    expect([...written].sort()).toStrictEqual([
+      `${CARRIED_DIR}SKILL.md`,
+      `${CARRIED_DIR}metadata.yaml`,
+      `${CARRIED_DIR}visual-companion.md`,
+    ])
+  })
+
+  /**
+   * What that file has to say for the next `edit`, `compile` or `list` to find
+   * the skill again: the id it answers to, the placement the visitor confirmed,
+   * that it is the user's own, and where its bytes came from — the provenance
+   * `uninstall` and `share` read to know the directory is the round trip's.
+   *
+   * The domain is read off the seated catalogue rather than written out, for
+   * the reason the stack specs above read `activeStacks()`: it is the
+   * catalogue's own metadata, and the install reads the same declaration.
+   */
+  it("records in that metadata.yaml what the install records", async () => {
+    const domain = activeMatrix().categories[CARRIED_CATEGORY]?.domain
+    const metadata = bodyOf(
+      await carriedPreview(),
+      GLOBAL_BASE,
+      `${CARRIED_DIR}metadata.yaml`
+    )
+
+    expect(
+      domain,
+      "the seated catalogue does not declare the carried skill's category, so nothing would install it"
+    ).toBeTruthy()
+    expect(
+      metadata,
+      "the preview drew no metadata.yaml for the carried skill"
+    ).toBeTruthy()
+    expect(metadata).toContain(`\nslug: ${CARRIED_ID}\n`)
+    expect(metadata).toContain(`\ncategory: ${CARRIED_CATEGORY}\n`)
+    expect(metadata).toContain(`\ndomain: ${domain}\n`)
+    expect(metadata).toContain("\ncustom: true\n")
+    expect(metadata).toContain(`\n  source: github:${CARRIED.repo}\n`)
+    expect(metadata).toContain(`\n  path: ${CARRIED.path}\n`)
+  })
+
+  /**
+   * The global `config-types.ts` splits `SkillId` under `// Custom` and
+   * `// Marketplace` once any member is the user's own — `isCustomSkill` in
+   * `@workspace/compile` reads `custom: true` off the catalogue entry, which
+   * the install seats and the preview's seat does not. The block is asserted
+   * whole, ending where the union ends, because the claim is the grouping and
+   * a flat union contains every one of these ids too.
+   */
+  it("files it under // Custom in the global config-types.ts, as the install does", async () => {
+    expect(
+      bodyOf(await carriedPreview(), GLOBAL_BASE, CONFIG_TYPES_TS)
+    ).toContain(
+      [
+        "export type SkillId =",
+        "  // Custom",
+        `  | '${CARRIED_ID}'`,
+        "  // Marketplace",
+        `  | '${REACT}'`,
+        "",
+      ].join("\n")
+    )
+  })
+})
+
 describe("which roots are emitted", () => {
   /**
-   * B3.2's first rule, and it is "absent, not empty" rather than a nicety: an
-   * emitted root always carries the config pair, so a root drawn for a scope
-   * holding nothing would show two files an install does not write there.
+   * BOTH, ALWAYS — and B3.2's "absent, not empty" rule rested on a premise the
+   * CLI contradicts. It reasoned that a root holding nothing would show "two
+   * files an install does not write there"; run from a project directory, the
+   * install writes exactly those two files there (see {@link configPairIn}).
+   * So a wholly global configuration still writes the project's pair, and the
+   * pair is all it writes there: its sub-agents and its plugins are global.
+   *
+   * The written files are named rather than counted, because the claim is
+   * which files the install leaves on disk and a count cannot see a swap.
    */
-  it("emits no root for a scope holding neither an agent nor a skill", async () => {
+  it("emits the project root for a wholly global configuration, holding the pair the install writes there", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),
       "claude"
     )
 
-    expect(preview.roots.map((root) => root.base)).toStrictEqual([GLOBAL_BASE])
+    expect(preview.roots.map((root) => root.base)).toStrictEqual([
+      GLOBAL_BASE,
+      PROJECT_BASE,
+    ])
+    expect(writtenIn(preview, PROJECT_BASE)).toStrictEqual(
+      configPairIn(PROJECT_BASE)
+    )
+  })
+
+  /**
+   * The mirror image: a configuration written wholly into the project still
+   * leaves the global pair on disk, because `ensureBlankPair` writes it before
+   * the project write runs. Nothing else lands under `~/` for it.
+   */
+  it("emits the global root for a wholly project configuration, holding the pair the install writes there", async () => {
+    const preview = await buildOutputPreview(
+      payload(
+        { [REACT]: skill("project", "plugin") },
+        { [WEB_DEVELOPER]: { on: true, scope: "project" } }
+      ),
+      "claude"
+    )
+
+    expect(preview.roots.map((root) => root.base)).toStrictEqual([
+      GLOBAL_BASE,
+      PROJECT_BASE,
+    ])
+    expect(writtenIn(preview, GLOBAL_BASE)).toStrictEqual(
+      configPairIn(GLOBAL_BASE)
+    )
+  })
+
+  /**
+   * And that global pair is BLANK, which is what makes it honest to draw: the
+   * configuration put nothing global in it, so the global config holds no
+   * skill and no sub-agent and its unions are `never`. A preview that filled
+   * the global root with the project's entries would satisfy the two specs
+   * above and draw a file no install writes.
+   *
+   * `export type SkillId = never` is written out rather than rendered here,
+   * because it is the line the install wrote — and an expectation built by the
+   * renderer under test would agree with whatever it was handed.
+   */
+  it("draws that global pair blank, as the install writes it", async () => {
+    const preview = await buildOutputPreview(
+      payload(
+        { [REACT]: skill("project", "plugin") },
+        { [WEB_DEVELOPER]: { on: true, scope: "project" } }
+      ),
+      "claude"
+    )
+    const globalRoot = rootOf(preview, GLOBAL_BASE)
+
+    expect(
+      globalRoot,
+      "no global root was drawn, though the install writes the global pair"
+    ).toBeDefined()
+    expect(globalRoot!.config.skills).toStrictEqual([])
+    expect(globalRoot!.config.agents).toStrictEqual([])
+    expect(bodyOf(preview, GLOBAL_BASE, CONFIG_TYPES_TS)).toContain(
+      "\nexport type SkillId = never\n"
+    )
   })
 
   /** Global first, then project — the emission order B3.2 states. */
@@ -960,16 +1479,18 @@ describe("the footer's file count", () => {
    * The expected number is arithmetic on the rows the preview itself emitted,
    * rather than a literal, because the sub-agent roster is the catalogue's and
    * moves with it — a literal here would be a catalogue fact wearing a footer's
-   * clothes.
+   * clothes. That holds for the roots too: the pair is counted once per root
+   * the preview drew, and WHICH roots it draws is pinned under "which roots are
+   * emitted" rather than restated here as an arity.
    */
   it("counts the config pair per root and one file per compiled sub-agent", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),
       "claude"
     )
-    const agents = (rootOf(preview, GLOBAL_BASE)?.nodes ?? []).filter((node) =>
-      node.id.endsWith(".md")
-    )
+    const agents = preview.roots
+      .flatMap((root) => root.nodes)
+      .filter((node) => node.id.endsWith(".md"))
     const CONFIG_FILES_PER_ROOT = 2
 
     // The subject: a preview that compiled no sub-agent at all states a count
@@ -979,7 +1500,7 @@ describe("the footer's file count", () => {
       "the preview compiled no sub-agent, so the count below has no subject"
     ).not.toStrictEqual([])
     expect(preview.fileCount).toStrictEqual(
-      CONFIG_FILES_PER_ROOT + agents.length
+      CONFIG_FILES_PER_ROOT * preview.roots.length + agents.length
     )
   })
 

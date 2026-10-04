@@ -15,6 +15,7 @@ import {
   usePinned,
   usePinnedAttribute,
 } from "@/features/configure/lib/use-pinned"
+import { useScrollClearance } from "@/features/configure/lib/use-scroll-clearance"
 import type { ConfigureSearch } from "@/routes/search"
 import { useUiStore } from "@/stores/ui-store"
 import { DomainTabs } from "./domain-tabs"
@@ -75,6 +76,11 @@ export function FilterBar({
   // MEASUREMENT depends on: the band's height. `scrollToDomain` republishes it
   // mid-jump, which React state cannot be made to do from inside an effect.
   usePinnedAttribute(wrapRef)
+
+  // THE CONTROL THE KEYBOARD IS ON STAYS CLEAR OF THE BAR, which pins over the
+  // head of the column: walking back up the page, a control scrolled in from
+  // above stopped at the window's top edge, behind the bar.
+  useScrollClearance(wrapRef, "top")
 
   // Pinning changes how the bar looks and never where the caret is. It used to
   // take focus into the search field on the transition — but focus can cause
