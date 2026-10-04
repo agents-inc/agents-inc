@@ -55,11 +55,6 @@ export function getCategoryDomain(category: string): Domain | undefined {
   return matrix.categories[category as Category]?.domain;
 }
 
-/** Check if a skill ID exists in the current matrix (built-in + custom). */
-export function hasSkill(id: string): boolean {
-  return id in matrix.skills;
-}
-
 /** Optional stack lookup by ID. */
 export function findStack(stackId: string): ResolvedStack | undefined {
   return matrix.suggestedStacks.find((s) => s.id === stackId);

@@ -25,6 +25,7 @@ import { loadSkillsMatrixFromSource, type UnusableSkillMetadata } from "../lib/l
 import { STANDARD_FILES } from "../consts";
 import { EXIT_CODES } from "../lib/exit-codes";
 import { getErrorMessage } from "../utils/errors";
+import { plural } from "../utils/string";
 import {
   ERROR_MESSAGES,
   STATUS_MESSAGES,
@@ -32,7 +33,7 @@ import {
   configTypesRefreshFailed,
   globalScopedAgentsHint,
   recompileSummary,
-  registeredProjectUpdateSkipped,
+  registeredProjectUpdateFailed,
   scopeBlockedStackAssignment,
   skillMetadataUnusableDetail,
   skillMetadataUnusableError,
@@ -95,6 +96,7 @@ export default class Compile extends BaseCommand {
       providerNamedBy(flags.provider),
       (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
+    await this.ensureConfigReadable(cwd);
     await this.settleSourceLayoutBeforeWriting(cwd);
     const installations = await this.detectInstallations(cwd);
     await this.refuseUnofferablePlacements(cwd);
@@ -431,10 +433,11 @@ export default class Compile extends BaseCommand {
    * not as a failure to refresh the type unions — which did succeed.
    */
   private reportPropagation(report: GateReport): void {
-    for (const skippedPath of report.propagated.skipped) {
-      this.warn(registeredProjectUpdateSkipped(skippedPath));
+    this.reportProjectsOutOfReach(report.propagated);
+    for (const projectPath of report.propagated.failed) {
+      this.warn(registeredProjectUpdateFailed(projectPath));
     }
-    this.reportPropagatedRecompile(report);
+    this.reportFanOut(report);
   }
 
   /** Runs one pass, and answers whether it compiled rather than skipping for want of anything to. */
@@ -448,8 +451,7 @@ export default class Compile extends BaseCommand {
     verbose(`  Project: ${projectDir}`);
     verbose(`  Agents: ${installation.agentsDir}`);
 
-    // Before anything below reads the matrix — including the early return just
-    // past skill discovery, which still calls refreshConfigTypes.
+    // Before anything below reads the matrix.
     const seatedMatrix = await this.seatMatrixForPass(projectDir);
 
     const { allSkills, totalSkillCount } = await this.discoverAllSkills(projectDir);
@@ -458,11 +460,9 @@ export default class Compile extends BaseCommand {
     if (compilesBaseAgents) {
       this.log(`No skills configured for ${label.toLowerCase()} pass, compiling base agents`);
     } else if (totalSkillCount === 0) {
+      // A run is one pass, so a skipped pass is a refused run — and a refused run writes nothing,
+      // config-types.ts included (owner ruling).
       this.log(`No skills found for ${label.toLowerCase()} pass, skipping`);
-      // The config loads independently of discovered skills: a hand-edited
-      // config.ts can list skills while nothing is installed for this scope,
-      // and its type unions must follow the config rather than stay stale.
-      await this.refreshConfigTypes(params, cwd, seatedMatrix);
       return false;
     }
 
@@ -484,7 +484,7 @@ export default class Compile extends BaseCommand {
       const summary = recompileSummary(
         rewritten.length,
         compiled.length - rewritten.length,
-        `${label.toLowerCase()} agents`,
+        `${label.toLowerCase()} agent`,
       );
 
       if (failed.length > 0) {
@@ -653,10 +653,10 @@ function formatDiscoveryMessage(result: DiscoveredSkills): string {
   const localCount = totalSkillCount - pluginSkillCount;
 
   if (pluginSkillCount > 0 && localCount > 0) {
-    return `Discovered ${totalSkillCount} skills (${pluginSkillCount} from plugins, ${localCount} local)`;
+    return `Discovered ${plural(totalSkillCount, "skill")} (${pluginSkillCount} from plugins, ${localCount} local)`;
   }
 
   return pluginSkillCount > 0
-    ? `Discovered ${pluginSkillCount} skills from plugins`
-    : `Discovered ${totalSkillCount} local skills`;
+    ? `Discovered ${plural(pluginSkillCount, "skill")} from plugins`
+    : `Discovered ${plural(totalSkillCount, "local skill")}`;
 }

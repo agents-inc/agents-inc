@@ -1,5 +1,5 @@
 import React from "react";
-import { partition } from "remeda";
+import { partition, unique } from "remeda";
 import path from "path";
 
 import { Flags } from "@oclif/core";
@@ -32,13 +32,14 @@ import { isHomeDirectory, resolveInstallPaths } from "../lib/installation/index"
 import { lazyGateDeps, mutateGlobal, propagateGlobalRemoval } from "../lib/config-gate/index.js";
 import { loadSkillsMatrixFromSource } from "../lib/loading";
 import { loadAgentDefs } from "../lib/operations";
-import { ConfigLoadError, loadInstalledConfig } from "../lib/configuration/project-config";
+import { ConfigLoadError, loadProjectConfigAt } from "../lib/configuration/project-config";
 import type { Provider } from "../consts";
 import { CLAUDE_DIR, DEFAULT_BRANDING, EJECT_SOURCE, STANDARD_FILES } from "../consts";
 import {
   providerInUse,
   agentCodec,
   type AgentCodec,
+  plannedSourceFolderMove,
   sourceFolderInUse,
   sourceRootOf,
   type SourceRoot,
@@ -60,6 +61,8 @@ import {
   registeredProjectsUpdated,
   registeredProjectUpdateSkipped,
   registeredProjectsUpdateFailed,
+  uninstallConfigUnreadable,
+  uninstallNeedsTerminal,
 } from "../utils/messages";
 import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../types/index";
 import type { SkillScope } from "../types/config";
@@ -105,7 +108,7 @@ function buildRemovalPlan(target: UninstallTarget): RemovalPlan {
       ...pluginsEntry(target),
       ...localSkillsEntry(target),
       ...agents,
-      ...configManifestEntry(target),
+      ...configManifestEntries(target),
     ],
     kept: keptStatements(target, agents),
   };
@@ -149,14 +152,15 @@ function identifiableAgents(target: UninstallTarget): string[] {
   return target.markedAgents;
 }
 
-/** The CLI config manifest (config.ts + config-types.ts) is always removed. */
-function configManifestEntry(target: UninstallTarget): ConfigManifestRemoval[] {
-  const fileNames = [
-    ...(target.hasClaudeSrcConfig ? [STANDARD_FILES.CONFIG_TS] : []),
-    ...(target.hasClaudeSrcConfigTypes ? [STANDARD_FILES.CONFIG_TYPES_TS] : []),
-  ];
-  if (fileNames.length === 0) return [];
-  return [{ kind: "config", sourceDir: target.sourceDir, fileNames }];
+/**
+ * The CLI config manifest (config.ts + config-types.ts) is always removed — from EVERY source
+ * folder this scope holds. Over both of a provider's folders that is two entries: removing only the
+ * one being read leaves the other read as the installation this run reported gone.
+ */
+function configManifestEntries(target: UninstallTarget): ConfigManifestRemoval[] {
+  return target.sourceFolders
+    .filter((folder) => folder.manifestFiles.length > 0)
+    .map((folder) => ({ kind: "config", sourceDir: folder.dir, fileNames: folder.manifestFiles }));
 }
 
 /**
@@ -170,6 +174,16 @@ function keptStatements(target: UninstallTarget, agentRemovals: AgentsRemoval[])
   const kept = target.unmarkedAgents.filter((name) => !removing.has(name));
   if (kept.length === 0) return [];
   return [unmarkedAgentsKept(target.agentsDir, kept.length)];
+}
+
+/** Every entry of a kind — the config kind has one per source folder. */
+function planEntries<K extends RemovalEntry["kind"]>(
+  plan: RemovalPlan,
+  kind: K,
+): Extract<RemovalEntry, { kind: K }>[] {
+  return plan.entries.filter(
+    (entry): entry is Extract<RemovalEntry, { kind: K }> => entry.kind === kind,
+  );
 }
 
 /** The plan's entry of a kind, for the remover that consumes it. At most one exists. */
@@ -274,6 +288,15 @@ export default class Uninstall extends BaseCommand {
     provider: providerFlag(),
   };
 
+  /**
+   * Starts at any terminal size. The size gate exists for the wizard's layout, and this command
+   * draws none — a plan and a one-line confirm fit any terminal — while it is the way out of every
+   * state, so a window too small to hold a wizard must not hold up an uninstall.
+   */
+  protected async ensureTerminalSize(): Promise<void> {
+    // Nothing to wait for — see above.
+  }
+
   async run(): Promise<void> {
     const { flags } = await this.parse(Uninstall);
     const projectDir = process.cwd();
@@ -292,10 +315,8 @@ export default class Uninstall extends BaseCommand {
 
     this.printHeader();
 
-    const target = await detectUninstallTarget(projectDir, (reason) =>
-      this.warn(
-        `Could not read the project config — plugins and compiled agents it lists may be left behind: ${reason}`,
-      ),
+    const target = await detectUninstallTarget(projectDir, (failure) =>
+      this.warn(uninstallConfigUnreadable(failure)),
     );
     const plan = buildRemovalPlan(target);
     if (!hasAnythingToRemove(plan)) {
@@ -349,6 +370,12 @@ export default class Uninstall extends BaseCommand {
   }
 
   private async confirmRemoval(plan: RemovalPlan): Promise<boolean> {
+    // A confirm nobody can answer must never become a yes, and mounting it here died on Ink's
+    // raw-mode error — so a run with no terminal is refused before it, naming `--yes`.
+    if (!process.stdin.isTTY) {
+      this.error(uninstallNeedsTerminal(), { exit: EXIT_CODES.ERROR });
+    }
+
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
       <RemovalPlanConfirm
         heading={UNINSTALL_PLAN.PREVIEW_HEADING}
@@ -425,18 +452,25 @@ export default class Uninstall extends BaseCommand {
    * local-installer.test.ts). Skipping avoids fetching every registered extra
    * source (network on a cold cache, plus unreachable-remote warnings) during
    * an uninstall that must never hang or noise-fail on remote state.
+   *
+   * `purpose: "upkeep"` because the prune only rewrites projects that are already installed: a
+   * marketplace that has since lost its manifest must not leave every registered project naming
+   * the global content this uninstall deletes.
    */
   private async prepareGlobalPropagation(
     target: UninstallTarget,
     projectDir: string,
   ): Promise<GlobalPropagationData | null> {
-    const globalConfig = target.config;
-    if (!globalConfig?.projects?.length) return null;
+    if (target.config === null || target.registeredProjects.length === 0) return null;
+    // Every project either source folder registered: a global uninstall over two folders removes
+    // both, so a project registered only in the one not being read is still owed its prune.
+    const globalConfig: ProjectConfig = { ...target.config, projects: target.registeredProjects };
 
     try {
       const [sourceResult, agentDefs] = await Promise.all([
         loadSkillsMatrixFromSource({
           projectDir,
+          purpose: "upkeep",
           skipExtraSources: true,
           matrixOnly: true,
         }),
@@ -469,12 +503,15 @@ export default class Uninstall extends BaseCommand {
         { matrix: propagation.matrix, agents: propagation.agents },
         propagation.provider,
       );
-      for (const skippedPath of report.propagated.skipped) {
+      const { updated, unreadable, failed } = report.propagated;
+      this.reportProjectsOutOfReach(report.propagated);
+      // Uninstall's own sentence, only where it is true: the config is there and was not pruned.
+      for (const skippedPath of [...unreadable, ...failed]) {
         this.warn(registeredProjectUpdateSkipped(skippedPath));
       }
-      if (report.propagated.updated.length === 0) return;
+      if (updated.length === 0) return;
 
-      this.logSuccess(registeredProjectsUpdated(report.propagated.updated.length));
+      this.logSuccess(registeredProjectsUpdated(updated.length));
 
       // The pruned projects' compiled agents were built from the global rows this
       // uninstall just removed, so the prune owes them a recompile too.
@@ -506,12 +543,10 @@ export default class Uninstall extends BaseCommand {
       this.log(statement);
     }
 
-    const cleanup = await cleanupEmptyDirs(target, planEntry(plan, "config"));
+    const cleanup = await cleanupEmptyDirs(target, planEntries(plan, "config"));
 
-    if (cleanup.sourceDirRemoved) {
-      this.logSuccess(`Removed ${target.sourceRel}/`);
-    } else if (cleanup.sourceManifestRemoved) {
-      this.logSuccess(`Removed CLI config from ${target.sourceRel}/`);
+    for (const folder of cleanup.sourceFolders) {
+      this.reportSourceFolderCleanup(folder);
     }
 
     this.reportSourceRootCleanup(target.sourceRoot, cleanup);
@@ -520,6 +555,17 @@ export default class Uninstall extends BaseCommand {
       this.logSuccess(`Removed ${CLAUDE_DIR}/`);
     } else if (cleanup.claudeDirKept) {
       this.log(`Kept ${CLAUDE_DIR}/ (contains user content)`);
+    }
+  }
+
+  /** What became of one source folder: gone, emptied of the CLI's files, or kept for the user's. */
+  private reportSourceFolderCleanup(folder: SourceFolderCleanup): void {
+    if (folder.dirRemoved) {
+      this.logSuccess(`Removed ${folder.relName}/`);
+    } else if (folder.manifestRemoved) {
+      this.logSuccess(`Removed CLI config from ${folder.relName}/`);
+    } else if (folder.kept) {
+      this.log(`Kept ${folder.relName}/ (contains user content)`);
     }
   }
 
@@ -610,10 +656,6 @@ export type UninstallTarget = {
   hasLocalSkills: boolean;
   hasLocalAgents: boolean;
   hasClaudeDir: boolean;
-  /** Whether this project's config.ts exists (the CLI config manifest). */
-  hasClaudeSrcConfig: boolean;
-  /** Whether this project's config-types.ts exists (companion to config.ts). */
-  hasClaudeSrcConfigTypes: boolean;
   pluginsDir: string;
   skillsDir: string;
   agentsDir: string;
@@ -623,23 +665,43 @@ export type UninstallTarget = {
    */
   agentCodec: AgentCodec;
   claudeDir: string;
-  /** The source folder this project is on — `.claude-src/`, or `.agents-inc/<provider>/`. */
-  sourceDir: string;
-  /** The same folder as it is shown to the user, and as the removal reports it. */
-  sourceRel: string;
   /**
-   * The `.agents-inc/` parent the provider folder sits under, and `null` for an installation
-   * still on the legacy name — whose parent is the scope root itself and is nobody's to remove.
+   * Every source folder this scope holds, the one being read first. One folder normally; both of
+   * Claude's — `.claude-src/` and `.agents-inc/claude/` — when both are on disk, because an
+   * uninstall removes the installation whichever name it is under.
+   */
+  sourceFolders: ScopeSourceFolder[];
+  /**
+   * The `.agents-inc/` parent a provider folder of this scope sits under, and `null` when every
+   * folder is on the legacy name — whose parent is the scope root itself and is nobody's to remove.
    */
   sourceRoot: SourceRoot | null;
-  /** Resolved project source config from the source folder's config.ts */
+  /**
+   * The first readable config among {@link UninstallTarget.sourceFolders}, the one being read
+   * first.
+   */
   config: ProjectConfig | null;
-  /** Agent names from the generated config (e.g., ["web-developer"]) */
+  /** Every project any readable config registers — only a global config registers any. */
+  registeredProjects: string[];
+  /** Agent names every readable config names (e.g., ["web-developer"]) */
   configuredAgents: AgentName[];
   /** On-disk agent basenames carrying this CLI's provenance marker. */
   markedAgents: string[];
   /** On-disk agent basenames carrying no marker — the user's, unless the config claims them. */
   unmarkedAgents: string[];
+};
+
+/** One source folder of the scope being uninstalled, and what this run reads and removes in it. */
+type ScopeSourceFolder = {
+  dir: string;
+  /** The folder as a user writes it: `.agents-inc/claude`, or `.claude-src`. */
+  relName: string;
+  /** Whether it is the legacy `.claude-src/`, which has no `.agents-inc/` parent. */
+  legacy: boolean;
+  /** The manifest files on disk in it — `config.ts`, `config-types.ts` — which this run removes. */
+  manifestFiles: string[];
+  /** Its config, or `null` when the file is absent or unreadable — see {@link loadUninstallConfig}. */
+  config: ProjectConfig | null;
 };
 
 /**
@@ -682,12 +744,22 @@ type UninstallPluginsResult = {
   totalUninstalled: number;
 };
 
+/** What a cleanup pass did with one source folder. */
+type SourceFolderCleanup = {
+  relName: string;
+  legacy: boolean;
+  /** Whether config.ts/config-types.ts were removed from it */
+  manifestRemoved: boolean;
+  /** Whether the emptied folder itself was removed */
+  dirRemoved: boolean;
+  /** Whether it is still there because something this CLI never wrote lives in it */
+  kept: boolean;
+};
+
 type CleanupResult = {
   claudeDirRemoved: boolean;
-  /** Whether config.ts/config-types.ts were removed from the source folder */
-  sourceManifestRemoved: boolean;
-  /** Whether the emptied source folder itself was removed */
-  sourceDirRemoved: boolean;
+  /** One per source folder of the scope, in {@link UninstallTarget.sourceFolders} order */
+  sourceFolders: SourceFolderCleanup[];
   /** Whether the emptied `.agents-inc/` parent went with the last provider folder under it */
   sourceRootRemoved: boolean;
   /** Whether `.agents-inc/` still exists because something this CLI never wrote lives in it */
@@ -720,7 +792,7 @@ export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null)
 
 /**
  * Loads the config that drives the removal plan. A config file that exists but
- * cannot be parsed (`ConfigLoadError`) is reported through `onLoadFailed` and
+ * cannot be parsed (`ConfigLoadError`) is handed to `onLoadFailed` and
  * then treated exactly like a missing one — an unreadable config is precisely
  * when a user needs to uninstall, so it must never fail the run. Same posture as
  * the `deregister-project` mutation's call site above. Only the plan degrades: the plugins and
@@ -728,17 +800,96 @@ export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null)
  * removal proceeds. Any other failure is a real fault and still propagates.
  */
 async function loadUninstallConfig(
+  configPath: string,
   projectDir: string,
-  onLoadFailed: (reason: string) => void,
+  provider: Provider,
+  onLoadFailed: (failure: ConfigLoadError) => void,
 ): Promise<ProjectConfig | null> {
   try {
-    const result = await loadInstalledConfig(projectDir);
+    const result = await loadProjectConfigAt(configPath, projectDir, provider);
     return result?.config ?? null;
   } catch (error) {
     if (!(error instanceof ConfigLoadError)) throw error;
-    onLoadFailed(getErrorMessage(error));
+    onLoadFailed(error);
     return null;
   }
+}
+
+/**
+ * The scope's source folders, the one being read first: one normally, and both of Claude's when
+ * both are on disk — the state every write command refuses over, and the one an uninstall has to
+ * clear rather than refuse, since leaving either behind leaves an installation behind.
+ */
+function sourceFoldersOf(
+  projectDir: string,
+  provider: Provider,
+): Pick<ScopeSourceFolder, "dir" | "relName" | "legacy">[] {
+  const read = sourceFolderInUse(projectDir, provider);
+  const move = plannedSourceFolderMove(projectDir, provider);
+  if (!read.both || move === null) return [read];
+
+  const rival = read.legacy ? move.to : move.from;
+  return [read, { dir: rival.dir, relName: rival.relName, legacy: !read.legacy }];
+}
+
+/** One folder's manifest files on disk, and its config read under uninstall's degrade posture. */
+async function readSourceFolder(
+  folder: Pick<ScopeSourceFolder, "dir" | "relName" | "legacy">,
+  projectDir: string,
+  provider: Provider,
+  onConfigLoadFailed: (failure: ConfigLoadError) => void,
+): Promise<ScopeSourceFolder> {
+  const [manifestFiles, config] = await Promise.all([
+    manifestFilesIn(folder.dir),
+    loadUninstallConfig(
+      path.join(folder.dir, STANDARD_FILES.CONFIG_TS),
+      projectDir,
+      provider,
+      onConfigLoadFailed,
+    ),
+  ]);
+  return { ...folder, manifestFiles, config };
+}
+
+/** The files of the CLI config manifest — `config.ts`, `config-types.ts` — that are in `dir`. */
+async function manifestFilesIn(dir: string): Promise<string[]> {
+  const manifest = [STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS];
+  const present = await Promise.all(
+    manifest.map((fileName) => fileExists(path.join(dir, fileName))),
+  );
+  return manifest.filter((_, index) => present[index]);
+}
+
+/**
+ * The `.agents-inc/` parent, when any of the scope's folders sits under it: the folder being read
+ * answers for itself, and where that one is the legacy name, a rival on the new name brings its
+ * parent with it.
+ */
+function sourceRootFor(
+  projectDir: string,
+  provider: Provider,
+  folders: readonly Pick<ScopeSourceFolder, "legacy">[],
+): SourceRoot | null {
+  const ofTheFolderBeingRead = sourceRootOf(projectDir, provider);
+  if (ofTheFolderBeingRead !== null) return ofTheFolderBeingRead;
+
+  const move = plannedSourceFolderMove(projectDir, provider);
+  const rivalOnTheNewName = folders.some((folder) => !folder.legacy);
+  return rivalOnTheNewName && move !== null ? move.parent : null;
+}
+
+/** {@link getCliInstalledPluginKeys} as a list, so several configs' keys can be pooled. */
+function cliInstalledPluginKeysOf(config: ProjectConfig): string[] {
+  return [...getCliInstalledPluginKeys(config)];
+}
+
+/** A config with its excluded rows dropped — the entries an uninstall acts on. */
+function activeConfigOf(config: ProjectConfig): ProjectConfig {
+  return {
+    ...config,
+    skills: config.skills.filter((s) => !s.excluded),
+    agents: config.agents.filter((a) => !a.excluded),
+  };
 }
 
 /**
@@ -749,37 +900,30 @@ async function loadUninstallConfig(
  */
 async function detectUninstallTarget(
   projectDir: string,
-  onConfigLoadFailed: (reason: string) => void,
+  onConfigLoadFailed: (failure: ConfigLoadError) => void,
 ): Promise<UninstallTarget> {
   const pluginsDir = getProjectPluginsDir(projectDir);
   const { skillsDir, agentsDir } = resolveInstallPaths(projectDir);
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
-  // One read for the folder being removed and the parent it sits in: an uninstall that
-  // resolved those two against different installations would delete half of each.
+  // One read for the folders being removed and the parent they sit in: an uninstall that
+  // resolved those against different installations would delete half of each.
   const provider = providerInUse(projectDir);
-  const { dir: sourceDir, relName: sourceRel } = sourceFolderInUse(projectDir, provider);
-  const sourceRoot = sourceRootOf(projectDir, provider);
+  const folders = sourceFoldersOf(projectDir, provider);
+  const sourceRoot = sourceRootFor(projectDir, provider, folders);
 
-  const configPath = path.join(sourceDir, STANDARD_FILES.CONFIG_TS);
-  const configTypesPath = path.join(sourceDir, STANDARD_FILES.CONFIG_TYPES_TS);
+  const [hasLocalSkills, hasLocalAgents, hasClaudeDir, sourceFolders, agentProvenance] =
+    await Promise.all([
+      directoryExists(skillsDir),
+      directoryExists(agentsDir),
+      directoryExists(claudeDir),
+      Promise.all(
+        folders.map((folder) => readSourceFolder(folder, projectDir, provider, onConfigLoadFailed)),
+      ),
+      splitAgentsByProvenance(agentsDir, agentCodec(provider)),
+    ]);
 
-  const [
-    hasLocalSkills,
-    hasLocalAgents,
-    hasClaudeDir,
-    hasClaudeSrcConfig,
-    hasClaudeSrcConfigTypes,
-    config,
-    agentProvenance,
-  ] = await Promise.all([
-    directoryExists(skillsDir),
-    directoryExists(agentsDir),
-    directoryExists(claudeDir),
-    fileExists(configPath),
-    fileExists(configTypesPath),
-    loadUninstallConfig(projectDir, onConfigLoadFailed),
-    splitAgentsByProvenance(agentsDir, agentCodec(provider)),
-  ]);
+  const readable = sourceFolders.flatMap((folder) => (folder.config ? [folder.config] : []));
+  const config = readable[0] ?? null;
 
   let pluginNames: string[] = [];
   try {
@@ -788,15 +932,11 @@ async function detectUninstallTarget(
     // Best-effort: plugin detection may fail
   }
 
-  const activeConfig = config
-    ? {
-        ...config,
-        skills: config.skills.filter((s) => !s.excluded),
-        agents: config.agents.filter((a) => !a.excluded),
-      }
-    : null;
-  const configuredAgents = collectConfiguredAgents(activeConfig);
-  const cliInstalledKeys = getCliInstalledPluginKeys(activeConfig);
+  // Every readable config's roster, not only the one being read: over two folders each names what
+  // was installed from it, and the run removes both.
+  const activeConfigs = readable.map(activeConfigOf);
+  const configuredAgents = unique(activeConfigs.flatMap(collectConfiguredAgents));
+  const cliInstalledKeys = new Set(activeConfigs.flatMap(cliInstalledPluginKeysOf));
   const cliPluginNames = thisRunOwnsAnyPlugin(projectDir)
     ? pluginNames.filter((name) => cliInstalledKeys.has(name))
     : [];
@@ -808,16 +948,14 @@ async function detectUninstallTarget(
     hasLocalSkills,
     hasLocalAgents,
     hasClaudeDir,
-    hasClaudeSrcConfig,
-    hasClaudeSrcConfigTypes,
     pluginsDir,
     skillsDir,
     agentsDir,
     claudeDir,
-    sourceDir,
-    sourceRel,
+    sourceFolders,
     sourceRoot,
     config,
+    registeredProjects: unique(readable.flatMap((each) => each.projects ?? [])),
     configuredAgents,
     agentCodec: agentCodec(provider),
     markedAgents: agentProvenance.marked,
@@ -1103,11 +1241,20 @@ async function removeConfigManifest(
  * only when nothing of theirs is left in them once the CLI-managed contents are gone.
  */
 async function cleanupEmptyDirs(
-  target: Pick<UninstallTarget, "hasClaudeDir" | "claudeDir" | "sourceRoot">,
-  manifestEntry: ConfigManifestRemoval | undefined,
+  target: Pick<UninstallTarget, "hasClaudeDir" | "claudeDir" | "sourceRoot" | "sourceFolders">,
+  manifestEntries: readonly ConfigManifestRemoval[],
 ): Promise<CleanupResult> {
-  const manifest = await removeConfigManifest(manifestEntry);
-  const sourceRoot = await cleanupSourceRoot(target.sourceRoot, manifest.dirRemoved);
+  // In parallel: the two folders are siblings under the scope root, and neither holds the other.
+  const sourceFolders = await Promise.all(
+    target.sourceFolders.map((folder) =>
+      cleanupSourceFolder(
+        folder,
+        manifestEntries.find((entry) => entry.sourceDir === folder.dir),
+      ),
+    ),
+  );
+  const providerDirRemoved = sourceFolders.some((folder) => !folder.legacy && folder.dirRemoved);
+  const sourceRoot = await cleanupSourceRoot(target.sourceRoot, providerDirRemoved);
 
   const claudeDirRemoved = target.hasClaudeDir && (await removeDirIfEmpty(target.claudeDir));
   // Nothing else removes .claude itself, so "kept" is exactly "present but not removed".
@@ -1116,11 +1263,32 @@ async function cleanupEmptyDirs(
 
   return {
     claudeDirRemoved,
-    sourceManifestRemoved: manifest.manifestRemoved,
-    sourceDirRemoved: manifest.dirRemoved,
+    sourceFolders,
     sourceRootRemoved: sourceRoot.removed,
     sourceRootKept: sourceRoot.kept,
     claudeDirKept,
+  };
+}
+
+/**
+ * One source folder, once the plan's manifest files are out of it: removed when nothing is left,
+ * kept when the user's own content is. A folder the plan named no file in is still removed when it
+ * is empty — an empty rival folder is what `mkdir` or a half-finished move leaves, and it is the
+ * product's name on a folder holding nothing.
+ */
+async function cleanupSourceFolder(
+  folder: ScopeSourceFolder,
+  entry: ConfigManifestRemoval | undefined,
+): Promise<SourceFolderCleanup> {
+  const manifest = await removeConfigManifest(entry);
+  const dirRemoved = manifest.dirRemoved || (await removeDirIfEmpty(folder.dir));
+  const kept = !dirRemoved && (await directoryExists(folder.dir));
+  return {
+    relName: folder.relName,
+    legacy: folder.legacy,
+    manifestRemoved: manifest.manifestRemoved,
+    dirRemoved,
+    kept,
   };
 }
 

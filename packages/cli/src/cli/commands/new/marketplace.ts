@@ -10,6 +10,12 @@ import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 import { isDirectoryEmpty } from "../../utils/fs.js";
 
 /**
+ * How a reserved name is replaced here. The name is this command's argument, and nothing it could
+ * be read from exists yet — no package.json, and no `--name` — so another argument is the way out.
+ */
+const RESERVED_NAME_WAY_OUT = `run '${CLI_INVOKE_COMMAND} new marketplace <other-name>'`;
+
+/**
  * The refusal over a target directory that already holds something.
  *
  * A scaffold writes a whole marketplace, so writing into an occupied directory
@@ -82,7 +88,11 @@ export default class NewMarketplace extends BaseCommand {
     // itself, so the marketplace name IS the package name. That is what keeps the
     // public catalogue's exemption out of reach: it belongs to one npm package, and
     // nobody scaffolds that package from here.
-    const reservedError = validateMarketplaceName(marketplaceName, marketplaceName);
+    const reservedError = validateMarketplaceName(
+      marketplaceName,
+      marketplaceName,
+      RESERVED_NAME_WAY_OUT,
+    );
     if (reservedError) {
       this.error(reservedError, { exit: EXIT_CODES.ERROR });
     }

@@ -37,6 +37,10 @@ import { loadSkillsMatrixFromSource } from "./source-loader.js";
  * own failure handling rather than silently processed against somebody else's — which is the
  * whole defect this exists to stop. Both callers count such a project as one they could not
  * reach and carry on with the rest.
+ *
+ * The load is an `"upkeep"` one: a fan-out rewrites a project that is already installed, so a
+ * marketplace that has since lost its manifest does not leave the project naming global content
+ * a change elsewhere just removed.
  */
 export async function withCatalogueSeatedFor<T>(
   projectDir: string,
@@ -45,6 +49,7 @@ export async function withCatalogueSeatedFor<T>(
   const callersCatalogue = matrix;
   const { matrix: seated } = await loadSkillsMatrixFromSource({
     projectDir,
+    purpose: "upkeep",
     skipExtraSources: true,
     matrixOnly: true,
   });

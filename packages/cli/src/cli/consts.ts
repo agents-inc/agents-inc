@@ -144,6 +144,14 @@ export function editorConfigUrl(id: string): string {
  */
 export const EDIT_PROJECT_SETUP_FLAG = "project-setup";
 
+/**
+ * Internal `edit` flag carrying the marketplace `init --marketplace` named into that project
+ * setup, which then reads its catalogue from there rather than from the one the installation
+ * stored. Hidden for the same reason as {@link EDIT_PROJECT_SETUP_FLAG}: naming a marketplace is
+ * `init`'s decision alone, so `edit --marketplace` stays a flag that does not exist.
+ */
+export const EDIT_PROJECT_SETUP_MARKETPLACE_FLAG = "project-setup-marketplace";
+
 export const SKILL_CATEGORIES_PATH = "config/skill-categories.ts";
 export const SKILL_RULES_PATH = "config/skill-rules.ts";
 export const STACKS_FILE_PATH = "config/stacks.ts";

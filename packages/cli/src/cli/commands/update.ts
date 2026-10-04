@@ -42,7 +42,7 @@ export default class Update extends BaseCommand {
   static summary = "Refresh the marketplaces this installation uses";
 
   static description =
-    "Runs Claude's own marketplace update for every marketplace this installation's config names. Ejected skills are copies you own and are never touched. Sub-agents reference plugin skills by pointer, so refreshed content lands without recompiling anything.";
+    "Runs Claude's own marketplace update for every marketplace this installation's config names. Ejected skills are copies you own and are never touched.";
 
   static flags = { provider: providerFlag() };
 
@@ -62,6 +62,9 @@ export default class Update extends BaseCommand {
       providerNamedBy(flags.provider),
       (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
+    // Both configs, not only the one this refresh reads: a project inherits the global config, so
+    // a broken global one is a config this folder uses as surely as its own.
+    await this.ensureConfigReadable(process.cwd());
     await this.settleSourceLayoutBeforeWriting(process.cwd());
     await this.refuseUnofferablePlacements(process.cwd());
     const config = await this.loadInstalledConfig(process.cwd());

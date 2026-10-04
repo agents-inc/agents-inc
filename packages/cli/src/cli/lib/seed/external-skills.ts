@@ -1,10 +1,18 @@
+import os from "os";
 import path from "path";
+import { mkdtemp } from "fs/promises";
 
+import { isDeepEqual, omit } from "remeda";
 import { seedExternalSkillSchema } from "@workspace/matrix/seed";
+import {
+  carriedSkillAuthor,
+  carriedSkillMetadata,
+  withInstalledName,
+} from "@workspace/compile/carried-skill";
 
 import { GITHUB_SOURCE, LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
-import { readSkillMetadata } from "../loading/loader.js";
+import { parseFrontmatter, readSkillMetadata } from "../loading/loader.js";
 import { getCategoryDomain } from "../matrix/matrix-provider.js";
 import { claimSlug } from "../matrix/skill-resolution.js";
 import { validateSkillPath } from "../skills/skill-copier.js";
@@ -17,7 +25,7 @@ import {
 import { defaultUsageGuidance } from "../stacks/stacks-loader.js";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix.js";
 import { computeFileHash } from "../versioning.js";
-import { directoryExists, glob, readFile, writeFile } from "../../utils/fs.js";
+import { copy, directoryExists, glob, readFile, remove, writeFile } from "../../utils/fs.js";
 import { typedEntries, typedKeys } from "../../utils/typed-object.js";
 
 import type { SkillScope } from "../../types/config.js";
@@ -166,12 +174,6 @@ function externalSlug(id: SkillId): SkillSlug {
   return id as SkillSlug;
 }
 
-/** The repository's owner as a handle, which is all the authorship a carried skill records. */
-function skillAuthor(repo: string): string {
-  const [owner = repo] = repo.split("/");
-  return `@${owner}`;
-}
-
 /** The repository ref a carried skill's provenance records, in the form every other ref wears. */
 function repoRef(repo: string): string {
   return `${GITHUB_SOURCE.GITHUB_PREFIX}${repo}`;
@@ -197,7 +199,7 @@ function externalCatalogueEntry(install: ExternalSkillInstall): ResolvedSkill {
     // Boundary cast held by the guard above it: the category was confirmed against the catalogue
     // the payload names, and this one has just been shown to declare it too.
     category: install.skill.categoryId as CategoryPath,
-    author: skillAuthor(install.skill.repo),
+    author: carriedSkillAuthor(install.skill.repo),
     path: `${LOCAL_SKILLS_PATH}/${install.id}/`,
     conflictsWith: [],
     requires: [],
@@ -261,7 +263,7 @@ function seatExternalSkill(
  * overwritten whatever it seated on the way there.
  *
  * The third refusal is not here. Whether a DIRECTORY may be written over is a question about the
- * disk rather than about the catalogue, and {@link writeExternalSkills} is where it is asked.
+ * disk rather than about the catalogue — see {@link refuseUncarriedDestinations}.
  *
  * @throws {Error} If any carried skill asks to be installed as a plugin — see
  *   {@link pluginInstallError} — or claims an id either catalogue already owns, see
@@ -290,17 +292,97 @@ export function registerExternalSkills(
  * enough for the next `edit`, `compile` or `list` to find it again. The seat above lasts one run;
  * this is what makes the install survive.
  *
+ * Its callers have already asked {@link refuseUncarriedDestinations}, before they listed the
+ * install or asked about it; it is asked again here because the question was put to a person,
+ * and a directory written while they read it is no less theirs.
+ *
+ * Answers with the ids whose directories now read differently: a re-applied skill whose bytes
+ * changed is a change the configuration's own entries cannot show.
+ *
  * @throws {Error} If any destination is a directory this installation did not receive inside a
  *   shared configuration — see {@link refuseUncarriedDestinations}.
  */
-export async function writeExternalSkills(installs: ExternalSkillInstall[]): Promise<void> {
+export async function writeExternalSkills(installs: ExternalSkillInstall[]): Promise<SkillId[]> {
   await refuseUncarriedDestinations(installs);
 
-  for (const install of installs) {
-    await writeSkillTree(install);
-    await writeSkillManifest(install);
-    await registerSkillOnDisk(install);
+  const written = await Promise.all(installs.map(writeExternalSkill));
+  return changedIds(written);
+}
+
+const SCRATCH_DIR_PREFIX = "agents-inc-carried-";
+
+/**
+ * The carried skills whose installed copy {@link writeExternalSkills} would change, asked of a
+ * scratch copy of each directory so nothing installed is touched.
+ *
+ * For a run that may not write them: from a project, a carried skill the global install already
+ * holds stays as that install holds it, and a revision that does not arrive is named rather than
+ * dropped in silence. The comparison is the write's own, so "would change" and "changed" are one
+ * definition.
+ */
+export async function carriedSkillsThatDiffer(
+  installs: ExternalSkillInstall[],
+): Promise<SkillId[]> {
+  if (installs.length === 0) return [];
+
+  const scratch = await mkdtemp(path.join(os.tmpdir(), SCRATCH_DIR_PREFIX));
+  try {
+    const written = await Promise.all(
+      installs.map(async (install) => writeExternalSkill(await scratchCopyOf(install, scratch))),
+    );
+    return changedIds(written);
+  } finally {
+    await remove(scratch);
   }
+}
+
+/** The install, pointed at a copy of its directory under `scratch` — taken now, if there is one. */
+async function scratchCopyOf(
+  install: ExternalSkillInstall,
+  scratch: string,
+): Promise<ExternalSkillInstall> {
+  const skillDir = path.join(scratch, install.id);
+  if (await directoryExists(install.skillDir)) await copy(install.skillDir, skillDir);
+  return { ...install, skillDir };
+}
+
+/** One carried skill as written, and whether its directory now reads differently. */
+type WrittenSkill = { id: SkillId; changed: boolean };
+
+/** The skills whose directories now read differently. */
+function changedIds(written: WrittenSkill[]): SkillId[] {
+  return written.filter(({ changed }) => changed).map(({ id }) => id);
+}
+
+async function writeExternalSkill(install: ExternalSkillInstall): Promise<WrittenSkill> {
+  const before = await readSkillDir(install.skillDir);
+
+  await writeSkillTree(install);
+  await writeSkillManifest(install);
+  await registerSkillOnDisk(install);
+
+  return { id: install.id, changed: !isDeepEqual(before, await readSkillDir(install.skillDir)) };
+}
+
+/** A skill directory as a load reads it: its files, and its metadata as data. */
+type SkillDirReading = { files: SeedSkillTree; metadata: Record<string, unknown> | null };
+
+/**
+ * What a load reads out of one skill directory, or nothing where there is none — less the day
+ * `forkedFrom` was stamped, which every write moves whether or not anything else did. The metadata
+ * is read as data because the stamp's place in the file differs between a first write and a
+ * second (see `withForkedFrom` in `@workspace/compile/carried-skill`).
+ */
+async function readSkillDir(skillDir: string): Promise<SkillDirReading | null> {
+  if (!(await directoryExists(skillDir))) return null;
+
+  const files = omit(await readSkillTree(skillDir), [STANDARD_FILES.METADATA_YAML]);
+  return { files, metadata: undated(await readLocalSkillMetadata(skillDir)) };
+}
+
+function undated(metadata: LocalSkillMetadata | null): Record<string, unknown> | null {
+  if (metadata?.forkedFrom === undefined) return metadata;
+  return { ...metadata, forkedFrom: omit(metadata.forkedFrom, ["date"]) };
 }
 
 /** One destination a carried skill's bytes may not be written to, and what stands there. */
@@ -326,8 +408,12 @@ type BlockedDestination = { id: SkillId; skillDir: string };
  * Every destination is judged before any is written, for the same reason the two refusals in
  * {@link registerExternalSkills} are decided before anything is seated: a guard that threw on the
  * first blocked destination it met would have overwritten whatever it wrote on the way there.
+ *
+ * Exported for the `--from` producers, which ask it before they list what they would install or
+ * ask whether to: a refusal that came after the question would ask a person to confirm an
+ * install that was never going to happen.
  */
-async function refuseUncarriedDestinations(installs: ExternalSkillInstall[]): Promise<void> {
+export async function refuseUncarriedDestinations(installs: ExternalSkillInstall[]): Promise<void> {
   const judged = await Promise.all(installs.map(judgeDestination));
   const blocked = judged.filter((destination) => destination !== null);
 
@@ -378,79 +464,15 @@ async function writeSkillTree(install: ExternalSkillInstall): Promise<void> {
   }
 }
 
-/** The frontmatter block at the head of a SKILL.md, and the `name` field inside it. */
-const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---/;
-const NAME_FIELD = /^name:.*$/m;
-
-/**
- * Names the skill by the id it installs under.
- *
- * Every loader reads a skill's id off this one field, and a compiled sub-agent references the id
- * the configuration recorded — the one minted at intake, which is also this directory's name. The
- * repository the skill came from knew about neither, so left as it was written the two never
- * meet: the sub-agent names a skill Claude Code knows as something else, and the next load
- * registers an id no configuration carries.
- *
- * Only the name. Everything else in the block is the author's and travels untouched.
- */
-function withInstalledName(manifest: string, install: ExternalSkillInstall): string {
-  const named = `name: ${install.id}`;
-  const block = FRONTMATTER_BLOCK.exec(manifest);
-
-  // A manifest with no frontmatter at all describes no skill to Claude Code either. The payload
-  // carries both fields one needs, so it is given one rather than installed unreadable.
-  if (!block) {
-    return `---\n${named}\ndescription: ${install.skill.description}\n---\n\n${manifest}`;
-  }
-
-  const [whole, fields = ""] = block;
-  const renamed = NAME_FIELD.test(fields)
-    ? fields.replace(NAME_FIELD, named)
-    : `${named}\n${fields}`;
-
-  // The block is anchored at the head of the file, so what follows it is the rest verbatim.
-  return `---\n${renamed}\n---${manifest.slice(whole.length)}`;
-}
-
 async function writeSkillManifest(install: ExternalSkillInstall): Promise<void> {
   const manifestPath = path.join(install.skillDir, STANDARD_FILES.SKILL_MD);
-  await writeFile(manifestPath, withInstalledName(await readFile(manifestPath), install));
-}
-
-/**
- * What the payload confirmed, over what the repository shipped, over what neither says.
- *
- * The order is the whole of it. The taxonomy is the placement the user chose against the
- * catalogue this configuration names, and the repository's own idea of where its skill belongs
- * answers to a taxonomy nobody here shares — so that is written over the file. Everything else
- * the repository wrote is kept, because its author knows more about their skill than a default
- * does.
- *
- * The defaults underneath exist because `doctor` validates every installed metadata.yaml, and a
- * file this command writes that that command reports as an error is the CLI disagreeing with
- * itself — in a file the user cannot fix, since the skill is somebody else's repository. Neither
- * is invented: the authorship is the repository's owner, and the usage line is
- * {@link defaultUsageGuidance}, the same call the stack loader makes for every skill reference it
- * has nothing more specific for. The same CALL rather than the same words — this file spelled the
- * sentence itself until 2026-09-03, and drifted on both halves, so one carried skill's cue read
- * `Use when working with Brainstorming` off disk and `Use when working with web-tooling.` during
- * the run that installed it.
- */
-function externalSkillMetadata(
-  install: ExternalSkillInstall,
-  shipped: LocalSkillMetadata | null,
-): LocalSkillMetadata {
-  return {
-    author: skillAuthor(install.skill.repo),
-    usageGuidance: defaultUsageGuidance(install.skill.categoryId),
-    ...shipped,
-    displayName: install.skill.displayName,
-    slug: install.id,
-    category: install.skill.categoryId,
-    domain: install.domain,
-    cliDescription: install.skill.description,
-    custom: true,
-  };
+  await writeFile(
+    manifestPath,
+    withInstalledName(await readFile(manifestPath), {
+      id: install.id,
+      description: install.skill.description,
+    }),
+  );
 }
 
 /**
@@ -469,7 +491,16 @@ async function registerSkillOnDisk(install: ExternalSkillInstall): Promise<void>
   const metadataPath = path.join(install.skillDir, STANDARD_FILES.METADATA_YAML);
   const shipped = await readLocalSkillMetadata(install.skillDir);
 
-  await writeMetadataYaml(metadataPath, externalSkillMetadata(install, shipped));
+  await writeMetadataYaml(
+    metadataPath,
+    carriedSkillMetadata({
+      id: install.id,
+      skill: install.skill,
+      domain: install.domain,
+      usageGuidance: defaultUsageGuidance(install.skill.categoryId),
+      shipped,
+    }),
+  );
   await injectForkedFromMetadata(
     install.skillDir,
     install.id,
@@ -528,6 +559,17 @@ function repoFromRef(ref: string | undefined): string | undefined {
   return ref.slice(GITHUB_SOURCE.GITHUB_PREFIX.length);
 }
 
+const NO_MANIFEST_DESCRIPTION = `no description can be read from its ${STANDARD_FILES.SKILL_MD}`;
+
+/** The description the skill's own SKILL.md states, or null where none can be read from it. */
+function manifestDescription(files: SeedSkillTree, skillDir: string): string | null {
+  const manifest = files[STANDARD_FILES.SKILL_MD];
+  if (manifest === undefined) return null;
+
+  const frontmatter = parseFrontmatter(manifest, path.join(skillDir, STANDARD_FILES.SKILL_MD));
+  return frontmatter === null ? null : frontmatter.description;
+}
+
 /** Every file under the skill, keyed by its path relative to it — dotfiles and nesting included. */
 async function readSkillTree(skillDir: string): Promise<SeedSkillTree> {
   const files = await glob("**/*", skillDir, { dot: true });
@@ -544,9 +586,12 @@ async function readSkillTree(skillDir: string): Promise<SeedSkillTree> {
  * install recorded, and a user may have edited the skill since. Both are what is installed here,
  * and what is installed here is what a share carries.
  *
+ * The description is the manifest's own. The `cliDescription` beside it is the wizard's label,
+ * cut to the length `doctor` accepts, so a re-share sending it would shorten the skill once per
+ * round trip.
+ *
  * Validated against the contract's own schema rather than by rules restated here — that is what
- * makes the weight limit, the manifest requirement and every field's shape one definition rather
- * than two that can drift.
+ * makes the weight limit and every field's shape one definition rather than two that can drift.
  */
 async function readCarriedSkill({ id, skillDir, provenance }: OwnedSkillDir): Promise<CarriedRead> {
   // The directory is what marks a skill as one no catalogue can resolve. Without it there is a
@@ -561,13 +606,19 @@ async function readCarriedSkill({ id, skillDir, provenance }: OwnedSkillDir): Pr
     return { carries: "unshareable", line: uncarryableContentMessage(id, described.reason) };
   }
 
+  const files = await readSkillTree(skillDir);
+  const description = manifestDescription(files, skillDir);
+  if (description === null) {
+    return { carries: "unshareable", line: uncarryableContentMessage(id, NO_MANIFEST_DESCRIPTION) };
+  }
+
   const parsed = seedExternalSkillSchema.safeParse({
     displayName: described.metadata.displayName,
-    description: described.metadata.cliDescription,
+    description,
     categoryId: described.metadata.category,
     repo,
     path: provenance.path,
-    files: await readSkillTree(skillDir),
+    files,
   });
   if (!parsed.success) {
     const reason = parsed.error.issues.map((issue) => issue.message).join("; ");

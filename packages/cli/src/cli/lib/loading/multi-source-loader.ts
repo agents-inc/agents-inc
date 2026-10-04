@@ -65,11 +65,10 @@ function addAvailableSource(
  * @param projectDir - Absolute path to the project root, used to locate plugin directories
  * @param marketplace - Optional marketplace name resolved from the source's marketplace.json.
  *                      Takes precedence over `sourceConfig.marketplace` when provided.
- * @param unbackedSkillIds - Ids the matrix holds that the marketplace does NOT carry: skills
- *                           the local merge introduced from `.claude/skills/`. They are left
- *                           out of the primary tag, because a marketplace entry on a skill no
- *                           marketplace has is a plugin install that cannot happen. Defaults
- *                           to empty, which is what a matrix built without a local merge means.
+ * @param unbackedSkillIds - Ids the matrix holds that the marketplace does NOT carry. They are
+ *                           left out of the primary tag, because a marketplace entry on a skill
+ *                           no marketplace has is a plugin install that cannot happen. Defaults
+ *                           to empty.
  *
  * @remarks
  * **Side effects:** Mutates `primaryMatrix` in place.
@@ -81,22 +80,39 @@ export async function loadSkillsFromAllSources(
   marketplace?: string,
   unbackedSkillIds: ReadonlySet<SkillId> = new Set(),
 ): Promise<void> {
-  const resolvedMarketplace = marketplace ?? sourceConfig.marketplace;
-  const primarySourceName = resolvedMarketplace ?? DEFAULT_PUBLIC_SOURCE_NAME;
-  const primarySourceType: SkillSourceType = isDefaultSource(sourceConfig.source)
-    ? "public"
-    : "private";
+  const { name: primarySourceName, type: primarySourceType } = marketplaceSource(
+    sourceConfig,
+    marketplace,
+  );
 
-  tagPrimarySourceSkills(primaryMatrix, primarySourceName, primarySourceType, unbackedSkillIds);
+  tagPrimarySourceSkills(primaryMatrix, sourceConfig, marketplace, unbackedSkillIds);
   tagLocalSkills(primaryMatrix);
   await tagPluginSkills(primaryMatrix, projectDir, primarySourceName, primarySourceType);
   setActiveSources(primaryMatrix);
 }
 
+/**
+ * The entry naming the marketplace a skill is carried by, as the primary pass writes it: the
+ * marketplace's resolved name — `marketplace`, read from its manifest, over the name its config
+ * stored — public or private, and not yet known to be installed.
+ *
+ * Exported for the one other catalogue a load reads: the global installation's own, whose skills
+ * `source-loader.ts` seats beside a project's when that project's marketplace does not carry them.
+ * A fresh object per call, because the tagging pass mutates the entry it is handed.
+ */
+export function marketplaceSource(sourceConfig: ResolvedConfig, marketplace?: string): SkillSource {
+  return {
+    name: marketplace ?? sourceConfig.marketplace ?? DEFAULT_PUBLIC_SOURCE_NAME,
+    type: isDefaultSource(sourceConfig.source) ? "public" : "private",
+    installed: false,
+    primary: true,
+  };
+}
+
 function tagPrimarySourceSkills(
   matrix: MergedSkillsMatrix,
-  sourceName: string,
-  sourceType: SkillSourceType,
+  sourceConfig: ResolvedConfig,
+  marketplace: string | undefined,
   unbackedSkillIds: ReadonlySet<SkillId>,
 ): void {
   for (const [id, skill] of typedEntries(matrix.skills)) {
@@ -104,14 +120,7 @@ function tagPrimarySourceSkills(
     if (!skill) continue;
     if (unbackedSkillIds.has(id)) continue;
 
-    const source: SkillSource = {
-      name: sourceName,
-      type: sourceType,
-      installed: false,
-      primary: true,
-    };
-
-    addAvailableSource(skill, source);
+    addAvailableSource(skill, marketplaceSource(sourceConfig, marketplace));
   }
 }
 
@@ -159,9 +168,13 @@ async function tagPluginSkills(
 }
 
 /**
- * Records that a skill is installed as a plugin. The primary marketplace's entry, where the
- * primary pass left one with no install mode yet, becomes the installed plugin; otherwise a
- * plugin entry is added under the primary source — unless the skill already carries one.
+ * Records that a skill is installed as a plugin. The skill's own marketplace entry, where one was
+ * written with no install mode yet, becomes the installed plugin; otherwise a plugin entry is
+ * added under the primary source — unless the skill already carries one.
+ *
+ * Its OWN entry rather than the loaded marketplace's: a global installation's skill seated from
+ * the marketplace that installation was made from is carried under that marketplace's name, and
+ * labelling its plugin with the loaded one's would name a marketplace that never shipped it.
  */
 function markInstalledAsPlugin(
   skill: ResolvedSkill,
@@ -170,7 +183,7 @@ function markInstalledAsPlugin(
 ): void {
   skill.availableSources = skill.availableSources ?? [];
 
-  const existingSource = skill.availableSources.find((s) => s.name === primarySourceName);
+  const existingSource = skill.availableSources.find((s) => s.primary === true);
   if (existingSource && !existingSource.installMode) {
     existingSource.installed = true;
     existingSource.installMode = "plugin";

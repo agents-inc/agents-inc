@@ -26,7 +26,10 @@ import {
 import { parseFrontmatter } from "./loading/loader";
 import { ConfigDefaultExportError, loadConfig, loadSourceRepoConfig } from "./configuration";
 import { checkMatrixHealth, type MatrixHealthIssue } from "./matrix";
-import { loadSkillsMatrixFromSource } from "./loading/source-loader";
+import {
+  loadSkillsMatrixFromSource,
+  MarketplaceManifestRequiredError,
+} from "./loading/source-loader";
 import { MarketplaceNameRefusedError } from "./loading/source-fetcher";
 import { matrix } from "./matrix/matrix-provider";
 import { getErrorMessage } from "../utils/errors";
@@ -334,6 +337,16 @@ function checkMetadataSchema(rawMetadata: unknown, relPath: string): SourceValid
 const MARKETPLACE_MANIFEST_PATH = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
 
 /**
+ * How loud a missing or unreadable manifest is, by who is reading: its author is one build from
+ * the fix, and a consumer has nothing to load. Keyed on the whole union, so a new kind of reader
+ * does not compile until someone decides this.
+ */
+const MANIFEST_REQUIRED_SEVERITY = {
+  author: "warning",
+  consumer: "error",
+} as const satisfies Record<MarketplaceReader, SourceValidationIssue["severity"]>;
+
+/**
  * Whether every relationship the source declares resolves to a skill it actually holds.
  * A load that did not complete is reported by {@link matrixLoadFailure}, which decides
  * whether the failure is this marketplace's fault or merely this pass's.
@@ -348,23 +361,34 @@ async function checkCrossReferences(
       toSourceIssue(healthIssue, resolvedPath, reader),
     );
   } catch (error) {
-    return [matrixLoadFailure(error)];
+    return [matrixLoadFailure(error, reader)];
   }
 }
 
 /**
  * A load this pass could not complete, as the finding a reader can act on.
  *
- * Two answers, because the two failures are not one event. A manifest naming the
- * marketplace something Claude Code registers no plugin under leaves nothing here
- * installable, so it is this marketplace's own ERROR, against the file that holds the
- * name — without it the Marketplaces row counted such a marketplace as validated and
- * printed a tick beneath `doctor`'s own warning about that same file, and a warning above
- * a tick is what a reader stops believing. Everything else leaves the marketplace
- * installable and only leaves this pass unable to run, so it stays a warning against the
- * file it was reading. Read off the throw's TYPE, so nothing here matches on a sentence.
+ * Three answers, because the failures are not one event. A marketplace with no valid
+ * manifest cannot be loaded at all, so the finding is the manifest's, filed against the file
+ * a reader opens rather than the categories file this pass happened to be reading, at the
+ * severity {@link MANIFEST_REQUIRED_SEVERITY} gives its reader. A manifest naming the marketplace
+ * something Claude Code registers no plugin under leaves nothing here installable, so it is
+ * this marketplace's own ERROR, against the file that holds the name — without it the
+ * Marketplaces row counted such a marketplace as validated and printed a tick beneath
+ * `doctor`'s own warning about that same file, and a warning above a tick is what a reader
+ * stops believing. Everything else only leaves this pass unable to run, so it stays a warning
+ * against the file it was reading. Read off the throw's TYPE, so nothing here matches on a
+ * sentence.
  */
-function matrixLoadFailure(error: unknown): SourceValidationIssue {
+function matrixLoadFailure(error: unknown, reader: MarketplaceReader): SourceValidationIssue {
+  if (error instanceof MarketplaceManifestRequiredError) {
+    return {
+      severity: MANIFEST_REQUIRED_SEVERITY[reader],
+      file: MARKETPLACE_MANIFEST_PATH,
+      message: getErrorMessage(error),
+    };
+  }
+
   if (error instanceof MarketplaceNameRefusedError) {
     return {
       severity: "error",

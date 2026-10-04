@@ -4,6 +4,7 @@ import { countBy, sortBy } from "remeda";
 import {
   DEFAULT_PUBLIC_SOURCE_NAME,
   DEFAULT_VERSION,
+  EJECT_SOURCE,
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
   PUBLIC_CATALOGUE_PACKAGE,
@@ -11,7 +12,9 @@ import {
 import { writeFile, glob, ensureDir } from "../utils/fs";
 import { verbose, warn } from "../utils/logger";
 import type { Marketplace, MarketplacePlugin, PluginManifest } from "../types";
-import { readPluginManifest } from "./plugins";
+// The module rather than the `./plugins` barrel: the loader reads this file's load-side refusal,
+// and the barrel reaches the loader back through plugin discovery.
+import { readPluginManifest } from "./plugins/plugin-finder";
 
 const PLUGIN_MANIFEST_PATH = `${PLUGIN_MANIFEST_DIR}/${PLUGIN_MANIFEST_FILE}`;
 const MARKETPLACE_SCHEMA_URL = "https://anthropic.com/claude-code/marketplace.schema.json";
@@ -26,13 +29,17 @@ const LOCAL_SKILL_NAMESPACE = "local";
  * Marketplace names that are not an author's to take.
  *
  * The public catalogue's skills ship unprefixed, so every bare id in the catalogue
- * already lives in `agents-inc`; the other two hold the skills that belong to no
- * marketplace. Publishing under any of them claims ids the marketplace does not own.
+ * already lives in `agents-inc`; `external` and `local` hold the skills that belong to
+ * no marketplace. Publishing under any of those claims ids the marketplace does not own.
+ * `eject` is the `origin` an installation records for a skill copied into it, so a
+ * marketplace under that name has every skill it installs read back as an ejected copy —
+ * a plugin install turned into a silent local one.
  */
 const RESERVED_MARKETPLACE_NAMES: readonly string[] = [
   DEFAULT_PUBLIC_SOURCE_NAME,
   EXTERNAL_SKILL_NAMESPACE,
   LOCAL_SKILL_NAMESPACE,
+  EJECT_SOURCE,
 ];
 
 /** How many offending ids a namespace refusal lists before summarising the rest. */
@@ -129,15 +136,38 @@ function pluginDirNameOf(manifestFile: string): string {
  * `packageName` is package.json's own `name`. It is read for one purpose: the public
  * catalogue publishes under a reserved name legitimately, and
  * {@link PUBLIC_CATALOGUE_PACKAGE} is what distinguishes it from a claimant.
+ *
+ * `wayOut` is the caller's, because how another name is chosen depends on where this one came
+ * from: `build marketplace` reads it off package.json and takes `--name`, while `new marketplace`
+ * takes it as its argument and has no package.json yet.
  */
 export function validateMarketplaceName(
   marketplaceName: string,
   packageName: string,
+  wayOut: string,
 ): string | null {
   if (!RESERVED_MARKETPLACE_NAMES.includes(marketplaceName)) return null;
   if (isCatalogueOwnReservedName(marketplaceName, packageName)) return null;
 
-  return reservedNameError(marketplaceName);
+  return reservedNameError(marketplaceName, wayOut);
+}
+
+/**
+ * Refuses a marketplace being LOADED under a reserved name, or returns null — a manifest built
+ * before the name was reserved, or written by hand, refused in the words the build uses.
+ *
+ * The list {@link validateMarketplaceName} refuses, less the public catalogue's own name: the
+ * catalogue's manifest is called `agents-inc`, and a load has no package.json to tell the
+ * catalogue from a claimant by, so that one name loads.
+ */
+export function validateLoadedMarketplaceName(
+  marketplaceName: string,
+  wayOut: string,
+): string | null {
+  if (marketplaceName === DEFAULT_PUBLIC_SOURCE_NAME) return null;
+  return RESERVED_MARKETPLACE_NAMES.includes(marketplaceName)
+    ? reservedNameError(marketplaceName, wayOut)
+    : null;
 }
 
 /**
@@ -178,13 +208,14 @@ function carriesNamespace(skillId: string, marketplaceName: string): boolean {
   return skillId.startsWith(`${marketplaceName}-`);
 }
 
-function reservedNameError(marketplaceName: string): string {
+function reservedNameError(marketplaceName: string, wayOut: string): string {
   return (
     `Marketplace name '${marketplaceName}' is reserved. ` +
-    `'${DEFAULT_PUBLIC_SOURCE_NAME}' is the public catalogue's own namespace, and ` +
+    `'${DEFAULT_PUBLIC_SOURCE_NAME}' is the public catalogue's own namespace, ` +
     `'${EXTERNAL_SKILL_NAMESPACE}' and '${LOCAL_SKILL_NAMESPACE}' hold the skills that belong to ` +
-    `no marketplace — publishing under any of them claims skill ids that are not this ` +
-    `marketplace's. Choose a name of your own: set package.json 'name', or pass --name.`
+    `no marketplace, and '${EJECT_SOURCE}' is what an installation records for a skill copied ` +
+    `into it rather than installed as a plugin — a marketplace under any of them is read back ` +
+    `as something it is not. Choose a name of your own: ${wayOut}.`
   );
 }
 
@@ -199,7 +230,7 @@ function namespaceViolationError(foreignIds: string[], marketplaceName: string):
       `namespace. Every skill id must begin with the marketplace's name:`,
     ...listed,
     ...(unlisted > 0 ? [`  ... and ${unlisted} more`] : []),
-    `Rename each skill directory and the id in its metadata, re-run 'build plugins', then ` +
+    `Rename each skill directory and the 'name' in its SKILL.md, re-run 'build plugins', then ` +
       `build the marketplace again.`,
   ].join("\n");
 }

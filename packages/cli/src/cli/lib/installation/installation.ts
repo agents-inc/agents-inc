@@ -1,7 +1,7 @@
 import os from "os";
 import path from "path";
 import { fileExists } from "../../utils/fs";
-import { loadProjectConfigFromDir } from "../configuration/project-config";
+import { ConfigLoadError, loadProjectConfigFromDir } from "../configuration/project-config";
 import { CLAUDE_DIR, PLUGINS_SUBDIR, EJECT_SOURCE } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir";
 import { agentsDir, providerInUse } from "./install-layout";
@@ -129,6 +129,20 @@ async function detectInstallationInDir(
 /** Detect installation in a specific directory only (no global fallback). */
 export async function detectProjectInstallation(projectDir: string): Promise<Installation | null> {
   return detectInstallationInDir(projectDir, "project");
+}
+
+/**
+ * Whether `dir` holds an installation of its own, for a surface that must answer rather than
+ * refuse. DEGRADE posture: a config that exists and cannot be loaded answers yes, because the file
+ * is there — where {@link detectProjectInstallation} throws `ConfigLoadError` over it.
+ */
+export async function holdsItsOwnInstallation(dir: string): Promise<boolean> {
+  try {
+    return (await detectProjectInstallation(dir)) !== null;
+  } catch (error) {
+    if (error instanceof ConfigLoadError) return true;
+    throw error;
+  }
 }
 
 /** Detect installation in the home directory (global scope). */

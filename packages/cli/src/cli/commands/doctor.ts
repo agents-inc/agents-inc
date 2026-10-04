@@ -5,6 +5,7 @@ import { getErrorMessage } from "../utils/errors";
 import { EXIT_CODES } from "../lib/exit-codes";
 import {
   effectivelyExcludedSkillIds,
+  findConfigLoadFailures,
   loadInstalledConfig,
   validateProjectConfig,
   SOURCE_ENV_VAR,
@@ -34,9 +35,14 @@ import {
 } from "../lib/installation/install-layout";
 import { ambiguityFinding } from "../lib/installation/provider-flag";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements";
-import { sourceScopesInPlay } from "../lib/installation/source-scopes";
+import { sourceScopesInPlay, type ScopeKind } from "../lib/installation/source-scopes";
 import { layoutFindingFor, type LayoutFinding } from "../lib/installation/layout-findings";
-import { REGISTRY_IS_NOT_AN_INVENTORY } from "../utils/messages";
+import {
+  REGISTRY_IS_NOT_AN_INVENTORY,
+  recreateConfigFrom,
+  scopeLabel,
+  scopeNoun,
+} from "../utils/messages";
 import { getInstalledConfigPath } from "../lib/installation/install-base-dir";
 import { isSourceRepo } from "../lib/source-validator";
 import {
@@ -60,6 +66,7 @@ import type {
   SkillScope,
 } from "../types";
 import { fileExists, directoryExists } from "../utils/fs";
+import { plural } from "../utils/string";
 import {
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
@@ -106,11 +113,15 @@ type ConfigCheckOutput = {
  * file and for one that loads while declaring neither skills nor agents — two states that need
  * different sentences. The state missing from this union is the one that cannot reach this layer:
  * a config that cannot be READ is the content layer's finding, and it skips the operational layer.
+ *
+ * A loaded config says whether it is this directory's own or the global one it inherits: a
+ * directory with no config of its own under a global installation reads the global config, and a
+ * row naming this directory's path for it describes a file that is not there.
  */
 type ConfigState =
   | { kind: "absent" }
   | { kind: "declares-nothing"; config: ProjectConfig }
-  | { kind: "loaded"; config: ProjectConfig };
+  | { kind: "loaded"; config: ProjectConfig; inherited: boolean };
 
 /**
  * The config in THIS directory, and what state it is in. Only this directory: the global fallback
@@ -125,14 +136,25 @@ async function resolveConfigState(
   detected: DetectedProject | null,
   projectDir: string,
 ): Promise<ConfigState> {
-  if (detected?.config) return { kind: "loaded", config: detected.config };
+  if (detected?.config) {
+    return {
+      kind: "loaded",
+      config: detected.config,
+      inherited: inheritsTheGlobalConfig(detected.installation.projectDir, projectDir),
+    };
+  }
 
   const loaded = await loadInstalledConfig(projectDir);
   if (!loaded) return { kind: "absent" };
 
   return declaresNoContent(loaded.config)
     ? { kind: "declares-nothing", config: loaded.config }
-    : { kind: "loaded", config: loaded.config };
+    : { kind: "loaded", config: loaded.config, inherited: false };
+}
+
+/** Whether the config detection read for `projectDir` is the home directory's, inherited. */
+function inheritsTheGlobalConfig(readFrom: string, projectDir: string): boolean {
+  return isHomeDirectory(readFrom) && !isHomeDirectory(projectDir);
 }
 
 /**
@@ -142,13 +164,13 @@ async function resolveConfigState(
  * old name to go and edit a file that is not there.
  */
 function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOutput {
-  const configTsRel = relativeConfigPath(projectDir, providerInUse(projectDir));
+  const theConfig = (verdict: string) => configRowMessage(state, projectDir, verdict);
   if (state.kind === "absent") {
     return {
       result: {
         kind: "config",
         status: "fail",
-        message: `${configTsRel} not found`,
+        message: theConfig("not found"),
         details: [`Run '${CLI_INVOKE_COMMAND} init' to create a configuration`],
       },
       config: null,
@@ -163,7 +185,7 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
       result: {
         kind: "config-empty",
         status: "warn",
-        message: `${configTsRel} is valid but declares no skills and no agents`,
+        message: theConfig("is valid but declares no skills and no agents"),
       },
       config: state.config,
     };
@@ -177,7 +199,7 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
       result: {
         kind: "config",
         status: "fail",
-        message: `${configTsRel} has errors`,
+        message: theConfig("has errors"),
         details: validation.errors,
       },
       config: null,
@@ -189,7 +211,7 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
       result: {
         kind: "config",
         status: "warn",
-        message: `${configTsRel} has warnings`,
+        message: theConfig("has warnings"),
         details: validation.warnings,
       },
       config,
@@ -200,10 +222,48 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
     result: {
       kind: "config",
       status: "pass",
-      message: `${configTsRel} is valid`,
+      message: theConfig("is valid"),
     },
     config,
   };
+}
+
+/**
+ * What a Config Valid row says, led by whose config it is: this project's, or the global
+ * installation's — the nouns the Layout rows lead with.
+ *
+ * A directory with no config of its own under a global installation reads the global one, and the
+ * row says so, naming the file it actually read rather than this directory's path for a file that
+ * is not there.
+ */
+function configRowMessage(state: ConfigState, projectDir: string, verdict: string): string {
+  if (state.kind === "loaded" && state.inherited)
+    return `${theInheritedConfig()}, which ${verdict}`;
+  return `${theOwnConfig(projectDir)} ${verdict}`;
+}
+
+/** `This project: .agents-inc/claude/config.ts`, or the global installation's from home. */
+function theOwnConfig(projectDir: string): string {
+  return `${scopeLabel(scopeOf(projectDir))}: ${configNamedFrom(projectDir)}`;
+}
+
+/** A project with no config of its own, and the global one it reads in its place. */
+function theInheritedConfig(): string {
+  return `${scopeLabel("project")}: no ${STANDARD_FILES.CONFIG_TS}, using ${scopeNoun("global")}'s (${configNamedFrom(os.homedir())})`;
+}
+
+/** The scope whose config a directory holds: the home directory's is the global one. */
+function scopeOf(dir: string): ScopeKind {
+  return isHomeDirectory(dir) ? "global" : "project";
+}
+
+/**
+ * A config file as a row names it: relative to the project it belongs to, and from home for the
+ * global one — named relative to a project, the global config is a file that project does not have.
+ */
+function configNamedFrom(root: string): string {
+  const relPath = relativeConfigPath(root, providerInUse(root));
+  return isHomeDirectory(root) ? `~/${relPath}` : relPath;
 }
 
 async function checkSkillsResolved(
@@ -245,7 +305,7 @@ async function checkSkillsResolved(
     return {
       kind: "skills",
       status: "fail",
-      message: `${uniqueSkills.length - missingSkills.length}/${uniqueSkills.length} skills found`,
+      message: `${ratio(uniqueSkills.length - missingSkills.length, uniqueSkills.length, "skill")} found`,
       details: missingSkills.map((s) => `- ${s} (not found)`),
     };
   }
@@ -253,7 +313,7 @@ async function checkSkillsResolved(
   return {
     kind: "skills",
     status: "pass",
-    message: `${uniqueSkills.length}/${uniqueSkills.length} skills found`,
+    message: `${ratio(uniqueSkills.length, uniqueSkills.length, "skill")} found`,
   };
 }
 
@@ -334,7 +394,7 @@ async function checkAgentsCompiled(
   return {
     kind: "agents",
     status: "pass",
-    message: `${renderable}/${renderable} agents compiled`,
+    message: `${ratio(renderable, renderable, "agent")} compiled`,
   };
 }
 
@@ -471,6 +531,11 @@ async function checkUnownedInstallation(projectDir: string): Promise<CheckResult
   };
 }
 
+/** "1/1 skill", "2/3 skills" — the noun agrees with the count it is out of. */
+function ratio(found: number, total: number, noun: string): string {
+  return `${found}/${plural(total, noun)}`;
+}
+
 /** "7 skills and 2 agents", dropping a half with nothing in it rather than saying "0 agents". */
 function countedArtifacts(skills: string[], agents: string[]): string {
   return [
@@ -527,7 +592,7 @@ async function checkSkillsInstalled(
   return {
     kind: "installed",
     status: "pass",
-    message: `${ejectSkills.length}/${ejectSkills.length} eject-mode skills installed`,
+    message: `${ratio(ejectSkills.length, ejectSkills.length, "eject-mode skill")} installed`,
   };
 }
 
@@ -603,7 +668,7 @@ async function checkPluginSkillsInstalled(
   return {
     kind: "plugins",
     status: "pass",
-    message: `${pluginSkills.length}/${pluginSkills.length} plugin-mode skills installed`,
+    message: `${ratio(pluginSkills.length, pluginSkills.length, "plugin-mode skill")} installed`,
   };
 }
 
@@ -638,10 +703,14 @@ function howItWasReached(source: string, isLocal: boolean): string {
  * directory it was unpacked into; the provenance line beneath it names the marketplace itself.
  * Both, because neither answers the other's question: a cache path says nothing about whose
  * catalogue it holds, and a ref says nothing about what is on disk to inspect.
+ *
+ * The count is what that marketplace carries, not the matrix this run loaded: the matrix also
+ * holds the skills ejected here and the global installation's, which may come from another
+ * marketplace altogether.
  */
 function reachedMarketplace(result: SourceLoadResult): CheckResult {
   const { source, sourceOrigin } = result.sourceConfig;
-  const skillCount = Object.keys(matrix.skills).length;
+  const skillCount = result.marketplaceSkillIds.size;
   const sourceLabel = result.isLocal ? "local" : "remote";
 
   return {
@@ -823,10 +892,6 @@ function skipRestatingContent(nouns: string[]): string {
   return `Skipped — this row would only restate the ${nouns.join(" and ")} errors above`;
 }
 
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? "" : "s"}`;
-}
-
 function formatCheckName(name: string): string {
   return name.padEnd(CHECK_WIDTH);
 }
@@ -857,12 +922,25 @@ function formatStatus(status: CheckResult["status"]): string {
   }
 }
 
+/** The column a row's details start at, under its message. */
+const DETAIL_INDENT = `${ROW_INDENT}${" ".repeat(CHECK_WIDTH)}   `;
+
 function formatCheckLine(name: string, result: CheckResult): string[] {
   const headerLine = `${ROW_INDENT}${formatCheckName(name)}${formatStatus(result.status)}  ${result.message}`;
-  const detailLines = (result.details ?? []).map(
-    (detail) => `${ROW_INDENT}${" ".repeat(CHECK_WIDTH)}   ${detail}`,
-  );
+  const detailLines = (result.details ?? []).flatMap(indentedDetailLines);
   return [headerLine, ...detailLines];
+}
+
+/**
+ * A detail can be a whole refusal — a loader's message, paragraphs and all — so every one of its
+ * lines is indented, and its blank lines dropped. Indenting the first alone printed the rest at
+ * column 0, outside the row they belong to and between the rows below it.
+ */
+function indentedDetailLines(detail: string): string[] {
+  return detail
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => `${DETAIL_INDENT}${line}`);
 }
 
 function formatSummary(results: CheckResult[]): string {
@@ -897,14 +975,6 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
     tip: `  Tip: Nothing is configured yet — run '${CLI_INVOKE_COMMAND} init' to choose skills and sub-agents`,
   },
   {
-    // The one remedy that applies to a config that cannot be read. `init` does not clear such a
-    // file — it refuses it — so the tip above would send the reader in a circle; this is the same
-    // way out `edit` and `init` themselves name, worded the same way.
-    kind: "content-config",
-    status: "fail",
-    tip: `  Tip: There is no automatic repair — recreate the configuration: '${CLI_INVOKE_COMMAND} uninstall' still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init'`,
-  },
-  {
     // Printed beside the config tip above, which says how to get a configuration back and
     // nothing about the files that outlived the old one. Both halves are named with what they
     // actually do: `uninstall` matches skill directories by their own `forked-from` metadata and
@@ -932,6 +1002,29 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
 function formatTips(results: CheckResult[]): string[] {
   return TIPS.filter((t) => results.some((r) => r.kind === t.kind && r.status === t.status)).map(
     (t) => t.tip,
+  );
+}
+
+/**
+ * The one remedy that applies to a config that cannot be read, once per such config, naming the
+ * folder it is taken from. `init` does not clear such a file — it refuses it — so the config tip
+ * would send the reader in a circle; this is the way out every refusing command names, worded the
+ * same way and sending the reader to the same folder: the project, or the home directory for the
+ * global config.
+ *
+ * Read again rather than threaded out of the content pass, and only once that pass has failed. A
+ * failure it cannot classify is already that pass's own failed row, so it adds no tip of its own.
+ */
+async function recreateConfigTips(
+  contentResults: CheckResult[],
+  projectDir: string,
+): Promise<string[]> {
+  if (!failedContentKinds(contentResults).has(CONFIG_CHECK.kind)) return [];
+
+  const failures = await findConfigLoadFailures(projectDir).catch(() => []);
+  return failures.map(
+    (failure) =>
+      `  Tip: There is no automatic repair — recreate the configuration by running ${recreateConfigFrom(failure.scopeRoot)}`,
   );
 }
 
@@ -1108,7 +1201,7 @@ export default class Doctor extends BaseCommand {
     const operationalResults = await this.runOperationalChecks(projectDir, contentResults);
     const results = [...contentResults, ...operationalResults];
 
-    this.printResults(results);
+    this.printResults(results, await recreateConfigTips(contentResults, projectDir));
 
     if (results.some((r) => r.status === "fail")) {
       this.exit(EXIT_CODES.ERROR);
@@ -1372,11 +1465,11 @@ export default class Doctor extends BaseCommand {
     }
   }
 
-  private printResults(results: CheckResult[]): void {
+  private printResults(results: CheckResult[], recreateTips: string[]): void {
     this.log("");
     this.log(formatSummary(results));
 
-    const tips = formatTips(results);
+    const tips = [...formatTips(results), ...recreateTips];
     if (tips.length > 0) {
       this.log("");
       for (const tip of tips) {

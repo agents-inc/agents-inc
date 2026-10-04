@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useInput, type Key } from "ink";
 
 type KeyboardNavigationHandlers = {
@@ -24,12 +24,18 @@ export function useKeyboardNavigation(
   const { onEnter, onEscape } = handlers;
   const { wrap = true, vimKeys = true, active = true } = options;
 
-  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [focusedIndex, setRenderedIndex] = useState(0);
+  // The focus the handlers read, written the moment it moves rather than once the move renders.
+  // Keys that arrive in one chunk — a fast typist, a paste — are handled one after another with no
+  // render between them, so a copy synced by an effect still held the focus from before the burst
+  // when Enter read it: Down, Down, Enter on the dashboard ran Edit.
   const focusedIndexRef = useRef(focusedIndex);
 
-  useEffect(() => {
-    focusedIndexRef.current = focusedIndex;
-  }, [focusedIndex]);
+  const setFocusedIndex = useCallback<Dispatch<SetStateAction<number>>>((action) => {
+    const next = typeof action === "function" ? action(focusedIndexRef.current) : action;
+    focusedIndexRef.current = next;
+    setRenderedIndex(next);
+  }, []);
 
   const moveUp = useCallback(() => {
     setFocusedIndex((prev) => {
@@ -38,7 +44,7 @@ export function useKeyboardNavigation(
       }
       return Math.max(0, prev - 1);
     });
-  }, [itemCount, wrap]);
+  }, [itemCount, wrap, setFocusedIndex]);
 
   const moveDown = useCallback(() => {
     setFocusedIndex((prev) => {
@@ -47,7 +53,7 @@ export function useKeyboardNavigation(
       }
       return Math.min(itemCount - 1, prev + 1);
     });
-  }, [itemCount, wrap]);
+  }, [itemCount, wrap, setFocusedIndex]);
 
   useInput(
     useCallback(

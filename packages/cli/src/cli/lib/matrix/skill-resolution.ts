@@ -77,32 +77,36 @@ export function synthesizeCategory(category: Category, domain: Domain): Category
 }
 
 /**
- * Registers a skill's claim on a slug, first claim winning and every later one
- * named. Exported because the merge is not the only writer: `source-loader`
- * merges a project's local skills into an already-built map, and two writers
- * deciding a collision differently is how a slug comes to mean one skill here
- * and another there.
+ * Claims a slug for a skill merged in after a marketplace's map was built — an installed copy, or
+ * a skill a shared configuration carries — unless a skill already holds it.
  *
- * A skill re-stating a claim it already holds is not a collision — a local skill
- * overriding a matrix id inherits that id's slug and arrives back here with it.
+ * A held slug keeps its holder, and nothing is said. Ids carry their marketplace's namespace and
+ * slugs do not, so a skill installed from one marketplace may share its slug with one the loaded
+ * marketplace ships — every `new marketplace` scaffold gives its example skill the same one. Both
+ * are installed and both work, so there is no collision to report and nothing is ignored.
+ * Exported because the merge is not the only writer: `source-loader` and `external-skills` both
+ * seat skills into an already-built map, and two writers deciding a held slug differently is how
+ * a slug comes to mean one skill here and another there.
  */
 export function claimSlug(slugMap: SkillSlugMap, slug: SkillSlug, id: SkillId): void {
-  const incumbent = slugMap.slugToId[slug];
-  if (incumbent === id) return;
-  if (incumbent !== undefined) {
-    warn(`Duplicate slug '${slug}': already mapped to '${incumbent}', ignoring '${id}'`);
-    return;
-  }
-
-  slugMap.slugToId[slug] = id;
+  slugMap.slugToId[slug] ??= id;
 }
 
-/** Builds the slug -> ID map from extracted skill metadata. */
+/**
+ * Builds the slug -> ID map from one marketplace's extracted skill metadata, first claim winning
+ * and every later one named. Inside ONE marketplace two skills sharing a slug is that author's
+ * defect: the rules that marketplace writes name its skills by slug, so one of the two is no
+ * longer reachable by them. A skill re-stating a claim it already holds is not a collision.
+ */
 function buildSlugMap(skills: ExtractedSkillMetadata[]): SkillSlugMap {
   const slugMap: SkillSlugMap = { slugToId: {} };
 
-  for (const skill of skills) {
-    claimSlug(slugMap, skill.slug, skill.id);
+  for (const { slug, id } of skills) {
+    const incumbent = slugMap.slugToId[slug];
+    if (incumbent !== undefined && incumbent !== id) {
+      warn(`Duplicate slug '${slug}': already mapped to '${incumbent}', ignoring '${id}'`);
+    }
+    claimSlug(slugMap, slug, id);
   }
 
   return slugMap;

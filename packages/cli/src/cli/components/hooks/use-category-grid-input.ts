@@ -3,7 +3,7 @@ import { useInput, type Key } from "ink";
 
 import type { Category, SkillId } from "../../types/index.js";
 import type { CategoryRow } from "../wizard/category-grid.js";
-import type { Direction } from "./use-focused-list-item.js";
+import type { Direction, FocusedPosition } from "./use-focused-list-item.js";
 import { HOTKEY_TOGGLE_LABELS, KEY_SPACE, isHotkey } from "../wizard/hotkeys.js";
 
 /** Find next section index (wrapping forward) */
@@ -17,6 +17,7 @@ type UseCategoryGridInputOptions = {
   categories: CategoryRow[];
   focusedRow: number;
   focusedCol: number;
+  currentFocus: () => FocusedPosition;
   setFocused: (row: number, col: number) => void;
   moveFocus: (direction: Direction) => void;
   onToggle: (categoryId: Category, technologyId: SkillId) => void;
@@ -27,6 +28,7 @@ export function useCategoryGridInput({
   categories,
   focusedRow,
   focusedCol,
+  currentFocus,
   setFocused,
   moveFocus,
   onToggle,
@@ -61,9 +63,12 @@ export function useCategoryGridInput({
       return;
     }
 
+    // Tab and Space read the focus as it stands now rather than as the last render painted it:
+    // a key that follows a move in the same chunk is handled before that move renders.
     if (key.tab && !key.shift) {
-      const nextSection = findNextIndex(categories, focusedRow);
-      if (nextSection !== focusedRow) {
+      const { row } = currentFocus();
+      const nextSection = findNextIndex(categories, row);
+      if (nextSection !== row) {
         setFocused(nextSection, 0);
       }
       return;
@@ -75,9 +80,11 @@ export function useCategoryGridInput({
     }
 
     if (input === KEY_SPACE) {
-      const currentOption = currentOptions[focusedCol];
-      if (currentRow && currentOption) {
-        onToggle(currentRow.id, currentOption.id);
+      const { row, col } = currentFocus();
+      const category = categories[row];
+      const option = category?.options[col];
+      if (category && option) {
+        onToggle(category.id, option.id);
       }
       return;
     }

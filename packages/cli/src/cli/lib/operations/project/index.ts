@@ -20,6 +20,7 @@ export {
 export {
   type CompileAllScopesOptions,
   compileAgentsAllScopes,
+  compileProjectScope,
 } from "./compile-agents-all-scopes.js";
 export {
   recompileRegisteredProjectAgents,

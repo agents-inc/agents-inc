@@ -22,9 +22,17 @@ type UseFocusedListItemOptions = {
   skipRow?: (row: number) => boolean;
 };
 
+export type FocusedPosition = { row: number; col: number };
+
 type UseFocusedListItemResult = {
   focusedRow: number;
   focusedCol: number;
+  /**
+   * The position as it stands now, for a key handler. `focusedRow`/`focusedCol` are what the last
+   * render painted, and a key that follows a move in the same chunk is handled before that move
+   * has rendered.
+   */
+  currentFocus: () => FocusedPosition;
   setFocused: (row: number, col: number) => void;
   moveFocus: (direction: Direction) => void;
 };
@@ -52,26 +60,30 @@ export function useFocusedListItem(
   const [focusedRow, setFocusedRow] = useState(initialRow);
   const [focusedCol, setFocusedCol] = useState(initialCol);
 
-  // Refs for stable callback access without stale closures.
-  // Synced during render (not via useEffect) to prevent a timing gap where
-  // the ref holds stale values when an input event arrives between render
-  // and effect execution (e.g. after a domain-switch remount).
+  // The position every move starts from, written the moment focus moves rather than when the move
+  // renders. Keys that arrive in one chunk — a fast typist, a paste — are handled one after another
+  // with no render between them, so a copy synced during render still held the position from
+  // before the burst, and the second of two moves started where the first one had.
   const focusedRowRef = useRef(focusedRow);
-  focusedRowRef.current = focusedRow;
-
   const focusedColRef = useRef(focusedCol);
-  focusedColRef.current = focusedCol;
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   const applyFocus = useCallback((row: number, col: number) => {
+    focusedRowRef.current = row;
+    focusedColRef.current = col;
     setFocusedRow(row);
     setFocusedCol(col);
     onChangeRef.current?.(row, col);
   }, []);
 
   const setFocused = applyFocus;
+
+  const currentFocus = useCallback(
+    (): FocusedPosition => ({ row: focusedRowRef.current, col: focusedColRef.current }),
+    [],
+  );
 
   const findNextRow = useCallback(
     (fromRow: number, direction: 1 | -1): number => {
@@ -130,5 +142,5 @@ export function useFocusedListItem(
     [getColCount, wrap, findValidCol, adjustCol, findNextRow, applyFocus],
   );
 
-  return { focusedRow, focusedCol, setFocused, moveFocus };
+  return { focusedRow, focusedCol, currentFocus, setFocused, moveFocus };
 }

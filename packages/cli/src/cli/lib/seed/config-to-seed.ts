@@ -105,34 +105,74 @@ function unshareableConfigError(unshareable: string[]): string {
 
 /** The ref a payload has to carry, and the skills no ref this config holds can account for. */
 type MarketplaceReading = {
-  /** Absent when nothing installed here came from a marketplace. */
   ref: string | undefined;
   unnameable: string[];
 };
 
+/** Where a configuration fetches its marketplace from, and the name that joins it to skills. */
+type MarketplaceRecord = Pick<ProjectConfig, "marketplace" | "marketplaceName">;
+
 /**
- * Whether the marketplace this installation reads is the one `skill` came from.
+ * Whether `record` is the marketplace `skill` came from, and says where it is fetched from. No
+ * record, as for a configuration that inherits from none, records nothing.
  *
- * A skill's `origin` is a marketplace's NAME, `config.marketplace` is the ref it was fetched from,
- * and `marketplaceName` is what joins them — the name the install read out of that repository's
- * own manifest. Without both halves agreeing, the ref would send the receiver to a repository that
+ * A skill's `origin` is a marketplace's NAME, `marketplace` is the ref it was fetched from, and
+ * `marketplaceName` is what joins them — the name the install read out of that repository's own
+ * manifest. Without both halves agreeing, the ref would send the receiver to a repository that
  * never served this skill, which is the same silent swap under a different spelling.
  */
-function isRecordedMarketplace(config: ProjectConfig, skill: SkillConfig): boolean {
-  return config.marketplace !== undefined && skill.origin === config.marketplaceName;
+function isRecordedMarketplace(record: MarketplaceRecord | undefined, skill: SkillConfig): boolean {
+  return record?.marketplace !== undefined && skill.origin === record.marketplaceName;
 }
 
-/** Which marketplace the payload names, decided by the skills that oblige it to name one. */
-function readMarketplace(config: ProjectConfig, skills: SkillConfig[]): MarketplaceReading {
+/**
+ * Which marketplace the payload names, decided by the skills that oblige it to name one.
+ *
+ * A payload names ONE marketplace, and it is this configuration's own whenever a skill shared here
+ * comes from it. A project under a global installation from another marketplace carries that
+ * one's skills too: they travel, the receiver loading this ref alone leaves them behind, and
+ * {@link skillsItsMarketplaceLeavesBehind} names them for the sharer. Only a skill whose
+ * marketplace neither configuration records is refused — no payload could ever name where it is.
+ */
+function readMarketplace(
+  config: ProjectConfig,
+  skills: SkillConfig[],
+  inheritedFrom: MarketplaceRecord | undefined,
+): MarketplaceReading {
   const served = skills.filter((skill) => needsMarketplaceNamed(skill.origin));
-  if (served.length === 0) return { ref: undefined, unnameable: [] };
-
-  const unaccounted = served.filter((skill) => !isRecordedMarketplace(config, skill));
+  const unaccounted = served.filter(
+    (skill) =>
+      !isRecordedMarketplace(config, skill) && !isRecordedMarketplace(inheritedFrom, skill),
+  );
   if (unaccounted.length > 0) {
     return { ref: undefined, unnameable: unaccounted.map(unnameableOriginMessage) };
   }
 
-  return { ref: config.marketplace, unnameable: [] };
+  const servesItsOwn = served.some((skill) => isRecordedMarketplace(config, skill));
+  return { ref: servesItsOwn ? config.marketplace : undefined, unnameable: [] };
+}
+
+/**
+ * The plugin skills `payload` carries that the marketplace it names does not serve.
+ *
+ * An install reads the one marketplace a payload names — the public catalogue when it names none —
+ * so a plugin from any other is skipped wherever the id is installed. That is a stopgap rather
+ * than a refusal: the id still installs everything else, and the sharer is told which skills it
+ * leaves behind. An ejected copy is not a plugin and is not asked about here.
+ */
+export function skillsItsMarketplaceLeavesBehind(
+  config: ProjectConfig,
+  payload: SeedPayload,
+): SkillId[] {
+  const namedMarketplace =
+    payload.marketplace === undefined ? DEFAULT_PUBLIC_SOURCE_NAME : config.marketplaceName;
+  const isPluginFromElsewhere = (skill: SkillConfig): boolean =>
+    skill.origin !== EJECT_SOURCE && skill.origin !== namedMarketplace;
+
+  return config.skills
+    .filter(isInstalled)
+    .filter(isPluginFromElsewhere)
+    .map((skill) => skill.id);
 }
 
 function unnameableModels(agents: AgentScopeConfig[]): string[] {
@@ -241,15 +281,23 @@ function toSeedAgent(agent: AgentScopeConfig): SeedAgent {
  * every id above is resolved by the receiver against a catalogue it already has, and the entries
  * in `carried` are the ones that answer to no catalogue in either direction. Stated rather than
  * defaulted, because a producer that forgot the content is exactly the defect this closed.
+ *
+ * `inheritedFrom` is the global configuration a project's own inherits from, absent when `config`
+ * is the global one. It is read for one thing: the marketplace the inherited skills came from,
+ * which this configuration does not record but the global one does.
  */
-export function configToSeedPayload(config: ProjectConfig, carried: ContentReading): SeedPayload {
+export function configToSeedPayload(
+  config: ProjectConfig,
+  carried: ContentReading,
+  inheritedFrom?: MarketplaceRecord,
+): SeedPayload {
   const skills = config.skills.filter(isInstalled);
   const agents = config.agents.filter(isInstalled);
   const skillScopes = new Map(skills.map((skill) => [skill.id, skill.scope]));
   const agentScopes = new Map<string, SkillScope>(agents.map((agent) => [agent.name, agent.scope]));
 
   const { assignments, unwritable } = readStack(config.stack, skillScopes, agentScopes);
-  const marketplace = readMarketplace(config, skills);
+  const marketplace = readMarketplace(config, skills, inheritedFrom);
 
   const unshareable = [
     ...marketplace.unnameable,

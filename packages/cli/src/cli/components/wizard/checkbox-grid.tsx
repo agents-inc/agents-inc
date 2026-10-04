@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { CLI_COLORS, UI_SYMBOLS } from "../../consts.js";
 import { useRowScroll } from "../hooks/use-row-scroll.js";
 import { KEY_SPACE } from "./hotkeys.js";
@@ -35,7 +35,15 @@ export const CheckboxGrid = <T extends string = string>({
 }: CheckboxGridProps<T>): React.ReactElement => {
   // Items + continue option at the end
   const totalItems = items.length + 1;
-  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [focusedIndex, setRenderedIndex] = useState(0);
+  // The focus Space reads, written the moment it moves rather than once the move renders: a Space
+  // that follows a move in the same chunk is handled before that move renders.
+  const focusedIndexRef = useRef(focusedIndex);
+
+  const focus = (index: number): void => {
+    focusedIndexRef.current = index;
+    setRenderedIndex(index);
+  };
 
   useInput((input, key) => {
     if (key.escape) {
@@ -44,12 +52,14 @@ export const CheckboxGrid = <T extends string = string>({
     }
 
     if (key.upArrow || input === "k") {
-      setFocusedIndex((prev) => (prev <= 0 ? totalItems - 1 : prev - 1));
+      const prev = focusedIndexRef.current;
+      focus(prev <= 0 ? totalItems - 1 : prev - 1);
       return;
     }
 
     if (key.downArrow || input === "j") {
-      setFocusedIndex((prev) => (prev >= totalItems - 1 ? 0 : prev + 1));
+      const prev = focusedIndexRef.current;
+      focus(prev >= totalItems - 1 ? 0 : prev + 1);
       return;
     }
 
@@ -59,7 +69,7 @@ export const CheckboxGrid = <T extends string = string>({
     }
 
     if (input === KEY_SPACE) {
-      const item = items[focusedIndex];
+      const item = items[focusedIndexRef.current];
       if (item) {
         onToggle(item.id);
       }

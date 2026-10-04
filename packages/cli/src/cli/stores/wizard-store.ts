@@ -195,7 +195,10 @@ function wouldOverwriteGlobalEject(
 
 /**
  * True when the slot a Sources-step call targets is a global install this session INHERITED —
- * an active global entry the hydration snapshot already carried.
+ * an active global entry the hydration snapshot already carried, or the global install a snapshot
+ * tombstone masked. The second is the entry a collapsed `[P][G]` pair resurfaces: the project's half
+ * is gone, and what is left at global scope is the same install every other project reads, so a
+ * project edit may no more re-mode it than one it never masked.
  *
  * Keyed on the `(id, scope)` SLOT, never on the id: an id legitimately occupies slots at both
  * scopes at once, and the project half of a `[P][G]` pair is the project's own install to
@@ -212,7 +215,9 @@ function isInheritedGlobalSlot(
   scope: SkillScope | undefined,
 ): boolean {
   if (installed === null) return false;
-  return scope === "global" && hasGlobalActive(installed, id);
+  return (
+    scope === "global" && (hasGlobalActive(installed, id) || hasGlobalTombstone(installed, id))
+  );
 }
 
 /**
@@ -927,7 +932,10 @@ function classifySkillSourceRows(
     ];
   }
 
-  const readOnly = !isEditingFromGlobalScope && !!installedGlobalConfig;
+  const readOnly =
+    !isEditingFromGlobalScope &&
+    (!!installedGlobalConfig ||
+      isInheritedGlobalSlot(installedSkillConfigs, skillId, configEntry?.scope));
   return [
     {
       skillId,
@@ -1047,6 +1055,22 @@ export type WizardState = {
    * rather than dropping it in silence.
    */
   unresolvableSkillIds: SkillId[];
+
+  /**
+   * The `[P][G]` pairs `s` collapsed into the global install this session, as opposed to the
+   * selection key dropping their project half. Both leave the config holding the same entry, and
+   * they mean different things: a drop removes the project's copy, a fold moves it into the
+   * global install every project reads. `s` restoring the pair takes the fold back.
+   */
+  foldedSkillIds: SkillId[];
+
+  /**
+   * The marketplace a project setup was named from (`init --marketplace`), by its name, when the
+   * global install above the project was made from another. Null on every other run. The summary
+   * names it as the setup's marketplace: until something is picked, every skill the summary holds
+   * is the global install's, and their marketplace is the one the setup is NOT made from.
+   */
+  setupMarketplace: string | null;
 
   showInfo: boolean;
 
@@ -1360,6 +1384,8 @@ type WizardStateData = Pick<
   | "skillConfigs"
   | "focusedSkillId"
   | "unresolvableSkillIds"
+  | "foldedSkillIds"
+  | "setupMarketplace"
   | "showInfo"
   | "selectedAgents"
   | "agentConfigs"
@@ -1388,6 +1414,8 @@ export const createInitialState = (overrides?: Partial<WizardStateData>): Wizard
   skillConfigs: [],
   focusedSkillId: null,
   unresolvableSkillIds: [],
+  foldedSkillIds: [],
+  setupMarketplace: null,
   showInfo: false,
   selectedAgents: [],
   agentConfigs: [],
@@ -1715,6 +1743,7 @@ export const useWizardStore = create<WizardState>((set, get) => ({
                 { id: skillId, scope: "global" as const, excluded: true, origin: config.origin },
               ]
             : rescoped,
+          foldedSkillIds: state.foldedSkillIds.filter((id) => id !== skillId),
         };
       }
 
@@ -1724,7 +1753,15 @@ export const useWizardStore = create<WizardState>((set, get) => ({
       // removal (not gated on wasInstalledGlobally) heals the case where the prior
       // G→P produced a tombstone that installedSkillConfigs-derived wasInstalledGlobally
       // cannot see (because its `!sc.excluded` filter ignores the tombstone itself).
-      return { skillConfigs: rescoped.filter((sc) => !(sc.id === skillId && sc.excluded)) };
+      //
+      // Collapsing a live pair this way FOLDS the project's half into the global install, which
+      // the selection key's collapse into the same entry does not, so the store records it.
+      return {
+        skillConfigs: rescoped.filter((sc) => !(sc.id === skillId && sc.excluded)),
+        foldedSkillIds: isDualScopePair(state.skillConfigs, skillId)
+          ? [...state.foldedSkillIds, skillId]
+          : state.foldedSkillIds,
+      };
     }),
 
   setFocusedSkillId: (id) => set({ focusedSkillId: id }),
@@ -2049,6 +2086,7 @@ export type HydrateOptions = {
   installedSkillConfigs?: SkillConfig[];
   installedAgentConfigs?: AgentScopeConfig[];
   isEditingFromGlobalScope?: boolean;
+  setupMarketplace?: string;
 };
 
 /**
@@ -2080,6 +2118,7 @@ function hydrateForEdit(initialStep: WizardStep, options: HydrateOptions): void 
     installedSkillConfigs,
     installedAgentConfigs,
     isEditingFromGlobalScope,
+    setupMarketplace,
   } = options;
 
   if (installedSkillIds?.length) {
@@ -2107,6 +2146,7 @@ function hydrateForEdit(initialStep: WizardStep, options: HydrateOptions): void 
         }
       : {}),
     ...(isEditingFromGlobalScope ? { isEditingFromGlobalScope: true } : {}),
+    ...(setupMarketplace !== undefined && { setupMarketplace }),
   });
 
   useWizardStore.getState().seedFocusedSkillForActiveDomain();

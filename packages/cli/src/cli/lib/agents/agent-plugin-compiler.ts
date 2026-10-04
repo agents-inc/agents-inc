@@ -10,6 +10,7 @@ import {
 import { listAgentMdFiles } from "./list-compiled-agents";
 import { computeStringHash, determinePluginVersion, writeContentHash } from "../versioning";
 import { extractFrontmatter } from "../../utils/frontmatter";
+import { plural } from "../../utils/string";
 import type { AgentFrontmatter, PluginManifest } from "../../types";
 import { agentFrontmatterValidationSchema, formatZodIssues } from "../schemas";
 
@@ -144,7 +145,7 @@ export async function compileAllAgentPlugins(
 }
 
 export function printAgentCompilationSummary(results: CompiledAgentPlugin[]): void {
-  log(`\nCompiled ${results.length} agent plugins:`);
+  log(`\nCompiled ${plural(results.length, "agent plugin")}:`);
   for (const result of results) {
     log(`  - agent-${result.agentName} (v${result.manifest.version})`);
   }

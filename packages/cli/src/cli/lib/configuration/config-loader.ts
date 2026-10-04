@@ -73,6 +73,13 @@ function declaresNoDefaultExport(namespace: unknown): boolean {
   return isRecord(namespace) && ES_MODULE_MARKER in namespace && !("default" in namespace);
 }
 
+/**
+ * The reason both readers of an installation's config give for one that is there and declared
+ * nothing — the file {@link loadConfig} answers `null` for, the same value it gives a missing one,
+ * which suits its other callers and not a reader that has already found the file.
+ */
+export const NO_VALID_DEFAULT_EXPORT = "the file has no valid default export";
+
 /** Nothing was exported: an empty file, `export {}`, or a default export with no keys. */
 function exportsNothing(value: unknown): boolean {
   return value == null || (typeof value === "object" && Object.keys(value).length === 0);

@@ -1,29 +1,50 @@
+import os from "os";
 import path from "path";
 
-import { configToSeedPayload, isInstalled } from "./config-to-seed.js";
+import {
+  configToSeedPayload,
+  isInstalled,
+  skillsItsMarketplaceLeavesBehind,
+} from "./config-to-seed.js";
 import { readCarriedSkills } from "./external-skills.js";
 import { EJECT_SOURCE } from "../../consts.js";
-import { loadProjectConfig } from "../configuration/project-config.js";
-import { resolveInstallPaths } from "../installation/install-base-dir.js";
+import { withoutExcludedAssignments } from "../agents/agent-recompiler.js";
+import { loadProjectConfig, loadProjectConfigFromDir } from "../configuration/project-config.js";
+import { activeAgentScopeMap, activeSkillScopeMap } from "../configuration/scope-predicates.js";
+import { getProjectConfigPath, resolveInstallPaths } from "../installation/install-base-dir.js";
 import { readForkedFromMetadata } from "../skills/skill-metadata.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { directoryExists } from "../../utils/fs.js";
 import { ERROR_MESSAGES } from "../../utils/messages.js";
+import { typedEntries } from "../../utils/typed-object.js";
 
 import type { ContentReading, OwnedSkillDir } from "./external-skills.js";
-import type { ProjectConfig, SkillConfig, SkillId } from "../../types/index.js";
+import type { LoadedProjectConfig } from "../configuration/project-config.js";
+import type { AgentScopeConfig, ProjectConfig, SkillConfig, SkillId } from "../../types/index.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
 /**
  * A payload ready to post, and what it will install — counted the way the sharer's own screens
  * count it, off the payload rather than off the config, so what a caller announces and what it
  * posts cannot disagree.
+ *
+ * `leftBehind` names the skills the payload carries that the one marketplace it names does not
+ * serve: they travel, and an install anywhere else skips them. Empty for an installation read
+ * from a single marketplace.
  */
 export type InstallationPayload =
-  { ok: true; payload: SeedPayload; skills: number; agents: number } | { ok: false; error: string };
+  | { ok: true; payload: SeedPayload; skills: number; agents: number; leftBehind: SkillId[] }
+  | { ok: false; error: string };
 
-/** The config to map, or the sentence explaining why there is none to map. */
-type InstalledConfig = { ok: true; config: ProjectConfig } | { ok: false; error: string };
+/**
+ * The config to map, or the sentence explaining why there is none to map.
+ *
+ * `inheritedFrom` is the global configuration a project's own config inherits from, and absent
+ * when the config read is the global one already.
+ */
+type InstalledConfig =
+  | { ok: true; config: ProjectConfig; inheritedFrom: ProjectConfig | undefined }
+  | { ok: false; error: string };
 
 /** The mapped payload, or every line naming something the contract cannot carry. */
 type MappedPayload = { ok: true; payload: SeedPayload } | { ok: false; error: string };
@@ -52,7 +73,8 @@ export async function seedPayloadForInstallation(projectDir: string): Promise<In
   const installed = await readInstalledConfig(projectDir);
   if (!installed.ok) return installed;
 
-  const mapped = mapOrRefuse(await readRoundTrip(installed.config, projectDir));
+  const roundTrip = await readRoundTrip(installed.config, projectDir);
+  const mapped = mapOrRefuse(roundTrip, installed.inheritedFrom);
   if (!mapped.ok) return mapped;
 
   const { payload } = mapped;
@@ -65,28 +87,104 @@ export async function seedPayloadForInstallation(projectDir: string): Promise<In
   // nor sub-agents is nothing to carry.
   if (skills === 0 && agents === 0) return { ok: false, error: ERROR_MESSAGES.NO_INSTALLATION };
 
-  return { ok: true, payload, skills, agents };
+  const leftBehind = skillsItsMarketplaceLeavesBehind(roundTrip.config, payload);
+  return { ok: true, payload, skills, agents, leftBehind };
 }
 
 /**
  * The installation this directory has: its own configuration, or the global one it inherits.
  *
- * That is the config every other command reads here, and it carries the entries of BOTH scopes
- * with each entry's own scope on it — which is exactly what the wire keys by. So a payload minted
- * from a project describes the whole of what is installed for it rather than half of it, and the
- * receiver puts each entry back where this one had it.
+ * That is the config every other command reads here, and its skills and sub-agents are those of
+ * BOTH scopes with each entry's own scope on it — which is exactly what the wire keys by. Its
+ * `stack` is not: see {@link withInheritedCuration}, which is what makes a payload minted from a
+ * project describe the whole of what is installed for it rather than half of it.
  *
  * A config file that exists but cannot be loaded is a fault, not an absence, so its own message
- * is reported rather than read as "not installed".
+ * is reported rather than read as "not installed" — HOME's included, because minting without
+ * the rows it holds would mint the thinner configuration this module refuses to.
  */
 async function readInstalledConfig(projectDir: string): Promise<InstalledConfig> {
   try {
     const loaded = await loadProjectConfig(projectDir);
     if (!loaded) return { ok: false, error: ERROR_MESSAGES.NO_INSTALLATION };
-    return { ok: true, config: loaded.config };
+    const inheritedFrom = await readInheritedConfig(loaded);
+    return { ok: true, config: withInheritedCuration(loaded.config, inheritedFrom), inheritedFrom };
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) };
   }
+}
+
+/**
+ * The global configuration a project's own config inherits from — the SAME provider's, since each
+ * provider inherits only within itself. None when the config read is the global one already.
+ */
+async function readInheritedConfig(
+  loaded: LoadedProjectConfig,
+): Promise<ProjectConfig | undefined> {
+  if (isGlobalConfig(loaded)) return undefined;
+
+  const home = await loadProjectConfigFromDir(os.homedir(), loaded.provider);
+  return home?.config;
+}
+
+/** Whether the config read is the global one: at `$HOME`, or in a directory without its own. */
+function isGlobalConfig(loaded: LoadedProjectConfig): boolean {
+  return loaded.configPath === getProjectConfigPath(os.homedir(), loaded.provider);
+}
+
+/**
+ * The project's configuration with the rows of the sub-agents it inherits, read from the file that
+ * compiles them.
+ *
+ * A project's file inlines the global skills and sub-agents but keeps rows for its own sub-agents
+ * only: a global sub-agent is compiled from the global config, so its row is written there alone
+ * (`partitionInlinedConfigEntries` in `@workspace/compile`). Read by itself, the project file hands
+ * every inherited sub-agent to the mapping with no row, and the id it mints installs them bare.
+ *
+ * The global config's row for an inherited sub-agent wins over one the project file holds, which
+ * only a hand edit puts there: the global config is the one that compiles that sub-agent.
+ */
+function withInheritedCuration(
+  config: ProjectConfig,
+  inheritedFrom: ProjectConfig | undefined,
+): ProjectConfig {
+  if (inheritedFrom?.stack === undefined) return config;
+
+  return { ...config, stack: { ...config.stack, ...inheritedRows(config, inheritedFrom.stack) } };
+}
+
+/**
+ * The global config's rows for the sub-agents this project inherits, each narrowed to the skills
+ * it inherits too — read through the scopes the mapping itself reads, so no row taken here can
+ * land on a sub-agent or skill the payload carries at project scope.
+ *
+ * A sub-agent or skill the project masks with a half of its own is the project's here, and the
+ * global row naming it describes an install this project does not use: on the project's own
+ * sub-agent it would hand over another agent's load, and on a project skill it would ask a global
+ * sub-agent for a pair the wire cannot carry, refusing a share that never named it.
+ */
+function inheritedRows(
+  config: ProjectConfig,
+  globalStack: NonNullable<ProjectConfig["stack"]>,
+): NonNullable<ProjectConfig["stack"]> {
+  const agents = inheritedAgents(config.agents);
+  const rows = Object.fromEntries(typedEntries(globalStack).filter(([agent]) => agents.has(agent)));
+  return withoutExcludedAssignments(rows, skillsNotInherited(config.skills));
+}
+
+/** The sub-agents this project takes from the global config: those resting at global scope here. */
+function inheritedAgents(agents: AgentScopeConfig[]): Set<string> {
+  const scopes = activeAgentScopeMap(agents);
+  return new Set(agents.map((agent) => agent.name).filter((name) => scopes.get(name) === "global"));
+}
+
+/**
+ * The skills this project names but does not take from the global config: its own, and the global
+ * installs it masks.
+ */
+function skillsNotInherited(skills: SkillConfig[]): Set<SkillId> {
+  const scopes = activeSkillScopeMap(skills);
+  return new Set(skills.map((skill) => skill.id).filter((id) => scopes.get(id) !== "global"));
 }
 
 /**
@@ -184,9 +282,12 @@ async function judgeSkill(skill: SkillConfig, projectDir: string): Promise<Skill
  * missing what it could not say still mints an id, and that id installs a configuration nobody
  * chose.
  */
-function mapOrRefuse({ config, content }: RoundTrip): MappedPayload {
+function mapOrRefuse(
+  { config, content }: RoundTrip,
+  inheritedFrom: ProjectConfig | undefined,
+): MappedPayload {
   try {
-    return { ok: true, payload: configToSeedPayload(config, content) };
+    return { ok: true, payload: configToSeedPayload(config, content, inheritedFrom) };
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) };
   }

@@ -300,13 +300,17 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
 
   const effectiveDefaultRow = firstFocusableRowIndex(rows, defaultFocusedRow);
 
-  const { focusedRow, focusedCol, moveFocus } = useFocusedListItem(rows.length, getColCount, {
-    wrap: true,
-    ...(onFocusChange !== undefined && { onChange: onFocusChange }),
-    initialRow: effectiveDefaultRow,
-    initialCol: defaultFocusedCol,
-    skipRow,
-  });
+  const { focusedRow, focusedCol, currentFocus, moveFocus } = useFocusedListItem(
+    rows.length,
+    getColCount,
+    {
+      wrap: true,
+      ...(onFocusChange !== undefined && { onChange: onFocusChange }),
+      initialRow: effectiveDefaultRow,
+      initialCol: defaultFocusedCol,
+      skipRow,
+    },
+  );
 
   const {
     setSectionRef,
@@ -329,10 +333,14 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
   useInput(
     useCallback(
       (input: string, key: Key) => {
+        // The focus as it stands now rather than as the last render painted it: a key that
+        // follows a move in the same chunk is handled before that move renders.
+        const focused = currentFocus();
+
         if (input === KEY_SPACE) {
-          const currentRow = rows[focusedRow];
+          const currentRow = rows[focused.row];
           if (!currentRow || isRowInert(currentRow)) return;
-          const currentOption = currentRow.options[focusedCol];
+          const currentOption = currentRow.options[focused.col];
           if (currentOption) {
             onSelect(currentRow.skillId, currentOption.mode);
           }
@@ -344,7 +352,7 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
         // vertical keys drive the viewport directly. Otherwise, overscroll only kicks in
         // once focus sits on the last focusable row (below it are only inert rows).
         const noFocusableRow = lastFocusableRow === -1;
-        const atLastFocusableRow = focusedRow === lastFocusableRow;
+        const atLastFocusableRow = focused.row === lastFocusableRow;
 
         if (key.leftArrow) {
           moveFocus("left");
@@ -370,8 +378,7 @@ export const SourceGrid: React.FC<SourceGridProps> = ({
       },
       [
         rows,
-        focusedRow,
-        focusedCol,
+        currentFocus,
         onSelect,
         moveFocus,
         scrollEnabled,

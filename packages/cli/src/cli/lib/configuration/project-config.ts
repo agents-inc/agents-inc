@@ -11,7 +11,8 @@ import { formatZodErrors } from "../schema-validator";
 import { getProjectConfigPath } from "../installation/install-base-dir";
 import { providerInUse } from "../installation/install-layout";
 import { isHomeDirectory } from "../installation/is-home-directory";
-import { loadConfig } from "./config-loader";
+import type { ScopeKind } from "../installation/source-scopes";
+import { loadConfig, NO_VALID_DEFAULT_EXPORT } from "./config-loader";
 
 export type LoadedProjectConfig = {
   config: ProjectConfig;
@@ -36,14 +37,23 @@ export type LoadedProjectConfig = {
  * surface, never swallow into `null`. Collapsing both into `null` let a broken
  * install pass as absent (e.g. `compile` treating it as config-less and
  * resurrecting every built-in agent).
+ *
+ * It carries whose installation the file is, because a refusal read from a project can be about
+ * either config the project uses, and the way out — `uninstall`, then `init` — is run from the
+ * folder holding the broken one: the home directory for the global config.
  */
 export class ConfigLoadError extends Error {
+  readonly scope: ScopeKind;
+
   constructor(
     readonly configPath: string,
     readonly reason: string,
+    /** The directory whose installation this config is: a project, or the home directory. */
+    readonly scopeRoot: string,
   ) {
     super(`Config at '${configPath}' could not be loaded: ${reason}`);
     this.name = "ConfigLoadError";
+    this.scope = isHomeDirectory(scopeRoot) ? "global" : "project";
   }
 }
 
@@ -62,7 +72,20 @@ export async function loadProjectConfigFromDir(
   projectDir: string,
   provider: Provider,
 ): Promise<LoadedProjectConfig | null> {
-  const configPath = getProjectConfigPath(projectDir, provider);
+  return loadProjectConfigAt(getProjectConfigPath(projectDir, provider), projectDir, provider);
+}
+
+/**
+ * {@link loadProjectConfigFromDir} for a config at a path the caller names rather than the one the
+ * resolver picks — the second of a scope's two source folders, which the resolver never reads.
+ * Same contract: `null` only when the file is absent, {@link ConfigLoadError} when it is there and
+ * cannot be loaded.
+ */
+export async function loadProjectConfigAt(
+  configPath: string,
+  projectDir: string,
+  provider: Provider,
+): Promise<LoadedProjectConfig | null> {
   const scope = isHomeDirectory(projectDir) ? "global" : "project";
   const scopeLabel = scope === "project" ? "Project" : "Global";
 
@@ -79,16 +102,16 @@ export async function loadProjectConfigFromDir(
     // Load raw object and validate with Zod (lenient schema accepts custom values via z.string() casts)
     raw = await loadConfig<ProjectConfig>(configPath);
   } catch (error) {
-    throw new ConfigLoadError(configPath, getErrorMessage(error));
+    throw new ConfigLoadError(configPath, getErrorMessage(error), projectDir);
   }
 
   if (!raw || typeof raw !== "object") {
-    throw new ConfigLoadError(configPath, "the file has no valid default export");
+    throw new ConfigLoadError(configPath, NO_VALID_DEFAULT_EXPORT, projectDir);
   }
 
   const result = projectConfigLoaderSchema.safeParse(raw);
   if (!result.success) {
-    throw new ConfigLoadError(configPath, formatZodErrors(result.error).join("; "));
+    throw new ConfigLoadError(configPath, formatZodErrors(result.error).join("; "), projectDir);
   }
 
   // Normalize the loose stack values (bare strings, objects, arrays) BEFORE claiming

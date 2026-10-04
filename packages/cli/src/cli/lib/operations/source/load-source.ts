@@ -4,6 +4,7 @@ import {
   enableBuffering,
   drainBuffer,
   disableBuffering,
+  warn,
   type StartupMessage,
 } from "../../../utils/logger.js";
 
@@ -60,4 +61,19 @@ export async function loadSource(options: LoadSourceOptions): Promise<LoadedSour
   }
 
   return { sourceResult, startupMessages };
+}
+
+/**
+ * Says what a captured load held back, for a run that mounts no wizard to paint it.
+ *
+ * Capture exists for the wizard alone: its first repaint wipes stderr, so `warn()` is held and
+ * painted as the startup band instead. A `--from` run loads through the same capture and mounts no
+ * wizard, so what was held went nowhere — a skill skipped for a file that will not parse, two
+ * folders claiming one id, a marketplace served from a stale cache. They are said here in the
+ * words `compile` prints them in. Only the warnings: an `info` line is the band's own narration.
+ */
+export function sayCapturedWarnings(messages: readonly StartupMessage[]): void {
+  for (const { level, text } of messages) {
+    if (level === "warn") warn(text);
+  }
 }

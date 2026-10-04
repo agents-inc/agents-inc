@@ -68,6 +68,12 @@ export type WizardResultV2 = {
    * removal and say why it happened — a removal the user never asked for must never be silent.
    */
   unresolvableSkillIds: SkillId[];
+  /**
+   * The `[P][G]` pairs `s` folded into the global install, which the selection key's collapse
+   * into the same config entry does not. Absent from a producer with no keys to press: a shared
+   * configuration folds nothing.
+   */
+  foldedSkillIds?: SkillId[];
   cancelled: boolean;
   validation: SelectionValidation;
 };
@@ -212,6 +218,7 @@ export const Wizard: React.FC<WizardProps> = ({
       domainSelections: store.domainSelections,
       selectedDomains: store.selectedDomains,
       unresolvableSkillIds: store.unresolvableSkillIds,
+      foldedSkillIds: store.foldedSkillIds,
       cancelled: false,
       validation,
     };

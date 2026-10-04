@@ -458,10 +458,18 @@ const CODEX_PROJECT_SKILLS_PATH = ".agents/skills";
 const CODEX_CONFIG_FILE = "config.toml";
 
 /**
- * Claude Code's own state file in the user's home: per-project records, the trust dialog's answer
- * among them. Only ever READ by this CLI.
+ * Claude Code's own state file — per-project records, the trust dialog's answer among them — in
+ * the directory {@link claudeStateRoot} names. Only ever READ by this CLI.
  */
 const CLAUDE_STATE_FILE = ".claude.json";
+
+/**
+ * The environment variable that moves Claude Code's state file out of the home directory.
+ *
+ * Exported for `e2e-runner-environment.test.ts`, which resolves the variable a bracket read names
+ * by IMPORTING the constant — {@link CODEX_HOME_VAR}'s reason, one host over.
+ */
+export const CLAUDE_CONFIG_DIR_VAR = "CLAUDE_CONFIG_DIR";
 
 /**
  * The file the claude CLI records every plugin install in, inside a plugins directory.
@@ -655,14 +663,29 @@ export function codexGlobalConfigFile(): string {
 }
 
 /**
- * `~/.claude.json`, where Claude Code records whether each project's trust dialog was accepted —
+ * `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json` while that variable names a directory,
+ * where Claude Code records whether each project's trust dialog was accepted —
  * `projects[<path>].hasTrustDialogAccepted`. Read from the shipped binary 2.1.259, 2026-09-03: a
  * PROJECT sub-agent's frontmatter hooks are dropped until that is `true`, so the completion gate
  * compiled into `<project>/.claude/agents/` does nothing in an untrusted folder. The CLI reads it
  * to say so, and never writes it (owner, 2026-09-26: tell the user).
  */
 export function claudeStateFile(): string {
-  return path.join(os.homedir(), CLAUDE_STATE_FILE);
+  return path.join(claudeStateRoot(), CLAUDE_STATE_FILE);
+}
+
+/**
+ * The directory Claude Code keeps its state file in: `$CLAUDE_CONFIG_DIR` where it names one, the
+ * home directory otherwise. Watched with Claude Code 2.1.288 under a scratch HOME on 2026-10-03:
+ * set, the file is `$CLAUDE_CONFIG_DIR/.claude.json` — even where the variable names `~/.claude`,
+ * the tree HOME already implies — and unset or empty, it is `~/.claude.json`.
+ *
+ * Read at call time and with an empty value read as no answer, for {@link codexUserRoot}'s reasons.
+ */
+function claudeStateRoot(): string {
+  const relocated = process.env[CLAUDE_CONFIG_DIR_VAR];
+  if (relocated === undefined || relocated === "") return os.homedir();
+  return relocated;
 }
 
 /** Where this host keeps the configuration and state of one scope's installation. */

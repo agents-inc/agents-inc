@@ -5,14 +5,17 @@ import {
   EDITOR_URL,
   LOCAL_SKILLS_PATH,
   MARKETPLACE_JSON,
+  PLUGIN_MANIFEST_DIR,
   STANDARD_FILES,
   editorConfigUrl,
   type Provider,
 } from "../consts.js";
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
 import type { ScopeKind } from "../lib/installation/source-scopes.js";
+import type { ConfigLoadError } from "../lib/configuration/project-config.js";
 import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
-import type { AgentName, SkillId } from "../types/index.js";
+import { plural } from "./string.js";
+import type { AgentName, Category, SkillId } from "../types/index.js";
 
 export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: "Unknown error occurred",
@@ -150,7 +153,7 @@ export function notInstalledHere(brandingName: string): string {
 
 /** Closing line of a plugin install, printed wherever one runs. */
 export function pluginsInstalled(count: number): string {
-  return `Installed ${count} skill plugins`;
+  return `Installed ${plural(count, "skill plugin")}`;
 }
 
 /**
@@ -174,11 +177,12 @@ export function localSkillsCopied(count: number): string {
  * reported intent rather than outcome. `rewritten` is agents whose file this pass
  * wrote; `unchanged` is agents it found already correct and left alone.
  *
- * `subject` is the noun each caller counts in, because `compile` reports per
- * scope pass ("global agents") and `edit` reports the whole run's ("agents").
+ * `subject` is the noun each caller counts in, given in the singular and pluralised against
+ * `rewritten`, because `compile` reports per scope pass ("global agent") and `edit` reports the
+ * whole run's ("agent").
  */
 export function recompileSummary(rewritten: number, unchanged: number, subject: string): string {
-  return `${rewritten} ${subject} rewritten, ${unchanged} unchanged`;
+  return `${plural(rewritten, subject)} rewritten, ${unchanged} unchanged`;
 }
 
 /**
@@ -186,8 +190,7 @@ export function recompileSummary(rewritten: number, unchanged: number, subject: 
  *
  * Read off the pass's `failed` roster rather than off the prose it also returns: that roster is
  * the structured answer to "which ones did not land", while `warnings` carries entries that are
- * not failures at all — a scope with nothing to compile contributes one on every project-context
- * run, and a summary built from the prose would file that as work owed.
+ * not failures at all, and a summary built from the prose would file those as work owed.
  */
 export function agentsNotCompiled(agentNames: readonly AgentName[]): string {
   return `${agentNames.length} sub-agent(s) did not compile: ${agentNames.join(", ")}`;
@@ -256,7 +259,7 @@ export function propagatedRecompileSummary(
   failed: number,
 ): string {
   const failureSuffix = failed > 0 ? ` (${failed} failed)` : "";
-  return `Recompiled agents in ${rewritten} registered projects, ${unchanged} unchanged${failureSuffix}`;
+  return `Recompiled agents in ${plural(rewritten, "registered project")}, ${unchanged} unchanged${failureSuffix}`;
 }
 
 /**
@@ -291,13 +294,16 @@ export function scopeBlockedStackAssignment(agentNames: AgentName[], skillId: Sk
  * stack change.
  */
 export function globalScopedAgentsHint(count: number): string {
-  const subject = count === 1 ? "agent is" : "agents are";
-  return `${count} ${subject} global-scoped — run '${CLI_INVOKE_COMMAND} compile' from your home directory, or edit from this project, to recompile them.`;
+  const [subject, object] = count === 1 ? ["agent is", "it"] : ["agents are", "them"];
+  return `${count} ${subject} global-scoped — run '${CLI_INVOKE_COMMAND} compile' from your home directory, or edit from this project, to recompile ${object}.`;
 }
 
-/** Summary printed after `update` refreshed every marketplace its config named. */
+/**
+ * Summary printed after `update` refreshed every marketplace its config named. A marketplace
+ * refresh re-reads the listing and installs nothing, so the installed plugins keep their versions.
+ */
 export function marketplacesRefreshed(count: number): string {
-  return `Update complete! ${count} ${count === 1 ? "marketplace" : "marketplaces"} refreshed.`;
+  return `Refreshed ${plural(count, "marketplace listing")}. Installed plugins were not changed.`;
 }
 
 /** Warning printed for one marketplace the Claude CLI could not refresh. */
@@ -382,6 +388,38 @@ export function marketplaceNameNotPublishable(name: string, packageJsonPath: str
   ].join("\n\n");
 }
 
+/** A marketplace's manifest as its author has to type the path. */
+const MARKETPLACE_MANIFEST = `${PLUGIN_MANIFEST_DIR}/${MARKETPLACE_JSON}`;
+
+/**
+ * The rule and its remedy, shared by both refusals below: the two builds that write the manifest,
+ * in the order an author runs them — `build plugins` writes the bundles `build marketplace` lists.
+ */
+const MARKETPLACE_MANIFEST_REQUIRED = [
+  `Every marketplace other than the default one must publish a valid ${MARKETPLACE_MANIFEST}.`,
+  `Run '${CLI_INVOKE_COMMAND} build plugins' and then '${CLI_INVOKE_COMMAND} build marketplace' in that marketplace's repository, which write it.`,
+].join(" ");
+
+/** The refusal of a marketplace other than the default one that publishes no manifest at all. */
+export function marketplaceManifestMissing(source: string): string {
+  return [
+    `'${source}' has no ${MARKETPLACE_MANIFEST}, so it is not a marketplace yet.`,
+    MARKETPLACE_MANIFEST_REQUIRED,
+  ].join("\n\n");
+}
+
+/**
+ * The refusal of a marketplace other than the default one whose manifest is there and cannot be
+ * read — it does not parse, or the schema refuses it. `reason` is the reader's own, so a schema
+ * refusal names the field the author has to fix as well as the builds that rewrite the file.
+ */
+export function marketplaceManifestUnreadable(source: string, reason: string): string {
+  return [
+    `'${source}' has a ${MARKETPLACE_MANIFEST} this CLI cannot read:\n${reason}`,
+    MARKETPLACE_MANIFEST_REQUIRED,
+  ].join("\n\n");
+}
+
 /**
  * Warning printed when a compile pass finished but the scope's config-types.ts
  * could not be regenerated (e.g. the skills source was unreachable). The compiled
@@ -400,11 +438,31 @@ export function registeredProjectsUpdated(count: number): string {
 }
 
 /**
- * Warning printed when a global uninstall could not update one registered
- * project (missing directory or unreadable config). The uninstall continues.
+ * Warning printed when a global uninstall could not prune one registered project whose config is
+ * still there — unreadable, or its rewrite failed. The uninstall continues.
  */
 export function registeredProjectUpdateSkipped(projectPath: string): string {
   return `Could not update registered project at ${projectPath} — its config may still reference the uninstalled global content`;
+}
+
+/** Warning printed when a global change could not reach a registered project whose config.ts cannot be loaded. */
+export function registeredProjectConfigUnreadable(projectPath: string): string {
+  return `Skipped ${projectPath}: its config.ts can't be read.`;
+}
+
+/** Warning printed when a global change found nothing installed at a registered project's path. */
+export function registeredProjectGone(projectPath: string): string {
+  return `Skipped ${projectPath}: nothing is installed there any more.`;
+}
+
+/** Warning printed when a global change left a registered project on the other provider alone. */
+export function registeredProjectOnAnotherProvider(projectPath: string): string {
+  return `Skipped ${projectPath}: it is another provider's installation.`;
+}
+
+/** Warning printed when a global compile's rewrite of a registered project failed. */
+export function registeredProjectUpdateFailed(projectPath: string): string {
+  return `Skipped ${projectPath}: updating it failed.`;
 }
 
 /**
@@ -447,7 +505,7 @@ const METADATA_UNUSABLE_WAY_OUT = `Fix the file, or delete the skill directory �
 /**
  * Refusal printed when `compile` meets an installed skill whose metadata.yaml exists but
  * describes no skill — either nothing can be parsed out of it, or it parses without the
- * fields a skill is described by. It is the sibling of {@link configUnreadableError} one
+ * fields a skill is described by. It is the sibling of {@link installationConfigsUnreadable} one
  * layer down: the file is there, and nothing can be made of it.
  *
  * Compile refuses rather than skips because a skipped skill is invisible. The same file is
@@ -484,10 +542,15 @@ export function savedSkillMetadataUnusableError(entries: UnusableSkillMetadata[]
 }
 
 /**
- * `init --from` is greenfield-only. A shared configuration is installed whole — its own
- * `assignments` map REPLACES the ownership-derived stack rather than merging with it — so there is
- * no coherent answer to what it should do when it meets a setup that is already there. Both
- * refusals below name `uninstall`, because that is the whole of the way through.
+ * `init --from` installs into a clean directory. A shared configuration is installed whole — its
+ * own `assignments` map REPLACES the ownership-derived stack rather than merging with it — so there
+ * is no coherent answer to what it should do when it meets a setup that is already there. The
+ * refusal below names `edit --from`, which applies the id to that setup, and `uninstall`, which
+ * clears the way for this one.
+ *
+ * A global installation above the directory is not such a setup. It is not this directory's, so
+ * the run adds to it what it lacks and leaves the rest as installed — see
+ * {@link keptAsInstalledGlobally}.
  */
 const SHARED_CONFIG_GREENFIELD_HINT =
   "installing a shared configuration is a fresh setup, not a merge";
@@ -507,18 +570,49 @@ export function sharedConfigDestinations(id: string): string[] {
   ];
 }
 
-/** Refusal printed when the directory `init --from` was run in is already installed. */
-export function sharedConfigExistingInstall(configPath: string): string {
-  return `An installation already exists at ${configPath}. Run '${CLI_INVOKE_COMMAND} uninstall' first — ${SHARED_CONFIG_GREENFIELD_HINT}.`;
+/**
+ * What `init --ui` and `edit --ui --from` print under the link: the command that applies an id
+ * HERE. `init --from` installs into a directory holding no installation of its own and refuses one
+ * that does, where `edit --from` is what applies an id — so the line follows the directory, never
+ * the command that opened the link. With no id yet (a bare `init --ui`), it names the command for
+ * the id the editor will give.
+ */
+export function applySharedConfigHere(id: string | undefined, installedHere: boolean): string {
+  const command = `${CLI_INVOKE_COMMAND} ${installedHere ? "edit" : "init"} --from`;
+  const verb = installedHere ? "apply" : "install";
+  return id === undefined
+    ? `Then ${verb} what it gives you with '${command} <id>'.`
+    : `To ${verb} it here instead, run '${command} ${id}'.`;
 }
 
 /**
- * Refusal printed when this project is clean but the payload writes into the user's own
- * ~/.claude, which is already installed. Only a payload carrying global-scoped entries can reach
- * that far, so a project-only configuration is never refused for it.
+ * `share`'s refusal while anything it would send is an ejected (Local) copy, an editor-added skill
+ * included. A share carries plugins only; `edit --ui` still opens the same installation.
  */
-export function sharedConfigGlobalInstall(configPath: string): string {
-  return `This configuration installs global-scoped content, and a global installation already exists at ${configPath}. Run '${CLI_INVOKE_COMMAND} uninstall' from your home directory first — ${SHARED_CONFIG_GREENFIELD_HINT}.`;
+export function shareRefusesEjectedSkills(skillIds: readonly string[]): string {
+  return [
+    "This installation holds ejected skills, and ejected skills cannot be shared:",
+    ...skillIds.map((id) => `  ${id}`),
+    "Only plugins can be shared.",
+  ].join("\n");
+}
+
+/** What `share` says after the id when the marketplace it names is a folder on this machine. */
+export function sharedIdNamesAFolder(folder: string): string {
+  return `This id names the marketplace folder ${folder}, so it installs only where that folder exists.`;
+}
+
+/**
+ * What `share` says after the id when what it sent comes from more than one marketplace. A payload
+ * names one, so the others' skills are skipped wherever the id is installed.
+ */
+export function sharedSkillsLeftBehind(skillIds: readonly string[]): string {
+  return `A shared id names one marketplace, and these skill(s) come from another, so they will not install elsewhere: ${skillIds.join(", ")}`;
+}
+
+/** Refusal printed when the directory `init --from <id>` was run in is already installed. */
+export function sharedConfigExistingInstall(configPath: string, id: string): string {
+  return `An installation already exists at ${configPath}. Run '${CLI_INVOKE_COMMAND} uninstall' first — ${SHARED_CONFIG_GREENFIELD_HINT}. ${applySharedConfigHere(id, true)}`;
 }
 
 /**
@@ -579,26 +673,27 @@ export function carriedSkillsWritten(skillIds: readonly string[]): string {
 /**
  * The fixed text of `edit --from`'s removal plan.
  *
- * Applying a shared configuration makes this project MATCH it, so a skill the previous
- * configuration installed and this payload omits is removed. That is the whole reason the
- * command is interactive, and the reason the heading names removal rather than the apply:
- * additions and re-tunings need no permission, and the change summary prints them afterwards.
+ * Applying a shared configuration makes the installation this run edits MATCH it, so a skill the
+ * previous configuration installed and this payload omits is removed. That is the whole reason the
+ * command is interactive, and the reason the heading names removal rather than the apply. What the
+ * apply adds or changes is listed above it, in {@link SHARED_CONFIG_ARRIVALS}' two lists.
  */
 export const SHARED_CONFIG_APPLY = {
   PREVIEW_HEADING: "Applying this configuration will remove:",
   SKILLS_HEADING: "Skills:",
   AGENTS_HEADING: "Sub-agents:",
-  /**
-   * The two headings a PROJECT run prints instead, for entries that live at global scope. They
-   * exist only there: at the home directory every entry is global, so a heading saying so would
-   * label the whole list with the one fact the location already states.
-   */
-  GLOBAL_SKILLS_HEADING: "Skills installed globally:",
-  GLOBAL_AGENTS_HEADING: "Sub-agents installed globally:",
   /** Printed in place of the sections when the payload takes nothing away. */
   NOTHING_REMOVED: "Nothing is removed — this configuration only adds and re-tunes.",
   CONFIRM: "Apply this configuration?",
 } as const;
+
+/**
+ * A removal-plan line for the project's half of a `[P][G]` pair the configuration leaves out. Only
+ * this project's copy goes: the global install keeps its own, which the project then reads.
+ */
+export function projectCopyRemoved(subject: string): string {
+  return `${subject}: this project's copy is removed; the global one takes over`;
+}
 
 /**
  * Refusal printed when `edit --from` has no terminal to confirm its removals at.
@@ -616,38 +711,111 @@ export function sharedConfigNeedsTerminal(id: string): string {
 }
 
 /**
- * The removal plan's statement of CONSEQUENCE for entries a project run removes at global scope.
- *
- * A global install is one installation every registered project reads, so removing one from
- * inside a project changes projects the person confirming is not looking at and did not choose
- * to be looking at. Nothing is refused over that — the ruling is that they may do it — but a yes
- * given without it is a yes to a change nobody described, so the reach is counted AND named:
- * "2 other projects" cannot be weighed against anything, and a path can.
- *
- * Printed only from a PROJECT. Inside the global installation the location IS the scope and the
- * person chose it, so the ordinary apply confirm is the whole of the gate there — see
- * `edit`'s two plan branches.
+ * Refusal printed when `edit --from` is run where nothing is installed, terminal or not: there is
+ * no installation for the configuration to be applied to. It names `init --from` with the id
+ * rather than bare `init`, because the configuration is already in hand and that is the command
+ * that installs it here.
  */
-export function globallyInstalledRemoved(otherProjects: readonly string[]): string {
+export function nothingInstalledToApplyTo(id: string): string {
+  return `No installation found. Run '${CLI_INVOKE_COMMAND} init --from ${id}' to install configuration '${id}' here.`;
+}
+
+/** The run each wizard-opening command can be swapped for where there is no terminal. */
+const RUNS_WITHOUT_A_TERMINAL = {
+  init: `'${CLI_INVOKE_COMMAND} init --from <id>' installs a configuration built in the editor without one`,
+  edit: `'${CLI_INVOKE_COMMAND} edit --ui' opens this installation in the editor without one`,
+} as const;
+
+/**
+ * Refusal printed when `init` or `edit` would open the wizard where there is no terminal to open
+ * it in — a CI job, a script, a pipe.
+ *
+ * Mounting it anyway died on Ink's raw-mode error over a React stack trace. A command that cannot
+ * run without a terminal "should break because it's not a valid command" (owner ruling
+ * 2026-10-02), so it breaks on purpose and in words, worded after {@link sharedConfigNeedsTerminal}
+ * because it is the same refusal one command over.
+ */
+export function wizardNeedsTerminal(command: keyof typeof RUNS_WITHOUT_A_TERMINAL): string {
   return [
-    "These are installed globally, and a global install is shared by every project on this machine.",
-    ...globalRemovalReach(otherProjects),
-    `To keep them, answer no and re-share the configuration with them included.`,
+    `'${CLI_INVOKE_COMMAND} ${command}' opens a wizard, and there is no terminal here to open it in.`,
+    `Run it from a terminal — ${RUNS_WITHOUT_A_TERMINAL[command]}.`,
   ].join("\n");
 }
 
-/** Who else the removal above lands on: every registered project but the one being edited. */
-function globalRemovalReach(otherProjects: readonly string[]): string[] {
-  if (otherProjects.length === 0) {
-    return [
-      "No other project is registered here, so nothing else changes today — a project set up later inherits whatever the global install holds then.",
-    ];
-  }
-
+/**
+ * Refusal printed when `uninstall` has no terminal to confirm its removals at. A confirm nobody
+ * can answer must never become a yes, so `--yes` — the person saying it in advance — is named.
+ */
+export function uninstallNeedsTerminal(): string {
   return [
-    `Also affects ${otherProjects.length} other registered project(s):`,
-    ...otherProjects.map((projectDir) => `  ${projectDir}`),
-  ];
+    "Uninstalling removes files, so it has to be confirmed — and there is no terminal here to confirm it at.",
+    `Run '${CLI_INVOKE_COMMAND} uninstall' from a terminal, or '${CLI_INVOKE_COMMAND} uninstall --yes' to remove it without being asked.`,
+  ].join("\n");
+}
+
+/**
+ * Refusal printed for `init --ui --marketplace`. The editor's address carries a configuration id
+ * and nothing else, so a marketplace named here would be dropped on the way — and a flag silently
+ * dropped reads as honoured. The one command it names is the same run without the flag, because
+ * that runs in every folder: `init --marketplace` refuses in one whose installation came from
+ * another marketplace.
+ */
+export function editorLoadsItsOwnMarketplace(named: string): string {
+  return `--marketplace '${named}' cannot be handed to the editor: the editor loads marketplaces itself. Run '${CLI_INVOKE_COMMAND} init --ui' and load it there.`;
+}
+
+/**
+ * Refusal printed when `init --marketplace` names a marketplace other than the one this folder's
+ * own installation was made from. An installation's marketplace is chosen once, when it is made,
+ * and every command after `init` reads the one it stored.
+ */
+export function marketplaceFixedAtInstall(stored: string, named: string): string {
+  return `This folder's installation was made from the marketplace '${stored}', and an installation's marketplace is chosen once, when it is made — so --marketplace '${named}' was not used. Run '${CLI_INVOKE_COMMAND} init' without it to open this installation, or '${CLI_INVOKE_COMMAND} uninstall' first to set this folder up from another.`;
+}
+
+/**
+ * The two lists every `--from` install prints before it writes anything — what goes into this
+ * project and what into the global install — and the question `init --from` asks under them at a
+ * terminal.
+ *
+ * Half a shared configuration may land in the global install, which every project on the machine
+ * reads, so what lands where is said before anything does. `init --from` prints the lists with no
+ * terminal too, where it carries on without asking; `edit --from` prints them above the confirm it
+ * already asks, listing only what it adds or changes. At the home directory the run IS the global
+ * install, so only the second list can have anything in it.
+ *
+ * In a project, `init --from` lists a third thing under those two: the global skills it skips
+ * because the global install above the project already holds them, each left as installed.
+ */
+export const SHARED_CONFIG_ARRIVALS = {
+  PROJECT_HEADING: "Into this project:",
+  GLOBAL_HEADING: "Into the global install:",
+  SKIPPED_HEADING: "Skipped, already in the global install:",
+  INSTALL_CONFIRM: "Install this configuration?",
+} as const;
+
+/**
+ * The statement for global entries a project run leaves exactly as the global install holds them,
+ * though the configuration states them otherwise.
+ *
+ * From a project, `--from` only ADDS to the global install: it is one installation every project on
+ * the machine reads, and a run started in one of them is not a decision about the rest. So a global
+ * skill or sub-agent the configuration installs differently, loads differently or tunes
+ * differently stays as installed — and is named here, because a difference nobody is told about is
+ * a configuration that silently did not arrive. So is a global skill or sub-agent `edit --from`
+ * keeps though the configuration leaves it out, and a carried skill whose global copy reads
+ * otherwise than the configuration's.
+ */
+export function keptAsInstalledGlobally(
+  skillIds: readonly SkillId[],
+  agentNames: readonly AgentName[],
+): string {
+  return [
+    "Kept as installed in the global install — this configuration states them differently or leaves them out, and a project run only adds to the global install:",
+    ...skillIds.map((id) => `  skill ${id}`),
+    ...agentNames.map((name) => `  sub-agent ${name}`),
+    `Change them with '${CLI_INVOKE_COMMAND} edit' from your home directory.`,
+  ].join("\n");
 }
 
 /**
@@ -689,27 +857,88 @@ export function unplaceableKept(skillIds: readonly SkillId[]): string {
 }
 
 /**
- * Refusal printed when a command that must read an existing configuration meets one it
- * cannot load. There are no versioned migrations, so an unreadable configuration is
- * recreated rather than repaired — and `uninstall` deliberately keeps working on one, which
- * is what makes the first instruction a real way out rather than a suggestion to delete
- * directories by hand. The editor is the other: it builds a configuration the CLI installs
- * by id.
+ * A kept skill's row in a category that holds one skill, which the configuration's own skill
+ * takes: the skill stays installed, and that sub-agent no longer loads it there.
+ */
+export function keptUnassigned(skillId: SkillId, agentName: AgentName, category: Category): string {
+  return `${skillId}: kept, no longer assigned to ${agentName}'s ${category}`;
+}
+
+/**
+ * What every refusal over an unreadable config offers besides recreating it: the editor builds a
+ * configuration the CLI installs by id, and `doctor` reports the same files as its own findings.
  *
- * `configLoadFailure` is a `ConfigLoadError` message, so the offending file and the reason
- * are already in it and are not restated here.
+ * `doctor` could not be named until it did — it used to call a config that exists but cannot be
+ * read `.claude-src/config.ts not found` and send the reader to `init`, contradicting both lines.
+ */
+function otherWaysPastUnreadableConfigs(count: number): string[] {
+  return [
+    `Or build one at ${EDITOR_URL} and install it with '${CLI_INVOKE_COMMAND} init --from <id>'.`,
+    `'${CLI_INVOKE_COMMAND} doctor' reports the same ${count === 1 ? "file" : "files"}, alongside whatever else is wrong here.`,
+  ];
+}
+
+/** One config that could not be loaded, as the refusal names it. */
+type UnreadableConfig = Pick<ConfigLoadError, "configPath" | "reason" | "scope" | "scopeRoot">;
+
+/**
+ * Refusal printed when a command that must read an installation's configuration meets configs it
+ * cannot load. There are no versioned migrations, so an unreadable configuration is recreated
+ * rather than repaired — and `uninstall` deliberately keeps working on one, which is what makes
+ * the first instruction a real way out rather than a suggestion to delete directories by hand.
  *
- * `doctor` is named last and deliberately: it reports this same file as its own finding, with the
- * same way out. It could not be named until it did — it used to call a config that exists but
- * cannot be read `.claude-src/config.ts not found` and send the reader to `init`, contradicting
- * every line below.
+ * It says WHOSE config each is and where its way out is taken from. A project reads two configs,
+ * its own and the global one it inherits, so a refusal printed in a project can be about either
+ * or both — and one naming no folder sent a user with a healthy project config and a broken global
+ * one to uninstall the project, deleting the one config that was fine. Naming only the first of
+ * two broken ones sends them round twice.
+ */
+export function installationConfigsUnreadable(failures: readonly UnreadableConfig[]): string {
+  return [
+    ...failures.flatMap(whoseConfigAndItsWayOut),
+    ...otherWaysPastUnreadableConfigs(failures.length),
+  ].join("\n");
+}
+
+/** One unreadable config: whose it is, why, and the folder its way out is run from. */
+function whoseConfigAndItsWayOut(failure: UnreadableConfig): string[] {
+  return [
+    `${scopeLabel(failure.scope)}'s config at '${failure.configPath}' could not be loaded: ${failure.reason}`,
+    `There is no automatic repair for this — recreate the configuration by running ${recreateConfigFrom(failure.scopeRoot)}.`,
+  ];
+}
+
+/**
+ * `uninstall`'s warning over a config it cannot read, which it goes past rather than stops on: the
+ * plugins and compiled agents the config lists can no longer be identified. It names whose config
+ * it read — at the home directory that is the global installation's, never a project's.
+ */
+export function uninstallConfigUnreadable(
+  failure: Pick<ConfigLoadError, "scope" | "message">,
+): string {
+  return `Could not read the ${failure.scope} config — plugins and compiled agents it lists may be left behind: ${failure.message}`;
+}
+
+/**
+ * The way out of a config nobody can read, run from the folder that holds it: the project, or the
+ * home directory for the global config. Shared with `doctor`'s tip, so the report and the refusal
+ * send a user to the same place.
+ */
+export function recreateConfigFrom(scopeRoot: string): string {
+  return `'${CLI_INVOKE_COMMAND} uninstall', which still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init', from '${scopeRoot}'`;
+}
+
+/**
+ * The same refusal for a config file that belongs to no installation — a marketplace repository's
+ * own `config.ts`, which `loadSourceRepoConfig` reads — so there is no scope to name and no folder
+ * to send anyone to. `configLoadFailure` is the loader's own message, which already names the file
+ * and the reason.
  */
 export function configUnreadableError(configLoadFailure: string): string {
   return [
     configLoadFailure,
     `There is no automatic repair for this — recreate the configuration: '${CLI_INVOKE_COMMAND} uninstall' still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init'.`,
-    `Or build one at ${EDITOR_URL} and install it with '${CLI_INVOKE_COMMAND} init --from <id>'.`,
-    `'${CLI_INVOKE_COMMAND} doctor' reports the same file, alongside whatever else is wrong here.`,
+    ...otherWaysPastUnreadableConfigs(1),
   ].join("\n");
 }
 

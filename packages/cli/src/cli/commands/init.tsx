@@ -11,14 +11,17 @@ import { useTerminalDimensions } from "../components/hooks/use-terminal-dimensio
 import { type SourceLoadResult } from "../lib/loading/index.js";
 import {
   loadSource,
+  sayCapturedWarnings,
   loadAgentDefs,
   copyLocalSkills,
   writeProjectConfig,
   compileAgentsAllScopes,
+  compileProjectScope,
   type CompilationResult,
   type SkillCopyResult,
   discoverInstalledSkills,
 } from "../lib/operations/index.js";
+import { movedGlobalAgentInputs, type GateReport } from "../lib/config-gate/index.js";
 import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
 import {
   registerExternalSkills,
@@ -26,15 +29,22 @@ import {
   type ExternalSkillInstall,
 } from "../lib/seed/external-skills.js";
 import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
+import {
+  holdInstalledGlobal,
+  installPlanLines,
+  notInstalledGlobally,
+  readInstalledGlobal,
+  type HeldGlobal,
+} from "../lib/seed/seed-apply.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
-import { resolveBranding } from "../lib/configuration/config.js";
+import { isSameMarketplace, resolveBranding, resolveSource } from "../lib/configuration/config.js";
 import {
   type InstallMode,
   detectInstallation,
-  detectGlobalInstallation,
   detectProjectInstallation,
   deriveInstallMode,
+  holdsItsOwnInstallation,
   installBaseDir,
   resolveInstallPaths,
   buildAgentScopeMap,
@@ -43,13 +53,11 @@ import {
   INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
 import { hostAt } from "../lib/hosts/host-for.js";
-import { refuseUnofferedPlacements } from "../lib/hosts/offered-placements.js";
 import {
   agentCodec,
   chooseProviderForThisRun,
   providerInUse,
   relativeConfigPath,
-  skillsPathPrefix,
 } from "../lib/installation/install-layout.js";
 import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import {
@@ -64,29 +72,37 @@ import {
   DEFAULT_BRANDING,
   EDITOR_URL,
   EDIT_PROJECT_SETUP_FLAG,
+  EDIT_PROJECT_SETUP_MARKETPLACE_FLAG,
   EJECT_SOURCE,
   editorConfigUrl,
 } from "../consts.js";
 import { clearTerminalScreen } from "../utils/terminal.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
-import { promptValue } from "../components/common/prompt-confirm.js";
+import { promptConfirm, promptValue } from "../components/common/prompt-confirm.js";
+import { Confirm } from "../components/common/confirm.js";
 import { awaitUnderSpinner } from "../components/common/spinner.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { openUrl } from "../utils/open-url.js";
-import type { AgentName, MergedSkillsMatrix, SkillScope } from "../types/index.js";
+import { plural } from "../utils/string.js";
+import type { AgentName, MergedSkillsMatrix, SkillId, SkillScope } from "../types/index.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
   INCOMPLETE_WORK_RECOVERY,
+  SHARED_CONFIG_ARRIVALS,
   STATUS_MESSAGES,
   agentsNotCompiled,
+  applySharedConfigHere,
   carriedSkillsWritten,
+  editorLoadsItsOwnMarketplace,
   globalScopedAgentsHint,
   initSucceeded,
+  keptAsInstalledGlobally,
+  marketplaceFixedAtInstall,
   sharedConfigExistingInstall,
-  sharedConfigGlobalInstall,
   skippedUnknownAgents,
   skippedUnknownSkills,
+  wizardNeedsTerminal,
 } from "../utils/messages.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
@@ -185,13 +201,23 @@ export function formatDashboardText(data: DashboardData): string {
 }
 
 /**
- * Shows the project dashboard and returns the selected command (or null if cancelled).
+ * What {@link showDashboard} answers when Ctrl+C ended it: a cancellation, as Ctrl+C is at every
+ * other prompt — where Escape, which answers null, only steps back out of the dashboard.
+ */
+const DASHBOARD_INTERRUPTED = "interrupted";
+
+/** How the dashboard was left: a command chosen, Escape (null), or Ctrl+C. */
+type DashboardAnswer = DashboardCommand | typeof DASHBOARD_INTERRUPTED | null;
+
+/**
+ * Shows the project dashboard and returns the selected command, null when it was left with Escape,
+ * or {@link DASHBOARD_INTERRUPTED} when Ctrl+C ended it.
  * In non-interactive environments (no TTY), prints the summary text and returns null.
  */
 export async function showDashboard(
   projectDir: string,
   log?: (message: string) => void,
-): Promise<DashboardCommand | null> {
+): Promise<DashboardAnswer> {
   const data = await getDashboardData(projectDir);
 
   // Non-interactive: print text summary and exit (CI, piped, tests)
@@ -203,7 +229,7 @@ export async function showDashboard(
 
   // First-wins resolution via promptValue; clearOnResolve repaints a clean
   // terminal before unmount (dashboard occupies the full height).
-  const selectedCommand = await promptValue<DashboardCommand | null>(
+  const selectedCommand = await promptValue<DashboardAnswer>(
     (resolve) => (
       <Dashboard
         data={data}
@@ -211,7 +237,7 @@ export async function showDashboard(
         onCancel={() => resolve(null)}
       />
     ),
-    { onExit: null, clearOnResolve: true },
+    { onExit: DASHBOARD_INTERRUPTED, clearOnResolve: true },
   );
 
   clearTerminalScreen();
@@ -231,32 +257,59 @@ export async function showDashboard(
  */
 export type DashboardOrigin = "init" | "standalone";
 
-/** The extra argv a dashboard selection needs to carry its origin into the command. */
-function dashboardCommandArgv(command: DashboardCommand, origin: DashboardOrigin): string[] {
+/**
+ * The extra argv a dashboard selection needs to carry its origin into the command — and, for an
+ * `init` that named a marketplace, the marketplace the project setup reads its catalogue from.
+ */
+function dashboardCommandArgv(
+  command: DashboardCommand,
+  origin: DashboardOrigin,
+  setupMarketplace: string | undefined,
+): string[] {
   if (command !== "edit" || origin !== "init") return [];
-  return [`--${EDIT_PROJECT_SETUP_FLAG}`];
+  const marketplaceArgv =
+    setupMarketplace === undefined
+      ? []
+      : [`--${EDIT_PROJECT_SETUP_MARKETPLACE_FLAG}`, setupMarketplace];
+  return [`--${EDIT_PROJECT_SETUP_FLAG}`, ...marketplaceArgv];
 }
 
 /**
+ * What a run offered the dashboard came to: no installation to show it for, shown and left or
+ * acted on, or cancelled with Ctrl+C — which the caller ends the run on as cancelled.
+ */
+export type DashboardFlow = "not-installed" | "shown" | "cancelled";
+
+/**
  * Shared dashboard entry: when the project is already initialized, shows the
- * dashboard and runs the chosen command. Returns true when the project was
- * initialized (dashboard shown), false otherwise. Never exits the process —
- * callers decide (the init hook exits SUCCESS at its own call site).
+ * dashboard and runs the chosen command. Never exits the process — callers decide
+ * from the {@link DashboardFlow} it answers (the init hook exits SUCCESS at its own
+ * call site for a dashboard shown).
+ *
+ * `setupMarketplace` is what `init --marketplace` named. A project with no installation of its own
+ * is shown the global installation's dashboard, and its Edit sets the project up — from the named
+ * marketplace, as a bare `init` in an empty folder would, rather than from the one the global
+ * installation stored.
  */
 export async function runDashboardFlow(
   projectDir: string,
   config: Interfaces.Config,
   origin: DashboardOrigin,
   log?: (message: string) => void,
-): Promise<boolean> {
+  setupMarketplace?: string,
+): Promise<DashboardFlow> {
   const installation = await detectInstallation(projectDir);
-  if (!installation) return false;
+  if (!installation) return "not-installed";
 
   const selectedCommand = await showDashboard(projectDir, log);
+  if (selectedCommand === DASHBOARD_INTERRUPTED) return "cancelled";
   if (selectedCommand) {
-    await config.runCommand(selectedCommand, dashboardCommandArgv(selectedCommand, origin));
+    await config.runCommand(
+      selectedCommand,
+      dashboardCommandArgv(selectedCommand, origin, setupMarketplace),
+    );
   }
-  return true;
+  return "shown";
 }
 
 /**
@@ -286,22 +339,12 @@ type Selection = {
   sourceFlags: SourceFlags;
   /** Whether a person is at the terminal, so the permission notice may wait for them. */
   interactive: boolean;
-  /** What to say if the selection turns out to be empty — only the producer knows why it is. */
-  emptyMessage: string;
+  /**
+   * Skills in the selection that are already installed where it puts them — a global install's
+   * own, which a run from a project records as they are and never installs over.
+   */
+  installedAlready: ReadonlySet<SkillId>;
 };
-
-/**
- * Whether a decoded selection would write anything into the user's own ~/.claude. Skills and
- * sub-agents are asked separately because either can be globally scoped on its own: a shared
- * configuration can pin every skill to the project and still send a sub-agent home, and the
- * reverse.
- */
-function writesGlobalContent(result: WizardResultV2): boolean {
-  return (
-    result.skills.some((skill) => skill.scope === "global") ||
-    result.agentConfigs.some((agent) => agent.scope === "global")
-  );
-}
 
 /**
  * Which marketplace a shared configuration installs from.
@@ -392,15 +435,11 @@ export default class Init extends BaseCommand {
    * loss, so opening one is the convenience on top and a failure to open is a warning beside a
    * link that still works.
    */
-  private async openEditor(id: string | undefined): Promise<void> {
+  private async openEditor(id: string | undefined, projectDir: string): Promise<void> {
     const url = id === undefined ? EDITOR_URL : editorConfigUrl(id);
 
     this.log(id === undefined ? `Build it at ${url}` : `Open it at ${url}`);
-    if (id === undefined) {
-      this.log(`Then install what it gives you with '${CLI_INVOKE_COMMAND} init --from <id>'.`);
-    } else {
-      this.log(`To install it here instead, run '${CLI_INVOKE_COMMAND} init --from ${id}'.`);
-    }
+    this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(projectDir)));
 
     if (!process.stdin.isTTY) return;
 
@@ -410,8 +449,9 @@ export default class Init extends BaseCommand {
 
   /**
    * One spine, two producers. The wizard and a shared id differ only in *where the selection
-   * comes from* — everything after it (the empty guard, the install pipeline) is identical, so it
-   * lives here once rather than being written twice and drifting.
+   * comes from* — everything after it (the install pipeline) is identical, so it lives here once
+   * rather than being written twice and drifting. What each producer refuses, it refuses itself:
+   * `--from` asks a question the wizard does not, and every refusal it makes comes before it.
    */
   private async install(): Promise<void> {
     const { flags } = await this.parse(Init);
@@ -423,10 +463,13 @@ export default class Init extends BaseCommand {
     // refused is the state every later command has to guess about.
     this.settleTheProviderForThisRun(flags);
 
-    // Above `ensureConfigReadable`, and above every read below it, because this route touches no
+    // Above `ensureConfigReadable`, and above every read below it, because this route needs no
     // installation at all. A config too broken to load must not stop someone reaching the other
     // front door, and an id somebody shared is not this directory's business either.
-    if (flags.ui) return this.openEditor(flags.from);
+    if (flags.ui) {
+      this.refuseMarketplaceForTheEditor(flags.marketplace);
+      return this.openEditor(flags.from, projectDir);
+    }
 
     // Every route below reads the configs first — to show a dashboard, to refuse a shared id, or
     // to inline the global one. One that exists but cannot be read is recreated, not installed
@@ -440,8 +483,15 @@ export default class Init extends BaseCommand {
     this.brandingName = await this.resolveBrandingName(projectDir);
 
     // Only a bare `init` is diverted to the dashboard. An id is an explicit instruction to install
-    // *that* configuration, so it overrides an existing installation instead.
-    if (!flags.from && (await this.showDashboardIfInitialized(projectDir))) return;
+    // *that* configuration, so it overrides an existing installation instead. A named marketplace
+    // takes the same route: it is refused only where this folder's OWN installation was made from
+    // another, and otherwise carried into the setup the dashboard's Edit runs.
+    if (!flags.from) {
+      await this.refuseMarketplaceOtherThanTheInstalledOne(projectDir, flags.marketplace);
+      const dashboard = await this.showDashboardIfInitialized(projectDir, flags.marketplace);
+      if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+      if (dashboard === "shown") return;
+    }
 
     const selection = flags.from
       ? await this.selectionFromSharedConfig(flags.from, flags, projectDir)
@@ -456,19 +506,12 @@ export default class Init extends BaseCommand {
     // what is said here is this catalog's verdict either way.
     this.reportValidationErrors(selection.result.validation);
 
-    // A sub-agent is installable on its own — it has front-matter, a prompt and a compiled file
-    // without owning a single skill — so only a selection with neither is nothing to install.
-    if (selection.result.skills.length === 0 && selection.result.selectedAgents.length === 0) {
-      // The producer supplies the wording because only it knows why empty means what it means:
-      // nothing chosen, versus a payload this catalog cannot install.
-      this.error(selection.emptyMessage, { exit: EXIT_CODES.ERROR });
-    }
-
     await this.handleInstallation(
       selection.result,
       selection.sourceResult,
       selection.sourceFlags,
       selection.interactive,
+      selection.installedAlready,
     );
   }
 
@@ -510,8 +553,15 @@ export default class Init extends BaseCommand {
 
     const { sourceResult, startupMessages } = await this.loadWizardInputsUnderSpinner(flags);
 
+    // After the load, so a marketplace that cannot be loaded is still refused in its own words
+    // over a pipe, and before the mount, which is the first thing here that needs a terminal.
+    if (!process.stdin.isTTY) {
+      this.error(wizardNeedsTerminal("init"), { exit: EXIT_CODES.ERROR });
+    }
+
     const result = await this.runWizard(startupMessages, isGlobalRoot);
     if (!result) return null;
+    if (selectsNothing(result)) this.error("No skills selected", { exit: EXIT_CODES.ERROR });
 
     return {
       result,
@@ -519,7 +569,8 @@ export default class Init extends BaseCommand {
       sourceFlags: flags,
       // A person is already at the terminal, so the permission notice can wait for them.
       interactive: true,
-      emptyMessage: "No skills selected",
+      // The wizard opens only where nothing is installed at all — see `runWizard`.
+      installedAlready: new Set(),
     };
   }
 
@@ -535,21 +586,28 @@ export default class Init extends BaseCommand {
   }
 
   /**
-   * The `--from <id>` producer: fetch and map, no wizard. Nothing here may assume a TTY — running
-   * headless is most of why the flag exists.
+   * The `--from <id>` producer: fetch and map, no wizard — and, at a terminal, one question.
    *
-   * It is also greenfield-only, which is what two of the three refusals are: a shared
-   * configuration is installed whole, so anything it would have to install over has to be
-   * uninstalled first. The third is about the LOCATION rather than what is already in it — a
-   * global installation holds only global-scoped content, and this is the one producer that never
-   * asked. All three fire before anything is written.
+   * It installs into a clean directory, which is what the first refusal is: a shared
+   * configuration is installed whole, so a directory already holding one has it applied with
+   * `edit --from` instead, or is uninstalled first. The second is about the LOCATION rather than what is already in it — a global
+   * installation holds only global-scoped content. Both fire before anything is written.
+   *
+   * A global installation ABOVE a project is not in the way. It is not this project's, so the run
+   * adds to it what it lacks and states every entry it already holds as installed (see
+   * `holdInstalledGlobal`).
+   *
+   * Before writing anything the run lists what goes into the project and what into the global
+   * install. At a terminal it then asks, and a no writes nothing. With no terminal — a CI job or a
+   * script — it prints the same lists and carries on: running headless is most of why the flag
+   * exists.
    */
   private async selectionFromSharedConfig(
     id: string,
     flags: SourceFlags,
     projectDir: string,
-  ): Promise<Selection> {
-    await this.refuseInstalledProject(projectDir);
+  ): Promise<Selection | null> {
+    await this.refuseInstalledProject(projectDir, id);
 
     this.log(`Fetching configuration ${id}...`);
     const fetched = await fetchSeedConfig(id);
@@ -558,7 +616,7 @@ export default class Init extends BaseCommand {
     }
 
     const sourceFlags = sharedConfigSourceFlags(flags, fetched.payload);
-    const { sourceResult } = await this.loadSourceOrFail(sourceFlags);
+    const { sourceResult, startupMessages } = await this.loadSourceOrFail(sourceFlags);
     // Before the decode, because a skill the payload CARRIES answers to no catalogue: unseated,
     // its id is skipped like any other unknown one and its content is never read.
     const carriedSkills = this.registerExternalSkillsOrFail(
@@ -573,15 +631,28 @@ export default class Init extends BaseCommand {
 
     // The location refusal is `BaseCommand`'s, because `edit --from` reaches the same
     // contradiction through the other door and an invariant enforced on one producer is enforced
-    // nowhere. It runs before {@link refuseBlockingGlobalInstall} because it needs no filesystem
-    // probe to answer: where the install root is, and what the payload said, is all of it.
+    // nowhere.
     this.refuseProjectScopedContentAtHome(result, projectDir);
-    await this.refuseBlockingGlobalInstall(result);
 
-    // After the refusals and before the install: every refusal this producer makes fires with
-    // nothing written, and the copy step that follows finds these skills already where they
-    // belong. The spine's placement refusal in `handleInstallation` still runs after this.
-    await this.writeCarriedSkills(carriedSkills);
+    const held = holdInstalledGlobal(
+      result,
+      isHomeDirectory(projectDir) ? null : await readInstalledGlobal(projectDir),
+    );
+    const arrivingCarried = notInstalledGlobally(carriedSkills, held);
+
+    // The last refusals, and still above the lists and the question: a yes installs what was
+    // listed, so nothing listed may then be refused.
+    await this.refuseSharedConfigBeforeAsking(
+      held.result,
+      arrivingCarried,
+      projectDir,
+      sourceResult,
+    );
+
+    // What the load held back for a wizard this run never mounts, directly above the skips it may
+    // explain — a skill this catalogue "does not know" is often one it ships with a file that
+    // will not parse.
+    sayCapturedWarnings(startupMessages);
 
     // Named, not counted. "3 skills were skipped" cannot be acted on; the ids can, and this is the
     // one moment the user can tell whether what they shared is what they are getting. Worded once,
@@ -589,51 +660,85 @@ export default class Init extends BaseCommand {
     if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
 
-    if (result.skills.length > 0) {
+    // Below the skips, which are its explanation, and above the lists: a configuration this
+    // catalogue can place nothing of has nothing to list, and nothing to ask about.
+    if (selectsNothing(held.result)) {
+      this.error(`Configuration '${id}' contains no skills this catalog can install.`, {
+        exit: EXIT_CODES.ERROR,
+      });
+    }
+
+    this.logWhatGoesWhere(held);
+    if (process.stdin.isTTY && !(await this.confirmInstall())) {
+      this.log("Setup cancelled");
+      return null;
+    }
+
+    // After the question and before the install: every refusal this producer makes, and a no,
+    // leave nothing written, and the copy step that follows finds these skills already where they
+    // belong.
+    await this.writeCarriedSkills(arrivingCarried);
+
+    const arriving = notInstalledGlobally(held.result.skills, held);
+    if (arriving.length > 0) {
       this.log(
-        `Installing ${result.skills.length} skill(s) across ${result.selectedAgents.length} sub-agent(s)\n`,
+        `Installing ${arriving.length} skill(s) across ${result.selectedAgents.length} sub-agent(s)\n`,
       );
     }
 
     return {
-      result,
+      result: held.result,
       sourceResult,
       sourceFlags,
       interactive: false,
-      emptyMessage: `Configuration '${id}' contains no skills this catalog can install.`,
+      installedAlready: new Set(held.installed.skillIds),
     };
+  }
+
+  /**
+   * The two lists — what goes into this project, and what into the global install — then the
+   * global skills skipped as already installed, and the global entries the configuration states
+   * otherwise than they are installed, which stay.
+   */
+  private logWhatGoesWhere(held: HeldGlobal): void {
+    for (const line of installPlanLines(held)) {
+      this.log(line);
+    }
+
+    const { skillIds, agentNames } = held.keptAsInstalled;
+    if (skillIds.length > 0 || agentNames.length > 0) {
+      this.log(keptAsInstalledGlobally(skillIds, agentNames));
+    }
+    this.log("");
+  }
+
+  /** The question under the lists, defaulting to no: nothing has been written yet. */
+  private async confirmInstall(): Promise<boolean> {
+    const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
+      <Confirm
+        message={SHARED_CONFIG_ARRIVALS.INSTALL_CONFIRM}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    ));
+    return outcome === "confirmed";
   }
 
   /**
    * Refuses to install a shared configuration into a directory that already has one.
    *
    * Project-scoped detection rather than `detectInstallation`, whose global fallback would refuse
-   * every clean project on a machine with a global install — including for a payload that never
-   * goes near it. Whether a global install is in the way is a question about the PAYLOAD, and
-   * {@link refuseBlockingGlobalInstall} is where it is asked.
+   * every clean project on a machine with a global install. A global install above the project is
+   * added to rather than refused over — see {@link selectionFromSharedConfig}.
    *
    * This runs before the fetch: there is nothing to learn from the network about a directory that
    * is already spoken for.
    */
-  private async refuseInstalledProject(projectDir: string): Promise<void> {
+  private async refuseInstalledProject(projectDir: string, id: string): Promise<void> {
     const installation = await detectProjectInstallation(projectDir);
     if (!installation) return;
 
-    this.error(sharedConfigExistingInstall(installation.configPath), { exit: EXIT_CODES.ERROR });
-  }
-
-  /**
-   * The other half of the same rule. A payload carrying global-scoped skills or sub-agents writes
-   * into the user's own ~/.claude, so an installation there is in its way even when this project
-   * is spotless. A payload with nothing global cannot reach that far and is never refused for it.
-   */
-  private async refuseBlockingGlobalInstall(result: WizardResultV2): Promise<void> {
-    if (!writesGlobalContent(result)) return;
-
-    const globalInstallation = await detectGlobalInstallation();
-    if (!globalInstallation) return;
-
-    this.error(sharedConfigGlobalInstall(globalInstallation.configPath), {
+    this.error(sharedConfigExistingInstall(installation.configPath, id), {
       exit: EXIT_CODES.ERROR,
     });
   }
@@ -681,8 +786,56 @@ export default class Init extends BaseCommand {
     this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
   }
 
-  private async showDashboardIfInitialized(projectDir: string): Promise<boolean> {
-    return runDashboardFlow(projectDir, this.config, "init", (msg) => this.log(msg));
+  private async showDashboardIfInitialized(
+    projectDir: string,
+    setupMarketplace: string | undefined,
+  ): Promise<DashboardFlow> {
+    return runDashboardFlow(
+      projectDir,
+      this.config,
+      "init",
+      (msg) => this.log(msg),
+      setupMarketplace,
+    );
+  }
+
+  /**
+   * Refuses `--marketplace` beside `--ui`. The editor's address carries a configuration id and
+   * nothing else, so the marketplace would be dropped on the way — and the editor loads
+   * marketplaces itself.
+   */
+  private refuseMarketplaceForTheEditor(named: string | undefined): void {
+    if (named === undefined) return;
+    this.error(editorLoadsItsOwnMarketplace(named), { exit: EXIT_CODES.INVALID_ARGS });
+  }
+
+  /**
+   * Refuses a marketplace other than the one this folder's OWN installation was made from.
+   *
+   * An installation's marketplace is chosen once, when it is made, and the dashboard every route
+   * here ends on reads the one it stored — so naming another would be dropped, and a flag dropped
+   * reads as honoured. Project-scoped detection, because a project with no installation of its
+   * own is not refused for the global one above it: that is two installations, and the setup the
+   * dashboard's Edit runs there takes the named marketplace. At the home directory the folder's
+   * own installation IS the global one, and the same detection finds it.
+   *
+   * The stored marketplace is resolved the way every later command resolves it — this folder's
+   * config, then the global one, then the default — so an installation that recorded none is
+   * held to the one it has actually been reading. A folder named back by another spelling of its
+   * path is that same marketplace.
+   */
+  private async refuseMarketplaceOtherThanTheInstalledOne(
+    projectDir: string,
+    named: string | undefined,
+  ): Promise<void> {
+    if (named === undefined) return;
+
+    if (!(await detectProjectInstallation(projectDir))) return;
+
+    const { source: stored } = await resolveSource({ caller: "stored", projectDir });
+    if (isSameMarketplace(named, stored, projectDir)) return;
+
+    this.error(marketplaceFixedAtInstall(stored, named), { exit: EXIT_CODES.INVALID_ARGS });
   }
 
   private async loadSourceOrFail(
@@ -737,14 +890,19 @@ export default class Init extends BaseCommand {
      * which is fine after the wizard and a hang everywhere else. `--from` sets this false: it has
      * to complete over a pipe and in CI.
      */
-    interactive = true,
+    interactive: boolean,
+    /** Skills recorded as they are installed already, and so neither copied nor registered. */
+    installedAlready: ReadonlySet<SkillId>,
   ): Promise<void> {
     const projectDir = process.cwd();
     const activeSkills = result.skills.filter((s) => !s.excluded);
-    const installMode = deriveInstallMode(activeSkills);
-    const ejectedSkills = activeSkills.filter((s) => s.origin === EJECT_SOURCE);
-    const pluginSkills = activeSkills.filter((s) => s.origin !== EJECT_SOURCE);
+    const toInstall = activeSkills.filter((s) => !installedAlready.has(s.id));
+    const installMode = deriveInstallMode(toInstall);
+    const ejectedSkills = toInstall.filter((s) => s.origin === EJECT_SOURCE);
+    const pluginSkills = toInstall.filter((s) => s.origin !== EJECT_SOURCE);
 
+    // The wizard's selection meets its placement refusal here. A shared configuration's has met
+    // it already, above its lists and its question, and passes it again unchanged.
     this.refuseUnofferablePlacementsBeforeWriting(activeSkills, projectDir);
     this.logInstallPlan(installMode, ejectedSkills, pluginSkills);
 
@@ -763,7 +921,7 @@ export default class Init extends BaseCommand {
         : null;
 
     const copyResult =
-      installMode === "eject" || installMode === "mixed"
+      ejectedSkills.length > 0
         ? await this.copyEjectSkillsStep(ejectedSkills, projectDir, sourceResult, installMode)
         : null;
 
@@ -801,41 +959,6 @@ export default class Init extends BaseCommand {
   }
 
   /**
-   * Refuses a SELECTION asking for a mode/scope cell this host does not offer, before the run has
-   * touched anything.
-   *
-   * **`bindsItsOfferedPlacements` is not a pre-flight and cannot be made into one.** It refuses
-   * at `installPlugin`, which `installPluginSkills` calls once per skill inside a loop that
-   * collects per-skill failures — so a payload whose first plugin row is offerable and whose
-   * second is not installed a real plugin into the user's Codex registry and only then stopped,
-   * on a message ending "Nothing has been changed." Nothing removed it afterwards: no `config.ts`
-   * was written, so `uninstall` had no row naming it and `doctor` had no configuration to check
-   * it against — an orphan in the host's own registry that no command in this CLI can see. The
-   * single-row case cannot show it, because with one unofferable row the loop's first iteration
-   * IS the refusal.
-   *
-   * It reads the whole selection — ejected rows included — because the roster is about CELLS
-   * rather than about plugins: a host that stopped offering `eject+project` would owe the same
-   * refusal, and a guard that only looked at plugin rows would go on writing files for it.
-   *
-   * The same function the read path calls (`refuseUnofferedPlacements`, off the same host
-   * roster), so `init`'s sentence and `compile`'s are one sentence rather than two that agree
-   * today. The per-call guard stays where it is: it is the backstop for a caller that did not
-   * come through here, and for the one host this release ships every cell is offered, so a
-   * backstop that never fires is what a deleted one would look like.
-   */
-  private refuseUnofferablePlacementsBeforeWriting(
-    activeSkills: WizardResultV2["skills"],
-    projectDir: string,
-  ): void {
-    try {
-      refuseUnofferedPlacements(activeSkills, hostAt(projectDir));
-    } catch (error) {
-      this.error(getErrorMessage(error), { exit: EXIT_CODES.ERROR });
-    }
-  }
-
-  /**
    * The permission notice, where there is one to show. It is an Ink app with no exit of its own,
    * so `waitUntilExit()` only ever resolves because a person is there to end it — which is fine
    * after the wizard and a hang everywhere else. Without a terminal to hold, one frame is
@@ -862,7 +985,7 @@ export default class Init extends BaseCommand {
     pluginSkills: WizardResultV2["skills"],
   ): void {
     this.log("\n");
-    this.log(`Selected ${ejectedSkills.length + pluginSkills.length} skills`);
+    this.log(`Selected ${plural(ejectedSkills.length + pluginSkills.length, "skill")}`);
     this.log(
       `Install mode: ${
         installMode === "mixed"
@@ -909,15 +1032,18 @@ export default class Init extends BaseCommand {
       this.log(`Merged with existing config at ${configResult.existingConfigPath}`);
     }
 
-    this.log(`Configuration saved (${configResult.config.agents.length} agents)\n`);
-    this.reportUnassignedSkills(configResult.config);
+    this.log(`Configuration saved (${plural(configResult.config.agents.length, "agent")})\n`);
+    this.reportUnassignedSkills(configResult.config, result.skills);
 
     this.log(STATUS_MESSAGES.COMPILING_AGENTS);
     const cwd = process.cwd();
     const agentDefs = await loadAgentDefs();
     const { allSkills } = await discoverInstalledSkills(cwd);
     const agentScopeMap = buildAgentScopeMap(configResult.config);
-    const compileResult = await compileAgentsAllScopes({
+    const compile = compilesGlobalScope(cwd, configResult.propagation)
+      ? compileAgentsAllScopes
+      : compileProjectScope;
+    const compileResult = await compile({
       projectDir: cwd,
       sourcePath: agentDefs.sourcePath,
       skills: allSkills,
@@ -926,7 +1052,7 @@ export default class Init extends BaseCommand {
     this.reportCompilation(compileResult);
     await this.reportWhatThisHostCannotCarry(cwd);
 
-    this.reportPropagatedRecompile(configResult.propagation);
+    this.reportFanOut(configResult.propagation);
 
     return { configResult, compileResult, agentScopeMap };
   }
@@ -963,7 +1089,7 @@ export default class Init extends BaseCommand {
    */
   private reportCompilation(compileResult: CompilationResult): void {
     const { compiled, failed, warnings } = compileResult;
-    const summary = `Compiled ${compiled.length} agents`;
+    const summary = `Compiled ${plural(compiled.length, "agent")}`;
 
     if (failed.length === 0) {
       this.log(`${summary}\n`);
@@ -975,8 +1101,7 @@ export default class Init extends BaseCommand {
       this.warn(warning);
     }
     // Recorded off `failed` rather than off the warnings just printed: `warnings` also carries
-    // entries that are not failures — a scope with nothing to compile contributes one on every
-    // project-context run — and the ending must not file those as work owed.
+    // entries that are not failures, and the ending must not file those as work owed.
     this.recordIncompleteWork(agentsNotCompiled(failed), INCOMPLETE_WORK_RECOVERY.RECOMPILE);
   }
 
@@ -1113,45 +1238,64 @@ export default class Init extends BaseCommand {
 }
 
 /**
+ * Whether a selection holds nothing to install. A sub-agent is installable on its own — it has
+ * front-matter, a prompt and a compiled file without owning a single skill — so only a selection
+ * with neither is empty.
+ *
+ * Asked by each producer rather than on the spine, because each refuses it in its own words and
+ * at its own moment: the wizard once the user has chosen nothing, and `--from` before it lists a
+ * plan or asks about one.
+ */
+function selectsNothing(result: WizardResultV2): boolean {
+  return result.skills.length === 0 && result.selectedAgents.length === 0;
+}
+
+/**
+ * Whether this run's compile covers the global install as well as the project — `edit`'s rule
+ * (`compilesGlobalScope` in `commands/edit.tsx`), for the same reason.
+ *
+ * From a project, the global install is held as installed, so its sub-agents are recompiled only
+ * when the write added something they are built from. Recompiled anyway, they would be built from
+ * the catalogue THIS run loaded rather than the one the global install was made from — a skill
+ * that catalogue does not ship is described by its fallback guidance instead of its own — and a
+ * project run that added nothing to the global install would still have rewritten it. The wizard
+ * reaches the same answer by the same test: it opens only where nothing is installed, so every
+ * global entry it writes is an added one.
+ */
+function compilesGlobalScope(cwd: string, written: GateReport): boolean {
+  return isHomeDirectory(cwd) || movedGlobalAgentInputs(written);
+}
+
+/**
  * The line an eject copy ends on: how many skills landed, and where.
  *
- * **Three of its four lines spelled `.claude/skills/` for every provider until 2026-09-22**,
- * so a Codex install narrated a directory it does not have — six lines above the
- * `reportSkillsCopied` block that reads the layout and names the real one. The single-scope lines
- * now take the destination from {@link copiedSkillsDir}, which is that same read; the both-scopes
- * lines name no directory, because two scopes have two and a single answer there would be the
- * defect one layer along.
+ * A copy that landed at one scope names the directory `copyLocalSkills` wrote it into, read the
+ * way that function reads it — `resolveInstallPaths` at the scope — so it is the folder the
+ * `Skills copied to:` block beneath names too. The line spelled the directory from the scope ROOT
+ * until 2026-10-03, so a run from a project that copied every skill under HOME printed
+ * `.claude/skills/`, which, read where the command was typed, names the project's own empty
+ * folder. A copy that landed at both scopes names no directory, because two scopes have two and
+ * the block beneath lists each.
+ *
+ * In a mixed install the copies are its "local" half, beside the plugins installed after them.
  */
 function skillsCopiedLine(
   copyResult: SkillCopyResult,
   installMode: InstallMode,
   projectDir: string,
 ): string {
-  const { totalCopied } = copyResult;
+  const isMixed = installMode === "mixed";
+  const copied = plural(copyResult.totalCopied, isMixed ? "local skill" : "skill");
+  const lineEnd = isMixed ? "" : "\n";
   const projectCount = copyResult.projectCopied.length;
   const globalCount = copyResult.globalCopied.length;
   const landedAtBothScopes = projectCount > 0 && globalCount > 0;
 
-  if (installMode === "mixed") {
-    if (landedAtBothScopes) {
-      return `Copied ${totalCopied} local skills (${projectCount} project, ${globalCount} global)`;
-    }
-    if (globalCount > 0) {
-      return `Copied ${globalCount} local skills to ${copiedSkillsDir(projectDir, "global")}/`;
-    }
-    return `Copied ${projectCount} local skills to ${copiedSkillsDir(projectDir, "project")}/`;
-  }
-
   if (landedAtBothScopes) {
-    return `Copied ${totalCopied} skills (${projectCount} project, ${globalCount} global)\n`;
+    return `Copied ${copied} (${projectCount} project, ${globalCount} global)${lineEnd}`;
   }
-  const scope: SkillScope = globalCount > 0 ? "global" : "project";
-  return `Copied ${totalCopied} skills to ${copiedSkillsDir(projectDir, scope)}/\n`;
-}
-
-/** The skills directory one scope's copies landed in, as its own host's layout names it. */
-function copiedSkillsDir(projectDir: string, scope: SkillScope): string {
-  return skillsPathPrefix(providerInUse(installBaseDir(projectDir, scope)), scope, projectDir);
+  const landedAt: SkillScope = globalCount > 0 ? "global" : "project";
+  return `Copied ${copied} to ${resolveInstallPaths(projectDir, landedAt).skillsDir}/${lineEnd}`;
 }
 
 /**

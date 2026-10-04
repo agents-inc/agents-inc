@@ -32,6 +32,7 @@ import {
 } from "../../consts";
 import type { Marketplace } from "../../types/plugins";
 import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
+import { plural } from "../../utils/string.js";
 
 const DEFAULT_OUTPUT_FILE = `${PLUGIN_MANIFEST_DIR}/${MARKETPLACE_JSON}`;
 
@@ -39,6 +40,9 @@ const AUTHOR_STRING_PATTERN = /^(.*?)\s*<([^>]+)>\s*(?:\(([^)]+)\))?\s*$/;
 
 /** The entity {@link validateKebabCaseName} names in this command's refusals. */
 const MARKETPLACE_NOUN = "Marketplace";
+
+/** How a reserved name is replaced here: it is read off package.json, and `--name` overrides it. */
+const RESERVED_NAME_WAY_OUT = "set package.json 'name', or pass --name";
 
 const packageAuthorObjectSchema = z.object({
   name: z.string(),
@@ -133,7 +137,7 @@ export default class BuildMarketplace extends BaseCommand {
 
       this.log("");
       this.logSuccess(
-        `Marketplace generated with ${getMarketplaceStats(marketplace).total} plugins!`,
+        `Marketplace generated with ${plural(getMarketplaceStats(marketplace).total, "plugin")}!`,
       );
       this.log("");
     } catch (error) {
@@ -189,7 +193,7 @@ export default class BuildMarketplace extends BaseCommand {
 
     const resolvedName = this.resolvePublishableName(name, nameOverride, packageJsonPath);
 
-    const reservedError = validateMarketplaceName(resolvedName, name);
+    const reservedError = validateMarketplaceName(resolvedName, name, RESERVED_NAME_WAY_OUT);
     if (reservedError) {
       this.error(reservedError, { exit: EXIT_CODES.ERROR });
     }
@@ -261,7 +265,7 @@ export default class BuildMarketplace extends BaseCommand {
     });
 
     const stats = getMarketplaceStats(marketplace);
-    this.log(`Found ${stats.total} plugins`);
+    this.log(`Found ${plural(stats.total, "plugin")}`);
 
     if (marketplace.plugins.length === 0) {
       this.error(noPluginsToPublish(pluginsDir, pluginsDirFlag), { exit: EXIT_CODES.ERROR });

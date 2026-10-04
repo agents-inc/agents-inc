@@ -1,6 +1,7 @@
 import { Flags } from "@oclif/core";
 
 import { BaseCommand } from "../base-command.js";
+import { isLocalSource } from "../lib/configuration/config.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
 import { seedPayloadForInstallation } from "../lib/seed/installation-payload.js";
@@ -15,9 +16,48 @@ import {
   providerNamedBy,
   refuseAnAmbiguousInstallation,
 } from "../lib/installation/provider-flag.js";
+import { warn } from "../utils/logger.js";
 import { readAllOf } from "../utils/read-stream.js";
-import { sharedConfigDestinations } from "../utils/messages.js";
+import {
+  sharedConfigDestinations,
+  sharedIdNamesAFolder,
+  sharedSkillsLeftBehind,
+  shareRefusesEjectedSkills,
+} from "../utils/messages.js";
+import { typedEntries } from "../utils/typed-object.js";
+import type { SkillId } from "../types/index.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
+
+/** A payload to publish, and what is owed about it once it has an id. */
+type ShareablePayload = { payload: SeedPayload; caveats: string[] };
+
+/**
+ * What an id minted from this installation will not do everywhere, said after the id rather than
+ * refused: it still installs everything else.
+ *
+ * A payload names one marketplace, by the ref `--marketplace` took. A folder is a ref only this
+ * machine can follow, and a plugin from any other marketplace is skipped wherever the id is
+ * installed.
+ */
+function caveatsAbout(payload: SeedPayload, leftBehind: readonly SkillId[]): string[] {
+  const { marketplace } = payload;
+  return [
+    ...(isAFolder(marketplace) ? [sharedIdNamesAFolder(marketplace)] : []),
+    ...(leftBehind.length > 0 ? [sharedSkillsLeftBehind(leftBehind)] : []),
+  ];
+}
+
+/** Whether a payload's marketplace ref is a folder on this machine rather than a repository. */
+function isAFolder(marketplace: string | undefined): marketplace is string {
+  return marketplace !== undefined && isLocalSource(marketplace);
+}
+
+/** The skills a payload asks the receiver to eject — local copies, editor-added ones included. */
+function ejectedSkillsIn(payload: SeedPayload): string[] {
+  return typedEntries(payload.skills)
+    .filter(([, skill]) => skill.install === "eject")
+    .map(([id]) => id);
+}
 
 export default class Share extends BaseCommand {
   static summary = "Share this installation as an id anyone can install";
@@ -40,7 +80,7 @@ export default class Share extends BaseCommand {
   ];
 
   /**
-   * Read, map, refuse, publish.
+   * Read, map, refuse, publish, then say what the id will not do everywhere.
    *
    * Everything that can fail locally fails before the POST. The store's free tier allows a
    * thousand writes a day and reads a hundred times that, so a write is the scarce half — and one
@@ -48,6 +88,8 @@ export default class Share extends BaseCommand {
    *
    * The first three steps are `seedPayloadForInstallation`, shared with `edit --ui`: the two
    * commands mint the same id from the same directory and differ only in what they do with it.
+   * The one refusal `edit --ui` does not share is of ejected skills — a share carries plugins
+   * only, and the editor is where a user goes to turn ejected skills into plugins.
    */
   async run(): Promise<void> {
     const { flags } = await this.parse(Share);
@@ -63,10 +105,14 @@ export default class Share extends BaseCommand {
         providerNamedBy(flags.provider),
         (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
       );
+      await this.ensureConfigReadable(process.cwd());
       await this.refuseUnofferablePlacements(process.cwd());
+      // With two source folders on disk the resolver reads whichever holds a `config.ts`, which
+      // can be the stale one — and an id minted from it describes an installation nobody chose.
+      await this.settleSourceLayoutBeforeWriting(process.cwd());
     }
 
-    const payload = flags.stdin
+    const { payload, caveats } = flags.stdin
       ? await this.payloadFromPipe()
       : await this.payloadFromInstallation();
 
@@ -76,6 +122,9 @@ export default class Share extends BaseCommand {
     }
 
     this.reportShared(published.id);
+    // Through `warn()` from `utils/logger.ts` rather than `this.warn`: oclif hard-wraps at the
+    // terminal width, and a caveat names a folder path that does not survive being broken.
+    for (const caveat of caveats) warn(caveat);
   }
 
   /**
@@ -103,16 +152,35 @@ export default class Share extends BaseCommand {
     if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
-  /** The installation in this directory, mapped and announced. */
-  private async payloadFromInstallation(): Promise<SeedPayload> {
+  /** The installation in this directory: mapped, refused if it holds ejected skills, announced. */
+  private async payloadFromInstallation(): Promise<ShareablePayload> {
     const prepared = await seedPayloadForInstallation(process.cwd());
     if (!prepared.ok) {
       this.error(prepared.error, { exit: EXIT_CODES.ERROR });
     }
 
+    this.refuseEjectedSkills(prepared.payload);
     this.log(`Sharing ${prepared.skills} skill(s) across ${prepared.agents} sub-agent(s)...`);
 
-    return prepared.payload;
+    return {
+      payload: prepared.payload,
+      caveats: caveatsAbout(prepared.payload, prepared.leftBehind),
+    };
+  }
+
+  /**
+   * Refuses a share while anything it would send is an ejected (Local) skill.
+   *
+   * An ejected skill is a copy on this machine, which the user may have edited and an
+   * editor-added skill always is, so a share carries plugins only — from a project, that covers
+   * the ejected skills it inherits from the global installation as well as its own. A skill the
+   * user wrote by hand is never in the payload, so it neither travels nor refuses.
+   */
+  private refuseEjectedSkills(payload: SeedPayload): void {
+    const ejected = ejectedSkillsIn(payload);
+    if (ejected.length > 0) {
+      this.error(shareRefusesEjectedSkills(ejected), { exit: EXIT_CODES.ERROR });
+    }
   }
 
   /**
@@ -128,8 +196,10 @@ export default class Share extends BaseCommand {
    * the editor, which reads `?fromId=` and nothing else. Publishing from here rather than from
    * the producer keeps `SEED_VERSION`, the `AGENTS_INC_API_URL` override and the caller's
    * user-agent in the one place that owns them.
+   *
+   * It owes no caveats: those describe an installation, and none was read.
    */
-  private async payloadFromPipe(): Promise<SeedPayload> {
+  private async payloadFromPipe(): Promise<ShareablePayload> {
     if (process.stdin.isTTY) {
       this.error(STDIN_IS_A_TERMINAL, { exit: EXIT_CODES.ERROR });
     }
@@ -139,7 +209,7 @@ export default class Share extends BaseCommand {
       this.error(read.error, { exit: EXIT_CODES.ERROR });
     }
 
-    return read.payload;
+    return { payload: read.payload, caveats: [] };
   }
 
   /**

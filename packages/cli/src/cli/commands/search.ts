@@ -57,6 +57,9 @@ export default class Search extends BaseCommand {
 
   async run(): Promise<void> {
     const { args } = await this.parse(Search);
+    // The marketplace searched is the one the configs name, so a config nobody can read is not
+    // read past to whichever marketplace the next rung would answer.
+    await this.ensureConfigReadable(process.cwd());
     await this.runSearch(args.query);
   }
 

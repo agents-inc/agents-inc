@@ -1,6 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import path from "path";
 import { getErrorMessage } from "../../utils/errors";
+import { unreadableFrontmatter } from "../../utils/frontmatter";
 import { glob, readFile, fileExists } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { STANDARD_FILES } from "../../consts";
@@ -71,8 +72,9 @@ export async function loadSkillRules(configPath: string): Promise<SkillRulesConf
  * 4. Merges metadata fields into an ExtractedSkillMetadata object
  *
  * A metadata.yaml that describes no skill — unparseable, or parseable without the
- * fields the schema requires — is warned by path and skips its own skill; one bad
- * file does not take the scan down with it. Skills missing the required
+ * fields the schema requires — is warned by path and skips its own skill, and so is a
+ * SKILL.md whose frontmatter does not read; one bad file does not take the scan down
+ * with it. Skills missing the required
  * `displayName` field in metadata.yaml cause a hard error.
  *
  * @param skillsDir - Absolute path to the skills root directory (e.g., `{root}/src/skills`)
@@ -121,8 +123,15 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
     const skillMdContent = await readFile(skillMdPath);
     const frontmatter = parseFrontmatter(skillMdContent, skillMdPath);
 
+    // Named as an unparseable metadata.yaml is above, so the skill does not simply go missing. A
+    // frontmatter that READ and failed its schema has already been named by `parseFrontmatter`.
     if (!frontmatter) {
-      verbose(`Skipping ${metadataFile}: Invalid SKILL.md frontmatter`);
+      const unreadable = unreadableFrontmatter(skillMdContent);
+      if (unreadable !== undefined) {
+        warn(
+          `Skipping '${path.join(skillDir, STANDARD_FILES.SKILL_MD)}': unparseable ${STANDARD_FILES.SKILL_MD} frontmatter at ${skillMdPath} — ${unreadable}`,
+        );
+      }
       continue;
     }
 

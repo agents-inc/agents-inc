@@ -7,6 +7,7 @@ export {
   INSTALL_MODE_DESCRIPTIONS,
   detectInstallation,
   detectProjectInstallation,
+  holdsItsOwnInstallation,
 } from "./installation";
 
 /**
@@ -20,6 +21,7 @@ export {
   setConfigMetadata,
   buildCompileAgents,
   buildAgentScopeMap,
+  refuseUnofferedStack,
 } from "./local-installer";
 
 export { isHomeDirectory } from "./is-home-directory";

@@ -11,10 +11,10 @@ import type {
   StackAgentConfig,
 } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
-import type { Provider } from "../../consts";
+import { PROVIDERS, type Provider } from "../../consts";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
 import { providerInUse, sourceFolderInUse } from "../installation/install-layout";
-import { loadInstalledConfig } from "../configuration/project-config";
+import { ConfigLoadError, loadInstalledConfig } from "../configuration/project-config";
 import { mergeConfigs, type AuthoritativeScope } from "../configuration/config-merger";
 import {
   activeProjectAgentNames,
@@ -42,7 +42,12 @@ import { fileExists, writeFile } from "../../utils/fs";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
-import { GLOBAL_CONFIG_NAME, LOCAL_PSEUDO_CATEGORY } from "../../consts";
+import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
+// The merge a project install resolves the global config through lives in `@workspace/compile`,
+// because the editor's output preview resolves the global config it draws through it too.
+import { addSessionToGlobal, type ResolvedGlobalConfig } from "@workspace/compile/global-config";
+
+export { mergeGlobalConfigs } from "@workspace/compile/global-config";
 
 export async function writeConfigFile(
   config: ProjectConfig,
@@ -51,184 +56,6 @@ export async function writeConfigFile(
 ): Promise<void> {
   const source = generateConfigSource(config, activeMatrix, options);
   await writeFile(configPath, source);
-}
-
-/**
- * Deep-additive stack merge: appends any (agent, category, skill) triple present in
- * `incoming` but missing in `existing`. Never removes or overwrites existing entries
- * (including their `preloaded` flags). Returns a fresh stack object — inputs are not
- * mutated. `changed` is true iff at least one new agent, category, or skill assignment
- * was appended.
- */
-function additiveMergeStack(
-  existing: Partial<Record<AgentName, StackAgentConfig>> | undefined,
-  incoming: Partial<Record<AgentName, StackAgentConfig>> | undefined,
-): { stack: Partial<Record<AgentName, StackAgentConfig>>; changed: boolean } {
-  const merged: Partial<Record<AgentName, StackAgentConfig>> = existing
-    ? structuredClone(existing)
-    : {};
-  if (!incoming) return { stack: merged, changed: false };
-
-  let changed = false;
-  for (const [agentName, incomingAgentStack] of typedEntries<AgentName, StackAgentConfig>(
-    incoming,
-  )) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
-    if (!incomingAgentStack) continue;
-
-    const existingAgentStack = merged[agentName];
-    if (!existingAgentStack) {
-      merged[agentName] = structuredClone(incomingAgentStack);
-      changed = true;
-      continue;
-    }
-
-    if (mergeAgentCategories(existingAgentStack, incomingAgentStack)) {
-      changed = true;
-    }
-  }
-
-  return { stack: merged, changed };
-}
-
-/**
- * Mutates `existingAgentStack` in place by appending any category or skill assignment
- * from `incomingAgentStack` that is not already present. Returns true if anything was
- * appended. Caller must pass a cloned `existingAgentStack` — this function is only
- * called on the merged copy, never on the original input.
- */
-function mergeAgentCategories(
-  existingAgentStack: StackAgentConfig,
-  incomingAgentStack: StackAgentConfig,
-): boolean {
-  let changed = false;
-  for (const [category, incomingAssignments] of typedEntries<Category, SkillAssignment[]>(
-    incomingAgentStack,
-  )) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
-    if (!incomingAssignments) continue;
-
-    const existingAssignments = existingAgentStack[category];
-    if (!existingAssignments) {
-      existingAgentStack[category] = incomingAssignments.map((a) => ({ ...a }));
-      changed = true;
-      continue;
-    }
-
-    if (appendMissingAssignments(existingAssignments, incomingAssignments)) {
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-/**
- * Mutates `existingAssignments` in place by appending a copy of each incoming assignment whose id
- * it does not already hold — an id repeated within `incomingAssignments` is appended once. Returns
- * true if anything was appended. Called on the merged copy only, like
- * {@link mergeAgentCategories}.
- */
-function appendMissingAssignments(
-  existingAssignments: SkillAssignment[],
-  incomingAssignments: SkillAssignment[],
-): boolean {
-  const existingIds = new Set(existingAssignments.map((a) => a.id));
-  let changed = false;
-  for (const assignment of incomingAssignments) {
-    if (existingIds.has(assignment.id)) continue;
-    existingAssignments.push({ ...assignment });
-    existingIds.add(assignment.id);
-    changed = true;
-  }
-  return changed;
-}
-
-/**
- * Merges new global-scoped items into an existing global config.
- * Adds skills/agents that don't already exist. Never removes existing items.
- *
- * Exported for unit testing. See `mergeGlobalConfigs` describe block in
- * `local-installer.test.ts`.
- */
-export function mergeGlobalConfigs(
-  existing: ProjectConfig,
-  incoming: ProjectConfig,
-): { config: ProjectConfig; changed: boolean } {
-  const existingSkillIds = new Set(existing.skills.map((s) => s.id));
-  const existingAgentNames = new Set(existing.agents.map((a) => a.name));
-
-  const incomingActiveSkills = incoming.skills.filter((s) => !s.excluded);
-  const incomingActiveAgents = incoming.agents.filter((a) => !a.excluded);
-  const newSkills = incomingActiveSkills.filter((s) => !existingSkillIds.has(s.id));
-  const newAgents = incomingActiveAgents.filter((a) => !existingAgentNames.has(a.name));
-
-  const mergedSkills = [...existing.skills, ...newSkills];
-  const mergedAgents = [...existing.agents, ...newAgents];
-
-  // Per-agent stack merge policy: deep-additive. Project-context edits must NEVER remove
-  // or overwrite global state; individual projects express their local view via tombstones
-  // in the PROJECT config, not by rewriting the GLOBAL config (see commit 403df46:
-  // "never modify global config from project-level operations").
-  //
-  // Merge rule per triple (agent, category, skill):
-  //   - agent absent in existing    -> add from incoming
-  //   - category absent in existing -> add from incoming
-  //   - skill id absent in existing -> append from incoming
-  //   - everything already present  -> keep existing as-is (including its preloaded flag)
-  // Anything present only in `existing` is left untouched.
-  const { stack: mergedStack, changed: stackChanged } = additiveMergeStack(
-    existing.stack,
-    incoming.stack,
-  );
-
-  // Merge selected domains (union, no duplicates)
-  const mergedSelectedDomains = [
-    ...new Set([...(existing.selectedDomains ?? []), ...(incoming.selectedDomains ?? [])]),
-  ];
-
-  // Marketplace identity (`marketplace`, `marketplaceName`) travels on the global partition of
-  // `splitConfigByScope` but was previously lost here, leaving the global config with no
-  // record of where its plugins came from. `uninstall` reads `config.marketplaceName` to build
-  // the `<id>@<marketplace name>` registry key (getCliInstalledPluginKeys) — without it a global
-  // uninstall silently owns nothing and leaves registered plugins behind.
-  //
-  // Precedence is FILL-ONLY: existing wins, incoming is used solely when the global config
-  // has no value yet. Both fields are scalar but the merged config is multi-marketplace by
-  // construction — this merge never removes skills, so after a second project init from a
-  // different marketplace the skills array holds plugins from BOTH, and whichever label is
-  // recorded orphans the other's registry key. Repointing is therefore never a strict
-  // improvement, and doing it from a project context would silently rewrite global state on
-  // behalf of every other registered project (commit 403df46). This also matches
-  // `mergeConfigs`, which preserves `existingConfig.marketplaceName` on the home-root install
-  // path. Changing global marketplace identity stays an explicit global-scope operation
-  // (`init` run from ~), which writes the global config directly and bypasses this merge.
-  const mergedMarketplaceName = existing.marketplaceName ?? incoming.marketplaceName;
-  const mergedMarketplace = existing.marketplace ?? incoming.marketplace;
-
-  // Newly-filled marketplace identity must mark the merge dirty: this flag becomes
-  // `resolveEffectiveGlobalConfig`'s `changed`, which is the condition `writeGlobalPairWhenChanged`
-  // (lib/config-gate/index.ts) tests before calling `writeGlobalPair`, so a run whose only delta
-  // is the now-known marketplace would otherwise skip the global write and drop the field again.
-  const changed =
-    newSkills.length > 0 ||
-    newAgents.length > 0 ||
-    stackChanged ||
-    !isDeepEqual(existing.selectedDomains ?? [], mergedSelectedDomains) ||
-    mergedMarketplaceName !== existing.marketplaceName ||
-    mergedMarketplace !== existing.marketplace;
-
-  return {
-    config: {
-      ...existing,
-      skills: mergedSkills,
-      agents: mergedAgents,
-      stack: mergedStack,
-      selectedDomains: mergedSelectedDomains,
-      ...(mergedMarketplaceName !== undefined && { marketplaceName: mergedMarketplaceName }),
-      ...(mergedMarketplace !== undefined && { marketplace: mergedMarketplace }),
-    },
-    changed,
-  };
 }
 
 /**
@@ -607,10 +434,20 @@ function withoutRemovedAssignments(
   return reconciledAgentStack;
 }
 
-/** The registered projects one fan-out rewrote, and the ones it could not reach. */
+/**
+ * The registered projects one fan-out rewrote, and the ones it left alone, by why. Each project is
+ * in exactly one, so a run can say which and why for each.
+ */
 export type PropagationResult = {
   updated: string[];
-  skipped: string[];
+  /** Its `config.ts` is there and cannot be loaded. */
+  unreadable: string[];
+  /** Nothing is installed at the registered path any more. */
+  gone: string[];
+  /** It holds another provider's installation, not this one's. */
+  notOurs: string[];
+  /** Its rewrite threw: its catalogue would not load, or its pair could not be written. */
+  failed: string[];
 };
 
 export type PropagationOptions = {
@@ -776,10 +613,12 @@ async function propagateToProject(
   agents: Partial<Record<AgentName, AgentDefinition>>,
   options: PropagationOptions,
 ): Promise<boolean> {
-  return withCatalogueSeatedFor(projectPath, async (catalogue) => {
-    const existingProject = await loadInstalledConfig(projectPath);
-    if (!existingProject?.config) return false;
+  // Before the catalogue: its load reads this config too, and refuses it in words no caller can
+  // tell from any other failure, where this raises a ConfigLoadError.
+  const existingProject = await loadInstalledConfig(projectPath);
+  if (!existingProject?.config) return false;
 
+  return withCatalogueSeatedFor(projectPath, async (catalogue) => {
     const projectSplit = reconcileAgainstGlobal(existingProject.config, globalConfig, catalogue);
 
     await writeProjectConfigPair(
@@ -804,7 +643,7 @@ async function propagateToProject(
  * There is deliberately NO catalogue parameter. Each project's own is loaded per project by
  * {@link propagateToProject}, and a parameter beside that could only ever be the wrong one —
  * which is what every caller used to pass. A project whose catalogue cannot be loaded lands
- * in `skipped` through the same catch as any other failure: leaving it stale is recoverable
+ * in `failed` through the same catch as any other failure: leaving it stale is recoverable
  * by a run from inside it, where rewriting its types from another installation's catalogue
  * is the fight this exists to end.
  */
@@ -816,11 +655,16 @@ export async function propagateGlobalChangesToProjects(
   options: PropagationOptions = {},
 ): Promise<PropagationResult> {
   const projects = globalConfig.projects ?? [];
-  if (projects.length === 0) return { updated: [], skipped: [] };
+  const result: PropagationResult = {
+    updated: [],
+    unreadable: [],
+    gone: [],
+    notOurs: [],
+    failed: [],
+  };
+  if (projects.length === 0) return result;
 
   const currentNormalized = currentProjectDir ? normalizeProjectPath(currentProjectDir) : null;
-  const updated: string[] = [];
-  const skipped: string[] = [];
 
   // One project at a time, never `Promise.all`: each propagation seats its project's catalogue
   // in the module-wide matrix singleton and restores the previous one after, so two in flight
@@ -836,18 +680,22 @@ export async function propagateGlobalChangesToProjects(
       agents,
       options,
     );
-    if (outcome === "updated") updated.push(projectPath);
-    else skipped.push(projectPath);
+    result[outcome].push(projectPath);
   }
 
-  return { updated, skipped };
+  return result;
 }
 
 /**
- * Brings one registered project's pair up to date with the global config, or leaves it alone: a
- * project on another installation, one whose config is gone, one the loader returns nothing for,
- * or one whose propagation threw — loading its catalogue as much as writing its pair. None of them
- * stops the fan-out.
+ * Brings one registered project's pair up to date with the global config, or leaves it alone and
+ * answers why: nothing installed there any more, another provider's installation, a config that is
+ * there and cannot be loaded, or a propagation that threw — loading its catalogue as much as
+ * writing its pair. None of them stops the fan-out.
+ *
+ * Whether anything is installed there is asked first, of every provider, because the provider
+ * policy cannot answer it: the layout reads a folder holding nothing as the provider a NEW
+ * installation is made under, so to a global on the other provider a deleted project reads as
+ * another provider's.
  */
 async function propagateToRegisteredProject(
   projectPath: string,
@@ -855,37 +703,48 @@ async function propagateToRegisteredProject(
   globalConfig: ProjectConfig,
   agents: Partial<Record<AgentName, AgentDefinition>>,
   options: PropagationOptions,
-): Promise<"updated" | "skipped"> {
-  const notOurs = whyThisProjectIsNotOurs(projectPath, provider);
-  if (notOurs !== null) {
-    verbose(`Skipped propagation to ${projectPath} (${notOurs})`);
-    return "skipped";
+): Promise<keyof PropagationResult> {
+  if (!(await holdsAnInstallation(projectPath))) {
+    verbose(`Skipped propagation to ${projectPath} (nothing installed there)`);
+    return "gone";
   }
 
-  if (!(await fileExists(getProjectConfigPath(projectPath, provider)))) {
-    verbose(`Skipped propagation to ${projectPath} (config not found)`);
-    return "skipped";
+  const notOurs = await whyThisProjectIsNotOurs(projectPath, provider);
+  if (notOurs !== null) {
+    verbose(`Skipped propagation to ${projectPath} (${notOurs})`);
+    return "notOurs";
   }
 
   try {
     if (!(await propagateToProject(projectPath, provider, globalConfig, agents, options))) {
-      return "skipped";
+      return "gone";
     }
     verbose(`Propagated global changes to ${projectPath}`);
     return "updated";
   } catch (error) {
     verbose(`Failed to propagate to ${projectPath}: ${getErrorMessage(error)}`);
-    return "skipped";
+    return error instanceof ConfigLoadError ? "unreadable" : "failed";
   }
 }
 
+/** Whether any provider's installation is at `projectPath`, this fan-out's or another's. */
+async function holdsAnInstallation(projectPath: string): Promise<boolean> {
+  const configs = await Promise.all(
+    PROVIDERS.map((installed) => fileExists(getProjectConfigPath(projectPath, installed))),
+  );
+  return configs.includes(true);
+}
+
 /**
- * Why a registered project is not this fan-out's to rewrite, or `null` when it is.
+ * Why a registered project that holds an installation is not this fan-out's to rewrite, or `null`
+ * when it is.
  *
  * A global installation fans out only within its own provider family: `projects[]` is a list of
  * directories with nothing in it saying which installation each belongs to, so a project on the
  * other provider is a different installation that happens to be registered here, and rewriting
  * its pair from this global's data is the cross-installation write the folders exist to prevent.
+ * A root the layout reads as this provider's while it holds no config of this provider's — a run
+ * whose `--provider` named it — holds only the other provider's, so it is not ours either.
  *
  * **A refusal is a reason to skip, never a reason to abort the fan-out.** `providerInUse` refuses
  * a root whose installation this release has no host for, and a registered project it cannot act
@@ -893,13 +752,17 @@ async function propagateToRegisteredProject(
  * sentence becomes the reason, so the folder that produced it reaches the verbose log rather than
  * being replaced by a summary of it.
  */
-function whyThisProjectIsNotOurs(projectPath: string, provider: Provider): string | null {
+async function whyThisProjectIsNotOurs(
+  projectPath: string,
+  provider: Provider,
+): Promise<string | null> {
+  const notOurs = `not a ${provider} installation`;
   try {
-    const installed = providerInUse(projectPath);
-    return installed === provider ? null : `not a ${provider} installation`;
+    if (providerInUse(projectPath) !== provider) return notOurs;
   } catch (error) {
     return getErrorMessage(error);
   }
+  return (await fileExists(getProjectConfigPath(projectPath, provider))) ? null : notOurs;
 }
 
 /**
@@ -912,8 +775,8 @@ function whyThisProjectIsNotOurs(projectPath: string, provider: Provider): strin
  *
  * Call AFTER the global .claude-src manifest has been removed so the regenerated
  * project types fall back to the standalone form instead of importing from the
- * now-deleted global config-types.ts. Unreachable project dirs are reported in
- * `skipped`, never thrown.
+ * now-deleted global config-types.ts. Unreachable project dirs are reported by why,
+ * never thrown.
  *
  * The per-project catalogue seat comes with the reuse, and this is the case that needs it
  * most: the standalone form these projects fall back to declares its unions from the
@@ -925,7 +788,7 @@ export async function pruneGlobalEntriesFromRegisteredProjects(
   globalConfig: ProjectConfig,
   agents: Partial<Record<AgentName, AgentDefinition>>,
   provider: Provider,
-): Promise<{ updated: string[]; skipped: string[] }> {
+): Promise<PropagationResult> {
   const emptiedGlobal: ProjectConfig = {
     ...globalConfig,
     skills: [],
@@ -934,16 +797,13 @@ export async function pruneGlobalEntriesFromRegisteredProjects(
   return propagateGlobalChangesToProjects(emptiedGlobal, agents, provider);
 }
 
-/** What one resolution decided: the config to commit, and whether the global data changed. */
-type ResolvedGlobalConfig = { config: ProjectConfig; changed: boolean };
-
 /**
  * Resolves the global config a project install should write, and registers this project's path.
  * `globalDataChanged` gates propagation; `changed` gates the write itself.
  *
  * `authority` is `mergeConfigs`' own word for how much of what it can see the session owns, and
- * it selects between the two resolutions below. Absent, or `"owned"`, keeps the standing
- * additive behaviour.
+ * it selects between two resolutions: `matchGlobalToSession` below, and `addSessionToGlobal` from
+ * `@workspace/compile`. Absent, or `"owned"`, keeps the standing additive behaviour.
  */
 export async function resolveEffectiveGlobalConfig(
   globalSplit: ProjectConfig,
@@ -954,7 +814,7 @@ export async function resolveEffectiveGlobalConfig(
   const merged =
     authority === "all"
       ? matchGlobalToSession(globalSplit, existingGlobalConfig)
-      : addSessionToGlobal(globalSplit, existingGlobalConfig);
+      : addSessionToGlobal(globalSplit, existingGlobalConfig, activeMatrix);
 
   const registration = await registerProjectPath(merged.config, projectDir);
   return {
@@ -962,31 +822,6 @@ export async function resolveEffectiveGlobalConfig(
     globalDataChanged: merged.changed,
     changed: merged.changed || registration.changed,
   };
-}
-
-/**
- * The standing resolution, and the one every caller but `edit --from` gets: the session's global
- * items are ADDED and nothing is taken away.
- *
- * A project install has asked nobody about the machine, so it may not decide for it (commit
- * 403df46, "never modify global config from project-level operations"). The `hasGlobalItems`
- * shortcut is part of that: a session carrying nothing global is not a statement that the global
- * install should be empty.
- */
-function addSessionToGlobal(
-  globalSplit: ProjectConfig,
-  existingGlobalConfig: ProjectConfig | undefined,
-): ResolvedGlobalConfig {
-  const hasGlobalItems = globalSplit.skills.length > 0 || globalSplit.agents.length > 0;
-  if (!hasGlobalItems) {
-    return {
-      config: existingGlobalConfig ?? { name: GLOBAL_CONFIG_NAME, skills: [], agents: [] },
-      changed: false,
-    };
-  }
-
-  if (!existingGlobalConfig) return { config: globalSplit, changed: true };
-  return mergeGlobalConfigs(existingGlobalConfig, globalSplit);
 }
 
 /**

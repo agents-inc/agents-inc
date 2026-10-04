@@ -100,6 +100,7 @@ export default class List extends BaseCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(List);
     await this.sayWhichInstallationThisIs(flags.provider);
+    await this.ensureConfigReadable(process.cwd());
 
     const installation = await detectInstallation();
 

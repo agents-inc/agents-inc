@@ -17,6 +17,7 @@ import type { z } from "zod";
 type SkillMetadata = z.infer<typeof skillMetadataLoaderSchema>;
 import { DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
 import { stripYamlSchemaComment } from "../../utils/yaml-schema";
+import { plural } from "../../utils/string";
 import { SKILL_CONTENT_FILES, SKILL_CONTENT_DIRS } from "../metadata-keys";
 
 export type SkillPluginOptions = {
@@ -228,7 +229,7 @@ export async function compileAllSkillPlugins(
 }
 
 export function printCompilationSummary(results: CompiledSkillPlugin[]): void {
-  log(`\nCompiled ${results.length} skill plugins:`);
+  log(`\nCompiled ${plural(results.length, "skill plugin")}:`);
   for (const result of results) {
     log(`  - ${result.skillName} (v${result.manifest.version})`);
   }

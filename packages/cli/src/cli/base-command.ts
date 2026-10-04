@@ -8,11 +8,14 @@ import { getErrorMessage } from "./utils/errors.js";
 import { verbose, warn } from "./utils/logger.js";
 import {
   completedWithFailures,
-  configUnreadableError,
+  installationConfigsUnreadable,
   rivalSourceFoldersRefuseWrites,
   type IncompleteWork,
   pluginsInstalled,
   propagatedRecompileSummary,
+  registeredProjectConfigUnreadable,
+  registeredProjectGone,
+  registeredProjectOnAnotherProvider,
   savedSkillMetadataUnusableError,
   scopeBlockedStackAssignment,
   sharedConfigProjectScopeAtHome,
@@ -29,7 +32,7 @@ import {
 import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { resolveBranding } from "./lib/configuration/config.js";
-import { isHomeDirectory } from "./lib/installation/index.js";
+import { isHomeDirectory, refuseUnofferedStack } from "./lib/installation/index.js";
 import {
   folderBeingRead,
   sourceScopesInPlay,
@@ -48,6 +51,13 @@ import type {
 import { findConfigLoadFailures } from "./lib/configuration/project-config.js";
 import { findUnusableSavedSkillMetadata } from "./lib/skills/index.js";
 import type { PluginHost } from "./lib/hosts/plugin-host.js";
+import { hostAt } from "./lib/hosts/host-for.js";
+import { refuseUnofferedPlacements } from "./lib/hosts/offered-placements.js";
+import {
+  refuseUncarriedDestinations,
+  type ExternalSkillInstall,
+} from "./lib/seed/external-skills.js";
+import { refuseUnwritableStack } from "@workspace/compile/config-source";
 import { requireMarketplace } from "./lib/operations/source/require-marketplace.js";
 import {
   installPluginSkills,
@@ -98,22 +108,31 @@ function waitForTerminal(isSatisfied: () => boolean): Promise<void> {
 type UnassignedSkill = { skillId: SkillId; blockedBy: AgentName[] };
 
 /**
- * Every active skill of a saved config that no agent's stack references, paired with the
- * global-scoped sub-agents that could not have carried it.
+ * Every active skill this save selected that no agent's stack in the saved config references,
+ * paired with the global-scoped sub-agents that could not have carried it.
+ *
+ * Only the selection is judged. A project's saved config also lists the global skills it
+ * inherits, while the stack a shared configuration brings names only the sub-agents it carries —
+ * a global sub-agent's rows stay in the global config — so an inherited skill is missing from
+ * this stack without being unassigned.
  *
  * `blockedBy` is empty for a global-scoped skill: the scope rule had no say there, and the
  * skill reached nothing for a different reason (no selected sub-agent the resolver
  * considers it relevant to). Naming sub-agents there would blame the wrong rule.
  */
-function findUnassignedSkills(config: ProjectConfig): UnassignedSkill[] {
+function findUnassignedSkills(
+  config: ProjectConfig,
+  selected: readonly SkillConfig[],
+): UnassignedSkill[] {
   const assignedIds = new Set(config.stack ? getStackSkillIds(config.stack) : []);
+  const selectedIds = new Set(selected.map((skill) => skill.id));
   const globalAgentNames = config.agents
     .filter((agent) => isActiveAt(agent, "global"))
     .map((agent) => agent.name);
 
   const unassignedIds = unique(
     config.skills
-      .filter((skill) => !skill.excluded)
+      .filter((skill) => !skill.excluded && selectedIds.has(skill.id))
       .map((skill) => skill.id)
       .filter((skillId) => !assignedIds.has(skillId)),
   );
@@ -199,14 +218,13 @@ export abstract class BaseCommand extends Command {
    * {@link DEFAULT_BRANDING.NAME} everywhere else.
    *
    * **DEGRADE is the posture, and it is chosen here for every command that prints a name.**
-   * `loadSourceConfig` raises for a config that exists and cannot be evaluated, and three of the
-   * four callers must survive precisely that state: `doctor`'s whole job is naming it,
-   * `uninstall` is the only way out of it, and `eject` already catches the same fault one method
-   * down so an ejection that landed is never reported as a run that did nothing. A heading is
-   * decoration — nothing about a display name is worth refusing a command over, and refusing
-   * here would turn the branding wiring into a new way for an unreadable config to abort three
-   * commands that survive it today. `init` is the fourth caller and cannot reach the catch at
-   * all: {@link ensureConfigReadable} has already refused every config this would read.
+   * `loadSourceConfig` raises for a config that exists and cannot be evaluated, and two of the
+   * four callers must survive precisely that state: `doctor`'s whole job is naming it, and
+   * `uninstall` is the only way out of it. A heading is decoration — nothing about a display name
+   * is worth refusing a command over, and refusing here would turn the branding wiring into a new
+   * way for an unreadable config to abort two commands that survive it today. `init` and `eject`
+   * cannot reach the catch at all: {@link ensureConfigReadable} has already refused every config
+   * they would read.
    *
    * The cause is not swallowed: it goes to `verbose`, and the command's own config reader reports
    * it in full where the user needs to act on it. Reporting it twice would put a warning about
@@ -345,6 +363,35 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
+   * Renders what a gated write's fan-out did to the OTHER registered projects: one line for each
+   * it left alone because its config.ts cannot be loaded, then the recompile it performed.
+   *
+   * `uninstall` alone calls {@link reportPropagatedRecompile} directly, since it words the projects
+   * whose config it could not prune in its own terms.
+   */
+  protected reportFanOut(report: GateReport): void {
+    for (const projectPath of report.propagated.unreadable) {
+      this.warn(registeredProjectConfigUnreadable(projectPath));
+    }
+    this.reportPropagatedRecompile(report);
+  }
+
+  /**
+   * One line for each registered project a fan-out left alone because nothing of this
+   * installation is there to rewrite: nothing is installed at its path any more, or it is another
+   * provider's installation. `compile` and `uninstall` print it — neither project's config can
+   * hold what either run changed.
+   */
+  protected reportProjectsOutOfReach(propagated: GateReport["propagated"]): void {
+    for (const projectPath of propagated.gone) {
+      this.warn(registeredProjectGone(projectPath));
+    }
+    for (const projectPath of propagated.notOurs) {
+      this.warn(registeredProjectOnAnotherProvider(projectPath));
+    }
+  }
+
+  /**
    * Renders the recompile a gated write already performed on every OTHER registered
    * project this run's global change was propagated into.
    *
@@ -376,8 +423,8 @@ export abstract class BaseCommand extends Command {
    * `compile` says the same thing about the same shape one layer over, for a config
    * hand-edited into it — see `Compile.warnScopeDroppedStackPairs`.
    */
-  protected reportUnassignedSkills(config: ProjectConfig): void {
-    for (const { skillId, blockedBy } of findUnassignedSkills(config)) {
+  protected reportUnassignedSkills(config: ProjectConfig, selected: readonly SkillConfig[]): void {
+    for (const { skillId, blockedBy } of findUnassignedSkills(config, selected)) {
       this.warn(skillAssignedToNoAgent(skillId));
       if (blockedBy.length > 0) {
         this.warn(scopeBlockedStackAssignment(blockedBy, skillId));
@@ -394,13 +441,18 @@ export abstract class BaseCommand extends Command {
    * config write, after the wizard had copied skills and installed plugins, as a warning that
    * the write never happened.
    *
+   * Every command that reads an installation's config calls it before anything else reads one:
+   * the writes (`init`, `edit`, `compile`, `update`, `share`, `eject`) and the two that only
+   * report (`search`, `list`). `doctor` reports the same file instead, and `uninstall` is the way
+   * out of it, so neither does.
+   *
    * A MISSING config is not a corrupt one and passes here untouched: it is the legitimate
    * state `init` exists for, and the state `edit` reports as "no installation".
    */
   protected async ensureConfigReadable(projectDir: string): Promise<void> {
-    const [failure] = await findConfigLoadFailures(projectDir);
-    if (failure) {
-      this.error(configUnreadableError(failure.message), { exit: EXIT_CODES.ERROR });
+    const failures = await findConfigLoadFailures(projectDir);
+    if (failures.length > 0) {
+      this.error(installationConfigsUnreadable(failures), { exit: EXIT_CODES.ERROR });
     }
   }
 
@@ -481,6 +533,86 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
+   * The refusals a `--from` producer can decide only once it holds what it would install — the
+   * selection and the skills the configuration carries — asked before it lists any of it or asks
+   * whether to install it.
+   *
+   * A run that lists, asks, and is told yes has promised that a yes installs what was listed (the
+   * u01 ruling: "On yes, it installs what is listed"), so a refusal still to come after the
+   * question would ask a person to confirm an install that was never going to happen. Every other
+   * `--from` refusal is already decided above the lists — a carried skill asked for as a plugin or
+   * under a catalogue's id, project content at the home directory, an installation already here —
+   * and these four are the ones that need the decoded selection to be asked of:
+   *
+   * - **A placement the host does not offer.** Read off the selection and the host the run
+   *   installs through, nothing else, so nothing makes it wait for the yes.
+   * - **A stack the marketplace does not ship.** The stack supplies only the configuration's
+   *   description, yet the install refuses an id it cannot resolve — after the plugins are
+   *   installed and the skills copied. So it is asked here, through the lookup the install makes,
+   *   of the marketplace the install reads.
+   * - **A carried skill over a directory no shared configuration put there** — the user's own
+   *   skill at the id the configuration minted for it. Judged on the same set the producer writes,
+   *   so the skills already installed globally, which it does not write, are not asked about.
+   * - **A stack the config writer would refuse** — two skills in a category that holds one, as a
+   *   hand-written row or the kept skills an apply puts back can make. Asked through the writer's
+   *   own rule, because `edit --from` writes the config after its removals have landed.
+   *
+   * Shared by `init --from` and `edit --from` for the reason {@link refuseProjectScopedContentAtHome}
+   * is: an invariant enforced on one producer and not the other is enforced nowhere.
+   */
+  protected async refuseSharedConfigBeforeAsking(
+    selection: WizardResultV2,
+    carried: ExternalSkillInstall[],
+    root: string,
+    sourceResult: SourceLoadResult,
+  ): Promise<void> {
+    this.refuseUnofferablePlacementsBeforeWriting(selection.skills, root);
+    try {
+      await refuseUnofferedStack(selection.selectedStackId, sourceResult);
+      await refuseUncarriedDestinations(carried);
+      refuseUnwritableStack(selection.assignedStack, sourceResult.matrix);
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  /**
+   * Refuses a SELECTION asking for a mode/scope cell this host does not offer, before the run has
+   * touched anything.
+   *
+   * **`bindsItsOfferedPlacements` is not a pre-flight and cannot be made into one.** It refuses
+   * at `installPlugin`, which `installPluginSkills` calls once per skill inside a loop that
+   * collects per-skill failures — so a payload whose first plugin row is offerable and whose
+   * second is not installed a real plugin into the user's Codex registry and only then stopped,
+   * on a message ending "Nothing has been changed." Nothing removed it afterwards: no `config.ts`
+   * was written, so `uninstall` had no row naming it and `doctor` had no configuration to check
+   * it against — an orphan in the host's own registry that no command in this CLI can see. The
+   * single-row case cannot show it, because with one unofferable row the loop's first iteration
+   * IS the refusal. `edit --from` had no pre-flight at all until it came here, and met exactly
+   * that per-plugin guard after its own yes.
+   *
+   * It reads the whole selection — ejected rows included — because the roster is about CELLS
+   * rather than about plugins: a host that stopped offering `eject+project` would owe the same
+   * refusal, and a guard that only looked at plugin rows would go on writing files for it.
+   *
+   * The same function the read path calls (`refuseUnofferedPlacements`, off the same host
+   * roster), so `init`'s sentence and `compile`'s are one sentence rather than two that agree
+   * today. The per-call guard stays where it is: it is the backstop for a caller that did not
+   * come through here, and for the one host this release ships every cell is offered, so a
+   * backstop that never fires is what a deleted one would look like.
+   */
+  protected refuseUnofferablePlacementsBeforeWriting(
+    skills: readonly SkillConfig[],
+    root: string,
+  ): void {
+    try {
+      refuseUnofferedPlacements(skills, hostAt(root));
+    } catch (error) {
+      this.error(getErrorMessage(error), { exit: EXIT_CODES.ERROR });
+    }
+  }
+
+  /**
    * What a command that is about to WRITE owes the user about the layout of the folders it will
    * write into: a refusal where a scope holds two of them.
    *
@@ -490,7 +622,9 @@ export abstract class BaseCommand extends Command {
    *
    * Read-only commands do not call this: `doctor`'s Layout row is where a command that changes
    * nothing says all of this, and a user whose scope holds two folders has to be able to LOOK at
-   * it.
+   * it. `share` changes nothing here and calls it anyway, because it PUBLISHES what it reads — an
+   * id minted from whichever folder the resolver picked describes an installation nobody chose,
+   * and it outlives the folder it was read from.
    */
   protected async settleSourceLayoutBeforeWriting(projectDir: string): Promise<void> {
     this.refuseRivalSourceFolders(await sourceScopesInPlay(projectDir));

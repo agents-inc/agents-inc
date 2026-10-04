@@ -238,6 +238,20 @@ async function buildInstallConfig(
 }
 
 /**
+ * Refuses a selected stack the source does not offer, through the lookup the install makes, so a
+ * caller can ask before it writes anything. The `--from` producers do (see
+ * `refuseSharedConfigBeforeAsking` on `BaseCommand`); the install's own lookup is then only the
+ * backstop, since a refusal reached that late lands after the plugins are installed and the skills
+ * copied.
+ */
+export async function refuseUnofferedStack(
+  stackId: WizardResultV2["selectedStackId"],
+  sourceResult: SourceLoadResult,
+): Promise<void> {
+  await loadSelectedStack(stackId, sourceResult);
+}
+
+/**
  * The stack the wizard selected, loaded from the source — `null` where none was selected, and a
  * refusal naming the source where one was selected that the source does not offer.
  */

@@ -12,6 +12,7 @@ import {
 } from "../../lib/skills";
 import { compileAllAgentPlugins, printAgentCompilationSummary } from "../../lib/agents";
 import { readPluginManifest } from "../../lib/plugins";
+import { plural } from "../../utils/string";
 
 export default class BuildPlugins extends BaseCommand {
   static summary = "Build skills and agents into standalone plugins";
@@ -129,7 +130,7 @@ export default class BuildPlugins extends BaseCommand {
 
     const { compiled, failed } = await compileAllSkillPlugins(skillsDir, outputDir);
 
-    this.log(`Compiled ${compiled.length} skill plugins`);
+    this.log(`Compiled ${plural(compiled.length, "skill plugin")}`);
     printCompilationSummary(compiled);
 
     if (failed.length > 0) {
@@ -159,7 +160,7 @@ export default class BuildPlugins extends BaseCommand {
 
     const agentResults = await compileAllAgentPlugins(resolvedAgentsDir, outputDir);
 
-    this.log(`Compiled ${agentResults.length} agent plugins`);
+    this.log(`Compiled ${plural(agentResults.length, "agent plugin")}`);
     printAgentCompilationSummary(agentResults);
   }
 

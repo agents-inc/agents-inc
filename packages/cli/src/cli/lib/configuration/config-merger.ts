@@ -1,4 +1,5 @@
-import { indexBy, uniqueBy } from "remeda";
+import { indexBy, omit, pick, uniqueBy } from "remeda";
+import { HAND_WRITTEN_FIELDS } from "@workspace/compile/config-source";
 
 import type { ProjectConfig } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
@@ -204,9 +205,15 @@ export function mergeConfigs(
     merged.agentsSource = existingConfig.agentsSource;
   }
 
-  if (existingConfig.marketplaceName) {
+  // The existing name labels the marketplace it was recorded beside. A project set up from another
+  // merges over the GLOBAL config, and that name would otherwise be written in as the project's.
+  if (existingConfig.marketplaceName && merged.marketplace === existingConfig.marketplace) {
     merged.marketplaceName = existingConfig.marketplaceName;
   }
+
+  // Written by hand into this file and by nothing the session produces, so the file is their only
+  // record: a rewrite that dropped them put a white-labelled install back on the shipped name.
+  Object.assign(merged, pick(existingConfig, HAND_WRITTEN_FIELDS));
 
   // Preserve the registered project paths from the existing (global) config — the wizard
   // result never carries them, and losing them silently disables propagation of global
@@ -230,7 +237,10 @@ export function mergeConfigs(
  * The carry-forward itself is intentional and stays: a project's OWN prior config is how a
  * hand-renamed `config.ts` keeps its name across saves. What decides between the two is the
  * provenance of the load, which is known here and nowhere inside the pure merge — so a
- * config that came from the home fallback lends this save every field except its name.
+ * config that came from the home fallback lends this save every field except its name and its
+ * {@link HAND_WRITTEN_FIELDS}. A project that declares none of those reads the global's at run
+ * time, so a copy lent here would become the project's own and keep the old value after the
+ * global changed.
  */
 function existingConfigForMerge(
   loaded: LoadedProjectConfig,
@@ -240,7 +250,9 @@ function existingConfigForMerge(
   // Against the SAME installation's path: the load says which provider it came out of, and a
   // comparison against another provider's file would read a project's own config as inherited.
   const isProjectsOwnFile = loaded.configPath === getProjectConfigPath(projectDir, loaded.provider);
-  return isProjectsOwnFile ? loaded.config : { ...loaded.config, name: ownName };
+  if (isProjectsOwnFile) return loaded.config;
+
+  return { ...omit(loaded.config, HAND_WRITTEN_FIELDS), name: ownName };
 }
 
 export async function mergeWithExistingConfig(

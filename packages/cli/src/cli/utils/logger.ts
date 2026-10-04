@@ -60,23 +60,7 @@ export function disableBuffering(): void {
 //   - Do NOT prefix the message with "Warning:" — this function adds it automatically
 //   - After a colon, use lowercase (e.g., "Skipping 'foo': invalid frontmatter")
 //   - Use em dash for supplemental info (e.g., "Missing category — defaulting to 'local'")
-export type WarnOptions = {
-  /**
-   * When true, suppresses this warning in a UNIT run — the gate reads `VITEST` from the
-   * environment of the process evaluating it, so it can only ever mean that. Every E2E runner
-   * hands the spawned binary `VITEST: undefined`, so an E2E run of the real binary is a test
-   * environment in which this warning IS printed. Which runners those are is not a number worth
-   * carrying here — it said "Both" while there were three, and the third was clearing nothing at
-   * all; `src/cli/lib/__tests__/e2e-runner-environment.test.ts` derives the roster and is the
-   * only place that count is correct by construction.
-   */
-  suppressInTest?: boolean;
-};
-
-export function warn(msg: string, options?: WarnOptions): void {
-  if (options?.suppressInTest && process.env.VITEST) {
-    return;
-  }
+export function warn(msg: string): void {
   if (bufferMode) {
     messageBuffer.push({ level: "warn", text: msg });
     return;
@@ -98,8 +82,8 @@ const alreadySaid = new Set<string>();
  * reset: the scope is one CLI invocation, and every surface that asserts on one of these lines
  * drives a spawned binary, which is a fresh process by construction.
  */
-export function warnOnce(msg: string, options?: WarnOptions): void {
+export function warnOnce(msg: string): void {
   if (alreadySaid.has(msg)) return;
   alreadySaid.add(msg);
-  warn(msg, options);
+  warn(msg);
 }

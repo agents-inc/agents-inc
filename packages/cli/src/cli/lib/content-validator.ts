@@ -33,6 +33,8 @@ import { splitMetadataValidationIssues, validateSkillMetadata } from "./schemas.
 import { readForkedFromMetadata } from "./skills/index.js";
 import { isSourceRepo, validateSource, type MarketplaceReader } from "./source-validator.js";
 import { invalidResult, mergeValidationResults, validResult } from "./validation-result.js";
+import { scopeLabel } from "../utils/messages.js";
+import { plural } from "../utils/string.js";
 import type { ValidationResult } from "../types/index.js";
 
 /** How a source repository under the cwd is labelled when it is not a registered source. */
@@ -113,10 +115,14 @@ export async function validateProjectConfigFile(projectDir: string): Promise<Con
   return { count: present, issues: failures.map(toUnreadableConfigIssue), notes: [] };
 }
 
+/**
+ * Led by whose config it is, as every config row `doctor` prints is: from a project, the file can
+ * be its own or the global one it inherits.
+ */
 function toUnreadableConfigIssue(failure: ConfigLoadError): ContentIssue {
   return {
     severity: "error",
-    file: displayDir(failure.configPath),
+    file: `${scopeLabel(failure.scope)}'s ${displayDir(failure.configPath)}`,
     message: `${CONFIG_UNREADABLE}: ${failure.reason}`,
   };
 }
@@ -196,7 +202,7 @@ async function validateOneSource(
   const label = `${source.name} (${source.url})`;
   try {
     const result = await validateSource(source.url, reader);
-    return { note: `${label} — ${result.skillCount} skills`, issues: result.issues };
+    return { note: `${label} — ${plural(result.skillCount, "skill")}`, issues: result.issues };
   } catch (error) {
     return {
       note: `${label} — failed`,

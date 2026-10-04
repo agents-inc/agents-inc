@@ -220,7 +220,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     [showLabels, onToggleLabels, onFocusChange],
   );
 
-  const { focusedRow, focusedCol, setFocused, moveFocus } = useFocusedListItem(
+  const { focusedRow, focusedCol, currentFocus, setFocused, moveFocus } = useFocusedListItem(
     categories.length,
     getColCount,
     {
@@ -236,6 +236,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     categories,
     focusedRow,
     focusedCol,
+    currentFocus,
     setFocused,
     moveFocus,
     onToggle,

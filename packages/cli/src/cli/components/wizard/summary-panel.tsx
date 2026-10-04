@@ -114,9 +114,15 @@ export const SummaryPanel: React.FC = () => {
   const skillConfigs = useWizardStore((s) => s.skillConfigs);
   const agentConfigs = useWizardStore((s) => s.agentConfigs);
   const selectedStackId = useWizardStore((s) => s.selectedStackId);
+  const setupMarketplace = useWizardStore((s) => s.setupMarketplace);
   const { viewportRef, contentRef, contentMarginTop, hiddenAbove, hiddenBelow } = usePanelScroll();
 
-  const sourceNames = formatSkillMarketplaces(skillConfigs);
+  // A project set up from a marketplace named for it is set up from THAT one, whichever the
+  // global install's skills it shows come from.
+  const sourceNames =
+    setupMarketplace === null
+      ? formatSkillMarketplaces(skillConfigs)
+      : formatSourceDisplayName(setupMarketplace);
   const stackName = getStackName(selectedStackId);
 
   return (

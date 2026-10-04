@@ -133,7 +133,7 @@ export function filterExcludedEntries(config: ProjectConfig): ProjectConfig {
  * The stack with every excluded skill's assignment taken out. Each agent and category keeps its
  * key, even where that leaves a category with no assignments.
  */
-function withoutExcludedAssignments(
+export function withoutExcludedAssignments(
   stack: NonNullable<ProjectConfig["stack"]>,
   excludedIds: ReadonlySet<SkillId>,
 ): NonNullable<ProjectConfig["stack"]> {
@@ -179,8 +179,10 @@ export async function recompileAgents(
     pluginDir,
   });
 
+  // An empty pass has nothing to say: every caller reports one off `compiled`, and a warning here
+  // only ever surfaced merged into the OTHER scope's failure report, beside agents that compiled.
   if (agentNames.length === 0) {
-    return { compiled: [], rewritten: [], failed: [], warnings: ["No agents found to recompile"] };
+    return { compiled: [], rewritten: [], failed: [], warnings: [] };
   }
 
   verbose(`Recompiling ${agentNames.length} agents in ${outputDir ?? pluginDir}`);

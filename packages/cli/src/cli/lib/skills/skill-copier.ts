@@ -2,6 +2,7 @@ import path from "path";
 
 import { copy, ensureDir, isPathWithin } from "../../utils/fs";
 import { getErrorMessage } from "../../utils/errors";
+import { plural } from "../../utils/string";
 import { computeFileHash } from "../versioning";
 import { EJECT_SOURCE, SOURCE_SRC_DIR, STANDARD_FILES } from "../../consts";
 import type { ResolvedSkill, SkillId } from "../../types";
@@ -190,7 +191,7 @@ function isCopySuccess(outcome: CopyOutcome): outcome is CopySuccess {
 function copyFailureMessage(failures: CopyFailure[], attempted: number): string {
   const lines = failures.map((failure) => `  ${failure.skillId}: ${failure.problem}`);
 
-  return `Could not copy ${failures.length} of ${attempted} skills:\n${lines.join("\n")}`;
+  return `Could not copy ${failures.length} of ${plural(attempted, "skill")}:\n${lines.join("\n")}`;
 }
 
 function getFlattenedSkillDestPath(skill: ResolvedSkill, localSkillsDir: string): string {

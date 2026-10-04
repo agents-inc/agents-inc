@@ -4,6 +4,9 @@ import { Box, Text, useApp } from "ink";
 import { Confirm } from "./confirm.js";
 import { CLI_COLORS } from "../../consts.js";
 
+/** Where a section's items start: two columns in from its heading, which sits one in. */
+const ITEM_INDENT = 3;
+
 /** A grouped section of a removal plan: a heading, and the lines it promises beneath it. */
 export type RemovalPlanSection = {
   label: string;
@@ -58,12 +61,13 @@ export const RemovalPlanConfirm: React.FC<RemovalPlanConfirmProps> = ({
       {sections.map((section) => (
         <Box key={section.label} flexDirection="column">
           <Text color={CLI_COLORS.ERROR}> {section.label}</Text>
-          {section.items.map((item) => (
-            <Text key={item} dimColor>
-              {" "}
-              {item}
-            </Text>
-          ))}
+          <Box flexDirection="column" paddingLeft={ITEM_INDENT}>
+            {section.items.map((item) => (
+              <Text key={item} dimColor>
+                {item}
+              </Text>
+            ))}
+          </Box>
         </Box>
       ))}
 

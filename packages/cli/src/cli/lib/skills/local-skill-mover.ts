@@ -124,3 +124,19 @@ export async function migrateLocalSkillScope(
 
   verbose(`Migrated skill '${skillId}' from ${fromScope} to ${toScope}`);
 }
+
+/**
+ * Moves a project's ejected copy of a skill into the global install, in place of the global copy
+ * it masked: what `s` does to a `[P][G]` pair whose halves are both Local. Every project reads the
+ * global copy, so the project's edits reach them all.
+ *
+ * The global copy is removed first rather than copied over, because a copy merges into what is
+ * there: a file the project's copy deleted would survive in the global install.
+ */
+export async function foldLocalSkillIntoGlobal(
+  projectDir: string,
+  skillId: SkillId,
+): Promise<void> {
+  await deleteLocalSkill(projectDir, skillId, "global");
+  await migrateLocalSkillScope(skillId, "project", projectDir);
+}

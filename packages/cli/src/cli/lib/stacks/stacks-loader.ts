@@ -2,7 +2,7 @@ import path from "path";
 import { flatMap, groupBy, mapValues, partition, pipe, unique, uniqueBy } from "remeda";
 import { getErrorMessage } from "../../utils/errors";
 import { verbose, warn } from "../../utils/logger";
-import { hasSkill, matrix } from "../matrix/matrix-provider";
+import { matrix } from "../matrix/matrix-provider";
 import type {
   AgentName,
   SkillAssignment,
@@ -240,7 +240,7 @@ export function stackNotOfferedMessage(stackId: string, source: string): string 
  *
  * Exported because more than one surface must produce it word for word, which is the carve-out
  * CLAUDE.md makes for a definition every caller is meant to reach rather than restate.
- * `externalSkillMetadata` in `seed/external-skills.ts` is the second caller: a carried skill's
+ * `registerSkillOnDisk` in `seed/external-skills.ts` is the second caller: a carried skill's
  * cue is reachable by two routes — that file writes it into the installed `metadata.yaml`, and
  * {@link statedUsageFor} answers for it during the run that seats it, before any metadata exists
  * — so two spellings meant one sub-agent could read a different sentence for the same skill
@@ -276,19 +276,11 @@ function statedUsageFor(skillId: SkillId, category: Category): string {
 export function resolveAgentConfigToSkills(agentConfig: StackAgentConfig): SkillReference[] {
   return typedEntries<Category, SkillAssignment[]>(agentConfig).flatMap(([category, assignments]) =>
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
-    (assignments ?? []).map((assignment): SkillReference => {
-      if (!hasSkill(assignment.id)) {
-        warn(
-          `Skill '${assignment.id}' for category '${category}' not found in matrix. It may be a custom or local skill.`,
-          { suppressInTest: true },
-        );
-      }
-      return {
-        id: assignment.id,
-        usage: statedUsageFor(assignment.id, category),
-        preloaded: assignment.preloaded ?? false,
-      };
-    }),
+    (assignments ?? []).map((assignment): SkillReference => ({
+      id: assignment.id,
+      usage: statedUsageFor(assignment.id, category),
+      preloaded: assignment.preloaded ?? false,
+    })),
   );
 }
 

@@ -29,4 +29,8 @@ export {
   unresolvedSkillRemovalReasons,
 } from "./unresolved-skill-entries";
 
-export { deleteLocalSkill, migrateLocalSkillScope } from "./local-skill-mover";
+export {
+  deleteLocalSkill,
+  foldLocalSkillIntoGlobal,
+  migrateLocalSkillScope,
+} from "./local-skill-mover";

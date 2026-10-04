@@ -39,13 +39,27 @@ export async function compileAgentsAllScopes(
     outputDir: resolveInstallPaths(os.homedir(), "global").agentsDir,
     scopeFilter: "global",
   });
-  const projectResult = await compileAgents({
-    ...base,
+  const projectResult = await compileProjectScope(options);
+  return mergeCompilationResults(globalResult, projectResult);
+}
+
+/**
+ * The project pass alone, filtered to the project's own scope — what a project run compiles when
+ * it leaves the global install exactly as installed, so its global pass would have nothing to
+ * write but the drift it was never asked to repair.
+ */
+export async function compileProjectScope(
+  options: CompileAllScopesOptions,
+): Promise<CompilationResult> {
+  const { projectDir, sourcePath, skills, agentScopeMap } = options;
+  return compileAgents({
+    sourcePath,
+    skills,
+    agentScopeMap,
     projectDir,
     outputDir: resolveInstallPaths(projectDir, "project").agentsDir,
     scopeFilter: "project",
   });
-  return mergeCompilationResults(globalResult, projectResult);
 }
 
 function mergeCompilationResults(...results: CompilationResult[]): CompilationResult {

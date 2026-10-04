@@ -3,6 +3,7 @@
 
 export {
   loadSource,
+  sayCapturedWarnings,
   type LoadSourceOptions,
   type LoadedSource,
   ensureMarketplace,
@@ -44,6 +45,7 @@ export {
   pruneCompiledAgents,
   type PruneCompiledAgentsOptions,
   compileAgentsAllScopes,
+  compileProjectScope,
   type CompileAllScopesOptions,
   recompileRegisteredProjectAgents,
   recompilePropagatedProjectAgents,

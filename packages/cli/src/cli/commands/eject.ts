@@ -33,8 +33,8 @@ import {
 import { copySkillsToLocalFlattened, type CopiedSkill } from "../lib/skills/index.js";
 import { INCOMPLETE_WORK_RECOVERY, INFO_MESSAGES } from "../utils/messages.js";
 import { getErrorMessage } from "../utils/errors.js";
-import type { MergedSkillsMatrix, SkillId } from "../types/index.js";
-import { typedKeys } from "../utils/typed-object.js";
+import { plural } from "../utils/string.js";
+import type { MergedSkillsMatrix } from "../types/index.js";
 
 const EJECT_TYPES = ["agent-partials", "templates", "skills", "all"] as const;
 type EjectType = (typeof EJECT_TYPES)[number];
@@ -114,6 +114,9 @@ export default class Eject extends BaseCommand {
       (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
 
+    // Before anything is copied: a config nobody can read is recreated, not ejected over, and a
+    // refusal past this point would follow files already written.
+    await this.ensureConfigReadable(projectDir);
     await this.settleSourceLayoutBeforeWriting(projectDir);
     const ejectType = this.validateEjectType(args.type);
     const outputBase = await this.resolveOutputBase(flags, projectDir);
@@ -334,7 +337,7 @@ export default class Eject extends BaseCommand {
     }
 
     this.logSuccess(
-      `${result.copiedSkills.length} skills ejected to ${result.destDir} from ${result.sourceLabel}`,
+      `${plural(result.copiedSkills.length, "skill")} ejected to ${result.destDir} from ${result.sourceLabel}`,
     );
     this.log("You can now customize skill content locally.");
   }
@@ -473,10 +476,12 @@ type EjectSkillsResult =
     };
 
 /**
- * Copies non-local skills from source to a target directory.
+ * Copies the marketplace's own skills from source to a target directory.
  *
- * Filters out skills already marked as local, then copies the remaining skills
- * using copySkillsToLocalFlattened.
+ * Only the skills the loaded marketplace carries, because those are the only ones its folder
+ * holds: a global installation's skill seated from another marketplace is in the matrix and not
+ * on disk here. Skills already marked as local are filtered out too, then the remaining skills
+ * are copied using copySkillsToLocalFlattened.
  *
  * Returns structured data — the command decides what to log.
  */
@@ -501,7 +506,7 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
     };
   }
 
-  const skillIds = typedKeys<SkillId>(matrix.skills).filter(
+  const skillIds = [...sourceResult.marketplaceSkillIds].filter(
     (skillId) => !matrix.skills[skillId]?.local,
   );
 

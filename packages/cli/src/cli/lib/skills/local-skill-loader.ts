@@ -1,6 +1,7 @@
 import path from "path";
 import { directoryExists, listDirectories, fileExists, readFile } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
+import { plural } from "../../utils/string";
 import { LOCAL_PSEUDO_CATEGORY, LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../consts";
 import { namesPlaceholderCategory, parseFrontmatter, readSkillMetadata } from "../loading";
 import type { CategoryPath, Domain, ExtractedSkillMetadata, SkillSlug } from "../../types";
@@ -42,7 +43,7 @@ export async function discoverLocalSkills(
   );
   const skills = extracted.filter((skill) => skill !== null);
 
-  verbose(`Discovered ${skills.length} local skills from ${localSkillsPath}`);
+  verbose(`Discovered ${plural(skills.length, "local skill")} from ${localSkillsPath}`);
 
   return {
     skills,

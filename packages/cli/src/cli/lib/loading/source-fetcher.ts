@@ -28,6 +28,7 @@ import {
 import { log, verbose, warn } from "../../utils/logger";
 import { sourceUnreachableUsingCache, STATUS_MESSAGES } from "../../utils/messages";
 import { DEFAULT_SOURCE, isLocalSource } from "../configuration";
+import { validateLoadedMarketplaceName } from "../marketplace-generator";
 import {
   formatZodIssues,
   marketplaceSchema,
@@ -445,8 +446,8 @@ export class MarketplaceManifestAbsentError extends Error {}
  * The name is the namespace Claude Code registers every plugin under, so a name it will
  * not accept leaves a marketplace that loads and can install nothing — which is the
  * state `build marketplace` refuses to publish and this is the same rule read on load.
- * Every other refusal in {@link fetchMarketplace} leaves the marketplace installable
- * and merely unnameable, so it stays an ordinary `Error` and its reader degrades.
+ * Every other refusal in {@link fetchMarketplace} is a manifest to repair or rebuild, so
+ * it stays an ordinary `Error`.
  */
 export class MarketplaceNameRefusedError extends Error {}
 
@@ -455,6 +456,13 @@ export class MarketplaceNameRefusedError extends Error {}
  * of it fails here rather than silently stopping the refusal below from firing.
  */
 const MANIFEST_NAME_FIELD: keyof Marketplace = "name";
+
+/**
+ * How a reserved name is replaced on load, worded as the schema's own name refusal words it
+ * (`MARKETPLACE_NAME_REFUSAL` in `schemas.ts`): the manifest is the file being read, so it is
+ * the one a reader can change.
+ */
+const LOADED_NAME_WAY_OUT = "rename the marketplace in this manifest";
 
 /**
  * Whether a manifest's refusal is about its name.
@@ -518,6 +526,13 @@ export async function fetchMarketplace(source: string): Promise<MarketplaceFetch
   }
 
   const marketplace = validation.data;
+
+  const reservedName = validateLoadedMarketplaceName(marketplace.name, LOADED_NAME_WAY_OUT);
+  if (reservedName) {
+    throw new MarketplaceNameRefusedError(
+      `Invalid ${MARKETPLACE_JSON} at: ${marketplacePath}\n\n${reservedName}`,
+    );
+  }
 
   const EXPECTED_MARKETPLACE_KEYS = [
     "$schema",

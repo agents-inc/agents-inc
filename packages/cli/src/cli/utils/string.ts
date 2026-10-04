@@ -122,6 +122,15 @@ export function truncateText(text: string, maxLength: number): string {
   return inert.slice(0, maxLength - 1) + "\u2026";
 }
 
+/**
+ * A count and its noun, the noun pluralised unless the count is one — `1 skill`, `0 skills`,
+ * `2 skill plugins`. The noun is given in the singular and takes a plain `s`, which every noun a
+ * count line here counts in does.
+ */
+export function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 /** Converts a kebab-case string to a space-separated Title Case string. */
 export function toTitleCase(kebabCase: string): string {
   return kebabCase

@@ -1,4 +1,3 @@
-import os from "os";
 import path from "path";
 
 import chalk from "chalk";
@@ -13,6 +12,7 @@ import {
   CLI_INVOKE_COMMAND,
   CLI_COLORS,
   EDIT_PROJECT_SETUP_FLAG,
+  EDIT_PROJECT_SETUP_MARKETPLACE_FLAG,
   EJECT_SOURCE,
   editorConfigUrl,
   formatSourceDisplayName,
@@ -20,6 +20,7 @@ import {
 import {
   detectProject,
   loadSource,
+  sayCapturedWarnings,
   copyLocalSkills,
   uninstallPluginSkills,
   loadAgentDefs,
@@ -27,6 +28,7 @@ import {
   writeProjectConfig,
   type ConfigWriteResult,
   compileAgentsAllScopes,
+  compileProjectScope,
   discoverInstalledSkills,
   removeCompiledAgents,
   type RemoveCompiledAgentsOptions,
@@ -39,26 +41,30 @@ import {
   detectMigrations,
   ejectCopyFailureError,
   executeMigration,
+  holdsItsOwnInstallation,
   isHomeDirectory,
   resolveInstallPaths,
   INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
 import {
   applyMigratedGlobalSources,
+  movedGlobalAgentInputs,
   mutateGlobal,
-  normalizeProjectPath,
+  type GateReport,
 } from "../lib/config-gate/index.js";
 import { matrix, getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
-import { type AuthoritativeScope, loadInstalledConfig } from "../lib/configuration/index.js";
+import { type AuthoritativeScope } from "../lib/configuration/index.js";
 import {
   activeAgentNames,
   activeAgentScopeMap,
   isActiveAt,
+  isGlobalTombstone,
 } from "../lib/configuration/scope-predicates.js";
 import type { SourceLoadResult } from "../lib/loading/index.js";
 import { discoverAllPluginSkills, buildMarketplacePluginRef } from "../lib/plugins/index.js";
 import {
   deleteLocalSkill,
+  foldLocalSkillIntoGlobal,
   migrateLocalSkillScope,
   unresolvedSkillRemovalReasons,
 } from "../lib/skills/index.js";
@@ -78,25 +84,43 @@ import {
 import { publishSeedConfig } from "../lib/seed/publish-seed.js";
 import { fetchSeedConfig } from "../lib/seed/fetch-seed.js";
 import {
+  carriedSkillsThatDiffer,
   registerExternalSkills,
   writeExternalSkills,
   type ExternalSkillInstall,
 } from "../lib/seed/external-skills.js";
 import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
-import { reconcileSharedConfig, type KeptFromRoundTrip } from "../lib/seed/seed-apply.js";
+import {
+  arrivalLines,
+  arrivalsByScope,
+  notInstalledGlobally,
+  readInstalledGlobal,
+  reconcileSharedConfig,
+  restoreInstalledGlobal,
+  sameAssignments,
+  skillLabel,
+  withUnplaceableAssignees,
+  type Arrivals,
+  type HeldGlobal,
+  type KeptFromRoundTrip,
+  type UnassignedRow,
+} from "../lib/seed/seed-apply.js";
 import {
   RemovalPlanConfirm,
   type RemovalPlanSection,
 } from "../components/common/removal-plan-confirm.js";
 import { promptConfirm } from "../components/common/prompt-confirm.js";
 import { hostAt } from "../lib/hosts/host-for.js";
+import { hostCompileNotices } from "../lib/hosts/host-compile-notices.js";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements.js";
+import { providerInUse } from "../lib/installation/install-layout.js";
 import {
   providerFlag,
   providerNamedBy,
   refuseAnAmbiguousInstallation,
 } from "../lib/installation/provider-flag.js";
 import { openUrl } from "../utils/open-url.js";
+import { plural } from "../utils/string.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
@@ -106,16 +130,21 @@ import {
   SHARED_CONFIG_APPLY,
   STATUS_MESSAGES,
   agentsNotCompiled,
+  applySharedConfigHere,
   authoredHereKept,
   carriedSkillsWritten,
-  globallyInstalledRemoved,
+  keptAsInstalledGlobally,
+  keptUnassigned,
   localSkillsCopied,
+  nothingInstalledToApplyTo,
+  projectCopyRemoved,
   recompileSummary,
   sharedConfigDestinations,
   sharedConfigNeedsTerminal,
   skippedUnknownAgents,
   skippedUnknownSkills,
   unplaceableKept,
+  wizardNeedsTerminal,
 } from "../utils/messages.js";
 import { formatScopeTag } from "../lib/wizard/index.js";
 import { typedKeys } from "../utils/typed-object.js";
@@ -125,11 +154,11 @@ import type { SeedPayload } from "@workspace/matrix/seed";
 type ScopeChange = { from: SkillScope; to: SkillScope };
 
 /**
- * The noun `edit`'s recompile summary counts in. `edit` recompiles every scope this
- * context owns in one pass, so it has no scope word to qualify with — `compile`,
- * which runs one scope at a time, does.
+ * The noun `edit`'s recompile summary counts in, singular as `recompileSummary` takes it. `edit`
+ * recompiles every scope this context owns in one pass, so it has no scope word to qualify with —
+ * `compile`, which runs one scope at a time, does.
  */
-const RECOMPILE_SUBJECT = "agents";
+const RECOMPILE_SUBJECT = "agent";
 
 /**
  * Dual-scope add/remove: the project half of a [P][G] pair was toggled while the
@@ -230,6 +259,11 @@ type EditContext = {
   sourceResult: SourceLoadResult;
   startupMessages: StartupMessage[];
   currentSkillIds: SkillId[];
+  /**
+   * The name of the marketplace `init --marketplace` named for the project setup this run
+   * continues. Absent on every other run, where the marketplace is the one the installation stored.
+   */
+  setupMarketplace?: string;
 };
 
 /**
@@ -308,96 +342,58 @@ type SharedConfigPlan = {
   statements: string[];
 };
 
-/** A removal set's two lists, whichever scope the entries in it were installed at. */
-type RemovedEntries = { skills: SkillId[]; agents: AgentName[] };
-
-/** The removal set split by the scope each entry was actually installed at. */
-type RemovalsByScope = { here: RemovedEntries; global: RemovedEntries };
-
-/** The entries this run is applying over, which is where a removal's scope is read from. */
-type InstalledEntries = Pick<ProjectConfig, "skills" | "agents">;
-
 /**
- * The plan INSIDE the global installation: the ordinary one, and deliberately nothing more.
+ * The plan a shared apply is confirmed against: what it removes, and what stays and why.
  *
- * The person ran this at their home directory. The location IS the global scope, they chose it,
- * and that global is inherited by every project is what global means — so a second
- * acknowledgement restates a fact the directory already states, and a gate that fires everywhere
- * is one nobody is still reading by the time it matters.
+ * It is one plan wherever the run was started. Inside the global installation the removals are
+ * global ones, and the person chose that scope by running the command there. Inside a project
+ * the global install is put back whole before the diff (see `restoreInstalledGlobal`), so every
+ * removal listed is the project's own and nothing reaches past it — including the project's half
+ * of a `[P][G]` pair, whose id survives at global scope and so is not in the removed lists.
  */
-function globalScopePlan(changes: ConfigChanges, kept: string[]): SharedConfigPlan {
-  const sections = removalSections(changes.removedSkills, changes.removedAgents);
+function sharedConfigPlan(changes: ConfigChanges, kept: string[]): SharedConfigPlan {
+  const dropped = droppedProjectHalves(changes);
+  const skillLines = [
+    ...changes.removedSkills.map(skillLabel),
+    ...dropped.skillIds.map(droppedSkillLine),
+  ];
+  const agentLines = [...changes.removedAgents, ...dropped.agentNames.map(projectCopyRemoved)];
+
+  const sections = removalSections(skillLines, agentLines);
   return { heading: planHeading(sections), sections, statements: kept };
 }
 
-/**
- * The plan INSIDE a project, where a removal can reach past the directory it was asked for in.
- *
- * A global install is one installation every registered project reads, so removing one here
- * changes projects the person confirming is not looking at. Those entries get their own section
- * and a statement counting and naming the projects the yes changes; everything else reads as it
- * always has. The split is on the entries' own scope rather than on wording, so the two confirms
- * stay two branches — one gate firing everywhere and explaining itself differently is how a gate
- * drifts into firing wrongly.
- */
-function projectScopePlan(
-  changes: ConfigChanges,
-  kept: string[],
-  installed: InstalledEntries,
-  otherProjects: string[],
-): SharedConfigPlan {
-  const { here, global } = splitRemovalsByScope(changes, installed);
-  const sections = [
-    ...removalSections(here.skills, here.agents),
-    ...globalRemovalSections(global.skills, global.agents),
-  ];
-
-  return {
-    heading: planHeading(sections),
-    sections,
-    statements: [...globalReachStatement(global, otherProjects), ...kept],
-  };
-}
-
-/** Which removals leave this project only, and which leave the machine. */
-function splitRemovalsByScope(
-  changes: ConfigChanges,
-  installed: InstalledEntries,
-): RemovalsByScope {
-  const isGlobalSkill = (id: SkillId): boolean =>
-    installed.skills.some((skill) => skill.id === id && isActiveAt(skill, "global"));
-  const isGlobalAgent = (name: AgentName): boolean =>
-    installed.agents.some((agent) => agent.name === name && isActiveAt(agent, "global"));
-
-  const [globalSkills, projectSkills] = partition(changes.removedSkills, isGlobalSkill);
-  const [globalAgents, projectAgents] = partition(changes.removedAgents, isGlobalAgent);
-
-  return {
-    here: { skills: projectSkills, agents: projectAgents },
-    global: { skills: globalSkills, agents: globalAgents },
-  };
+/** A dropped project half of a skill, as the plan prints it. */
+function droppedSkillLine(skillId: SkillId): string {
+  return projectCopyRemoved(skillLabel(skillId));
 }
 
 /** The removals a shared configuration makes here, grouped as the plan prints them. */
-function removalSections(skills: SkillId[], agents: AgentName[]): RemovalPlanSection[] {
+function removalSections(skills: string[], agents: string[]): RemovalPlanSection[] {
   return [
-    { label: SHARED_CONFIG_APPLY.SKILLS_HEADING, items: skills.map(skillLabel) },
-    { label: SHARED_CONFIG_APPLY.AGENTS_HEADING, items: [...agents] },
+    { label: SHARED_CONFIG_APPLY.SKILLS_HEADING, items: skills },
+    { label: SHARED_CONFIG_APPLY.AGENTS_HEADING, items: agents },
   ].filter((section) => section.items.length > 0);
 }
 
-/** The same lists for entries that live at global scope, under headings that say so. */
-function globalRemovalSections(skills: SkillId[], agents: AgentName[]): RemovalPlanSection[] {
-  return [
-    { label: SHARED_CONFIG_APPLY.GLOBAL_SKILLS_HEADING, items: skills.map(skillLabel) },
-    { label: SHARED_CONFIG_APPLY.GLOBAL_AGENTS_HEADING, items: [...agents] },
-  ].filter((section) => section.items.length > 0);
-}
+/** The project halves of `[P][G]` pairs a run drops. */
+type DroppedHalves = { skillIds: SkillId[]; agentNames: AgentName[] };
 
-/** Who else a global removal lands on — printed only when there is one to land. */
-function globalReachStatement(global: RemovedEntries, otherProjects: string[]): string[] {
-  if (global.skills.length === 0 && global.agents.length === 0) return [];
-  return [globallyInstalledRemoved(otherProjects)];
+/**
+ * The `[P][G]` pairs whose project half this run drops, leaving the global install's copy to take
+ * over. The diff records each as a project-to-global scope change rather than a removal, because
+ * the id survives at global scope. A pair `s` folded is not one: its copy moves rather than goes.
+ */
+function droppedProjectHalves(changes: ConfigChanges): DroppedHalves {
+  const droppedSkills = changes.collapsedPairs.filter((pair) => !pair.folded);
+  const droppedAgents = [...changes.agentScopeChanges].filter(
+    ([name, change]) => change.to === "global" && changes.dualScopeAgentTransitions.has(name),
+  );
+
+  return {
+    skillIds: droppedSkills.map(({ projectHalf }) => projectHalf.id),
+    agentNames: droppedAgents.map(([name]) => name),
+  };
 }
 
 /**
@@ -410,10 +406,97 @@ function planHeading(sections: RemovalPlanSection[]): string {
   return SHARED_CONFIG_APPLY.PREVIEW_HEADING;
 }
 
-/** How a removal reads in the plan: the name the user picked it by, with the id behind it. */
-function skillLabel(skillId: SkillId): string {
-  const displayName = getSkillDisplayName(skillId);
-  return displayName === skillId ? skillId : `${displayName} (${skillId})`;
+/**
+ * Whether this run's compile covers the global install as well as the project.
+ *
+ * A shared configuration applied from a project holds the global install as installed, so the
+ * global pass is owed only when the write added something the global sub-agents derive from. Run
+ * anyway, it would write nothing but the drift between the global config and its compiled files —
+ * a missing or hand-edited agent — which no project run was asked to repair. The wizard keeps
+ * both passes: a mode switch it carries to global scope is recorded before this write, so the
+ * write alone cannot say whether the global agents moved.
+ */
+function compilesGlobalScope(
+  producer: EditSelection["producer"],
+  editRoot: EditRoot,
+  written: GateReport,
+): boolean {
+  if (editRoot.isGlobal || producer === "wizard") return true;
+  return movedGlobalAgentInputs(written);
+}
+
+/**
+ * The diff a run plans: the roster's, plus the sub-agents whose skill rows change while the roster
+ * does not — a change {@link detectConfigChanges} has no field for, because it diffs entries and a
+ * re-assignment adds or removes none.
+ */
+type PlannedChanges = ConfigChanges & { reassignedAgents: AgentName[] };
+
+/**
+ * The diff an apply acts on: the plan, plus the carried skills already installed here whose files
+ * the apply rewrote with different bytes — the other change no config entry records.
+ */
+type AppliedChanges = PlannedChanges & { rewrittenSkills: SkillId[] };
+
+/**
+ * The diff, with the sub-agents this run owns whose rows the result changes. Only a producer that
+ * states rows has any: the wizard leaves `assignedStack` undefined and the ownership rules derive
+ * the stack, while a shared configuration states every row it means.
+ *
+ * In a project that is the project's own sub-agents only — a global one keeps every row it is
+ * installed with (see `restoreInstalledGlobal`), and gains one only beside a skill the diff already
+ * counts as added. A sub-agent the diff already counts as added is not counted twice.
+ */
+function withReassignments(
+  changes: ConfigChanges,
+  result: WizardResultV2,
+  installedStack: ProjectConfig["stack"],
+  editRoot: EditRoot,
+): PlannedChanges {
+  const { assignedStack } = result;
+  if (assignedStack === undefined) return { ...changes, reassignedAgents: [] };
+
+  const ownedHere = (agent: AgentScopeConfig): boolean =>
+    editRoot.isGlobal || isActiveAt(agent, "project");
+  const countedAsAdded = (agent: AgentScopeConfig): boolean =>
+    changes.addedAgents.includes(agent.name);
+  const rowsMoved = (agent: AgentScopeConfig): boolean =>
+    !sameAssignments(assignedStack[agent.name], installedStack?.[agent.name]);
+
+  const reassigned = result.agentConfigs.filter(
+    (agent) => ownedHere(agent) && !countedAsAdded(agent) && rowsMoved(agent),
+  );
+  return { ...changes, reassignedAgents: reassigned.map((agent) => agent.name) };
+}
+
+/**
+ * What the apply adds or changes, by the scope each entry lands at — the two lists printed above
+ * the confirm. Not the whole configuration: what is already installed as the configuration states
+ * it is not arriving anywhere, and neither is the global copy a dropped project half leaves — the
+ * plan lists that drop as a removal.
+ */
+function applyArrivals(changes: PlannedChanges, result: WizardResultV2): Arrivals {
+  const changedSkills = new Set<SkillId>([
+    ...changes.addedSkills,
+    ...changes.sourceChanges.keys(),
+    ...changes.scopeChanges.keys(),
+  ]);
+  const changedAgents = new Set<AgentName>([
+    ...changes.addedAgents,
+    ...changes.agentScopeChanges.keys(),
+    ...changes.tuningChanges.keys(),
+    ...changes.reassignedAgents,
+  ]);
+  const dropped = droppedProjectHalves(changes);
+  const skillArrives = (skill: SkillConfig): boolean =>
+    changedSkills.has(skill.id) && !dropped.skillIds.includes(skill.id);
+  const agentArrives = (agent: AgentScopeConfig): boolean =>
+    changedAgents.has(agent.name) && !dropped.agentNames.includes(agent.name);
+
+  return arrivalsByScope(
+    result.skills.filter(skillArrives),
+    result.agentConfigs.filter(agentArrives),
+  );
 }
 
 /**
@@ -441,23 +524,40 @@ function catalogueStatement(kept: KeptFromRoundTrip): string[] {
   return [unplaceableKept(kept.unplaceableSkillIds)];
 }
 
+/** The kept skills that lose a slot to the configuration's own skill, one bare line each. */
+function unassignedStatement(unassigned: UnassignedRow[]): string[] {
+  if (unassigned.length === 0) return [];
+  return [
+    unassigned
+      .map(({ skillId, agentName, category }) => keptUnassigned(skillId, agentName, category))
+      .join("\n"),
+  ];
+}
+
+/**
+ * The global entries a project run holds as installed though the configuration differs — with
+ * the carried skills whose global copy reads otherwise than the configuration's, which no config
+ * entry can show.
+ */
+function keptAsInstalledStatement(held: HeldGlobal, revisedCarried: SkillId[]): string[] {
+  const skillIds = [...held.keptAsInstalled.skillIds, ...revisedCarried];
+  const { agentNames } = held.keptAsInstalled;
+  if (skillIds.length === 0 && agentNames.length === 0) return [];
+  return [keptAsInstalledGlobally(skillIds, agentNames)];
+}
+
 /**
  * How much of what it can see a run owns — the word the merger takes, and the same word the
  * global config the project write commits is resolved under.
  *
  * At the home root, everything: the session loaded the whole global config, so an absent entry
- * was deselected. In a project the WIZARD owns only what the project owns, because the store
- * refuses to deselect a live global entry at all — an inherited row absent from its result is
- * one it never offered, not one anybody dropped. A CONFIRMED shared configuration is the other
- * case and the reason this is not simply `editRoot.isGlobal`: it states a whole roster, the plan
- * above named every global removal and every project that reaches, and somebody answered yes.
+ * was deselected. In a project, only what the project owns, whichever producer said so. The
+ * wizard's store refuses to deselect a live global entry at all, and a shared configuration only
+ * ADDS to the global install from a project (owner ruling 2026-10-02) — so an inherited row absent
+ * from either result is one nobody dropped, and the global config is added to, never matched.
  */
-function applyAuthority(
-  producer: EditSelection["producer"],
-  editRoot: EditRoot,
-): AuthoritativeScope {
-  if (editRoot.isGlobal) return "all";
-  return producer === "shared" ? "all" : "owned";
+function applyAuthority(editRoot: EditRoot): AuthoritativeScope {
+  return editRoot.isGlobal ? "all" : "owned";
 }
 
 export default class Edit extends BaseCommand {
@@ -487,13 +587,18 @@ export default class Edit extends BaseCommand {
     }),
     from: Flags.string({
       description:
-        "Apply a configuration shared from agentsinc.sh by its id, removing whatever it leaves out",
+        "Apply a configuration shared from agentsinc.sh by its id, removing whatever it leaves out — from a project, only the project's own entries",
       helpValue: "<id>",
     }),
     [EDIT_PROJECT_SETUP_FLAG]: Flags.boolean({
       description: "Internal: this run continues an `init` project setup",
       default: false,
       hidden: true,
+    }),
+    [EDIT_PROJECT_SETUP_MARKETPLACE_FLAG]: Flags.string({
+      description: "Internal: the marketplace `init --marketplace` named for that project setup",
+      hidden: true,
+      dependsOn: [EDIT_PROJECT_SETUP_FLAG],
     }),
     provider: providerFlag(),
   };
@@ -516,12 +621,12 @@ export default class Edit extends BaseCommand {
     const cwd = process.cwd();
 
     // ABOVE `ensureConfigReadable`, and above `edit`'s own requirement that something be installed
-    // here at all. Opening an id somebody shared reads no local state — no config, no catalogue,
+    // here at all. Opening an id somebody shared needs no local state — no config, no catalogue,
     // no marketplace — so a directory's condition cannot decide whether you may look at it, and
     // the id already IS a stored configuration so nothing is minted either. That exemption is the
     // owner's ruling of 2026-08-24 rather than an oversight, and `edit-ui-from.e2e.test.ts` is
     // what says so: `edit` refuses an empty directory on every other path.
-    if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from);
+    if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from, cwd);
 
     // Beside the config-readability refusal and for the same reason: past this point the wizard
     // has copied skills and installed plugins, so a run that cannot tell WHICH installation it is
@@ -547,7 +652,7 @@ export default class Edit extends BaseCommand {
     const payload =
       flags.from === undefined ? null : await this.fetchSharedConfigOrFail(flags.from);
 
-    const context = await this.loadContextUnderSpinner();
+    const context = await this.loadContextUnderSpinner(flags[EDIT_PROJECT_SETUP_MARKETPLACE_FLAG]);
 
     // Which installation this run is editing, resolved once and read by every layer below.
     const editRoot = resolveEditRoot(context.installation, cwd, flags[EDIT_PROJECT_SETUP_FLAG]);
@@ -584,29 +689,33 @@ export default class Edit extends BaseCommand {
       ? { ...context.projectConfig, skills: activeOldSkills, agents: activeOldAgents }
       : null;
 
-    const changes = detectConfigChanges(filteredOldConfig, filteredResult, {
-      newSkills: result.skills,
-      oldSkills: context.projectConfig?.skills ?? [],
-      newAgents: result.agentConfigs,
-      oldAgents: context.projectConfig?.agents ?? [],
-    });
+    const planned = withReassignments(
+      detectConfigChanges(filteredOldConfig, filteredResult, {
+        newSkills: result.skills,
+        oldSkills: context.projectConfig?.skills ?? [],
+        newAgents: result.agentConfigs,
+        oldAgents: context.projectConfig?.agents ?? [],
+      }),
+      filteredResult,
+      context.projectConfig?.stack,
+      editRoot,
+    );
     // The gate, at the one point where the removals are known and none has been made: after the
     // diff, above every mutation, and above the no-change return — a configuration that carries
     // its own skills still has bytes to land when the roster is unchanged.
-    if (selection.producer === "shared") {
-      await this.confirmSharedConfigOrCancel(
-        changes,
-        selection.kept,
-        { skills: activeOldSkills, agents: activeOldAgents },
-        editRoot,
-      );
-      await this.writeCarriedSkills(selection.carried);
-    }
+    const rewritten =
+      selection.producer === "shared"
+        ? await this.confirmAndWriteCarried(selection, planned, filteredResult)
+        : [];
+    const changes: AppliedChanges = {
+      ...planned,
+      rewrittenSkills: difference(rewritten, planned.addedSkills),
+    };
 
-    // One word for both halves of the write, decided once from what was actually confirmed: the
-    // merger reads it for the config ROW, and the gate reads it for the global config a project
-    // write commits. Deriving it twice is how the row and the disk come to disagree.
-    const authority = applyAuthority(selection.producer, editRoot);
+    // One word for both halves of the write, decided once from where the run is: the merger reads
+    // it for the config ROW, and the gate reads it for the global config a project write commits.
+    // Deriving it twice is how the row and the disk come to disagree.
+    const authority = applyAuthority(editRoot);
 
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
@@ -617,7 +726,8 @@ export default class Edit extends BaseCommand {
       // dashboard was shown for, so a no-change pass there stays an inspection, as does every
       // bare `cc edit`.
       if (!editRoot.isProjectSetup) return;
-      await this.writeConfigAndCompile(result, context, editRoot, authority);
+      await this.writeConfigAndCompile(result, context, editRoot, authority, selection.producer);
+      await this.reportWhatThisHostCannotCarry(editRoot);
       this.logCompletionSummary(changes);
       return;
     }
@@ -648,12 +758,14 @@ export default class Edit extends BaseCommand {
       context,
     );
     await this.applyScopeChanges(changes, filteredResult, context, editRoot);
+    await this.applyCollapsedPairs(changes, filteredResult, context, editRoot);
     await this.applySourceChanges(changes, activeOldSkills, editRoot, migratedSkillIds);
     await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, editRoot);
     await this.copyNewLocalSkills(changes, filteredResult, context, editRoot);
     await this.removeDeletedLocalSkills(changes, activeOldSkills, editRoot);
-    await this.writeConfigAndCompile(result, context, editRoot, authority);
+    await this.writeConfigAndCompile(result, context, editRoot, authority, selection.producer);
     await this.cleanupStaleAgentFiles(changes, activeOldAgents, editRoot);
+    await this.reportWhatThisHostCannotCarry(editRoot);
     this.logCompletionSummary(changes);
   }
 
@@ -662,6 +774,13 @@ export default class Edit extends BaseCommand {
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<EditSelection | null> {
+    // Here rather than above the load: every refusal about the installation — there is none, its
+    // config will not load, a saved skill's metadata.yaml no longer describes it — still speaks for
+    // itself over a pipe, and the mount below is the first thing that needs a terminal.
+    if (!process.stdin.isTTY) {
+      this.error(wizardNeedsTerminal("edit"), { exit: EXIT_CODES.ERROR });
+    }
+
     const result = await this.runEditWizard(context, editRoot);
     if (!result) return null;
 
@@ -679,9 +798,12 @@ export default class Edit extends BaseCommand {
    * catalogue cannot place, because a destructive apply removes on intent and never on its own
    * inability. Both are disclosed in the confirm rather than silently excused.
    *
-   * A globally installed entry is NOT one of them. It is removable from here, and what its scope
-   * changes is who the removal reaches — which the confirm names, rather than this putting the
-   * entry back and calling the reach impossible.
+   * From a project the global install comes back too, whole: it is one installation every project
+   * on the machine reads, so a project run only ADDS to it (owner ruling 2026-10-02). Every global
+   * entry the configuration leaves out is put back as installed, every one it states otherwise is
+   * held as installed and named in the confirm, and only the global entries the global install
+   * lacks arrive — a skill with its rows, on a global sub-agent already there too. At the home
+   * directory the run IS the global install, so nothing is held there.
    */
   private async selectionFromSharedConfig(
     payload: SeedPayload,
@@ -703,24 +825,51 @@ export default class Edit extends BaseCommand {
     // point of the same value, and a run about to be refused must not first narrate its skips.
     this.refuseProjectScopedContentAtHome(result, editRoot.dir);
 
+    // The ids the decode above could not place. They are the skips reported below, read as what
+    // STAYS rather than as what did not arrive: the payload named them, so their absence from the
+    // decode is this catalogue's limit and not an instruction to delete anything — and neither is
+    // the absence of a sub-agent only they carried in.
+    const unplaceable = new Set(skippedSkillIds);
+    const reconciled = reconcileSharedConfig({
+      decoded: withUnplaceableAssignees(result, context.projectConfig, payload, unplaceable),
+      installed: context.projectConfig,
+      authoredHere: await this.readAuthoredHere(context.projectConfig, editRoot.dir),
+      unplaceable,
+    });
+    const held = restoreInstalledGlobal(
+      reconciled.result,
+      editRoot.isGlobal ? null : await readInstalledGlobal(editRoot.dir),
+    );
+    const arrivingCarried = notInstalledGlobally(carried, held);
+
+    // The last refusals, asked of what the apply would install and write, and above the skips,
+    // the plan and the question for the reason the location refusal is above the skips.
+    await this.refuseSharedConfigBeforeAsking(
+      held.result,
+      arrivingCarried,
+      editRoot.dir,
+      context.sourceResult,
+    );
+
+    // A carried skill the global install already holds is not written from a project, so a
+    // revision of it does not arrive — and is named in the plan rather than dropped in silence.
+    const heldGlobally = difference(carried, arrivingCarried);
+    const revisedGlobally = await carriedSkillsThatDiffer(heldGlobally);
+
+    // What the load held back for a wizard this run never mounts, above the skips it may explain.
+    sayCapturedWarnings(context.startupMessages);
     if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
 
-    const reconciled = reconcileSharedConfig({
-      decoded: result,
-      installed: context.projectConfig,
-      authoredHere: await this.readAuthoredHere(context.projectConfig, editRoot.dir),
-      // The ids the decode above could not place. They are the skips just reported, read as
-      // what STAYS rather than as what did not arrive: the payload named them, so their absence
-      // from the decode is this catalogue's limit and not an instruction to delete anything.
-      unplaceable: new Set(skippedSkillIds),
-    });
-
     return {
       producer: "shared",
-      result: reconciled.result,
-      kept: keptStatements(reconciled.kept),
-      carried,
+      result: held.result,
+      kept: [
+        ...keptStatements(reconciled.kept),
+        ...unassignedStatement(reconciled.unassigned),
+        ...keptAsInstalledStatement(held, revisedGlobally),
+      ],
+      carried: arrivingCarried,
     };
   }
 
@@ -750,11 +899,17 @@ export default class Edit extends BaseCommand {
   /**
    * The id, fetched — or the run refused before it is.
    *
-   * The terminal question is answered first because nothing in the payload can change its
-   * answer: an apply that cannot be confirmed is over before the store is asked, and a refusal
-   * that had already spent a round trip would be describing work it never intended to do.
+   * Two questions are answered first, because nothing in the payload can change either answer:
+   * an apply with nothing to apply to, or that cannot be confirmed, is over before the store is
+   * asked, and a refusal that had already spent a round trip would be describing work it never
+   * intended to do. Whether anything is installed comes before the terminal: the terminal
+   * refusal's way on is this same command from a terminal, which in a folder with nothing
+   * installed would only refuse again.
    */
   private async fetchSharedConfigOrFail(id: string): Promise<SeedPayload> {
+    if (!(await detectProject())) {
+      this.error(nothingInstalledToApplyTo(id), { exit: EXIT_CODES.ERROR });
+    }
     if (!process.stdin.isTTY) {
       this.error(sharedConfigNeedsTerminal(id), { exit: EXIT_CODES.ERROR });
     }
@@ -800,12 +955,26 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  /** Writes the skills the configuration brought with it, and says which they were. */
-  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
-    if (carried.length === 0) return;
+  /**
+   * Confirms a shared configuration, then writes the skills it brought with it — answering with
+   * those whose files now read differently.
+   */
+  private async confirmAndWriteCarried(
+    selection: Extract<EditSelection, { producer: "shared" }>,
+    planned: PlannedChanges,
+    result: WizardResultV2,
+  ): Promise<SkillId[]> {
+    await this.confirmSharedConfigOrCancel(planned, selection.kept, applyArrivals(planned, result));
+    return this.writeCarriedSkills(selection.carried);
+  }
 
-    await writeExternalSkills(carried);
+  /** Writes the skills the configuration brought with it, and says which they were. */
+  private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<SkillId[]> {
+    if (carried.length === 0) return [];
+
+    const rewritten = await writeExternalSkills(carried);
     this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
+    return rewritten;
   }
 
   /**
@@ -817,25 +986,19 @@ export default class Edit extends BaseCommand {
    * honesty: nothing is refused over an entry this run cannot remove, and nothing is silent
    * about one either.
    *
-   * WHICH plan is built is decided here and only here, on the directory the run was started in.
-   * Inside the global installation the scope was chosen and is obvious, so the ordinary confirm
-   * is the whole of the gate; inside a project a global removal reaches projects nobody here is
-   * looking at, so it is shown apart and the reach is named.
+   * Above it go the two lists every `--from` install prints — what the apply adds or changes in
+   * this project, and in the global install — so the question is asked about the whole of what a
+   * yes does, not only about what it takes away.
    */
   private async confirmSharedConfigOrCancel(
     changes: ConfigChanges,
     kept: string[],
-    installed: InstalledEntries,
-    editRoot: EditRoot,
+    arrivals: Arrivals,
   ): Promise<void> {
-    const plan = editRoot.isGlobal
-      ? globalScopePlan(changes, kept)
-      : projectScopePlan(
-          changes,
-          kept,
-          installed,
-          await this.otherRegisteredProjects(editRoot.dir),
-        );
+    const plan = sharedConfigPlan(changes, kept);
+    for (const line of arrivalLines(arrivals)) {
+      this.log(line);
+    }
 
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
       <RemovalPlanConfirm
@@ -851,28 +1014,6 @@ export default class Edit extends BaseCommand {
 
     this.log("\nEdit cancelled");
     this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
-  }
-
-  /**
-   * Every registered project but this one — the blast radius a global removal actually has.
-   *
-   * Read from the GLOBAL config rather than from `context.projectConfig`: `projects[]` is the
-   * registry the fan-out itself walks, and a project's own config never carries it, so taking
-   * the list from anywhere else would let the confirm name a set the propagation does not.
-   *
-   * Best-effort by nature. The list exists to be DISCLOSED, so a home directory that cannot be
-   * read leaves the disclosure counting nobody rather than failing an apply — and the statement
-   * it produces then is the one that says no other project is registered.
-   */
-  private async otherRegisteredProjects(editRoot: string): Promise<string[]> {
-    try {
-      const global = await loadInstalledConfig(os.homedir());
-      const here = normalizeProjectPath(editRoot);
-      return (global?.config.projects ?? []).filter((projectDir) => projectDir !== here);
-    } catch (error) {
-      this.warn(`Could not tell which projects share this install: ${getErrorMessage(error)}`);
-      return [];
-    }
   }
 
   /**
@@ -921,17 +1062,17 @@ export default class Edit extends BaseCommand {
    *
    * The counterpart of `openInEditor` above and deliberately not a variant of it: that one MINTS,
    * because an installation is not yet a configuration the store holds. An id already is one, so
-   * there is nothing to publish, nothing to read off disk, and no way for this to fail except the
-   * browser refusing to launch — which is a warning beside a link that still works.
+   * there is nothing to publish, and no way for this to fail except the browser refusing to launch
+   * — which is a warning beside a link that still works.
    *
    * `--from` without `--ui` remains the destructive apply. Looking and applying are the two
    * things a recipient can do with an id, and this is the one that changes nothing.
    */
-  private async openSharedInEditor(id: string): Promise<void> {
+  private async openSharedInEditor(id: string, cwd: string): Promise<void> {
     const url = editorConfigUrl(id);
 
     this.log(`Open it at ${url}`);
-    this.log(`To apply it here instead, run '${CLI_INVOKE_COMMAND} edit --from ${id}'.`);
+    this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(cwd)));
 
     if (!process.stdin.isTTY) return;
 
@@ -967,11 +1108,17 @@ export default class Edit extends BaseCommand {
    * The load below, behind a spinner that comes down whichever way the await ends — all
    * three of `loadContext`'s refusals are raised while it is mounted.
    */
-  private async loadContextUnderSpinner(): Promise<EditContext> {
-    return awaitUnderSpinner(STATUS_MESSAGES.LOADING_SKILLS, () => this.loadContext());
+  private async loadContextUnderSpinner(setupMarketplace?: string): Promise<EditContext> {
+    return awaitUnderSpinner(STATUS_MESSAGES.LOADING_SKILLS, () =>
+      this.loadContext(setupMarketplace),
+    );
   }
 
-  private async loadContext(): Promise<EditContext> {
+  /**
+   * @param setupMarketplace - What `init --marketplace` named for the project setup this run
+   *   continues. Absent, the catalogue is the one the installation stored.
+   */
+  private async loadContext(setupMarketplace?: string): Promise<EditContext> {
     const detected = await detectProject();
     if (!detected) {
       this.error(ERROR_MESSAGES.NO_INSTALLATION, {
@@ -988,15 +1135,20 @@ export default class Edit extends BaseCommand {
     let sourceResult: SourceLoadResult;
     let startupMessages: StartupMessage[] = [];
     try {
-      // No source is named here: `edit` reads the one the installation stored.
-      const loaded = await loadSource({ projectDir, captureStartupMessages: true });
+      // `edit` reads the marketplace the installation stored, unless this run is the project setup
+      // an `init --marketplace` routed here — a new installation, made from what that named.
+      const loaded = await loadSource({
+        projectDir,
+        ...(setupMarketplace !== undefined && { sourceFlag: setupMarketplace }),
+        captureStartupMessages: true,
+      });
       sourceResult = loaded.sourceResult;
       startupMessages = loaded.startupMessages;
 
       const sourceInfo = sourceResult.isLocal ? "local" : sourceResult.sourceConfig.sourceOrigin;
       startupMessages.push({
         level: "info",
-        text: `Loaded ${Object.keys(matrix.skills).length} skills (${sourceInfo})`,
+        text: `Loaded ${plural(Object.keys(matrix.skills).length, "skill")} (${sourceInfo})`,
       });
     } catch (error) {
       this.handleError(error);
@@ -1022,7 +1174,7 @@ export default class Edit extends BaseCommand {
 
       startupMessages.push({
         level: "info",
-        text: `Found ${currentSkillIds.length} installed skills`,
+        text: `Found ${plural(currentSkillIds.length, "installed skill")}`,
       });
     } catch (error) {
       this.handleError(error);
@@ -1035,6 +1187,8 @@ export default class Edit extends BaseCommand {
       sourceResult,
       startupMessages,
       currentSkillIds,
+      ...(setupMarketplace !== undefined &&
+        sourceResult.marketplace !== undefined && { setupMarketplace: sourceResult.marketplace }),
     };
   }
 
@@ -1056,6 +1210,9 @@ export default class Edit extends BaseCommand {
         ...(projectConfig?.skills !== undefined && { installedSkillConfigs: projectConfig.skills }),
         ...(projectConfig?.agents !== undefined && { installedAgentConfigs: projectConfig.agents }),
         isEditingFromGlobalScope: editRoot.isGlobal,
+        ...(context.setupMarketplace !== undefined && {
+          setupMarketplace: context.setupMarketplace,
+        }),
       },
       props: {
         version: this.config.version,
@@ -1135,7 +1292,7 @@ export default class Edit extends BaseCommand {
           loadAgents: async () => (await loadAgentDefs()).agents,
         },
       );
-      this.reportPropagatedRecompile(report);
+      this.reportFanOut(report);
     } catch (error) {
       // The migration itself already happened — the skill has been copied under $HOME or had
       // its user-scope registration moved. Only the record of it failed, so the disk and the
@@ -1148,7 +1305,7 @@ export default class Edit extends BaseCommand {
   }
 
   private logChangeSummary(
-    changes: ConfigChanges,
+    changes: AppliedChanges,
     newSkills: SkillConfig[],
     oldSkills: SkillConfig[],
     removalReasons: ReadonlyMap<SkillId, string>,
@@ -1164,6 +1321,8 @@ export default class Edit extends BaseCommand {
       dualScopeSkillTransitions,
       dualScopeAgentTransitions,
       tuningChanges,
+      reassignedAgents,
+      rewrittenSkills,
     } = changes;
 
     this.log(`\n${chalk.hex(CLI_COLORS.WHITE).bold("Changes:")}`);
@@ -1214,17 +1373,34 @@ export default class Edit extends BaseCommand {
     for (const [agentName, change] of tuningChanges) {
       this.log(formatValueChangeLine(agentName, change, "agent"));
     }
+    // A re-assignment moves no file either, and is the whole of a configuration that only gives a
+    // sub-agent different skills.
+    for (const agentName of reassignedAgents) {
+      this.log(
+        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
+          chalk.hex(CLI_COLORS.NEUTRAL)(" (agent: skills reassigned)"),
+      );
+    }
+    for (const skillId of rewrittenSkills) {
+      this.log(
+        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${getSkillDisplayName(skillId)}`) +
+          chalk.hex(CLI_COLORS.NEUTRAL)(" (skill: files rewritten)"),
+      );
+    }
     this.log("");
   }
 
   private async applyMigrations(
-    _changes: ConfigChanges,
+    changes: ConfigChanges,
     filteredResult: WizardResultV2,
     activeOldSkills: SkillConfig[],
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<Set<SkillId>> {
-    const migrationPlan = detectMigrations(activeOldSkills, filteredResult.skills);
+    const migrationPlan = detectMigrations(
+      withMaskedGlobalsRestored(activeOldSkills, changes.collapsedPairs),
+      filteredResult.skills,
+    );
     const migratedSkillIds = new Set([
       ...migrationPlan.toEject.map((m) => m.id),
       ...migrationPlan.toPlugin.map((m) => m.id),
@@ -1312,13 +1488,18 @@ export default class Edit extends BaseCommand {
     this.log(chalk.hex(CLI_COLORS.NEUTRAL)(`Switching ${count} skill(s) to ${modeDescription}`));
   }
 
+  /**
+   * The scope moves this edit made, on disk. A collapsed `[P][G]` pair is not one of them: its
+   * project half is dropped or folded ({@link applyCollapsedPairs}), and moving every collapse is
+   * what wrote a dropped copy over the global install.
+   */
   private async applyScopeChanges(
     changes: ConfigChanges,
     filteredResult: WizardResultV2,
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
-    const { scopeChanges } = changes;
+    const scopeChanges = scopeMovesOf(changes);
 
     // Handle scope migrations (P->G or G->P) for eject-mode skills
     for (const [skillId, change] of scopeChanges) {
@@ -1356,6 +1537,75 @@ export default class Edit extends BaseCommand {
         `Failed to migrate plugin scope for ${item.id}: ${item.error}`,
         INCOMPLETE_WORK_RECOVERY.INSPECT_INSTALLATION,
       );
+    }
+  }
+
+  /**
+   * The project's own half of each `[P][G]` pair this edit collapsed. A Local copy `s` folded into
+   * a Local global install moves there, edits included, replacing the global copy every project
+   * reads. Every other half is removed at project scope and nowhere else: its ejected copy deleted,
+   * or its project-scope plugin registration uninstalled.
+   *
+   * The global install's MODE is {@link applyMigrations}' to change, and it changes only when the
+   * collapse carried a new install mode with it — a fold into a plugin installs the plugin there.
+   *
+   * The uninstall is diagnostic, as every plugin uninstall here is: the config no longer names the
+   * registration, so one left behind is untidy rather than wrong.
+   */
+  private async applyCollapsedPairs(
+    changes: ConfigChanges,
+    filteredResult: WizardResultV2,
+    context: EditContext,
+    editRoot: EditRoot,
+  ): Promise<void> {
+    const [foldedCopies, removedPairs] = partition(changes.collapsedPairs, (pair) =>
+      foldsItsCopyIntoGlobal(pair, filteredResult.skills),
+    );
+    const [ejectedHalves, pluginHalves] = partition(
+      removedPairs.map(({ projectHalf }) => projectHalf),
+      (half) => half.origin === EJECT_SOURCE,
+    );
+
+    for (const { projectHalf } of foldedCopies) {
+      await foldLocalSkillIntoGlobal(editRoot.dir, projectHalf.id);
+    }
+    for (const half of ejectedHalves) {
+      await deleteLocalSkill(editRoot.dir, half.id, half.scope);
+    }
+    await this.uninstallProjectPluginHalves(
+      pluginHalves,
+      context.sourceResult.marketplace,
+      editRoot,
+    );
+  }
+
+  /** The project-scope registrations of collapsed pairs' plugin halves, uninstalled and reported. */
+  private async uninstallProjectPluginHalves(
+    pluginHalves: SkillConfig[],
+    marketplace: string | undefined,
+    editRoot: EditRoot,
+  ): Promise<void> {
+    if (pluginHalves.length === 0) return;
+    if (marketplace === undefined) {
+      for (const half of pluginHalves) {
+        this.warn(`Could not uninstall this project's plugin for ${half.id}: no marketplace`);
+      }
+      return;
+    }
+
+    const uninstallResult = await uninstallPluginSkills(
+      pluginHalves.map((half) => half.id),
+      pluginHalves,
+      marketplace,
+      editRoot.dir,
+    );
+    if (uninstallResult.uninstalled.length > 0) {
+      this.log(
+        chalk.hex(CLI_COLORS.NEUTRAL)(`Removed ${uninstallResult.uninstalled.length} plugin(s)`),
+      );
+    }
+    for (const item of uninstallResult.failed) {
+      this.warn(`Failed to uninstall plugin ${item.id}: ${item.error}`);
     }
   }
 
@@ -1479,6 +1729,7 @@ export default class Edit extends BaseCommand {
     context: EditContext,
     editRoot: EditRoot,
     authority: AuthoritativeScope,
+    producer: EditSelection["producer"],
   ): Promise<void> {
     // Load agent definitions — needed for both config-types.ts and recompilation
     let agentDefsResult: AgentDefs;
@@ -1515,12 +1766,15 @@ export default class Edit extends BaseCommand {
       });
     }
 
-    this.reportUnassignedSkills(configResult.config);
+    this.reportUnassignedSkills(configResult.config, result.skills);
 
     try {
       const agentScopeMap = activeAgentScopeMap(result.agentConfigs);
       const { allSkills } = await discoverInstalledSkills(editRoot.dir);
-      const compilationResult = await compileAgentsAllScopes({
+      const compile = compilesGlobalScope(producer, editRoot, configResult.propagation)
+        ? compileAgentsAllScopes
+        : compileProjectScope;
+      const compilationResult = await compile({
         projectDir: editRoot.dir,
         sourcePath: agentDefsResult.sourcePath,
         skills: allSkills,
@@ -1543,8 +1797,7 @@ export default class Edit extends BaseCommand {
           this.warn(warning);
         }
         // Recorded off `failed` rather than off the warnings just printed: `warnings` also
-        // carries entries that are not failures — a scope with nothing to compile contributes
-        // one on every project-context run — and the ending must not file those as work owed.
+        // carries entries that are not failures, and the ending must not file those as work owed.
         this.recordIncompleteWork(agentsNotCompiled(failed), INCOMPLETE_WORK_RECOVERY.RECOMPILE);
       } else if (compiled.length > 0) {
         this.log(chalk.hex(CLI_COLORS.NEUTRAL)(summary));
@@ -1562,7 +1815,7 @@ export default class Edit extends BaseCommand {
       this.log(`You can manually recompile with '${CLI_INVOKE_COMMAND} compile'.`);
     }
 
-    this.reportPropagatedRecompile(configResult.propagation);
+    this.reportFanOut(configResult.propagation);
   }
 
   private async cleanupStaleAgentFiles(
@@ -1582,6 +1835,26 @@ export default class Edit extends BaseCommand {
           INCOMPLETE_WORK_RECOVERY.DELETE_AGENT_FILE,
         );
       }
+    }
+  }
+
+  /**
+   * What this host could not carry, once per run and after the last write: the lines `init` and
+   * `compile` print, from {@link hostCompileNotices}, so `edit` cannot say something different
+   * about the tree it just compiled.
+   *
+   * After {@link cleanupStaleAgentFiles}, because the question is about the tree as it now stands:
+   * an edit that removed the project's last gated sub-agent must not count the file it deleted.
+   *
+   * Not on a run that owes work, which ends on that account instead: such a run may have left
+   * nothing here to read, and a notice that threw over it would turn the run's
+   * `COMPLETED_WITH_FAILURES` exit into an `ERROR`.
+   */
+  private async reportWhatThisHostCannotCarry(editRoot: EditRoot): Promise<void> {
+    if (this.hasIncompleteWork) return;
+
+    for (const notice of await hostCompileNotices(providerInUse(editRoot.dir), editRoot.dir)) {
+      this.log(notice);
     }
   }
 
@@ -1606,11 +1879,23 @@ export type ConfigChanges = {
   /**
    * Skill ids whose `scopeChanges` entry is a dual-scope add/remove — the project
    * half of a `[P][G]` pair was toggled while the global half persists — NOT a true
-   * single-entry migration. The disk-side scope work still flows through
-   * `scopeChanges`; this set only steers the completion-summary display so a
-   * dual-scope addition is not misreported as a `[G] → [P]` migration.
+   * single-entry migration. It steers the completion summary, so a dual-scope addition
+   * is not misreported as a `[G] → [P]` migration; the disk side of a removal is
+   * `collapsedPairs`.
    */
   dualScopeSkillTransitions: Set<SkillId>;
+  /**
+   * The `[P][G]` pairs this edit collapsed — the removal half of `dualScopeSkillTransitions` —
+   * each half as it stood before the edit.
+   *
+   * SPACE on the pair's row and `s` both collapse it, into an entry the config cannot tell apart,
+   * and they mean different things, which the wizard result tells apart instead. SPACE DROPS the
+   * project's own install, at project scope, and leaves the global one it masked as it is. `s`
+   * FOLDS it into the global install for every project: a Local copy replaces the global copy, and
+   * a half in another mode than the global install carries that mode to it. So `sourceChanges` and
+   * the mode migrations measure a collapsed skill against `maskedGlobal`, never against the half.
+   */
+  collapsedPairs: CollapsedPair[];
   /** Agent equivalent of `dualScopeSkillTransitions`. */
   dualScopeAgentTransitions: Set<AgentName>;
   /**
@@ -1629,6 +1914,16 @@ export type ConfigChanges = {
 
 /** One field's before and after, as the summary prints them. */
 type ValueChange = { from: string; to: string };
+
+/** A collapsed `[P][G]` pair, as the config held it before the edit. */
+type CollapsedPair = {
+  /** The project's own install: the half the collapse drops or folds. */
+  projectHalf: SkillConfig;
+  /** The global install the project half masked, as its tombstone recorded it. */
+  maskedGlobal: SkillConfig;
+  /** Whether `s` folded the half into the global install, rather than SPACE dropping it. */
+  folded: boolean;
+};
 
 /** Full (tombstone-inclusive) entry lists used to classify dual-scope transitions. */
 type FullScopeEntries = {
@@ -1672,6 +1967,18 @@ export function detectConfigChanges(
     (a) => a.name,
     (a) => a.scope,
   );
+  const dualScopeSkillTransitions = detectDualScopeTransitions(
+    scopeChanges,
+    fullEntries?.newSkills ?? [],
+    fullEntries?.oldSkills ?? [],
+    (s) => s.id,
+  );
+  const collapsedPairs = collapsedPairsOf(
+    scopeChanges,
+    dualScopeSkillTransitions,
+    fullEntries?.oldSkills ?? [],
+    wizardResult.foldedSkillIds ?? [],
+  );
 
   return {
     addedSkills: difference(newSkillIds, oldSkillIds),
@@ -1680,18 +1987,14 @@ export function detectConfigChanges(
     removedAgents: difference(oldAgentNames, newAgentNames),
     sourceChanges: detectPropertyChanges(
       wizardResult.skills,
-      oldSkillsById,
+      indexBy(withMaskedGlobalsRestored(oldConfig?.skills ?? [], collapsedPairs), (s) => s.id),
       (s) => s.id,
       (s) => s.origin,
     ),
     scopeChanges,
     agentScopeChanges,
-    dualScopeSkillTransitions: detectDualScopeTransitions(
-      scopeChanges,
-      fullEntries?.newSkills ?? [],
-      fullEntries?.oldSkills ?? [],
-      (s) => s.id,
-    ),
+    dualScopeSkillTransitions,
+    collapsedPairs,
     dualScopeAgentTransitions: detectDualScopeTransitions(
       agentScopeChanges,
       fullEntries?.newAgents ?? [],
@@ -1775,6 +2078,87 @@ function detectDualScopeTransitions<
   return result;
 }
 
+/**
+ * The removal half of the dual-scope transitions, as the pairs they collapsed: each P→G change
+ * the old state's tombstone classified, with both halves read back out of that old state, and
+ * whether `s` folded it.
+ */
+function collapsedPairsOf(
+  scopeChanges: Map<SkillId, ScopeChange>,
+  dualScopeSkillTransitions: ReadonlySet<SkillId>,
+  fullOldSkills: SkillConfig[],
+  foldedSkillIds: readonly SkillId[],
+): CollapsedPair[] {
+  return [...scopeChanges]
+    .filter(([id, change]) => change.to === "global" && dualScopeSkillTransitions.has(id))
+    .map(([id]) => ({
+      projectHalf: oldHalfOf(fullOldSkills, id, (skill) => isActiveAt(skill, "project")),
+      maskedGlobal: oldHalfOf(fullOldSkills, id, isGlobalTombstone),
+      folded: foldedSkillIds.includes(id),
+    }));
+}
+
+/**
+ * Whether a collapse moves the project's copy into the global install: `s` folded a Local half,
+ * and the global entry it became is Local too. A fold into a plugin installs the plugin instead,
+ * and a drop removes the copy.
+ */
+function foldsItsCopyIntoGlobal(pair: CollapsedPair, newSkills: SkillConfig[]): boolean {
+  const { projectHalf, folded } = pair;
+  const globalEntry = newSkills.find(
+    (skill) => skill.id === projectHalf.id && isActiveAt(skill, "global"),
+  );
+  return folded && projectHalf.origin === EJECT_SOURCE && globalEntry?.origin === EJECT_SOURCE;
+}
+
+/** One half of a pair the old state held — present by construction, so a miss is a defect. */
+function oldHalfOf(
+  fullOldSkills: SkillConfig[],
+  id: SkillId,
+  isHalf: (skill: SkillConfig) => boolean,
+): SkillConfig {
+  const half = fullOldSkills.find((skill) => skill.id === id && isHalf(skill));
+  if (half === undefined) {
+    throw new Error(`The config before this edit holds no such half of the pair for '${id}'`);
+  }
+  return half;
+}
+
+/**
+ * The pre-edit roster with each collapsed pair's project half replaced by the global install it
+ * masked — what a collapsed skill's origin is measured against. The project half is removed, not
+ * migrated, so the only install whose mode a collapse can change is the global one.
+ */
+function withMaskedGlobalsRestored(
+  oldSkills: SkillConfig[],
+  collapsedPairs: CollapsedPair[],
+): SkillConfig[] {
+  const maskedById = indexBy(
+    collapsedPairs.map(({ maskedGlobal }) => maskedGlobal),
+    (skill) => skill.id,
+  );
+  return oldSkills.map((skill) => {
+    const masked = maskedById[skill.id];
+    if (masked === undefined || skill.scope !== "project") return skill;
+    return installRecordedBy(masked);
+  });
+}
+
+/** The global install a tombstone masks, as the active entry it records. */
+function installRecordedBy(tombstone: SkillConfig): SkillConfig {
+  const { excluded: _masked, ...install } = tombstone;
+  return install;
+}
+
+/**
+ * The scope changes that moved an install. A collapsed pair's change is not one: its project half
+ * is dropped or folded into the global install it masked, which stays where it is.
+ */
+function scopeMovesOf(changes: ConfigChanges): Map<SkillId, ScopeChange> {
+  const collapsed = new Set(changes.collapsedPairs.map(({ projectHalf }) => projectHalf.id));
+  return new Map([...changes.scopeChanges].filter(([id]) => !collapsed.has(id)));
+}
+
 type StaleAgent = { name: AgentName; scope: SkillScope };
 
 /** Every scope a stale compiled agent can be sitting at. */
@@ -1820,8 +2204,10 @@ function planStaleAgentRemovals(
   return STALE_AGENT_SCOPES.map(removalAtScope).filter((removal) => removal.agents.length > 0);
 }
 
-function hasAnyChanges(changes: ConfigChanges): boolean {
+function hasAnyChanges(changes: AppliedChanges): boolean {
   return (
+    changes.reassignedAgents.length > 0 ||
+    changes.rewrittenSkills.length > 0 ||
     changes.addedSkills.length > 0 ||
     changes.removedSkills.length > 0 ||
     changes.addedAgents.length > 0 ||

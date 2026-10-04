@@ -1,6 +1,7 @@
 import os from "os";
 import path from "path";
 import { z } from "zod";
+import { DEFAULT_SOURCE } from "@workspace/compile";
 import { fileExists, readFileOptional } from "../../utils/fs";
 import { verbose, warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
@@ -12,14 +13,22 @@ import {
   SOURCE_ROOT_DIR,
   STANDARD_FILES,
 } from "../../consts";
-import { configUnreadableError } from "../../utils/messages";
-import { projectSourceConfigSchema } from "../schemas";
+import { configUnreadableError, installationConfigsUnreadable } from "../../utils/messages";
+import { formatZodIssues, projectConfigLoaderSchema, projectSourceConfigSchema } from "../schemas";
 import type { ProjectConfig, SourceEntry } from "../../types";
-import { ConfigDefaultExportError, ConfigSchemaError, loadConfig } from "./config-loader";
+import {
+  ConfigDefaultExportError,
+  ConfigSchemaError,
+  loadConfig,
+  NO_VALID_DEFAULT_EXPORT,
+} from "./config-loader";
 import { getInstalledConfigPath, getProjectConfigPath } from "../installation/install-base-dir";
 import { isHomeDirectory } from "../installation/is-home-directory";
+import type { ScopeKind } from "../installation/source-scopes";
 
-export const DEFAULT_SOURCE = `${GITHUB_SOURCE.GITHUB_PREFIX}agents-inc/skills`;
+// DEFAULT_SOURCE lives in @workspace/compile, because the editor's output preview records it for
+// a configuration naming no marketplace; re-exported here for existing importers of this module.
+export { DEFAULT_SOURCE };
 export const SOURCE_ENV_VAR = "CC_MARKETPLACE";
 
 // Re-export types that moved to src/cli/types/config.ts for backward compatibility
@@ -32,8 +41,13 @@ export { getProjectConfigPath };
 export type ResolvedConfig = {
   source: string;
   sourceOrigin: "flag" | "env" | "project" | "global" | "default";
-  marketplace?: string;
-};
+} & (RecordedMarketplaceName | { marketplace?: undefined; marketplaceRecordedIn?: undefined });
+
+/**
+ * The marketplace name an installation recorded beside its source, and the `config.ts` it was
+ * recorded in. A pair, because a refusal of the name sends the reader to the file holding it.
+ */
+type RecordedMarketplaceName = { marketplace: string; marketplaceRecordedIn: string };
 
 /**
  * Who is asking for a marketplace, and therefore whether this run may CHOOSE one.
@@ -65,9 +79,14 @@ export type ResolveSourceRequest = {
  * 2026-08-20). `resolveSource` reads the return value alone, so a swallowed failure was
  * indistinguishable from a config that is not there: the run walked past this rung to
  * {@link DEFAULT_SOURCE} and installed from a marketplace nobody named, while the config naming a
- * private one sat unread on disk. All three ways a config can fail are on the loud side of that
- * line now — a shape the schema refused, a module whose exports are all named, and a file that
- * could not be evaluated at all, which was the one still reported as `null`.
+ * private one sat unread on disk. Every way a config can fail is on the loud side of that line — a
+ * file that could not be evaluated, a module whose exports are all named, a file that declared
+ * nothing, and a shape the installation schema refuses.
+ *
+ * **The file is judged as the full-config reader judges it** (`loadProjectConfigFromDir`) before
+ * its settings are read. The settings schema declares only the settings fields and lets everything
+ * else through, so judged by it alone an empty file read as absent and a refused `skills` beside a
+ * named marketplace read as usable — while `list`, `edit` and `doctor` refused the very same file.
  *
  * A MISSING file keeps its `null`, and that is the whole of what `null` means here: the legitimate
  * state `init` exists for, and the state `edit` reports as "no installation".
@@ -83,7 +102,7 @@ export type ResolveSourceRequest = {
  */
 async function loadSourceConfig(
   dir: string,
-  scope: "project" | "global",
+  scope: ScopeKind,
 ): Promise<Partial<ProjectConfig> | null> {
   const scopeLabel = scope === "project" ? "Project" : "Global";
   const configPath = getInstalledConfigPath(dir);
@@ -93,29 +112,67 @@ async function loadSourceConfig(
     return null;
   }
 
-  const data = await readSourceConfigOrRefuse(configPath);
-  if (!data) return null;
+  const unreadable = refuseInstallationConfig(configPath, scope, dir);
+  const installation = await readConfigOrRefuse(configPath, projectConfigLoaderSchema, unreadable);
+  if (installation === null) throw unreadable(NO_VALID_DEFAULT_EXPORT);
+  const settings = readSettings(configPath, installation);
 
   verbose(`Loaded ${scope} config from ${dir}`);
-  return data;
+  return settings;
+}
+
+/** How a reader words a config that is there and will not load, from the reason it gives. */
+type RefuseUnreadable = (reason: string, cause?: unknown) => Error;
+
+/**
+ * The refusal for an installation's config, worded as `ensureConfigReadable` words the same file:
+ * whose config it is, and the folder the way out is taken from.
+ */
+function refuseInstallationConfig(
+  configPath: string,
+  scope: ScopeKind,
+  scopeRoot: string,
+): RefuseUnreadable {
+  return (reason, cause) =>
+    new Error(installationConfigsUnreadable([{ configPath, reason, scope, scopeRoot }]), { cause });
 }
 
 /**
- * The config at `configPath`, or `null` when it evaluated and declared nothing.
+ * The config at `configPath` as `schema` admits it, or `null` when it evaluated and declared
+ * nothing — which each caller answers for itself: an installation's file declaring nothing is
+ * refused, while a source repo declaring nothing in one folder is asked about the next.
  *
  * Every way of failing raises. Split out from {@link loadSourceConfig} so that function's own body
- * reads as the two states it answers — no file, or a config — with the third state, a file that
- * will not load, named once here rather than assembled from a `let` and a `try`.
+ * reads as the states it answers, with a file that will not load named once here rather than
+ * assembled from a `let` and a `try`.
  */
-async function readSourceConfigOrRefuse(
+async function readConfigOrRefuse<T>(
   configPath: string,
-): Promise<Partial<ProjectConfig> | null> {
+  schema: z.ZodType<T>,
+  unreadable: RefuseUnreadable,
+): Promise<T | null> {
   try {
-    return await loadConfig(configPath, projectSourceConfigSchema);
+    return await loadConfig(configPath, schema);
   } catch (error) {
     if (describesItsOwnFault(error)) throw error;
-    throw unreadableSourceConfig(error);
+    throw unreadable(getErrorMessage(error), error);
   }
+}
+
+/**
+ * The settings an installation's config carries, read out of a config its installation schema has
+ * already admitted.
+ *
+ * Parsed rather than taken as they stand, because that schema lets the settings-only fields through
+ * unread — `branding` and the directory overrides are not its fields — and one of the wrong type is
+ * refused here as it always was, naming the field.
+ */
+function readSettings(configPath: string, installation: unknown): Partial<ProjectConfig> {
+  const settings = projectSourceConfigSchema.safeParse(installation);
+  if (!settings.success) {
+    throw new ConfigSchemaError(configPath, formatZodIssues(settings.error.issues));
+  }
+  return settings.data;
 }
 
 /**
@@ -123,26 +180,23 @@ async function readSourceConfigOrRefuse(
  * itself rather than re-worded.
  *
  * The two it admits fault a LINE of a file the user still owns and can go and correct. Everything
- * else says only that the file would not evaluate, which is what {@link unreadableSourceConfig}
- * exists to turn into a way out.
+ * else says only that the file would not evaluate, which is what each reader's own
+ * {@link RefuseUnreadable} exists to turn into a way out.
  */
 function describesItsOwnFault(error: unknown): boolean {
   return error instanceof ConfigSchemaError || error instanceof ConfigDefaultExportError;
 }
 
 /**
- * The refusal for a config that exists and cannot be evaluated.
+ * The refusal for a marketplace repository's own config that exists and cannot be evaluated.
  *
  * `loadConfig` already names the file and the parser's own reason — `Failed to load config from
- * '<path>': ParseError: Missing semicolon` — so the cause is handed straight to
- * {@link configUnreadableError} rather than restated. That builder is what `BaseCommand`'s
- * `ensureConfigReadable` prints for the OTHER loader of this very file, so both readers refuse it
- * in one vocabulary and offer the one route that clears it: `uninstall` still works on a config it
- * cannot read.
+ * '<path>': ParseError: Missing semicolon` — so it is handed straight to
+ * {@link configUnreadableError} rather than restated. An installation's config is refused by
+ * {@link installationConfigsUnreadable} instead, which can say whose config it is.
  */
-function unreadableSourceConfig(cause: unknown): Error {
-  return new Error(configUnreadableError(getErrorMessage(cause)), { cause });
-}
+const unreadableSourceRepoConfig: RefuseUnreadable = (reason, cause) =>
+  new Error(configUnreadableError(reason), { cause });
 
 /**
  * The config a MARKETPLACE SOURCE REPOSITORY declares about itself, or `null` when it declares
@@ -180,7 +234,7 @@ async function readDeclaredConfig(dir: string): Promise<Partial<ProjectConfig> |
     verbose(`Source config not found at ${configPath}`);
     return null;
   }
-  return readSourceConfigOrRefuse(configPath);
+  return readConfigOrRefuse(configPath, projectSourceConfigSchema, unreadableSourceRepoConfig);
 }
 
 /**
@@ -202,22 +256,33 @@ export async function loadGlobalSourceConfig(): Promise<Partial<ProjectConfig> |
   return loadSourceConfig(os.homedir(), "global");
 }
 
-/** The effective source config plus which scope it was actually loaded from. */
+/** The effective source config, which scope it was actually loaded from, and its file. */
 type EffectiveSourceConfig = {
   config: Partial<ProjectConfig>;
-  origin: "project" | "global";
+  origin: ScopeKind;
+  configPath: string;
 };
 
 async function loadEffectiveSourceConfig(
   projectDir?: string,
 ): Promise<EffectiveSourceConfig | null> {
-  const projectConfig = await loadOwnProjectSourceConfig(projectDir);
-  if (projectConfig) return { config: projectConfig, origin: "project" };
+  const ownDir = ownProjectDir(projectDir);
+  const own = ownDir === null ? null : await readStoredRung(ownDir, "project");
+  return own ?? (await readStoredRung(os.homedir(), "global"));
+}
 
-  const globalConfig = await loadGlobalSourceConfig();
-  if (globalConfig) return { config: globalConfig, origin: "global" };
+/** One stored rung: the config at `dir` and the file it was read from, or null when it has none. */
+async function readStoredRung(
+  dir: string,
+  origin: ScopeKind,
+): Promise<EffectiveSourceConfig | null> {
+  const config = await loadSourceConfig(dir, origin);
+  return config && { config, origin, configPath: getInstalledConfigPath(dir) };
+}
 
-  return null;
+/** The directory whose config is a project's own, or null — see {@link loadOwnProjectSourceConfig}. */
+function ownProjectDir(projectDir: string | undefined): string | null {
+  return projectDir === undefined || isHomeDirectory(projectDir) ? null : projectDir;
 }
 
 /**
@@ -232,8 +297,19 @@ async function loadEffectiveSourceConfig(
 async function loadOwnProjectSourceConfig(
   projectDir: string | undefined,
 ): Promise<Partial<ProjectConfig> | null> {
-  if (projectDir === undefined || isHomeDirectory(projectDir)) return null;
-  return loadProjectSourceConfig(projectDir);
+  const ownDir = ownProjectDir(projectDir);
+  return ownDir === null ? null : loadProjectSourceConfig(ownDir);
+}
+
+/** The marketplace name the effective config recorded, with the file it recorded it in. */
+function recordedMarketplaceName(
+  effective: EffectiveSourceConfig | null,
+): RecordedMarketplaceName | undefined {
+  if (effective?.config.marketplaceName === undefined) return undefined;
+  return {
+    marketplace: effective.config.marketplaceName,
+    marketplaceRecordedIn: effective.configPath,
+  };
 }
 
 /**
@@ -243,20 +319,23 @@ async function loadOwnProjectSourceConfig(
 export async function resolveSource(request: ResolveSourceRequest): Promise<ResolvedConfig> {
   const { caller, flag, projectDir } = request;
   const effective = await loadEffectiveSourceConfig(projectDir);
+  const storedSource = effective?.config.marketplace ?? DEFAULT_SOURCE;
   // The stored NAME becomes this result's `marketplace` — the ref it was read beside becomes the
-  // `source`. Every return below carries the same name, present only when the config named one.
-  const marketplaceName = effective?.config.marketplaceName;
-  const marketplaceLabel = marketplaceName !== undefined && { marketplace: marketplaceName };
+  // `source`. It labels that ref and no other: a project set up from another marketplace than the
+  // one its global installation stored read the global's name as its own, and installed plugins
+  // against a marketplace Claude Code had registered under a different one.
+  const recorded = recordedMarketplaceName(effective);
+  const labelFor = (source: string) => source === storedSource && recorded;
 
   if (flag !== undefined) {
     assertNamedSourceUsable(flag);
     verbose(`Marketplace named by this run: ${flag}`);
-    return { source: flag, sourceOrigin: "flag", ...marketplaceLabel };
+    return { source: flag, sourceOrigin: "flag", ...labelFor(flag) };
   }
 
   const envSource = caller === "init" ? readEnvSource() : undefined;
   if (envSource !== undefined) {
-    return { source: envSource, sourceOrigin: "env", ...marketplaceLabel };
+    return { source: envSource, sourceOrigin: "env", ...labelFor(envSource) };
   }
 
   if (effective?.config.marketplace) {
@@ -264,12 +343,12 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
     return {
       source: effective.config.marketplace,
       sourceOrigin: effective.origin,
-      ...marketplaceLabel,
+      ...labelFor(effective.config.marketplace),
     };
   }
 
   verbose(`Using default marketplace: ${DEFAULT_SOURCE}`);
-  return { source: DEFAULT_SOURCE, sourceOrigin: "default", ...marketplaceLabel };
+  return { source: DEFAULT_SOURCE, sourceOrigin: "default", ...labelFor(DEFAULT_SOURCE) };
 }
 
 /**
@@ -653,4 +732,18 @@ export function isLocalSource(source: string): boolean {
     );
   }
   return true;
+}
+
+/**
+ * Whether two marketplace refs name one marketplace.
+ *
+ * A folder on disk is one marketplace however its path is spelled, so two local paths are compared
+ * resolved against `fromDir` — the directory a relative one is read from — and `path.resolve`
+ * drops a trailing slash on the way. A remote ref names one repository only as written.
+ */
+export function isSameMarketplace(a: string, b: string, fromDir: string): boolean {
+  if (isLocalSource(a) && isLocalSource(b)) {
+    return path.resolve(fromDir, a) === path.resolve(fromDir, b);
+  }
+  return a === b;
 }

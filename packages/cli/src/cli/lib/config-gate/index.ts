@@ -104,7 +104,21 @@ export type GateReport = {
  */
 
 /** A write whose classification obliged nothing beyond the global pair. */
-const NOTHING_PROPAGATED: PropagationResult = { updated: [], skipped: [] };
+const NOTHING_PROPAGATED: PropagationResult = {
+  updated: [],
+  unreadable: [],
+  gone: [],
+  notOurs: [],
+  failed: [],
+};
+
+/**
+ * Whether a gated write moved anything the global install's compiled sub-agents are built from —
+ * the question a caller asks before deciding its global compile pass has work to do.
+ */
+export function movedGlobalAgentInputs(written: GateReport): boolean {
+  return tierRegeneratesTypes(consequenceTier(written.changes));
+}
 
 function report(
   globalWritten: boolean,
