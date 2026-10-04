@@ -3,6 +3,8 @@ import { expect, userEvent } from "storybook/test"
 
 import { Input } from "@workspace/ui/components/input"
 
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+
 const SEARCH_TERM = "react"
 
 // Both search fields are borderless — the border belongs to the bar or field
@@ -94,7 +96,7 @@ export const FocusDrawsTheRing: Story = {
 
     field.focus()
 
-    await expect(getComputedStyle(field).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(field)
   },
 }
 

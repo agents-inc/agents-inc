@@ -126,13 +126,21 @@ function LatticeCell({
 // chosen between the pointer and the arrow through `interactive`/`disabled`,
 // and `cursor` is an inherited property, so that one decision holds over the
 // whole surface.
+//
+// THE RING IS INSET, and it is the one ring in the package that has to be. The
+// button fills the cell's padding box exactly, so an outset ring is drawn
+// entirely in the band outside it — which is the cell's border, clipped by the
+// cell's `overflow-hidden` on an unselected cell and painted over by its
+// `-outline-offset-1` amber on a selected one. A focused cell and an unfocused
+// one rendered byte-identical. Inset, the ring lies just inside the hairline,
+// clear of both, and the cell's content keeps its padding away from it.
 function LatticeCellButton({ className, ...props }: ComponentProps<"button">) {
   return (
     <button
       data-slot="lattice-cell-button"
       type="button"
       className={cn(
-        "absolute inset-0 z-0 cursor-[inherit] outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "absolute inset-0 z-0 cursor-[inherit] outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
         className
       )}
       {...props}

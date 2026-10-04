@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect } from "storybook/test"
 
 import { Badge } from "@workspace/ui/components/badge"
+
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
 // What the skill cell gives its flippable badges, so the name says the value
 // rather than announcing "plugin, button".
@@ -47,6 +48,6 @@ export const InteractiveFocusDrawsTheRing: Story = {
 
     badge.focus()
 
-    await expect(getComputedStyle(badge).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(badge)
   },
 }

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect, screen } from "storybook/test"
+import { screen } from "storybook/test"
 
 import {
   ButtonGroup,
@@ -7,6 +7,8 @@ import {
 } from "@workspace/ui/components/button-group"
 import { Hinge, HingeButton, Rule } from "@workspace/ui/components/divider"
 import { Glyph } from "@workspace/ui/components/glyph"
+
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
 // Both dividers bleed out of the main column's gutter with `-mx-gutter`, so
 // they need a gutter to bleed out of or they render off the canvas.
@@ -113,8 +115,8 @@ export const PlainRule: Story = {
 
 // THE PACKAGE'S ONE FOCUS TREATMENT, on the two controls this file ships. Axe
 // cannot check a focus indicator — it is not machine-decidable — so a play
-// function that focuses the control and reads its `box-shadow` back is the
-// entire gate. Both are square controls with no box of their own beyond a
+// function that focuses the control and photographs its ring is the entire
+// gate. Both are square controls with no box of their own beyond a
 // hairline, which is exactly the shape a missing ring is invisible on.
 export const AccordionButtonFocusDrawsTheRing: Story = {
   ...HingeWithAction,
@@ -123,7 +125,7 @@ export const AccordionButtonFocusDrawsTheRing: Story = {
 
     button.focus()
 
-    await expect(getComputedStyle(button).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(button)
   },
 }
 

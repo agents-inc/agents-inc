@@ -7,6 +7,8 @@ import {
   ButtonGroupItem,
 } from "@workspace/ui/components/button-group"
 
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+
 const INSTALL_MODES = ["plugin", "eject"] as const
 const SCOPES = ["project", "global"] as const
 
@@ -168,8 +170,6 @@ export const TheFocusedCellDrawsARing: Story = {
   play: async ({ canvas }) => {
     await userEvent.tab()
 
-    await expect(canvas.getByRole("radio", { name: "plugin" })).toHaveClass(
-      /focus-visible:ring-1/
-    )
+    await expectVisibleFocusRing(canvas.getByRole("radio", { name: "plugin" }))
   },
 }

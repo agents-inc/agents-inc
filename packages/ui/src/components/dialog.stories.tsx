@@ -18,6 +18,8 @@ import {
   DialogTrigger,
 } from "@workspace/ui/components/dialog"
 
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+
 const TITLE = "Install"
 const TRIGGER = "open install"
 const INSTALL_COMMAND = "npx agents-inc@latest install --from abc123"
@@ -118,7 +120,7 @@ export const CloseGlyphFocusDrawsTheRing: Story = {
 
     close.focus()
 
-    await expect(getComputedStyle(close).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(close)
   },
 }
 
@@ -227,7 +229,7 @@ export const MaximiseFocusDrawsTheRing: Story = {
 
     maximise.focus()
 
-    await expect(getComputedStyle(maximise).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(maximise)
   },
 }
 

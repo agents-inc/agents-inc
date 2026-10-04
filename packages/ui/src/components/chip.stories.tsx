@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
-import { expect } from "storybook/test"
 
 import { Chip } from "@workspace/ui/components/chip"
+
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
 const meta = {
   title: "Components/Chip",
@@ -54,6 +55,6 @@ export const FocusDrawsTheRing: Story = {
 
     chip.focus()
 
-    await expect(getComputedStyle(chip).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(chip)
   },
 }

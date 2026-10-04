@@ -7,6 +7,8 @@ import {
   type MatrixRow,
 } from "@workspace/ui/components/matrix-grid"
 
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+
 const ROLES = ["dev", "pm", "rsrch", "rev", "test"]
 
 // A domain × role pair with no sub-agent behind it, as distinct from a pair
@@ -102,6 +104,6 @@ export const FocusDrawsTheRing: Story = {
 
     cell.focus()
 
-    await expect(getComputedStyle(cell).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(cell)
   },
 }

@@ -9,6 +9,8 @@ import {
   LatticeRows,
 } from "@workspace/ui/components/lattice"
 
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+
 // Cells are pulled back 1px so every shared edge lands on one physical line.
 // That only reads correctly against the page ground, so the stories carry it.
 const meta = {
@@ -151,7 +153,7 @@ export const CellButtonFocusDrawsTheRing: Story = {
 
     surface.focus()
 
-    await expect(getComputedStyle(surface).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(surface)
   },
 }
 
@@ -238,7 +240,7 @@ export const RowFocusDrawsTheRing: Story = {
 
     row.focus()
 
-    await expect(getComputedStyle(row).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(row)
   },
 }
 

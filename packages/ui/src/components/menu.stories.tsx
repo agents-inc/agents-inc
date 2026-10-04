@@ -10,6 +10,8 @@ import {
   MenuTrigger,
 } from "@workspace/ui/components/menu"
 
+import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+
 // The one menu the product draws: the roster panel's grouping control, two
 // mutually exclusive values, no icons and no separator.
 const GROUP_BYS = ["domain", "scope"] as const
@@ -204,7 +206,7 @@ export const FocusDrawsTheRing: Story = {
     })
 
     // The unfocused row reads `none`, so this is the ring and nothing else.
-    await expect(getComputedStyle(option).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(option)
   },
 }
 
@@ -221,7 +223,7 @@ export const TheTriggerDrawsTheRing: Story = {
     await expect(trigger).toHaveFocus()
 
     // The unfocused trigger reads `none`, so this is the ring and nothing else.
-    await expect(getComputedStyle(trigger).boxShadow).not.toBe("none")
+    await expectVisibleFocusRing(trigger)
   },
 }
 
