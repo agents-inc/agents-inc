@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "schemas/project-source-config.schema.json",
   "title": "Project Source Configuration",
-  "description": "Schema for .agents-inc/config.ts marketplace source configuration files. Provider-neutral, with no <provider> segment: the fields describe the repository's own layout. A source repo still declaring .claude-src/config.ts is read there indefinitely.",
+  "description": "Schema for .agents-inc/config.ts marketplace source configuration files. Provider-neutral, with no <provider> segment: the fields describe the repository's own layout.",
   "type": "object",
   "properties": {
     "marketplace": {
