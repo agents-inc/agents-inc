@@ -74,7 +74,7 @@ const CONFIG_GATE_PRIVATE_DYNAMIC_IMPORT = {
  */
 const FS_WRITE_NAMES = ["writeFile", "writeFileSync", "appendFile", "appendFileSync", "outputFile"];
 const FS_WRITE_MESSAGE =
-  "Write through writeFile() from src/cli/utils/fs.ts — it holds the runtime guard on ~/.claude-src/config.ts and config-types.ts.";
+  "Write through writeFile() from src/cli/utils/fs.ts — it holds the runtime guard on the global config pair, config.ts and config-types.ts.";
 const FS_WRITE_PATHS = ["fs", "node:fs", "fs/promises", "node:fs/promises", "fs-extra"].map(
   (name) => ({ name, importNames: FS_WRITE_NAMES, message: FS_WRITE_MESSAGE }),
 );
@@ -192,10 +192,10 @@ const TASK_ID_SHAPES = [
 /**
  * The source folder's name, written anywhere but the funnel that resolves it.
  *
- * `.claude-src/` is becoming `.agents-inc/<provider>/`, and for as long as both names are live
- * every path under one is resolved by `lib/installation/install-layout.ts` — fourteen sites join a
- * directory from a root and seven print one at a user, and a single one of them left on a literal
- * gives a project that writes into a folder the CLI is no longer reading, with every test green.
+ * The source folder is `.agents-inc/<provider>/`, and every path under it is resolved by
+ * `lib/installation/install-layout.ts` — fourteen sites join a directory from a root and seven
+ * print one at a user, and a single one of them left on a literal gives a project that writes into
+ * a folder the CLI is not reading, with every test green.
  * A census grep finds today's sites; only a rule stops tomorrow's from being written.
  *
  * The regex demands a boundary on both sides, because the names this repository is full of are one
@@ -203,17 +203,17 @@ const TASK_ID_SHAPES = [
  * `agents-inc` is the package, `.claude-plugin/plugin.json` is a plugin manifest and `.claude/skills`
  * is where ejected skills land. A rule condemning any of those would be turned off within the hour,
  * so `src/cli/lib/__tests__/source-folder-literals-are-funnelled.test.ts` feeds each of them to this
- * config and requires silence, alongside the four banned spellings it requires a report for.
+ * config and requires silence, alongside the banned spellings it requires a report for.
  *
  * Both halves are needed: a bare string literal and a template's static text are two node types,
  * and a selector for one says nothing about the other. Neither needs a `/`, which is fortunate —
  * esquery ends a regex at the first raw slash, and `\u002F` is the escape the config-gate selector
  * above already spells it with.
  */
-const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](claude-src|agents-inc)([^\\w-]|$)/";
+const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](agents-inc)([^\\w-]|$)/";
 
 const SOURCE_FOLDER_MESSAGE =
-  "The source folder's name is resolved, not written: call sourceFolderInUse/sourceDir from src/cli/lib/installation/install-layout.ts, or relativeConfigPath for a message. Both names are live and only that module knows which one a scope is on.";
+  "The source folder's name is resolved, not written: call sourceFolderInUse/sourceDir from src/cli/lib/installation/install-layout.ts, or relativeConfigPath for a message. Only that module knows which folder a scope is on.";
 
 const SOURCE_FOLDER_LITERALS = [
   {
@@ -243,10 +243,10 @@ const SOURCE_FOLDER_LITERALS = [
  * Specs need no exemption and are given none: no block sets `no-restricted-imports` for a file in
  * `TEST_FILES`, so the rule has never reached one.
  */
-const SOURCE_FOLDER_SYMBOLS = ["SOURCE_ROOT_DIR", "LEGACY_SOURCE_DIR", "CLAUDE_SRC_DIR"];
+const SOURCE_FOLDER_SYMBOLS = ["SOURCE_ROOT_DIR"];
 
 const SOURCE_FOLDER_SYMBOL_MESSAGE =
-  "The source folder's name is resolved, not composed: call sourceDir/sourceFolderInUse from src/cli/lib/installation/install-layout.ts, or relativeConfigPath for a message. Both names are live and only that module knows which one a scope is on.";
+  "The source folder's name is resolved, not composed: call sourceDir/sourceFolderInUse from src/cli/lib/installation/install-layout.ts, or relativeConfigPath for a message. Only that module knows which folder a scope is on.";
 
 /**
  * Both specifiers the names are reachable through: the CLI's own barrel, and the package the
@@ -318,8 +318,8 @@ const CLAUDE_HOST_IMPORTS = {
  *
  * The regex demands a boundary on both sides for the reason the source-folder one does: the names
  * here are a character away from names this repository is full of. `.claude-plugin/plugin.json` is
- * a plugin manifest and `.claude-src` is the legacy source folder — both end the match on a `-`,
- * which `[^\w-]` excludes — and the bare word `claude` is a provider name rather than a directory.
+ * a plugin manifest, which ends the match on a `-` that `[^\w-]` excludes — and the bare word
+ * `claude` is a provider name rather than a directory.
  * `src/cli/lib/__tests__/host-path-literals-are-funnelled.test.ts` feeds each of those to this
  * config and requires silence beside the spellings it requires a report for.
  *
@@ -639,7 +639,7 @@ export default defineConfig(
   },
 
   // ── config-gate enforcement (L2) ────────────────────────────────────────────
-  // Writing ~/.claude-src/config.ts and its config-types.ts sibling is
+  // Writing the global config.ts and its config-types.ts sibling is
   // src/cli/lib/config-gate/'s exclusive privilege, because that write owes
   // consequences (propagate to registered projects, recompile their agents) that
   // no caller can be relied on to remember. These blocks are the static layer of
@@ -865,10 +865,9 @@ export default defineConfig(
   {
     // A SPEC may write the folder names, and its shared infrastructure may not.
     //
-    // This is the repository's existing ruling about rendering assertions arriving at the rename:
-    // `.claude-src` is text already written into directories on people's disks, so an assertion
-    // that imported the constant the product writes would move with it and could never fail. Every
-    // spec in the rename's own suite pins both names as literals for exactly that reason.
+    // This is the repository's existing ruling about rendering assertions: a folder name is text
+    // already written into directories on people's disks, so an assertion that imported the
+    // constant the product writes would move with it and could never fail.
     //
     // What stays banned in the spec zone is everything that is not a spec — page objects,
     // assertion modules, fixtures and helpers. Those are shared vocabulary rather than a single
@@ -926,11 +925,11 @@ export default defineConfig(
 
   {
     // The SOURCE-REPO door, which is a different question from the installation funnel and is why
-    // `loadSourceRepoConfig` exists: a marketplace repo declares its layout in either folder and
-    // always will, while an installation is on exactly one and `install-layout.ts` says which.
-    // `SOURCE_REPO_CONFIG_FOLDERS` is that "either" written down, so it holds both names by
-    // design. The other side of the pair is `utils/fs.ts`, whose global-pair tripwire must know
-    // every folder a write could land in rather than the one in use — its rule is already off.
+    // `loadSourceRepoConfig` exists: a marketplace repo declares its layout in `.agents-inc/`
+    // itself, provider-neutral, while an installation is on one provider folder under it and
+    // `install-layout.ts` says which. The other side of the pair is `utils/fs.ts`, whose
+    // global-pair tripwire must know every folder a write could land in rather than the one in
+    // use — its rule is already off.
     //
     // Its zone is the configuration block above, so that block's set comes back minus this group —
     // the SOURCE-folder one alone. `HOST_PATH_SYMBOL_IMPORTS` is a different subject and is

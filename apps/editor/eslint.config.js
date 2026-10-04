@@ -6,9 +6,8 @@ import { defineConfig } from "eslint/config"
  * The source folder's name, written anywhere but a spec.
  *
  * The third copy of the ban `packages/cli/eslint.config.js` and `packages/compile/eslint.config.js`
- * carry, with the same regex, for the same reason: `.claude-src/` is becoming
- * `.agents-inc/<provider>/`, both names are live at once, and the editor renders paths under one of
- * them. It DECLARES neither — `output-preview.ts` imports the names from `@workspace/compile`,
+ * carry, with the same regex, for the same reason: the source folder is `.agents-inc/<provider>/`,
+ * and the editor renders paths under it. It DECLARES none — `output-preview.ts` imports the names from `@workspace/compile`,
  * which is where that package's own ban points — so there is no funnel to exempt here, only specs.
  *
  * ONE PRODUCT FILE CANNOT IMPORT THEM, and carries a `no-restricted-syntax` disable with the
@@ -28,10 +27,10 @@ import { defineConfig } from "eslint/config"
  * (`.agents-inc/claude/` since R2 flipped the preview onto it), and `packages/cli`'s
  * `e2e/pages/constants.ts` exemption is the same ruling.
  */
-const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](claude-src|agents-inc)([^\\w-]|$)/"
+const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](agents-inc)([^\\w-]|$)/"
 
 const SOURCE_FOLDER_MESSAGE =
-  "The source folder's name is declared in @workspace/compile — import SOURCE_ROOT_DIR, LEGACY_SOURCE_DIR or sourceDirName rather than writing either name. Both are live and only that package knows which one a scope is on."
+  "The source folder's name is declared in @workspace/compile — import SOURCE_ROOT_DIR or sourceDirName rather than writing the name."
 
 const SOURCE_FOLDER_LITERALS = [
   {

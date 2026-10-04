@@ -287,7 +287,7 @@ export const REGISTRY: RegistryEntry[] = [
     source: { file: MESSAGES, exports: "const" },
     document: {
       document: COMMANDS_INDEX,
-      from: "constant objects and one bare string constant, enumerated exhaustively:",
+      from: "constant objects, enumerated exhaustively:",
       to: "The same module exports these",
       states: "table-rows",
     },
@@ -543,10 +543,8 @@ export const REGISTRY: RegistryEntry[] = [
     // The SPLIT itself, which is the one claim on this page the three rows around it cannot make.
     // Each of those binds one object's members; this binds WHICH NAMES the Paths table's own
     // declarations were moved to `packages/compile/src/paths.ts`, and the document states that as
-    // a prose list beside a count. Nothing read it, so `.claude-src` could stop being declared
-    // there — it now is not; `LEGACY_SOURCE_DIR` is, and `CLAUDE_SRC_DIR` is an alias re-exported
-    // by `packages/compile/src/index.ts` — while the sentence went on naming it and the table
-    // below went on carrying its row.
+    // a prose list beside a count. Nothing read it, so a name could stop being declared there
+    // while the sentence went on naming it and the table below went on carrying its row.
     //
     // The section is the list only: `from` ends before it and `to` begins after the clause that
     // follows, so every backticked name between them is a member and the trailing clause's three

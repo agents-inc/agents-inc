@@ -158,7 +158,7 @@ export const SplitWithFullscreen: Story = {
       <DialogContent className="w-[47.5rem]">
         <DialogHeader
           title="Output preview"
-          subtitle="~/.claude-src/config.ts · new"
+          subtitle="~/.agents-inc/claude/config.ts · new"
           onToggleFullscreen={() => {}}
         />
         <DialogPanes className="min-h-[16rem]">
@@ -190,7 +190,7 @@ export const Fullscreen: Story = {
       <DialogContent fullscreen className="w-[47.5rem]">
         <DialogHeader
           title="Output preview"
-          subtitle="~/.claude-src/config.ts · new"
+          subtitle="~/.agents-inc/claude/config.ts · new"
           fullscreen
           onToggleFullscreen={() => {}}
         />

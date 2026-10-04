@@ -104,29 +104,7 @@ export const MIRRORS: Mirror[] = [
     product: { file: CONSTS, symbol: "PLUGINS_DIST_PATH", path: [] },
   },
   /**
-   * Registered with the source-folder rename, which is the change that gave this pair a second
-   * name to drift towards.
-   *
-   * `DIRS.CLAUDE_SRC` is the e2e tree's copy of the folder every pre-rename installation carries,
-   * and it is used on dozens of lines across the E2E suite. While `.claude-src/` and
-   * `.agents-inc/<provider>/` are both live, a mirror that quietly moved to the new name would
-   * turn every one of those assertions into a statement about a folder the CLI does not write —
-   * and every one of them would go on passing, because they assert an absence as often as a
-   * presence.
-   */
-  {
-    name: "DIRS.CLAUDE_SRC",
-    kind: "value",
-    e2e: { file: E2E_CONSTANTS, symbol: "DIRS", path: ["CLAUDE_SRC"] },
-    product: { file: COMPILE_PATHS, symbol: "LEGACY_SOURCE_DIR", path: [] },
-  },
-  /**
-   * The other half of that pair, and it was the half left unregistered: `e2e/pages/constants.ts`
-   * declared `DIRS.SOURCE_ROOT` as mirroring `SOURCE_ROOT_DIR` while only the legacy row existed,
-   * so the file's own header — every mirrored value owes a third party comparing it — was true of
-   * one of the two names and not the other.
-   *
-   * It is the name `expectNoSourceFolder` asks after when neither provider folder is present, and
+   * The source folder's root name. It is the name `expectNoSourceFolder` asks after when neither provider folder is present, and
    * an uninstall that leaves an emptied `.agents-inc/` behind is exactly what that assertion is
    * for — so a mirror that drifted here would turn a cleanup claim into one about a directory
    * nothing creates. `DIRS.SOURCE_CLAUDE` beside it stays unregistered on purpose: its production

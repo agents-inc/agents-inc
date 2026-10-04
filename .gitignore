@@ -91,10 +91,9 @@ storybook-static
 
 # Claude Code working files, at any level
 .claude
-.claude-src
-# Where a new installation keeps its source: `.agents-inc/<provider>/`. One already on
-# `.claude-src/` (above) stays there. Measured: a fresh `init --from` writes
-# `.agents-inc/claude/config.ts` and `config-types.ts`, untracked and committable without this.
+# Where an installation keeps its source: `.agents-inc/<provider>/`. Measured: a fresh
+# `init --from` writes `.agents-inc/claude/config.ts` and `config-types.ts`, untracked and
+# committable without this.
 .agents-inc
 .claude-design/
 CLAUDE.md
