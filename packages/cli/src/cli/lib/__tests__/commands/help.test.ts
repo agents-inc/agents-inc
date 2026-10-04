@@ -7,7 +7,7 @@ describe("help command", () => {
 
   // Every in-process run goes through the oclif `init` hook, which calls
   // `resolveSource` and walks to the home root — so even `help` reads whatever
-  // `~/.claude-src/config.ts` and cwd the developer's machine happens to have.
+  // `~/.agents-inc/claude/config.ts` and cwd the developer's machine happens to have.
   beforeEach(async () => {
     ({ cleanup } = await setupIsolatedHome("cc-help-test-"));
   });

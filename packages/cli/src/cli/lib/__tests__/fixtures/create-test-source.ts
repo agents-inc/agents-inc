@@ -3,7 +3,6 @@ import { mkdir, writeFile, readFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
   PLUGINS_SUBDIR,
   STANDARD_DIRS,
@@ -27,6 +26,7 @@ import { createMockMarketplace, createMockMarketplacePlugin } from "../factories
 import type { SkillRulesFile } from "../content-generators";
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { DEFAULT_TEST_AGENTS } from "../mock-data/mock-agents";
+import { sourceFolderInUse } from "../../installation/install-layout.js";
 
 // Boundary widening: test fixtures use arbitrary skill IDs, categories, and domains for test isolation.
 // Slugs and forkedFrom.skillId are narrowed to SkillSlug / SkillId; fictional values cast at definition site.
@@ -377,10 +377,10 @@ permissionMode: {{ agent.permissionMode }}
   }
 
   if (options.projectConfig) {
-    const projectClaudeSrcDir = path.join(projectDir, CLAUDE_SRC_DIR);
-    await mkdir(projectClaudeSrcDir, { recursive: true });
+    const projectSourceDir = sourceFolderInUse(projectDir, "claude").dir;
+    await mkdir(projectSourceDir, { recursive: true });
     await writeFile(
-      path.join(projectClaudeSrcDir, STANDARD_FILES.CONFIG_TS),
+      path.join(projectSourceDir, STANDARD_FILES.CONFIG_TS),
       renderConfigTs(options.projectConfig),
     );
   }

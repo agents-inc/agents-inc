@@ -60,7 +60,7 @@ describe("every reader of an agents-inc config.ts", () => {
    * argument. `os.homedir()` is spied for EVERY reader either way, not just for that one — the
    * first run of this file proved why: `loadProjectConfig` takes a directory AND falls back to the
    * home root when that directory has no config, so with the real `os.homedir()` in place its
-   * absent-config case read the developer's own `~/.claude-src/config.ts` and answered a loaded
+   * absent-config case read the developer's own global config and answered a loaded
    * config. A spy rather than `process.env.HOME`, because node re-reads that variable per call and
    * bun resolves it once at startup, and this package runs its tests under both.
    */
@@ -79,6 +79,9 @@ describe("every reader of an agents-inc config.ts", () => {
     sourceFolder?: string;
     read: (dir: string) => Promise<unknown>;
   };
+
+  /** A folder the resolver never picks, so only a reader told the path finds the fixture. */
+  const CALLER_NAMED_FOLDER = "named-by-the-caller";
 
   const READERS = [
     {
@@ -111,23 +114,21 @@ describe("every reader of an agents-inc config.ts", () => {
       read: (dir) => projectConfigModule.loadInstalledConfig(dir),
     },
     {
-      // `loadProjectConfigFromDir` at a path the caller names: the second of a scope's two source
-      // folders, which the resolver never picks — so the fixture goes in the legacy folder, the
-      // one an uninstall over both names has to read beside the folder being read.
+      // `loadProjectConfigFromDir` at a path the caller names, which the resolver never picks —
+      // so the fixture goes in a folder only the caller knows.
       name: "loadProjectConfigAt",
       locate: "argument",
-      sourceFolder: ".claude-src",
+      sourceFolder: CALLER_NAMED_FOLDER,
       read: (dir) =>
         projectConfigModule.loadProjectConfigAt(
-          path.join(dir, ".claude-src", "config.ts"),
+          path.join(dir, CALLER_NAMED_FOLDER, "config.ts"),
           dir,
           "claude",
         ),
     },
     {
       // A marketplace source repo's own declaration, which reads a DIFFERENT file from the readers
-      // above — `<dir>/.agents-inc/config.ts` before `<dir>/.claude-src/config.ts`, neither
-      // inside a provider folder — and owes the same two answers about it.
+      // above — `<dir>/.agents-inc/config.ts`, not inside a provider folder — and owes the same two answers about it.
       name: "loadSourceRepoConfig",
       locate: "argument",
       // A literal: the folder is text on a marketplace author's disk, and an assertion that

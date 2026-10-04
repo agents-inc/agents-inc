@@ -7,7 +7,7 @@ import { mkdir, writeFile } from "fs/promises";
  * The source root `loadFromLocal` reads when the DEFAULT source is resolved from disk.
  * Unset for every spec but the one that drives that path, which points it at a root the
  * test owns — otherwise the load reads this checkout, including its gitignored
- * `.claude-src/config.ts`, whose `skillsDir` and `stacksFile` keys decide the answer.
+ * `.agents-inc/config.ts`, whose `skillsDir` and `stacksFile` keys decide the answer.
  */
 const { projectRootOverride } = vi.hoisted(() => ({
   projectRootOverride: { value: undefined as string | undefined },
@@ -323,7 +323,7 @@ afterAll(async () => {
 
 /**
  * Every `loadSkillsMatrixFromSource` here walks to the home root twice — `resolveSource`
- * falls through to `~/.claude-src/config.ts`, and the local-skill merge reads
+ * falls through to the global config under HOME, and the local-skill merge reads
  * `~/.claude/skills` — so without this the suite loads whatever the developer has
  * installed. The env var alone is not enough: `os.homedir()` re-reads `$HOME` under node
  * but fixes it at startup under bun, and this package runs its tests under both.
@@ -1102,7 +1102,7 @@ describe("source-loader config-driven paths", () => {
     const sourceDir = path.join(tempDir, "custom-source");
 
     // Create source config with custom skillsDir
-    const configDir = path.join(sourceDir, ".claude-src");
+    const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
@@ -1145,7 +1145,7 @@ describe("source-loader config-driven paths", () => {
     const sourceDir = path.join(tempDir, "custom-categories-source");
 
     // Create source config with custom categoriesFile pointing to a non-existent path
-    const configDir = path.join(sourceDir, ".claude-src");
+    const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
@@ -1171,7 +1171,7 @@ describe("source-loader config-driven paths", () => {
     const sourceDir = path.join(tempDir, "custom-rules-source");
 
     // Create source config with custom rulesFile pointing to a non-existent path
-    const configDir = path.join(sourceDir, ".claude-src");
+    const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
@@ -1195,7 +1195,7 @@ describe("source-loader config-driven paths", () => {
     const sourceDir = path.join(tempDir, "custom-stacks-source");
 
     // Create source config with custom stacksFile
-    const configDir = path.join(sourceDir, ".claude-src");
+    const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),
@@ -1236,7 +1236,7 @@ describe("source-loader config-driven paths", () => {
   it("should fall back to convention defaults when source has no config", async () => {
     const sourceDir = path.join(tempDir, "no-config-source");
 
-    // No .claude-src/config.ts — just create conventional paths
+    // No .agents-inc/config.ts — just create conventional paths
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
 
     await publishMarketplace(sourceDir);
@@ -1255,7 +1255,7 @@ describe("source-loader config-driven paths", () => {
     const sourceDir = path.join(tempDir, "config-no-paths-source");
 
     // Create source config WITHOUT path fields
-    const configDir = path.join(sourceDir, ".claude-src");
+    const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
       path.join(configDir, STANDARD_FILES.CONFIG_TS),

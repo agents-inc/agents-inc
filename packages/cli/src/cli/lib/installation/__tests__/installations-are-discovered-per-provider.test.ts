@@ -26,9 +26,6 @@
  * - **a root holding both** — two entries, each single-provider. This is the one that reddens if
  *   discovery keeps the defaulting behaviour: today every path builder under a two-folder root
  *   answers Claude and says nothing, which is the plan's Risk 8.
- * - **a legacy scope** — `.claude-src/` is an installation and answers `claude`. A discovery that
- *   asked only which `.agents-inc/<provider>/` directories exist is blind to that folder by
- *   construction, and reports "nothing installed" for every pre-rename machine.
  * - **run from the home directory** — the two scopes are one directory there, and an installation
  *   counted twice is a second installation that does not exist.
  *
@@ -50,9 +47,6 @@ import { detectInstallations } from "../index.js";
 /** The new layout, per provider, as it is written on disk and shown to a user. */
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
 const CODEX_SOURCE_REL = ".agents-inc/codex";
-
-/** The name every installation made before the source-folder rename still carries. */
-const LEGACY_SOURCE_REL = ".claude-src";
 
 /**
  * What the hand gate of a consuming repository keeps under `.agents-inc/`, and therefore the
@@ -149,19 +143,6 @@ describe("detectInstallations", () => {
 
       expect(await detectInstallations(project)).toStrictEqual([
         { provider: "claude", scope: "project", configPath: configAt(project, CLAUDE_SOURCE_REL) },
-      ]);
-    });
-  });
-
-  describe("a scope on the folder every pre-rename installation carries", () => {
-    it("answers the Claude installation that is there, not an absent one", async () => {
-      await plantConfig(project, LEGACY_SOURCE_REL);
-
-      expect(
-        await detectInstallations(project),
-        "`.claude-src/` holds a live installation, and an empty answer is what makes a command tell a pre-rename machine it has none",
-      ).toStrictEqual([
-        { provider: "claude", scope: "project", configPath: configAt(project, LEGACY_SOURCE_REL) },
       ]);
     });
   });

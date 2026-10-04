@@ -10,7 +10,7 @@ import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { sa } from "../factories/skill-factories.js";
-import { CLAUDE_SRC_DIR, EJECT_SOURCE } from "../../../consts";
+import { EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import { STATUS_MESSAGES } from "../../../utils/messages";
 import type { ProjectConfig } from "../../../types";
@@ -96,7 +96,7 @@ describe("edit --from", () => {
 
   /** Writes the `config.ts` this command reads the installation out of. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
-    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides));
   }
 
   /** The one installed configuration these specs would apply over. */

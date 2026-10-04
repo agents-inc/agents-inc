@@ -96,7 +96,7 @@ function preloadedRefsIn(frontmatter: Record<string, unknown> | null): string[] 
  * no skill, or a fenced `skill: "[skill-id]"` demonstrating the call, each of which a bare scan
  * for that shape reports as a skill. The shipped template's preamble carries neither since it
  * was slimmed on 2026-09-03; the retired one carried both, and a project overriding
- * `agent.liquid` from its own `.claude-src/agents/_templates/` may carry them again.
+ * `agent.liquid` from its own `.agents-inc/claude/agents/_templates/` may carry them again.
  */
 function dynamicEntriesIn(body: string): CompiledAgentDynamicEntry[] {
   const protocol = activationProtocolIn(body);

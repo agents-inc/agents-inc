@@ -9,7 +9,6 @@ import { getDashboardData, formatDashboardText } from "../../../commands/init";
 import { formatInstallationDisplay, getInstallationInfo } from "../../plugins";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DEFAULT_BRANDING,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
@@ -46,7 +45,7 @@ const EJECTED_SKILL_ID = "web-mocks-msw" satisfies SkillId;
 const UNDECLARED_SKILL_DIR = "context7-mcp";
 
 /**
- * Writes an installed project: the `.claude-src/config.ts` declaring `skills`, and a
+ * Writes an installed project: the `.agents-inc/claude/config.ts` declaring `skills`, and a
  * `.claude/skills/<id>` directory for each id in `onDisk`.
  *
  * The two lists are separate parameters because they genuinely differ in every installation the
@@ -58,7 +57,7 @@ async function writeInstallation(
   skills: SkillConfig[],
   onDisk: readonly string[],
 ): Promise<void> {
-  await writeTestTsConfig(projectDir, { name: "test-project", skills }, CLAUDE_SRC_DIR);
+  await writeTestTsConfig(projectDir, { name: "test-project", skills });
   for (const skillId of onDisk) {
     await mkdir(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId), {
       recursive: true,
@@ -67,19 +66,15 @@ async function writeInstallation(
 }
 
 /**
- * Writes the `.claude-src/config.ts` the dashboard reads: a project declaring no skills, carrying
+ * Writes the `.agents-inc/claude/config.ts` the dashboard reads: a project declaring no skills, carrying
  * a `branding` block only when one is named — the two states the title line is asserted over.
  */
 async function writeDashboardConfig(projectDir: string, branding?: BrandingConfig): Promise<void> {
-  await writeTestTsConfig(
-    projectDir,
-    {
-      name: "test-project",
-      skills: [],
-      ...(branding !== undefined && { branding }),
-    },
-    CLAUDE_SRC_DIR,
-  );
+  await writeTestTsConfig(projectDir, {
+    name: "test-project",
+    skills: [],
+    ...(branding !== undefined && { branding }),
+  });
 }
 
 describe("init command", () => {
@@ -99,11 +94,10 @@ describe("init command", () => {
       // A real installation: the config declares skills so it is detected as
       // installed. A config declaring neither skills nor agents is content-less
       // and routes to the setup wizard, not the dashboard.
-      await writeTestTsConfig(
-        projectDir,
-        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
-        CLAUDE_SRC_DIR,
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
+      });
 
       const { stdout, stderr, error } = await runCliCommand(["init"]);
 
@@ -121,11 +115,10 @@ describe("init command", () => {
     });
 
     it("should show skill and agent counts in dashboard", async () => {
-      await writeTestTsConfig(
-        projectDir,
-        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
-        CLAUDE_SRC_DIR,
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
+      });
 
       // Install the declared skills — the dashboard reports what is on disk
       for (const skillId of EXPECTED_SKILLS.WEB_DEFAULT) {
@@ -151,11 +144,11 @@ describe("init command", () => {
     });
 
     it("should show source when configured", async () => {
-      await writeTestTsConfig(
-        projectDir,
-        { name: "test-project", skills: [], marketplace: TEST_SOURCE_URL },
-        CLAUDE_SRC_DIR,
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: [],
+        marketplace: TEST_SOURCE_URL,
+      });
 
       const data = await getDashboardData(projectDir);
       expect(data.source).toBe("github:agents-inc/skills");
@@ -196,11 +189,10 @@ describe("init command", () => {
     it("should not modify existing config when already initialized", async () => {
       // A real installation (declares skills) so init shows the dashboard and
       // leaves the config untouched, rather than routing to the setup wizard.
-      const configPath = await writeTestTsConfig(
-        projectDir,
-        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
-        CLAUDE_SRC_DIR,
-      );
+      const configPath = await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
+      });
       const originalContent = await readFile(configPath, "utf-8");
 
       await runCliCommand(["init"]);
@@ -212,11 +204,10 @@ describe("init command", () => {
     it("should exit with SUCCESS when already initialized", async () => {
       // A real installation (declares skills) so init shows the dashboard, which
       // exits cleanly, rather than routing to the setup wizard.
-      await writeTestTsConfig(
-        projectDir,
-        { name: "test-project", skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]) },
-        CLAUDE_SRC_DIR,
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
+      });
 
       const { error } = await runCliCommand(["init"]);
 
@@ -225,7 +216,7 @@ describe("init command", () => {
     });
 
     it("should show 0 counts when skills and agents are empty", async () => {
-      await writeTestTsConfig(projectDir, { name: "test-project", skills: [] }, CLAUDE_SRC_DIR);
+      await writeTestTsConfig(projectDir, { name: "test-project", skills: [] });
 
       const data = await getDashboardData(projectDir);
       expect(data.skillCount).toBe(0);

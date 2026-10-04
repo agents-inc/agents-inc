@@ -22,7 +22,7 @@ import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js
 import { REACT_HONO_WEB_API_DOMAINS_MATRIX } from "../mock-data/mock-matrices";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { EXIT_CODES } from "../../exit-codes";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
 import { buildMarketplacePluginRef } from "../../plugins/plugin-ref.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 import type { PluginHost } from "../../hosts/plugin-host.js";
@@ -34,6 +34,7 @@ import type {
   writeProjectConfig,
 } from "../../operations/index.js";
 import type { SkillId } from "../../../types";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
  * The spine `init --from` shares with the wizard: plugin skills are handed to the
@@ -172,7 +173,7 @@ describe("init --from: plugin install spine", () => {
     await mkdir(projectDir, { recursive: true });
 
     // `--from` is greenfield-only, and the global half of that check reads `os.homedir()`. Without
-    // a fake HOME this spec would consult the developer's own ~/.claude-src and refuse to install
+    // a fake HOME this spec would consult the developer's own ~/.agents-inc/claude and refuse to install
     // the global-scoped skill on any machine that happens to have one.
     vi.stubEnv("HOME", tempDir);
 
@@ -197,7 +198,7 @@ describe("init --from: plugin install spine", () => {
     mockWriteProjectConfig.mockResolvedValue(
       buildConfigWriteResult(
         buildProjectConfig({ name: "drift-lock", skills: [], agents: [] }),
-        path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        getProjectConfigPath(projectDir, "claude"),
       ),
     );
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
@@ -288,7 +289,7 @@ describe("init --from: plugin install spine", () => {
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     expect(mockWriteProjectConfig).not.toHaveBeenCalled();
     expect(
-      await fileExists(path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS)),
+      await fileExists(getProjectConfigPath(projectDir, "claude")),
       "no config.ts may be left behind by a failed plugin install",
     ).toBe(false);
   });

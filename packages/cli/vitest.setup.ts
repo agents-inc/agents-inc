@@ -110,7 +110,7 @@ process.env.AGENTS_INC_API_URL = WORKER_ORIGIN;
 // consults.
 process.env.AGENTS_INC_SKIP_NEW_VERSION_CHECK = "1";
 
-// Prevent tests from finding the real ~/.claude-src/config.yaml via global fallback.
+// Prevent tests from finding the developer's real global config via global fallback.
 // loadProjectConfig() falls back to os.homedir() when no project-level config exists,
 // which pollutes test results when a real global install is present.
 //
@@ -127,7 +127,7 @@ beforeEach(async () => {
   // Installed per TEST, not once per file. From a `beforeAll` a single `vi.restoreAllMocks()`
   // — which twenty-three specs in this package call from an `afterEach` — withdrew this spy for
   // every LATER test in that file, after which os.homedir() answered from the developer's own
-  // machine. That is how a unit test came to read a real ~/.claude-src/config.ts and pass on it.
+  // machine. That is how a unit test came to read a real global config.ts and pass on it.
   // `home-dir-read-at-call-time.test.ts` holds the re-installation, paired with a case proving
   // the withdrawal it survives is real.
   vi.spyOn(os, "homedir").mockImplementation(() => {

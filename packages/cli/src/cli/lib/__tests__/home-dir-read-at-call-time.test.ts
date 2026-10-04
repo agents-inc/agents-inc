@@ -105,7 +105,7 @@ describe("the constants derived from the home directory follow it", () => {
  * It was installed in a `beforeAll`, so a single `vi.restoreAllMocks()` — which twenty-three
  * specs in this package call from an `afterEach` — withdrew it for every LATER test in that
  * file, after which `os.homedir()` answered from the developer's own machine. That is how a
- * unit test came to read a real `~/.claude-src/config.ts` and pass on it.
+ * unit test came to read a real `~/.agents-inc/claude/config.ts` and pass on it.
  *
  * **The two cases are one claim read from both ends and neither means anything alone.** The
  * second is an assertion that isolation held, and isolation holding proves nothing unless the

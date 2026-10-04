@@ -8,7 +8,6 @@ import { seedPayloadForInstallation } from "./installation-payload.js";
 import { registerExternalSkills, writeExternalSkills } from "./external-skills.js";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
   STANDARD_DIRS,
@@ -69,7 +68,7 @@ describe("seedPayloadForInstallation", () => {
   });
 
   async function installConfig(overrides: Partial<FixtureProjectConfig>): Promise<void> {
-    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides));
   }
 
   /**

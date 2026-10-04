@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mutateGlobal } from "../index.js";
 import { consequenceTier } from "../classify.js";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
-import { CLAUDE_SRC_DIR } from "../../../consts.js";
 import type { GateDeps } from "../index.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 
@@ -55,7 +54,7 @@ describe("mutateGlobal — a mutation that moves nothing", () => {
   }
 
   async function writeGlobalConfig(config: Record<string, unknown>): Promise<void> {
-    await writeTestTsConfig(tempHome, config, CLAUDE_SRC_DIR);
+    await writeTestTsConfig(tempHome, config);
   }
 
   it("reports T4 and no write when there is no global config to mutate", async () => {

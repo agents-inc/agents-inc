@@ -136,8 +136,7 @@ describe("config", () => {
   describe("getProjectConfigPath", () => {
     // The folder a project with neither name on disk gets its config CREATED in, written as a
     // literal: it is text on people's disks, and an assertion importing the constant the product
-    // writes would move with it and could never fail. A project already on `.claude-src/` is
-    // answered for in `installation/install-layout.test.ts`, which owns the preference order.
+    // writes would move with it and could never fail.
     it("should return path in the folder a new installation is created in", () => {
       const configPath = getProjectConfigPath("/my/project", "claude");
       expect(configPath).toBe(`/my/project/.agents-inc/claude/${STANDARD_FILES.CONFIG_TS}`);

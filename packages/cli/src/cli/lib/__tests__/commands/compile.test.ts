@@ -12,11 +12,12 @@ import {
   SKILL_WITHOUT_METADATA,
   SKILL_WITHOUT_METADATA_CUSTOM,
 } from "../mock-data/mock-skills";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
 import { expectValidAgentMarkdown } from "../assertions";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { flattenCliOutput } from "../helpers/flatten-cli-output.js";
 import { SKILLS } from "../test-fixtures";
+import { sourceDir } from "../../installation/install-layout.js";
 
 describe("compile command", () => {
   let cleanup: () => Promise<void>;
@@ -260,7 +261,7 @@ describe("compile command", () => {
       );
       expect(
         await fileExists(
-          path.join(localDirs.projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TYPES_TS),
+          path.join(sourceDir(localDirs.projectDir, "claude"), STANDARD_FILES.CONFIG_TYPES_TS),
         ),
         "a pass with no catalogue must write no type unions",
       ).toBe(false);

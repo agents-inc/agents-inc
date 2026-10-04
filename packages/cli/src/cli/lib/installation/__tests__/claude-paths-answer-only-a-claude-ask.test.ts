@@ -47,7 +47,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SkillScope } from "../../../types/config.js";
 import { CLI_ROOT } from "../../__tests__/helpers/cli-runner.js";
-import type { RecordedGolden } from "../../__tests__/helpers/golden-source-folder.js";
+import type { RecordedGolden } from "../../__tests__/helpers/golden-tree.js";
 import { getProjectConfigPath } from "../install-base-dir.js";
 import { agentsDir, pluginsDir, skillsDir } from "../install-layout.js";
 import { attributeByRole, type RoleSite } from "./helpers/install-path-roles.js";

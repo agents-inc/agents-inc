@@ -35,6 +35,18 @@ export type InstallTree = {
   emptyDirectories: string[];
 };
 
+/** One phase of a recorded journey, in the shape `readInstallTree` serialises. */
+export type RecordedPhase = {
+  files: Record<string, string>;
+  emptyDirectories: string[];
+};
+
+/** One journey's recorded trees: each phase by name, and the paths the journey does not pin. */
+export type RecordedGolden = {
+  notPinned: string[];
+  phases: Record<string, RecordedPhase>;
+};
+
 /** What one run's tree is normalised against. */
 export type GoldenTreeContext = {
   /**

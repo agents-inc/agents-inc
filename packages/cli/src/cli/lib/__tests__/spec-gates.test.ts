@@ -54,7 +54,7 @@ const RECOGNISED_NON_SPEC_NAMES = [
  * named with their directory, and are specs at all. All three walk row -> spec, so the page cannot
  * see what it OMITS — and a spec belonging to no row is invisible in exactly the way a row naming
  * no spec is not. It has already cost something: five corrupt-config specs belonged to no journey,
- * which is how a ruling landed on the second reader of `.claude-src/config.ts` with no row whose
+ * which is how a ruling landed on the second reader of `config.ts` with no row whose
  * surfaces anyone re-judged
  * (`agent-findings/2026-08-21-five-specs-covered-a-behaviour-the-coverage-matrix-had-no-row-for.md`).
  *

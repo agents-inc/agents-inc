@@ -166,9 +166,9 @@ ${systemReminder(NO_SKILLS_NOTE)}`;
  *
  * **Not the shipped template's shape, and deliberately kept anyway.** The shipped preamble is
  * three lines of prose with no headings and no fence, so nothing in the bundled tree exercises
- * the pairing that keeps such lines out of the answer. A project may override `agent.liquid` from
- * its own `.claude-src/agents/_templates/`, and the retired shipped template carried exactly this
- * shape — so a reader that scanned for either token alone would have answered wrongly then and
+ * the pairing that keeps such lines out of the answer. A project may override `agent.liquid`
+ * from its own `.agents-inc/claude/agents/_templates/`, and the retired shipped template carried
+ * exactly this shape — so a reader that scanned for either token alone would have answered wrongly then and
  * would answer wrongly for an overriding project now.
  */
 const PROSE_IN_PROTOCOL_AGENT = `---

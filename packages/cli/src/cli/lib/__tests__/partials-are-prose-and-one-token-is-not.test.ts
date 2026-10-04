@@ -54,7 +54,6 @@ import { PROJECT_ROOT, STANDARD_DIRS, STANDARD_FILES } from "../../consts.js";
 import { compileAgentForHost, createLiquidEngine } from "../compiler.js";
 import { sourceFolderInUse } from "../installation/install-layout.js";
 import { createMockAgentConfig } from "./factories/agent-factories.js";
-import { writeTestTsConfig } from "./helpers/config-io.js";
 import { cleanupTempDir, createTempDir } from "./test-fs-utils.js";
 import type { AgentName } from "../../types/index.js";
 
@@ -222,11 +221,6 @@ async function summonerCompiledFor(installRoot: string): Promise<string> {
   );
 }
 
-/** An install still on the folder every pre-rename installation carries. */
-async function putOnLegacyLayout(projectDir: string): Promise<void> {
-  await writeTestTsConfig(projectDir, {}, ".claude-src");
-}
-
 describe("what a compile does to the text an author wrote in a partial", () => {
   const temps: string[] = [];
 
@@ -263,18 +257,11 @@ describe("what a compile does to the text an author wrote in a partial", () => {
   });
 
   it("substitutes the one token a partial opts into with the folder this install writes", async () => {
-    const projectDir = await tempProject("partial-token-legacy-");
-    await putOnLegacyLayout(projectDir);
+    const projectDir = await tempProject("partial-token-");
     const relName = sourceFolderInUse(projectDir, "claude").relName;
 
     const compiled = await projectAgentCompiledIn(projectDir);
 
-    // Subject guard: the fixture really did put this install on the pre-rename folder, so the
-    // assertion below is about resolution rather than about whichever literal is current.
-    expect(
-      relName,
-      "the fixture did not put this install on the folder it was written to test",
-    ).toBe(".claude-src");
     expect(
       AGENT_PARTIALS.filter((partial) => compiled.includes(substitutedLine(partial, relName))),
       "a partial's opted-in token was not substituted, so an agent is told to author into a folder this install does not have",

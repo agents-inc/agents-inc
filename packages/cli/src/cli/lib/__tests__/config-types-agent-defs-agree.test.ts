@@ -167,7 +167,7 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
     {
       file: "src/cli/lib/agents/agent-recompiler.ts",
       posture: "not the union",
-      why: "`loadAllAgents(sourcePath)` plus `loadProjectAgents(projectDir)` build the roster of what to COMPILE, including a project's own `.claude-src/agents/`. Nothing here reaches a type union.",
+      why: "`loadAllAgents(sourcePath)` plus `loadProjectAgents(projectDir)` build the roster of what to COMPILE, including a project's own `.agents-inc/claude/agents/`. Nothing here reaches a type union.",
     },
     {
       file: "src/cli/lib/config-gate/index.ts",

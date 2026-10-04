@@ -5,7 +5,8 @@ import fg from "fast-glob";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLI_ROOT } from "./helpers/cli-runner.js";
 import { cleanupTempDir, createTempDir, fileExists } from "./test-fs-utils.js";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../consts.js";
+import { STANDARD_FILES } from "../../consts.js";
+import { sourceDir } from "../installation/install-layout.js";
 import { withGateToken } from "../config-gate/gate-token.js";
 import { GlobalPairWriteViolation, writeProjectPartial } from "../config-gate/index.js";
 import { regenerateConfigTypes } from "../configuration/config-types-writer.js";
@@ -123,7 +124,7 @@ const CONFIG_PAIR_REFERENCE =
 
 /**
  * A whole logging call whose only argument is a template literal, e.g.
- * ``this.logSuccess(`Created ${CLAUDE_SRC_DIR}/${STANDARD_FILES.CONFIG_TS}`)``.
+ * ``this.logSuccess(`Created ${SOURCE_DIR}/${STANDARD_FILES.CONFIG_TS}`)``.
  *
  * Removed before the pair-reference test because a name printed at the user is
  * not a path written to. This narrows the scan without loosening it: the text it
@@ -157,7 +158,7 @@ function writesTheConfigPairDirectly(source: string): boolean {
 
 /** The canonical bypass the scanner exists to catch (the shape at eject.ts). */
 const ROGUE_SNIPPET = `
-await ensureDir(path.join(projectDir, CLAUDE_SRC_DIR));
+await ensureDir(path.join(projectDir, SOURCE_DIR));
 await writeFile(tsConfigPath, generateConfigSource(config));
 const tsConfigPath = getProjectConfigPath(projectDir);
 `;
@@ -180,7 +181,7 @@ return loadProjectConfigFromDir(path.dirname(configPath));
  */
 const LOGS_THE_PAIR_NAME_SNIPPET = `
 await writeFile(readmePath, readmeContent);
-this.logSuccess(\`Created \${CLAUDE_SRC_DIR}/\${STANDARD_FILES.CONFIG_TS}\`);
+this.logSuccess(\`Created \${SOURCE_DIR}/\${STANDARD_FILES.CONFIG_TS}\`);
 this.warn(\`Could not update \${STANDARD_FILES.CONFIG_TYPES_TS}: \${getErrorMessage(error)}\`);
 `;
 
@@ -189,7 +190,7 @@ this.warn(\`Could not update \${STANDARD_FILES.CONFIG_TYPES_TS}: \${getErrorMess
  * strip cannot be used to hide a write behind a nearby log line.
  */
 const ROGUE_PLUS_LOG_SNIPPET = `
-this.logSuccess(\`Created \${CLAUDE_SRC_DIR}/\${STANDARD_FILES.CONFIG_TS}\`);
+this.logSuccess(\`Created \${SOURCE_DIR}/\${STANDARD_FILES.CONFIG_TS}\`);
 const tsConfigPath = getProjectConfigPath(projectDir);
 await writeFile(tsConfigPath, source);
 `;
@@ -323,7 +324,7 @@ describe("config-gate enforcement", () => {
 
     beforeEach(async () => {
       tempHome = await createTempDir("cc-gate-tripwire-");
-      await mkdir(path.join(tempHome, CLAUDE_SRC_DIR), { recursive: true });
+      await mkdir(sourceDir(tempHome, "claude"), { recursive: true });
       vi.spyOn(os, "homedir").mockReturnValue(tempHome);
       ({ writeFile: realWriteFile } =
         await vi.importActual<typeof import("../../utils/fs.js")>("../../utils/fs.js"));
@@ -334,7 +335,7 @@ describe("config-gate enforcement", () => {
       await cleanupTempDir(tempHome);
     });
 
-    const pairPath = (file: string) => path.join(tempHome, CLAUDE_SRC_DIR, file);
+    const pairPath = (file: string) => path.join(sourceDir(tempHome, "claude"), file);
 
     it.each([
       ["the config half", STANDARD_FILES.CONFIG_TS],
@@ -357,7 +358,7 @@ describe("config-gate enforcement", () => {
     });
 
     it("leaves every other file alone", async () => {
-      const unrelated = path.join(tempHome, CLAUDE_SRC_DIR, "notes.md");
+      const unrelated = path.join(sourceDir(tempHome, "claude"), "notes.md");
       await realWriteFile(unrelated, "fine");
 
       expect(await readFile(unrelated, "utf-8")).toBe("fine");
@@ -388,7 +389,7 @@ describe("config-gate enforcement", () => {
 
     beforeEach(async () => {
       tempHome = await createTempDir("cc-gate-private-writer-");
-      await mkdir(path.join(tempHome, CLAUDE_SRC_DIR), { recursive: true });
+      await mkdir(sourceDir(tempHome, "claude"), { recursive: true });
       vi.spyOn(os, "homedir").mockReturnValue(tempHome);
     });
 
@@ -399,7 +400,7 @@ describe("config-gate enforcement", () => {
 
     it("writeGlobalConfigHalf throws GlobalPairWriteViolation when called outside the gate", async () => {
       const { writeGlobalConfigHalf } = await import("../config-gate/pair-writer.js");
-      const configPath = path.join(tempHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = path.join(sourceDir(tempHome, "claude"), STANDARD_FILES.CONFIG_TS);
 
       await expect(
         writeGlobalConfigHalf({ name: "rogue", skills: [], agents: [] }, configPath),
@@ -409,7 +410,7 @@ describe("config-gate enforcement", () => {
 
     it("leaves the global config half unwritten when the call is refused", async () => {
       const { writeGlobalConfigHalf } = await import("../config-gate/pair-writer.js");
-      const configPath = path.join(tempHome, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = path.join(sourceDir(tempHome, "claude"), STANDARD_FILES.CONFIG_TS);
 
       await writeGlobalConfigHalf({ name: "rogue", skills: [], agents: [] }, configPath).catch(
         () => undefined,

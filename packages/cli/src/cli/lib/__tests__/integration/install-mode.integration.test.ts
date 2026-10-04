@@ -19,9 +19,10 @@ import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { FULLSTACK_TRIO_MATRIX } from "../mock-data/mock-matrices";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { INIT_SKILL_IDS, INIT_TEST_SKILLS } from "../mock-data/mock-skills";
-import { CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { STANDARD_FILES } from "../../../consts";
 import path from "path";
 import { mkdir } from "fs/promises";
+import { sourceDir } from "../../installation/install-layout.js";
 
 const REACT_SKILL_ID: SkillId = "web-framework-react";
 const HONO_SKILL_ID: SkillId = "api-framework-hono";
@@ -250,7 +251,7 @@ describe("Integration: writeConfigFile Round-Trip", () => {
 
   beforeEach(async () => {
     tempDir = await createTempDir("config-roundtrip-");
-    const configDir = path.join(tempDir, CLAUDE_SRC_DIR);
+    const configDir = sourceDir(tempDir, "claude");
     await mkdir(configDir, { recursive: true });
     configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
   });

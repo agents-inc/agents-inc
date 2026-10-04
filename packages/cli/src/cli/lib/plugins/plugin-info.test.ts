@@ -10,13 +10,11 @@ import {
 import type { SkillDefinitionMap, SkillId } from "../../types";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DEFAULT_PLUGIN_NAME,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
   PLUGINS_SUBDIR,
   STANDARD_DIRS,
-  STANDARD_FILES,
 } from "../../consts";
 
 vi.mock("fs/promises", () => ({
@@ -52,6 +50,7 @@ import {
 } from "../__tests__/factories/installation-factories.js";
 import { createMockSkillDefinition } from "../__tests__/factories/skill-factories";
 import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { getProjectConfigPath } from "../installation/install-base-dir.js";
 
 const mockedReaddir = vi.mocked(readdir);
 const mockedDiscoverAllPluginSkills = vi.mocked(discoverAllPluginSkills);
@@ -113,7 +112,7 @@ describe("plugin-info", () => {
     });
 
     it("should return local installation info", async () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
       const agentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const skillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
@@ -162,7 +161,7 @@ describe("plugin-info", () => {
     });
 
     it("counts skills and agents at both scopes and names both agents directories", async () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
       const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const projectSkillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
@@ -220,7 +219,7 @@ describe("plugin-info", () => {
     });
 
     it("names only the global agents directory when every agent is installed globally", async () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
       const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const globalSkillsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.SKILLS);
@@ -253,7 +252,7 @@ describe("plugin-info", () => {
     });
 
     it("names only the project agents directory when every agent is installed in the project", async () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
       const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const projectSkillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
@@ -282,7 +281,7 @@ describe("plugin-info", () => {
     });
 
     it("names no agents directory when no scope holds compiled agents", async () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
 
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
@@ -304,7 +303,7 @@ describe("plugin-info", () => {
 
     it("counts the home root only once when the installation is global", async () => {
       const homeDir = os.homedir();
-      const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(homeDir, "claude");
       const agentsDir = path.join(homeDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const skillsDir = path.join(homeDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
@@ -345,7 +344,7 @@ describe("plugin-info", () => {
 
       mockedDetectInstallation.mockResolvedValue(
         buildPluginInstallation({
-          configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+          configPath: getProjectConfigPath(PROJECT_DIR, "claude"),
           agentsDir,
           projectDir: PROJECT_DIR,
         }),
@@ -357,7 +356,7 @@ describe("plugin-info", () => {
           name: "my-plugin",
           skills: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
         }),
-        configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        configPath: getProjectConfigPath(PROJECT_DIR, "claude"),
         provider: "claude",
       });
 
@@ -385,13 +384,13 @@ describe("plugin-info", () => {
         name: "my-plugin",
         skillCount: 1,
         agentCount: 2,
-        configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        configPath: getProjectConfigPath(PROJECT_DIR, "claude"),
         agentDirs: [agentsDir],
       });
     });
 
     it("counts plugin skills enabled at the home root when the command runs in a project", async () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
 
       mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
@@ -419,7 +418,7 @@ describe("plugin-info", () => {
     });
 
     it("counts a plugin skill enabled at both scopes once", async () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
       const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
 
@@ -475,7 +474,7 @@ describe("plugin-info", () => {
      */
     it("counts a home-root plugin installation from its configuration, not from the registry", async () => {
       const homeDir = os.homedir();
-      const configPath = path.join(homeDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(homeDir, "claude");
 
       mockedDetectInstallation.mockResolvedValue(
         buildPluginInstallation({
@@ -511,7 +510,7 @@ describe("plugin-info", () => {
     });
 
     it("should use default name when local config has no name", async () => {
-      const mockConfigPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const mockConfigPath = getProjectConfigPath(PROJECT_DIR, "claude");
 
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath: mockConfigPath }));
       mockedDirectoryExists.mockResolvedValue(false);
@@ -539,7 +538,7 @@ describe("plugin-info", () => {
     });
 
     it("should handle readdir errors gracefully for skills", async () => {
-      const mockConfigPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const mockConfigPath = getProjectConfigPath(PROJECT_DIR, "claude");
 
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath: mockConfigPath }));
       mockedDirectoryExists.mockResolvedValue(true);
@@ -573,7 +572,7 @@ describe("plugin-info", () => {
    * so each mode gets a fixture where that source under-reports.
    */
   describe("the skill count is what the configuration declares", () => {
-    const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+    const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
     const projectSkillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 
     it("counts a mixed installation's plugin skills, which own no directory on disk", async () => {
@@ -759,7 +758,7 @@ describe("plugin-info", () => {
 
   describe("formatInstallationDisplay", () => {
     it("should format eject installation info", () => {
-      const configPath = path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS);
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
       const agentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       const info = buildInstallationInfo({
         name: "my-project",
@@ -868,7 +867,7 @@ function buildInstallationInfo(overrides: Partial<InstallationInfo> = {}): Insta
     name: "my-project",
     skillCount: 5,
     agentCount: 3,
-    configPath: path.join(PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+    configPath: getProjectConfigPath(PROJECT_DIR, "claude"),
     agentDirs: [path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS)],
     ...overrides,
   };

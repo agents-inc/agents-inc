@@ -3,13 +3,11 @@
  *
  * Every write in the CLI funnels through `utils/fs.writeFile`, which resolves its target and
  * refuses the two halves of the GLOBAL pair unless the caller holds the config gate's token.
- * `isGlobalPairPath` is what it asks, and today that function knows exactly one folder —
- * `~/.claude-src/{config,config-types}.ts` — because until the rename there was only one.
+ * `isGlobalPairPath` is what it asks.
  *
- * After R1 there are three folders a global pair can sit in: the legacy one, and
- * `~/.agents-inc/<provider>/` for each provider. A guard that knows one of them lets the others
- * through with nothing failing anywhere, which is the quietest way a config-gate ruling can stop
- * being true — the gate's static layers (module privacy, the lint bans, the source scanner) are
+ * A global pair can sit in `~/.agents-inc/<provider>/` for each provider. A guard that knows one
+ * of them lets the others through with nothing failing anywhere, which is the quietest way a
+ * config-gate ruling can stop being true — the gate's static layers (module privacy, the lint bans, the source scanner) are
  * all satisfied by a write that simply lands somewhere they were not told about.
  *
  * Both directions are pinned in this file on purpose. A refusal on its own cannot tell a
@@ -34,7 +32,7 @@ import { cleanupTempDir, createTempDir } from "./test-fs-utils.js";
 const REFUSAL = "may only be written through config-gate";
 
 /**
- * Every folder a GLOBAL config pair can sit in after R1, paired with each half of the pair.
+ * Every folder a GLOBAL config pair can sit in, paired with each half of the pair.
  *
  * Written out as a roster rather than assembled from a provider list, so a provider added to the
  * product without a row here reads as a missing row rather than as a loop that grew on its own.
@@ -42,7 +40,6 @@ const REFUSAL = "may only be written through config-gate";
 const GLOBAL_PAIR_LOCATIONS = [
   { label: "the claude folder", segments: [".agents-inc", "claude"] },
   { label: "the codex folder", segments: [".agents-inc", "codex"] },
-  { label: "the legacy folder", segments: [".claude-src"] },
 ] as const;
 
 const PAIR_HALVES = [

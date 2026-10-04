@@ -7,13 +7,13 @@ import { setupIsolatedHome } from "../../helpers/isolated-home.js";
 import { directoryExists, fileExists } from "../../test-fs-utils";
 import { EXIT_CODES } from "../../../exit-codes";
 import {
-  CLAUDE_SRC_DIR,
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
   STACKS_FILE_PATH,
   STANDARD_FILES,
 } from "../../../../consts";
+import { sourceDir } from "../../../installation/install-layout.js";
 
 /** The name every scaffold under test publishes under. */
 const MARKETPLACE_NAME = "acme";
@@ -115,9 +115,9 @@ describe("new:marketplace command", () => {
     });
 
     it("leaves no config manifest — a marketplace is not an installation", async () => {
-      expect(await directoryExists(path.join(projectDir, MARKETPLACE_NAME, CLAUDE_SRC_DIR))).toBe(
-        false,
-      );
+      expect(
+        await directoryExists(sourceDir(path.join(projectDir, MARKETPLACE_NAME), "claude")),
+      ).toBe(false);
     });
   });
 

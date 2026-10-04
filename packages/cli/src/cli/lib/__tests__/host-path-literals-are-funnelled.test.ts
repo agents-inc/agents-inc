@@ -14,8 +14,7 @@
  * `source-folder-literals-are-funnelled.test.ts` is the one to read first: same derivation, same
  * two-halves discipline, a different set of names. The half that is not decoration is the SECOND
  * one — the names here are a character away from names this repository is full of.
- * `.claude-plugin/plugin.json` is a plugin manifest, `.claude-src` is the legacy source folder
- * (the sibling ban's subject, not this one's), `config.toml` is Codex's own configuration file
+ * `.claude-plugin/plugin.json` is a plugin manifest, `config.toml` is Codex's own configuration file
  * which the layout module itself writes, and `claude` on its own is a provider name. A rule
  * condemning any of those would be reverted within the hour, so each is fed to this config here
  * and required to be silent.
@@ -177,8 +176,7 @@ const BANNED_SPELLINGS = [
  * rather than a guess.
  *
  * None of them may trip the SOURCE-folder ban either, or the silence asserted below would be
- * measuring the wrong selector — which is why `.claude-src` is not among them despite being the
- * nearest miss of all.
+ * measuring the wrong selector.
  */
 const ALLOWED_SPELLINGS = [
   {

@@ -1,14 +1,9 @@
 import path from "path";
 
-import {
-  CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
-  PLUGINS_SUBDIR,
-  STANDARD_DIRS,
-  STANDARD_FILES,
-} from "../../../consts.js";
+import { CLAUDE_DIR, PLUGINS_SUBDIR, STANDARD_DIRS } from "../../../consts.js";
 
 import type { Installation } from "../../installation/index.js";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /** The project root every installation below is rooted at unless a caller names another. */
 const FACTORY_PROJECT_DIR = "/project";
@@ -26,7 +21,7 @@ const FACTORY_PROJECT_DIR = "/project";
 export function buildInstallation(overrides: Partial<Installation> = {}): Installation {
   return {
     mode: "eject",
-    configPath: path.join(FACTORY_PROJECT_DIR, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+    configPath: getProjectConfigPath(FACTORY_PROJECT_DIR, "claude"),
     agentsDir: path.join(FACTORY_PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
     skillsDir: path.join(FACTORY_PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS),
     projectDir: FACTORY_PROJECT_DIR,

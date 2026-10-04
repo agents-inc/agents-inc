@@ -23,7 +23,7 @@ import { MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX } from "../mock-data/mock-matrices
 import { CUSTOM_HOUSE_TOOLING_ID } from "../mock-data/mock-skills";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { EXIT_CODES } from "../../exit-codes";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
 import type { SeedPayload } from "@workspace/matrix/seed";
 import type { PluginHost } from "../../hosts/plugin-host.js";
 import type {
@@ -33,6 +33,7 @@ import type {
   loadSource,
   writeProjectConfig,
 } from "../../operations/index.js";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
  * A skill that exists only in this project cannot be pulled from a marketplace, so an
@@ -128,7 +129,7 @@ describe("init --from: a plugin install nothing backs", () => {
     mockWriteProjectConfig.mockResolvedValue(
       buildConfigWriteResult(
         buildProjectConfig({ name: "unbacked", skills: [], agents: [] }),
-        path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        getProjectConfigPath(projectDir, "claude"),
       ),
     );
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
@@ -176,7 +177,7 @@ describe("init --from: a plugin install nothing backs", () => {
     ).not.toHaveBeenCalled();
     expect(mockWriteProjectConfig).not.toHaveBeenCalled();
     expect(
-      await fileExists(path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS)),
+      await fileExists(getProjectConfigPath(projectDir, "claude")),
       "no config.ts may be left behind by a refused plugin install",
     ).toBe(false);
   });

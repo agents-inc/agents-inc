@@ -44,7 +44,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SkillScope } from "../../../types/config.js";
 import { agentsDir, permissionFiles, pluginsDir, skillsDir, sourceDir } from "../install-layout.js";
 import { CLI_ROOT } from "../../__tests__/helpers/cli-runner.js";
-import type { RecordedGolden } from "../../__tests__/helpers/golden-source-folder.js";
+import type { RecordedGolden } from "../../__tests__/helpers/golden-tree.js";
 import { attributeByRole, type RoleSite } from "./helpers/install-path-roles.js";
 
 const GOLDEN_TREES_DIR = path.join(CLI_ROOT, "e2e", "fixtures", "claude-golden-trees");

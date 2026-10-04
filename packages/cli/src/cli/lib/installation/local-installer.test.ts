@@ -2124,9 +2124,9 @@ describe("local-installer", () => {
         false,
       );
 
-      const globalClaudeSrc = sourceFolderInUse(fakeHomeHandle.dir, "claude").dir;
+      const globalClaudeSource = sourceFolderInUse(fakeHomeHandle.dir, "claude").dir;
       expect(
-        (await readdir(globalClaudeSrc)).sort(),
+        (await readdir(globalClaudeSource)).sort(),
         "the write that generates the project types creates the global pair it then imports from",
       ).toStrictEqual([STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS].sort());
 
@@ -2269,9 +2269,9 @@ describe("local-installer", () => {
     const fakeHomeHandle = useFakeHome(() => tempDir);
 
     it("rewrites standalone unions narrowed to the config's entries at global scope", async () => {
-      const globalClaudeSrc = sourceFolderInUse(fakeHomeHandle.dir, "claude").dir;
-      await mkdir(globalClaudeSrc, { recursive: true });
-      const typesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
+      const globalClaudeSource = sourceFolderInUse(fakeHomeHandle.dir, "claude").dir;
+      await mkdir(globalClaudeSource, { recursive: true });
+      const typesPath = path.join(globalClaudeSource, STANDARD_FILES.CONFIG_TYPES_TS);
       // Stale unions from before a hand-edit of config.ts: a removed skill is
       // still present, the newly added react is absent.
       await writeFile(typesPath, 'export type SkillId = "api-framework-hono";\n');
@@ -2384,9 +2384,9 @@ describe("local-installer", () => {
     // annotations, so both matrices must emit byte-identical config-types.ts.
     // This pins the parity claim documented at both skipExtraSources call sites.
     it("emits byte-identical config-types from an untagged and a source-tagged matrix", async () => {
-      const globalClaudeSrc = sourceFolderInUse(fakeHomeHandle.dir, "claude").dir;
-      await mkdir(globalClaudeSrc, { recursive: true });
-      const typesPath = path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TYPES_TS);
+      const globalClaudeSource = sourceFolderInUse(fakeHomeHandle.dir, "claude").dir;
+      await mkdir(globalClaudeSource, { recursive: true });
+      const typesPath = path.join(globalClaudeSource, STANDARD_FILES.CONFIG_TYPES_TS);
 
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
@@ -2395,7 +2395,7 @@ describe("local-installer", () => {
         }),
         agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
       });
-      await writeConfigFile(config, path.join(globalClaudeSrc, STANDARD_FILES.CONFIG_TS));
+      await writeConfigFile(config, path.join(globalClaudeSource, STANDARD_FILES.CONFIG_TS));
 
       await regenerateScopeConfigTypes(
         fakeHomeHandle.dir,

@@ -14,7 +14,6 @@ import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
 import { CUSTOM_HOUSE_TOOLING_SKILL } from "../mock-data/mock-skills.js";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   LOCAL_SKILLS_PATH,
   STANDARD_DIRS,
   STANDARD_FILES,
@@ -73,7 +72,7 @@ describe("doctor command", () => {
     });
 
     it("should fail when no config exists", async () => {
-      // projectDir has no .claude-src/config.ts
+      // projectDir has no .agents-inc/claude/config.ts
       const { error } = await runCliCommand(["doctor"]);
 
       // Should exit with error because Config Valid check fails
@@ -104,22 +103,10 @@ describe("doctor command", () => {
   });
 
   /**
-   * A config that EXISTS and cannot be loaded, on each folder an installation can be on.
-   *
-   * Both, because these two cases are one sentence apart and only one of them was here. "Doctor
-   * fails on a config with syntax errors" and "doctor fails when there is no config" both exit
-   * ERROR, so a spec that seeds the corrupt file somewhere the resolver does not look reports the
-   * second while reading as the first — and the source-folder rename is exactly the change that
-   * can move where the resolver looks.
-   *
-   * The plan for the source-folder rename predicted this file would become that: "writes an invalid
-   * config at the old path, so the 'syntax errors' case silently becomes the 'not found' case". It
-   * does not, and the reason is the resolver's preference order: `sourceFolderOnDisk` prefers
-   * whichever folder HOLDS a config, so a project with a config only under the old name resolves
-   * there whatever a new install would have been created in. What the flip changes is the
-   * empty-scope answer alone. The second case is here anyway,
-   * because "the case the plan feared is unreachable today" is a fact about this month's resolver
-   * and not a property anything holds.
+   * A config that EXISTS and cannot be loaded. "Doctor fails on a config with syntax errors" and
+   * "doctor fails when there is no config" both exit ERROR, so a spec that seeds the corrupt file
+   * somewhere the resolver does not look reports the second while reading as the first — which is
+   * why the spec below asserts the row and the path, not only the exit code.
    */
   describe("config validation", () => {
     /**
@@ -128,27 +115,20 @@ describe("doctor command", () => {
      */
     const UNREADABLE_CONFIG_ROW = "exists but could not be loaded";
 
-    it.each([".claude-src", ".agents-inc/claude"])(
-      "should fail on a config.ts with syntax errors under %s",
-      async (sourceFolder) => {
-        const configPath = await writeRawTestConfig(
-          projectDir,
-          renderUnparseableConfigTs(),
-          sourceFolder,
-        );
+    it("should fail on a config.ts with syntax errors", async () => {
+      const configPath = await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
 
-        const { error, stdout } = await runCliCommand(["doctor"]);
+      const { error, stdout } = await runCliCommand(["doctor"]);
 
-        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-        // The discriminating half: a project where doctor looked somewhere else exits ERROR too,
-        // reporting a config that is not there — which reads exactly like this one.
-        expect(
-          stdout,
-          `doctor exited ERROR without reporting the config at ${configPath} — it found no config rather than a broken one, so this spec is about the wrong failure`,
-        ).toContain(UNREADABLE_CONFIG_ROW);
-        expect(stdout).toContain(configPath);
-      },
-    );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      // The discriminating half: a project where doctor looked somewhere else exits ERROR too,
+      // reporting a config that is not there — which reads exactly like this one.
+      expect(
+        stdout,
+        `doctor exited ERROR without reporting the config at ${configPath} — it found no config rather than a broken one, so this spec is about the wrong failure`,
+      ).toContain(UNREADABLE_CONFIG_ROW);
+      expect(stdout).toContain(configPath);
+    });
 
     it("should pass with minimal valid config", async () => {
       await writeTestTsConfig(projectDir, {
@@ -467,7 +447,7 @@ describe("doctor command", () => {
 
     it("still stands down for a config that exists and cannot be read", async () => {
       await installContentWithoutConfig();
-      await writeRawTestConfig(projectDir, renderUnparseableConfigTs(), CLAUDE_SRC_DIR);
+      await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
 
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");

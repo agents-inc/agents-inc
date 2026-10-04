@@ -40,9 +40,6 @@ import { getProjectConfigPath } from "../install-base-dir.js";
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
 const CODEX_SOURCE_REL = ".agents-inc/codex";
 
-/** The name every installation made before the source-folder rename still carries. */
-const LEGACY_SOURCE_REL = ".claude-src";
-
 /**
  * What each installation calls itself.
  *
@@ -137,21 +134,6 @@ describe("the config path and the config read, per provider", () => {
           configPath: path.join(root, ".agents-inc", "claude", "config.ts"),
         },
         codex: { name: undefined, provider: undefined, configPath: undefined },
-      });
-    });
-
-    /**
-     * A pre-rename installation is Claude's and is read where it sits. The provider a caller is
-     * handed back says which installation it holds, never which folder name it was found under —
-     * so `.claude-src/` answers `claude` exactly as `.agents-inc/claude/` does.
-     */
-    it("reads a legacy folder as the Claude installation it is", async () => {
-      await plantConfig(LEGACY_SOURCE_REL, CLAUDE_INSTALLATION_NAME);
-
-      expect(await readAs("claude")).toStrictEqual({
-        name: CLAUDE_INSTALLATION_NAME,
-        provider: "claude",
-        configPath: path.join(root, ".claude-src", "config.ts"),
       });
     });
   });

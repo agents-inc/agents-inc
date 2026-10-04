@@ -10,7 +10,6 @@ import {
 } from "../../__tests__/factories/config-factories.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { buildSkillConfig } from "../../__tests__/helpers/wizard-simulation.js";
-import { CLAUDE_SRC_DIR } from "../../../consts.js";
 import type { ProjectConfig } from "../../../types/index.js";
 
 /**
@@ -55,13 +54,13 @@ describe("resolveEffectiveGlobalConfig", () => {
   });
 
   /**
-   * A directory carrying a real `.claude-src/config.ts`, named by the same normalization the
+   * A directory carrying a real `.agents-inc/claude/config.ts`, named by the same normalization the
    * registrar applies. `registerProjectPath` drops a registration whose config file is gone, so
    * a bare `mkdir` would be filtered out of `projects[]` before any assertion could see it.
    */
   async function makeRegisteredProject(name: string): Promise<string> {
     const dir = path.join(tempDir, name);
-    await writeTestTsConfig(dir, buildProjectConfig({ name }), CLAUDE_SRC_DIR);
+    await writeTestTsConfig(dir, buildProjectConfig({ name }));
     return realpath(dir);
   }
 
@@ -223,7 +222,7 @@ describe("resolveEffectiveGlobalConfig", () => {
       );
 
       // The row half of the ruling. Without it the removal diff deletes
-      // `~/.claude/skills/<id>` while `~/.claude-src/config.ts` goes on declaring the skill.
+      // `~/.claude/skills/<id>` while `~/.agents-inc/claude/config.ts` goes on declaring the skill.
       expect(config.skills.map((skill) => skill.id)).toStrictEqual([REACT]);
     });
 

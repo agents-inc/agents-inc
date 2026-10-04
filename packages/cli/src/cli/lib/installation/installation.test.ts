@@ -40,7 +40,7 @@ describe("installation", () => {
 
   beforeEach(async () => {
     tempDir = await createTempDir("installation-test-");
-    // Isolate from the dev machine's real ~/.claude-src so global-fallback
+    // Isolate from the dev machine's real ~/.agents-inc/claude so global-fallback
     // behavior is deterministic
     fakeHome = await createTempDir("installation-test-home-");
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);

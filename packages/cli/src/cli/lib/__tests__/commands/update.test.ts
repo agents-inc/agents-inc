@@ -8,7 +8,7 @@ import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { buildProjectConfig } from "../factories/config-factories.js";
-import { CLAUDE_SRC_DIR, EJECT_SOURCE } from "../../../consts";
+import { EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import type { PluginHost } from "../../hosts/plugin-host.js";
 import type { ProjectConfig } from "../../../types";
@@ -90,9 +90,9 @@ describe("update command", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Writes the `config.ts` the command reads its marketplaces out of, under the legacy folder. */
+  /** Writes the `config.ts` the command reads its marketplaces out of. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
-    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides));
   }
 
   describe("marketplace refresh", () => {

@@ -13,12 +13,7 @@ import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { sa } from "../factories/skill-factories.js";
-import {
-  CLAUDE_SRC_DIR,
-  DEFAULT_PUBLIC_SOURCE_NAME,
-  EDITOR_URL,
-  EJECT_SOURCE,
-} from "../../../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, EDITOR_URL, EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
 import type { ProjectConfig } from "../../../types";
 import { writeTestTsConfig } from "../helpers/config-io.js";
@@ -86,7 +81,7 @@ describe("share command", () => {
 
   /** Writes the `config.ts` this command reads the installation out of. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
-    await writeTestTsConfig(projectDir, buildProjectConfig(overrides), CLAUDE_SRC_DIR);
+    await writeTestTsConfig(projectDir, buildProjectConfig(overrides));
   }
 
   /**

@@ -6,7 +6,7 @@ import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { writeTestSkill } from "../helpers/disk-writers.js";
 import { buildAgentConfigs } from "../factories/config-factories.js";
 import { initializeMatrix } from "../../matrix/matrix-provider";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR } from "../../../consts";
+import { CLAUDE_DIR } from "../../../consts";
 import { VITEST_MATRIX } from "../mock-data/mock-matrices";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 
@@ -49,14 +49,10 @@ describe("list command", () => {
       await mkdir(skillsDir, { recursive: true });
 
       // Write minimal config
-      await writeTestTsConfig(
-        projectDir,
-        {
-          name: "test-project",
-          agents: buildAgentConfigs(["web-developer"]),
-        },
-        CLAUDE_SRC_DIR,
-      );
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        agents: buildAgentConfigs(["web-developer"]),
+      });
 
       // Write a test agent
       await writeFile(

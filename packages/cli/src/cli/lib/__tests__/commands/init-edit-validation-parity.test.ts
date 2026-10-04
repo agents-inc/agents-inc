@@ -27,7 +27,7 @@ import {
 import { BUILD_STEP_REQUIRES_MATRIX } from "../mock-data/mock-matrices";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { validateSelection } from "../../matrix/index.js";
-import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
+import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
 import type { SkillId } from "../../../types";
 import type { WizardResultV2 } from "../../../components/wizard/wizard.js";
 import type {
@@ -39,6 +39,7 @@ import type {
   writeProjectConfig,
 } from "../../operations/index.js";
 import type { discoverAllPluginSkills } from "../../plugins/index.js";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
  * One rejected selection, two commands, one wording.
@@ -191,7 +192,6 @@ describe("init and edit report a rejected selection identically", () => {
         skills: buildSkillConfigs([REQUIRING_SKILL_ID]),
         agents: [],
       }),
-      CLAUDE_SRC_DIR,
     );
 
     initializeMatrix(BUILD_STEP_REQUIRES_MATRIX);
@@ -208,7 +208,7 @@ describe("init and edit report a rejected selection identically", () => {
     mockWriteProjectConfig.mockResolvedValue(
       buildConfigWriteResult(
         buildProjectConfig({ name: PROJECT_NAME, skills: [], agents: [] }),
-        path.join(initProjectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+        getProjectConfigPath(initProjectDir, "claude"),
         { propagation: buildGateReport([]) },
       ),
     );

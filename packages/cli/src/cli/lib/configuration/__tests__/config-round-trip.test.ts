@@ -17,8 +17,9 @@ import { sa, saUnflagged } from "../../__tests__/factories/skill-factories.js";
 import { expectAgentConfigs, expectSkillConfigs } from "../../__tests__/assertions/index.js";
 import { elementAt } from "../../__tests__/helpers/element-at.js";
 import type { ProjectConfig, SkillConfig, SkillId } from "../../../types";
-import { CLAUDE_SRC_DIR, DEFAULT_PUBLIC_SOURCE_NAME, STANDARD_FILES } from "../../../consts";
+import { DEFAULT_PUBLIC_SOURCE_NAME, STANDARD_FILES } from "../../../consts";
 import { EXPECTED_SKILLS } from "../../__tests__/expected-values";
+import { sourceDir } from "../../installation/install-layout.js";
 
 let tempDir: string;
 
@@ -57,10 +58,10 @@ async function writeAndLoad(config: ProjectConfig): Promise<unknown> {
  * the literal emitted shape; this one pins what consumers actually receive.
  */
 async function writeAndLoadProjectConfig(config: ProjectConfig): Promise<ProjectConfig> {
-  const claudeSrcDir = path.join(tempDir, CLAUDE_SRC_DIR);
-  await mkdir(claudeSrcDir, { recursive: true });
+  const claudeSourceDir = sourceDir(tempDir, "claude");
+  await mkdir(claudeSourceDir, { recursive: true });
   await writeFile(
-    path.join(claudeSrcDir, STANDARD_FILES.CONFIG_TS),
+    path.join(claudeSourceDir, STANDARD_FILES.CONFIG_TS),
     stripTypeOnlySyntax(generateConfigSource(config, matrix)),
   );
 

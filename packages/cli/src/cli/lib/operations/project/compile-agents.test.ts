@@ -103,7 +103,7 @@ describe("compile-agents", () => {
 
     mockLoadInstalledConfig.mockResolvedValue({
       config,
-      configPath: "/test/project/.claude-src/config.ts",
+      configPath: "/test/project/.agents-inc/claude/config.ts",
       provider: "claude",
     });
     mockBuildAgentScopeMap.mockReturnValue(scopeMap);
@@ -151,7 +151,7 @@ describe("compile-agents", () => {
 
     mockLoadInstalledConfig.mockResolvedValue({
       config,
-      configPath: "/test/project/.claude-src/config.ts",
+      configPath: "/test/project/.agents-inc/claude/config.ts",
       provider: "claude",
     });
     mockBuildAgentScopeMap.mockReturnValue(scopeMap);
@@ -188,7 +188,7 @@ describe("compile-agents", () => {
 
     mockLoadInstalledConfig.mockResolvedValue({
       config,
-      configPath: "/test/project/.claude-src/config.ts",
+      configPath: "/test/project/.agents-inc/claude/config.ts",
       provider: "claude",
     });
     mockBuildAgentScopeMap.mockReturnValue(scopeMap);

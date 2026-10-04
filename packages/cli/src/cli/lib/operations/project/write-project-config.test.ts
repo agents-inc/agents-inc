@@ -70,7 +70,7 @@ const mockEnsureDir = vi.mocked(ensureDir);
 describe("write-project-config", () => {
   const projectDir = "/test/project";
   const sourcePath = "/test/source";
-  const configPath = "/test/project/.claude-src/config.ts";
+  const configPath = "/test/project/.agents-inc/claude/config.ts";
   const finalConfig = buildProjectConfig({ name: "test-project" });
 
   let wizardResult: WizardResultV2;
@@ -112,7 +112,7 @@ describe("write-project-config", () => {
     });
 
     expect(mockResolveInstallPaths).toHaveBeenCalledWith(projectDir, "project");
-    expect(mockEnsureDir).toHaveBeenCalledWith("/test/project/.claude-src");
+    expect(mockEnsureDir).toHaveBeenCalledWith("/test/project/.agents-inc/claude");
     expect(mockBuildAndMergeConfig).toHaveBeenCalledWith(
       wizardResult,
       sourceResult,
@@ -233,7 +233,7 @@ describe("write-project-config", () => {
     mockBuildAndMergeConfig.mockResolvedValue({
       config: finalConfig,
       merged: true,
-      existingConfigPath: "/test/project/.claude-src/config.ts.bak",
+      existingConfigPath: "/test/project/.agents-inc/claude/config.ts.bak",
     });
 
     const result = await writeProjectConfig({
@@ -247,7 +247,7 @@ describe("write-project-config", () => {
       config: finalConfig,
       configPath,
       wasMerged: true,
-      existingConfigPath: "/test/project/.claude-src/config.ts.bak",
+      existingConfigPath: "/test/project/.agents-inc/claude/config.ts.bak",
       propagation: buildGateReport(),
     });
   });

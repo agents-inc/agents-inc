@@ -1,18 +1,9 @@
 /**
- * What the CLI actually does with an installation laid out the new way — found, loaded, and
- * compiled from — and that an installation laid out the old way keeps behaving exactly as it
- * does today.
+ * What the CLI actually does with an installation — found, loaded, and compiled from.
  *
- * R1 of the source-folder rename (`todo/plans/CLI-source-folder-rename-plan.md`) teaches the
- * CLI to READ `.agents-inc/<provider>/`. Nothing is written to the new name, nothing moves, and
- * no golden file changes. The resolver's own preference order is pinned in
- * `lib/installation/install-layout.test.ts`; this file is the other half — the readers that sit
- * on top of it, each asked the same question under both layouts.
- *
- * Every spec here has a pair: the legacy case is a CONTROL and not a leftover. A suite that
- * only proved the new folder works could not tell a resolver that reads both from one that has
- * quietly stopped reading the old name, and "the old name keeps working, read and write, in
- * place" is the ruling the whole step rests on.
+ * An installation is `.agents-inc/<provider>/` and nothing else. The layout module's own answer is
+ * pinned in `lib/installation/install-layout.test.ts`; this file is the other half — the readers
+ * that sit on top of it.
  *
  * The folder names are literals. They are text on people's disks, and an assertion that
  * imported the constant the product writes would move with it and could never fail.
@@ -34,13 +25,11 @@ import { loadProjectConfig, loadProjectConfigFromDir } from "../../configuration
 import { detectInstallation } from "../../installation/index.js";
 import { loadProjectAgents } from "../../loading/loader.js";
 
-/** The new layout, and the name every installation made before the rename still carries. */
+/** The layout. */
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
-const LEGACY_SOURCE_REL = ".claude-src";
 
 /** Names that say which of two configs on one disk was the one that got read. */
 const IN_THE_NEW_FOLDER = "read-from-the-new-folder";
-const IN_THE_LEGACY_FOLDER = "read-from-the-legacy-folder";
 const IN_THE_GLOBAL_FOLDER = "read-from-the-global-folder";
 
 const FIXTURES_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures");
@@ -66,19 +55,6 @@ describe("a project's own config", () => {
     await cleanupTempDir(projectDir);
   });
 
-  it("is loaded from the legacy folder, exactly as it is today", async () => {
-    await writeTestTsConfig(
-      projectDir,
-      buildProjectConfig({ name: IN_THE_LEGACY_FOLDER }),
-      LEGACY_SOURCE_REL,
-    );
-
-    const loaded = await loadProjectConfigFromDir(projectDir, "claude");
-
-    expect(loaded?.config.name).toBe(IN_THE_LEGACY_FOLDER);
-    expect(loaded?.configPath).toBe(path.join(projectDir, LEGACY_SOURCE_REL, "config.ts"));
-  });
-
   it("is loaded from the new folder", async () => {
     await writeTestTsConfig(
       projectDir,
@@ -92,33 +68,12 @@ describe("a project's own config", () => {
     expect(loaded?.configPath).toBe(path.join(projectDir, ".agents-inc", "claude", "config.ts"));
   });
 
-  it("comes from the new folder when both folders hold one", async () => {
-    await writeTestTsConfig(
-      projectDir,
-      buildProjectConfig({ name: IN_THE_LEGACY_FOLDER }),
-      LEGACY_SOURCE_REL,
-    );
-    await writeTestTsConfig(
-      projectDir,
-      buildProjectConfig({ name: IN_THE_NEW_FOLDER }),
-      CLAUDE_SOURCE_REL,
-    );
-
-    const loaded = await loadProjectConfigFromDir(projectDir, "claude");
-
-    expect(
-      loaded?.config.name,
-      "the new layout wins the preference order, so a project holding both is read from it",
-    ).toBe(IN_THE_NEW_FOLDER);
-  });
-
-  it("is absent when neither folder holds one", async () => {
+  it("is absent when the folder holds none", async () => {
     await mkdir(path.join(projectDir, ".agents-inc", "claude"), { recursive: true });
-    await mkdir(path.join(projectDir, LEGACY_SOURCE_REL), { recursive: true });
 
     expect(
       await loadProjectConfigFromDir(projectDir, "claude"),
-      "two empty folders are not an installation, and a missing config is a legitimate null rather than a fault",
+      "an empty folder is not an installation, and a missing config is a legitimate null rather than a fault",
     ).toBeNull();
   });
 });
@@ -154,56 +109,6 @@ describe("a project that inherits from the global", () => {
     expect(loaded?.config.name).toBe(IN_THE_GLOBAL_FOLDER);
     expect(loaded?.configPath).toBe(path.join(fakeHome, ".agents-inc", "claude", "config.ts"));
   });
-
-  it("falls back to a global on the legacy layout, exactly as it does today", async () => {
-    await writeTestTsConfig(
-      fakeHome,
-      buildProjectConfig({ name: IN_THE_GLOBAL_FOLDER }),
-      LEGACY_SOURCE_REL,
-    );
-
-    const loaded = await loadProjectConfig(projectDir);
-
-    expect(loaded?.config.name).toBe(IN_THE_GLOBAL_FOLDER);
-    expect(loaded?.configPath).toBe(path.join(fakeHome, LEGACY_SOURCE_REL, "config.ts"));
-  });
-
-  it("reads its own new-layout config over a global on the legacy layout", async () => {
-    await writeTestTsConfig(
-      projectDir,
-      buildProjectConfig({ name: IN_THE_NEW_FOLDER }),
-      CLAUDE_SOURCE_REL,
-    );
-    await writeTestTsConfig(
-      fakeHome,
-      buildProjectConfig({ name: IN_THE_GLOBAL_FOLDER }),
-      LEGACY_SOURCE_REL,
-    );
-
-    const loaded = await loadProjectConfig(projectDir);
-
-    expect(loaded?.config.name).toBe(IN_THE_NEW_FOLDER);
-  });
-
-  it("reads its own legacy-layout config over a global on the new layout", async () => {
-    await writeTestTsConfig(
-      projectDir,
-      buildProjectConfig({ name: IN_THE_LEGACY_FOLDER }),
-      LEGACY_SOURCE_REL,
-    );
-    await writeTestTsConfig(
-      fakeHome,
-      buildProjectConfig({ name: IN_THE_GLOBAL_FOLDER }),
-      CLAUDE_SOURCE_REL,
-    );
-
-    const loaded = await loadProjectConfig(projectDir);
-
-    expect(
-      loaded?.config.name,
-      "a project standing on the old name is still its own installation — the global does not take it over",
-    ).toBe(IN_THE_LEGACY_FOLDER);
-  });
 });
 
 describe("detectInstallation", () => {
@@ -225,15 +130,6 @@ describe("detectInstallation", () => {
     expect(found?.configPath).toBe(path.join(projectDir, ".agents-inc", "claude", "config.ts"));
     expect(found?.projectDir).toBe(projectDir);
   });
-
-  it("finds an installation in the legacy folder, exactly as it does today", async () => {
-    await writeTestTsConfig(projectDir, buildProjectConfig(), LEGACY_SOURCE_REL);
-
-    const found = await detectInstallation(projectDir);
-
-    expect(found?.configPath).toBe(path.join(projectDir, LEGACY_SOURCE_REL, "config.ts"));
-    expect(found?.projectDir).toBe(projectDir);
-  });
 });
 
 describe("the agents a project keeps of its own", () => {
@@ -249,12 +145,6 @@ describe("the agents a project keeps of its own", () => {
 
   it("are loaded from the new folder", async () => {
     await writeTestAgent(path.join(projectDir, ".agents-inc", "claude", "agents"), "my-agent");
-
-    expect(Object.keys(await loadProjectAgents(projectDir))).toStrictEqual(["my-agent"]);
-  });
-
-  it("are loaded from the legacy folder, exactly as they are today", async () => {
-    await writeTestAgent(path.join(projectDir, LEGACY_SOURCE_REL, "agents"), "my-agent");
 
     expect(Object.keys(await loadProjectAgents(projectDir))).toStrictEqual(["my-agent"]);
   });
@@ -278,18 +168,12 @@ describe("a project's own agent template", () => {
     expect(await compileFixtureAgent(projectDir)).toContain(PROJECT_TEMPLATE_MARKER);
   });
 
-  it("is the one that renders when it sits in the legacy folder, as it is today", async () => {
-    await installTemplateOverride(projectDir, [LEGACY_SOURCE_REL]);
-
-    expect(await compileFixtureAgent(projectDir)).toContain(PROJECT_TEMPLATE_MARKER);
-  });
-
   it("leaves the shipped template rendering when the project has none", async () => {
     const compiled = await compileFixtureAgent(projectDir);
 
     expect(
       compiled,
-      "without this the two specs above would hold for a compile that always renders the fixture",
+      "without this the first spec above would hold for a compile that always renders the fixture",
     ).toContain(SHIPPED_TEMPLATE_KEY);
     expect(compiled).not.toContain(PROJECT_TEMPLATE_MARKER);
   });

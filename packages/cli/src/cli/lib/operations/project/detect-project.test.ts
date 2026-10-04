@@ -24,7 +24,7 @@ const MOCK_INSTALLATION = buildInstallation();
 const MOCK_CONFIG = buildProjectConfig();
 
 /** Where the loaded config says it was read from — the path `detectProject` reports. */
-const LOADED_CONFIG_PATH = "/tmp/project/.claude-src/config.ts";
+const LOADED_CONFIG_PATH = "/tmp/project/.agents-inc/claude/config.ts";
 
 describe("detectProject", () => {
   beforeEach(() => {

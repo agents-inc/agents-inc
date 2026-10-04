@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-implied-eval --
  * `new Function(source)` is the assertion here, not a way of running code. What
- * this file covers is a *writer*: it renders the source of ~/.claude-src/config.ts,
+ * this file covers is a *writer*: it renders the source of ~/.agents-inc/claude/config.ts,
  * and "the source it rendered is parseable JavaScript" is a claim only a
  * JavaScript parser can settle. The input is the writer's own output, built from
  * fixtures in this file — never anything a user supplies — and the constructed

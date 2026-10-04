@@ -25,9 +25,11 @@ describe("normalizeInstallTree", () => {
   it("writes each machine-specific root as its placeholder, wherever a file names it", () => {
     const config = `marketplace: '${SOURCE}',\nprojects: ['${HOME}/other', '${SOURCE}'],\n`;
 
-    expect(normalizeInstallTree(treeOf(".claude-src/config.ts", config), CONTEXT)).toStrictEqual(
+    expect(
+      normalizeInstallTree(treeOf(".agents-inc/claude/config.ts", config), CONTEXT),
+    ).toStrictEqual(
       treeOf(
-        ".claude-src/config.ts",
+        ".agents-inc/claude/config.ts",
         "marketplace: '<source>',\nprojects: ['<home>/other', '<source>'],\n",
       ),
     );

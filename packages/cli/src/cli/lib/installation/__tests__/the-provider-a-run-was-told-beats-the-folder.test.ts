@@ -22,7 +22,6 @@
  * could never fail.
  */
 
-import { mkdir } from "fs/promises";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -101,27 +100,6 @@ describe("the provider a run was told", () => {
 
     it("falls to roster order with no choice made, which is the ambiguity the refusal is about", () => {
       expect(providerInUse(root)).toBe("claude");
-    });
-  });
-
-  describe("leaves which FOLDER that provider is read from to the disk", () => {
-    it("finds a pre-rename installation for a run that named claude out loud", async () => {
-      await plantInstallation(".claude-src");
-      chooseProviderForThisRun("claude");
-
-      expect(
-        getInstalledConfigPath(root),
-        "the flag says which PROVIDER, never which folder — a run that named the default must install byte-for-byte what no flag installs",
-      ).toBe(path.join(root, ".claude-src", "config.ts"));
-    });
-
-    it("answers the new layout for a Codex run, which has no legacy folder to find", async () => {
-      await mkdir(path.join(root, ".claude-src"), { recursive: true });
-      chooseProviderForThisRun("codex");
-
-      expect(getInstalledConfigPath(root)).toBe(
-        path.join(root, ".agents-inc", "codex", "config.ts"),
-      );
     });
   });
 });

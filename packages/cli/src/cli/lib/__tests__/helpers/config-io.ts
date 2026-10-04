@@ -74,11 +74,10 @@ export async function writeTestTsConfig(
  * read as testing corruption._
  *
  * `configSubdir` defaults to the folder `projectDir` is ON, as {@link writeTestTsConfig}'s does. It
- * is a parameter for a fixture whose subject IS one layout — a corrupt config on the legacy folder
- * and on the new one are separate cases, and only one of them is where a fresh project resolves —
- * and for the one reader that reads a DIFFERENT file: a marketplace source repo declares its layout
- * at `<dir>/.agents-inc/config.ts`, with no provider folder, so a fixture for it cannot be written
- * where an installation's config goes.
+ * is a parameter for a fixture whose subject IS one folder, and for the one reader that reads a
+ * DIFFERENT file: a marketplace source repo declares its layout at `<dir>/.agents-inc/config.ts`,
+ * with no provider folder, so a fixture for it cannot be written where an installation's config
+ * goes.
  */
 export async function writeRawTestConfig(
   projectDir: string,

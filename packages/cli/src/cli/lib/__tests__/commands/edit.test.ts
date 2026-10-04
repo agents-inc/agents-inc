@@ -25,12 +25,10 @@ import { EXPECTED_SKILLS } from "../expected-values";
 import { EXIT_CODES } from "../../exit-codes";
 import {
   CLAUDE_DIR,
-  CLAUDE_SRC_DIR,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EDITOR_URL,
   EJECT_SOURCE,
   STANDARD_DIRS,
-  STANDARD_FILES,
 } from "../../../consts";
 import { ERROR_MESSAGES } from "../../../utils/messages";
 import * as wizardStore from "../../../stores/wizard-store";
@@ -53,6 +51,7 @@ import Edit, {
   migratePluginSkillScopes,
   detectConfigChanges,
 } from "../../../commands/edit.js";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 // --- Module mocks (hoisted by vitest) ---
 
@@ -158,22 +157,22 @@ vi.mock("../../../utils/fs.js", async (importOriginal) => {
 });
 
 /**
- * Both folders an installation's `config.ts` can be written into, as a user writes one.
+ * Every folder an installation's `config.ts` can be written into, as a user writes one.
  *
  * An assertion that a config was NOT written has to ask after every name it could have been
- * written under, and until the source-folder rename there was only one. Naming just the folder
- * this release happens to create makes the absence true of the other for free — and an absence
- * that cannot fail is the shape `packages/cli/CLAUDE.md` calls a gap encoded in an assertion.
+ * written under. Naming just the folder this run happens to resolve makes the absence true of the
+ * other for free — and an absence that cannot fail is the shape `packages/cli/CLAUDE.md` calls a
+ * gap encoded in an assertion.
  */
-const CONFIG_PATHS_UNDER_EITHER_LAYOUT = [
-  ".claude-src/config.ts",
+const CONFIG_PATHS_UNDER_EVERY_PROVIDER = [
   ".agents-inc/claude/config.ts",
+  ".agents-inc/codex/config.ts",
 ] as const;
 
 /** Every config.ts actually on disk under `projectDir`, by the relative path it was found at. */
 async function configsWrittenUnder(projectDir: string): Promise<string[]> {
   const found = await Promise.all(
-    CONFIG_PATHS_UNDER_EITHER_LAYOUT.map(async (relative) =>
+    CONFIG_PATHS_UNDER_EVERY_PROVIDER.map(async (relative) =>
       (await fileExists(path.join(projectDir, relative))) ? relative : null,
     ),
   );
@@ -182,14 +181,14 @@ async function configsWrittenUnder(projectDir: string): Promise<string[]> {
 }
 
 /**
- * Mocks loadProjectConfig with what it answers for a Claude installation on the legacy folder:
+ * Mocks loadProjectConfig with what it answers for a Claude installation:
  * the config, the path it was read from, and the provider that folder belongs to. `provider` was
  * missing here while the mock was an untyped `vi.fn()`, and nothing said so.
  */
 function mockProjectConfig(projectDir: string, config: ProjectConfig): void {
   mockLoadProjectConfig.mockResolvedValue({
     config,
-    configPath: path.join(projectDir, ".claude-src/config.ts"),
+    configPath: path.join(projectDir, ".agents-inc/claude/config.ts"),
     provider: "claude",
   });
 }
@@ -204,7 +203,7 @@ function buildEjectInstallation(projectDir: string): Installation {
   return buildInstallation({
     mode: "eject",
     projectDir,
-    configPath: path.join(projectDir, CLAUDE_SRC_DIR, STANDARD_FILES.CONFIG_TS),
+    configPath: getProjectConfigPath(projectDir, "claude"),
     agentsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS),
     skillsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS),
   });
@@ -1206,7 +1205,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
   const testSourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, "/test/source");
   /**
    * The save WRITES the global scope (`writeScopedFromWizard`'s project branch
-   * resolves `~/.claude-src/` through `os.homedir()` at runtime), so without this
+   * resolves the global source folder through `os.homedir()` at runtime), so without this
    * the run would write into the developer's own home.
    *
    * It reaches every read too, which it once did not: `discoverInstalledSkills`

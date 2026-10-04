@@ -1,8 +1,7 @@
 /**
  * The source folder's name may be written in one place, and the linter is what holds that.
  *
- * R1 of the source-folder rename turns one name into two — `.claude-src/` and
- * `.agents-inc/<provider>/` — resolved by one funnel. The failure that costs the whole step is
+ * The source folder is `.agents-inc/<provider>/`, resolved by one funnel. The failure that costs the whole step is
  * a HALF-ROUTED path: fourteen sites join a directory from a root and seven print one at the
  * user, and any single one of them left on a literal brings back a project that writes into a
  * folder the CLI is no longer reading, with every test green. A census grep finds today's
@@ -163,14 +162,6 @@ const STILL_REFUSED_IN_THE_MIRROR = [
 /** Every spelling of a source folder that must be refused outside the funnel. */
 const BANNED_SPELLINGS = [
   {
-    name: "the old folder as a bare literal",
-    source: `export const sourceDir = ".claude-src";\n`,
-  },
-  {
-    name: "the old folder inside a template",
-    source: `export const sourceDir = (root: string): string => \`\${root}/.claude-src\`;\n`,
-  },
-  {
     name: "the new root as a bare literal",
     source: `export const sourceRoot = ".agents-inc";\n`,
   },
@@ -185,8 +176,7 @@ const BANNED_SPELLINGS = [
  * repository, which is what makes this half a measurement rather than a guess.
  *
  * The last two are ALSO the host-path ban's subject, and are kept here for exactly that reason:
- * `.claude/skills` is one character from `.claude-src` and is the nearest miss this regex has, so
- * dropping it because a different selector now reports it would delete the measurement that proves
+ * `.claude/skills` is the nearest miss this regex has, so dropping it because a different selector now reports it would delete the measurement that proves
  * this one has not over-reached.
  */
 const ALLOWED_SPELLINGS = [
@@ -370,11 +360,11 @@ describe("a name that merely shares a prefix with the source folder", () => {
 
 /**
  * The shape the plan asks this guard to fail on, written out:
- * "any `path.join(..., SOURCE_ROOT_DIR)` or `LEGACY_SOURCE_DIR` outside the funnel"
+ * "any `path.join(..., SOURCE_ROOT_DIR)` outside the funnel"
  * (`todo/plans/CLI-source-folder-rename-plan.md` :157).
  *
- * The composition is what makes the symbol ban necessary rather than redundant — neither of these
- * fixtures writes a banned spelling, so the literal selectors above are silent on both.
+ * The composition is what makes the symbol ban necessary rather than redundant — the fixture
+ * writes no banned spelling, so the literal selectors above are silent on it.
  */
 const COMPOSED_SOURCE_PATHS = [
   {
@@ -384,17 +374,6 @@ const COMPOSED_SOURCE_PATHS = [
       `import { SOURCE_ROOT_DIR } from "../../consts.js";`,
       `export function at(root: string, provider: string): string {`,
       `  return path.join(root, SOURCE_ROOT_DIR, provider);`,
-      `}`,
-      ``,
-    ].join("\n"),
-  },
-  {
-    name: "a path joined from the legacy name",
-    source: [
-      `import path from "path";`,
-      `import { LEGACY_SOURCE_DIR } from "@workspace/compile";`,
-      `export function at(root: string): string {`,
-      `  return path.join(root, LEGACY_SOURCE_DIR);`,
       `}`,
       ``,
     ].join("\n"),
