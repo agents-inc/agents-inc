@@ -65,7 +65,6 @@ export default class Update extends BaseCommand {
     // Both configs, not only the one this refresh reads: a project inherits the global config, so
     // a broken global one is a config this folder uses as surely as its own.
     await this.ensureConfigReadable(process.cwd());
-    await this.settleSourceLayoutBeforeWriting(process.cwd());
     await this.refuseUnofferablePlacements(process.cwd());
     const config = await this.loadInstalledConfig(process.cwd());
     if (!config) {

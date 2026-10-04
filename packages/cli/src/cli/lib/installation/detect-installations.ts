@@ -24,7 +24,7 @@ import { scopeRootsInPlay, type ScopeKind, type ScopeRoot } from "./source-scope
 export type DetectedInstallation = {
   provider: Provider;
   scope: ScopeKind;
-  /** The config file as it is actually read — a pre-rename installation names `.claude-src/`. */
+  /** The config file as it is actually read. */
   configPath: string;
 };
 
@@ -36,11 +36,6 @@ export type DetectedInstallation = {
  * consuming repository keeps its own state under `.agents-inc/` — the benchmark's hand gate writes
  * `baseline.json` and an `attempts/` directory there — and an empty or half-built provider folder
  * beside a live installation must not be reported as a second one.
- *
- * A pre-rename scope answers `claude` at `.claude-src/config.ts`. The provider names the
- * installation rather than the folder it was found under: a discovery that asked only which
- * `.agents-inc/<provider>/` directories exist would answer nothing at all on every machine that
- * has not moved its folder by hand, and tell those users they have nothing installed.
  */
 export async function detectInstallations(cwd: string): Promise<DetectedInstallation[]> {
   const everywhereOneCouldBe = scopeRootsInPlay(cwd).flatMap(everyProviderUnder);

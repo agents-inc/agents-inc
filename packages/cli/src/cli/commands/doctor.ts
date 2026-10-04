@@ -29,20 +29,17 @@ import {
   hostCompilesAgent,
   providerInUse,
   relativeConfigPath,
-  resolveSourceDir,
   skillsDir,
   skillsPathPrefix,
 } from "../lib/installation/install-layout";
 import { ambiguityFinding } from "../lib/installation/provider-flag";
 import { unofferablePlacementsFound } from "../lib/hosts/configured-placements";
-import { sourceScopesInPlay, type ScopeKind } from "../lib/installation/source-scopes";
-import { layoutFindingFor, type LayoutFinding } from "../lib/installation/layout-findings";
 import {
-  REGISTRY_IS_NOT_AN_INVENTORY,
-  recreateConfigFrom,
-  scopeLabel,
-  scopeNoun,
-} from "../utils/messages";
+  sourceScopesInPlay,
+  type ScopeKind,
+  type SourceScope,
+} from "../lib/installation/source-scopes";
+import { layoutIsCurrent, recreateConfigFrom, scopeLabel, scopeNoun } from "../utils/messages";
 import { getInstalledConfigPath } from "../lib/installation/install-base-dir";
 import { isSourceRepo } from "../lib/source-validator";
 import {
@@ -159,9 +156,8 @@ function inheritsTheGlobalConfig(readFrom: string, projectDir: string): boolean 
 
 /**
  * `projectDir` rather than a module-level constant for the path this reports about: a scope's
- * source folder is resolved from disk, so nothing about it exists at module load, and every line
- * below has to name the folder this project is ACTUALLY on. A constant would tell a user on the
- * old name to go and edit a file that is not there.
+ * source folder depends on the provider read off its disk, so nothing about it exists at module
+ * load, and every line below has to name the folder this project is ACTUALLY on.
  */
 function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOutput {
   const theConfig = (verdict: string) => configRowMessage(state, projectDir, verdict);
@@ -1031,35 +1027,13 @@ async function recreateConfigTips(
 /** The row name every Layout row is printed under, one per scope. */
 const LAYOUT_ROW_NAME = "Layout";
 
-function toLayoutResult(finding: LayoutFinding): CheckResult {
+/** One scope's Layout row: which folder its installation is read from and written to. */
+function toLayoutResult(scope: SourceScope): CheckResult {
   return {
     kind: "layout",
-    status: finding.status,
-    message: finding.message,
-    details: finding.details,
+    status: "pass",
+    message: layoutIsCurrent(scopeLabel(scope.kind), scope.relName),
   };
-}
-
-/**
- * Registered projects whose own source folder is still the old one, as the registry spells them.
- *
- * Read from the global config's `projects` array and nothing else — which is exactly why the line
- * above the list says so. A config that cannot be loaded yields no list rather than a failed row:
- * the file itself is already this report's own finding, one row up.
- */
-async function registeredProjectsOnTheOldFolder(home: string): Promise<string[]> {
-  const loaded = await loadInstalledConfig(home).catch(() => null);
-  return (loaded?.config.projects ?? []).filter(isOnTheLegacySourceFolder);
-}
-
-/**
- * Whether the installation in `dir` is read from the folder every pre-rename install carries.
- *
- * The provider is read off the directory rather than assumed: the retired name is Claude's, so a
- * registered project on another provider has only ever had one folder and is never on the old one.
- */
-function isOnTheLegacySourceFolder(dir: string): boolean {
-  return resolveSourceDir(dir, providerInUse(dir)).legacy;
 }
 
 /** The row name the placement and installation-ambiguity findings are printed under. */
@@ -1076,8 +1050,7 @@ const PLACEMENTS_ROW_NAME = "Placements Offered";
  * bill of health on a configuration no command would touch. A diagnostic that disagrees with every
  * command it is diagnosing is worse than a missing one.
  *
- * **It reports and never refuses**, which is the same distinction `settleSourceLayoutBeforeWriting`
- * draws for the rival-folder refusal: a command that changes nothing must not refuse to LOOK,
+ * **It reports and never refuses**: a command that changes nothing must not refuse to LOOK,
  * because this is exactly the state a user needs to see in order to fix it.
  *
  * The message is the refusal's own, word for word, off the same host roster — so what a user is
@@ -1351,54 +1324,21 @@ export default class Doctor extends BaseCommand {
   }
 
   /**
-   * One `Layout` row per scope in play, and — at the home directory — the registered projects
-   * still on the old folder.
+   * One `Layout` row per scope in play.
    *
-   * Per scope rather than per machine: a project and the global installation can be on different
-   * layouts, and one row for the two can only be right about one of them.
+   * Per scope rather than per machine: a project and the global installation are two
+   * installations, and one row for the two can only name one of their folders.
    *
    * Printed right under `Config Valid`, because every row below it is read out of a config file
-   * whose folder this row is about — a scope with two rival folders has a config the rest of the
-   * report may have read from either one.
+   * in the folder this row names.
    */
   private async reportLayout(projectDir: string): Promise<CheckResult[]> {
-    const scopes = await sourceScopesInPlay(projectDir);
-    const rows = await Promise.all(
-      scopes.map(async (scope) => toLayoutResult(await layoutFindingFor(scope))),
-    );
-    const withRegistry = await this.appendRegistryList(projectDir, rows);
+    const rows = (await sourceScopesInPlay(projectDir)).map(toLayoutResult);
 
-    for (const row of withRegistry) {
+    for (const row of rows) {
       this.logCheck(LAYOUT_ROW_NAME, row);
     }
-    return withRegistry;
-  }
-
-  /**
-   * The registered projects still on the old folder, added to the LAST row, and only at HOME.
-   *
-   * At home because that is where the registry lives, and the move a legacy project needs is made
-   * by hand in that project — a list of other people's projects printed inside one of them is a
-   * list nobody standing there can act on. The caveat travels with it: the registry holds a
-   * fraction of the installations on a machine, so a list printed without it reads as an
-   * inventory.
-   */
-  private async appendRegistryList(
-    projectDir: string,
-    rows: CheckResult[],
-  ): Promise<CheckResult[]> {
-    const last = rows.at(-1);
-    if (!isHomeDirectory(projectDir) || last === undefined) return rows;
-
-    const legacyProjects = await registeredProjectsOnTheOldFolder(projectDir);
-    if (legacyProjects.length === 0) return rows;
-
-    const detailed: CheckResult = {
-      ...last,
-      status: last.status === "fail" ? "fail" : "warn",
-      details: [...(last.details ?? []), REGISTRY_IS_NOT_AN_INVENTORY, ...legacyProjects],
-    };
-    return [...rows.slice(0, -1), detailed];
+    return rows;
   }
 
   /**

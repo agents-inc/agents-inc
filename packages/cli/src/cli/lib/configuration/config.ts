@@ -8,7 +8,6 @@ import { getErrorMessage } from "../../utils/errors";
 import {
   DEFAULT_BRANDING,
   GITHUB_SOURCE,
-  LEGACY_SOURCE_DIR,
   PUBLIC_CATALOGUE_PACKAGE,
   SOURCE_ROOT_DIR,
   STANDARD_FILES,
@@ -200,7 +199,7 @@ const unreadableSourceRepoConfig: RefuseUnreadable = (reason, cause) =>
 
 /**
  * The config a MARKETPLACE SOURCE REPOSITORY declares about itself, or `null` when it declares
- * none: `<base>/.agents-inc/config.ts`, falling back to `<base>/.claude-src/config.ts`.
+ * none: `<base>/.agents-inc/config.ts`.
  *
  * Its own door, because it answers a different question from every other reader of this file.
  * An INSTALLATION's config lives inside a provider folder — one installation is exactly one
@@ -208,26 +207,14 @@ const unreadableSourceRepoConfig: RefuseUnreadable = (reason, cause) =>
  * carries no provider segment: `skillsDir` and `stacksFile` describe the repository's own layout
  * and have nothing to do with a provider, and a marketplace serving both would otherwise have to
  * declare its layout twice.
- *
- * The old name is a fallback with NO sunset. The CLI can never move a folder in a repository it
- * only reads, and an author who moved it would break every consumer still on an older CLI —
- * silently, as "No skills found". Keeping both names reachable from one function is what lets
- * "read `.claude-src` in sources forever" and "sunset `.claude-src` for installs" both be true.
  */
 export async function loadSourceRepoConfig(
   basePath: string,
 ): Promise<Partial<ProjectConfig> | null> {
-  for (const folder of SOURCE_REPO_CONFIG_FOLDERS) {
-    const declared = await readDeclaredConfig(path.join(basePath, folder));
-    if (declared) return declared;
-  }
-  return null;
+  return readDeclaredConfig(path.join(basePath, SOURCE_ROOT_DIR));
 }
 
-/** Where a source repo may declare itself, in the order the first one found wins. */
-const SOURCE_REPO_CONFIG_FOLDERS = [SOURCE_ROOT_DIR, LEGACY_SOURCE_DIR];
-
-/** The config in one candidate folder, or `null` when that folder declares none. */
+/** The config in `dir`, or `null` when that folder declares none. */
 async function readDeclaredConfig(dir: string): Promise<Partial<ProjectConfig> | null> {
   const configPath = path.join(dir, STANDARD_FILES.CONFIG_TS);
   if (!(await fileExists(configPath))) {
@@ -288,7 +275,7 @@ function ownProjectDir(projectDir: string | undefined): string | null {
 /**
  * A project's OWN source config, and nothing at the home root.
  *
- * `~/.claude-src/config.ts` is the global config, so reading it as a project's would label
+ * The home root's config is the global config, so reading it as a project's would label
  * one file both things at once: `compile` naming `Marketplace: project` beside
  * `Compiling global agents...`, `edit` announcing `(project)` while refusing scope toggles
  * as a global context. The axis is which FILE the settings were read from — never what

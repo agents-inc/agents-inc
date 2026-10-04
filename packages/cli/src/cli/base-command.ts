@@ -5,11 +5,10 @@ import { unique } from "remeda";
 
 import { CLI_COLORS, DEFAULT_BRANDING, MIN_TERMINAL_SIZE } from "./consts.js";
 import { getErrorMessage } from "./utils/errors.js";
-import { verbose, warn } from "./utils/logger.js";
+import { verbose } from "./utils/logger.js";
 import {
   completedWithFailures,
   installationConfigsUnreadable,
-  rivalSourceFoldersRefuseWrites,
   type IncompleteWork,
   pluginsInstalled,
   propagatedRecompileSummary,
@@ -22,7 +21,6 @@ import {
   skillAssignedToNoAgent,
   skillMetadataUnusableDetail,
   STATUS_MESSAGES,
-  WRITE_REFUSED_RIVAL_SOURCE_FOLDERS,
 } from "./utils/messages.js";
 import {
   clearTerminalScreen,
@@ -33,11 +31,6 @@ import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { resolveBranding } from "./lib/configuration/config.js";
 import { isHomeDirectory, refuseUnofferedStack } from "./lib/installation/index.js";
-import {
-  folderBeingRead,
-  sourceScopesInPlay,
-  type SourceScope,
-} from "./lib/installation/source-scopes.js";
 import type { WizardResultV2 } from "./components/wizard/wizard.js";
 import { getStackSkillIds } from "./lib/stacks/index.js";
 import type {
@@ -610,59 +603,6 @@ export abstract class BaseCommand extends Command {
     } catch (error) {
       this.error(getErrorMessage(error), { exit: EXIT_CODES.ERROR });
     }
-  }
-
-  /**
-   * What a command that is about to WRITE owes the user about the layout of the folders it will
-   * write into: a refusal where a scope holds two of them.
-   *
-   * A scope on the retired name alone is NOT nudged and never was a fault. Such an installation
-   * is read and written exactly where it is, indefinitely; there is no command that moves one,
-   * and a line printed on every write about a supported state is one people learn to skip.
-   *
-   * Read-only commands do not call this: `doctor`'s Layout row is where a command that changes
-   * nothing says all of this, and a user whose scope holds two folders has to be able to LOOK at
-   * it. `share` changes nothing here and calls it anyway, because it PUBLISHES what it reads — an
-   * id minted from whichever folder the resolver picked describes an installation nobody chose,
-   * and it outlives the folder it was read from.
-   */
-  protected async settleSourceLayoutBeforeWriting(projectDir: string): Promise<void> {
-    this.refuseRivalSourceFolders(await sourceScopesInPlay(projectDir));
-  }
-
-  /**
-   * A scope holding both source folders stops a write command, and names both.
-   *
-   * The preference order is why it is a refusal rather than a warning: with two folders on disk
-   * the resolver reads whichever holds a `config.ts`, and that can be the STALE one — so the
-   * write lands in a folder nothing compiles, beside a folder holding the sub-agents the user is
-   * about to stop seeing. Both of its causes are the product's own: a compiled `agent-summoner`
-   * names the source folder in its prompt, so a copy compiled under either layout authors into
-   * the other one.
-   *
-   * The way out is a manual one, and the sentence names it: nothing in this CLI merges two source
-   * folders, so the user moves what they want into the folder being read and removes the other.
-   * Which folder that is comes from {@link folderBeingRead} rather than from the new name — the
-   * preference order takes whichever holds a `config.ts`, so in the state this refusal is read in
-   * the live folder is very often the OLD one.
-   */
-  private refuseRivalSourceFolders(scopes: readonly SourceScope[]): void {
-    const rivals = scopes.filter((scope) => scope.both);
-    const [first] = rivals;
-    if (first?.move === undefined || first.move === null) return;
-
-    // Through `warn()` from `utils/logger.ts` rather than `this.warn`: oclif hard-wraps at the
-    // terminal width, and this sentence names three folders and an invocation — none of which
-    // survives being broken in half.
-    warn(
-      rivalSourceFoldersRefuseWrites(
-        rivals.map((scope) => scope.kind),
-        first.move.from.relName,
-        first.move.to.relName,
-        folderBeingRead(first, first.move),
-      ),
-    );
-    this.error(WRITE_REFUSED_RIVAL_SOURCE_FOLDERS, { exit: EXIT_CODES.ERROR });
   }
 
   /** Whether this run owes an account — the one thing a command may ask about the list. */

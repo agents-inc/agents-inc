@@ -80,7 +80,7 @@ export function normalizeProjectPath(projectDir: string): string {
 /**
  * Registers a project directory in the global config's `projects` array.
  * Paths are normalized via {@link normalizeProjectPath} to resolve symlinks.
- * Filters stale entries (where .claude-src/config.ts no longer exists).
+ * Filters stale entries (where the project's config.ts no longer exists).
  */
 async function registerProjectPath(
   globalConfig: ProjectConfig,
@@ -338,8 +338,8 @@ function maskCollidingGlobalAgents(
  * only sees tombstones that are still warranted.
  *
  * Masking is PROJECT-LOCAL: it is applied to the project split only. The global
- * config passed in is read, never rewritten — tombstones never belong in
- * `~/.claude-src/config.ts`.
+ * config passed in is read, never rewritten — tombstones never belong in the
+ * global config.ts.
  */
 export function reconcileProjectSplitAgainstGlobal(
   projectSplit: ProjectConfig,
@@ -773,7 +773,7 @@ async function whyThisProjectIsNotOurs(
  * dropped, per-agent stack refs lose their global-only ids, and each project's
  * config-types.ts is regenerated.
  *
- * Call AFTER the global .claude-src manifest has been removed so the regenerated
+ * Call AFTER the global config manifest has been removed so the regenerated
  * project types fall back to the standalone form instead of importing from the
  * now-deleted global config-types.ts. Unreachable project dirs are reported by why,
  * never thrown.

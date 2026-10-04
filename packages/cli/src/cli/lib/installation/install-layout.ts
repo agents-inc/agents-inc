@@ -10,7 +10,6 @@ import {
 
 import {
   CLAUDE_DIR,
-  LEGACY_SOURCE_DIR,
   PLUGINS_SUBDIR,
   PROVIDERS,
   SOURCE_ROOT_DIR,
@@ -25,18 +24,7 @@ import type { SkillScope } from "../../types/config.js";
 /**
  * Which folder a scope keeps its agents-inc source in, and how to build a path under it.
  *
- * A new installation is created in `.agents-inc/<provider>/` at both scopes. An installation made
- * before that flip keeps `.claude-src/`, is read there and written there indefinitely, and moves
- * only when a user moves it by hand — there is no command that moves one. So the two answers here
- * have converged and differ in nothing today:
- *
- * - {@link resolveSourceDir} says which layout a scope is ON, which is what doctor's Layout row
- *   and the rival-folder refusal each need.
- * - {@link sourceFolderInUse} says which folder this release reads from and writes to, which is
- *   where every path the CLI builds under a source folder comes from.
- *
- * They are kept as two names because they answer two questions, and a provider whose folders both
- * exist is answered differently by each.
+ * An installation is `.agents-inc/<provider>/` at both scopes, and nothing else.
  *
  * It is also where the HOST roles live — `userConfigRoot`, `agentsDir`, `skillsDir` and the rest
  * of the group under {@link installBaseDir} below — rather than in a second funnel beside it. A
@@ -44,48 +32,11 @@ import type { SkillScope } from "../../types/config.js";
  * installation put things", and both have to answer it per provider.
  */
 
-/** Which of a scope's two possible source folders is read, and what else is on disk beside it. */
+/** A scope's source folder for one provider: where it is, and how a message names it. */
 export type SourceFolder = {
   /** Absolute path of the folder. */
   dir: string;
-  /** The same folder as a user writes it: `.agents-inc/claude`, or `.claude-src`. */
-  relName: string;
-  /** Whether it is the name every installation made before the rename carries. */
-  legacy: boolean;
-  /**
-   * Whether this provider's new folder and the folder it replaces are BOTH on disk.
-   *
-   * Provider-scoped, not "the root holds two folders": the legacy name belonged to Claude, so a
-   * `.claude-src/` beside a Codex installation is a second installation rather than a rival half
-   * of this one, and refusing a Codex write on account of it would refuse the one arrangement the
-   * ruling explicitly allows.
-   */
-  both: boolean;
-};
-
-/**
- * A scope's two possible source folders for one provider: the legacy one, the current one, and
- * the parent the current one sits in.
- *
- * `null` for a provider that never had a legacy folder — the name being retired is Claude's, so a
- * Codex installation has only ever had one folder and no sentence about two applies to it.
- *
- * Both ends are named as a user writes them as well as resolved, because every sentence about the
- * layout names both folders and is read by someone looking at their own disk. Moving a folder
- * from `from` to `to` is a thing the USER does by hand; nothing in this CLI moves one.
- */
-export type SourceFolderMove = {
-  /** The legacy folder: where a pre-rename installation's source is. */
-  from: SourceFolderEnd;
-  /** The provider folder under the new root: where this release creates one. */
-  to: SourceFolderEnd;
-  /** The `.agents-inc/` parent `to` sits in, which a manual move has to create. */
-  parent: SourceRoot;
-};
-
-/** One end of a move: the absolute directory, and the relative name a message uses. */
-export type SourceFolderEnd = {
-  dir: string;
+  /** The same folder as a user writes it: `.agents-inc/claude`. */
   relName: string;
 };
 
@@ -98,32 +49,6 @@ export type SourceFolderEnd = {
  */
 export function everySourceFolderName(): string[] {
   return PROVIDERS.map(sourceDirName);
-}
-
-/** `provider`'s two folder names under `root`, whatever is actually on disk. */
-export function plannedSourceFolderMove(root: string, provider: Provider): SourceFolderMove | null {
-  const legacy = legacyFolderFor(root, provider);
-  if (legacy === null) return null;
-
-  return {
-    from: { dir: legacy, relName: LEGACY_SOURCE_DIR },
-    to: { dir: sourceDir(root, provider), relName: sourceDirName(provider) },
-    parent: { dir: path.join(root, SOURCE_ROOT_DIR), relName: SOURCE_ROOT_DIR },
-  };
-}
-
-/**
- * The folder this scope is NOT on, as a compiled agent's own prompt would spell it.
- *
- * An installed `agent-summoner` carries an instruction about where to author new sub-agents, and
- * a copy compiled under the other layout aims that instruction at a folder this installation does
- * not read — so the files it writes never compile and nothing reports it. This is the string that
- * finding looks for. `null` where the provider has only one folder it could ever be on.
- */
-export function unusedSourceFolderName(root: string, provider: Provider): string | null {
-  const move = plannedSourceFolderMove(root, provider);
-  if (move === null) return null;
-  return sourceFolderInUse(root, provider).legacy ? move.to.relName : move.from.relName;
 }
 
 /** The folder a provider's source lives in under `root`, whether or not anything is there. */
@@ -140,17 +65,35 @@ export type SourceRoot = {
 };
 
 /**
- * The `.agents-inc/` parent of the folder `provider` is read from under `root`, or `null` for a
- * scope still on the legacy name.
- *
- * `null` rather than a path, because `.claude-src/` has no parent belonging to this product: its
- * parent is the scope root, and a caller that removed THAT would take a user's project with it.
- * So the one caller that acts on this — uninstall's cleanup, which removes the parent once the
- * last provider folder under it is gone — cannot reach the destructive case at all.
+ * The `.agents-inc/` parent every provider folder under `root` sits in — what uninstall's cleanup
+ * removes once the last provider folder under it is gone.
  */
-export function sourceRootOf(root: string, provider: Provider): SourceRoot | null {
-  if (sourceFolderInUse(root, provider).legacy) return null;
+export function sourceRootOf(root: string): SourceRoot {
   return { dir: path.join(root, SOURCE_ROOT_DIR), relName: SOURCE_ROOT_DIR };
+}
+
+/**
+ * The retired folder's name: the one place the product writes it, read by the check below and by
+ * the startup line that names it (`retiredSourceFolderUnsupported` in `utils/messages.ts`).
+ */
+export const RETIRED_SOURCE_FOLDER = ".claude-src";
+
+/**
+ * Where the retired folder's contents belong now, when any of `roots` holds that folder, and
+ * `null` when none does. The folder was Claude's, so a move out of it lands in Claude's.
+ *
+ * One answer for all of them rather than one per root: the line a run prints about it is said once
+ * however many scopes hold the folder, so the question is whether ANY does. The folder is never
+ * read from or written to, only noticed.
+ */
+export function retiredSourceFolderIn(roots: readonly string[]): string | null {
+  if (!roots.some(holdsTheRetiredSourceFolder)) return null;
+  return sourceDirName("claude");
+}
+
+/** Whether `root` holds the retired folder as a directory — a file of that name is not the folder. */
+function holdsTheRetiredSourceFolder(root: string): boolean {
+  return directoryExists(path.join(root, RETIRED_SOURCE_FOLDER));
 }
 
 /**
@@ -229,15 +172,15 @@ export function forgetTheProviderChosenForThisRun(): void {
  * The folder is the only record of a provider — there is no field in `config.ts` and nothing in
  * a shared payload carries one — so this is the whole of "the provider is derivable after the
  * install", for every caller that holds a directory and nothing else. It is also the ONE function
- * that answers it: `providerAt` asked the same question on rungs of its own until C2, answering
- * `[]` for every pre-rename machine and giving a bare `mkdir` equal standing with a live
- * installation, and the list a caller needs in order to see that a root holds two is
- * `detectInstallations`, which carries the scope and the config path with it.
+ * that answers it: `providerAt` asked the same question on rungs of its own until C2, giving a
+ * bare `mkdir` equal standing with a live installation, and the list a caller needs in order to
+ * see that a root holds two is `detectInstallations`, which carries the scope and the config path
+ * with it.
  *
- * The rungs are {@link sourceFolderOnDisk}'s, asked across providers instead of across names: an
- * installation that holds a `config.ts` wins over one that merely holds a folder, because a
- * half-built or abandoned folder beside a live installation must not take the run away from it.
- * An EMPTY folder is on no rung at all, so `mkdir -p .agents-inc/codex` decides nothing.
+ * Two rungs, asked across providers: an installation that holds a `config.ts` wins over one that
+ * merely holds a folder, because a half-built or abandoned folder beside a live installation must
+ * not take the run away from it. An EMPTY folder is on no rung at all, so
+ * `mkdir -p .agents-inc/codex` decides nothing.
  *
  * `undefined` is a caller that is rendering for NO installation — the compile engine built over
  * no project is the one — and gets the provider a new installation is created under, because
@@ -259,9 +202,7 @@ export function forgetTheProviderChosenForThisRun(): void {
  * **`--provider` beats the disk, and only where a run was given one.** The flag is the answer to
  * the two questions the folder cannot answer — a greenfield install has no folder, and a scope
  * holding two has two — so a run that was told one is about that provider at every root it
- * touches. Nothing else changes: which FOLDER that provider is read from is still
- * {@link sourceFolderInUse}'s ladder, so a pre-rename `.claude-src/` is still found by a run that
- * named `claude` out loud. See {@link chooseProviderForThisRun}.
+ * touches. See {@link chooseProviderForThisRun}.
  */
 export function providerInUse(root: string | undefined): Provider {
   if (providerChosenForThisRun !== undefined) return providerChosenForThisRun;
@@ -282,24 +223,12 @@ function providerOnDisk(root: string): Provider {
 
 /** Whether `provider`'s source folder under `root` holds a config — a live installation. */
 function holdsAnInstallation(root: string, provider: Provider): boolean {
-  return holdsAConfig(sourceFolderInUse(root, provider).dir);
+  return holdsAConfig(sourceDir(root, provider));
 }
 
-/** Whether `provider` has a source folder under `root` at all, config or not. */
+/** Whether `provider` has a started source folder under `root`, config or not. */
 function holdsASourceFolder(root: string, provider: Provider): boolean {
-  return sourceFolderOnDisk(root, provider) !== null;
-}
-
-/**
- * Which folder `provider`'s source is read from under `root`, and the state of the two names
- * beside it. A scope with neither folder is named under the new layout.
- */
-export function resolveSourceDir(root: string, provider: Provider): SourceFolder {
-  return describeSourceFolder(
-    sourceFolderOnDisk(root, provider) ?? sourceDir(root, provider),
-    root,
-    provider,
-  );
+  return holdsAnything(sourceDir(root, provider));
 }
 
 /**
@@ -313,20 +242,15 @@ export function resolveSourceDir(root: string, provider: Provider): SourceFolder
  *   only a directory asks {@link providerInUse} for the answer rather than assuming one.
  */
 export function sourceFolderInUse(root: string, provider: Provider): SourceFolder {
-  return describeSourceFolder(
-    sourceFolderOnDisk(root, provider) ?? newInstallationDir(root, provider),
-    root,
-    provider,
-  );
+  return { dir: sourceDir(root, provider), relName: sourceDirName(provider) };
 }
 
 /**
  * The config file as a user sees it written, relative to the scope root:
- * `.claude-src/config.ts`, or `.agents-inc/claude/config.ts`.
+ * `.agents-inc/claude/config.ts`, or `.agents-inc/codex/config.ts`.
  *
  * One builder rather than one per command, because every message naming that file has to name the
- * folder this scope is ACTUALLY on. A message assembled from a constant tells a user on the old
- * name to edit a file that is not there — and the three commands that print it each used to hold
+ * provider this scope is ACTUALLY on — and the three commands that print it each used to hold
  * their own copy of the string.
  */
 export function relativeConfigPath(root: string, provider: Provider): string {
@@ -345,73 +269,6 @@ export function relativeConfigPath(root: string, provider: Provider): string {
 export function sourceFolderName(root: string | undefined, provider: Provider): string {
   if (root === undefined) return sourceDirName(provider);
   return sourceFolderInUse(root, provider).relName;
-}
-
-/**
- * The preference order, one rung per line, answering `null` when neither name is on disk.
- *
- * A config decides the winner before content does, so a legacy installation keeps being read while
- * an empty or half-built new folder sits beside it — which is what an interrupted migration leaves
- * behind, and taking a live config away from it would be the one unrecoverable outcome here.
- */
-function sourceFolderOnDisk(root: string, provider: Provider): string | null {
-  const preferred = sourceDir(root, provider);
-  const legacy = legacyFolderFor(root, provider);
-
-  if (holdsAConfig(preferred)) return preferred;
-  if (legacy !== null && holdsAConfig(legacy)) return legacy;
-  if (holdsAnything(preferred)) return preferred;
-  if (legacy !== null && directoryExists(legacy)) return legacy;
-  return null;
-}
-
-/**
- * Where a scope holding no source folder at all gets one CREATED.
- *
- * Every provider now gets `.agents-inc/<provider>/`, Claude included — this function IS the flip,
- * and it is the whole of it: every production path under a source folder is built from
- * {@link sourceFolderInUse}, so one return decides them all.
- *
- * It says nothing about an installation that already exists. {@link sourceFolderOnDisk} answers
- * first and prefers whichever folder holds a config, so a scope on `.claude-src/` goes on being
- * read AND written where it is, indefinitely; nothing in this CLI moves one.
- */
-function newInstallationDir(root: string, provider: Provider): string {
-  return sourceDir(root, provider);
-}
-
-/**
- * The legacy folder as a candidate for `provider`, which only Claude ever has.
- *
- * `null` for every other provider. Every rung that names the old folder comes through here — the
- * one preferring a legacy folder holding a `config.ts`, and the bare-folder rung under it — so a
- * provider that never had one cannot be sent to it by either.
- */
-function legacyFolderFor(root: string, provider: Provider): string | null {
-  return provider === "claude" ? path.join(root, LEGACY_SOURCE_DIR) : null;
-}
-
-function describeSourceFolder(dir: string, root: string, provider: Provider): SourceFolder {
-  const legacy = dir === legacyFolderFor(root, provider);
-
-  return {
-    dir,
-    relName: legacy ? LEGACY_SOURCE_DIR : sourceDirName(provider),
-    legacy,
-    both: bothFoldersPresent(root, provider),
-  };
-}
-
-/**
- * Whether this provider's new folder and the folder it replaces are both on disk AS RIVALS.
- *
- * The state the write commands refuse on: with two folders the preference order picks whichever
- * holds a `config.ts`, and that can be the stale one.
- */
-function bothFoldersPresent(root: string, provider: Provider): boolean {
-  const legacyFolder = legacyFolderFor(root, provider);
-  if (legacyFolder === null) return false;
-  return directoryExists(sourceDir(root, provider)) && directoryExists(legacyFolder);
 }
 
 /**
@@ -782,8 +639,8 @@ export function skillsPathPrefix(
  * this answers is which roots a command reads to know WHOSE installation it is looking at, which
  * is what "the folder says the provider, so no command needs a flag" rests on.
  *
- * The source folder comes from {@link sourceFolderInUse} rather than from {@link sourceDir}, so
- * an installation still on the legacy name is named where it is actually read from.
+ * The source folder comes from {@link sourceFolderInUse}, the same answer every other path under
+ * a source folder is built from.
  */
 export function ownedRoots(provider: Provider, scope: SkillScope, projectDir: string): string[] {
   const host = userConfigRoot(provider, scope, projectDir);

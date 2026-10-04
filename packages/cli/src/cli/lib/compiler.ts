@@ -75,8 +75,8 @@ async function readOutputPartial(agentDir: string, categoryDir: string): Promise
  * Creates a Liquid template engine with a layered template root hierarchy.
  *
  * Template resolution order (first match wins):
- * 1. Project-local templates: `agents/_templates/` inside whichever source folder the project is
- *    on — `.claude-src/` or `.agents-inc/<provider>/`, resolved by `sourceFolderInUse`
+ * 1. Project-local templates: `agents/_templates/` inside the project's source folder,
+ *    `.agents-inc/<provider>/`, resolved by `sourceFolderInUse`
  * 2. Legacy templates: `{projectDir}/.claude/templates/`
  * 3. Built-in templates: `{PROJECT_ROOT}/src/agents/_templates/`
  *

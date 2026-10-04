@@ -97,7 +97,6 @@ export default class Compile extends BaseCommand {
       (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
     await this.ensureConfigReadable(cwd);
-    await this.settleSourceLayoutBeforeWriting(cwd);
     const installations = await this.detectInstallations(cwd);
     await this.refuseUnofferablePlacements(cwd);
     await this.resolveAndLogSource(cwd);

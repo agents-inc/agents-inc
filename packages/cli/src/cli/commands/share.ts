@@ -107,9 +107,6 @@ export default class Share extends BaseCommand {
       );
       await this.ensureConfigReadable(process.cwd());
       await this.refuseUnofferablePlacements(process.cwd());
-      // With two source folders on disk the resolver reads whichever holds a `config.ts`, which
-      // can be the stale one — and an id minted from it describes an installation nobody chose.
-      await this.settleSourceLayoutBeforeWriting(process.cwd());
     }
 
     const { payload, caveats } = flags.stdin

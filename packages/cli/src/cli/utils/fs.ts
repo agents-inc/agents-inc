@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import fg from "fast-glob";
 import os from "os";
 import path from "path";
-import { LEGACY_SOURCE_DIR, PROVIDERS, STANDARD_FILES } from "../consts";
+import { PROVIDERS, STANDARD_FILES } from "../consts";
 import { sourceDir } from "../lib/installation/install-layout.js";
 // The gate's private token module, imported here by exception (eslint records
 // it): this file is the write choke point every pair write funnels through, and
@@ -84,8 +84,7 @@ export async function glob(
 const PAIR_HALVES = [STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS];
 
 /**
- * Every folder a GLOBAL config pair can sit in: the one every pre-rename installation carries,
- * and one per provider under the new root.
+ * Every folder a GLOBAL config pair can sit in: one per provider.
  *
  * All of them, rather than the one this home is on, because the guard has to hold against the
  * write it did not expect. A tripwire that knew only the folder in use would let a write into any
@@ -95,10 +94,7 @@ const PAIR_HALVES = [STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS];
  */
 function globalPairFolders(): string[] {
   const home = os.homedir();
-  return [
-    path.join(home, LEGACY_SOURCE_DIR),
-    ...PROVIDERS.map((provider) => sourceDir(home, provider)),
-  ];
+  return PROVIDERS.map((provider) => sourceDir(home, provider));
 }
 
 /** Every path either half of the global pair can have. */

@@ -640,7 +640,7 @@ function withNormalizedStack(partial: Partial<ProjectConfig>): Partial<ProjectCo
 }
 
 /**
- * Writes a partial config to a PROJECT's `.claude-src/config.ts`, filling
+ * Writes a partial config to a PROJECT's own `config.ts`, filling
  * required defaults. Refuses the home directory: the global pair's config half
  * may never be written without its types sibling and without classification.
  */

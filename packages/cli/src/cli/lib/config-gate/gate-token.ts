@@ -1,8 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
- * The write privilege for the global config pair (`~/.claude-src/config.ts` and
- * its `config-types.ts` sibling).
+ * The write privilege for the global config pair (the home directory's `config.ts`
+ * and its `config-types.ts` sibling).
  *
  * AsyncLocalStorage rather than a module-level boolean: pair writes are async
  * and interleave, so a flag one write clears while another is still in flight

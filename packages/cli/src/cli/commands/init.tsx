@@ -475,7 +475,6 @@ export default class Init extends BaseCommand {
     // to inline the global one. One that exists but cannot be read is recreated, not installed
     // over, and saying so here is what keeps the raw loader error off the screen.
     await this.ensureConfigReadable(projectDir);
-    await this.settleSourceLayoutBeforeWriting(projectDir);
 
     // Read once on the spine, because the closing line is printed several calls below it. The
     // degrade arm of `resolveBrandingName` cannot fire here: the line above has already refused

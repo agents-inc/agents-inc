@@ -20,8 +20,6 @@ export type LoadedProjectConfig = {
   /**
    * Which installation this config was read out of.
    *
-   * It says which installation the caller is holding, never which folder name it was found
-   * under: a pre-rename `.claude-src/` answers `claude` exactly as `.agents-inc/claude/` does.
    * Carried on the read because nothing inside the file records it — the folder is the only
    * record — so a caller that has to write back, compile, or name a host directory would
    * otherwise have to re-derive the provider and could derive a different one.

@@ -297,7 +297,7 @@ type EditRoot = {
  * this run may write to. Reading the working directory instead made a project out of
  * whichever directory the command was started in: over a global-only install the wizard
  * offered the project/global scope toggle for a project that did not exist, and saving
- * wrote a `.claude-src/` pair into an unrelated checkout.
+ * wrote a config pair into an unrelated checkout.
  *
  * `--project-setup` is an instance of that rule rather than an exception to it. It means the
  * user ran `cc init` HERE, which declares this directory the installation being set up, so
@@ -640,7 +640,6 @@ export default class Edit extends BaseCommand {
     // copied skills and installed plugins by the time a config read fails.
     await this.ensureConfigReadable(cwd);
     await this.refuseUnofferablePlacements(cwd);
-    await this.settleSourceLayoutBeforeWriting(cwd);
 
     // The browser is the other editor, so it replaces the wizard rather than preceding it —
     // above the source load, which exists to fill screens this run will never paint.
@@ -720,7 +719,7 @@ export default class Edit extends BaseCommand {
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
       // `cc init` inside a project means "set this project up", so the project must be
-      // materialised — `<project>/.claude-src/config.ts` + `config-types.ts` written and the
+      // materialised — the project's `config.ts` + `config-types.ts` written and the
       // path registered in the global `projects[]` — even when the wizard produced no roster
       // change. At the home root there is no project to set up: the global install is what the
       // dashboard was shown for, so a no-change pass there stays an inspection, as does every

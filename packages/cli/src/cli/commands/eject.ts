@@ -117,7 +117,6 @@ export default class Eject extends BaseCommand {
     // Before anything is copied: a config nobody can read is recreated, not ejected over, and a
     // refusal past this point would follow files already written.
     await this.ensureConfigReadable(projectDir);
-    await this.settleSourceLayoutBeforeWriting(projectDir);
     const ejectType = this.validateEjectType(args.type);
     const outputBase = await this.resolveOutputBase(flags, projectDir);
 

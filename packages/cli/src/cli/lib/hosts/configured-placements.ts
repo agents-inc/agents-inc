@@ -26,11 +26,10 @@
  * make an unofferable installation unremovable, which is a guard that has swallowed its own
  * domain — the shape this package's rule against unpaired refusals is written about.
  *
- * **Doctor's is a ROW and the other four are refusals**, which is the same distinction
- * `BaseCommand.settleSourceLayoutBeforeWriting` already draws: a command that changes nothing must
- * not refuse to LOOK, because the state it is reporting on is exactly the state a user needs to
- * see. {@link unofferablePlacementsFound} is the shared reading and each caller decides its own
- * posture from it.
+ * **Doctor's is a ROW and the other four are refusals**: a command that changes nothing must not
+ * refuse to LOOK, because the state it is reporting on is exactly the state a user needs to see.
+ * {@link unofferablePlacementsFound} is the shared reading and each caller decides its own posture
+ * from it.
  *
  * One message, from one roster, at every door — `refuseUnofferedPlacements` reads the host's own
  * `offeredPlacements` — so the sentence a user gets from `compile` names the same cells the one

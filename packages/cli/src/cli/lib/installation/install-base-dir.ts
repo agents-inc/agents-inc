@@ -22,13 +22,10 @@ import {
 export { installBaseDir };
 
 /**
- * Path to `provider`'s unified project config under `dir`, inside whichever source folder that
- * installation is on.
+ * Path to `provider`'s unified project config under `dir`, inside that provider's source folder.
  *
  * The resolution is {@link sourceFolderInUse}'s, so the path a caller reads and the path a caller
- * writes are one answer: a scope on the old name keeps its config exactly where it is, a scope
- * someone has migrated is found in the new one, and a scope with neither still gets its config
- * created where this release creates it.
+ * writes are one answer.
  *
  * **The provider is required, and that is the whole of C2 at this function.** It took none until
  * then, so a root holding an installation of each provider answered the Claude one to every
