@@ -144,10 +144,6 @@ directories it wrote to, and where those are depends on the scope you chose.
 
 At global scope these live at `~/.agents-inc/claude/`.
 
-:::note[If your install says `.claude-src/`]
-`.agents-inc/claude/` is not in a release yet: 0.164.0 writes `.claude-src/`. An installation on `.claude-src/` keeps it — every command reads **and writes** it there, and no command moves it. Everywhere this documentation writes `.agents-inc/claude/`, read `.claude-src/` if that is what your project holds. From the next release `doctor` warns about it, and [Scopes and paths](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src) says how to move one by hand.
-:::
-
 **Your compiled sub-agents**, in `.claude/agents/`, or `~/.claude/agents/` at
 global scope — one markdown file per sub-agent. These are build outputs.
 Editing them directly works until the next compile overwrites them; to change a

@@ -49,7 +49,7 @@ Agents Inc. Doctor
   Summary: 14 passed, 0 warnings, 0 errors
 ```
 
-`Layout` and `Placements Offered` are not in a release yet, and neither is the `.agents-inc/claude/` folder: 0.164.0 prints neither row and names `.claude-src/config.ts`. From the next release, a scope still on `.claude-src/` makes its `Layout` row a warning — see [Scopes and paths](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src).
+`Layout` and `Placements Offered` are not in a release yet.
 
 Four glyphs, and they aren't interchangeable: `✓` passed, `✗` failed, `!` warned, `–` stood down without answering. Rows that stood down are **not** counted in the summary, so a report with twelve rows can end on a total of eleven — if the arithmetic doesn't add up, a row skipped.
 

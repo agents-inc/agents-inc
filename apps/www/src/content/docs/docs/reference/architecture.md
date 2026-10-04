@@ -7,10 +7,6 @@ sidebar:
 
 A rough overview of the Agents Inc. CLI codebase. For granular implementation details, see the verified documentation in [`.ai-docs/`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/.ai-docs/DOCUMENTATION_MAP.md).
 
-:::note[If your install says `.claude-src/`]
-`.agents-inc/claude/` is not in a release yet: 0.164.0 writes `.claude-src/`. An installation on `.claude-src/` keeps it — every command reads **and writes** it there, and no command moves it. Everywhere this page writes `.agents-inc/claude/`, read `.claude-src/` if that is what your project holds.
-:::
-
 ---
 
 ## Overview
@@ -109,7 +105,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 - **Marketplace resolution precedence**: `--marketplace` flag > `CC_MARKETPLACE` env var > the project's `config.ts` > the global `config.ts` > the default marketplace. The first two rungs are install-time only: `init` declares the flag and is the only caller `CC_MARKETPLACE` is read for, so every later command starts at the project config.
 
-- **Install modes**: Skills can be installed as **Claude plugins** (managed by Claude's plugin system) or **locally** (copied to `.claude/skills/`). On Claude Code, agents are written to `.claude/agents/`. Config is at `.agents-inc/claude/config.ts` — see the note above for `.claude-src/`.
+- **Install modes**: Skills can be installed as **Claude plugins** (managed by Claude's plugin system) or **locally** (copied to `.claude/skills/`). On Claude Code, agents are written to `.claude/agents/`. Config is at `.agents-inc/claude/config.ts`.
 
 - **Liquid template compilation**: Agent prompts are compiled from partials using LiquidJS. Template root resolution checks project-level overrides first, then built-in templates.
 

@@ -24,7 +24,7 @@ In the editor, scope is the `project | global` pair on a skill's cell — click 
 | Who sees it         | every project on the machine       | this directory only            |
 | Good for            | the stack you reach for by default | the one project that deviates  |
 
-Those are a Claude Code installation's paths. `.agents-inc/claude/` is not in a release yet — 0.164.0 writes `.claude-src/` at both scopes, and an installation already on it stays there. A Codex installation, also not in a release yet, has its paths in [Claude or Codex](/docs/configuration/providers).
+Those are a Claude Code installation's paths. A Codex installation, not in a release yet, has its paths in [Claude or Codex](/docs/configuration/providers).
 
 You can mix freely. A common shape is a global base with a project overriding the one thing it does differently — global React everywhere, plus project-scoped Vue in the one app that uses it.
 

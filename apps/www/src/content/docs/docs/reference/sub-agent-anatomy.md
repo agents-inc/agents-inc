@@ -215,7 +215,7 @@ npx agents-inc eject templates        # the Liquid templates, into <source folde
 npx agents-inc compile                # rebuild from what you now own
 ```
 
-`<source folder>` is the one the installation is on: `.claude-src/` on 0.164.0 and on any installation still there, and otherwise `.agents-inc/claude/`, which is not in a release yet.
+`<source folder>` is the one the installation is on: `.agents-inc/claude/`.
 
 `eject agent-partials` copies the whole shipped agent tree, not just the agent you're changing — and it brings `_templates/` with it unless you already have those locally.
 

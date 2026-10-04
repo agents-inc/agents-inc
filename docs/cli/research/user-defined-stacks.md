@@ -114,16 +114,16 @@ Computes a display label based on whether the source is local, the default publi
 
 ## 2. Config Changes Needed
 
-### Consumer Project's `.claude-src/config.yaml`
+### Consumer Project's `.agents-inc/claude/config.yaml`
 
 The `stacks_file` field in `ProjectSourceConfig` currently serves a different purpose -- it tells a **source** (marketplace) where to find its own stacks. For consumer projects, a new field or reuse of this field is needed.
 
 **Option A: Reuse `stacks_file` in consumer config**
 
-The consumer's `.claude-src/config.yaml` already supports `stacks_file`. Currently it's only read from the source's config, but it could be read from the consumer's config too:
+The consumer's `.agents-inc/claude/config.yaml` already supports `stacks_file`. Currently it's only read from the source's config, but it could be read from the consumer's config too:
 
 ```yaml
-# .claude-src/config.yaml (consumer project)
+# .agents-inc/claude/config.yaml (consumer project)
 source: github:acme-corp/skills
 stacks_file: stacks/my-stacks.ts # project-level stacks
 ```
@@ -135,14 +135,14 @@ This would mean `stacks_file` has dual meaning depending on context (source vs c
 Add a distinct field that specifically points to project-level stacks:
 
 ```yaml
-# .claude-src/config.yaml (consumer project)
+# .agents-inc/claude/config.yaml (consumer project)
 source: github:acme-corp/skills
 project_stacks: stacks/my-stacks.ts # project-level stacks
 ```
 
 **Option C: Use `stacks_file` but load from project root**
 
-The simplest approach: `stacks_file` in the consumer's `.claude-src/config.yaml` is interpreted relative to the project root (not the source root). This is actually already how it's stored, but `loadAndMergeFromBasePath()` only reads `stacks_file` from the **source's** config. Adding a separate read from the **consumer's** config would provide project-level stacks.
+The simplest approach: `stacks_file` in the consumer's `.agents-inc/claude/config.yaml` is interpreted relative to the project root (not the source root). This is actually already how it's stored, but `loadAndMergeFromBasePath()` only reads `stacks_file` from the **source's** config. Adding a separate read from the **consumer's** config would provide project-level stacks.
 
 **Recommended: Option C**. The field already exists in the schema and config type. The only change needed is reading it from the consumer's project config in addition to the source's config.
 
@@ -465,7 +465,7 @@ No changes needed to `projectSourceConfigSchema` -- `stacks_file` already exists
 - The exclusion rule does not apply -- public stacks are shown.
 - If extra sources exist in `sources[]`, those might provide stacks too. The current proposal does not load stacks from extra sources -- only from the primary source. This could be a future extension.
 
-### Consumer Project Has No `.claude-src/config.yaml`
+### Consumer Project Has No `.agents-inc/claude/config.yaml`
 
 - `loadProjectSourceConfig()` returns `null` (line 74-76 in config.ts).
 - No project stacks are loaded. The wizard shows only marketplace/public stacks.

@@ -80,7 +80,7 @@ All other scope toggle combinations are safe. Agent scope toggles are always saf
 
 ```typescript
 const skills: SkillConfig[] = [
-  // Global skills (from ~/.claude-src/config.ts)
+  // Global skills (from ~/.agents-inc/claude/config.ts)
   { id: "web-styling-tailwind-...", scope: "global", source: "agents-inc" },
 
   // Global skills (excluded)
@@ -96,7 +96,7 @@ const skills: SkillConfig[] = [
 ]
 
 const agents: AgentScopeConfig[] = [
-  // Global agents (from ~/.claude-src/config.ts)
+  // Global agents (from ~/.agents-inc/claude/config.ts)
   { name: "web-researcher", scope: "global" },
 
   // Global agents (excluded)

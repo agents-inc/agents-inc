@@ -6,7 +6,7 @@ sidebar:
 ---
 
 :::note[Codex is not in a release yet]
-0.164.0 installs onto Claude Code only, and has no `--provider` flag. Everything on this page about Codex describes the next release, and so do the `.agents-inc/<provider>/` folder names: 0.164.0 keeps its source folder at `.claude-src/`.
+0.164.0 installs onto Claude Code only, and has no `--provider` flag. Everything on this page about Codex describes the next release.
 :::
 
 An installation belongs to one **provider** — the coding agent it is for. There are two: **Claude Code** and **OpenAI Codex**.

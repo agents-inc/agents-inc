@@ -7,10 +7,6 @@ sidebar:
 
 Your installation is described by one file: `.agents-inc/claude/config.ts`. It's plain TypeScript, it's meant to be hand-edited, and it's the source of truth `npx agents-inc compile` reads every time it rebuilds your sub-agents. Whichever front door you came through writes it on first run — the editor hands you an `npx agents-inc init --from <id>` command that does it, and `npx agents-inc init` on its own does it from the terminal wizard. Nothing in it is off-limits afterwards.
 
-:::note[If your install says `.claude-src/`]
-`.agents-inc/claude/` is not in a release yet: 0.164.0 writes `.claude-src/`. An installation on `.claude-src/` keeps it — every command reads **and writes** it there, and no command moves it. Everywhere this documentation writes `.agents-inc/claude/`, read `.claude-src/` if that is what your project holds. From the next release `doctor` warns about it, and [Scopes and paths](/docs/configuration/scopes-and-paths#moving-an-installation-off-claude-src) says how to move one by hand — and what refuses while both folders are on disk.
-:::
-
 ## Quick start
 
 Open `.agents-inc/claude/config.ts` in your editor. The smallest change with a visible result is giving one sub-agent a different model — add two keys to its entry in the `agents` array:
