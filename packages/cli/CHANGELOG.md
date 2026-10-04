@@ -7,6 +7,14 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.167.0] - 2026-10-04
+
+**`.claude-src/` is retired: nothing reads or writes it, and a run that finds it says to move it**
+
+- CLI-913: every scope resolves to `.agents-inc/<provider>/` with no fallback, and a run that finds `.claude-src/` in the project or HOME prints one line telling the user to move it to `.agents-inc/claude/`. The two-folder write refusal, `doctor`'s legacy rows and `uninstall`'s two-folder clean-up are gone.
+
+See [changelogs/0.167.0.md](./changelogs/0.167.0.md) for full details.
+
 ## [0.166.0] - 2026-10-04
 
 **From a project, `share`, `edit --ui` and every `--from` treat the global install as one every project reads, every write refuses a broken `config.ts` by name, and the audit that followed the journey fixes is applied**
