@@ -1,9 +1,8 @@
 import path from "path";
 import { sharedSourcePath } from "../../src/cli/lib/__tests__/helpers/shared-source.js";
-import { writeE2ESourceInto } from "./create-e2e-source.js";
+import { buildE2EMarketplaceInto } from "./create-e2e-source.js";
 import { createE2ESource } from "./create-e2e-source.js";
 import type { E2ESource } from "./create-e2e-source.js";
-import { runCLI, writeTestPackageJson } from "./test-utils.js";
 import { E2E_MARKETPLACE_NAME } from "../pages/constants.js";
 import { PLUGINS_DIST_PATH } from "../../src/cli/consts.js";
 import type { RelationshipDefinitions } from "../../src/cli/types/index.js";
@@ -18,7 +17,8 @@ export type E2EPluginSource = E2ESource & {
  * compiles skill plugins, and generates marketplace.json.
  *
  * This is the canonical setup helper for all plugin-mode E2E tests.
- * The build chain is: createE2ESource() -> build plugins -> build marketplace.
+ * The build chain is `createE2ESource()`'s own — build plugins, then build marketplace — and
+ * what this adds is the description: the name it was published under and its `dist/plugins/`.
  *
  * The marketplace is published under the shared, STABLE `E2E_MARKETPLACE_NAME`
  * unless a spec names its own. It used to be `e2e-test-${Date.now()}`, which no
@@ -52,25 +52,11 @@ export async function createE2EPluginSource(options?: {
     return sharedPluginSource();
   }
 
-  const { sourceDir, tempDir } = await createE2ESource(
-    options.relationships ? { relationships: options.relationships } : undefined,
-  );
-
-  const buildPluginsResult = await runCLI(["build", "plugins"], sourceDir);
-  if (buildPluginsResult.exitCode !== 0) {
-    throw new Error(
-      `build plugins failed (exit ${buildPluginsResult.exitCode}):\n${buildPluginsResult.combined}`,
-    );
-  }
-
   const marketplaceName = options.marketplaceName ?? E2E_MARKETPLACE_NAME;
-  await writeTestPackageJson(sourceDir, { name: marketplaceName });
-  const buildMarketplaceResult = await runCLI(["build", "marketplace"], sourceDir);
-  if (buildMarketplaceResult.exitCode !== 0) {
-    throw new Error(
-      `build marketplace failed (exit ${buildMarketplaceResult.exitCode}):\n${buildMarketplaceResult.combined}`,
-    );
-  }
+  const { sourceDir, tempDir } = await createE2ESource({
+    marketplaceName,
+    ...(options.relationships && { relationships: options.relationships }),
+  });
 
   const pluginsDir = path.join(sourceDir, PLUGINS_DIST_PATH);
 
@@ -85,24 +71,7 @@ export async function createE2EPluginSource(options?: {
  * descriptions that have to be kept in step.
  */
 export async function buildPluginSourceInto(dir: string): Promise<void> {
-  const sourceDir = path.join(dir, "fixture");
-  await writeE2ESourceInto(sourceDir);
-
-  const builtPlugins = await runCLI(["build", "plugins"], sourceDir);
-  if (builtPlugins.exitCode !== 0) {
-    throw new Error(
-      `build plugins failed (exit ${builtPlugins.exitCode}):\n${builtPlugins.combined}`,
-    );
-  }
-
-  await writeTestPackageJson(sourceDir, { name: E2E_MARKETPLACE_NAME });
-
-  const builtMarketplace = await runCLI(["build", "marketplace"], sourceDir);
-  if (builtMarketplace.exitCode !== 0) {
-    throw new Error(
-      `build marketplace failed (exit ${builtMarketplace.exitCode}):\n${builtMarketplace.combined}`,
-    );
-  }
+  await buildE2EMarketplaceInto(path.join(dir, "fixture"));
 }
 
 /** The shared frozen fixture, described the way a freshly built one is. */

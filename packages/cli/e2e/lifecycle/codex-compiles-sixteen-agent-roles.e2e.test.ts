@@ -198,21 +198,29 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
       const said = flattenCliOutput(output);
       expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
 
-      // Both names, so the line covers both agents rather than one of them.
-      for (const summoner of CODEX_AGENTS_LEFT_OUT) expect(said).toContain(summoner);
-
-      // ONE line carries them. Counted on the raw output, because `flattenCliOutput` collapses
-      // every run of whitespace and leaves nothing to count lines with. Seventeen shipped stacks
-      // list both summoners and every Codex install drops them, so "once per stack" would be
-      // seventeen lines and "once per agent" two — on every install, forever.
-      const linesNamingASummoner = stripAnsi(output)
+      // ONE line says why Codex leaves them out. Counted on the raw output, because
+      // `flattenCliOutput` collapses every run of whitespace and leaves nothing to count lines
+      // with. Seventeen shipped stacks list both summoners and every Codex install drops them, so
+      // "once per stack" would be seventeen lines and "once per agent" two — on every install,
+      // forever. Only the lines that name Codex are counted: the list every `--from` install
+      // prints before it writes names each sub-agent the configuration carries, these two
+      // included, and that list is a statement about the configuration rather than about Codex.
+      const linesSayingCodexLeavesThemOut = stripAnsi(output)
         .split("\n")
-        .filter((line) => CODEX_AGENTS_LEFT_OUT.some((summoner) => line.includes(summoner)));
+        .filter(
+          (line) =>
+            line.includes("Codex") &&
+            CODEX_AGENTS_LEFT_OUT.some((summoner) => line.includes(summoner)),
+        );
 
       expect(
-        linesNamingASummoner,
+        linesSayingCodexLeavesThemOut,
         "the sub-agents Codex leaves out are reported on more than one line",
       ).toHaveLength(1);
+      // Both names, on that one line, so it covers both agents rather than one of them.
+      for (const summoner of CODEX_AGENTS_LEFT_OUT) {
+        expect(linesSayingCodexLeavesThemOut[0]).toContain(summoner);
+      }
     },
   );
 

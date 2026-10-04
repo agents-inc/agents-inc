@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { EXIT_CODES } from "../pages/constants.js";
+import { E2E_MARKETPLACE_NAME, EXIT_CODES } from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
@@ -175,8 +175,11 @@ describe("search command", () => {
       const { exitCode, stdout } = await CLI.run(["search", spare.slug], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      // One match is one row, so the cells below are that row's Origin — asserted as cells,
+      // because every id the fixture ships begins with the marketplace's own name.
       expect(stdout).toContain(`Found 1 skill matching "${spare.slug}"`);
-      expect(stdout).toContain(DEFAULT_PUBLIC_SOURCE_NAME);
+      expect(stdout).toContain(`│ ${E2E_MARKETPLACE_NAME} │`);
+      expect(stdout).not.toContain(`│ ${DEFAULT_PUBLIC_SOURCE_NAME} │`);
       expect(stdout.toLowerCase()).not.toContain(EJECT_SOURCE);
     });
 
@@ -192,7 +195,7 @@ describe("search command", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(`Found 1 skill matching "${LOCAL_ONLY_SKILL.slug}"`);
       expect(stdout.toLowerCase()).toContain(EJECT_SOURCE);
-      expect(stdout).not.toContain(DEFAULT_PUBLIC_SOURCE_NAME);
+      expect(stdout).not.toContain(`│ ${E2E_MARKETPLACE_NAME} │`);
     });
   });
 

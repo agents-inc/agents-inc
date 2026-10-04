@@ -111,7 +111,8 @@ describe("build plugins version bumping", () => {
   let marketplacePath: string;
 
   beforeAll(async () => {
-    ({ sourceDir, tempDir } = await createE2ESource());
+    // The author's checkout before its first build: the version this file pins starts there.
+    ({ sourceDir, tempDir } = await createE2ESource({ unbuilt: true }));
     pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
     marketplacePath = path.join(
       sourceDir,

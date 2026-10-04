@@ -33,10 +33,10 @@ export type InitWizardOptions = {
   /**
    * The source this wizard runs `init --marketplace` against.
    *
-   * Defaults to {@link E2E_SOURCE}, the shared frozen tree with no marketplace — so every skill is
-   * local-only and the wizard's unstated origin is EJECT. Name a source only when the spec's
-   * subject IS one: `createE2EPluginSource()` for plugin-install mode, `createE2ESource(options)`
-   * for a tree that differs in what it ships.
+   * Defaults to {@link E2E_SOURCE}, the shared frozen built marketplace — so the wizard's unstated
+   * origin is a Plugin install from it, and an eject install is asked for by name. Name a source
+   * only when the spec's subject IS one: `createE2EPluginSource()` for plugin-install mode,
+   * `createE2ESource(options)` for a tree that differs in what it ships.
    */
   source?: E2ESource;
   /** Pre-created project directory. If not provided, creates a temp dir. */
@@ -378,20 +378,33 @@ export class InitWizard {
    * Launch init in a directory that already has an installation (dashboard mode).
    * Returns a raw session wrapper since the dashboard is NOT a wizard.
    * The caller can check output and press keys.
+   *
+   * The marketplace named is not incidental: `init --marketplace` sets a project up from the one
+   * it names, and refuses one that differs from the marketplace the directory's OWN installation
+   * was made from. So an installation that records none — a fixture-written config, read as the
+   * default catalogue — is launched with `noSource`, which is a bare `init`.
    */
   static async launchForDashboard(options: {
     projectDir: string;
     source?: E2ESource;
+    /** Launch without --marketplace — a bare `init`, as {@link InitWizardOptions.noSource} is. */
+    noSource?: boolean;
+    /** Launch with no command at all — the dashboard the `init` hook shows, rather than `init`'s. */
+    bare?: boolean;
     env?: Record<string, string | undefined>;
   }): Promise<DashboardSession> {
-    const sourceDir = (options.source ?? E2E_SOURCE).sourceDir;
+    const args = options.bare
+      ? []
+      : options.noSource
+        ? ["init"]
+        : ["init", "--marketplace", (options.source ?? E2E_SOURCE).sourceDir];
 
     const env: Record<string, string | undefined> = {
       CC_MARKETPLACE: undefined,
       ...options.env,
     };
 
-    const session = new TerminalSession(["init", "--marketplace", sourceDir], options.projectDir, {
+    const session = new TerminalSession(args, options.projectDir, {
       env,
     });
 

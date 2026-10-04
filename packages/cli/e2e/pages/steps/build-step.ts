@@ -1,4 +1,4 @@
-import { delay, E2E_SKILL_TITLES } from "../../helpers/test-utils.js";
+import { delay, E2E_SKILL_TITLES, pollUntil } from "../../helpers/test-utils.js";
 import { BaseStep } from "../base-step.js";
 import {
   INTERNAL_DELAYS,
@@ -627,6 +627,32 @@ export class BuildStep extends BaseStep {
   async toggleScopeOnFocusedSkill(): Promise<void> {
     await this.waitForWizardFooter();
     await this.pressKey("s");
+  }
+
+  /**
+   * Press "s" on the focused skill and return once the cell labelled `skillLabel` renders otherwise
+   * than it did before the press — its scope badge moving. For a spec that reads the badge next.
+   *
+   * {@link toggleScopeOnFocusedSkill} returns once the key is written, so a badge read straight
+   * after it races the repaint, and under load reads the frame from before the press. Like
+   * {@link selectSkill}, this waits on the named cell's own text rather than on "the frame
+   * changed"; unlike it, it presses once — a scope toggle pressed again can land twice and read as
+   * never pressed. A press the product refuses leaves the cell as it was and is reported here; a
+   * spec whose subject is the refusal wants {@link toggleScopeOnFocusedSkillAwaiting}.
+   */
+  async toggleScopeOnSkill(skillLabel: string): Promise<void> {
+    await this.waitForWizardFooter();
+    const before = this.renderedCellOrThrow(skillLabel);
+    await this.pressKey("s");
+    await pollUntil(
+      () => this.cellOtherThan(skillLabel, before) !== null,
+      this.defaultTimeout,
+      () =>
+        new Error(
+          `toggleScopeOnSkill: the cell labelled "${skillLabel}" still renders "${before}" ` +
+            `${this.defaultTimeout}ms after "s" was pressed.\nScreen:\n${this.getScreen()}`,
+        ),
+    );
   }
 
   /**

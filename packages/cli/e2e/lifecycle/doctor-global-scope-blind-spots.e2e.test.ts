@@ -95,7 +95,7 @@ describe("doctor global-scope diagnostics", () => {
       expect(await listFiles(skillsPath(fakeHome))).toStrictEqual(skillsBefore);
 
       expect(stdout, "the global agent file is present, so it must count as compiled").toContain(
-        "1/1 agents compiled",
+        "1/1 agent compiled",
       );
       expect(
         stdout,

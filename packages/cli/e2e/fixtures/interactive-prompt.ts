@@ -1,5 +1,5 @@
 import { TerminalSession } from "../helpers/terminal-session.js";
-import { delay } from "../helpers/test-utils.js";
+import { delay, pollUntil } from "../helpers/test-utils.js";
 import { TerminalScreen } from "../pages/terminal-screen.js";
 import { TIMEOUTS, INTERNAL_DELAYS } from "../pages/constants.js";
 
@@ -33,6 +33,25 @@ export class InteractivePrompt {
 
   async waitForRawText(text: string, timeoutMs: number = TIMEOUTS.WIZARD_LOAD): Promise<void> {
     await this.screen.waitForRawText(text, timeoutMs);
+  }
+
+  /**
+   * Waits until `text` is painted or the process has ended, whichever comes first.
+   *
+   * For a spec whose subject is whether a command stops to ask at all. Waiting on the question
+   * alone turns "it never asked" into a timeout naming nothing; this hands the spec a settled run,
+   * so the question's absence fails on the assertion that states it.
+   */
+  async waitForTextOrExit(text: string, timeoutMs: number = TIMEOUTS.WIZARD_LOAD): Promise<void> {
+    await pollUntil(
+      () => this.session.hasExited() || this.session.getFullOutput().includes(text),
+      timeoutMs,
+      () =>
+        new Error(
+          `InteractivePrompt: neither "${text}" nor an exit within ${timeoutMs}ms.\n` +
+            `Output:\n${this.session.getFullOutput()}`,
+        ),
+    );
   }
 
   async confirm(): Promise<void> {

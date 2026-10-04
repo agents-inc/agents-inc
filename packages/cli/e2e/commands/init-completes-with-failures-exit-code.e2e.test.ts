@@ -198,6 +198,13 @@ describe("init completes its install and exits non-zero when a sub-agent would n
       output,
       "a tick over an install missing a sub-agent is the claim being withdrawn, not a line beside it",
     ).not.toContain(STEP_TEXT.INIT_SUCCESS);
+    // The failure report prints the pass's warnings, and the global pass — which has no sub-agent
+    // here, both are pinned to the project — used to contribute one, right under a count that
+    // says a sub-agent compiled.
+    expect(
+      output,
+      "a scope with nothing to compile is not a warning beside the one sub-agent that failed",
+    ).not.toContain("No agents found to recompile");
 
     // The install finished: the sub-agent the sabotage did not touch is compiled, the occupied
     // path is still the directory it was, and the config pair describes what landed.

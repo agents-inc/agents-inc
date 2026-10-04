@@ -389,4 +389,27 @@ describe("init --from <id>", () => {
     expect(await listFiles(agentsPath(tempDir))).toStrictEqual(agentsBefore);
     expect(configBefore).not.toContain(E2E_SKILL.hono.id);
   });
+
+  it("names edit --from <id> as the way to apply the id to an existing installation", async () => {
+    tempDir = await createTempDir();
+    store.publish(
+      "First003",
+      buildSeedPayload({
+        v: PINNED_WIRE_VERSION,
+        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
+      }),
+    );
+    const first = await runInit("First003");
+    expect(first.exitCode, `first install failed: ${first.output}`).toBe(EXIT_CODES.SUCCESS);
+
+    const appliedId = "Second04";
+    const second = await runInit(appliedId);
+
+    expect(second.exitCode).toBe(EXIT_CODES.ERROR);
+    const said = flattenCliOutput(second.output);
+    expect(said).toContain(STEP_TEXT.SHARED_CONFIG_EXISTING_INSTALL);
+    expect(said, "the refusal must name the command that applies this id here").toContain(
+      `edit --from ${appliedId}`,
+    );
+  });
 });

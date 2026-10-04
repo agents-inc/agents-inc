@@ -6,6 +6,7 @@ import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
   agentsPath,
   cleanupTempDir,
+  compactCliOutput,
   configTsPath,
   configTypesTsPath,
   createTempDir,
@@ -81,7 +82,8 @@ describe("edit with an unreadable config", () => {
     const { project, result } = await editWithCorruptProjectConfig(configSource);
 
     expect(result.exitCode, `edit output:\n${result.output}`).toBe(EXIT_CODES.ERROR);
-    expect(result.output).toContain(configTsPath(project.dir));
+    // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+    expect(compactCliOutput(result.output)).toContain(compactCliOutput(configTsPath(project.dir)));
     expect(result.output).toContain(STEP_TEXT.CONFIG_UNREADABLE_RECREATE);
     expect(result.output).toContain(STEP_TEXT.EDITOR_URL);
     // The third way out, and the last to become true: doctor reports this same file rather than
@@ -129,7 +131,7 @@ describe("edit with an unreadable config", () => {
     );
 
     expect(exitCode, `edit output:\n${output}`).toBe(EXIT_CODES.ERROR);
-    expect(output).toContain(configTsPath(globalHome));
+    expect(compactCliOutput(output)).toContain(compactCliOutput(configTsPath(globalHome)));
     expect(output).toContain(STEP_TEXT.CONFIG_UNREADABLE_RECREATE);
     expect(output).toContain(STEP_TEXT.EDITOR_URL);
 
@@ -152,7 +154,7 @@ describe("edit with an unreadable config", () => {
     );
 
     expect(uninstall.exitCode, `uninstall output:\n${uninstall.output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(uninstall.output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+    expect(uninstall.output).toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
     expect(uninstall.output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     expect(await fileExists(configTsPath(project.dir))).toBe(false);
@@ -218,7 +220,7 @@ describe("init with an unreadable config", () => {
     );
 
     expect(exitCode, `init output:\n${output}`).toBe(EXIT_CODES.ERROR);
-    expect(output).toContain(configTsPath(project.dir));
+    expect(compactCliOutput(output)).toContain(compactCliOutput(configTsPath(project.dir)));
     expect(output).toContain(STEP_TEXT.CONFIG_UNREADABLE_RECREATE);
     expect(output).toContain(STEP_TEXT.EDITOR_URL);
 

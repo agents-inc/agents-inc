@@ -6,6 +6,7 @@ import { DashboardSession } from "../pages/dashboard-session.js";
 import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { CLI } from "../fixtures/cli.js";
 import { E2E_AGENT, E2E_SKILL, E2E_STACK_DISPLAY } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
@@ -67,7 +68,6 @@ describe("init wizard — existing projects", () => {
   describe("already initialized project", () => {
     it("should show dashboard when project already has a config", async () => {
       tempDir = await createTempDir();
-      source = await createE2ESource();
 
       // A real installation: the project config declares a skill and an agent,
       // so detectInstallation treats it as installed and init shows the dashboard.
@@ -80,9 +80,11 @@ describe("init wizard — existing projects", () => {
         }),
       );
 
+      // A bare `init`: this installation records no marketplace, so naming one would be naming
+      // a different marketplace than the one it was installed from.
       dashboard = await InitWizard.launchForDashboard({
         projectDir: tempDir,
-        source,
+        noSource: true,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -101,10 +103,13 @@ describe("init wizard — existing projects", () => {
   });
 
   describe("dashboard on existing project", () => {
+    /**
+     * An installed project, launched below as a bare `init`: its config records no marketplace,
+     * so naming one would be naming a different marketplace than the one it was installed from.
+     */
     async function createDashboardProject(
       options?: Parameters<typeof ProjectBuilder.editable>[0],
     ): Promise<string> {
-      source = await createE2ESource();
       const project = await ProjectBuilder.editable(options);
       tempDir = path.dirname(project.dir);
       return project.dir;
@@ -118,7 +123,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: source!,
+        noSource: true,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -142,7 +147,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: source!,
+        noSource: true,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -158,6 +163,40 @@ describe("init wizard — existing projects", () => {
       await dashboard.waitForExit();
     });
 
+    /**
+     * Down, Down, Enter written at once — a fast typist, or a paste — reaches the CLI as one chunk,
+     * and the dashboard handles the three keys with no frame painted between them. Two moves down
+     * from Edit is Doctor however fast they came; the paced walk is the spec above.
+     */
+    it("should run the option the keys land on when they arrive in one burst", async () => {
+      const dashboardDir = await createDashboardProject({
+        skills: [E2E_SKILL.react.id],
+        agents: ["web-developer"],
+      });
+
+      dashboard = await InitWizard.launchForDashboard({
+        projectDir: dashboardDir,
+        noSource: true,
+      });
+
+      await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+
+      await dashboard.chooseInOneBurst(2);
+      await dashboard.waitForEither(
+        STEP_TEXT.DOCTOR_CONFIG_CHECK,
+        STEP_TEXT.BUILD_FOOTER,
+        TIMEOUTS.WIZARD_LOAD,
+      );
+
+      const output = dashboard.getOutput();
+      expect(output, "Down, Down, Enter from Edit lands on Doctor").toContain(
+        STEP_TEXT.DOCTOR_CONFIG_CHECK,
+      );
+      expect(output, "the burst must not open the option it started on").not.toContain(
+        STEP_TEXT.BUILD_FOOTER,
+      );
+    });
+
     it("should exit cleanly when pressing Escape", async () => {
       const dashboardDir = await createDashboardProject({
         skills: [E2E_SKILL.react.id],
@@ -166,7 +205,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: source!,
+        noSource: true,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -182,7 +221,11 @@ describe("init wizard — existing projects", () => {
       expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
     });
 
-    it("should exit cleanly when pressing Ctrl+C", async () => {
+    /**
+     * Ctrl+C cancels, as it does at every other prompt — where Escape, the spec above, only steps
+     * back out of the dashboard and exits 0. Neither writes anything.
+     */
+    it("should exit as cancelled when pressing Ctrl+C", async () => {
       const dashboardDir = await createDashboardProject({
         skills: [E2E_SKILL.react.id],
         agents: ["web-developer"],
@@ -190,7 +233,7 @@ describe("init wizard — existing projects", () => {
 
       dashboard = await InitWizard.launchForDashboard({
         projectDir: dashboardDir,
-        source: source!,
+        noSource: true,
       });
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
@@ -199,8 +242,94 @@ describe("init wizard — existing projects", () => {
       await dashboard.ctrlC();
 
       const exitCode = await dashboard.waitForExit();
+      expect(exitCode, "Ctrl+C on the dashboard is a cancellation").toBe(EXIT_CODES.CANCELLED);
+      expect(dashboard.getOutput()).toContain(STEP_TEXT.RUN_CANCELLED);
+      expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
+    });
+
+    it("should exit as cancelled when pressing Ctrl+C on the dashboard shown with no command", async () => {
+      const dashboardDir = await createDashboardProject({
+        skills: [E2E_SKILL.react.id],
+        agents: ["web-developer"],
+      });
+
+      dashboard = await InitWizard.launchForDashboard({ projectDir: dashboardDir, bare: true });
+
+      await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+      const treeBefore = await readTreeSnapshot(dashboardDir);
+
+      await dashboard.ctrlC();
+
+      const exitCode = await dashboard.waitForExit();
+      expect(exitCode, "Ctrl+C on the dashboard is a cancellation").toBe(EXIT_CODES.CANCELLED);
+      expect(dashboard.getOutput()).toContain(STEP_TEXT.RUN_CANCELLED);
+      expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
+    });
+
+    /**
+     * A run with no command is, to oclif, a request for the root help — and the dashboard shown in
+     * its place has answered it. Whichever way the dashboard is left, the run ends there.
+     */
+    it("should end the run when Escape leaves the dashboard shown with no command", async () => {
+      const dashboardDir = await createDashboardProject({
+        skills: [E2E_SKILL.react.id],
+        agents: ["web-developer"],
+      });
+
+      dashboard = await InitWizard.launchForDashboard({ projectDir: dashboardDir, bare: true });
+
+      await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+      const treeBefore = await readTreeSnapshot(dashboardDir);
+
+      await dashboard.escape();
+
+      const exitCode = await dashboard.waitForExit();
+      expect(dashboard.getOutput(), "Escape leaves the dashboard, not into the help").not.toContain(
+        STEP_TEXT.ROOT_HELP_USAGE,
+      );
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
+    });
+
+    /**
+     * Chosen one key at a time rather than in a burst: the burst is the spec above's subject, and a
+     * dashboard that misread one would open Edit and fail this spec on a timeout instead of on the
+     * help listing it is about.
+     */
+    it("should end the run with the command chosen on the dashboard shown with no command", async () => {
+      const dashboardDir = await createDashboardProject({
+        skills: [E2E_SKILL.react.id],
+        agents: ["web-developer"],
+      });
+
+      dashboard = await InitWizard.launchForDashboard({ projectDir: dashboardDir, bare: true });
+
+      await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
+
+      await dashboard.chooseOneKeyAtATime(2, STEP_TEXT.DASHBOARD_DOCTOR_FOCUSED);
+
+      // A whole doctor run, so a real command's exit wait rather than a keypress's.
+      const exitCode = await dashboard.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const output = dashboard.getOutput();
+      expect(output, "the chosen command ran").toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+      expect(output, "the run ends with the command, not with the help").not.toContain(
+        STEP_TEXT.ROOT_HELP_USAGE,
+      );
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+    });
+
+    /** The same dashboard through a pipe, which prints its text in place of the menu. */
+    it("should end the run after the dashboard a pipe is shown with no command", async () => {
+      const dashboardDir = await createDashboardProject({
+        skills: [E2E_SKILL.react.id],
+        agents: ["web-developer"],
+      });
+
+      const { exitCode, stdout } = await CLI.run([], { dir: dashboardDir });
+
+      expect(stdout, "the dashboard's text is printed").toContain(STEP_TEXT.DASHBOARD);
+      expect(stdout, "and nothing after it").not.toContain(STEP_TEXT.ROOT_HELP_USAGE);
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     });
   });
 

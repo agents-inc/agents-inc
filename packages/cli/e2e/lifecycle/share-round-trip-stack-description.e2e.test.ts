@@ -2,8 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
 import {
+  runEditUi,
   runInitFrom,
-  runShare,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
@@ -31,6 +31,10 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
  * `agents` and the compiled bodies. None of those can see this: a description is a config field
  * that reaches no compiled sub-agent, so both ends agreed on everything that spec reads while the
  * origin said "Minimal stack for E2E testing" and the rebuild said nothing at all.
+ *
+ * The id is minted by `edit --ui` rather than `share`, for the reason that spec gives: the wizard
+ * end ejects its skills, `share` refuses ejected skills, and `edit --ui` mints the same payload
+ * through the same function.
  */
 describe("a share round trip that starts from an applied stack", () => {
   let store: SeedConfigStore;
@@ -76,8 +80,8 @@ describe("a share round trip that starts from an applied stack", () => {
         "the origin has no description to lose, so the round trip below has nothing to carry",
       ).toBe(E2E_STACK_DESCRIPTION);
 
-      const shared = await runShare(store, { dir: origin, globalHome: origin });
-      expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
+      const minted = await runEditUi(store, { dir: origin, globalHome: origin });
+      expect(minted.exitCode, `edit --ui failed: ${minted.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const reinstalled = await runInitFrom(
         store,

@@ -64,8 +64,9 @@ describe("compile command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain("Compiling global agents");
-    expect(output).toContain("Discovered 1 local skills");
-    expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+    expect(output).toContain("Discovered 1 local skill");
+    expect(output).not.toContain("Discovered 1 local skills");
+    expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
     expect(output).toContain("Global compile complete");
 
     await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
@@ -197,7 +198,7 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Discovered 3 local skills");
-      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -230,8 +231,9 @@ describe("compile command", () => {
       const { exitCode, output } = await CLI.run(["compile", "--verbose"], { dir: project.dir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Discovered 1 local skills");
-      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
       expect(output).toContain(`${STEP_TEXT.LOADED_SKILL} ${MINIMAL_PROJECT_SKILL_ID}`);
       expect(
         output,
@@ -284,7 +286,8 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("missing metadata.yaml");
-      expect(output).toContain("Discovered 1 local skills");
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -436,7 +439,7 @@ describe("compile command", () => {
       const { exitCode, output } = await CLI.run(["compile"], { dir: project.dir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
 
       await expect({ dir: project.dir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -507,12 +510,13 @@ describe("compile command", () => {
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Discovered 1 local skills");
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
       expect(
         output,
         "the marketplace came from the config the installation recorded — this run's cwd is its home root, so that config is the global one",
       ).toContain("Marketplace: global");
-      expect(output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -566,7 +570,8 @@ describe("compile command", () => {
       expect(output, "the home root compiles the global installation").toContain(
         "Compiling global agents",
       );
-      expect(output).toContain("Discovered 1 local skills");
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
       expect(
         output,
         "the marketplace came from the global config — the home root has no project config to read",

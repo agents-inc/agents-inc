@@ -24,6 +24,19 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
+/** The events a completion gate is declared under: compile's own, and a sub-agent's own. */
+const COMPLETION_GATE_EVENTS = ["Stop", "SubagentStop"] as const;
+
+/** Whether a parsed `hooks` value holds at least one hook under a completion-gate event. */
+function carriesCompletionGate(hooks: unknown): boolean {
+  if (typeof hooks !== "object" || hooks === null) return false;
+
+  return COMPLETION_GATE_EVENTS.some((event) => {
+    const definitions: unknown = Reflect.get(hooks, event);
+    return Array.isArray(definitions) && definitions.length > 0;
+  });
+}
+
 export type AgentFrontmatterExpectations = {
   name?: string;
   description?: string;
@@ -46,6 +59,14 @@ export type AgentFrontmatterExpectations = {
   exactSkills?: readonly string[];
   hasSkills?: boolean;
   noSkills?: boolean;
+  /**
+   * Whether the sub-agent carries a completion gate: a `hooks` record holding at least one hook
+   * under `Stop`, which compile writes for every sub-agent holding `Write` or `Edit`, or under
+   * `SubagentStop`, which a sub-agent may declare as its own gate instead. `false` asserts neither
+   * event holds a hook. Read off the parsed YAML rather than the raw text, because both event
+   * names occur in agent prose too.
+   */
+  completionGate?: boolean;
 };
 
 export type AgentDynamicSkillsExpectations = {
@@ -131,6 +152,15 @@ export const agentMatchers = {
         pass: false,
         message: () =>
           `Expected agent "${agentName}" frontmatter to carry no effort but got "${String(fm.effort)}"`,
+      };
+    }
+
+    const { completionGate } = expectations;
+    if (completionGate !== undefined && carriesCompletionGate(fm.hooks) !== completionGate) {
+      return {
+        pass: false,
+        message: () =>
+          `Expected agent "${agentName}" frontmatter to carry ${completionGate ? "a" : "no"} completion gate but its hooks are ${JSON.stringify(fm.hooks)}`,
       };
     }
 

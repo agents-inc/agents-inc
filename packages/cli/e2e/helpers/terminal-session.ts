@@ -81,6 +81,7 @@ export class TerminalSession {
   private xterm: Terminal;
   private rawChunks: string[] = [];
   private destroyed = false;
+  private exited = false;
   private exitPromise: Promise<{ exitCode: number; signal?: number }>;
   /** Auto-allocated HOME dir, removed on destroy(). Undefined when the caller supplied HOME. */
   private autoHomeDir: string | undefined;
@@ -147,11 +148,8 @@ export class TerminalSession {
       PATH: withCodexOnIt(options?.env?.["PATH"]),
       NO_COLOR: "1",
       FORCE_COLOR: "0",
-      // The harness's own variable, never the product's. `warn({ suppressInTest: true })`
-      // (src/cli/utils/logger.ts) reads it, so a spread of process.env silences
-      // user-facing warnings in every spawned binary — and a spec asserting one of those
-      // lines passes by not looking. Cleared here rather than gated in the product,
-      // because a spawned bin/run.js is a user's binary and should see a user's
+      // The harness's own variable, never the product's. Cleared here rather than gated in the
+      // product, because a spawned bin/run.js is a user's binary and should see a user's
       // environment. `CLI.run` clears it for the same reason on its own side.
       //
       // PINNED, NOT DEFAULTED — and deliberately (owner ruling 2026-08-21). This sits
@@ -186,6 +184,7 @@ export class TerminalSession {
 
     this.exitPromise = new Promise((resolve) => {
       this.ptyProcess.onExit(({ exitCode, signal }) => {
+        this.exited = true;
         resolve({ exitCode, ...(signal !== undefined && { signal }) });
       });
     });
@@ -282,6 +281,11 @@ export class TerminalSession {
             `Full output:\n${this.getFullOutput()}`,
         ),
     );
+  }
+
+  /** Whether the PTY process has ended — read without waiting, for a wait that races it. */
+  hasExited(): boolean {
+    return this.exited;
   }
 
   /** Waits for the PTY process to exit. Returns the exit code. */

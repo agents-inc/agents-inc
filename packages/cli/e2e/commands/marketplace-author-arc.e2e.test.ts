@@ -7,6 +7,7 @@ import {
   cleanupTempDir,
   completeWithLocalSources,
   configTypesTsPath,
+  flattenCliOutput,
   listFiles,
   loadConfigOrFail,
   readCompiledAgents,
@@ -17,6 +18,7 @@ import {
 import {
   E2E_MARKETPLACE_NAME,
   EXIT_CODES,
+  MARKETPLACE_MANIFEST_PATH,
   SOURCE_PATHS,
   STEP_TEXT,
   TIMEOUTS,
@@ -44,7 +46,10 @@ import "../matchers/setup.js";
  * check, and it is the one command whose answer must CHANGE between the two
  * cwds: in the repository it validates content and skips the operational layer
  * (there is no installation there to be operational about), and in the installed
- * project it runs both.
+ * project it runs both. Its answer in the repository changes across the build too:
+ * a marketplace is not installable until `.claude-plugin/marketplace.json` exists,
+ * so before the build `doctor` names the file as a warning — the author's own
+ * repository, half-built, is not yet wrong — and after it, says nothing about it.
  *
  * The install leg here is the eject one. Installing the BUILT PLUGINS requires
  * a registered marketplace and the Claude CLI — the same dependency that blocks
@@ -68,7 +73,7 @@ describe("marketplace author arc — check, build, publish, install", () => {
   let wizard: InitWizard | undefined;
 
   beforeAll(async () => {
-    const source = await createE2ESource();
+    const source = await createE2ESource({ unbuilt: true });
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
   }, TIMEOUTS.SETUP);
@@ -98,6 +103,10 @@ describe("marketplace author arc — check, build, publish, install", () => {
         beforeBuild.stdout,
         "a source repository has no installed state, so operational rows would be noise",
       ).not.toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
+      expect(
+        flattenCliOutput(beforeBuild.stdout),
+        "a repository nobody has built has no marketplace.json yet, which its author is told as a warning against the file",
+      ).toContain(`[WARN] ${MARKETPLACE_MANIFEST_PATH}`);
 
       const buildPlugins = await CLI.run(["build", "plugins"], { dir: sourceDir });
       expect(buildPlugins.exitCode, buildPlugins.output).toBe(EXIT_CODES.SUCCESS);
@@ -117,7 +126,7 @@ describe("marketplace author arc — check, build, publish, install", () => {
       );
 
       const marketplace = await readMarketplaceJson(
-        path.join(sourceDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR, "marketplace.json"),
+        path.join(sourceDir, MARKETPLACE_MANIFEST_PATH),
       );
       expect(marketplace.name).toBe(MARKETPLACE_NAME);
       expect(
@@ -133,6 +142,10 @@ describe("marketplace author arc — check, build, publish, install", () => {
         `doctor must still pass over a repository that has been built:\n${afterBuild.output}`,
       ).toBe(EXIT_CODES.SUCCESS);
       expect(afterBuild.stdout).toContain(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION);
+      expect(
+        flattenCliOutput(afterBuild.stdout),
+        "a built repository carries its marketplace.json, so doctor has nothing to say about it",
+      ).not.toContain(MARKETPLACE_MANIFEST_PATH);
     },
   );
 

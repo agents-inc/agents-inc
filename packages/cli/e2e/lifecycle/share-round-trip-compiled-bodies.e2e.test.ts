@@ -3,8 +3,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
 import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import {
+  runEditUi,
   runInitFrom,
-  runShare,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
@@ -35,6 +35,11 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
  * table a sub-agent is handed; nothing else in the suite reads that.
  *
  * The comparison lived only in `handrun-journeys.ts`, which no script runs. This is the gate.
+ *
+ * The id is minted by `edit --ui` rather than `share`. The wizard end ejects its skills, which is
+ * the one install that needs no Claude CLI, and `share` refuses ejected skills; `edit --ui` mints
+ * the same payload through the same function and still opens them. The producer and the decoder
+ * this spec holds to each other are the same either way.
  */
 describe("a share round trip that starts at the wizard", () => {
   let store: SeedConfigStore;
@@ -73,8 +78,8 @@ describe("a share round trip that starts at the wizard", () => {
         EXIT_CODES.SUCCESS,
       );
 
-      const shared = await runShare(store, { dir: origin, globalHome: origin });
-      expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
+      const minted = await runEditUi(store, { dir: origin, globalHome: origin });
+      expect(minted.exitCode, `edit --ui failed: ${minted.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const reinstalled = await runInitFrom(
         store,

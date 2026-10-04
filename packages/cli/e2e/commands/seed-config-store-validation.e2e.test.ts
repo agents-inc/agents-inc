@@ -21,8 +21,7 @@ import {
  * `user-journeys.md`'s journey 1 is a code-symbol reference using the same `fixtures/` prefix
  * (`RECOGNISED_NON_SPEC_NAMES` in `spec-gates.test.ts`); a real spec there makes `fixtures` a
  * directory `classify()` expects to hold specs, which turns that symbol into a name the gate
- * cannot resolve. `commands/warn-suppression-stops-at-the-harness.e2e.test.ts` is the precedent
- * for a harness-subject spec sitting in `commands/` for exactly this reason.
+ * cannot resolve.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;

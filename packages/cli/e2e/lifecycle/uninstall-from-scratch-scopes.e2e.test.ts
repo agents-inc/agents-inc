@@ -203,7 +203,10 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       );
 
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+      expect(
+        output,
+        "at the home directory the config uninstall could not read is the global one",
+      ).toContain(STEP_TEXT.UNINSTALL_GLOBAL_CONFIG_UNREADABLE);
       expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
       // The manifest and the ejected skills still go, which is the whole reason

@@ -7,16 +7,26 @@ import {
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  EXIT_CODES,
+  FILES,
+  MANIFEST_REFUSAL_BUILDS_IN_ORDER,
+  STEP_TEXT,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import {
   cleanupFixture,
   cleanupTempDir,
+  createPermissionsFile,
   createTempDir,
+  flattenCliOutput,
   isClaudeCLIAvailable,
   readCompiledAgents,
   readTestFile,
+  runCLI,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 
@@ -160,62 +170,57 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
   });
 
   /**
-   * Plugin install intent is inviolable: a source with no marketplace.json
-   * must hard-error, not silently fall back to eject/local copy.
+   * Plugin install intent is inviolable: a marketplace with no marketplace.json must not fall back
+   * to eject/local copy. It is now refused by the load itself, before the wizard (owner ruling
+   * 2026-10-02: a custom marketplace must carry a valid manifest), so no plugin intent is ever
+   * formed — what this holds is that the refusal leaves the project as it found it.
    * See feedback_no_plugin_to_eject_fallback.md.
    *
    * This suite complements the init scenario in edit-plugin-hard-error.e2e.test.ts
    * by asserting filesystem state integrity (no source folder created, existing
-   * `.claude/settings.json` untouched) in addition to exit code + output.
+   * `.claude/settings.json` untouched) in addition to exit code + output. Run without a
+   * terminal, because the refusal lands before the wizard mounts.
    */
-  describe("hard error when source has no marketplace", () => {
-    let localSource: E2ESource;
-    let projectDir: string | undefined;
+  describe("hard error when the marketplace has no marketplace.json", () => {
+    let unbuilt: E2ESource;
+    let tempDir: string | undefined;
 
     beforeAll(async () => {
-      localSource = await createE2ESource();
+      unbuilt = await createE2ESource({ unbuilt: true });
     }, TIMEOUTS.SETUP);
 
     afterAll(async () => {
-      await cleanupFixture(localSource);
+      await cleanupFixture(unbuilt);
     });
 
     afterEach(async () => {
-      if (projectDir) await cleanupTempDir(projectDir);
-      projectDir = undefined;
+      if (tempDir) await cleanupTempDir(tempDir);
+      tempDir = undefined;
     });
 
     it(
       "should hard-error and leave project filesystem untouched",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        // Pre-create the project dir so we can snapshot state before launch.
-        // InitWizard.launch writes `.claude/settings.json` via createPermissionsFile
-        // into this dir before spawning the session; that file must remain
-        // byte-identical on hard-error.
-        projectDir = await createTempDir();
-
-        wizard = await InitWizard.launch({
-          projectDir,
-          source: localSource,
-        });
-
+        tempDir = await createTempDir();
+        const projectDir = path.join(tempDir, "project");
+        // The permissions file a launched wizard writes first, which must remain byte-identical.
+        await createPermissionsFile(projectDir);
         const settingsPath = path.join(projectDir, DIRS.CLAUDE, FILES.SETTINGS_JSON);
         const settingsBefore = await readTestFile(settingsPath);
 
-        // Step through manually; confirm() would wait for a success banner that
-        // will never arrive because `requireMarketplaceOrExit` must hard-error.
-        const domain = await wizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-        const sources = await build.passThroughAllDomains();
-        const agents = await sources.acceptDefaults();
-        const confirm = await agents.acceptDefaults("init");
-        const result = await confirm.confirmExpectingExit();
+        const { exitCode, combined } = await runCLI(
+          ["init", "--marketplace", unbuilt.sourceDir],
+          projectDir,
+          { env: { HOME: tempDir } },
+        );
 
-        expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
-
-        const output = result.output;
-        expect(output).toContain("marketplace could not be resolved");
+        const output = flattenCliOutput(combined);
+        expect(
+          output,
+          "a marketplace with no marketplace.json must be refused, naming the builds that write one",
+        ).toMatch(MANIFEST_REFUSAL_BUILDS_IN_ORDER);
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
         // Old silent fallback emitted "Skills copied to:" — it must be absent.
         expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
         expect(output).not.toContain(STEP_TEXT.INIT_SUCCESS);
@@ -228,7 +233,7 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
         // true whatever init had left behind and could not fail.
         await expectNoSourceFolder(
           projectDir,
-          "init hard-errored on an unresolvable marketplace and must have created no source folder",
+          "init refused a marketplace with no marketplace.json and must have created no source folder",
         );
 
         const settingsAfter = await readTestFile(settingsPath);

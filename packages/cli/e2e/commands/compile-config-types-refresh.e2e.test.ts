@@ -123,7 +123,16 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
     });
   });
 
-  it("regenerates the unions on a zero-skill pass when config.ts lists skills but nothing is installed", async () => {
+  /**
+   * The refusal beside the refresh above, which is its control: the same command refreshes the
+   * unions whenever it compiles, so only a run that writes them on every other path can show
+   * that this one writes nothing.
+   *
+   * This pinned the opposite until 2026-10-03 — the zero-skill pass rewrote config-types.ts and
+   * printed that it had, then exited 1 saying no skills were found. A refused compile writes
+   * nothing (owner ruling), so the stale file is left exactly as it was and no line claims it moved.
+   */
+  it("writes nothing when it refuses a zero-skill pass, even though config.ts lists skills", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
@@ -134,32 +143,26 @@ describe("compile refreshes config-types.ts from the persisted config", () => {
       skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
       agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
     });
-    // Stale collapsed stub — the post-run content must differ, proving the
-    // zero-skill pass still rewrote the file.
+    // A stale collapsed stub, which a refresh would replace — so it surviving byte for byte is
+    // what shows the refused run left it alone.
     await writeConfigTypes(projectDir);
     const configBefore = await readTestFile(configTsPath(projectDir));
+    const typesBefore = await readTestFile(configTypesTsPath(projectDir));
 
     const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
-    // Zero skills in every pass is still a hard error — but the config-types
-    // refresh must have run on the early-return path before it.
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(output).toContain(STEP_TEXT.COMPILE_PASS_NO_SKILLS);
     expect(output).toContain(STEP_TEXT.COMPILE_NO_SKILLS_ERROR);
-    expect(output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
+    expect(output, "a refused compile must not claim to have refreshed a file").not.toContain(
+      STEP_TEXT.CONFIG_TYPES_REFRESHED,
+    );
 
-    // The unions follow the hand-edited config even though nothing is installed — and the
-    // skill is named under the heading for what no loaded catalogue declares, which is the
-    // truth about an id this installation cannot place.
-    const types = await readTestFile(configTypesTsPath(projectDir));
-    const skillId = readGeneratedUnion(types, "SkillId");
-    expect(skillId, "config-types.ts must declare a SkillId alias").toBeDefined();
-    expect(skillId?.trim()).toBe(`// Custom\n  '${E2E_SKILL.react.id}'`);
-    expect(types).toContain(`export type AgentName = '${E2E_AGENT["web-developer"].name}'`);
-    expect(types, "stale stub must be replaced").not.toContain("export type SkillId = string;");
-
-    // The refresh touches only config-types.ts — config.ts stays byte-identical
-    // and no agents were compiled
+    // Both generated files and the agents directory, as they were.
+    expect(
+      await readTestFile(configTypesTsPath(projectDir)),
+      "a refused compile writes nothing, config-types.ts included",
+    ).toBe(typesBefore);
     expect(await readTestFile(configTsPath(projectDir))).toBe(configBefore);
     expect(await directoryExists(agentsPath(projectDir))).toBe(false);
   });

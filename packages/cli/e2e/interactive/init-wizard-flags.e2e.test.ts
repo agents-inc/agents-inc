@@ -4,7 +4,7 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import { STEP_TEXT, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir } from "../helpers/test-utils.js";
+import { cleanupTempDir, completeWithLocalSources } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 describe("init wizard — flags and permissions", () => {
@@ -58,19 +58,16 @@ describe("init wizard — flags and permissions", () => {
   });
 
   describe("permission checker", () => {
-    // BUG: the permission checker renders a blocking Ink component with no exit
-    // handler when no .claude/settings.json exists. It has no useInput and never
-    // calls exit, so the process hangs forever.
-    //
-    // No assertion carries the red — the wizard never paints a frame, so
-    // completeWithDefaults times out and the `it.fails` is satisfied by the
-    // timeout rather than by the exit-code check below. Two consequences worth
-    // knowing before "simplifying" this spec: the red cannot tell the hang from
-    // any other failure inside the launch, and the spec costs the full
-    // 30s test timeout on every run (doubled by the suite's one retry).
-    it.fails("should exit after showing permission notice without settings.json", async () => {
+    // This was an `it.fails` over a permission-notice hang, and the hang was never what failed:
+    // its install took the default Plugin rows from a fixture with no marketplace.json, which
+    // was refused after Confirm ("Cannot install plugin skills: marketplace could not be
+    // resolved"), and `confirm()` timed out waiting for the success line that refusal never
+    // printed. Run as an eject install, the same flow exits 0 over the unchanged fixture and over
+    // a built one alike, so the red marked nothing. The install mode is incidental to the
+    // subject, and an eject install keeps the Claude CLI out of it.
+    it("should exit after showing permission notice without settings.json", async () => {
       wizard = await InitWizard.launch({ skipPermissions: true });
-      const result = await wizard.completeWithDefaults();
+      const result = await completeWithLocalSources(wizard);
 
       expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
     });

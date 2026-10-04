@@ -67,11 +67,11 @@ export default async function setup() {
   // second writer of a fixed machine path — the rule `shared-source.ts` states.
   await installCodexOnPath();
 
-  // The two shared fixtures, built once here and frozen together: the plugin-capable tree at
-  // `fixture/` and the plain, marketplace-less one at `plain/` ({@link E2E_SOURCE}). One root, one
-  // freeze, one teardown — they differ only by the two builds run over the second, and a spec
-  // picks between them by which install mode its subject is. ~1.65s once instead of 51 times,
-  // about 84 seconds a run. Frozen with `chmod -R a-w` so a spec that writes into a source it does
+  // The two shared fixtures, built once here and frozen together: the tree at `fixture/` that
+  // `createE2EPluginSource()` describes, and the one at `plain/` ({@link E2E_SOURCE}). One root,
+  // one freeze, one teardown. Both are built marketplaces, because a custom marketplace with no
+  // valid marketplace.json is refused by every command that loads it; they differ only by path.
+  // ~1.65s once each instead of once per spec. Frozen with `chmod -R a-w` so a spec that writes into a source it does
   // not own fails AT THE WRITE rather than corrupting every spec scheduled after it —
   // `src/cli/lib/__tests__/helpers/shared-source.ts` carries the full reasoning.
   await buildSharedSource(async (root) => {

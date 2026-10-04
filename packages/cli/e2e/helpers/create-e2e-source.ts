@@ -1,6 +1,6 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { createTempDir } from "./test-utils.js";
+import { createTempDir, runCLI, writeTestPackageJson } from "./test-utils.js";
 import { sharedSourcePath } from "../../src/cli/lib/__tests__/helpers/shared-source.js";
 import type { FixtureStackAgentConfig } from "./test-utils.js";
 import {
@@ -17,7 +17,7 @@ import type {
   SkillSlug,
   Stack,
 } from "../../src/cli/types/index.js";
-import { e2eSkillId } from "../pages/constants.js";
+import { E2E_MARKETPLACE_NAME, e2eSkillId } from "../pages/constants.js";
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { typedKeys, typedValues } from "../../src/cli/utils/typed-object.js";
 import {
@@ -31,7 +31,7 @@ import {
 /**
  * E2E Source Creation Conventions
  *
- * **Reach for {@link E2E_SOURCE}, and build nothing.** It is the shared plain tree, written once
+ * **Reach for {@link E2E_SOURCE}, and build nothing.** It is the shared built tree, written once
  * per run by `globalSetup` and frozen, and it is what a spec wants unless its subject is the
  * source itself:
  *
@@ -46,10 +46,18 @@ import {
  *
  * Build your own only when the shared tree is not the source under test:
  *
- *   `createE2EPluginSource()`      — a marketplace, so plugin install mode is reachable at all
+ *   `createE2EPluginSource()`      — the same built marketplace, described with its name and
+ *                                    `dist/plugins/` for a spec whose subject is plugin install
  *   `createE2ESource(options)`     — a tree that differs in what it SHIPS (relationships,
  *                                    withoutStacks, withoutSkills)
+ *   `createE2ESource({ unbuilt: true })` — an author's checkout before the two builds
  *   `createE2EPluginSource({ owned: true })` — a tree the spec WRITES into
+ *
+ * **Every source built here is a marketplace: `build plugins` and `build marketplace` have run
+ * over it, so it carries a valid `.claude-plugin/marketplace.json`.** A custom marketplace without
+ * one is refused by every command that loads it, so a consumer-side spec has no other kind to
+ * launch against; `unbuilt` is for a spec whose subject is the author's side of the build or
+ * that refusal itself.
  *
  * The pattern this replaced — a `beforeAll` calling `createE2ESource()` into two suite-level
  * `let`s and an `afterAll` cleaning them up — was in about seventy files, and every one of them
@@ -399,6 +407,21 @@ type E2ESourceOptions = {
    * could not tell a narrowing apart from a load that failed.
    */
   withUndeclaredStackAgent?: boolean;
+  /**
+   * Leave the tree as a marketplace author's checkout stands before `build plugins` and
+   * `build marketplace`: no `.claude-plugin/marketplace.json`, no `dist/plugins/`, no
+   * `package.json`.
+   *
+   * Every command that loads a custom marketplace refuses one in this state, so only two kinds of
+   * spec ask for it — one whose subject is the author's side of the build, which starts from
+   * exactly this tree, and one whose subject is that refusal.
+   */
+  unbuilt?: boolean;
+  /**
+   * The name `build marketplace` publishes the source under, and so the name every load reads
+   * back out of its manifest. {@link E2E_MARKETPLACE_NAME} unless a spec's subject IS the name.
+   */
+  marketplaceName?: string;
 };
 
 /** A created E2E source: the source root plus the temp dir owning it. */
@@ -430,6 +453,10 @@ export type E2ESource = {
  *
  * When `options.withoutSkills` names skills, they are not written at all — see
  * that option's note for the pair of sources it exists to produce.
+ *
+ * The tree is then published with the CLI's own `build plugins` and `build marketplace`, so it
+ * carries the `.claude-plugin/marketplace.json` every command loading a custom marketplace
+ * requires — unless `options.unbuilt` asks for the author's checkout as it stood before them.
  */
 export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESource> {
   const tempDir = await createTempDir();
@@ -454,43 +481,85 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
     await writeSkillRules(sourceDir, options.relationships);
   }
 
+  if (!options?.unbuilt) {
+    await publishE2EMarketplace(sourceDir, options?.marketplaceName ?? E2E_MARKETPLACE_NAME);
+  }
+
   return { sourceDir, tempDir };
 }
 
 /**
  * Writes a source's whole tree into `sourceDir`, with no temp directory of its own.
  *
- * Exists so the SHARED fixture and a privately-built one are the same tree by construction rather
- * than by two descriptions that have to be kept in step — `globalSetup` builds the shared one by
- * calling this, exactly as {@link createE2ESource} does.
+ * Exists so the SHARED fixtures and a privately-built one are the same tree by construction rather
+ * than by two descriptions that have to be kept in step — `globalSetup` builds the shared ones
+ * through {@link buildE2EMarketplaceInto}, which calls this.
  */
-export async function writeE2ESourceInto(sourceDir: string): Promise<void> {
+async function writeE2ESourceInto(sourceDir: string): Promise<void> {
   await writeSkills(sourceDir, E2E_SKILLS);
   await writeStacks(sourceDir, false);
   await writeAgents(sourceDir);
 }
 
 /**
- * The segment the shared plain source occupies inside the frozen fixture root, beside the
- * plugin-capable `fixture/` its sibling helper builds. Spells neither withdrawn noun, for the
- * reason `sharedSourcePath`'s own docblock gives.
+ * Writes a source's whole tree into `sourceDir` and publishes it under
+ * {@link E2E_MARKETPLACE_NAME} — the tree {@link createE2ESource} builds by default, with no temp
+ * directory of its own. Both shared fixtures are built by calling this from `globalSetup`.
+ */
+export async function buildE2EMarketplaceInto(sourceDir: string): Promise<void> {
+  await writeE2ESourceInto(sourceDir);
+  await publishE2EMarketplace(sourceDir, E2E_MARKETPLACE_NAME);
+}
+
+/**
+ * Runs the two builds a marketplace author runs, in their order, over a tree already on disk —
+ * `build plugins`, then `build marketplace` under `marketplaceName`, which `build marketplace`
+ * reads from `package.json`.
+ *
+ * The CLI's own builds rather than a manifest written here, so what every spec loads is what an
+ * author publishes, and a change to what `build marketplace` emits reaches the fixtures with it.
+ *
+ * @throws if either build exits non-zero, quoting its output
+ */
+async function publishE2EMarketplace(sourceDir: string, marketplaceName: string): Promise<void> {
+  const builtPlugins = await runCLI(["build", "plugins"], sourceDir);
+  if (builtPlugins.exitCode !== 0) {
+    throw new Error(
+      `build plugins failed (exit ${builtPlugins.exitCode}):\n${builtPlugins.combined}`,
+    );
+  }
+
+  await writeTestPackageJson(sourceDir, { name: marketplaceName });
+
+  const builtMarketplace = await runCLI(["build", "marketplace"], sourceDir);
+  if (builtMarketplace.exitCode !== 0) {
+    throw new Error(
+      `build marketplace failed (exit ${builtMarketplace.exitCode}):\n${builtMarketplace.combined}`,
+    );
+  }
+}
+
+/**
+ * The segment the shared source occupies inside the frozen fixture root, beside the `fixture/`
+ * its sibling helper builds. Spells neither withdrawn noun, for the reason `sharedSourcePath`'s
+ * own docblock gives.
  */
 const SHARED_PLAIN_SEGMENT = "plain";
 
 /**
- * The one source every spec that neither mutates one nor needs a marketplace launches against.
+ * The one source every spec that does not mutate one launches against.
  *
  * A constant rather than a call because nothing about it is per-spec: `globalSetup` writes this
  * tree once and freezes it, and the path is derived, so a worker computes it without being handed
  * anything. Naming it at a launch site is the whole ergonomic point — `source: E2E_SOURCE` in
  * place of a two-field object assembled from a `beforeAll` that existed only to build one.
  *
- * **It has no `.claude-plugin/marketplace.json`, and that is the difference that matters.** With
- * no marketplace carrying them, every skill this source ships is local-only, so the wizard's
- * default origin is EJECT (`defaultOriginFor` in `stores/wizard-store.ts`). A spec whose subject
- * is plugin install therefore reaches for `createE2EPluginSource()` instead — that fixture is the
- * same tree with the two builds run over it, and swapping one for the other silently flips every
- * unstated origin in the spec.
+ * **It is a built marketplace, published under {@link E2E_MARKETPLACE_NAME}**, because a custom
+ * marketplace with no valid `.claude-plugin/marketplace.json` is refused by every command that
+ * loads it. The wizard therefore offers its rows as Plugin installs from that marketplace, and a
+ * spec whose subject is an eject install still says so (`setAllLocal`, `completeWithLocalSources`).
+ * `createE2EPluginSource()` is the same tree at its own path, described with its name and
+ * `dist/plugins/` for a spec whose subject is plugin install.
  *
  * Frozen, so a spec that writes into it fails at the write rather than corrupting whatever runs
  * next; `createE2ESource()` still returns a private writable tree for the specs that need one.
@@ -505,7 +574,7 @@ export const E2E_SOURCE: E2ESource = {
  * before the freeze.
  */
 export async function buildSharedE2ESourceInto(root: string): Promise<void> {
-  await writeE2ESourceInto(path.join(root, SHARED_PLAIN_SEGMENT));
+  await buildE2EMarketplaceInto(path.join(root, SHARED_PLAIN_SEGMENT));
 }
 
 async function writeSkills(sourceDir: string, skills: readonly E2ESkillEntry[]): Promise<void> {

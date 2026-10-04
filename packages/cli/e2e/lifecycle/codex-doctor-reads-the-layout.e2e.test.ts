@@ -111,7 +111,7 @@ describe("doctor on a healthy Codex installation", () => {
 
       expect(said).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED);
       // The row's own verdict, in the words it prints when it found everything.
-      expect(said).toContain("1/1 eject-mode skills installed");
+      expect(said).toContain("1/1 eject-mode skill installed");
       // And it may not have looked in a directory this installation does not own. Broad on
       // purpose: the row's own sentence is only half of what went wrong, and the other half was a
       // DIFFERENT row naming the same directory.
@@ -156,7 +156,7 @@ describe("doctor on a healthy Codex installation", () => {
       expect(said).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
       expect(said).not.toContain("needs recompilation");
       // The role file is `.toml` and it is where the layout puts it, so the row finds it.
-      expect(said).toContain("1/1 agents compiled");
+      expect(said).toContain("1/1 agent compiled");
     },
   );
 

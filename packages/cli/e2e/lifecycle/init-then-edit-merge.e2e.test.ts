@@ -75,10 +75,8 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
           projectDir,
         });
         // Explicit eject via the Sources step's `l` hotkey. `completeWithDefaults()`
-        // leaves the wizard in plugin mode, and the E2E source carries no
-        // marketplace.json, so the install hard-errors ("Cannot install plugin
-        // skills: marketplace could not be resolved") before Phase 1 finishes —
-        // which meant this spec never reached the merge assertions it exists for.
+        // leaves the wizard in plugin mode, and the merge this spec exists for is an
+        // eject install's.
         const initResult = await completeWithLocalSources(initWizard);
         await initResult.destroy();
 
@@ -141,10 +139,8 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
 
         // Navigate through: Build -> Sources -> Agents -> Confirm -> Complete.
         // `l` for the same reason Phase 1 uses it: a newly selected skill defaults to
-        // PLUGIN mode, and this source carries no marketplace.json, so accepting the
-        // Sources defaults hard-errors ("marketplace could not be resolved") before
-        // the merge is written. The already-installed skills are ejected already, so
-        // `l` changes only the skill this edit adds.
+        // PLUGIN mode. The already-installed skills are ejected already, so `l`
+        // changes only the skill this edit adds.
         const sources = await editWizard.build.passThroughAllDomains();
         await sources.waitForReady();
         await sources.setAllLocal();

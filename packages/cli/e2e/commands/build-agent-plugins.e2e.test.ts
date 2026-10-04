@@ -211,7 +211,8 @@ describe("build agent plugins", () => {
 
       expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(result.stdout).toContain("agent-good-agent");
-      expect(result.stdout).toContain("Compiled 1 agent plugins");
+      expect(result.stdout).toContain("Compiled 1 agent plugin");
+      expect(result.stdout).not.toContain("Compiled 1 agent plugins");
 
       const pluginDir = path.join(edgeSourceDir, SOURCE_PATHS.PLUGINS_DIST, "agent-good-agent");
       expect(

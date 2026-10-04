@@ -1,11 +1,10 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { DashboardSession } from "../pages/dashboard-session.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { BRANDING, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -52,18 +51,6 @@ const DASHBOARD_CONTENT = {
 describe("the name the interactive dashboard titles itself with", () => {
   let dashboard: DashboardSession | undefined;
   let tempDir: string | undefined;
-  let sourceDir: string;
-  let sourceTempDir: string;
-
-  beforeAll(async () => {
-    // Built once: the dashboard never reads this marketplace, but `launchForDashboard` always
-    // passes `--marketplace`, and rebuilding a source per test costs seconds for nothing.
-    ({ sourceDir, tempDir: sourceTempDir } = await createE2ESource());
-  }, TIMEOUTS.SETUP);
-
-  afterAll(async () => {
-    await cleanupTempDir(sourceTempDir);
-  });
 
   afterEach(async () => {
     await dashboard?.destroy();
@@ -96,10 +83,9 @@ describe("the name the interactive dashboard titles itself with", () => {
     await createLocalSkill(projectDir, E2E_SKILL.react.id);
     await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, { frontmatter: true });
 
-    const session = await InitWizard.launchForDashboard({
-      projectDir,
-      source: { sourceDir, tempDir: sourceTempDir },
-    });
+    // A bare `init`: the config records no marketplace, so naming one would be naming a
+    // different marketplace than the one this installation was made from.
+    const session = await InitWizard.launchForDashboard({ projectDir, noSource: true });
     await session.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
     return session;
   }

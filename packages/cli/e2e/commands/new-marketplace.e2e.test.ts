@@ -8,6 +8,7 @@ import {
   cleanupTempDir,
   createTempDir,
   fileExists,
+  flattenCliOutput,
   listFiles,
   loadConfigOrFail,
   readCompiledAgents,
@@ -17,6 +18,7 @@ import {
   writeTestPackageJson,
 } from "../helpers/test-utils.js";
 import {
+  CLI_INVOKE_COMMAND,
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
@@ -67,11 +69,11 @@ const SCAFFOLDED_STACK_ID = `${MARKETPLACE_NAME}-starter`;
 const SCAFFOLDED_CATEGORY_ID = "web-example";
 
 /**
- * The three names `build marketplace` refuses. Spelled out rather than imported:
+ * The four names `build marketplace` refuses. Spelled out rather than imported:
  * the rule is these strings, and a test reading the product's own list would agree
  * with any list it grew.
  */
-const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local"] as const;
+const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local", "eject"] as const;
 
 /** Every file `docs/guides/creating-a-marketplace.md` promises a marketplace holds. */
 const PROMISED_FILES = [
@@ -120,6 +122,13 @@ describe("new marketplace — refusals", () => {
 
       expect(exitCode, output).toBe(EXIT_CODES.ERROR);
       expect(output).toContain("reserved");
+      // Nothing is written yet, so there is no package.json to rename, and this command takes no
+      // --name: the name is its argument, so another argument is the one way out.
+      const flattened = flattenCliOutput(output);
+      expect(flattened, "the way out must be one this command has").toContain(
+        `Choose a name of your own: run '${CLI_INVOKE_COMMAND} new marketplace <other-name>'.`,
+      );
+      expect(flattened, "new marketplace takes no --name flag").not.toContain("--name");
       expect(
         await listFiles(tempDir),
         "a name that could never be published must leave no directory behind",

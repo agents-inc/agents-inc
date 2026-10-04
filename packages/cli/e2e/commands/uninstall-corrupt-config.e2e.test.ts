@@ -92,7 +92,7 @@ describe("uninstall with an unreadable config", () => {
     const { project, result } = await uninstallWithCorruptProjectConfig(configSource);
 
     expect(result.exitCode, `uninstall output:\n${result.output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(result.output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+    expect(result.output).toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
     expect(result.output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     expect(await fileExists(configTsPath(project.dir))).toBe(false);
@@ -147,7 +147,7 @@ describe("uninstall with an unreadable config", () => {
     );
 
     expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
@@ -188,7 +188,7 @@ describe("uninstall with an unreadable config", () => {
     );
 
     expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+    expect(output).toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
 
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_MANAGED_SECTION);
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
@@ -232,7 +232,11 @@ describe("uninstall with an unreadable config", () => {
     );
 
     expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+    expect(
+      output,
+      "at the home directory the config uninstall could not read is the global one",
+    ).toContain(STEP_TEXT.UNINSTALL_GLOBAL_CONFIG_UNREADABLE);
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     expect(await fileExists(configTsPath(globalHome))).toBe(false);
@@ -267,7 +271,8 @@ describe("uninstall with an unreadable config", () => {
     );
 
     expect(exitCode, `uninstall output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(output).not.toContain(STEP_TEXT.UNINSTALL_CONFIG_UNREADABLE);
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_PROJECT_CONFIG_UNREADABLE);
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_GLOBAL_CONFIG_UNREADABLE);
     expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     await expect({ dir: projectDir }).toHaveNoLocalSkills();

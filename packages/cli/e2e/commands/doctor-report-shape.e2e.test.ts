@@ -44,10 +44,13 @@ const EMPTY_CONTENT_SECTION = [
  * The `Operational checks` heading and the first row under it. Only the first row: every row below
  * it carries a temp path or a live skill count, and the claim here is about what sits between a
  * heading and the report it heads.
+ *
+ * The row leads with whose config it is about, and here that is the global installation's: a
+ * directory run with no global home of its own IS the home directory (`globalHomeFor`).
  */
 const EMPTY_OPERATIONAL_OPENING = [
   "  Operational checks",
-  "    Config Valid            ✗  .agents-inc/claude/config.ts not found",
+  "    Config Valid            ✗  The global installation: ~/.agents-inc/claude/config.ts not found",
 ].join("\n");
 
 describe("the report doctor prints over a directory holding nothing", () => {

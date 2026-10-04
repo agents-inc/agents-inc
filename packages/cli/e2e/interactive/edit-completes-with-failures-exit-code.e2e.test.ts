@@ -176,6 +176,12 @@ describe("edit completes its work and exits non-zero when part of it failed", ()
       expect(output).toContain(STEP_TEXT.COMPLETED_WITH_FAILURES);
       expect(output).toContain(`${STEP_TEXT.AGENTS_NOT_COMPILED}: ${SABOTAGED_AGENT}`);
       expect(output).toContain(STEP_TEXT.RECOMPILE_STALE_REMEDY);
+      // The failure report prints the pass's warnings, and a scope with no sub-agent to compile
+      // used to contribute one, right under a count that says the other sub-agent compiled.
+      expect(
+        output,
+        "a scope with nothing to compile is not a warning beside the one sub-agent that failed",
+      ).not.toContain("No agents found to recompile");
 
       // The command finished its work: the roster change is in config.ts and the sub-agent the
       // sabotage did not touch was compiled.

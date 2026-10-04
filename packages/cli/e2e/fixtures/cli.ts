@@ -45,11 +45,8 @@ export class CLI {
    * harness's copy of it complete.
    *
    * `VITEST` is cleared for the same class of reason, one layer up: it is the HARNESS's
-   * variable, not the product's, and `warn({ suppressInTest: true })`
-   * (`src/cli/utils/logger.ts`) reads it. Inherited, it silences user-facing warnings in
-   * every spawned binary — so a spec asserting one of those lines passes by not looking,
-   * and the only way to see them is to run the command outside vitest. A spawned
-   * `bin/run.js` is a user's binary and must print what a user would be shown.
+   * variable, not the product's. A spawned `bin/run.js` is a user's binary and must see what a
+   * user's environment holds.
    *
    * `CLAUDE_CONFIG_DIR` is the Claude CLI's equivalent override and is pinned to
    * the effective HOME's own `.claude` — the directory that HOME already implies.

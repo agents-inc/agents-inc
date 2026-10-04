@@ -1,5 +1,5 @@
 import { execa } from "execa";
-import { mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, realpath, stat, writeFile } from "fs/promises";
 import { stripVTControlCharacters } from "node:util";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -24,6 +24,8 @@ import {
   renderIncompleteMetadataYaml,
   renderMetadataYaml,
   renderSkillMd,
+  renderUnparseableMetadataYaml,
+  renderUnparseableSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
 import { writeTestPackageJson } from "../../src/cli/lib/__tests__/helpers/config-io.js";
 import {
@@ -37,6 +39,7 @@ import {
   readInstallTree,
 } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 import { writeTestPluginManifest } from "../../src/cli/lib/__tests__/helpers/disk-writers.js";
+import { buildClaudeTrustState } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import {
   cleanupTempDir,
   createTempDir as createTempDirBase,
@@ -52,7 +55,7 @@ import type {
   ProjectConfig,
 } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import { DIRS, e2eSkillId } from "../pages/constants.js";
+import { DIRS, FILES, e2eSkillId } from "../pages/constants.js";
 import type { InitWizard } from "../pages/wizards/init-wizard.js";
 import type { WizardResult } from "../pages/wizard-result.js";
 
@@ -282,6 +285,8 @@ export {
   renderIncompleteMetadataYaml,
   renderMetadataYaml,
   renderSkillMd,
+  renderUnparseableMetadataYaml,
+  renderUnparseableSkillMd,
   writeTestPackageJson,
   writeTestPluginManifest,
 };
@@ -492,10 +497,8 @@ export function stripAnsi(text: string): string {
  * `CC_MARKETPLACE`, `AGENTS_INC_API_URL`, `XDG_CACHE_HOME` and `GIGET_AUTH` are the
  * CLI's own overrides — every variable `src/cli/` reads by name that is not the
  * harness's — and each is cleared ahead of `options.env`, so a spec that needs a value
- * still names its own. `VITEST` is the harness's own, read by
- * `warn({ suppressInTest: true })` (`src/cli/utils/logger.ts`): inherited, it silences
- * user-facing warnings in every binary this door spawns, and a spec asserting one of
- * those lines passes by not looking. This door carried none of the five for its whole
+ * still names its own. `VITEST` is the harness's own, and cleared beside them so a spawned
+ * binary sees a user's environment. This door carried none of the five for its whole
  * life, because the gate that answers for them —
  * `src/cli/lib/__tests__/e2e-runner-environment.test.ts` — named the other two doors and
  * stated its roster by hand. It derives the roster from `scripts/check-spawn-doors.ts`
@@ -787,6 +790,25 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? (value as unknown[]) : [];
 }
 
+/**
+ * Accepts Claude Code's trust prompt for `projectDir` the way a user does by opening Claude Code
+ * there: by recording it in the state file, the record the CLI reads, and never writes, to
+ * decide whether to say the folder needs trusting. Keyed by the realpath, because that is the
+ * working directory a CLI started inside `projectDir` reports. Inside a git repository Claude Code
+ * 2.1.288 keys the record by the repository's root instead, so a caller below one passes the root.
+ *
+ * The state file is `$CLAUDE_CONFIG_DIR/.claude.json` while that variable is set, and every door
+ * pins it to {@link claudeConfigDir}, so that is where Claude Code would write this record for a
+ * run the doors start — not `<home>/.claude.json`, which it uses only while the variable is unset.
+ */
+export async function acceptClaudeTrustPrompt(home: string, projectDir: string): Promise<void> {
+  await mkdir(claudeConfigDir(home), { recursive: true });
+  await writeFile(
+    path.join(claudeConfigDir(home), FILES.CLAUDE_SESSION_JSON),
+    JSON.stringify(buildClaudeTrustState([await realpath(projectDir)])),
+  );
+}
+
 /** Returns the path to compiled agents dir in a project. */
 export function agentsPath(dir: string): string {
   return path.join(dir, CLAUDE_DIR, "agents");
@@ -964,7 +986,10 @@ export function getEjectedTemplatePath(projectDir: string): string {
 // by the unit gate that sits beside it. One definition, so the run cannot drift from the
 // messages it is about.
 export { HANDED_OUT_INVOCATIONS } from "../../src/cli/lib/__tests__/helpers/handed-out-invocations.js";
-export { flattenCliOutput } from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
+export {
+  compactCliOutput,
+  flattenCliOutput,
+} from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
 
 export { createE2ESource, E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "./create-e2e-source.js";
 export type { E2ESource } from "./create-e2e-source.js";

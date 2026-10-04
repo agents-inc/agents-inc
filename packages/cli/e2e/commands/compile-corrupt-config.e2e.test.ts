@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
+  compactCliOutput,
   configTsPath,
   createLocalSkill,
   createTempDir,
@@ -105,9 +106,10 @@ describe("compile with a corrupt config", () => {
     // at the terminal width and prefixes each continuation with ` › `, and the folder rename made
     // the path long enough to push "could not be loaded" across a line break — a passing
     // assertion turned red by the WRAP rather than by the message.
-    const flattened = flattenCliOutput(combined);
-    expect(flattened).toContain(configTsPath(fakeHome));
-    expect(flattened).toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
+    // The path compacted, both sides: a word longer than the line is broken mid-word, which
+    // flattening rejoins with a space.
+    expect(compactCliOutput(combined)).toContain(compactCliOutput(configTsPath(fakeHome)));
+    expect(flattenCliOutput(combined)).toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
     // It must NOT claim success.
     expect(combined).not.toContain(STEP_TEXT.COMPILE_COMPLETE);
   });
@@ -150,7 +152,7 @@ describe("compile with a corrupt config", () => {
     expect(exitCode, `compile must reject a corrupt project config; output:\n${combined}`).toBe(
       EXIT_CODES.ERROR,
     );
-    expect(flattenCliOutput(combined)).toContain(configTsPath(projectDir));
+    expect(compactCliOutput(combined)).toContain(compactCliOutput(configTsPath(projectDir)));
     expect(combined).not.toContain(STEP_TEXT.COMPILE_COMPLETE);
 
     // No agents written to the project scope.

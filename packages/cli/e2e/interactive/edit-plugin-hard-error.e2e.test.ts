@@ -1,96 +1,91 @@
 import path from "path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { mkdir } from "fs/promises";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { CLI } from "../fixtures/cli.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   cleanupFixture,
+  cleanupTempDir,
   configTsPath,
+  createTempDir,
+  flattenCliOutput,
   isClaudeCLIAvailable,
   readTestFile,
+  readTreeSnapshot,
+  runCLI,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  EXIT_CODES,
+  FILES,
+  MANIFEST_REFUSAL_BUILDS_IN_ORDER,
+  STEP_TEXT,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
  * The word `source` withdraws from the user-facing surface, as a whole word. The refusal
- * under test reads "marketplace could not be resolved from '<ref>' … fix the marketplace
- * or switch the affected skills to eject mode" — one noun for one thing, where it once
- * spelled three. `<ref>` is a path the fixture chose and this negative runs over the whole
- * message, so `createE2ESource` owes it a directory segment that spells neither noun.
+ * under test names the marketplace it will not load and the builds that would make it one —
+ * one noun for one thing, where it once spelled three. The refusal names a path the fixture
+ * chose and this negative runs over the whole message, so `createE2ESource` owes it a
+ * directory segment that spells neither noun.
  */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
 
 /**
- * Hard-error coverage for plugin-install intent when marketplace resolution
- * fails. Enforces the "never silently substitute eject for plugin" rule from
+ * Hard-error coverage for plugin-install intent over a marketplace that cannot serve it.
+ * Enforces the "never silently substitute eject for plugin" rule from
  * feedback_no_plugin_to_eject_fallback.md.
  *
- * The edit refusal below replaces a silence, which is why it asserts an exit code and a
- * byte-identical config rather than a state change. `cc edit` once gated its whole plugin
- * install/uninstall block on the project-level marketplace string, so a config.ts saved
- * without a `marketplace:` field skipped the block entirely: the added skill reached
- * config.ts, `claude plugin install` was never invoked, and `enabledPlugins` in
- * settings.json disagreed with the config while the command exited 0. Install intent is
- * per skill (`origin !== EJECT_SOURCE`) and a project-level truthiness check cannot read
- * it, so once plugin work is requested and the marketplace will not resolve, stopping is
- * the only answer that leaves the two views agreeing.
+ * Both scenarios are a local directory with no `.claude-plugin/marketplace.json`. They used to
+ * reach the wizard, preselect Plugin rows, and hard-error only after Confirm ("marketplace could
+ * not be resolved"). A custom marketplace without a valid manifest is now refused by every
+ * command that loads it (owner ruling 2026-10-02), so the same two runs stop at the load — before
+ * any wizard, so before any plugin intent exists to substitute — and what is held here is what
+ * held before: a non-zero exit, nothing installed or copied, and the config and settings the run
+ * found left exactly as it found them. `commands/marketplace-manifest-required` owns the
+ * refusal's other commands and states.
+ *
+ * Without a terminal, as `init-edit-error-guards` runs them: the refusal lands before the
+ * wizard mounts, so a run without a PTY can show it, and a build that mounts the wizard instead
+ * dies on Ink's raw-mode error — which these assertions read as the missing refusal it is.
  *
  * Scenarios:
- *   - `cc edit` against a project whose config lacks `marketplace` AND whose
- *     --marketplace points at a local directory with no marketplace.json. Adding a
- *     plugin-sourced skill MUST hard-error, not silently skip.
- *   - `cc init` against a local source with no marketplace.json. With plugin
- *     mode implied by the default `primarySource`, the old behavior copied the
- *     skills as eject. The fix converts this into a hard error.
- *
- * Both paths require the Claude CLI at some point in the stack (marketplace
- * resolution calls `fetchMarketplace`, which is pure I/O, but `ensureMarketplace`
- * invokes `claudePluginMarketplaceExists` — skip when unavailable).
+ *   - `cc edit` over a project whose config lacks `marketplaceName` AND whose marketplace is a
+ *     local directory with no marketplace.json.
+ *   - `cc init --marketplace` pointed at a local directory with no marketplace.json.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () => {
   /**
-   * Edit scenario: project was built with plugin-sourced skills but config.ts
-   * was saved without the `marketplace` field (legacy state). Source flag
-   * points at a plain local source with no `.claude-plugin/marketplace.json`.
-   *
-   * Adding a new plugin-sourced skill triggers `applyPluginChanges`, which
-   * calls `requireMarketplace`. The helper resolves marketplace via
-   * `ensureMarketplace` -> `fetchMarketplace`. Both fail because the source
-   * has no marketplace manifest, so the helper must hard-error with
-   * EXIT_CODES.ERROR and a clear message mentioning "marketplace could not
-   * be resolved". The project state must remain untouched.
+   * Edit scenario: project was built with plugin-sourced skills but config.ts was saved without
+   * the `marketplaceName` field (legacy state), and the marketplace it names is a plain local
+   * directory with no `.claude-plugin/marketplace.json`. `edit` loads that marketplace before
+   * anything else, so the refusal is the load's, and the project state must remain untouched.
    */
-  describe("cc edit with local source (no marketplace) + plugin skill addition", () => {
+  describe("cc edit over a local marketplace with no marketplace.json", () => {
     let fixture: E2EPluginSource;
-    let localSource: E2ESource;
-    let wizard: EditWizard | undefined;
+    let unbuilt: E2ESource;
 
     beforeAll(async () => {
       // fixture provides plugin-sourced skill IDs used in the seeded config.
       fixture = await createE2EPluginSource();
-      // localSource is a plain directory with NO marketplace.json — the
-      // resolution path we expect to fail.
-      localSource = await createE2ESource();
+      // A directory nobody has built — the marketplace the load refuses.
+      unbuilt = await createE2ESource({ unbuilt: true });
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
       await cleanupFixture(fixture);
-      await cleanupFixture(localSource);
-    });
-
-    afterEach(async () => {
-      await wizard?.destroy();
-      wizard = undefined;
+      await cleanupFixture(unbuilt);
     });
 
     it(
@@ -98,8 +93,7 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
         const project = await ProjectBuilder.pluginProject({
-          // The local source with no marketplace.json — the resolution failure point.
-          marketplace: localSource.sourceDir,
+          marketplace: unbuilt.sourceDir,
           skills: [E2E_SKILL.react.id],
           marketplaceName: fixture.marketplaceName,
           agents: [...E2E_AGENTS.WEB],
@@ -113,30 +107,17 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
         const configBefore = await readTestFile(configPath);
         const settingsBefore = await readTestFile(settingsPath);
 
-        wizard = await EditWizard.launch({
-          projectDir: project.dir,
-          // local source without marketplace.json — the resolution failure point
-          source: localSource,
-          ...TERMINAL_SIZE.TALL,
-        });
+        const { exitCode, output } = await CLI.run(["edit"], project);
 
-        // Add a new skill — newly added skills default to a plugin-intent
-        // source (DEFAULT_PUBLIC_SOURCE_NAME / primarySource), never "eject".
-        await wizard.build.navigateDown();
-        await wizard.build.toggleFocusedSkill();
-
-        const sources = await wizard.build.passThroughAllDomainsGeneric();
-        const agents = await sources.acceptDefaults();
-        const confirm = await agents.acceptDefaults("edit");
-        const result = await confirm.confirmExpectingExit();
-
-        expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
-
-        const output = result.output;
-        expect(output).toContain("marketplace could not be resolved");
+        const refusal = flattenCliOutput(output);
         expect(
-          output,
-          "the refusal names the marketplace it could not resolve, not a source",
+          refusal,
+          "a marketplace with no marketplace.json must be refused, naming the builds that write one",
+        ).toMatch(MANIFEST_REFUSAL_BUILDS_IN_ORDER);
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
+        expect(
+          refusal,
+          "the refusal names the marketplace it will not load, not a source",
         ).not.toMatch(WITHDRAWN_NOUN);
         expect(output).not.toContain("Installed");
 
@@ -150,58 +131,55 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
   });
 
   /**
-   * Init scenario: user runs `cc init --marketplace <localDir>` where <localDir>
-   * has no marketplace.json. Default skill sources carry plugin intent
-   * (primarySource / DEFAULT_PUBLIC_SOURCE_NAME). Previously the CLI silently
-   * copied the plugin-intended skills as eject copies. After the fix,
-   * `handleInstallation` resolves the marketplace through
-   * `BaseCommand.requireMarketplaceOrExit`, which hard-errors via `EXIT_CODES.ERROR`.
+   * Init scenario: user runs `cc init --marketplace <localDir>` where <localDir> has no
+   * marketplace.json. Previously the CLI silently copied the plugin-intended skills as eject
+   * copies; then it hard-errored after Confirm through `requireMarketplaceOrExit`. Now the load
+   * refuses the directory before the wizard, so nothing is selected, installed or copied.
    *
    * This documents the removal of the old "eject mode fallback" in init.tsx.
    */
-  describe("cc init with local source (no marketplace) + default plugin intent", () => {
-    let localSource: E2ESource;
-    let wizard: InitWizard | undefined;
+  describe("cc init over a local marketplace with no marketplace.json", () => {
+    let unbuilt: E2ESource;
+    let tempDir: string | undefined;
 
     beforeAll(async () => {
-      localSource = await createE2ESource();
+      unbuilt = await createE2ESource({ unbuilt: true });
     }, TIMEOUTS.SETUP);
 
     afterAll(async () => {
-      await cleanupFixture(localSource);
-    });
-
-    afterEach(async () => {
-      await wizard?.destroy();
-      wizard = undefined;
+      await cleanupFixture(unbuilt);
+      if (tempDir) await cleanupTempDir(tempDir);
     });
 
     it(
       "should hard-error instead of silently copying plugin skills as eject",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
-          source: localSource,
-        });
-        // Step through the wizard manually so we can confirm without waiting
-        // for a success banner that will never arrive.
-        const domain = await wizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-        const sources = await build.passThroughAllDomains();
-        const agents = await sources.acceptDefaults();
-        const confirm = await agents.acceptDefaults("init");
-        const result = await confirm.confirmExpectingExit();
+        tempDir = await createTempDir();
+        const projectDir = path.join(tempDir, "project");
+        await mkdir(projectDir, { recursive: true });
 
-        expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
+        const { exitCode, combined } = await runCLI(
+          ["init", "--marketplace", unbuilt.sourceDir],
+          projectDir,
+          { env: { HOME: tempDir } },
+        );
 
-        const output = result.output;
-        expect(output).toContain("marketplace could not be resolved");
+        const refusal = flattenCliOutput(combined);
         expect(
-          output,
-          "the refusal names the marketplace it could not resolve, not a source",
+          refusal,
+          "a marketplace with no marketplace.json must be refused, naming the builds that write one",
+        ).toMatch(MANIFEST_REFUSAL_BUILDS_IN_ORDER);
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
+        expect(
+          refusal,
+          "the refusal names the marketplace it will not load, not a source",
         ).not.toMatch(WITHDRAWN_NOUN);
         // The old silent fallback emitted the eject-copy line — it must be absent.
-        expect(output).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
+        expect(refusal).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
+        expect(await readTreeSnapshot(projectDir), "nothing may be copied anywhere").toStrictEqual(
+          {},
+        );
       },
     );
   });

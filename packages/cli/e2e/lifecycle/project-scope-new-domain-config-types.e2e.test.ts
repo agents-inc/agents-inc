@@ -37,13 +37,10 @@ import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
  * reachable a second time. One scratch run that leaves react at global scope and moves hono to
  * project scope produces the divergence directly, in a flow a user actually has.
  *
- * WHAT THIS DOES NOT COVER, stated because the assertions below would otherwise read as though
- * it did. The `Domain` union does NOT diverge: `selectedDomains` is carried WHOLE into the
- * global partition regardless of any skill's scope, so the global side already names every
- * domain the run selected, and the project's `"api"` restates it rather than introducing it. No
- * wizard flow reaches a project domain the global install lacks. The domain path is exercised
- * here only through `deriveDomains(extraCategories)` — `api-api` resolving to `api` — which is
- * why the emitted `Domain` line is asserted verbatim rather than for the presence of `"api"`.
+ * The `Domain` union diverges too. A project install adds to the global config only the domains
+ * its arriving global skills come from — react's `web` here — while the domains the run selected,
+ * `mobile` with no skill among them, stay the project's own. So the global line names `web` alone
+ * and the project's extends it with the rest, asserted verbatim for the reason the constants give.
  */
 
 /** `origin` recorded for skills installed from a local source via `setAllLocal`. */
@@ -66,7 +63,7 @@ const NEW_CATEGORY = "api-api";
  * the thing it extends lacks the member.
  */
 const GLOBAL_CATEGORY_LINE = `export type Category = 'web-framework'`;
-const GLOBAL_DOMAIN_LINE = `export type Domain = 'api' | 'mobile' | 'web'`;
+const GLOBAL_DOMAIN_LINE = `export type Domain = 'web'`;
 const PROJECT_CATEGORY_LINE = `export type Category = GlobalCategory | 'api-api' | 'web-framework'`;
 const PROJECT_DOMAIN_LINE = `export type Domain = GlobalDomain | 'api' | 'mobile' | 'web'`;
 
@@ -166,7 +163,10 @@ describe("a project-scoped skill in a category the global install lacks widens t
         "the global Category union must not name the project-only category — with it there, the project's extension proves nothing",
       ).toContain(GLOBAL_CATEGORY_LINE);
       expect(globalTypes).not.toContain(NEW_CATEGORY);
-      expect(globalTypes).toContain(GLOBAL_DOMAIN_LINE);
+      expect(
+        globalTypes,
+        "the global Domain union names the domain of the one skill the global install holds",
+      ).toContain(GLOBAL_DOMAIN_LINE);
 
       expect(
         projectTypes,

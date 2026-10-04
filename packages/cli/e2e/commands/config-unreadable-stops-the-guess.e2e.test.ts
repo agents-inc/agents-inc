@@ -3,7 +3,7 @@ import { mkdir } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { flattenCliOutput } from "../helpers/test-utils.js";
+import { compactCliOutput, flattenCliOutput } from "../helpers/test-utils.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupFixture,
@@ -97,9 +97,11 @@ describe("a settings config that exists and cannot be evaluated", () => {
 
       expect(exitCode, `search output:\n${output}`).toBe(EXIT_CODES.ERROR);
       const flattened = flattenCliOutput(output);
-      expect(flattened, "the refusal names the file it could not evaluate").toContain(
-        configTsPath(projectDir),
-      );
+      // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+      expect(
+        compactCliOutput(output),
+        "the refusal names the file it could not evaluate",
+      ).toContain(compactCliOutput(configTsPath(projectDir)));
       expect(flattened, "and the loader's own reason for it").toContain(
         STEP_TEXT.CONFIG_LOAD_REASON,
       );
@@ -149,6 +151,10 @@ describe("a settings config that exists and cannot be evaluated", () => {
      * records comes from `resolveSource`, which — with no project config — is answering out of
      * the GLOBAL one. That is the reachable half of the eject ruling: the project has no config
      * to be unreadable, so the file the refusal is about is always the global one.
+     *
+     * Since the 2026-10-02 ruling `eject` is one of the write commands that refuse up front over
+     * any config in play that cannot be loaded, so the refusal lands before the ejection rather
+     * than after it — the partial apply this leg pinned until then is now nothing applied at all.
      */
     it("invents no configuration over a global one it cannot read", async () => {
       const { projectDir, home } = await makeProjectAndHome();
@@ -163,30 +169,28 @@ describe("a settings config that exists and cannot be evaluated", () => {
         },
       );
 
-      // The templates are already on disk by the time this refusal fires, so the code says a
-      // partial apply rather than a refusal: `ERROR` tells the caller nothing landed and the run
-      // can be repeated, which is the wrong instruction for a tree that now holds an ejection.
-      expect(exitCode, `eject output:\n${output}`).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+      // A refusal, not a partial apply: nothing landed, so the run can be repeated once the
+      // global config is recreated — which is exactly what `ERROR` tells the caller.
+      expect(exitCode, `eject output:\n${output}`).toBe(EXIT_CODES.ERROR);
       const flattened = flattenCliOutput(output);
       expect(
-        flattened,
+        compactCliOutput(output),
         "the refusal names the GLOBAL file, not the project's absent one",
-      ).toContain(configTsPath(home));
+      ).toContain(compactCliOutput(configTsPath(home)));
       expect(flattened).toContain(STEP_TEXT.CONFIG_LOAD_REASON);
-      expect(flattened, "and the ending says what did not happen, once, at the end").toContain(
-        STEP_TEXT.COMPLETED_WITH_FAILURES,
-      );
       expect(
         flattened,
-        "a completed-eject tick over a config that was never written is the claim being withdrawn",
+        "nothing landed, so there is no partial apply for the ending to account for",
+      ).not.toContain(STEP_TEXT.COMPLETED_WITH_FAILURES);
+      expect(
+        flattened,
+        "a completed-eject tick over a run that wrote nothing is the claim being withdrawn",
       ).not.toContain(STEP_TEXT.EJECT_SUCCESS);
 
-      // What the exit code is now about: the ejection this run was asked for DID land, which is
-      // the whole difference between this ending and the refusal it used to be reported as.
       expect(
         await fileExists(getEjectedTemplatePath(projectDir)),
-        "the template the command was asked for is on disk before the config step is reached",
-      ).toBe(true);
+        "the refusal lands before the ejection, so no template is on disk",
+      ).toBe(false);
 
       // The subject of the ruling: the invented config would have named a marketplace read from
       // nowhere, and it is exactly what must not appear.

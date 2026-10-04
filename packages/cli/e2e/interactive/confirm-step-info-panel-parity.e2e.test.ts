@@ -10,7 +10,7 @@ import {
 } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupFixture, cleanupTempDir } from "../helpers/test-utils.js";
-import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { E2E_MARKETPLACE_NAME, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import type { ConfirmStep } from "../pages/steps/confirm-step.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
 import "../matchers/setup.js";
@@ -23,9 +23,10 @@ import "../matchers/setup.js";
  * `<SkillAgentSummary />` inside the same copy-pasted scroll machinery. What the
  * confirm step lacks is the info panel's HEADER BLOCK: a `Marketplace <sources>`
  * row and a `Stack <name | none>` row above a dimmed divider. `sourceNames`
- * resolves through `formatSourceDisplayName` over the enabled sources, falling
- * back to `DEFAULT_PUBLIC_SOURCE_NAME` ("agents-inc" -> "Agents Inc");
- * `stackName` resolves through `findStack`, falling back to the literal "none".
+ * resolves through `formatSourceDisplayName` over the selected skills' origins —
+ * here the name the fixture marketplace's manifest publishes under,
+ * {@link E2E_MARKETPLACE_NAME}; `stackName` resolves through `findStack`, falling
+ * back to the literal "none".
  *
  * RED today — the two header tests. Both drive a real `cc init` to the confirm
  * step and assert the resolved header VALUES, not just that the words appear.
@@ -64,7 +65,7 @@ const STACK_SKILL_IDS = [
 /** Arrow presses used to run the confirm viewport from one end of its scroll range to the other. */
 const SCROLL_ATTEMPTS = 30;
 
-const MARKETPLACE_ROW = `${STEP_TEXT.PANEL_MARKETPLACE} ${STEP_TEXT.SOURCE_DISPLAY_DEFAULT}`;
+const MARKETPLACE_ROW = `${STEP_TEXT.PANEL_MARKETPLACE} ${E2E_MARKETPLACE_NAME}`;
 const STACK_ROW = `${STEP_TEXT.PANEL_STACK} ${E2E_STACK_DISPLAY}`;
 const NO_STACK_ROW = `${STEP_TEXT.PANEL_STACK} ${STEP_TEXT.PANEL_STACK_NONE}`;
 

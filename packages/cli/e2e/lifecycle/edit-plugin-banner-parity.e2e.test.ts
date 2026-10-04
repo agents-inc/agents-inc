@@ -40,9 +40,10 @@ import {
  * The line that closes a plugin install. Matched as a pattern rather than a
  * `STEP_TEXT` literal because the count differs by run — a fresh install carries
  * the whole selection, a mode switch carries only what was switched — and it is
- * the sentence, not the number, that has to be the same on both paths.
+ * the sentence, not the number, that has to be the same on both paths. The noun
+ * follows the count, so a run carrying one says `skill plugin`.
  */
-const INSTALLED_PLUGIN_TOTAL = /Installed \d+ skill plugins/;
+const INSTALLED_PLUGIN_TOTAL = /Installed \d+ skill plugins?\b/;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 

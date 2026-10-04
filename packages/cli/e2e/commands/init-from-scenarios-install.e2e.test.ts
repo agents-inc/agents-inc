@@ -52,6 +52,14 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
  * wire is also what keeps the skill-scope subject discriminating: the agent's destination has to be
  * fixed independently for "a global skill does not drag its agent with it" to mean anything.
  *
+ * The report of where an ejected install landed is asserted beside where it did land. The copy
+ * line named the skills directory relative to the SCOPE ROOT, so a run from a project that put
+ * every skill under HOME printed `Copied 2 skills to .claude/skills/` — the project's own folder,
+ * read where the command was typed, and empty. Both scopes are pinned, so a line naming one fixed
+ * folder fails one of the two. Every count line also pluralised unconditionally (`Copied 1 skills`,
+ * `Compiled 1 agents`), and a positive on the singular alone cannot catch that — `Selected 1 skill`
+ * is a substring of `Selected 1 skills` — so those lines are pinned from both sides.
+ *
  * Covers Phase 5 scenarios 8, 10 and 11 of the tracker's `--from` matrix.
  */
 
@@ -224,6 +232,78 @@ describe("init --from <id>: install scopes and unknown ids", () => {
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual([`${WEB_DEV}.md`]);
   });
 
+  it("names HOME's skills folder when a run from a project put every copy there", async () => {
+    env = await createTestEnvironment({ permissions: false });
+    store.publish(
+      "Report01",
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+          [E2E_SKILL.vitest.id]: buildSeedSkill({
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+      }),
+    );
+
+    const { exitCode, output } = await runInitFrom(
+      store,
+      "Report01",
+      { dir: env.projectDir, globalHome: env.fakeHome },
+      sourceDir,
+    );
+
+    const said = flattenCliOutput(output);
+    expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
+    expect(said, "the folder the copies are in, not one spelled from the scope root").toContain(
+      `Copied 2 skills to ${skillsPath(env.fakeHome)}/`,
+    );
+    // The report's subject guard: the copies really are under HOME, and only there.
+    expect((await listFiles(skillsPath(env.fakeHome))).sort()).toStrictEqual(
+      [E2E_SKILL.react.id, E2E_SKILL.vitest.id].sort(),
+    );
+    await expect({ dir: env.projectDir }).toHaveNoLocalSkills();
+  });
+
+  it("names the project's skills folder for a copy that landed in it, and counts one as one", async () => {
+    env = await createTestEnvironment({ permissions: false });
+    store.publish(
+      "Report02",
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+      }),
+    );
+
+    const { exitCode, output } = await runInitFrom(
+      store,
+      "Report02",
+      { dir: env.projectDir, globalHome: env.fakeHome },
+      sourceDir,
+    );
+
+    const said = flattenCliOutput(output);
+    expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
+    expect(said).toContain(`Copied 1 skill to ${skillsPath(env.projectDir)}/`);
+    expect(said).toContain("Selected 1 skill");
+    expect(said).not.toContain("Selected 1 skills");
+    expect(said).toContain("Configuration saved (1 agent)");
+    expect(said).toContain("Compiled 1 agent");
+    expect(said).not.toContain("Compiled 1 agents");
+    expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([E2E_SKILL.react.id]);
+    await expect({ dir: env.fakeHome }).toHaveNoLocalSkills();
+  });
+
   it("drops a sub-agent switched off, and the assignments naming it", async () => {
     env = await createTestEnvironment({ permissions: false });
     // The web app never sends `on: false` — it omits an unselected sub-agent entirely. Defensive:
@@ -345,7 +425,14 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
 
       // And that the CLI said so — the per-skill line, not the "N skill plugins"
       // count, which reads the same whether one skill installed or none did.
-      expect(flattenCliOutput(output)).toContain(`Installed ${reactRef}`);
+      const said = flattenCliOutput(output);
+      expect(said).toContain(`Installed ${reactRef}`);
+
+      // The two count lines of a mixed install, each about one skill: the copy names the folder
+      // it went to — HOME's, from this project — and neither counts its one as several.
+      expect(said).toContain(`Copied 1 local skill to ${skillsPath(env.fakeHome)}/`);
+      expect(said).toContain("Installed 1 skill plugin");
+      expect(said).not.toContain("Installed 1 skill plugins");
     },
   );
 

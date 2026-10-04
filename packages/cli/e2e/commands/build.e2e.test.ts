@@ -46,7 +46,7 @@ const FIXTURE_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}build-marketplace`;
 const FIXTURE_PLUGIN_NAME = `${FIXTURE_MARKETPLACE_NAME}-web-framework-react`;
 
 /** The success line, which the command only reaches with at least one plugin to publish. */
-const MARKETPLACE_GENERATED_LINE = "Marketplace generated with 1 plugins!";
+const MARKETPLACE_GENERATED_LINE = "Marketplace generated with 1 plugin!";
 
 /**
  * One built plugin in the default `dist/plugins` tree — the least a marketplace may hold, since
@@ -83,7 +83,7 @@ describe("build commands", () => {
     let source: E2ESource;
 
     beforeAll(async () => {
-      source = await createE2ESource();
+      source = await createE2ESource({ unbuilt: true });
     }, TIMEOUTS.SETUP);
 
     afterAll(async () => {
@@ -298,6 +298,12 @@ describe("build commands", () => {
       const collapsed = output.replace(/›/g, " ").replace(/\s+/g, " ");
       expect(collapsed).toContain(RESERVED_MARKETPLACE_NAME);
       expect(collapsed).toContain("reserved");
+      // The way out this command has — `new marketplace` shares the refusal and has neither, so
+      // it offers its own; this is the half that must not be lost to that.
+      expect(
+        collapsed,
+        "the build reads its name off package.json, and --name overrides it",
+      ).toContain("Choose a name of your own: set package.json 'name', or pass --name.");
       expect(await fileExists(outputPath)).toBe(false);
     });
 
@@ -306,7 +312,7 @@ describe("build commands", () => {
       let outputPath: string;
 
       beforeAll(async () => {
-        source = await createE2ESource();
+        source = await createE2ESource({ unbuilt: true });
         outputPath = path.join(source.sourceDir, "marketplace.json");
         const built = await CLI.run(["build", "plugins"], { dir: source.sourceDir });
         expect(built.exitCode, built.output).toBe(EXIT_CODES.SUCCESS);
@@ -328,6 +334,11 @@ describe("build commands", () => {
         expect(collapsed).toContain(FOREIGN_MARKETPLACE_NAME);
         expect(collapsed).toContain(E2E_SKILL.react.id);
         expect(collapsed).toContain(`${FOREIGN_MARKETPLACE_NAME}-${E2E_SKILL.react.id}`);
+        // A skill's id is the `name` in its SKILL.md — metadata.yaml carries none — so that is
+        // the field the way out has to name, as the load-side refusal of the same ids does.
+        expect(collapsed, "the refusal must name the field a skill's id is read from").toContain(
+          "Rename each skill directory and the 'name' in its SKILL.md",
+        );
         expect(await fileExists(outputPath)).toBe(false);
       });
 

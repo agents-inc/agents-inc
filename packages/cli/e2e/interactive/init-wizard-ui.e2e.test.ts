@@ -1,6 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { ADDED_MARKER, STEP_TEXT, WIZARD_TAB_LABELS } from "../pages/constants.js";
+import {
+  ADDED_MARKER,
+  E2E_MARKETPLACE_NAME,
+  STEP_TEXT,
+  WIZARD_TAB_LABELS,
+} from "../pages/constants.js";
 import { E2E_SKILL, E2E_STACK_AGENTS, E2E_STACK_DISPLAY } from "../fixtures/expected-values.js";
 
 import "../matchers/setup.js";
@@ -80,9 +85,7 @@ describe("init wizard — UI elements", () => {
 
       const confirmOutput = confirm.getOutput();
       expect(confirmOutput).toContain(`${STEP_TEXT.READY_TO_INSTALL} ${E2E_STACK_DISPLAY}`);
-      expect(confirmOutput).toContain(
-        `${STEP_TEXT.PANEL_MARKETPLACE} ${STEP_TEXT.SOURCE_DISPLAY_DEFAULT}`,
-      );
+      expect(confirmOutput).toContain(`${STEP_TEXT.PANEL_MARKETPLACE} ${E2E_MARKETPLACE_NAME}`);
       expect(confirmOutput).toContain(`${STEP_TEXT.PANEL_STACK} ${E2E_STACK_DISPLAY}`);
       expect(confirmOutput).toContain(STEP_TEXT.SCOPE_GLOBAL);
 

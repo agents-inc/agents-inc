@@ -88,6 +88,30 @@ async function readJsonOrFail(filePath: string): Promise<Record<string, unknown>
   return JSON.parse(await readTestFile(filePath));
 }
 
+/** One registration of a plugin, as `claude plugin install` records it. Opaque beyond its scope. */
+export type PluginRegistration = { scope: string } & Record<string, unknown>;
+
+/**
+ * Every registration `<home>/.claude/plugins/installed_plugins.json` holds for one plugin, in the
+ * order the registry lists them — the user-scope record of a global install and one project-scope
+ * record per project that installed it, each with its own install and update timestamps. A spec
+ * holding the user-scope record still across a project operation compares these, which is what
+ * shows a global plugin was neither reinstalled nor removed. An absent registry or key reads as
+ * none.
+ */
+export async function readPluginRegistrations(
+  home: string,
+  pluginKey: string,
+): Promise<PluginRegistration[]> {
+  const registryFile = registryPath(home);
+  if (!(await fileExists(registryFile))) return [];
+
+  const registry: { plugins?: Record<string, PluginRegistration[]> } = JSON.parse(
+    await readTestFile(registryFile),
+  );
+  return registry.plugins?.[pluginKey] ?? [];
+}
+
 /**
  * Creates a project whose skills are installed as Claude plugins: config.ts
  * declares them with the marketplace as `source`, settings.json enables the

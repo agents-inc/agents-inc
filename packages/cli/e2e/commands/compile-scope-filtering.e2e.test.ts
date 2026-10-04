@@ -315,7 +315,7 @@ describe("compile scope filtering", () => {
       expect(globalRun.exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(globalRun.output).toContain("Compiling global agents");
       expect(globalRun.output).toContain("Global compile complete");
-      expect(globalRun.output).toMatch(/\d+ global agents rewritten, \d+ unchanged/);
+      expect(globalRun.output).toMatch(/\d+ global agents? rewritten, \d+ unchanged/);
       expect(globalRun.output).not.toContain("Compiling project agents");
 
       const { exitCode, output } = await CLI.run(["compile", "--verbose"], project, {
@@ -325,7 +325,7 @@ describe("compile scope filtering", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Compiling project agents");
       expect(output).toContain("Project compile complete");
-      expect(output).toMatch(/\d+ project agents rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ project agents? rewritten, \d+ unchanged/);
       expect(output, "a compile inside a project must not run the global pass").not.toContain(
         "Compiling global agents",
       );

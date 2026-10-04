@@ -68,6 +68,7 @@ import {
   startCodexResponsesMock,
 } from "./fixtures/codex-responses-mock.js";
 import {
+  acceptClaudeTrustPrompt,
   agentsPath,
   codexHome,
   completeWithLocalSources,
@@ -1541,7 +1542,7 @@ const CLAUDE_PROJECT_PAYLOAD = buildSeedPayload({
 
 /**
  * Journey 79 — a Claude project install says its sub-agents' completion gate needs the folder
- * trusted, and stops saying so once `~/.claude.json` records the dialog as accepted.
+ * trusted, and stops saying so once Claude Code's state file records the dialog as accepted.
  *
  * The control is a global install run from the home directory, which says nothing: there the
  * project agents directory IS `~/.claude/agents/`, which Claude Code trusts unconditionally. A
@@ -1567,10 +1568,7 @@ async function journeyClaudeFolderTrust(store: SeedConfigStore, sourceDir: strin
         installed.output.includes(project),
     );
 
-    writeFileSync(
-      path.join(home, ".claude.json"),
-      JSON.stringify({ projects: { [project]: { hasTrustDialogAccepted: true } } }),
-    );
+    await acceptClaudeTrustPrompt(home, project);
     const recompiled = await CLI.run(["compile"], at);
     note(`compile, after the dialog was accepted — exit ${recompiled.exitCode}`, "");
     verdict(

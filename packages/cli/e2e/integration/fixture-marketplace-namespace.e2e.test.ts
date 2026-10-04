@@ -46,9 +46,8 @@ import { validateKebabCaseName } from "../../src/cli/lib/validate-kebab-name.js"
  *
  * **The slug axis is the same claim about the other half of a skill's identity, and it is
  * pinned rather than met.** A slug is the short key a rule and a `search` argument name a skill
- * by, and `claimSlug` is first-claim-wins — so two marketplaces publishing one slug leaves the
- * loser with no entry in EITHER direction of the map. This fixture mirrors ten catalogue skills
- * and publishes all ten under the catalogue's bare slugs, which is the worst case.
+ * by. This fixture mirrors ten catalogue skills and publishes all ten under the catalogue's bare
+ * slugs, which is the worst case.
  *
  * It cannot stop, and the reason is one layer down: `skillRefInRules` in
  * `src/cli/lib/schemas.ts` holds every slug a marketplace's own `config/skill-rules.ts` names to
@@ -64,7 +63,7 @@ import { validateKebabCaseName } from "../../src/cli/lib/validate-kebab-name.js"
  * the relationship-rule surface has only ever been covered BECAUSE this fixture borrows
  * catalogue slugs, and a marketplace naming its skills correctly has no way to write a rule
  * about them. Whether a marketplace's own slugs may be named in its own rules is an open
- * question; until it is answered the fixture cannot own its slugs, and the two pins stay red.
+ * question; until it is answered the fixture cannot own its slugs, and the namespace pin stays red.
  */
 
 describe("E2E fixture marketplace namespace", () => {
@@ -193,7 +192,7 @@ describe("E2E fixture marketplace namespace", () => {
       ).toStrictEqual([]);
     });
 
-    it.fails(
+    it(
       "are read back without a duplicate claim when the catalogue is loaded beside them",
       { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
@@ -210,7 +209,7 @@ describe("E2E fixture marketplace namespace", () => {
         );
         expect(
           flattenCliOutput(output),
-          "a slug claimed by the catalogue leaves the fixture's own skill with no slug-map entry at all",
+          "an installed skill may share a slug with the catalogue, since only ids carry a namespace, and nothing is ignored",
         ).not.toContain(STEP_TEXT.DUPLICATE_SLUG);
       },
     );

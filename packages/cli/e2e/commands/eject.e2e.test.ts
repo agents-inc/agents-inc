@@ -1,26 +1,36 @@
 import path from "path";
 import { chmod, mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
+  EXIT_CODES,
+  FILES,
+  MANIFEST_REFUSAL_BUILDS_IN_ORDER,
+  STEP_TEXT,
+} from "../pages/constants.js";
+import {
+  cleanupFixture,
   cleanupTempDir,
   configTsPath,
   createTempDir,
   directoryExists,
   fileExists,
+  flattenCliOutput,
   listFiles,
   readTestFile,
+  readTreeSnapshot,
   skillsPath,
   sourceFolderIn,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
 import { CLI } from "../fixtures/cli.js";
 import type { ProjectHandle } from "../pages/wizard-result.js";
 import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
 /**
  * One agent partial, addressed by the category directory it lands under and its
@@ -235,6 +245,99 @@ describe("eject command", () => {
     expect(await directoryExists(path.join(sourceFolderIn(tempDir), "agents"))).toBe(false);
   });
 
+  it("should count a single ejected skill in the singular", async () => {
+    tempDir = await createTempDir();
+    const oneSkill = await createE2ESource({
+      withoutSkills: E2E_SKILL_IDS.filter((id) => id !== E2E_SKILL.react.id),
+      withoutStacks: true,
+    });
+
+    try {
+      const { exitCode, stdout } = await CLI.run(
+        ["eject", "skills"],
+        await projectUnderGlobalSource(tempDir, oneSkill.sourceDir),
+      );
+
+      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain("1 skill ejected to");
+      expect(await listFiles(skillsPath(tempDir))).toStrictEqual([E2E_SKILL.react.id]);
+    } finally {
+      await cleanupTempDir(oneSkill.tempDir);
+    }
+  });
+
+  /**
+   * A project set up from one marketplace, under a global installation of plugins from another
+   * that ships a skill the project's does not. Sessions in the project show and compile that
+   * global skill, but its files are in the other marketplace, so `eject skills` copies what the
+   * project's own marketplace carries and nothing else — and leaves the global installation alone.
+   *
+   * Observed red against a build that seated the global skill in the project's catalogue: the run
+   * copied the project marketplace's skills, then read the global skill out of that marketplace's
+   * folder and exited 1 on ENOENT.
+   */
+  describe("beside a global plugin installation from another marketplace", () => {
+    /** Shipped by the global installation's marketplace and not by the project's. */
+    const ONLY_IN_GLOBAL_MARKETPLACE = E2E_SKILL["visual-regression"];
+
+    let projectMarketplace: E2ESource;
+
+    beforeAll(async () => {
+      projectMarketplace = await createE2ESource({
+        withoutSkills: [ONLY_IN_GLOBAL_MARKETPLACE.id],
+      });
+    });
+
+    afterAll(async () => {
+      await cleanupFixture(projectMarketplace);
+    });
+
+    it("should eject only the skills the project's marketplace carries", async () => {
+      tempDir = await createTempDir();
+      const globalHome = path.join(tempDir, "home");
+      const projectDir = path.join(tempDir, "project");
+      const globalMarketplace = await createE2EPluginSource();
+      await writeProjectConfig(
+        globalHome,
+        buildProjectConfig({
+          name: "global-install",
+          marketplace: globalMarketplace.sourceDir,
+          skills: buildSkillConfigs([ONLY_IN_GLOBAL_MARKETPLACE.id], {
+            scope: "global",
+            origin: globalMarketplace.marketplaceName,
+          }),
+          agents: [],
+        }),
+      );
+      await writeProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "project",
+          marketplace: projectMarketplace.sourceDir,
+          skills: [],
+          agents: [],
+        }),
+      );
+      const globalBefore = await readTreeSnapshot(globalHome);
+      const projectConfigBefore = await readTestFile(configTsPath(projectDir));
+
+      const { exitCode, output } = await CLI.run(
+        ["eject", "skills"],
+        { dir: projectDir },
+        { env: { HOME: globalHome } },
+      );
+
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      expect(output).toContain(STEP_TEXT.EJECT_SUCCESS);
+      expect(
+        (await listFiles(skillsPath(projectDir))).sort(),
+        "the project marketplace's skills, without the one only the global's ships",
+      ).toStrictEqual(E2E_SKILL_IDS.filter((id) => id !== ONLY_IN_GLOBAL_MARKETPLACE.id).sort());
+      expect(await readTestFile(configTsPath(projectDir))).toBe(projectConfigBefore);
+      expect(await readTreeSnapshot(globalHome)).toStrictEqual(globalBefore);
+    });
+  });
+
   it("should eject all phases from a local source", async () => {
     tempDir = await createTempDir();
 
@@ -293,20 +396,26 @@ describe("eject command", () => {
     expect(stdout).toContain("all");
   });
 
-  // BUG: CLI exits 0 with a corrupt source — it falls back to the default source instead of
-  // reporting an error for the invalid directory the run was pointed at.
-  it.fails("should handle corrupt source without crashing", async () => {
+  // A directory holding no marketplace — no `.claude-plugin/marketplace.json` — is refused by every
+  // command that loads it, rather than ejected from as an empty marketplace and exited 0 over.
+  it("should handle corrupt source without crashing", async () => {
     tempDir = await createTempDir();
     const corruptSourceDir = path.join(tempDir, "corrupt-source");
     await mkdir(corruptSourceDir, { recursive: true });
     await writeFile(path.join(corruptSourceDir, "garbage.txt"), "not a valid source");
 
-    const { exitCode } = await CLI.run(
+    const { exitCode, output } = await CLI.run(
       ["eject", "skills"],
       await projectUnderGlobalSource(tempDir, corruptSourceDir),
     );
 
-    expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
+    expect(exitCode, "a directory that is no marketplace must not be ejected from").not.toBe(
+      EXIT_CODES.SUCCESS,
+    );
+    expect(
+      flattenCliOutput(output),
+      "the refusal must name the builds that would make it a marketplace",
+    ).toMatch(MANIFEST_REFUSAL_BUILDS_IN_ORDER);
   });
 
   it("should refuse a --marketplace flag — it reads the source the installation is configured with", async () => {

@@ -71,9 +71,8 @@ const DASHBOARD_CONTENT: DeclaredContent = {
 
 /**
  * The shared configuration `init --from` installs, ejected at global scope like every other
- * `--from` spec: the E2E source is local and carries no marketplace, so plugin mode legitimately
- * refuses it, and a project-scoped skill assigned to a sub-agent resting at the shared default is
- * a pair the decode refuses outright.
+ * `--from` spec: an eject install keeps the Claude CLI out of it, and a project-scoped skill
+ * assigned to a sub-agent resting at the shared default is a pair the decode refuses outright.
  */
 const SEED_PAYLOAD = buildSeedPayload({
   skills: {

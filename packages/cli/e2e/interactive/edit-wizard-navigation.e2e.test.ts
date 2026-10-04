@@ -135,7 +135,7 @@ describe("edit wizard — navigation and hotkeys", () => {
         "the fixture installs react at project scope, so the row starts on the P badge",
       ).toStrictEqual(["P"]);
 
-      await wizard.build.toggleScopeOnFocusedSkill();
+      await wizard.build.toggleScopeOnSkill(E2E_SKILL.react.display);
 
       // The badge is the same observable the global-context refusal below reads, and the
       // reason the two are in one file: on its own, "the badge did not move" cannot tell a

@@ -27,7 +27,7 @@ import {
 } from "../fixtures/seed-config-store.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, FILES } from "../pages/constants.js";
+import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
   UPSTREAM_SKILL_NAME,
   buildSeedExternalSkill,
@@ -77,6 +77,13 @@ const PINNED_TO_PROJECT = { scope: "project" } as const;
  * never heard of it, so a guard reading only the LOADED matrix finds no incumbent and installs.
  */
 const CATALOGUE_ID_THE_FIXTURE_LACKS = "web-framework-react";
+
+/**
+ * A carried skill's description at the length the editor's index usually serves one — longer than
+ * the `cliDescription` doctor accepts without a warning.
+ */
+const LONG_EXTERNAL_DESCRIPTION =
+  "Use before any creative work - explores user intent, requirements and design before implementation";
 
 /** The whole directory an added skill carries: its manifest, and the reference file beside it. */
 const EXTERNAL_FILES = {
@@ -195,6 +202,46 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     // ~/.claude is content that crossed a boundary it was told not to cross — and an absence
     // nobody asserts is indistinguishable from one nobody looked for.
     await expectFourSurfaces(env.fakeHome, { expectEmpty: true });
+  });
+
+  it("writes a carried skill's metadata that doctor does not warn about", async () => {
+    env = await createTestEnvironment({ permissions: false });
+    store.publish(
+      "ExternalDoc",
+      buildSeedPayload({
+        skills: {
+          [EXTERNAL_ID]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        external: {
+          [EXTERNAL_ID]: buildSeedExternalSkill({
+            description: LONG_EXTERNAL_DESCRIPTION,
+            categoryId: EXTERNAL_CATEGORY,
+            repo: EXTERNAL_REPO,
+            files: {
+              [FILES.SKILL_MD]: renderSkillMd(UPSTREAM_SKILL_NAME, LONG_EXTERNAL_DESCRIPTION),
+            },
+          }),
+        },
+        agents: { [WEB_DEV]: PINNED_TO_PROJECT },
+      }),
+    );
+    const project = { dir: env.projectDir, globalHome: env.fakeHome };
+    const installed = await runInitFrom(store, "ExternalDoc", project, sourceDir);
+    expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+
+    const { exitCode, stdout } = await CLI.run(["doctor"], project);
+
+    expect(exitCode, `doctor failed: ${stdout}`).toBe(EXIT_CODES.SUCCESS);
+    // The subject guard: the content layer ran over this installation's skills.
+    expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
+    expect(
+      stdout,
+      "an install must not write a metadata.yaml its own doctor warns about",
+    ).not.toContain(STEP_TEXT.DOCTOR_CLI_DESCRIPTION_OVER_LENGTH);
   });
 
   it("routes a carried skill to the scope its own entry names", async () => {

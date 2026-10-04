@@ -2,7 +2,7 @@ import path from "path";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 
 import "../matchers/setup.js";
-import { cleanupTempDir, readTreeSnapshot } from "../helpers/test-utils.js";
+import { cleanupTempDir, createTempDir, readTreeSnapshot } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import {
@@ -67,6 +67,13 @@ describe("edit --from <id> without a terminal", () => {
     return project.dir;
   }
 
+  /** A directory with nothing installed in it, under a HOME holding no global install either. */
+  async function takeEmptyFolder(): Promise<string> {
+    const tempDir = await createTempDir();
+    tempDirs.push(tempDir);
+    return tempDir;
+  }
+
   /** A configuration naming one of the two installed skills — so the other would be removed. */
   function publishHalfOfIt(id: string): void {
     store.publish(
@@ -96,6 +103,35 @@ describe("edit --from <id> without a terminal", () => {
     // directory and removes nothing, so it needs no confirm. A refusal that named no way
     // forward would read as "this id is unusable here".
     expect(flattened).toContain(`init --from ${PUBLISHED_ID}`);
+  });
+
+  /**
+   * The installed-folder refusal above names `edit --from <id>` from a terminal as the way on.
+   * In a folder with nothing installed that command refuses too — "No installation found" — so
+   * telling someone to run it here sends them to a second refusal. Nothing is installed to apply
+   * a configuration TO, which is true with or without a terminal, so that is what is said first,
+   * with the command that does install one here.
+   */
+  it("in a folder with nothing installed, says so instead of sending it to a terminal", async () => {
+    const emptyDir = await takeEmptyFolder();
+    publishHalfOfIt(PUBLISHED_ID);
+
+    const { exitCode, output } = await runEditFrom(store, PUBLISHED_ID, { dir: emptyDir });
+
+    const flattened = flattenCliOutput(output);
+    expect(
+      flattened,
+      "a command suggested here must be one that does not refuse here as well",
+    ).not.toContain(`edit --from ${PUBLISHED_ID}`);
+    expect(exitCode, flattened).toBe(EXIT_CODES.ERROR);
+    expect(flattened).toContain(STEP_TEXT.NO_INSTALLATION);
+    expect(flattened, "the command that installs a configuration here").toContain(
+      `init --from ${PUBLISHED_ID}`,
+    );
+    expect(store.requests, "a run that cannot apply anything spends no round trip").toStrictEqual(
+      [],
+    );
+    expect(await readTreeSnapshot(emptyDir)).toStrictEqual({});
   });
 
   it("refuses before it asks the store for anything", async () => {

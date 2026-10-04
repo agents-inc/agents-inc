@@ -24,7 +24,7 @@ import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -40,26 +40,28 @@ import type {
   FixtureStackAgentConfig,
   TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
-import type { AgentName } from "../../src/cli/types/index.js";
+import type { AgentName, ProjectConfig } from "../../src/cli/types/index.js";
 
 /**
- * `edit --from <id>` removing a GLOBALLY installed skill, and who that reaches.
+ * `edit --from <id>` and a GLOBALLY installed skill the configuration leaves out — who it reaches.
  *
  * A global install is one installation shared by every registered project, so removing one from
- * inside project A changes projects B and C — which the person confirming is not looking at and
- * did not choose to be looking at. The ruling is that they may still do it, and that the confirm
- * has to say so: the removal appears under its own heading, and the statement beneath it counts
- * and NAMES the other projects the yes changes.
+ * inside project A would change projects B and C, which the person confirming is not looking at
+ * and did not choose to be looking at. The ruling is that a project run does not do it: from a
+ * project, `--from` never removes or changes anything global, so the global skill, the global
+ * sub-agent and its rows stay, the global installation and the other registered project are
+ * byte-identical, and the plan names no global removal and no other project — there is nothing
+ * reaching them to name. It does name the global skill it keeps, because the configuration leaves
+ * it out. The project's own rows still change, which is what proves the apply ran.
  *
- * Inside the global installation the case is different and is deliberately NOT gated twice. The
- * person ran the command at their home directory, the location IS the global scope, and that
- * global is inherited by projects is what global means — so they get the ordinary apply confirm,
- * with no second acknowledgement and no enumeration. A gate that fires everywhere and words
- * itself differently is a gate on its way to firing wrongly.
+ * Inside the global installation the case is different. The person ran the command at their home
+ * directory, the location IS the global scope, so there the configuration is applied to the
+ * global install itself and the skill it leaves out is removed — with the ordinary confirm, no
+ * second acknowledgement and no enumeration. That half is the permitted counterpart of the
+ * project half, and the two stay in one file so they cannot drift apart.
  *
- * Both halves have to land or the machine contradicts itself: the removal DIFF deletes
- * `~/.claude/skills/<id>` and the compiled global agent, and the config gate is what stops
- * the global `config.ts` going on declaring them. Every spec below reads both surfaces.
+ * Both surfaces are read on each side, because either alone can look right while the other lies:
+ * the global `config.ts` declaring a skill, and `~/.claude/skills/<id>` holding it.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -81,7 +83,7 @@ const bystanderStack = {
   [WEB_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-/** The global installation's own sub-agent stack, which the same removal has to prune. */
+/** The global installation's own sub-agent stack, which a project run has to leave as it is. */
 const globalStack = {
   [API_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
@@ -106,7 +108,21 @@ function snapshotEveryScope(fixture: Fixture): Promise<Record<string, TreeSnapsh
   );
 }
 
-describe("edit --from <id> removing a global install", () => {
+/**
+ * The scopes a project run in project A has no business writing: the global installation and the
+ * other registered project. Project A itself is left out because the apply rightly changes it.
+ */
+function snapshotGlobalAndBystander(
+  fixture: Fixture,
+): Promise<Record<string, TreeSnapshotEntry>[]> {
+  return Promise.all(
+    [fixture.home, fixture.projectB]
+      .flatMap((dir) => [sourceFolderIn(dir), path.join(dir, DIRS.CLAUDE)])
+      .map(readTreeSnapshot),
+  );
+}
+
+describe("edit --from <id> and a global install the configuration leaves out", () => {
   let sourceDir: string;
   let e2eSourceTempDir: string;
   let store: SeedConfigStore;
@@ -130,6 +146,10 @@ describe("edit --from <id> removing a global install", () => {
    *
    * The global copy carries `forkedFrom`, so the round trip owns it: without the stamp it would
    * read as somebody's own work and be kept for a reason that has nothing to do with this file.
+   *
+   * Every config records `marketplaceName`, as an install from a built marketplace does: the
+   * source publishes a manifest, and a config written without its name is a legacy one that a
+   * project write fills in.
    */
   async function takeInstallation(): Promise<Fixture> {
     const tempDir = await createTempDir();
@@ -148,6 +168,7 @@ describe("edit --from <id> removing a global install", () => {
       buildProjectConfig({
         name: "global-install",
         marketplace: sourceDir,
+        marketplaceName: E2E_MARKETPLACE_NAME,
         skills: [buildSkillConfig(E2E_SKILL.vitest.id, { scope: "global" })],
         agents: buildAgentConfigs([API_DEV], { scope: "global" }),
         selectedDomains: ["web"],
@@ -180,6 +201,7 @@ describe("edit --from <id> removing a global install", () => {
     return buildProjectConfig({
       name,
       marketplace: sourceDir,
+      marketplaceName: E2E_MARKETPLACE_NAME,
       skills: [
         buildSkillConfig(E2E_SKILL.react.id, { scope: "project" }),
         buildSkillConfig(E2E_SKILL.vitest.id, { scope: "global" }),
@@ -240,15 +262,19 @@ describe("edit --from <id> removing a global install", () => {
     let output: string;
     let exitCode: number;
     let preEditBystanderAgent: string;
+    let globalConfigBefore: ProjectConfig;
+    let globalAndBystanderBefore: Record<string, TreeSnapshotEntry>[];
 
     beforeAll(async () => {
       fixture = await takeInstallation();
       publishProjectScoped(PROJECT_APPLY_ID);
 
-      // A real compile, so the artifact the removal has to invalidate is product output
-      // rather than a hand-written file that could agree with the assertion by accident.
+      // A real compile, so the artifact a global removal would have invalidated is product
+      // output rather than a hand-written file that could agree with the assertion by accident.
       await runCLI(["compile"], fixture.projectB, { env: { HOME: fixture.home } });
       preEditBystanderAgent = await readTestFile(bystanderAgentPath(fixture.projectB));
+      globalConfigBefore = await loadConfigOrFail(fixture.home);
+      globalAndBystanderBefore = await snapshotGlobalAndBystander(fixture);
 
       const prompt = launch(PROJECT_APPLY_ID, fixture.projectA, fixture.home);
       try {
@@ -262,65 +288,85 @@ describe("edit --from <id> removing a global install", () => {
       }
     }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
-    it("shows the global removal under its own heading", () => {
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_GLOBAL_SKILLS_HEADING);
-      expect(planned).toContain(E2E_SKILL.vitest.id);
-      // The sub-agent half is its own statement for the same reason it is in the ordinary
-      // plan: a skill and a sub-agent are removed by different work and read differently.
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_GLOBAL_AGENTS_HEADING);
-      expect(planned).toContain(API_DEV);
+    it("names no global removal and no other project in its plan, only the skill it keeps", () => {
+      // The question matched here is the positive subject guard for the negatives below: the
+      // plan is on screen, and nothing global arrives or leaves, so nothing reaches another
+      // project. The global install's being left as it is, is the byte-identity test below.
+      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+      expect(
+        planned,
+        "a project apply must not plan anything for the global install",
+      ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL);
+      expect(
+        planned,
+        "a project apply removes nothing global, so the plan must not open by promising removals",
+      ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
+      expect(
+        planned,
+        "a project apply must name the global skill it keeps though the configuration leaves it out",
+      ).toMatch(
+        new RegExp(`${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*${E2E_SKILL.vitest.id}`),
+      );
+      expect(planned).not.toContain(realpathSync(fixture.projectB));
     });
 
-    it("names the other registered project the removal reaches, before removing anything", () => {
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_GLOBAL_REACH);
-      // Counted AND named: "2 other projects" cannot be weighed, and a path can.
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_GLOBAL_REACH_PROJECTS);
-      expect(planned).toContain(realpathSync(fixture.projectB));
+    it("names the global sub-agent it keeps though the configuration leaves it out", () => {
+      expect(planned).toMatch(
+        new RegExp(`${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*sub-agent ${API_DEV}`),
+      );
     });
 
     it("applies cleanly once it is confirmed", () => {
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
     });
 
-    it("removes the skill from the global config and from the global skills directory", async () => {
+    it("keeps the skill in the global config and in the global skills directory", async () => {
       const globalConfig = await loadConfigOrFail(fixture.home);
 
-      // Both surfaces, because either alone can look right while the other lies. The config
-      // row is the config gate's half; the directory is the removal diff's.
-      expect(globalConfig.skills.map((skill) => skill.id)).toStrictEqual([]);
-      expect(await listFiles(skillsPath(fixture.home))).toStrictEqual([]);
+      // Both surfaces, because either alone can look right while the other lies.
+      expect(
+        globalConfig.skills.map((skill) => skill.id),
+        "a project apply must not remove a skill from the global install",
+      ).toStrictEqual([E2E_SKILL.vitest.id]);
+      expect(await listFiles(skillsPath(fixture.home))).toStrictEqual([E2E_SKILL.vitest.id]);
     });
 
-    it("removes the global sub-agent from the global config", async () => {
+    it("keeps the global sub-agent and its skill rows in the global config", async () => {
       const globalConfig = await loadConfigOrFail(fixture.home);
-
-      expect(globalConfig.agents.map((agent) => agent.name)).toStrictEqual([]);
-    });
-
-    it("drops the removed rows from the editing project's own config", async () => {
-      const config = await loadConfigOrFail(fixture.projectA);
-
-      expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
-      expect(config.agents.map((agent) => agent.name)).toStrictEqual([WEB_DEV]);
-    });
-
-    it("propagates the removal into the bystander registered project", async () => {
-      const config = await loadConfigOrFail(fixture.projectB);
-
-      // The whole point of the disclosure: a project nobody was looking at really did change,
-      // so a confirm that had not said so would have been a change nobody agreed to.
-      expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
-    });
-
-    it("recompiles the bystander project's agents, and says it did", async () => {
-      const recompiled = await readTestFile(bystanderAgentPath(fixture.projectB));
 
       expect(
-        recompiled,
-        "the bystander's compiled agent must lose the global skill it preloaded",
-      ).not.toContain(E2E_SKILL.vitest.id);
-      expect(recompiled).not.toBe(preEditBystanderAgent);
-      expect(output).toContain(STEP_TEXT.PROPAGATED_RECOMPILE);
+        globalConfig.agents.map((agent) => agent.name),
+        "a project apply must not remove a sub-agent from the global install",
+      ).toStrictEqual([API_DEV]);
+      expect(
+        globalConfig.stack,
+        "a project apply must not change a global sub-agent's skill rows",
+      ).toStrictEqual(globalConfigBefore.stack);
+    });
+
+    it("leaves the global installation and the bystander project byte-identical", async () => {
+      expect(await snapshotGlobalAndBystander(fixture)).toStrictEqual(globalAndBystanderBefore);
+    });
+
+    it("leaves the bystander's compiled agent preloading the global skill", async () => {
+      const compiled = await readTestFile(bystanderAgentPath(fixture.projectB));
+
+      expect(compiled).toBe(preEditBystanderAgent);
+      expect(compiled).toContain(E2E_SKILL.vitest.id);
+    });
+
+    it("changes the editing project's own rows, which is what it was asked to do", async () => {
+      const config = await loadConfigOrFail(fixture.projectA);
+
+      expect(
+        config.skills.filter((skill) => skill.scope === "project").map((skill) => skill.id),
+      ).toStrictEqual([E2E_SKILL.react.id]);
+      expect(
+        config.agents.filter((agent) => agent.scope === "project").map((agent) => agent.name),
+      ).toStrictEqual([WEB_DEV]);
+      // The proof the apply ran: the project's own sub-agent now carries the configuration's
+      // skill, which the installation never assigned it.
+      expect(config.stack).toHaveProperty([WEB_DEV, "web-framework"]);
     });
   });
 
@@ -374,17 +420,18 @@ describe("edit --from <id> removing a global install", () => {
       }
     }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
-    it("asks the ordinary question, with no second acknowledgement", () => {
-      expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
+    it("asks the ordinary question about the removal, with no second acknowledgement", () => {
+      // The location IS the global scope and the person chose it, so the global skill the
+      // configuration leaves out is planned as an ordinary removal, under the ordinary question —
+      // and the one yes below is all the run waits for.
+      expect(planned).toMatch(
+        new RegExp(`${STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW}[\\s\\S]*${E2E_SKILL.vitest.display}`),
+      );
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
-      // The location IS the global scope and the person chose it. Restating that global is
-      // inherited by projects here is noise, and noise is what teaches people to stop reading.
-      expect(planned).not.toContain(STEP_TEXT.SHARED_CONFIG_GLOBAL_REACH);
-      expect(planned).not.toContain(STEP_TEXT.SHARED_CONFIG_GLOBAL_SKILLS_HEADING);
     });
 
     it("does not enumerate the registered projects", () => {
-      expect(planned).not.toContain(STEP_TEXT.SHARED_CONFIG_GLOBAL_REACH_PROJECTS);
+      expect(planned).not.toContain(realpathSync(fixture.projectA));
       expect(planned).not.toContain(realpathSync(fixture.projectB));
     });
 

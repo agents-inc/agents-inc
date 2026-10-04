@@ -2,6 +2,7 @@ import path from "path";
 import { realpathSync } from "fs";
 import { describe, it, expect, afterEach } from "vitest";
 import {
+  compactCliOutput,
   createTempDir,
   cleanupTempDir,
   fileExists,
@@ -139,10 +140,16 @@ describe("global uninstall propagates to registered projects", () => {
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
     // Summary line: exactly one registered project was updated, and the ghost
-    // path produced a warning instead of aborting the uninstall.
+    // path produced a warning instead of aborting the uninstall — one saying
+    // nothing is installed there, since there is no config left to reference
+    // the uninstalled content.
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_PROJECTS_UPDATED_ONE);
-    expect(output).toContain(STEP_TEXT.UNINSTALL_PROJECT_SKIPPED);
-    expect(output).toContain(ghostDir);
+    expect(compactCliOutput(output)).toContain(
+      compactCliOutput(
+        `${STEP_TEXT.SKIPPED_REGISTERED_PROJECT} ${ghostDir}: ${STEP_TEXT.REGISTERED_PROJECT_GONE}`,
+      ),
+    );
+    expect(output).not.toContain(STEP_TEXT.UNINSTALL_PROJECT_SKIPPED);
 
     // The global manifest is gone.
     expect(await fileExists(configTsPath(globalHome))).toBe(false);

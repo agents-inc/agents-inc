@@ -154,6 +154,17 @@ export const STEP_TEXT = {
   // `doctor` named as the place the same fault is reported in context. Only correct since doctor
   // stopped calling an unreadable config "not found" — before that it contradicted the line above.
   CONFIG_UNREADABLE_DOCTOR: "doctor",
+  // Whose config the refusal is about, said right before its path: every command that reads an
+  // installation's config refuses over one in play that exists and cannot be loaded, and from a
+  // project that can be either file. A spec composes each with ` '<path>'`, so the scope cannot be
+  // satisfied by a sentence naming the other file.
+  CONFIG_UNREADABLE_GLOBAL: "The global installation's config at",
+  CONFIG_UNREADABLE_PROJECT: "This project's config at",
+  // The remedy's disputable clause: WHERE the two commands are run. A spec composes it with
+  // ` '<folder>'` — the home directory for the global config, the project for its own. Run from a
+  // project over a broken GLOBAL config, a remedy naming no folder sends the user to uninstall the
+  // project, which deletes the one config that was fine.
+  CONFIG_UNREADABLE_RECREATE_FROM: "then 'npx agents-inc init', from",
   EJECT_SUCCESS: "Eject complete!",
   IMPORT_SUCCESS: "Import complete:",
   UNINSTALL_SUCCESS: "Uninstall complete!",
@@ -179,13 +190,13 @@ export const STEP_TEXT = {
   DELETE_AGENT_FILE_REMEDY:
     "Claude Code loads a compiled sub-agent this project no longer configures",
   // The qualifier `init` appends to its compile count when part of the pass did not land —
-  // `Compiled 1 agents (1 failed)`. Anchored on the word in FRONT of the parenthesis, because
+  // `Compiled 1 agent (1 failed)`. Anchored on the word in FRONT of the parenthesis, because
   // three other lines end in the same qualifier and none of them is this one: `edit` and
   // `compile` both append it to "…, N unchanged", and so does the propagated-recompile summary,
   // so a bare `(1 failed)` is satisfied by a line that is not the one under test. The count is
   // spelled out for the reason `UNINSTALL_AGENTS_KEPT_ONE` spells its own: one sabotaged
   // sub-agent that reports two failures is wrong in a way a count-free fragment cannot see.
-  COMPILED_WITH_FAILURES: "agents (1 failed)",
+  COMPILED_WITH_FAILURES: "agent (1 failed)",
   COMPILE_GLOBAL_SCOPE_HINT: "global-scoped — run", // Stable fragment of the project-context compile hint
   CONFIG_TYPES_REFRESHED: "Refreshed config-types.ts", // Per-pass compile line after config-types regeneration
   SKILL_NOT_FOUND_WARNING: "is configured but was not found", // Compile warning for a config-listed skill with no installed files
@@ -195,6 +206,15 @@ export const STEP_TEXT = {
   // suite, so it is only assertable here because neither runner hands the spawned
   // binary its own `VITEST`.
   STACK_SKILL_ABSENT_FROM_MATRIX: "not found in matrix",
+  // What a source load says about a marketplace stack naming a skill that marketplace's own
+  // catalogue does not carry (`withdrawnSkillsWarning` in `lib/loading/source-loader.ts`):
+  // "… does not carry: '<id>'. Left out of the stack — selecting it would install nothing."
+  // Anchored on the DECISION, not the diagnosis: both lines a load can raise for that id agree
+  // it is missing, and the one `STACK_SKILL_ABSENT_FROM_MATRIX` names disputes only what
+  // happens to it ("It may be a custom or local skill"). Cut before "would install nothing"
+  // because the startup band wraps the fixture's sentence between "install" and "nothing." at
+  // `TERMINAL_SIZE.SHORT`; "— selecting it" is what tells it from `undeclaredAgentsWarning`.
+  STACK_SKILL_LEFT_OUT: "Left out of the stack — selecting it",
   // What `extractLocalSkill` warns about an installed skill whose metadata.yaml states the
   // `local` pseudo-category: the value belongs to no domain, so the skill joins no matrix
   // category and no sub-agent can be given it. Anchored on the clause that names the fault
@@ -205,6 +225,19 @@ export const STEP_TEXT = {
   // one it prints instead when it could not ask at all and served the cached copy anyway.
   SOURCE_HAS_NEWER_CONTENT: "Marketplace has newer content",
   SOURCE_UNREACHABLE_CACHED: "using the cached copy, which may be out of date",
+  // What a marketplace load warns about a skill it skips because the skill's metadata.yaml does
+  // not parse (`extractAllSkills`): "Skipping '<dir>/metadata.yaml': unparseable metadata.yaml at
+  // <path> — <cause>". The clause is the diagnosis; the `<dir>/metadata.yaml` beside it is what
+  // makes the line about one skill, and specs assert the two together.
+  MARKETPLACE_METADATA_UNPARSEABLE: "unparseable metadata.yaml",
+  // The way out of a reserved name a MANIFEST carries. A name the installation's config.ts
+  // recorded is refused naming the field holding it instead, since that manifest is fine.
+  RESERVED_NAME_MANIFEST_WAY_OUT: "rename the marketplace",
+  RECORDED_MARKETPLACE_NAME_FIELD: "marketplaceName",
+  // What `init --from` and `edit --from` say about payload ids the loaded catalogue cannot place
+  // (`skippedUnknownSkills`): "Skipped N skill(s) this catalog does not know: <ids>". The effect
+  // a load warning above it may explain.
+  CATALOG_DOES_NOT_KNOW: "this catalog does not know:",
   // What a relationship rule naming a slug no loaded skill carries warns, once per
   // reference. A source's own rules earn it; the CLI's built-ins, which are written
   // against the whole public catalogue, are narrowed to the source's slugs first — so
@@ -243,10 +276,13 @@ export const STEP_TEXT = {
   // fragment is satisfied by a line that is not the one under test.
   REMOVED_REASON_NOT_IN_SOURCE: "not present in",
   REMOVED_REASON_FILES_GONE: "skill files no longer exist at",
+  // The startup band's line for an installed skill the loaded catalogue does not carry — the
+  // store leaves it out of the session, so a global one is no longer shown locked.
+  INSTALLED_SKILL_ABSENT_FROM_SOURCE: "is not present in the loaded source",
   // Summary after a global-scope change REWROTE one registered project. The count is projects
   // rewritten, not projects reached (reached = rewritten + unchanged), so a fan-out that visits one
   // project and changes nothing prints "0 registered projects, 1 unchanged" and never this string.
-  PROPAGATED_RECOMPILE_ONE: "Recompiled agents in 1 registered projects",
+  PROPAGATED_RECOMPILE_ONE: "Recompiled agents in 1 registered project,",
   // Prefix of the same summary. All four fan-out commands print the one line
   // BaseCommand.reportPropagatedRecompile owns ("Recompiled agents in N registered
   // projects, M unchanged"), so a spec that asserts the line's ABSENCE — or must
@@ -265,7 +301,12 @@ export const STEP_TEXT = {
   UPDATE_EJECTED_OWNED: "Ejected skills are yours to own",
   UPDATE_NO_MARKETPLACES: "No plugin marketplaces are configured",
   UPDATE_MARKETPLACE_REFRESHED: "Updated marketplace",
+  // The claim a refresh may not make: `claude plugin marketplace update` re-reads a marketplace's
+  // listing and leaves every installed plugin at the version it was installed at.
   UPDATE_COMPLETE: "Update complete!",
+  // The clause of the refresh summary a reader would dispute — that the installed plugins kept
+  // their versions — rather than its lead-in about the listings.
+  UPDATE_PLUGINS_UNCHANGED: "Installed plugins were not changed",
   UPDATE_NO_CLAUDE_CLI: "Claude CLI not found",
 
   // Prompts
@@ -275,8 +316,21 @@ export const STEP_TEXT = {
   UNINSTALL_PREVIEW_HEADING: "The following will be removed:", // Exact rendered heading
   UNINSTALL_CONFIG_SECTION: "Config:", // Removal-plan section header for the .claude-src/ manifest
   UNINSTALL_PROJECTS_UPDATED_ONE: "Updated 1 registered project", // Global-uninstall summary after pruning one registered project's global entries
-  UNINSTALL_PROJECT_SKIPPED: "Could not update registered project at", // Warn prefix for an unreachable registered project during global uninstall
-  UNINSTALL_CONFIG_UNREADABLE: "Could not read the project config", // Warn prefix when uninstall continues past a config it cannot parse
+  UNINSTALL_PROJECT_SKIPPED: "Could not update registered project at", // Warn prefix for a registered project whose config a global uninstall could not prune
+  // The one line a global `edit` or `compile` prints for a registered project it skipped because
+  // that project's config.ts cannot be loaded. A spec composes it as
+  // `${SKIPPED_REGISTERED_PROJECT} <path>: ${REGISTERED_PROJECT_CONFIG_UNREADABLE}`.
+  SKIPPED_REGISTERED_PROJECT: "Skipped",
+  REGISTERED_PROJECT_CONFIG_UNREADABLE: "its config.ts can't be read.",
+  // The same line for the other reasons a global `compile` or `uninstall` leaves a registered
+  // project alone: nothing installed at the path, another provider's installation, and — in
+  // `compile`, where uninstall's own sentence is not true — a rewrite that failed.
+  REGISTERED_PROJECT_GONE: "nothing is installed there any more.",
+  REGISTERED_PROJECT_OTHER_PROVIDER: "it is another provider's installation.",
+  REGISTERED_PROJECT_UPDATE_FAILED: "updating it failed.",
+  // Warn prefixes when uninstall continues past a config it cannot parse, naming whose it read.
+  UNINSTALL_PROJECT_CONFIG_UNREADABLE: "Could not read the project config",
+  UNINSTALL_GLOBAL_CONFIG_UNREADABLE: "Could not read the global config",
   // The three lines `reportNothingToUninstall` prints together, in order: the warn,
   // the state it found, and the promise it kept. Asserting one without the others
   // cannot tell "found nothing" from "removed everything and said so".
@@ -328,6 +382,9 @@ export const STEP_TEXT = {
 
   // Dashboard
   DASHBOARD: "Doctor",
+  // The Doctor row once the focus has moved onto it: the select list paints its marker, a space,
+  // then the label. A paced choice waits on this before pressing Enter.
+  DASHBOARD_DOCTOR_FOCUSED: "❯ Doctor",
 
   // `doctor` layered output (src/cli/commands/doctor.ts). Both layers run. The content layer
   // validates what is on disk, then the operational layer answers row by row: a row stands down
@@ -335,6 +392,9 @@ export const STEP_TEXT = {
   // stands down for one finding alone — a config nobody can read, which every row is read out of.
   DOCTOR_CONTENT_SECTION: "Content checks",
   DOCTOR_OPERATIONAL_SECTION: "Operational checks",
+  // The content layer's advisory warning for a metadata.yaml whose `cliDescription` is longer than
+  // `CLI_DESCRIPTION_MAX_LENGTH` (`formatOverLengthWarning` in src/cli/lib/schemas.ts).
+  DOCTOR_CLI_DESCRIPTION_OVER_LENGTH: "exceeds the recommended maximum",
   // Duplicated verbatim from `SKIP_AFTER_CONFIG_ERROR` in src/cli/commands/doctor.ts. The sentence
   // still says "content errors" while the trigger is the config alone, because the config row is
   // one of them and whatever else failed is printed above it too.
@@ -352,6 +412,15 @@ export const STEP_TEXT = {
   // A row name that only the operational layer emits, so its absence proves the
   // layer was skipped rather than merely quiet.
   DOCTOR_CONFIG_CHECK: "Config Valid",
+  // Which scope the Config Valid row is about, leading its message — the same two nouns the
+  // Layout rows lead with. Asserted anchored to that row: both also open Layout rows, so an
+  // unanchored match is satisfied by a row that is not the one under test.
+  DOCTOR_CONFIG_THIS_PROJECT: "This project:",
+  DOCTOR_CONFIG_THE_GLOBAL_INSTALLATION: "The global installation:",
+  // The Config Valid row in a directory with no config of its own under a global installation:
+  // the file it actually read is the global one, and the row says so rather than naming this
+  // directory's path for a file that is not there.
+  DOCTOR_CONFIG_USING_GLOBAL: "using the global installation's",
   // The six remaining operational row names `runAllChecks` logs. Named here rather
   // than retyped per spec: they are the report's skeleton, and a spec asserting one
   // of them is asserting that the row ran, not that a word appeared.
@@ -522,6 +591,11 @@ export const STEP_TEXT = {
   READY_TO_INSTALL: "Ready to install",
   NO_SKILLS_FOUND: "No skills found",
   UNINSTALL_CANCELLED: "Uninstall cancelled",
+  // What `edit`'s wizard prints on Ctrl+C, and the dashboard with it: oclif's framing of the
+  // command's own "Cancelled".
+  RUN_CANCELLED: "Error: Cancelled",
+  // The usage line of oclif's root help — printed for a run with no command, and only that help.
+  ROOT_HELP_USAGE: "$ agents-inc [COMMAND]",
 
   // `init --from` refusals. The command is greenfield-only: it installs a shared
   // configuration whole rather than merging it into what is already there, so it
@@ -538,6 +612,17 @@ export const STEP_TEXT = {
   // the payload is fine, the location is not.
   SHARED_CONFIG_PROJECT_SCOPE_AT_HOME: "these project-scoped entries have nowhere to be written",
   SHARED_CONFIG_PROJECT_SCOPE_HINT: "Run this from inside a project directory",
+  // The write-over refusal, shared by `init --from` and `edit --from`: a skill the payload carries
+  // would land on a directory the project keeps at its id that no shared configuration put there.
+  // Asserted on flattened output — oclif wraps it at the terminal width.
+  SHARED_CONFIG_UNCARRIED_DESTINATION: "no shared configuration put those directories there",
+  // The refusal `init --from` makes of a configuration that decodes to nothing this catalogue can
+  // place: "Configuration '<id>' contains no skills this catalog can install."
+  SHARED_CONFIG_NOTHING_INSTALLABLE: "contains no skills this catalog can install",
+  // The refusal both `--from` producers make of a configuration whose `stackId` the marketplace it
+  // installs from does not ship: "Stack '<id>' is not a stack the source '<ref>' offers. …". The
+  // sentinel is the clause the refusal turns on, and stops short of the ref, which oclif may wrap.
+  SHARED_CONFIG_STACK_NOT_OFFERED: "is not a stack the source",
 
   // `edit --from` — the inbound half of the round trip, and the destructive one. The project
   // is made to MATCH the payload, so the removals are shown and confirmed first, and a run
@@ -548,22 +633,58 @@ export const STEP_TEXT = {
   SHARED_CONFIG_APPLY_CONFIRM: "Apply this configuration?",
   SHARED_CONFIG_APPLY_NOTHING_REMOVED: "Nothing is removed",
   SHARED_CONFIG_NEEDS_TERMINAL: "no terminal here to confirm it at",
+  // What a command that opens the wizard says where there is no terminal to open it in — a CI
+  // job, a pipe — in place of Ink's raw-mode error and a React stack trace. Worded after the
+  // clause above, because it is the same refusal one command over. The remedy is the run that
+  // installs without a terminal at all, and `init`'s refusal names it.
+  WIZARD_NEEDS_TERMINAL: "no terminal here",
+  WIZARD_NEEDS_TERMINAL_REMEDY: "init --from <id>",
+  // The same refusal from `uninstall`, whose confirm is the part that needs a terminal. Its
+  // remedy is the flag that answers the confirm in advance.
+  UNINSTALL_NEEDS_TERMINAL: "Uninstalling removes files, so it has to be confirmed",
+  UNINSTALL_NEEDS_TERMINAL_REMEDY: "uninstall --yes",
+  // What `init --ui --marketplace` is refused with: the editor's address carries an id and no
+  // marketplace, so the flag would be dropped on the way.
+  EDITOR_LOADS_MARKETPLACES: "the editor loads marketplaces itself",
+  // The opening of Ink's own error when a wizard is mounted on a stdin that is not a terminal.
+  // Asserted absent: a refusal that still printed it would be the crash with a sentence on top.
+  INK_RAW_MODE_UNSUPPORTED: "Raw mode is not supported",
   // The plan's two "kept" disclosures — what the run may not remove, and why. The first is
   // ownership, which `forkedFrom` decides; the second is this catalogue's own limit, for an id
   // the configuration NAMES and the decode could not place. Both name a real remedy, which is
-  // what makes them a disclosure rather than an apology. Scope is NOT one of them: a global
-  // entry is removable, and what it gets instead is the blast-radius disclosure below.
+  // what makes them a disclosure rather than an apology.
   SHARED_CONFIG_KEPT_AUTHORED: "written here rather than installed",
   SHARED_CONFIG_KEPT_UNPLACEABLE: "cannot place them",
   SHARED_CONFIG_KEPT_UNPLACEABLE_REMEDY: "then apply the configuration again",
-  // The project run's own half of the plan: a removal at global scope is shown under its own
-  // heading, and the statement beneath it counts and NAMES the other registered projects the
-  // yes changes. Absent at the home directory, where the scope was chosen and is obvious.
-  SHARED_CONFIG_GLOBAL_SKILLS_HEADING: "Skills installed globally",
-  SHARED_CONFIG_GLOBAL_AGENTS_HEADING: "Sub-agents installed globally",
-  SHARED_CONFIG_GLOBAL_REACH: "shared by every project on this machine",
-  SHARED_CONFIG_GLOBAL_REACH_PROJECTS: "Also affects",
-  SHARED_CONFIG_GLOBAL_REACH_ALONE: "No other project is registered here",
+  // A kept skill in a category that holds one skill, which the configuration's own skill takes:
+  // "<id>: kept, no longer assigned to <sub-agent>'s <category>". The claim is the clause after
+  // the id, so a spec composes the whole line around this fragment.
+  SHARED_CONFIG_KEPT_UNASSIGNED: "kept, no longer assigned to",
+  // The config writer's refusal of a category that holds one skill given two — "Category '<id>'
+  // is exclusive but holds 2 skills". An apply whose result it would refuse is refused before the
+  // question, so this is asserted on a run that never asked.
+  SHARED_CONFIG_SLOT_OVERFULL: "is exclusive but holds",
+  // A removal of the project's half of a `[P][G]` pair, from a project: the plan names the skill
+  // or sub-agent, then says its project copy goes and the global install's copy takes over. Two
+  // fragments, because the line wraps on a long skill label and both clauses are the claim.
+  SHARED_CONFIG_PROJECT_COPY_REMOVED: "this project's copy is removed",
+  SHARED_CONFIG_GLOBAL_TAKES_OVER: "the global one takes over",
+  // Every `--from` install says what it puts where before it writes anything: the entries going
+  // into the project under one heading, those going into the global install under the other. The
+  // headings identify the two lists; the claim is which list an entry is printed under, so a spec
+  // asserts the ORDER heading → entry → other heading rather than either heading alone. At the
+  // home directory only the global list is printed. `init --from` asks at a terminal and carries
+  // on without one; `edit --from` prints the lists inside the confirm it already asks.
+  SHARED_CONFIG_LIST_PROJECT: "Into this project:",
+  SHARED_CONFIG_LIST_GLOBAL: "Into the global install:",
+  // `init --from` in a project lists, after those two, the global skills it skips because the
+  // global install above the project already holds them — a skipped skill stays as installed.
+  SHARED_CONFIG_LIST_SKIPPED: "Skipped, already in the global install:",
+  SHARED_CONFIG_INSTALL_CONFIRM: "Install this configuration?",
+  // A project run only ADDS to the global install above it. A global entry the configuration
+  // states differently from how the global install holds it is left as installed, and this
+  // statement names it so the difference is not silent.
+  SHARED_CONFIG_KEPT_AS_INSTALLED: "Kept as installed in the global install",
 
   // The advisory selection-validation report both `init` and `edit` print after the wizard
   // (validateRequirements / validateConflicts / validateExclusivity in matrix-resolver.ts). The
@@ -640,12 +761,12 @@ export const STEP_TEXT = {
   PANEL_STACK: "Stack",
   // Literal fallback rendered in the Stack row when no stack is selected.
   PANEL_STACK_NONE: "none",
-  // formatSourceDisplayName("agents-inc"). The Marketplace row names the distinct
-  // marketplaces the selected skills' `SkillConfig.origin` values point at, and the
-  // E2E source carries no marketplace.json, so every skill resolves to
-  // DEFAULT_PUBLIC_SOURCE_NAME and the row reads as this. Drive the wizard through
-  // `setAllLocal()` and it says "All skills ejected" instead — an eject source names
-  // no marketplace.
+  // formatSourceDisplayName("agents-inc") — the public marketplace, as the Marketplace
+  // row names it. The row names the distinct marketplaces the selected skills'
+  // `SkillConfig.origin` values point at, so a run on an E2E fixture — a built
+  // marketplace — reads E2E_MARKETPLACE_NAME there instead. Drive the wizard through
+  // `setAllLocal()` and it says "All skills ejected" — an eject source names no
+  // marketplace.
   SOURCE_DISPLAY_DEFAULT: "Agents Inc",
   // formatSourceDisplayName("eject") — the label the summary surfaces give an ejected skill's
   // provenance. Named here so the Sources grid can be asserted NOT to use it: the grid captions
@@ -687,6 +808,9 @@ export const STEP_TEXT = {
   // hook Claude Code drops in an untrusted folder, sit in a folder it has no record of the user
   // trusting (`claudeProjectNeedsTrustMessage`, 2026-09-26).
   CLAUDE_FOLDER_UNTRUSTED: "only once you trust the folder",
+  // That line's remedy clause, which is only true where Claude Code will show the prompt: never in
+  // a plain folder below one the user already trusted.
+  CLAUDE_TRUST_PROMPT_REMEDY: "accept the trust prompt",
   // What a write command says instead of writing, while a scope in play holds two of them. The
   // long half goes through the logger unwrapped and the short half is the line oclif ends on, so
   // a spec asserting the explanation and one asserting the refusal are asserting two things.
@@ -694,7 +818,32 @@ export const STEP_TEXT = {
   // The remedy, which is a manual operation because no command performs it.
   RIVAL_FOLDERS_MANUAL_REMEDY: "No command merges them: move what you want to keep from",
   WRITE_REFUSED_RIVAL_FOLDERS: "Refusing to write while two source folders are on disk",
+  // What `share` says instead of posting while anything it would send is an ejected (Local)
+  // copy, an editor-added skill included: the ejected skills are named beside the first half,
+  // and the second says what can be shared instead. `edit --ui` opens the same installation.
+  SHARE_EJECTED_SKILLS_REFUSED: "ejected skills cannot be shared",
+  SHARE_ONLY_PLUGINS: "Only plugins can be shared",
+  // What `share` prints after the id when the marketplace the id names is a folder on disk
+  // rather than a GitHub ref. It still shares.
+  SHARE_FOLDER_MARKETPLACE: "installs only where that folder exists",
+  // What `share` prints when what it sends comes from more than one marketplace — a payload names
+  // one — naming each skill the id leaves behind. It still shares.
+  SHARE_SKILLS_NOT_INSTALLED_ELSEWHERE: "will not install elsewhere",
+  // The two builds the refusal of a marketplace with no valid `.claude-plugin/marketplace.json`
+  // names, in the order an author runs them (`marketplaceManifestMissing` and
+  // `marketplaceManifestUnreadable` in src/cli/utils/messages.ts). Fragments of one sentence, so
+  // there is no literal for `scripts/check-mirrored-constants.ts` to hold them against.
+  MANIFEST_REFUSAL_FIRST_BUILD: "build plugins",
+  MANIFEST_REFUSAL_SECOND_BUILD: "build marketplace",
 } as const;
+
+/**
+ * The refusal of a marketplace with no valid manifest as one match: both builds, `build plugins`
+ * first. Composed from the two halves above, so a rewording of either is one edit.
+ */
+export const MANIFEST_REFUSAL_BUILDS_IN_ORDER = new RegExp(
+  `${STEP_TEXT.MANIFEST_REFUSAL_FIRST_BUILD}[\\s\\S]*${STEP_TEXT.MANIFEST_REFUSAL_SECOND_BUILD}`,
+);
 
 /**
  * Diff glyphs the info panel, the confirm step and the Sources grid all paint in
@@ -706,6 +855,11 @@ export const ADDED_MARKER = "+";
 export const REMOVED_MARKER = "-";
 /** The confirm summary's marker for a row the edit leaves alone. */
 export const UNCHANGED_MARKER = "•";
+/**
+ * `edit`'s Changes-block marker for a skill whose install mode or scope moved, in front of its
+ * display name: `~ <name> (<from> → <to>)`.
+ */
+export const CHANGED_MARKER = "~";
 
 /**
  * The invocation prefix the CLI prints in its user-facing guidance ("Run
@@ -732,6 +886,8 @@ export const CLI_INVOKE_COMMAND = "npx agents-inc";
 export const BRANDING = {
   DEFAULT_NAME: "Agents Inc.",
   WHITE_LABEL_NAME: "Northwind",
+  /** What a spec renames that white label to by hand, sharing no substring with either name. */
+  RENAMED_WHITE_LABEL_NAME: "Fabrikam",
   DOCTOR_HEADING_NOUN: "Doctor",
   EJECT_HEADING_NOUN: "Eject",
   UNINSTALL_HEADING_NOUN: "Uninstall",
@@ -815,6 +971,12 @@ export const KEYS = {
    * the page object wrote.
    */
   SPACE: " ",
+  /**
+   * Written by `TerminalSession.arrowDown()` and `enter()`. Named for the page object that writes
+   * several keys as ONE burst, the way a fast typist's keys or a paste reach the terminal.
+   */
+  ARROW_DOWN: "\x1b[B",
+  ENTER: "\r",
 } as const;
 
 export const INTERNAL_DELAYS = {
@@ -917,6 +1079,12 @@ export const SOURCE_PATHS = {
   // scripts/check-mirrored-constants.ts.
   PLUGINS_DIST: "dist/plugins",
 } as const;
+
+/**
+ * A marketplace's manifest as `doctor` names it in a finding, and as an author types it. Composed
+ * from its two mirrored halves, as the product composes it.
+ */
+export const MARKETPLACE_MANIFEST_PATH = `${SOURCE_PATHS.PLUGIN_MANIFEST_DIR}/${FILES.MARKETPLACE_JSON}`;
 
 /**
  * Terminal geometry overrides for CLI sessions. The unset defaults live in

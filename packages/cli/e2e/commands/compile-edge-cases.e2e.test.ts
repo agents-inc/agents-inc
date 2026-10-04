@@ -154,7 +154,8 @@ This skill has invalid YAML frontmatter.
 
       // Compile should succeed — the broken skill is skipped, the valid one compiles
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Discovered 1 local skills");
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
 
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
@@ -269,7 +270,8 @@ This skill has invalid YAML frontmatter.
       // discovered, so it's silently skipped during resolution. The existing skill
       // still routes to the agent.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Discovered 1 local skills");
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
 
       // The compiled agent should reference the existing skill but not the phantom
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(
@@ -308,7 +310,8 @@ This skill has invalid YAML frontmatter.
       // With an empty stack, the skill is discovered but not routed to any agent.
       // Agents should still compile (with no skill references).
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(output).toContain("Discovered 1 local skills");
+      expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
 
       // The agent should compile but not reference the orphan skill
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(

@@ -27,7 +27,7 @@ import {
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
 
-/** `checkSourceReachable` reports the whole matrix, which the E2E source defines. */
+/** `checkSourceReachable` counts what the marketplace carries, which the E2E source defines. */
 const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}`;
 
 /**
@@ -160,7 +160,7 @@ describe("doctor diagnostics", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
-      expect(stdout).toContain("1/1 agents compiled");
+      expect(stdout).toContain("1/1 agent compiled");
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_PLUGINS_INSTALLED);
@@ -223,7 +223,7 @@ describe("doctor diagnostics", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
-      expect(stdout).toContain("1/1 agents compiled");
+      expect(stdout).toContain("1/1 agent compiled");
       // The control for the spec above: the tip fires only on the warn result.
       expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
     });
@@ -329,7 +329,7 @@ describe("doctor diagnostics", () => {
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
-      expect(stdout).toContain("0/1 skills found");
+      expect(stdout).toContain("0/1 skill found");
       expect(stdout).toContain(`- ${UNKNOWN_SKILL_ID} (not found)`);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_CHECK_SKILL_IDS);
     });

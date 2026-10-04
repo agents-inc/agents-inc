@@ -1,37 +1,45 @@
 import path from "path";
+import { cp } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 
 import "../matchers/setup.js";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
 import {
-  addForkedFromMetadata,
   agentsPath,
   createTempDir,
   cleanupTempDir,
+  flattenCliOutput,
+  isClaudeCLIAvailable,
   listFiles,
   loadConfigOrFail,
-  readTestFile,
-  skillsPath,
+  writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { createE2ESource } from "../helpers/create-e2e-source.js";
+import {
+  createE2EPluginSource,
+  type E2EPluginSource,
+} from "../helpers/create-e2e-plugin-source.js";
 import {
   runInitFrom,
   runShare,
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
-import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
-import { flattenCliOutput } from "../helpers/test-utils.js";
+import { CLI } from "../fixtures/cli.js";
+import { PINNED_WIRE_VERSION } from "../fixtures/seed-wire-contract.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, FILES } from "../pages/constants.js";
-import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
 import {
-  UPSTREAM_SKILL_NAME,
-  buildSeedExternalSkill,
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
   buildSeedPayload,
+  buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 
 /**
  * `share` end to end: the CLI turns the installation in this directory into a configuration the
@@ -41,47 +49,28 @@ import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js
  * a payload, share what was installed, then install the minted id into a second, untouched
  * directory and compare the two installations. A spec that only inspected the posted body would
  * pass on a payload the decoder cannot read.
- */
-
-/**
- * A skill added from outside the catalogue, as it reaches the receiver: minted id, the category
- * the sharer confirmed, and the whole directory inline.
  *
- * A NON-exclusive category, for the reason `init-from-external-skills.e2e.test.ts` gives: an
- * exclusive one holds a single skill, so placing a carried skill beside a catalogue skill in one
- * would make these specs about that rule instead of about carried content.
+ * A share carries plugins only — `share-refuses-ejected.e2e.test.ts` owns the refusal of ejected
+ * skills and the `edit --ui` that still opens them — so every installation shared here is a
+ * plugin one. Where the spec only needs `share` to READ an installation, the configuration is
+ * written as a plugin install records it, which needs no Claude CLI; the round trip installs real
+ * plugins at both ends and needs one.
  */
-const EXTERNAL_ID = "external-web-tooling-brainstorming";
-const EXTERNAL_REPO = "obra/superpowers";
-const EXTERNAL_PATH = "skills/brainstorming";
-const EXTERNAL_FILES = {
-  [FILES.SKILL_MD]: renderSkillMd(UPSTREAM_SKILL_NAME, "Structured brainstorming"),
-  "reference/prompts.md": "# Prompts\n",
-};
 
-function externalEntry() {
-  return buildSeedExternalSkill({
-    categoryId: "web-tooling",
-    repo: EXTERNAL_REPO,
-    path: EXTERNAL_PATH,
-    files: EXTERNAL_FILES,
-  });
-}
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
+const claudeAvailable = await isClaudeCLIAvailable();
 
 describe("share", () => {
-  let sourceDir: string;
-  let e2eSourceTempDir: string;
   let store: SeedConfigStore;
   const tempDirs: string[] = [];
 
   beforeAll(async () => {
-    ({ sourceDir, tempDir: e2eSourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   });
 
   afterAll(async () => {
     await store.close();
-    await cleanupTempDir(e2eSourceTempDir);
   });
 
   afterEach(async () => {
@@ -96,128 +85,24 @@ describe("share", () => {
     return dir;
   }
 
-  it("mints an id whose install matches the installation it was minted from", async () => {
-    const origin = await takeTempDir();
-    store.publish(
-      "Origin01",
-      buildSeedPayload({
-        v: PINNED_WIRE_VERSION,
-        skills: {
-          [E2E_SKILL.react.id]: ejectedGlobalSkill(),
-          [E2E_SKILL.vitest.id]: ejectedGlobalSkill({
-            assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
-          }),
-        },
+  /** A plugin installation from the public catalogue, as its config.ts records it. */
+  async function writePluginInstallation(dir: string): Promise<void> {
+    await writeProjectConfig(
+      dir,
+      buildProjectConfig({
+        name: "plugin-share",
+        skills: buildSkillConfigs([E2E_SKILL.react.id], {
+          scope: "global",
+          origin: DEFAULT_PUBLIC_SOURCE_NAME,
+        }),
+        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
       }),
     );
-    const installed = await runInitFrom(store, "Origin01", { dir: origin }, sourceDir);
-    expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
-
-    const shared = await runShare(store, { dir: origin });
-
-    expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(store.minted).toHaveLength(1);
-    const mintedId = firstElement(store.minted);
-    expect(shared.output).toContain(mintedId);
-
-    // The other direction, in a directory that has never seen any of this: same skills at the
-    // same scopes, the same sub-agent roster, and the same per-agent curation.
-    const rebuilt = await takeTempDir();
-    const reinstalled = await runInitFrom(store, mintedId, { dir: rebuilt }, sourceDir);
-    expect(reinstalled.exitCode, `reinstall failed: ${reinstalled.output}`).toBe(
-      EXIT_CODES.SUCCESS,
-    );
-
-    const before = await loadConfigOrFail(origin);
-    const after = await loadConfigOrFail(rebuilt);
-    expect(after.skills).toStrictEqual(before.skills);
-    expect(after.agents).toStrictEqual(before.agents);
-    expect(after.stack).toStrictEqual(before.stack);
-    // Both sides of the install, not just the config: a config that agrees while the disk does
-    // not is the failure the round trip exists to rule out.
-    expect(await listFiles(skillsPath(rebuilt))).toStrictEqual(await listFiles(skillsPath(origin)));
-    expect(await listFiles(agentsPath(rebuilt))).toStrictEqual(await listFiles(agentsPath(origin)));
-    // The preload split the original payload asked for survives both directions.
-    await expect({ dir: rebuilt }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
-      exactSkills: [E2E_SKILL.vitest.id],
-    });
-
-    // Both ENDS of the round trip, at four-surface strength. The comparisons above are
-    // origin-against-rebuild, so two installations that are equally broken satisfy every one of
-    // them — a generated pair that stopped narrowing travels perfectly. Each end is checked
-    // against itself here, which is the claim a symmetry check cannot make.
-    await expectFourSurfaces(origin);
-    await expectFourSurfaces(rebuilt);
-  });
-
-  it("carries an added skill's own bytes back, so the minted id installs it too", async () => {
-    const origin = await takeTempDir();
-    store.publish(
-      "Origin03",
-      buildSeedPayload({
-        v: PINNED_WIRE_VERSION,
-        skills: { [EXTERNAL_ID]: ejectedGlobalSkill() },
-        external: { [EXTERNAL_ID]: externalEntry() },
-      }),
-    );
-    const installed = await runInitFrom(store, "Origin03", { dir: origin }, sourceDir);
-    expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
-
-    const shared = await runShare(store, { dir: origin });
-    expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
-
-    // A skill no catalogue knows answers to no id on the way back in either, so the content has
-    // to travel a second time or the id this share minted installs a configuration missing it.
-    const posted: { external?: Record<string, { repo: string; path: string }> } = JSON.parse(
-      firstElement(store.requests.filter((request) => request.method === "POST")).body,
-    );
-    expect(Object.keys(posted.external ?? {})).toStrictEqual([EXTERNAL_ID]);
-    // Provenance, rebuilt from what the install recorded on disk: where the bytes came from is
-    // what lets a reader go and look, and the path is the only address a skill outside every
-    // catalogue has.
-    expect(posted.external?.[EXTERNAL_ID]?.repo).toBe(EXTERNAL_REPO);
-    expect(posted.external?.[EXTERNAL_ID]?.path).toBe(EXTERNAL_PATH);
-
-    const rebuilt = await takeTempDir();
-    const mintedId = firstElement(store.minted);
-    const reinstalled = await runInitFrom(store, mintedId, { dir: rebuilt }, sourceDir);
-    expect(reinstalled.exitCode, `reinstall failed: ${reinstalled.output}`).toBe(
-      EXIT_CODES.SUCCESS,
-    );
-    // The failure this whole leg exists to end: the id reported as one the catalogue does not
-    // know, because the second payload named it and carried nothing.
-    expect(flattenCliOutput(reinstalled.output)).not.toContain("does not know");
-
-    // Both sides of the install, and the whole directory rather than the manifest alone: a skill
-    // that arrives without its reference files loads and then cannot do what it says.
-    const before = await loadConfigOrFail(origin);
-    const after = await loadConfigOrFail(rebuilt);
-    expect(after.skills).toStrictEqual(before.skills);
-    expect(after.stack).toStrictEqual(before.stack);
-    expect(await listFiles(skillsPath(rebuilt))).toStrictEqual([EXTERNAL_ID]);
-    for (const file of [FILES.SKILL_MD, path.join("reference", "prompts.md")]) {
-      expect(await readTestFile(path.join(skillsPath(rebuilt), EXTERNAL_ID, file))).toBe(
-        await readTestFile(path.join(skillsPath(origin), EXTERNAL_ID, file)),
-      );
-    }
-
-    // An id no catalogue knows has to reach the generated unions at both ends, or the config
-    // each end wrote names a skill its own `config-types.ts` never learned.
-    await expectFourSurfaces(origin);
-    await expectFourSurfaces(rebuilt);
-  });
+  }
 
   it("identifies itself as the CLI, and posts to the collection rather than to an id", async () => {
     const origin = await takeTempDir();
-    store.publish(
-      "Origin02",
-      buildSeedPayload({
-        v: PINNED_WIRE_VERSION,
-        skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() },
-      }),
-    );
-    await runInitFrom(store, "Origin02", { dir: origin }, sourceDir);
-    store.reset();
+    await writePluginInstallation(origin);
 
     await runShare(store, { dir: origin });
 
@@ -227,32 +112,35 @@ describe("share", () => {
     expect(firstElement(store.requests).userAgent).toBe("agents-inc-cli");
   });
 
-  it("leaves a skill the user wrote themselves out of what it shares", async () => {
-    // Two ejected skills, indistinguishable in config.ts — both `origin: "eject"`. What tells
-    // them apart is on disk: the CLI stamps `forkedFrom` into every skill it copies, and a
-    // skill somebody wrote by hand into `.claude/skills/` carries none.
-    const project = await ProjectBuilder.editable({
-      skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
+  it("refuses a scope holding two source folders, without spending a write", async () => {
+    const origin = await takeTempDir();
+    await writePluginInstallation(origin);
+
+    // The allowed half first, on the same installation: with one source folder it shares.
+    const before = await runShare(store, { dir: origin });
+    expect(before.exitCode, `share failed: ${before.output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(store.minted).toHaveLength(1);
+
+    // The rival: the same source folder under the retired name, which is what a summoner compiled
+    // under the other layout leaves behind. Which of the two is read is the resolver's guess.
+    await cp(path.join(origin, DIRS.SOURCE_CLAUDE), path.join(origin, DIRS.CLAUDE_SRC), {
+      recursive: true,
     });
-    tempDirs.push(path.dirname(project.dir));
-    await addForkedFromMetadata(project.dir, E2E_SKILL.react.id);
+    store.reset();
 
-    const shared = await runShare(store, project);
+    const { exitCode, output } = await runShare(store, { dir: origin });
+    const said = flattenCliOutput(output);
 
-    expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
-    // Not refused and not carried: a user-authored skill is outside the round trip, so nothing
-    // about leaving it home is lossy — it was never in scope. `edit --from` must not delete it
-    // either, which is the same rule read from the other end.
-    const posted: { skills: Record<string, unknown>; external?: unknown } = JSON.parse(
-      firstElement(store.requests).body,
+    // `edit --ui` mints the same id from the same directory and already refuses here; an id
+    // minted from whichever folder the resolver picked describes an installation nobody chose.
+    expect(exitCode, `share must refuse a scope holding two source folders: ${said}`).toBe(
+      EXIT_CODES.ERROR,
     );
-    expect(Object.keys(posted.skills)).toStrictEqual([E2E_SKILL.react.id]);
-    // `expect(posted.external).toBeUndefined()` sat here and proved nothing: this fixture's two
-    // skills are CATALOGUE skills, and `external` only ever carries ids no catalogue resolves, so
-    // it is undefined whether the rule works or not. The discriminating assertion is the one
-    // above — the posted id set is exactly the catalogue skill, with the user-authored directory
-    // absent from it. A spec that needs the content half asserted needs an EXTERNAL skill in the
-    // fixture; the sibling above, which posts `EXTERNAL_ID`, is that spec.
+    expect(said).toContain(STEP_TEXT.WRITE_REFUSED_RIVAL_FOLDERS);
+    // The same refusal every write command makes, explanation and manual remedy included.
+    expect(said).toContain(STEP_TEXT.RIVAL_FOLDERS_REFUSE_WRITES);
+    expect(said).toContain(STEP_TEXT.RIVAL_FOLDERS_MANUAL_REMEDY);
+    expect(store.requests).toStrictEqual([]);
   });
 
   it("refuses a directory with nothing installed, without spending a write", async () => {
@@ -266,4 +154,114 @@ describe("share", () => {
     // scarce half of the store's free tier.
     expect(store.requests).toStrictEqual([]);
   });
+});
+
+/**
+ * The round trip on real plugins, which hands both installs to the Claude CLI — so, like every
+ * plugin-mode spec, it needs the binary. The marketplace is the built E2E plugin source, a
+ * custom marketplace, which is the case a share has to NAME: the receiver is given no
+ * `--marketplace` of its own, so the payload's ref is all it has.
+ */
+describe.skipIf(!claudeAvailable)("share, with plugins installed at both ends", () => {
+  let fixture: E2EPluginSource;
+  let store: SeedConfigStore;
+  const tempDirs: string[] = [];
+
+  beforeAll(async () => {
+    fixture = await createE2EPluginSource();
+    store = await startSeedConfigStore();
+  }, TIMEOUTS.SETUP);
+
+  afterAll(async () => {
+    await store.close();
+  });
+
+  afterEach(async () => {
+    store.reset();
+    await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
+  });
+
+  async function takeTempDir(): Promise<string> {
+    const dir = await createTempDir();
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  it(
+    "mints an id whose install, with no --marketplace, matches the installation it was minted from",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      const origin = await takeTempDir();
+      store.publish(
+        "Plugin01",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: buildSeedSkill({
+              install: "plugin",
+              scope: "global",
+              assignments: { [WEB_DEV]: "lazy" },
+            }),
+            [E2E_SKILL.vitest.id]: buildSeedSkill({
+              install: "plugin",
+              scope: "global",
+              assignments: { [WEB_DEV]: "preloaded" },
+            }),
+          },
+        }),
+      );
+      const installed = await runInitFrom(store, "Plugin01", { dir: origin }, fixture.sourceDir);
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+      store.reset();
+
+      const shared = await runShare(store, { dir: origin });
+
+      expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(store.minted).toHaveLength(1);
+      const mintedId = firstElement(store.minted);
+      expect(shared.output).toContain(mintedId);
+      // A plugin from a custom marketplace installs only from that marketplace, so the payload
+      // has to say which one.
+      const posted: { marketplace?: string } = JSON.parse(firstElement(store.requests).body);
+      expect(posted.marketplace).toBe(fixture.sourceDir);
+
+      // The other direction, in a directory that has never seen any of this and is given no
+      // marketplace: same skills at the same scopes, the same sub-agent roster, the same
+      // per-agent curation, and the same plugins registered.
+      const rebuilt = await takeTempDir();
+      const reinstalled = await CLI.run(
+        ["init", "--from", mintedId],
+        { dir: rebuilt },
+        { env: { AGENTS_INC_API_URL: store.url } },
+      );
+      expect(reinstalled.exitCode, `reinstall failed: ${reinstalled.output}`).toBe(
+        EXIT_CODES.SUCCESS,
+      );
+
+      const before = await loadConfigOrFail(origin);
+      const after = await loadConfigOrFail(rebuilt);
+      expect(after.skills).toStrictEqual(before.skills);
+      expect(after.agents).toStrictEqual(before.agents);
+      expect(after.stack).toStrictEqual(before.stack);
+      expect(await listFiles(agentsPath(rebuilt))).toStrictEqual(
+        await listFiles(agentsPath(origin)),
+      );
+      for (const skillId of [E2E_SKILL.react.id, E2E_SKILL.vitest.id]) {
+        const ref = buildMarketplacePluginRef(skillId, fixture.marketplaceName);
+        await expect({ dir: rebuilt }).toHavePluginInRegistry(ref, "user");
+        await expect({ dir: rebuilt }).toHavePlugin(ref);
+      }
+      // The preload split the original payload asked for survives both directions. A plugin skill
+      // is preloaded under its plugin-qualified name, `<plugin>:<skill>`, and each skill is its
+      // own plugin.
+      await expect({ dir: rebuilt }).toHaveAgentFrontmatter(WEB_DEV, {
+        exactSkills: [`${E2E_SKILL.vitest.id}:${E2E_SKILL.vitest.id}`],
+      });
+
+      // Both ENDS at four-surface strength: the comparisons above are origin-against-rebuild, so
+      // two installations that are equally broken satisfy every one of them.
+      await expectFourSurfaces(origin);
+      await expectFourSurfaces(rebuilt);
+    },
+  );
 });

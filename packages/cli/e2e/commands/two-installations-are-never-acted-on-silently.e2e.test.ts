@@ -6,6 +6,7 @@ import {
   cleanupTempDir,
   createLocalSkillIn,
   createTempDir,
+  flattenCliOutput,
   listFiles,
   renderMetadataYaml,
   runCLI,
@@ -147,9 +148,12 @@ describe("a scope holding two installations", () => {
       exitCode,
       "compile resolves the provider by roster order, so it rewrites the Claude installation of a project that also has a Codex one and reports success",
     ).toBe(EXIT_CODES.INVALID_ARGS);
-    expect(combined).toContain("2 installations");
-    expect(combined).toContain("--provider");
-    expect(combined).toContain("Nothing has been changed.");
+    // Flattened: the refusal leads with the project's path, which pushes its sentence across
+    // oclif's line breaks.
+    const said = flattenCliOutput(combined);
+    expect(said).toContain("2 installations");
+    expect(said).toContain("--provider");
+    expect(said).toContain("Nothing has been changed.");
   });
 
   it("compiles the installation --provider names, and only that one", async () => {
@@ -178,8 +182,9 @@ describe("a scope holding two installations", () => {
     const { exitCode, combined } = await run(["update"]);
 
     expect(exitCode).toBe(EXIT_CODES.INVALID_ARGS);
-    expect(combined).toContain("2 installations");
-    expect(combined).toContain("--provider");
+    const said = flattenCliOutput(combined);
+    expect(said).toContain("2 installations");
+    expect(said).toContain("--provider");
   });
 
   it("updates the installation --provider names", async () => {

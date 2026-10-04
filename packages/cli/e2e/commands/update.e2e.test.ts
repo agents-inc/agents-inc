@@ -21,9 +21,7 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * It reads the marketplaces its installation's config actually names — the distinct
  * non-eject `source` values on the active skill entries — and runs
  * `claude plugin marketplace update` for each. It never reads a skills source, never
- * compares hashes, never rewrites a skill directory, and never recompiles: subagents
- * reference plugin skills by pointer, so refreshed content lands without touching the
- * compiled agents.
+ * compares hashes, never rewrites a skill directory, and never recompiles.
  *
  * Ejected skills are the user's copies. The command says so in one line and leaves them
  * alone, which is what makes an eject-only installation a successful no-op rather than
@@ -193,7 +191,7 @@ describe("update command", () => {
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(output).toContain(STEP_TEXT.UPDATE_NO_CLAUDE_CLI);
       expect(output, "nothing was refreshed, so nothing may claim to be").not.toContain(
-        STEP_TEXT.UPDATE_COMPLETE,
+        STEP_TEXT.UPDATE_PLUGINS_UNCHANGED,
       );
     },
   );
