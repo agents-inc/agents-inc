@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
+    "//dev": "`wrangler dev`, after applying the local D1 migrations and, when the local store holds no skill index or one older than three days, building one the way .github/workflows/build-skill-index.yml does — `build:skill-index` without a token, then `wrangler kv key put --local`. Without them a local worker failed every sign-in and answered 503 to the editor's Add skill search. Neither step stops the worker from starting; scripts/dev.ts says why. Arguments go to `wrangler dev`, and `--persist-to` reaches both steps.",
+    "dev": "bun scripts/dev.ts",
     "//build": "Declarations only — see tsconfig.build.json. wrangler builds the worker itself; this exists so apps/editor can infer its API client from AppType without compiling the worker's source.",
     "build": "tsc -p tsconfig.build.json",
     "//build:skill-index": "Crawls the allowlisted skills repositories and writes the index to the file named as its argument. Deliberately NOT part of `build` or `deploy`: it reaches the live GitHub API and the thing it produces is published to KV by .github/workflows/build-skill-index.yml, not by a deploy. Takes GITHUB_TOKEN if one is set and runs unauthenticated if not, so it can be run by hand.",
@@ -17,6 +18,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "//test:e2e": "The Node-side suite in vitest.e2e.config.ts: what a developer runs, driven as a process — `bun run dev` started over a store of its own, with GitHub played by a stand-in on the network path, so nothing reaches github.com. Separate from `test` because each spec starts a real worker. Needs `bun` and `openssl` on PATH.",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
