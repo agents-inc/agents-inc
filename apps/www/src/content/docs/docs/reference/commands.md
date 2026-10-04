@@ -177,7 +177,7 @@ Writes a whole marketplace into a new directory named after the marketplace: a `
 
 **Flags:** none — in particular there is no `--force`. Both name rules `build marketplace` enforces are enforced here instead, because failing at creation beats failing at publish when the name is already on every id; and a target directory that already holds files is refused rather than merged into or overwritten, because a scaffold writes a whole tree and a flag that overwrites an author's own files is the destructive half of a silent fallback. Both ways out — another name, or emptying that directory — are one step.
 
-**Reserved names:** `agents-inc`, `external` and `local` are refused, the same three `build marketplace` refuses.
+**Reserved names:** `agents-inc`, `external`, `local` and `eject` are refused, the same four `build marketplace` refuses.
 
 ---
 

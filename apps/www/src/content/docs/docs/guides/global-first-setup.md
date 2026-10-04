@@ -68,7 +68,7 @@ Both front doors enforce that from the same rule. Hand a project skill to a sub-
 
 ## Editing
 
-**Once a global install exists, `init --from` won't touch it.** A payload carrying global-scoped content writes into your own `~/.claude`, so an installation already there is in its way even when the project you're standing in is spotless — the refusal names it and points at `uninstall`. `edit` is the command that accepts a setup already in place, in either direction:
+`edit` is the command that accepts a setup already in place, in either direction:
 
 ```bash
 npx agents-inc edit --ui              # publishes what's installed and opens it at agentsinc.sh/editor

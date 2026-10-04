@@ -80,7 +80,7 @@ The causes:
 `init --from <id>` is greenfield-only. In a directory that already carries an installation it refuses before it even fetches the configuration:
 
 ```
-An installation already exists at <path>. Run 'npx agents-inc uninstall' first — installing a shared configuration is a fresh setup, not a merge.
+An installation already exists at <path>. Run 'npx agents-inc uninstall' first — installing a shared configuration is a fresh setup, not a merge. To apply it here instead, run 'npx agents-inc edit --from <id>'.
 ```
 
 Skills or sub-agents the current catalogue no longer knows are named and skipped, and the install proceeds without them.

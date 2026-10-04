@@ -224,8 +224,8 @@ shows a diff at the confirm step, and on confirm reinstalls, rewrites the
 config and recompiles.
 :::
 
-To pull newer skill content from the marketplace, `npx agents-inc update`. It
-refreshes every marketplace your config names through Claude Code's own plugin
-commands, and that is all it does — it asks nothing, and it recompiles nothing,
-because a sub-agent references a plugin skill by pointer rather than by copy.
-Ejected skills are copies you own, so it never touches them.
+`npx agents-inc update` refreshes the listing of every marketplace your config
+names through Claude Code's own plugin commands, and that is all it does — the
+plugins already installed keep their version, it asks nothing, and it recompiles
+nothing, because a sub-agent references a plugin skill by pointer rather than by
+copy. Ejected skills are copies you own, so it never touches them.

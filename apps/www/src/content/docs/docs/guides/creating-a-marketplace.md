@@ -73,14 +73,17 @@ home directory, one in a project. Two marketplaces both shipping a bare `web-fro
 different skills under one name, and whichever landed second would quietly win. Prefixing makes every
 id unique, so the two simply never meet.
 
-### Three names you cannot use
+### Four names you cannot use
 
-`agents-inc`, `external` and `local` are reserved, and `build marketplace` refuses them.
+`agents-inc`, `external`, `local` and `eject` are reserved, and `build marketplace` refuses them. The
+CLI also refuses to load a marketplace named `external`, `local` or `eject`.
 
 `agents-inc` is the public marketplace's own namespace — its skills are unprefixed, so the bare
 `web-frontend` and everything like it already belong to it. `external` and `local` hold the skills
 that belong to no marketplace at all: one you added from a repository, one you wrote yourself.
-Publishing under any of the three would claim ids that are not yours.
+Publishing under any of the three would claim ids that are not yours. `eject` is what an
+installation records for a skill copied into it, so every skill installed from a marketplace of that
+name would be recorded as a copy.
 
 Pick anything else. Your `package.json` name is the default, and `--name` overrides it when that name
 is npm-scoped.
@@ -94,7 +97,7 @@ Marketplace 'acme' ships 2 skill id(s) outside its own namespace.
 Every skill id must begin with the marketplace's name:
   api-framework-hono -> acme-api-framework-hono
   web-framework-react -> acme-web-framework-react
-Rename each skill directory and the id in its metadata, re-run 'build
+Rename each skill directory and the 'name' in its SKILL.md, re-run 'build
 plugins', then build the marketplace again.
 ```
 

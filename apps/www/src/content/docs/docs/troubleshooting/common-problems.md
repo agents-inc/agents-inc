@@ -135,9 +135,9 @@ Ids minted by `share` or by the editor are content-addressed and are never migra
 - `Could not reach https://api.agentsinc.sh — check your connection.`
 - `Fetching configuration failed (HTTP <status>).` and `The configuration store returned something that is not JSON.`
 - `Configuration '<id>' is not in a format this version of the CLI can install. Shared ids are never migrated — re-share the configuration to mint a current one, or update the CLI if that id came from a newer version.`
-- `An installation already exists at <path>. Run 'npx agents-inc uninstall' first — installing a shared configuration is a fresh setup, not a merge.`
+- `An installation already exists at <path>. Run 'npx agents-inc uninstall' first — installing a shared configuration is a fresh setup, not a merge. To apply it here instead, run 'npx agents-inc edit --from <id>'.`
 
-**`init --from` is greenfield-only, and every one of its refusals fires before anything is written.** A configuration carrying global-scoped content refuses against an existing global install too, and one carrying project-scoped entries refuses to install at your home directory, naming each offender as `skill <id> (scope: project)`.
+**`init --from` is greenfield-only, and every one of its refusals fires before anything is written.** A configuration carrying project-scoped entries refuses to install at your home directory, naming each offender as `skill <id> (scope: project)`.
 
 **`edit --from` is the destructive half**, because a payload states a whole roster and what it leaves out is removed. It needs a terminal to confirm that, and says so rather than applying silently:
 
