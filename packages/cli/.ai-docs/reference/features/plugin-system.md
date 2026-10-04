@@ -529,7 +529,7 @@ type GateReport = {
 - Global-scoped skills/agents go to `~/<source folder>/config.ts` and the host's global agents directory (`~/.claude/agents/` for Claude)
 - Project-scoped skills/agents go to `{projectDir}/<source folder>/config.ts` and the host's project agents directory (`{projectDir}/.claude/agents/` for Claude)
 
-`<source folder>` is `.agents-inc/<provider>/`, or `.claude-src/` for a Claude installation made before the rename — see [../concepts/source-folder-layout.md](../concepts/source-folder-layout.md). The agents directory per host and scope is `agentsDir(provider, scope, projectDir)`.
+`<source folder>` is `.agents-inc/<provider>/` — see [../concepts/source-folder-layout.md](../concepts/source-folder-layout.md). The agents directory per host and scope is `agentsDir(provider, scope, projectDir)`.
 
 **Two branches, keyed on `isHomeDirectory(projectDir)`:**
 

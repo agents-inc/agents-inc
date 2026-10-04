@@ -303,7 +303,7 @@ grep -rnP '^export const [A-Z_]+ = .*os\.homedir\(\)' src/cli
 
 `createPluginInstalledProject()` reproduces a completed `claude plugin install` **without** the Claude CLI binary — it writes `config.ts` (skills sourced to the marketplace), `settings.json` (`enabledPlugins`), and the fake-HOME `installed_plugins.json` registry directly. Plugin-state tests built on it run unconditionally, with no `describe.skipIf` gate.
 
-`probeConfigTypesNarrowing(claudeSrcDir, aliases)` asserts that a project's generated `config-types.ts` union aliases still REJECT bogus values, by running the repo-local `tsc` over a temporary probe module and reading its verdict. This is the property that matters: a union collapsed to `string` passes a text assertion but silently accepts everything. `exitCode === 0` means the aliases are NOT narrowing (a bug); non-zero with `TS_NOT_ASSIGNABLE` (`"TS2322"`) in the output means they are.
+`probeConfigTypesNarrowing(sourceFolderDir, aliases)` asserts that a project's generated `config-types.ts` union aliases still REJECT bogus values, by running the repo-local `tsc` over a temporary probe module and reading its verdict. This is the property that matters: a union collapsed to `string` passes a text assertion but silently accepts everything. `exitCode === 0` means the aliases are NOT narrowing (a bug); non-zero with `TS_NOT_ASSIGNABLE` (`"TS2322"`) in the output means they are.
 
 **Never create test data in** `e2e/commands/`, `e2e/interactive/`, `e2e/lifecycle/`, or `e2e/integration/`. Those directories contain only test files.
 

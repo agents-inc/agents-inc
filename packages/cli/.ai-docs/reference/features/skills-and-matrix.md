@@ -739,7 +739,7 @@ a `SKILL.md`), not the number of globbed metadata files.
 | 4–6   | `validateStacks()`, `validateAgents()`, `validateConfigFiles()` — run in parallel via `Promise.all`                                                      | errors only; each skips silently when its directory/file is absent |
 
 `loadSourceRepoConfig` (`configuration/config.ts`) reads the source repo's own config, which has no
-provider segment: `.agents-inc/config.ts`, else `.claude-src/config.ts` (`SOURCE_REPO_CONFIG_FOLDERS`).
+provider segment: `.agents-inc/config.ts`.
 `isSourceRepo` and `loadAndMergeFromBasePath` read `skillsDir` through it too.
 
 Phase 3 reads the **module-level `matrix` singleton** from `matrix/matrix-provider.ts` after the

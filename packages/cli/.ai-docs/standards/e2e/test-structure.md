@@ -212,7 +212,7 @@ it("should work", async () => {
   await delay(500);
   session.enter();
   // ... 20 more lines of keystrokes
-  const configPath = path.join(tempDir, ".claude-src", "config.ts");
+  const configPath = path.join(tempDir, ".agents-inc", "claude", "config.ts");
   expect(await fileExists(configPath)).toBe(true);
 });
 ```

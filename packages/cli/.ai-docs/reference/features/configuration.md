@@ -71,11 +71,8 @@ Type exports from the barrel: `BrandingConfig`, `SourceEntry`, `ResolvedConfig`,
 ## Config File Locations
 
 `<source folder>` is the folder that scope keeps one provider's installation in —
-`.agents-inc/<provider>` (`.agents-inc/claude` or `.agents-inc/codex`) for a new installation, and
-`.claude-src` for a Claude installation made before the rename, which is read and written where it
-is indefinitely; no command moves one. Resolved, never composed: `sourceFolderInUse(root, provider)`
-in `src/cli/lib/installation/install-layout.ts` takes the folder already on disk and falls back to
-the new-installation folder only when there is none —
+`.agents-inc/<provider>` (`.agents-inc/claude` or `.agents-inc/codex`). Resolved, never composed: `sourceFolderInUse(root, provider)` in
+`src/cli/lib/installation/install-layout.ts` —
 [concepts/source-folder-layout.md](../concepts/source-folder-layout.md) owns the layout. Every
 user-facing message naming the file builds it with `relativeConfigPath(root, provider)` so it names
 the folder that scope is actually on. `config.ts` carries no provider field; the folder is the
@@ -138,10 +135,10 @@ is what once told such an author a field was missing from a file they could see 
 Two readers in `configuration/config.ts` read a config's scalar settings, and both end in the private
 `readSourceConfigOrRefuse`:
 
-| Reader                                                                                             | Reads                                                                                                                                                                                                                                                                   |
-| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loadSourceConfig(dir, scope)` (private), via `loadProjectSourceConfig` / `loadGlobalSourceConfig` | An INSTALLATION's own config, at `getInstalledConfigPath(dir)` — inside the provider folder the directory holds                                                                                                                                                         |
-| `loadSourceRepoConfig(basePath)`                                                                   | A MARKETPLACE REPOSITORY's config about itself, which is provider-neutral: `<base>/.agents-inc/config.ts`, else `<base>/.claude-src/config.ts`, the first found winning. The old name has no sunset, because the CLI cannot move a folder in a repository it only reads |
+| Reader                                                                                             | Reads                                                                                                           |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `loadSourceConfig(dir, scope)` (private), via `loadProjectSourceConfig` / `loadGlobalSourceConfig` | An INSTALLATION's own config, at `getInstalledConfigPath(dir)` — inside the provider folder the directory holds |
+| `loadSourceRepoConfig(basePath)`                                                                   | A MARKETPLACE REPOSITORY's config about itself, which is provider-neutral: `<base>/.agents-inc/config.ts`       |
 
 Each answers `null` for exactly two states: no file on disk, and a file that evaluated and declared
 nothing. **Every way of failing raises** (owner ruling 2026-08-20). `readSourceConfigOrRefuse` hands

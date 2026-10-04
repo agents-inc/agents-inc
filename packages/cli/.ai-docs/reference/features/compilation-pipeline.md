@@ -811,8 +811,7 @@ The `compile` command (`src/cli/commands/compile.ts`) uses these operations to:
 
 0. Refuse before reading anything: `refuseAnAmbiguousInstallation` exits with
    `EXIT_CODES.INVALID_ARGS` when a scope holds a live installation of each provider and no
-   `--provider` names one; `settleSourceLayoutBeforeWriting` (`BaseCommand`) refuses a scope holding
-   both `.claude-src/` and `.agents-inc/claude/`.
+   `--provider` names one.
 1. `detectInstallations()` — `detectBothInstallations()` wrapped in a `ConfigLoadError`
    catch. A config file that exists but cannot be parsed hard-errors with
    `EXIT_CODES.ERROR` naming the path, BEFORE any compilation or write.

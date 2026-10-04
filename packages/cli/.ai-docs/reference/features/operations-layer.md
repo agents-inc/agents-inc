@@ -210,7 +210,6 @@ init.run()
 ```
 compile.run()
   |-> refuseAnAmbiguousInstallation(cwd, "compile", providerNamedBy(flags.provider), ...)
-  |-> settleSourceLayoutBeforeWriting(cwd)
   |-> detectBothInstallations(projectDir)
   |     -> detectGlobalInstallation() + detectProjectInstallation()
   |     -> ConfigLoadError => this.error(...) with EXIT_CODES.ERROR, before any write
@@ -245,7 +244,7 @@ compile.run()
 ```
 edit.run()
   |-> refuseAnAmbiguousInstallation(cwd, "edit", providerNamedBy(flags.provider), ...)
-  |-> ensureConfigReadable(cwd) + refuseUnofferablePlacements(cwd) + settleSourceLayoutBeforeWriting(cwd)
+  |-> ensureConfigReadable(cwd) + refuseUnofferablePlacements(cwd)
   |-> detectProject()
   |     -> detectInstallation() + loadProjectConfig()
   |-> loadSource({ projectDir, sourceFlag, captureStartupMessages: true })

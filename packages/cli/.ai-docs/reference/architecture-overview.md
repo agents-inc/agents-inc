@@ -43,8 +43,7 @@ last_validated: 2026-08-30
 | Runtime     | Node.js, floor `>=22` in `engines` (Ink 7 requires it — CI pins Node 22 in every job, and the E2E harness spawns the CLI with the runner's Node). Also Bun-compatible based on test helpers                                                                                                                                                                              |
 
 **`<source folder>` throughout this document** is the folder that scope keeps its agents-inc source
-in: `.agents-inc/<provider>` for anything installed since the rename, `.claude-src` for anything older,
-which is read and written where it is indefinitely — no command moves one. One installation is exactly one
+in: `.agents-inc/<provider>`. One installation is exactly one
 provider and the folder is what says which — nothing inside `config.ts` records it. The name is
 resolved rather than composed, and [concepts/scope-system.md](./concepts/scope-system.md) owns the
 resolution.

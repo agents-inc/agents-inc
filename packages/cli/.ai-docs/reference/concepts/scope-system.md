@@ -66,7 +66,7 @@ Skills and agents can exist at two scopes: `"project"` and `"global"`. This affe
 | `global`  | `claude` | `~/.claude/skills/`            | `~/.claude/agents/`            | `~/<source folder>/config.ts`              |
 | `global`  | `codex`  | `$CODEX_HOME/skills/`          | `$CODEX_HOME/agents/`          | `~/.agents-inc/codex/config.ts`            |
 
-`skillsDir(provider, scope, projectDir)` and `agentsDir(provider, scope, projectDir)` in `src/cli/lib/installation/install-layout.ts` answer the skills and agents columns, both off the module-private `hostRoles`; `$CODEX_HOME` is `~/.codex` where the variable is unset or empty. A Claude `<source folder>` is `.claude-src` or `.agents-inc/claude`, per scope, and is resolved rather than composed — see Path Resolution below. Every installation made before the rename is on the first; the CLI reads both and creates every new installation in `.agents-inc/<provider>/`. See [source-folder-layout.md](./source-folder-layout.md).
+`skillsDir(provider, scope, projectDir)` and `agentsDir(provider, scope, projectDir)` in `src/cli/lib/installation/install-layout.ts` answer the skills and agents columns, both off the module-private `hostRoles`; `$CODEX_HOME` is `~/.codex` where the variable is unset or empty. A `<source folder>` is `.agents-inc/<provider>`, per scope, and is resolved rather than composed — see Path Resolution below. See [source-folder-layout.md](./source-folder-layout.md).
 
 ## Path Resolution
 

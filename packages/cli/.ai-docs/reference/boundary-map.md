@@ -28,13 +28,10 @@ last_validated: 2026-07-30
 
 **Purpose:** Identifies all system boundaries where external data enters or leaves the CLI, and documents what validation/sanitization exists at each boundary.
 
-`<source folder>` throughout is the folder that scope keeps its source in — `.agents-inc/<provider>`
-for anything installed since the rename, `.claude-src` for anything older, which is read and
-written where it is indefinitely; no command moves one. It is resolved, never composed;
+`<source folder>` throughout is the folder that scope keeps its source in — `.agents-inc/<provider>`.
+It is resolved, never composed;
 [concepts/scope-system.md](./concepts/scope-system.md) owns the resolution. A SOURCE repo is the
-other way round and has no provider segment: `loadSourceRepoConfig` tries `.agents-inc/config.ts`
-then `.claude-src/config.ts`, and the second has no sunset, because the CLI can never move a folder
-in a repository it only reads.
+other way round and has no provider segment: `loadSourceRepoConfig` reads `.agents-inc/config.ts`.
 
 **Key Files:**
 
@@ -550,7 +547,7 @@ A **write-time invariant boundary**, distinct from the schema boundaries above: 
 **Deletion contracts:**
 
 - the source folder itself is removed only once empty (`removeDirIfEmpty`); user-owned content there (e.g. ejected templates) keeps it alive. `.claude/` follows the same rule and reports "Kept `.claude/` (contains user content)" otherwise.
-- **and its `.agents-inc/` parent after it**, through `cleanupSourceRoot`, attempted only when the provider folder itself went and only when the parent is likewise empty. A consuming repository keeps its own state under that parent — the benchmark's hand gate writes `baseline.json` and an `attempts/` directory there — so a parent that stays is SAID rather than left in silence, with the same "contains user content" wording. A scope still on the legacy name has no such parent: `sourceRootOf` answers `null` there, because `.claude-src/`'s parent is the scope root and removing THAT would take the user's project with it.
+- **and its `.agents-inc/` parent after it**, through `cleanupSourceRoot`, attempted only when the provider folder itself went and only when the parent is likewise empty. A consuming repository keeps its own state under that parent — the benchmark's hand gate writes `baseline.json` and an `attempts/` directory there — so a parent that stays is SAID rather than left in silence, with the same "contains user content" wording.
 - A skill directory without a `forkedFrom` marker is **skipped with a warning** — user-created content is never deleted.
 - Plugin uninstall derives its primary scope per skill from the config and sweeps every scope the host installs plugins at (`pluginScopesToSweep` in `commands/uninstall.tsx`, reading `PluginHost.offeredPlacements`), the config's own answer first, swallowing each attempt's error. A re-scoped plugin is filed under the scope it was INSTALLED at, which is why one scope is not enough.
 - **A project uninstall always deregisters** itself from the global `projects[]` registry (`mutateGlobal({ kind: "deregister-project" })`). A failure there — missing, project-less, or `ConfigLoadError`-corrupt global config — **warns and continues**; it may never fail the uninstall.

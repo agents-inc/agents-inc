@@ -2,7 +2,6 @@
 type: standard-gap
 severity: high
 affected_files:
-  - src/cli/lib/installation/layout-findings.ts
   - src/cli/lib/installation/source-scopes.ts
 standards_docs:
   - .ai-docs/standards/e2e/assertions.md
@@ -14,16 +13,11 @@ domain: cli
 root_cause: missing-rule
 status: partial
 partial_note: >-
-  Of the three instances only the first outlived the deletion of migrate on 2026-09-20, and it has
-  lost its pair. `folderBeingRead` in `src/cli/lib/installation/source-scopes.ts` still derives the
-  folder doctor's Layout row names (`bothSourceFoldersPresent`, from `layout-findings.ts`) and the
-  folder the write commands' refusal names (`rivalSourceFoldersRefuseWrites`, from
-  `refuseRivalSourceFolders` in `base-command.ts`). No spec drives either sentence from both sides
-  of the config's location: `LAYOUT_LEGACY_IS_READ` and `LAYOUT_CURRENT_IS_READ` in
-  `e2e/pages/constants.ts` are read by no spec, and the rival-folders spec seeds its config under
-  the old name only. The other two instances were the command's own and went with it. Also pending,
-  the Proposed Standard for `standards/e2e/assertions.md` is written into no standard, and nothing
-  runs the census grep.
+  None of the three instances survives. The last — the sentence naming which of a scope's two
+  source folders was the live one, in doctor's Layout row and in the write commands' refusal — was
+  deleted with `.claude-src/` support on 2026-10-04 (CLI-913). The finding stays for the CLASS it
+  names. Still pending: the Proposed Standard for `standards/e2e/assertions.md` is written into no
+  standard, and nothing runs the census grep.
 ---
 
 ## What Was Wrong

@@ -12,7 +12,7 @@ How to verify outcomes after a test runs.
 
 All file-based assertions go through custom Vitest matchers. Tests never call `readFile`, `readdir`, or `fileExists` directly in `it()` blocks. The matcher encapsulates the file reading.
 
-**Why:** If the config file format changes from `config.ts` to `config.yaml`, a matcher-based test needs zero changes -- only the matcher implementation updates. A test that calls `readFile(path.join(dir, ".claude-src", "config.ts"))` breaks everywhere — and the source-folder rename is the worked example: the folder's own name moved, and every spec that had written it out had to be edited by hand.
+**Why:** If the config file format changes from `config.ts` to `config.yaml`, a matcher-based test needs zero changes -- only the matcher implementation updates. A test that calls `readFile(path.join(dir, ".agents-inc", "claude", "config.ts"))` breaks everywhere.
 
 ---
 
@@ -207,9 +207,9 @@ await expectDualScopeInstallation(fakeHome, projectDir, {
 
 ### `expectNoSourceFolder(dir, reason)` and `expectOnlySourceFolder(dir, expected, reason)`
 
-In `e2e/assertions/source-folder-assertions.ts`. "No source folder here" asked of `DIRS.CLAUDE_SRC`, `DIRS.SOURCE_ROOT` and `DIRS.SOURCE_CLAUDE` — `SOURCE_FOLDER_NAMES` — and reported as the roster of names actually found, not as a boolean. A Codex folder, `DIRS.SOURCE_CODEX`, is not on the roster: it is caught through its parent, `DIRS.SOURCE_ROOT`, which is also all a Codex installation reads as to `expectOnlySourceFolder` — the same roster as a parent kept after its provider folder was removed.
+In `e2e/assertions/source-folder-assertions.ts`. "No source folder here" asked of `DIRS.SOURCE_ROOT` and `DIRS.SOURCE_CLAUDE` — `SOURCE_FOLDER_NAMES` — and reported as the roster of names actually found, not as a boolean. A Codex folder, `DIRS.SOURCE_CODEX`, is not on the roster: it is caught through its parent, `DIRS.SOURCE_ROOT`, which is also all a Codex installation reads as to `expectOnlySourceFolder` — the same roster as a parent kept after its provider folder was removed.
 
-**Use these rather than a hand-written absence, because three hand-written shapes in this suite stopped being able to fail and none of them changed:** `expect(await listFiles(dir)).not.toContain(DIRS.CLAUDE_SRC)` cannot see a two-segment name at all, since `listFiles` is a top-level `readdir`; `directoryExists(path.join(dir, DIRS.CLAUDE_SRC))` returning `false` is true of every install created after the flip whatever it left under the other name; and either of them after an uninstall stays green over an emptied `.agents-inc/` sitting where the install was.
+**Use these rather than a hand-written absence, because hand-written shapes in this suite stopped being able to fail and none of them changed:** `expect(await listFiles(dir)).not.toContain(DIRS.SOURCE_CLAUDE)` cannot see a two-segment name at all, since `listFiles` is a top-level `readdir`; and a single-name absence after an uninstall stays green over an emptied `.agents-inc/` sitting where the install was.
 
 `expectOnlySourceFolder` is the counterpart for a directory that is MEANT to hold one: it pins WHICH names are there and refuses every other, so an install that grew a second folder beside its first fails here instead of satisfying two separate assertions — one for the name that should be present, one for the name that should not — neither of which can see a THIRD name appear. The parent counts as one of the names: a new-layout install holds `DIRS.SOURCE_ROOT` and `DIRS.SOURCE_CLAUDE` both, and a scope uninstalled from under a kept parent holds `DIRS.SOURCE_ROOT` alone — which is `commands/uninstall-manifest-removal`'s live call. `reason` is the caller's own sentence about the promise being tested, and it is what the failure leads with.
 

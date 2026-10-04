@@ -1128,8 +1128,7 @@ configuration shared from agentsinc.sh by its id, removing whatever it leaves ou
 **Order in `applyEdit`:** `--ui --from` (opens the id and returns) → ambiguous-installation refusal
 (`refuseAnAmbiguousInstallation`) → config-readable → unofferable-placement refusal over the
 INSTALLED configuration (`unofferablePlacementsFound`; the payload's plugin rows meet only the
-per-call guard `bindsItsOfferedPlacements` puts on `installPlugin`) →
-`settleSourceLayoutBeforeWriting` → `--ui` → no-terminal refusal and fetch
+per-call guard `bindsItsOfferedPlacements` puts on `installPlugin`) → `--ui` → no-terminal refusal and fetch
 (`fetchSharedConfigOrFail`) → context load → `ensureSavedSkillsReadable` → producer (seat carried
 skills → decode → home-scope refusal → `reconcileSharedConfig`) → diff → confirm → write carried
 skills → apply. The no-terminal refusal precedes the fetch because nothing in the payload can change

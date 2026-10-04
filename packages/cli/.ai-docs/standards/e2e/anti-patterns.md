@@ -60,7 +60,7 @@ Every "never do this" rule with rationale. Organized by category.
 
 ### Never use `writeFile`/`mkdir` in `it()` blocks
 
-**What:** `await writeFile(path.join(projectDir, ".claude-src", "config.ts"), content)` inside a test.
+**What:** `await writeFile(path.join(projectDir, ".agents-inc", "claude", "config.ts"), content)` inside a test.
 
 **Why:** This couples the test to the config file format. When the format changes, the test breaks even though the CLI behavior didn't change.
 
@@ -103,7 +103,7 @@ afterEach(async () => {
 
 ### Never construct paths with `path.join` in test assertions
 
-**What:** `const configPath = path.join(dir, ".claude-src", "config.ts"); expect(await fileExists(configPath)).toBe(true)`.
+**What:** `const configPath = path.join(dir, ".agents-inc", "claude", "config.ts"); expect(await fileExists(configPath)).toBe(true)`.
 
 **Why:** Testing file existence without checking content is weak (an empty file passes). And the path construction couples to directory structure.
 
@@ -111,15 +111,14 @@ afterEach(async () => {
 
 ### Never assert the ABSENCE of a source folder by one of its names
 
-**What:** `expect(await listFiles(dir)).not.toContain(DIRS.CLAUDE_SRC)`, or `expect(await directoryExists(path.join(dir, DIRS.CLAUDE_SRC))).toBe(false)`.
+**What:** `expect(await listFiles(dir)).not.toContain(DIRS.SOURCE_CLAUDE)`.
 
-**Why:** a source folder is spelled more than one way on disk, and an installation made before the rename keeps its old name indefinitely because no command moves it — `.claude-src`, or the `.agents-inc` parent with `.agents-inc/claude` or `.agents-inc/codex` under it — so an assertion naming one of them is answered by the others. All three shapes below are vacuous rather than wrong, which is why none of them reddened when the folder moved:
+**Why:** a source folder is spelled more than one way on disk — the `.agents-inc` parent with `.agents-inc/claude` or `.agents-inc/codex` under it — so an assertion naming one of them is answered by the others. Both shapes below are vacuous rather than wrong:
 
 - `listFiles` is a top-level `readdir`, so it can answer `.agents-inc` and can never answer `.agents-inc/claude`. A `not.toContain` over a two-segment name is true of every directory on the machine.
-- `directoryExists(<dir>/.claude-src)` being `false` is true of every install created after the flip, whatever that install left behind under the other name.
 - either shape after an uninstall stays green with an emptied `.agents-inc/` sitting where the install was — a directory naming this product with nothing in it, which a later `init` and `doctor` both read as a half-built layout.
 
-**Instead:** `await expectNoSourceFolder(dir, reason)` from `e2e/assertions/source-folder-assertions.ts`, which asks after every name and reports the roster it found; or `expectOnlySourceFolder(dir, [DIRS.CLAUDE_SRC], reason)` where a folder is MEANT to be there and which one is the claim. `reason` is your own sentence about the promise being tested, and it leads the failure.
+**Instead:** `await expectNoSourceFolder(dir, reason)` from `e2e/assertions/source-folder-assertions.ts`, which asks after every name and reports the roster it found; or `expectOnlySourceFolder(dir, [DIRS.SOURCE_ROOT, DIRS.SOURCE_CLAUDE], reason)` where a folder is MEANT to be there and which one is the claim. `reason` is your own sentence about the promise being tested, and it leads the failure.
 
 ---
 
@@ -333,9 +332,9 @@ Which CLAUSE of a message a sentinel should hold is a different question, answer
 
 ### Never use hardcoded path segments
 
-**What:** `".claude"`, `".claude-src"`, `"config.ts"`, `"SKILL.md"`.
+**What:** `".claude"`, `".agents-inc"`, `"config.ts"`, `"SKILL.md"`.
 
-**Instead:** Use `DIRS.CLAUDE`, `DIRS.CLAUDE_SRC`, `FILES.CONFIG_TS`, `FILES.SKILL_MD` from constants.
+**Instead:** Use `DIRS.CLAUDE`, `DIRS.SOURCE_ROOT`, `FILES.CONFIG_TS`, `FILES.SKILL_MD` from constants.
 
 ---
 
@@ -343,7 +342,7 @@ Which CLAUSE of a message a sentinel should hold is a different question, answer
 
 ### Never create project fixtures inline in tests
 
-**What:** `await mkdir(path.join(tempDir, ".claude-src"), { recursive: true }); await writeFile(...)` inside a test file.
+**What:** `await mkdir(path.join(tempDir, ".agents-inc", "claude"), { recursive: true }); await writeFile(...)` inside a test file.
 
 **Why:** Duplicates setup logic. When the config format changes, every inline fixture breaks.
 
@@ -1034,7 +1033,7 @@ The E2E sandbox defaults `HOME` to a sibling temp dir distinct from `projectDir`
 
 **What:** Loading `config.stack` via `loadConfigOrFail(projectDir)` after a default (all-global) init.
 
-**Why:** the config-pair renderers filter the stack to agents matching that config's scope — `splitConfigByScope` in `packages/compile/src/seed-to-config.ts` partitions it by agent scope, and `partitionInlinedConfigEntries` in `packages/compile/src/config-source.ts` keeps a project config's stack to project-scoped agents. A default install's PROJECT config carries the flat skills/agents lists but NO stack for global agents — their stack is written to the GLOBAL config (`HOME/<source folder>/config.ts`, where `<source folder>` is `.agents-inc/claude` or `.claude-src`, per scope — see `DIRS` in `standards/e2e/README.md`).
+**Why:** the config-pair renderers filter the stack to agents matching that config's scope — `splitConfigByScope` in `packages/compile/src/seed-to-config.ts` partitions it by agent scope, and `partitionInlinedConfigEntries` in `packages/compile/src/config-source.ts` keeps a project config's stack to project-scoped agents. A default install's PROJECT config carries the flat skills/agents lists but NO stack for global agents — their stack is written to the GLOBAL config (`HOME/<source folder>/config.ts`, where `<source folder>` is `.agents-inc/claude` — see `DIRS` in `standards/e2e/README.md`).
 
 **Instead:** Read the stack from the global home (`wizard.globalHome`), not `projectDir`. The project config carries only the stack slice for PROJECT-scoped agents. Same finding as above.
 

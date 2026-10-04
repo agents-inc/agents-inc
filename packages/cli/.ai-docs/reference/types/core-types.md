@@ -505,7 +505,7 @@ Distinct from `InstallationInfo` (`src/cli/lib/plugins/plugin-info.ts`), which i
 export type LoadedProjectConfig = {
   config: ProjectConfig;
   configPath: string;
-  provider: Provider; // the installation the config was read out of — a pre-rename `.claude-src/` answers `claude`
+  provider: Provider; // the installation the config was read out of
 };
 ```
 
