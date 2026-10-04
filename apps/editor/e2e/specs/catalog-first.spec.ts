@@ -11,11 +11,11 @@ import { SKILL_INDEX } from "@workspace/api-mocks/fixtures"
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import {
+  stubHeldMissingMarketplace,
   stubMalformedCatalog,
   stubMarketplaceCatalog,
   stubMissingMarketplace,
   stubPrivateMarketplaceCatalog,
-  stubSlowMissingMarketplace,
 } from "../support/marketplace"
 import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
@@ -538,13 +538,19 @@ test.describe("a dialog already open when the import parks", () => {
     configure,
     page,
   }) => {
-    stubSlowMissingMarketplace(page)
+    const releaseRefusal = stubHeldMissingMarketplace(page)
     stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
 
-    await page.goto(`/?fromId=${MARKETPLACE_IMPORT_ID}`)
+    // Through the page object rather than `page.goto`, because this spec
+    // CLICKS straight after arriving and the others on this route only wait.
+    // It waits for the grid and the webfonts, and a click aimed before the
+    // rail stops reflowing landed on "Sign in" instead.
+    await configure.goto(`?fromId=${MARKETPLACE_IMPORT_ID}`)
     await configure.marketplaceButton.click()
     await expect(configure.marketplaceDialog.root).toBeVisible()
     await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue("")
+
+    releaseRefusal()
 
     await expect(configure.marketplaceDialog.marketplaceInput).toHaveValue(
       MARKETPLACE_CANONICAL_REF

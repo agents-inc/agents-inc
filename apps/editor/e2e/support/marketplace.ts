@@ -9,7 +9,7 @@ import {
   carriesMarketplaceToken,
   githubNotFound,
 } from "@workspace/api-mocks"
-import { HttpResponse, delay, http } from "msw"
+import { HttpResponse, http } from "msw"
 
 import { stubWith } from "./stub"
 
@@ -124,22 +124,31 @@ export const stubPrivateMarketplaceCatalog = (page: Page) =>
 export const stubMissingMarketplace = (page: Page) =>
   stubCatalogWith(page, githubNotFound)
 
-// How long the refusal below takes to arrive. Long enough for a spec to open
-// the dialog by hand before an arriving payload's catalogue has failed, which
-// is the one window in which the two can collide.
-const SLOW_REFUSAL_MS = 1500
-
 /**
- * The same refusal, arriving slowly.
+ * The same refusal, held until the spec lets it go.
  *
- * What it buys is that window: the form can already be mounted when the
- * recovery turns up, and it has to take one it did not open with.
+ * What it buys is a window: the form can already be mounted when the recovery
+ * turns up, and it has to take one it did not open with. The window is the
+ * spec's to close rather than a clock's — this was a fixed 1.5 seconds once,
+ * and under a loaded full-suite run `page.goto` plus a click outlasted it, so
+ * the refusal landed first and the dialog opened already pre-filled.
+ *
+ * Returns the release. Every catalogue request waits on it, so one the editor
+ * sends twice is held as long as the first.
  */
-export const stubSlowMissingMarketplace = (page: Page) =>
+export const stubHeldMissingMarketplace = (page: Page) => {
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
   stubCatalogWith(page, async () => {
-    await delay(SLOW_REFUSAL_MS)
+    await released
     return githubNotFound()
   })
+
+  return release
+}
 
 /**
  * A catalogue that is JSON and is not a catalogue. The one failure with no
