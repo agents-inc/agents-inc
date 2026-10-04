@@ -7,6 +7,21 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.166.0] - 2026-10-04
+
+**From a project, `share`, `edit --ui` and every `--from` treat the global install as one every project reads, every write refuses a broken `config.ts` by name, and the audit that followed the journey fixes is applied**
+
+- CLI-902: the 14 non-Codex failures from the 2026-10-01 manual journey run are fixed as ruled. From a project, `share` and `edit --ui` carry the global sub-agents' skills, and `share` refuses ejected skills because a share carries plugins only. Dropping a project copy writes nothing global, and `config.ts` rewrites keep `branding`. `edit` prints the trust line, and the editor's preview matches the install.
+- **Every `--from` lists what goes into the project and what into the global install, then asks.** With no terminal, `init --from` prints the lists and carries on. From a project, `--from` never removes or changes anything global, and names what it kept. The plan discloses a dropped project copy. A kept skill joins the configuration's row, or yields a one-skill slot and stays installed, and every refusal comes before the question.
+- **`init --marketplace` takes the bare-init route; `init --ui --marketplace` refuses.** A custom marketplace needs a valid `marketplace.json`, and `eject`, `local` and `external` are reserved at build and at load, recorded names included.
+- **A broken `config.ts` is refused by every write, naming the file and the folder to recreate it from.** `uninstall` still works on one and clears both source folders, and `doctor` labels the config it read.
+- **Commands that need a terminal refuse cleanly without one.** Raw mode is held before the first paint, Ctrl+C on the dashboard exits as cancelled, and the bare dashboard no longer prints help.
+- **The Claude trust check follows git roots and `CLAUDE_CONFIG_DIR`, and `update` says truthfully that it refreshed listings, not plugins.** Skipped registered projects get bare `Skipped <path>: <reason>.` lines, and counts are singular for one.
+- **`bun run dev` builds the local skill index and applies the local migrations.** The editor's Playwright suite runs on its own port. The modulepreload polyfill is off, and the first-paint budget is 352 KiB.
+- CLI-868: `check-finding-citations` resolves a dated plan under `todo/plans/` as a plan, not a missing finding, and a `compile` unit test no longer depends on TMPDIR's length.
+
+See [changelogs/0.166.0.md](./changelogs/0.166.0.md) for full details.
+
 ## [0.165.0] - 2026-10-01
 
 **A new installation's source folder is `.agents-inc/<provider>/`, a configuration can be installed onto OpenAI Codex, and `edit --from` applies a sub-agent's model and effort**
