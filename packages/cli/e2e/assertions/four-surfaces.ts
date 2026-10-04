@@ -105,10 +105,7 @@ export async function inspectFourSurfaces(
   const globalHome = globalHomeFor({ dir, globalHome: options?.globalHome });
   const expectEmpty = options?.expectEmpty ?? false;
   // The generated pair lives wherever this scope's source folder is, which is what the two tsc
-  // probes below have to be pointed at. Naming one folder was `path.join(dir, DIRS.CLAUDE_SRC)`
-  // until 2026-09-20: for any project this release created that directory is not there, so the
-  // narrowing probe's `writeFile` died on ENOENT and the typecheck ran over a file that did not
-  // exist — neither of them asking anything about the pair the install actually wrote.
+  // probes below have to be pointed at.
   const sourceFolder = sourceFolderIn(dir);
 
   // One load, not three: every claim below reads the same config snapshot, so no

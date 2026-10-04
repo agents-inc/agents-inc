@@ -5,24 +5,17 @@ import { directoryExists } from "../helpers/test-utils.js";
 import { DIRS } from "../pages/constants.js";
 
 /**
- * "No source folder here", asserted so it can still fail once the folder has two names.
+ * "No source folder here", asserted so it can still fail.
  *
- * Three shapes of assertion in this suite claimed that and stopped being able to, and the rename
- * is what exposed all three at once:
- *
- *   - `expect(await listFiles(dir)).not.toContain(DIRS.CLAUDE_SRC)` — `listFiles` is a top-level
- *     `readdir`, so it answers `.agents-inc`, never `.agents-inc/claude`. A two-segment name can
- *     never appear in that list and the assertion is true for every directory on the machine.
- *   - `expect(await directoryExists(path.join(dir, DIRS.CLAUDE_SRC))).toBe(false)` — true of every
- *     install created after the flip, whatever it left behind under the other name.
- *   - either of those after an uninstall — both stay green with an emptied `.agents-inc/` sitting
- *     where the install was, which is a directory naming this product with nothing in it.
+ * `listFiles` is a top-level `readdir`, so it answers `.agents-inc`, never `.agents-inc/claude`: a
+ * two-segment name can never appear in that list. And after an uninstall an emptied `.agents-inc/`
+ * sitting where the install was is a directory naming this product with nothing in it.
  *
  * So the question is asked of every name a source folder is spelled in, the PARENT included, and
- * the failure names which one was found rather than reporting a boolean. Both spellings come from
+ * the failure names which one was found rather than reporting a boolean. The names come from
  * `e2e/pages/constants.ts`, the one place this tree mirrors the product's path vocabulary.
  */
-const SOURCE_FOLDER_NAMES = [DIRS.CLAUDE_SRC, DIRS.SOURCE_ROOT, DIRS.SOURCE_CLAUDE];
+const SOURCE_FOLDER_NAMES = [DIRS.SOURCE_ROOT, DIRS.SOURCE_CLAUDE];
 
 /** Every source-folder name present under `dir`, in roster order. */
 async function sourceFoldersUnder(dir: string): Promise<string[]> {

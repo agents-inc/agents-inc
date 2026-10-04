@@ -26,7 +26,7 @@ import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config
 import "../matchers/setup.js";
 
 /**
- * Uninstall now always removes the CLI config manifest (.claude-src/config.ts +
+ * Uninstall now always removes the CLI config manifest (.agents-inc/claude/config.ts +
  * config-types.ts, and the directory when it empties) and deregisters the
  * project from the global config's `projects` registry. The `--all` flag that
  * previously gated manifest removal no longer exists.

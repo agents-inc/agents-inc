@@ -1,10 +1,19 @@
+import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupTempDir } from "../helpers/test-utils.js";
+import {
+  cleanupTempDir,
+  createTempDir,
+  writeConfigTypes,
+  writeProjectConfig,
+} from "../helpers/test-utils.js";
 import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
+import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
+import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
+import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import "../matchers/setup.js";
 
 /**
@@ -111,6 +120,52 @@ describe("wizard terminal-size guard on a mid-session resize", () => {
           copiedSkills: [E2E_SKILL.react.id],
         },
       );
+    },
+  );
+});
+
+/**
+ * The size gate is a wizard's, and a command that draws nothing needing room does not take it.
+ * `uninstall --yes` prints a removal list and exits; held at the gate it would never finish.
+ */
+describe("uninstall on a terminal below the wizard minimum", () => {
+  let tempDir: string | undefined;
+  let prompt: InteractivePrompt | undefined;
+
+  afterEach(async () => {
+    await prompt?.destroy();
+    prompt = undefined;
+    if (tempDir) await cleanupTempDir(tempDir);
+    tempDir = undefined;
+  });
+
+  it(
+    "does not wait for a bigger terminal before it starts",
+    { timeout: TIMEOUTS.LIFECYCLE },
+    async () => {
+      tempDir = await createTempDir();
+      const home = path.join(tempDir, "home");
+      await writeProjectConfig(
+        home,
+        buildProjectConfig({ name: "small-terminal-uninstall", skills: [], agents: [] }),
+      );
+      await writeConfigTypes(home);
+
+      prompt = new InteractivePrompt(["uninstall", "--yes"], home, {
+        ...TERMINAL_SIZE.BELOW_MINIMUM,
+        env: { HOME: home },
+      });
+      // A run held at the size gate never exits, so the wait is bounded and its timeout read as
+      // the answer rather than thrown: the assertion below says why the run did not finish.
+      const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT).catch(() => undefined);
+      const output = prompt.getRawOutput();
+
+      expect(output, "uninstall stopped to ask for a bigger terminal").not.toContain(
+        STEP_TEXT.RESIZE_PROMPT,
+      );
+      expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      await expectNoSourceFolder(home, "uninstall removed the config it was asked to remove");
     },
   );
 });

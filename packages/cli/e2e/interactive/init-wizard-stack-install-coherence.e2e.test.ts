@@ -54,7 +54,7 @@ import "../matchers/setup.js";
 const STACK_DERIVED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
 /** Everything an eject-mode install writes into its source folder. */
-const INSTALLED_CLAUDE_SRC_ENTRIES = ["config-types.ts", "config.ts"];
+const INSTALLED_SOURCE_FOLDER_ENTRIES = ["config-types.ts", "config.ts"];
 
 describe("init wizard — a stack install lands its roster and type-checks", () => {
   let wizard: InitWizard | undefined;
@@ -180,11 +180,11 @@ describe("init wizard — a stack install lands its roster and type-checks", () 
       expect(
         (await listFiles(globalSourceFolder)).sort(),
         "probing must leave the global source folder untouched",
-      ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
+      ).toStrictEqual(INSTALLED_SOURCE_FOLDER_ENTRIES);
       expect(
         (await listFiles(projectSourceFolder)).sort(),
         "probing must leave the project source folder untouched",
-      ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
+      ).toStrictEqual(INSTALLED_SOURCE_FOLDER_ENTRIES);
     },
   );
 });

@@ -25,7 +25,7 @@ import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
  * The documented hand-edit workflow — edit the scope's `config.ts`, then run
  * `compile` — must reach the registered projects a global change invalidates.
  *
- * A global-scope `compile` regenerates `~/.claude-src/config-types.ts` from the
+ * A global-scope `compile` regenerates `~/.agents-inc/claude/config-types.ts` from the
  * hand-edited config, narrowing the global unions. Every registered project
  * inlines the active global rows verbatim into its OWN `config.ts` and keeps its
  * compiled `.claude/agents/*.md` built from them, so narrowing the global side

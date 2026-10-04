@@ -180,7 +180,7 @@ describe("the bytes the shared renderer draws", () => {
       // compared here AT ALL — not one line of it, not only its import specifier.
       //
       // The specifier is why the gap was opened. It is
-      // `path.relative(<project>/.claude-src, $HOME/.claude-src)`, produced by
+      // `path.relative(<project>/.agents-inc/claude, $HOME/.agents-inc/claude)`, produced by
       // `computeGlobalTypesImportPath` — which stays in the CLI with the rest of the
       // disk-probing half and is deliberately NOT part of the shared package, because a
       // browser has no disk to probe and the preview renders a placeholder for that one line.

@@ -227,10 +227,6 @@ describe.skipIf(!claudeAvailable)("init wizard — plugin mode", () => {
 
         // Filesystem integrity: init must not create a source folder on hard-error, and the
         // pre-existing permissions file must remain byte-identical.
-        //
-        // `expectNoSourceFolder` rather than one `directoryExists` on the legacy name: this run
-        // would have created `.agents-inc/claude/`, so an assertion naming `.claude-src/` was
-        // true whatever init had left behind and could not fail.
         await expectNoSourceFolder(
           projectDir,
           "init refused a marketplace with no marketplace.json and must have created no source folder",

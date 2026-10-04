@@ -173,7 +173,7 @@ describe("eject command", () => {
     const partialFiles = await listFiles(path.join(outputDir, firstElement(entries)));
     expect(partialFiles.length).toBeGreaterThan(0);
 
-    // Default .claude-src/agents should NOT exist (output was redirected)
+    // Default .agents-inc/claude/agents should NOT exist (output was redirected)
     const defaultAgentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(defaultAgentsDir)).toBe(false);
   });

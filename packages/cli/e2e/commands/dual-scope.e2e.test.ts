@@ -131,7 +131,7 @@ describe("dual-scope compile", () => {
   it("should work with project-only installation", async () => {
     tempDir = await createTempDir();
 
-    // Fake HOME has no .claude-src/ — only project dir has config
+    // Fake HOME has no .agents-inc/claude/ — only project dir has config
     const globalHome = path.join(tempDir, "global-home");
     const projectDir = path.join(tempDir, "project");
     await mkdir(globalHome, { recursive: true });

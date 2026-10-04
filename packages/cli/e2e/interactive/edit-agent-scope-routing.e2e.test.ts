@@ -50,7 +50,7 @@ describe("edit recompile routes agents to correct scope directory", () => {
       tempHOME = await createTempDir();
       const projectDir = path.join(tempHOME, "project");
 
-      // --- Setup global config at <tempHOME>/.claude-src/config.ts ---
+      // --- Setup global config at <tempHOME>/.agents-inc/claude/config.ts ---
       await writeProjectConfig(tempHOME, {
         name: "global",
         skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
@@ -75,7 +75,7 @@ describe("edit recompile routes agents to correct scope directory", () => {
         body: "STUB: global web developer agent.\n",
       });
 
-      // --- Setup project config at <tempHOME>/project/.claude-src/config.ts ---
+      // --- Setup project config at <tempHOME>/project/.agents-inc/claude/config.ts ---
       // web-developer is global-scoped, api-developer is project-scoped.
       // The config includes "web-styling-tailwind" — a skill that does NOT exist
       // in the E2E source. The wizard drops it, creating a "removed" change

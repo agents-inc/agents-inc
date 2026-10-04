@@ -242,7 +242,6 @@ describe("--from refusals come before the lists and the question", () => {
       readTreeSnapshot(environment.projectDir),
       readTreeSnapshot(path.join(environment.fakeHome, DIRS.CLAUDE)),
       readTreeSnapshot(path.join(environment.fakeHome, DIRS.SOURCE_ROOT)),
-      readTreeSnapshot(path.join(environment.fakeHome, DIRS.CLAUDE_SRC)),
       readTreeSnapshot(codexHome(environment.fakeHome)),
     ]);
     return { project, home };

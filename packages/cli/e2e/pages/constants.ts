@@ -20,24 +20,13 @@
 export const DIRS = {
   CLAUDE: ".claude",
   /**
-   * The folder every installation made BEFORE the rename carries, and goes on carrying: it is
-   * read and written in place indefinitely, and nothing in the CLI moves one. Mirrors
-   * `LEGACY_SOURCE_DIR` and has a row in `scripts/check-mirrored-constants.ts`.
-   *
-   * Keep it out of any assertion about what a FRESH install creates — those are `SOURCE_CLAUDE`
-   * below. While both names are live, a spec asserting the absence of this one says nothing about
-   * the folder the CLI now writes.
-   */
-  CLAUDE_SRC: ".claude-src",
-  /**
    * The parent every provider's source folder sits under, so `.agents-inc/claude/` and
    * `.agents-inc/codex/` are two folders of one product. Mirrors `SOURCE_ROOT_DIR`.
    *
    * Named on its own because three things name the parent with no provider after it: detection,
    * uninstall's cleanup once the last provider folder goes, and a `.gitignore` entry.
    *
-   * Has a row in `scripts/check-mirrored-constants.ts`, added 2026-09-20 — the sentence above
-   * claimed the mirror while only `CLAUDE_SRC` was registered.
+   * Has a row in `scripts/check-mirrored-constants.ts`.
    */
   SOURCE_ROOT: ".agents-inc",
   /**
@@ -314,7 +303,7 @@ export const STEP_TEXT = {
   SEARCH: "Search Skills",
   UNINSTALL_PREVIEW: "The following will be removed", // Loose form for waitForText
   UNINSTALL_PREVIEW_HEADING: "The following will be removed:", // Exact rendered heading
-  UNINSTALL_CONFIG_SECTION: "Config:", // Removal-plan section header for the .claude-src/ manifest
+  UNINSTALL_CONFIG_SECTION: "Config:", // Removal-plan section header for the config manifest
   UNINSTALL_PROJECTS_UPDATED_ONE: "Updated 1 registered project", // Global-uninstall summary after pruning one registered project's global entries
   UNINSTALL_PROJECT_SKIPPED: "Could not update registered project at", // Warn prefix for a registered project whose config a global uninstall could not prune
   // The one line a global `edit` or `compile` prints for a registered project it skipped because
@@ -773,32 +762,19 @@ export const STEP_TEXT = {
   // an install MODE, and "Eject" is a source value, not a mode.
   SOURCE_DISPLAY_EJECT: "Eject",
 
-  // --- The source folder rename: the two surfaces that name a scope's layout ---
+  // --- The source folder: the startup line about the retired one, and doctor's Layout row ---
   //
   // These sentinels MIRROR the product's strings rather than importing them. An assertion built
   // from the constant the product prints moves with it and can never fail, which is the rule
   // `e2e/pages/constants.ts` exists for.
-  //
-  // Each sits in the clause a reader would dispute rather than in the lead-in introducing it.
-  //
-  // Nothing here names a command that moves a source folder: there is none, and the messages say
-  // so — the way out of two folders is a move the user makes by hand.
 
-  // Which of the two the resolver actually picked — the clause a user in this state acts on, and
-  // the half of the sentence that is not settled by the folder names in front of it. The
-  // preference order takes whichever folder holds a config.ts, so the live folder is the OLD one
-  // whenever the config is still under it.
-  LAYOUT_LEGACY_IS_READ: "are on disk — .claude-src/ is the one being read",
-  LAYOUT_CURRENT_IS_READ: "are on disk — .agents-inc/claude/ is the one being read",
+  // The one line a run prints at startup while the project or HOME holds the retired folder,
+  // after the folder's own name: `retired-source-folder.e2e.test.ts` prefixes it with that.
+  RETIRED_SOURCE_FOLDER_UNSUPPORTED:
+    "is no longer supported (agents-inc now serves Claude and Codex). Move it to .agents-inc/claude/.",
   // doctor's Layout row, one per scope in play.
   DOCTOR_ROW_LAYOUT: "Layout",
-  DOCTOR_LAYOUT_LEGACY: "is on .claude-src/, which this CLI goes on reading and writing",
-  DOCTOR_LAYOUT_LEGACY_MANUAL_MOVE: "move its contents into .agents-inc/claude/ by hand",
   DOCTOR_LAYOUT_CURRENT: "on .agents-inc/claude/",
-  DOCTOR_LAYOUT_BOTH_FOLDERS: "both .claude-src/ and .agents-inc/claude/ are on disk",
-  DOCTOR_LAYOUT_STALE_COMPILED_AGENT: "names a source folder this installation does not use",
-  DOCTOR_REGISTRY_IS_NOT_AN_INVENTORY:
-    "this list is the registry, not an inventory of this machine",
   // What a Codex project install prints once it has trusted the project in the user's global Codex
   // config (`codexProjectTrustMessage`, CLI-893), and what it prints when the user's own answer
   // there says otherwise and is left alone.
@@ -811,13 +787,6 @@ export const STEP_TEXT = {
   // That line's remedy clause, which is only true where Claude Code will show the prompt: never in
   // a plain folder below one the user already trusted.
   CLAUDE_TRUST_PROMPT_REMEDY: "accept the trust prompt",
-  // What a write command says instead of writing, while a scope in play holds two of them. The
-  // long half goes through the logger unwrapped and the short half is the line oclif ends on, so
-  // a spec asserting the explanation and one asserting the refusal are asserting two things.
-  RIVAL_FOLDERS_REFUSE_WRITES: "is the one being read, so anything under",
-  // The remedy, which is a manual operation because no command performs it.
-  RIVAL_FOLDERS_MANUAL_REMEDY: "No command merges them: move what you want to keep from",
-  WRITE_REFUSED_RIVAL_FOLDERS: "Refusing to write while two source folders are on disk",
   // What `share` says instead of posting while anything it would send is an ejected (Local)
   // copy, an editor-added skill included: the ejected skills are named beside the first half,
   // and the second says what can be shared instead. `edit --ui` opens the same installation.

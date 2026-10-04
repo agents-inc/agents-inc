@@ -125,7 +125,7 @@ describe("doctor command", () => {
     it("should validate global installation when no project config exists", async () => {
       tempDir = await createTempDir();
 
-      // Create a "global home" directory with valid .claude-src/config.ts
+      // Create a "global home" directory with valid .agents-inc/claude/config.ts
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(
         globalHome,

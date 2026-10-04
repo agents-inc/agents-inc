@@ -157,7 +157,6 @@ describe("init --from <id> at a terminal", () => {
       readTreeSnapshot(environment.projectDir),
       readTreeSnapshot(path.join(environment.fakeHome, DIRS.CLAUDE)),
       readTreeSnapshot(path.join(environment.fakeHome, DIRS.SOURCE_ROOT)),
-      readTreeSnapshot(path.join(environment.fakeHome, DIRS.CLAUDE_SRC)),
     ]);
     return { project, home };
   }

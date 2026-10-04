@@ -538,7 +538,7 @@ describe("compile command", () => {
       sourceTempDir = srcTempDir;
 
       // The home root holds the GLOBAL config. There is no project here, so the
-      // config the run reads is `~/.claude-src/config.ts` and nothing else.
+      // config the run reads is `~/.agents-inc/claude/config.ts` and nothing else.
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(
         globalHome,
@@ -689,7 +689,7 @@ describe("compile command", () => {
     it("should use global installation paths when no project config exists", async () => {
       tempDir = await createTempDir();
 
-      // Create a "global home" directory with .claude-src/config.ts and .claude/skills/
+      // Create a "global home" directory with .agents-inc/claude/config.ts and .claude/skills/
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(
         globalHome,

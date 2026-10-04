@@ -80,23 +80,18 @@ export const MONOREPO_ROOT = path.resolve(CLI_ROOT, "../..");
 export const BIN_RUN = path.join(CLI_ROOT, "bin", "run.js");
 
 /**
- * The source folder a scope is ON, resolved the way the product resolves it.
+ * The source folder a scope is ON, resolved the way the product resolves it — the provider read
+ * off the disk, and that provider's folder under `.agents-inc/`.
  *
  * Every helper below that has to name a file inside a source folder asks this rather than naming
- * one of the two spellings. That is what lets a fixture on the legacy name and a fixture this
- * release created be described by the SAME helper: `sourceFolderInUse` prefers whichever folder
- * holds a config and falls back to the folder a new installation is created in, so a helper built
- * on it answers before the install exists and goes on answering after it.
- *
- * A fixture whose subject IS one of the two layouts must not go through here — it names the folder
- * outright, through {@link writeProjectConfigIn} or `DIRS.CLAUDE_SRC` / `DIRS.SOURCE_CLAUDE`. A
- * resolver-routed helper cannot state which layout it found, so it can neither seed nor pin one.
+ * a spelling, so it answers before the install exists and goes on answering after it. A fixture
+ * whose subject IS a particular folder names it outright, through {@link writeProjectConfigIn}.
  */
 export function sourceFolderIn(dir: string): string {
   return sourceFolderInUse(dir, providerInUse(dir)).dir;
 }
 
-/** The same folder as a user writes it, relative to `dir`: `.claude-src`, or `.agents-inc/claude`. */
+/** The same folder as a user writes it, relative to `dir`: `.agents-inc/claude`. */
 export function sourceFolderRelIn(dir: string): string {
   return sourceFolderInUse(dir, providerInUse(dir)).relName;
 }
@@ -327,10 +322,9 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
  * Write a `config.ts` into the source folder the given base dir is ON, **through the product's own
  * writer**.
  *
- * The folder comes from {@link sourceFolderIn} rather than from a constant, so a fixture built on
- * the legacy name is seeded there and everything else is seeded where this release installs. A
- * fixture whose subject IS one of the two layouts names it outright with
- * {@link writeProjectConfigIn}.
+ * The folder comes from {@link sourceFolderIn} rather than from a constant, so a fixture is seeded
+ * where this release installs for the provider already on disk. A fixture whose subject IS a
+ * particular folder names it outright with {@link writeProjectConfigIn}.
  *
  * `generateConfigSource` rather than `renderConfigTs`, and that is the whole point: a fixture that
  * renders its own JSON writes a file shape the CLI never produces, and every assertion over it is
@@ -361,17 +355,11 @@ export async function writeProjectConfig(
 /**
  * The same config, written into a source folder the caller NAMES.
  *
- * Two folders are live while the rename is in flight — the one every installation made before it
- * carries, and the one a new install is created in — and a fixture that can only seed one of them
- * can only describe one of the two states the resolver has to handle. The folder is a parameter
- * rather than a second hard-coded constant because which one a spec wants is the spec's subject:
- * `sourceFolder` is a relative name as a user writes it, one segment or two.
- *
- * Callers pass `DIRS.SOURCE_CLAUDE` for an install on the new layout and `DIRS.CLAUDE_SRC` for one
- * that predates the rename. {@link writeProjectConfig} is NEITHER of those: it binds the folder
- * `sourceFolderRelIn` RESOLVES for its `baseDir`, so a fixture seeded through it lands wherever
- * that base dir already is. Come through here only when which of the two folders gets the config
- * is the spec's own claim.
+ * The folder is a parameter because which one a spec wants is the spec's subject: a provider's
+ * folder (`DIRS.SOURCE_CLAUDE`, `DIRS.SOURCE_CODEX`), or another a spec seeds to prove nothing
+ * reads it. `sourceFolder` is a relative name as a user writes it, one segment or
+ * two. {@link writeProjectConfig} binds the folder `sourceFolderRelIn` RESOLVES for its `baseDir`
+ * instead; come through here only when which folder gets the config is the spec's own claim.
  */
 export async function writeProjectConfigIn(
   baseDir: string,
@@ -408,14 +396,10 @@ export async function writeProjectConfigIn(
  * Measured at zero cost: the full E2E suite runs in the same 318s with this on as without it.
  *
  * **It asks its question of the file it WROTE, and the product's own answer is what says which
- * that is.** A scope with both source folders on disk has a config under each name and the
- * resolver reads exactly one of them, so a guard that re-read "this scope's config" after seeding
- * the other one compared two different files and refused the fixture for the difference between
- * them — reporting a normalisation nobody had performed, with the other file's `name` quoted back
- * as the drift. Where the file just written is not the one the product reads, there is nothing to
- * read it back through and this proves nothing about it; the SPEC seeding a rival folder is
- * asserting that the product ignores it, which is a claim about the resolver rather than about
- * the writer.
+ * that is.** Where the file just written is not the one the product reads — a config seeded under
+ * one provider while the scope reads another — there is nothing to
+ * read it back through and this proves nothing about it; the SPEC seeding it is asserting that the
+ * product ignores it, which is a claim about the resolver rather than about the writer.
  */
 async function refuseUnreachableConfig(
   baseDir: string,
@@ -489,7 +473,7 @@ export function stripAnsi(text: string): string {
  * HOME defaults to a freshly-created sibling temp directory, distinct from
  * cwd, so os.homedir() never collapses onto the project directory (which would
  * silently force a project command into global scope) while still isolating
- * tests from the user's real global config (~/.claude-src/config.ts). The
+ * tests from the user's real global config (~/.agents-inc/claude/config.ts). The
  * auto-created directory is removed after the run. Callers that need a specific
  * HOME override via options.env.HOME; an explicit value always wins and is
  * never auto-removed.

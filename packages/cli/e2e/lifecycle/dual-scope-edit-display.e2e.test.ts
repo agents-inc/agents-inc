@@ -18,12 +18,12 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  * Architecture per test:
  *   tempDir/
  *     fake-home/                          <- HOME env var
- *       .claude-src/config.ts             <- global config
+ *       .agents-inc/claude/config.ts             <- global config
  *       .claude/agents/web-developer.md   <- global agent
  *       .claude/skills/web-framework-react/ <- global local skill
  *       .claude/settings.json             <- permissions
  *       project/                          <- project dir (CWD for Phase B/C)
- *         .claude-src/config.ts           <- project config
+ *         .agents-inc/claude/config.ts           <- project config
  *         .claude/agents/api-developer.md <- project agent
  *         .claude/skills/api-framework-hono/ <- project local skill
  *         .claude/settings.json           <- permissions

@@ -71,7 +71,7 @@ export type TerminalSessionOptions = {
  * HOME defaults to a freshly-created sibling temp directory, distinct from
  * cwd/projectDir, so os.homedir() never collapses onto the project directory —
  * a project `edit`/`init` stays at project scope, and tests remain isolated
- * from the user's real global config (~/.claude-src/config.ts). The auto-created
+ * from the user's real global config (~/.agents-inc/claude/config.ts). The auto-created
  * directory is removed by destroy(). Callers that need a specific HOME (e.g. to
  * model editing the GLOBAL installation) pass options.env.HOME; an explicit
  * value always wins and is never auto-removed.

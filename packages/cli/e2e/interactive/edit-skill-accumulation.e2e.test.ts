@@ -54,7 +54,7 @@ describe("project config does not accumulate global skills after edit", () => {
       tempHOME = await createTempDir();
       const projectDir = path.join(tempHOME, "project");
 
-      // --- Setup global config at <tempHOME>/.claude-src/config.ts ---
+      // --- Setup global config at <tempHOME>/.agents-inc/claude/config.ts ---
       await writeProjectConfig(tempHOME, {
         name: "global",
         skills: [{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }],
@@ -79,7 +79,7 @@ describe("project config does not accumulate global skills after edit", () => {
         body: "Global web developer agent.\n",
       });
 
-      // --- Setup project config at <tempHOME>/project/.claude-src/config.ts ---
+      // --- Setup project config at <tempHOME>/project/.agents-inc/claude/config.ts ---
       await writeProjectConfig(projectDir, {
         name: "bug-b-test",
         skills: [

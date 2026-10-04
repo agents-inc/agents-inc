@@ -19,7 +19,7 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  * Edit global fallback E2E tests.
  *
  * Verifies that `cc edit` works correctly when launched from a project
- * directory that has NO project config (.claude-src/config.ts), falling
+ * directory that has NO project config (.agents-inc/claude/config.ts), falling
  * back to the global installation.
  */
 

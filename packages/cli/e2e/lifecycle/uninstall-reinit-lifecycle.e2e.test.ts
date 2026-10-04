@@ -75,8 +75,8 @@ describe("uninstall-reinit lifecycle", () => {
       // Verify uninstall cleaned everything.
       //
       // `expectNoSourceFolder` rather than one `directoryExists`: the resolved folder's absence is
-      // satisfied by an emptied `.agents-inc/` parent left sitting there, and by a `.claude-src/`
-      // beside it — a whole-source-folder absence has to ask after every name one is spelled in.
+      // satisfied by an emptied `.agents-inc/` parent left sitting there — a whole-source-folder
+      // absence has to ask after every name one is spelled in.
       await expectNoSourceFolder(fakeHome, "uninstall removed the global install it made");
       expect(
         await directoryExists(globalSkillsDir),

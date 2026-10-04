@@ -370,7 +370,7 @@ describe("list command", () => {
     it("should show global installation details when no project config exists", async () => {
       tempDir = await createTempDir();
 
-      // Create a "global home" directory with .claude-src/config.ts
+      // Create a "global home" directory with .agents-inc/claude/config.ts
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(globalHome, {
         name: "global-test",

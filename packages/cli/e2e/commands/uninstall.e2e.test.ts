@@ -109,7 +109,7 @@ describe("uninstall command", () => {
     // Skills, agents, and the config manifest should all be removed by default
     await expectCleanUninstall(projectDir, { removeConfig: true });
 
-    // Config directory removed (config.ts was the only .claude-src content)
+    // Config directory removed (config.ts was the only .agents-inc/claude content)
     expect(await directoryExists(configDir)).toBe(false);
   });
 

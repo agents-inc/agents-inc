@@ -252,11 +252,7 @@ describe("edit --from <id> in a project keeps the global install as it is", () =
   /** Every folder the global install keeps: its skills and agents, and its config pair. */
   function snapshotGlobalInstall(home: string): Promise<Record<string, TreeSnapshotEntry>[]> {
     return Promise.all(
-      [
-        path.join(home, DIRS.CLAUDE),
-        path.join(home, DIRS.SOURCE_ROOT),
-        path.join(home, DIRS.CLAUDE_SRC),
-      ].map(readTreeSnapshot),
+      [path.join(home, DIRS.CLAUDE), path.join(home, DIRS.SOURCE_ROOT)].map(readTreeSnapshot),
     );
   }
 

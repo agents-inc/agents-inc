@@ -46,7 +46,7 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
  *
  * The stack for an agent is written to that agent's SCOPE config: a default
  * init scopes every agent global, so the stack lands in the GLOBAL config at
- * HOME/.claude-src — pass the shared global home here, not projectDir.
+ * HOME/.agents-inc/claude — pass the shared global home here, not projectDir.
  */
 async function assertPreloadedInStack(
   configDir: string,

@@ -1,5 +1,3 @@
-import path from "path";
-import { cp } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 
 import "../matchers/setup.js";
@@ -27,7 +25,7 @@ import {
 import { CLI } from "../fixtures/cli.js";
 import { PINNED_WIRE_VERSION } from "../fixtures/seed-wire-contract.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
 import {
   buildAgentConfigs,
@@ -110,37 +108,6 @@ describe("share", () => {
     expect(firstElement(store.requests).method).toBe("POST");
     expect(firstElement(store.requests).url).toBe("/configs");
     expect(firstElement(store.requests).userAgent).toBe("agents-inc-cli");
-  });
-
-  it("refuses a scope holding two source folders, without spending a write", async () => {
-    const origin = await takeTempDir();
-    await writePluginInstallation(origin);
-
-    // The allowed half first, on the same installation: with one source folder it shares.
-    const before = await runShare(store, { dir: origin });
-    expect(before.exitCode, `share failed: ${before.output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(store.minted).toHaveLength(1);
-
-    // The rival: the same source folder under the retired name, which is what a summoner compiled
-    // under the other layout leaves behind. Which of the two is read is the resolver's guess.
-    await cp(path.join(origin, DIRS.SOURCE_CLAUDE), path.join(origin, DIRS.CLAUDE_SRC), {
-      recursive: true,
-    });
-    store.reset();
-
-    const { exitCode, output } = await runShare(store, { dir: origin });
-    const said = flattenCliOutput(output);
-
-    // `edit --ui` mints the same id from the same directory and already refuses here; an id
-    // minted from whichever folder the resolver picked describes an installation nobody chose.
-    expect(exitCode, `share must refuse a scope holding two source folders: ${said}`).toBe(
-      EXIT_CODES.ERROR,
-    );
-    expect(said).toContain(STEP_TEXT.WRITE_REFUSED_RIVAL_FOLDERS);
-    // The same refusal every write command makes, explanation and manual remedy included.
-    expect(said).toContain(STEP_TEXT.RIVAL_FOLDERS_REFUSE_WRITES);
-    expect(said).toContain(STEP_TEXT.RIVAL_FOLDERS_MANUAL_REMEDY);
-    expect(store.requests).toStrictEqual([]);
   });
 
   it("refuses a directory with nothing installed, without spending a write", async () => {

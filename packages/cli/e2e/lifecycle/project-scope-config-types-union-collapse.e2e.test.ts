@@ -66,7 +66,7 @@ const _aLiteralIsNotAnAliasName: Parameters<typeof probeConfigTypesNarrowing>[1]
 ];
 
 /** Everything an eject-mode install writes into its source folder. */
-const INSTALLED_CLAUDE_SRC_ENTRIES = ["config-types.ts", "config.ts"];
+const INSTALLED_SOURCE_FOLDER_ENTRIES = ["config-types.ts", "config.ts"];
 
 /** `source` recorded for skills installed from a local source via `setAllLocal`. */
 const EJECT_SOURCE = "eject";
@@ -304,11 +304,11 @@ describe("generated config types keep narrowing after a project-scope install", 
       expect(
         await listFiles(path.dirname(projectTypesPath)),
         "probing must leave the project source-folder tree untouched",
-      ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
+      ).toStrictEqual(INSTALLED_SOURCE_FOLDER_ENTRIES);
       expect(
         await listFiles(path.dirname(globalTypesPath)),
         "probing must leave the global source-folder tree untouched",
-      ).toStrictEqual(INSTALLED_CLAUDE_SRC_ENTRIES);
+      ).toStrictEqual(INSTALLED_SOURCE_FOLDER_ENTRIES);
     },
   );
 });

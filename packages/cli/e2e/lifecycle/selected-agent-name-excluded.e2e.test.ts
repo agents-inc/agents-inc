@@ -92,7 +92,7 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
       // Establish project scope by toggling scope on web-framework-react in the
       // first domain, focused explicitly rather than relying on where the grid
       // opens. Without a project-scoped skill, no project-level
-      // .claude-src/config-types.ts is generated.
+      // .agents-inc/claude/config-types.ts is generated.
       await build.focusSkill(E2E_SKILL.react.display);
       await build.toggleScopeOnFocusedSkill();
 

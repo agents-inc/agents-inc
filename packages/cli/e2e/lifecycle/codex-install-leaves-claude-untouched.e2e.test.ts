@@ -324,8 +324,8 @@ type ClaudeSide = { home: InstallTree; project: InstallTree };
  * Everything on the machine that belongs to Claude, as one normalised value.
  *
  * Read from each SCOPE ROOT rather than from each folder separately: a write that lands in a
- * directory neither of the two named folders covers — a stray `~/.claude-src/`, a half-routed
- * `~/.agents-inc/` — has to show up somewhere, and reading the whole scope root is what makes an
+ * directory neither of the two named folders covers — a half-routed `~/.agents-inc/` — has to
+ * show up somewhere, and reading the whole scope root is what makes an
  * unexpected sibling a failure rather than an omission. The Codex side is excluded by name at
  * each of them, because it is what the run under test is supposed to be writing.
  *
@@ -335,7 +335,7 @@ type ClaudeSide = { home: InstallTree; project: InstallTree };
  * not reach it — while `project/` itself flips from an empty directory to a populated one on the
  * strength of exactly that write, which no skip can undo because `readInstallTree` counts a
  * directory's real children. Reading the project as its own root keeps every Claude-side claim,
- * including a stray `project/.claude-src/`, and drops only the fact that the fixture nests the two.
+ * and drops only the fact that the fixture nests the two.
  */
 async function claudeSideOf(env: TestEnvironment): Promise<ClaudeSide> {
   const context = { roots: { home: [env.fakeHome] }, cliVersion: await cliVersion() };

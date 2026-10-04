@@ -41,7 +41,7 @@ const claudeAvailable = await isClaudeCLIAvailable();
  * Architecture:
  *   tempDir/
  *     fake-home/                    <- HOME env var points here
- *       .claude-src/config.ts       <- global config
+ *       .agents-inc/claude/config.ts       <- global config
  *       .claude/agents/             <- global agents
  *       .claude/skills/             <- global skills (eject mode copies here)
  *       project/                    <- project directory (CWD for Phase 2)
