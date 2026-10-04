@@ -13,7 +13,48 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Latest — 2026-10-01: the gate is reverted, Codex stays
+## Latest — 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
+
+Following CLI-902, the owner asked for a cycle: run every suite and every user journey by hand, test every new failure,
+fix it, and repeat. Six rounds have landed, all uncommitted.
+
+- **Fixed:** about 70 issues, each with a test that failed first, and the gates green on this tree after every round.
+- **Record:** the root `audit-issues.md`, with the patches in the journey-fixes plan folder (`audit-fix-1` to
+  `audit-fix-6`).
+- **Not tracked:** wizard-only failures. The owner is removing the wizard.
+
+**Open, filed 2026-10-04:**
+
+- **CLI:** CLI-908 to CLI-917.
+- **Owner rulings owed:** CLI-918 and CLI-919.
+- **Editor, logged but not fixed by owner ruling:** EDITOR-80 to EDITOR-89, plus EDITOR-91.
+- **Editor, owner rulings owed:** EDITOR-90.
+
+---
+
+## 2026-10-03: the manual journey run's failures are fixed
+
+Release 0.165.0 is committed (27 commits, `80b5f979`..`3ecb959a`) and is neither pushed nor published; both wait on
+the owner.
+
+**CLI-902 has landed, uncommitted.** A manual run of every user journey against 0.165.0 failed 14 non-Codex
+journeys, and all 14 are now fixed as the owner ruled them. Each was done tests-first and verified independently; the
+full gates are green on this tree, and the account is in [archive.md](./archive.md).
+
+**Deferred by the same rulings:**
+
+- **CLI-903:** a share carrying more than one marketplace;
+- **CLI-904:** custom marketplaces beyond today's rules;
+- **CLI-905:** `init --ui --marketplace` opening the editor on that marketplace;
+- **CLI-906:** `config.ts` recording several marketplaces.
+
+**Found by the final review:** CLI-907, a false requirement warning in projects that predates CLI-902.
+
+**The tree is uncommitted.** Read `git status`, not this line.
+
+---
+
+## 2026-10-01: the gate is reverted, Codex stays
 
 The owner ruled on 2026-10-01 that linting and type checking are asked for in the prompt, not enforced by
 hooks: _"any changes that were added now to handle stop hooks and lint gates should be removed."_ So the

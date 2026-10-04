@@ -6719,3 +6719,47 @@ at 1364 was therefore below the floor and already scrolling sideways; re-run at 
   now carries the SKILL.md description through the matrix loaders into `catalog.json`, and `resolveSkill` in
   `apps/editor/.../output-preview.ts` prefers it, falling back to the label for an older catalogue. Owner action:
   rebuild the public marketplace's `catalog.json` with this CLI before the live preview shows it.
+
+## 2026-10-03 — CLI-902: the manual journey run's 14 failures are fixed (UNCOMMITTED in the working tree)
+
+- **2026-10-03 — CLI-902** (cli.md, new 2026-10-02) — all 14 non-Codex failures from the 2026-10-01 manual journey
+  run are fixed as the owner ruled them, plus the extras those rulings added.
+  - **Done test-first:** eight lanes, each with a tester, a developer and an independent reviewer, then a merge,
+    follow-ups and a final review.
+  - **Gates on this tree, all unfiltered:** CLI e2e 1,275 passed across all 293 files, smoke 48, editor Playwright
+    618, web units green, CLI unit 7,970 of 7,973.
+  - **The three unit failures predate CLI-902:**
+    - two are `check-finding-citations` tripping on the staged manual-run plan's dated links (CLI-868);
+    - one is a `compile.test.ts` case that is TMPDIR-length-sensitive and passes with the default TMPDIR.
+  - **Decision record:** the root `journey-issues.md`.
+  - **Programme record:** `progress.md` in that plan folder.
+  - **Left open:**
+    - deferred by ruling: CLI-903 to CLI-906;
+    - found by the final review: CLI-907.
+- **2026-10-03 — CLI-868** (cli.md, new 2026-09-02) — `check-finding-citations.ts` no longer reads a dated plan
+  name as a missing finding. A name that exists under `todo/plans/`, at any depth, now resolves. A dated name found
+  nowhere still dangles, and a control test pins that. Done alongside it: the `compile.test.ts` "a failed matrix
+  seat" assertion goes through `flattenCliOutput`, so it no longer depends on TMPDIR's length. The CLI unit suite is
+  green with the default TMPDIR and with a 90-character one.
+
+## 2026-10-04 — the post-CLI-902 audit, rounds 1–6 (UNCOMMITTED in the working tree)
+
+- **2026-10-04 — audit rounds 1–6** (no tracker rows; the record is the root `audit-issues.md`). Every suite and every
+  non-Codex user journey was run by hand after CLI-902. Each failure found was given a test that failed first, then
+  fixed.
+  - **Patches:** `audit-fix-1` to `audit-fix-6` in the journey-fixes plan folder.
+  - **Fixed, among others:**
+    - `--from` refusing before it asks;
+    - nothing global changed from a project;
+    - the reserved marketplace names (`eject`, `local`, `external`);
+    - raw mode held before the first paint;
+    - stale focus in the dashboard and the grids;
+    - Ctrl+C exiting as cancelled;
+    - a bare-dashboard help listing;
+    - bare `Skipped <path>: <reason>` lines for skipped registered projects;
+    - the Claude trust check following git roots and `CLAUDE_CONFIG_DIR`;
+    - the `edit --from` disclosure and kept-row fixes;
+    - the editor's own-port Playwright server.
+  - **Gates:** green on this tree after each round. The final round passed with nothing re-run.
+  - **Open:** CLI-908 to CLI-919 and EDITOR-80 to EDITOR-91. Wizard-only failures are dropped, because the wizard is
+    being removed.

@@ -16,11 +16,59 @@ removed. And the only changes that should exist ... should be changes to make th
 
 ## In flight
 
-- The commit sequence, run on the owner's instruction (2026-10-01): 26 commits and the 0.165.0 release commit, all
-  with `--no-verify`. The owner ruled out tests and lint between, before and after, because the full run below had
-  just passed. Push and publish wait for the owner's own confirm.
+- **Post-CLI-902 audit (owner, 2026-10-03):** run every suite and every journey by hand. Document each new failure
+  in the root `audit-issues.md`, test it, fix it, and repeat until clean.
+  - Copies: `audit-base` (the hand-run build and the servers: worker 8787, editor 5173), `audit-gates` (the
+    unfiltered suites) and `fix3` (the three failing unit tests, one background agent).
+  - Suites and journeys are done; the findings are in `audit-issues.md` (17 open). The three unit tests are fixed
+    and applied, and CLI-868 is archived.
+  - Fix cycle 1 (`wf_1789f996-dbb`): all four lanes finished, and both reviewed lanes passed. The merge was
+    running when the machine went down. On reboot, `systemd-tmpfiles` emptied `/tmp`: the two simple lanes' copies
+    and the merge copy were lost. The reviewed lanes' diffs (issues 1, 2 and 8) were saved to `audit-fix-1/` in
+    the journey-fixes folder.
+  - Round 2 (18–24) is applied (`audit-fix-2/`), and every gate on the tree is green.
+  - Round 3 (25–33, 35, 37, 38 and the reserved-names doc) is applied (`audit-fix-3/`, 63 files) by workflow
+    `wf_dd017c1b-6d8`. Every gate on the tree is green.
+  - Round 4 (44–47, 57–63, 66–69) is applied (`audit-fix-4/`) by workflow `wf_89669085-ec1`, and every gate is
+    green.
+  - Round 5 (78, 79, 80) is applied (`audit-fix-5/`) with every gate green. Its hand-run found 90, a regression from
+    80's fix.
+  - Round 6 (81–90) is applied (`audit-fix-6/`, 53 files), and every gate is green with nothing re-run. Its hand-run
+    found 91–100, in `audit-issues.md`. The next round waits on the owner.
+  - Working area: `~/.claude/projects/-home-vince-dev-cli/cli902-work/`. The servers on 8787 and 5173 run from this
+    tree.
 
 ## Done
+
+- CLI-902 landed, uncommitted, 2026-10-03. Red (`wf_10a74c24-e0e`), green (`wf_23ae7fe7-b63`) and merge
+  (`wf_387c91fd-32f`) are done. The combined diff is applied to this tree and the gates are green there; the record
+  is `progress.md` in the journey-fixes folder. Filed CLI-903 to CLI-907.
+
+- Round-2 rulings recorded, 2026-10-02: `journey-issues.md` now holds the final ruling per issue, what each fix
+  becomes, and two open questions. The round-2 prototypes are kept in the journey-fixes folder's `round2/`. New
+  rows: CLI-902 (the programme), CLI-903 (a share carrying more than one marketplace, later) and CLI-904 (custom
+  marketplaces beyond today's rules, later). Nothing is applied.
+
+- Round 2, `wf_d171a07e-ed4`: 13 items answering the owner's 2026-10-02 rulings. Each was investigated by the area
+  developer and fact-checked by `reviewer`, and all came back CORRECTED, meaning the reviewers sharpened the
+  findings. Three of the owner's premises do not hold: u02's tombstone is project-only, `marketplace.json` is not
+  required (u06), and the documented decision allows two marketplaces (u07). There are 19 new questions, all in the
+  tracker. Nothing is applied.
+
+- Root-cause investigation `wf_a6028e31-162`: 14 issues from the manual run, all CONFIRMED by an independent reviewer.
+  13 are real bugs and 1 is a local setup gap. 4 are regressions (0.133.0, 0.142.2, 0.155.0 and 0.159.0) and the
+  other 9 never worked. Each fix was proven test-first in a scratch copy. All 14 combine into one patch that applies
+  cleanly to HEAD, and every gate is green on it apart from one artefact of the scratch copy. The tracker is
+  `journey-issues.md` at the repo root, and the patches and records are in the journey-fixes folder. Nothing is
+  applied to the tree. The owner decides, and five rulings are listed in the tracker.
+
+- Manual journey run, 2026-10-01: all 68 rows driven by hand across eight lanes, with no test suites.
+  46 PASS, 5 FAIL (8, 23, 29, 30, 48), 14 PARTIAL, 2 signed-in halves BLOCKED, and 1 N/A. The record, with every
+  reproduction, is the manual-journey-run plan beside this file. Nothing is fixed;
+  it waits for the owner to triage.
+
+- Commits and release: 27 commits (`80b5f979`..`3ecb959a`), release 0.165.0, all with `--no-verify` on the
+  owner's instruction. Not pushed or published.
 
 - Full test run `wf_234bb2cb-a0b`, on the owner's request, all green:
   - CLI vitest 265 files / 7,876 tests, of which integration is 12 / 205 and commands 21 / 471;
