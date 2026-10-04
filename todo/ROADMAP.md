@@ -30,7 +30,7 @@ fix it, and repeat. Six rounds have landed, all uncommitted.
 - **CLI, deferred by owner:** CLI-908 and CLI-909 (`edit --from` shows the info table), CLI-914 (`CLAUDE_CONFIG_DIR`).
 - **CLI, parked with Codex:** CLI-920.
 - **Owner rulings owed:** CLI-918 and CLI-919.
-- **Editor, logged but not fixed by owner ruling:** EDITOR-80 to EDITOR-89, plus EDITOR-91.
+- **Editor, logged but not fixed by owner ruling:** EDITOR-80 to EDITOR-89, plus EDITOR-91 and EDITOR-92.
 - **Editor, owner rulings owed:** EDITOR-90.
 
 ---

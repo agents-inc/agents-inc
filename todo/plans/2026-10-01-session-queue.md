@@ -124,3 +124,4 @@ removed. And the only changes that should exist ... should be changes to make th
 - Docs residue sweep.
 - 2026-10-04: CLI-913 (drop .claude-src/ support + startup notice) dispatched to one cli-developer agent, in the real repo, no workflow.
 - 2026-10-04: CLI-913 follow-up (purge every .claude-src mention except the printed line) dispatched to one cli-developer agent.
+- 2026-10-04: editor flake (catalog-first 'a dialog already open when the import parks', fixed 1.5s stub delay) dispatched to web-tester; blocks the owner's push.
