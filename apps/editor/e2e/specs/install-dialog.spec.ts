@@ -41,6 +41,17 @@ const ACME = {
   skill: "Acme Widgets",
 } as const
 
+/**
+ * How many lines an element's text is laid out on: the distinct tops of the
+ * boxes its words were broken into. Runs in the page.
+ */
+const linesOf = (element: HTMLElement) => {
+  const words = document.createRange()
+  words.selectNodeContents(element)
+  const tops = [...words.getClientRects()].map((line) => Math.round(line.top))
+  return new Set(tops).size
+}
+
 test.describe("install dialog", () => {
   test.use({ permissions: ["clipboard-read", "clipboard-write"] })
 
@@ -51,6 +62,15 @@ test.describe("install dialog", () => {
     await configure.chooseStack(STACKS.nextjs)
     await configure.roster.installButton.click()
     await expect(configure.installDialog.root).toBeVisible()
+  })
+
+  // A command is read and typed as a whole, so it does not break across lines:
+  // wrapped, `edit` sat on a line of its own and the footer read as naming
+  // `npx agents-inc`. Counted as the distinct lines its text is laid out on.
+  test("keeps the footer's edit command on one line", async ({ configure }) => {
+    const lines = await configure.installDialog.footerCommand.evaluate(linesOf)
+
+    expect(lines).toBe(1)
   })
 
   test("lists the selected skills", async ({ configure }) => {
@@ -259,6 +279,106 @@ test.describe("install dialog counts", () => {
     await configure.roster.installButton.click()
 
     await expect(configure.installDialog.skillsPane).toContainText("Project")
+  })
+
+  // One skill is one skill. The Install button that opens this dialog already
+  // says so; the footer under it said `1 skills`.
+  test("counts a single skill in the singular", async ({ configure }) => {
+    await configure.skillIn(web, CATEGORY, REACT).toggle()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.footerNote).toContainText("1 skill ·")
+  })
+
+  // A pinned sub-agent with nothing selected is an install of exactly one.
+  test("counts a single sub-agent in the singular", async ({ configure }) => {
+    await configure.roster.agentButton("web", "developer").click()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.footerNote).toContainText(
+      "1 sub-agent ·"
+    )
+  })
+})
+
+/**
+ * WHERE STEP 2 SAYS AN EJECTED SKILL IS COPIED, which is a fact about its
+ * scope. It said `ejects N skills into .claude/skills/` for every
+ * configuration, so a global skill — and every skill rests at global — was
+ * sent to the project's folder while the CLI copies it under the home
+ * directory, the very next sentence said global skills land in `~/.claude`,
+ * and one skill read as `1 skills`.
+ *
+ * The strings are written out for the reason the config-file pin above gives,
+ * and every folder named is pinned beside the one it must not be: `.claude/`
+ * is a substring of `~/.claude/`, so each assertion carries the word before
+ * the path.
+ */
+test.describe("install dialog, where ejected skills go", () => {
+  test.beforeEach(async ({ configure, page }) => {
+    stubCreateConfig(page)
+    await configure.chooseStack(STACKS.nextjs)
+  })
+
+  test("counts one ejected skill in the singular", async ({ configure }) => {
+    await configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).flipInstall()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "ejects 1 skill into"
+    )
+  })
+
+  test("names the home folder for a global skill", async ({ configure }) => {
+    await configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).flipInstall()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "into ~/.claude/skills/"
+    )
+    await expect(configure.installDialog.root).not.toContainText(
+      "into .claude/skills/"
+    )
+  })
+
+  // Both scopes at once, each with its own folder and its own count. The
+  // project skill is `SINGLE_AGENT_SKILL` for the reason the Project-group test
+  // above gives: its one sub-agent moving too is what lets Install open.
+  test("names each scope's folder when both eject", async ({ configure }) => {
+    const projectSkill = configure.skillIn(
+      web,
+      SINGLE_AGENT_SKILL.category,
+      SINGLE_AGENT_SKILL.name
+    )
+    await projectSkill.setInstallMode("eject")
+    await projectSkill.setScope("project")
+    await configure.roster.setScope(SINGLE_AGENT_SKILL.agentId, "project")
+    await configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).flipInstall()
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "ejects 1 skill into .claude/skills/ and 1 skill into ~/.claude/skills/"
+    )
+  })
+
+  // Nothing ejected is nothing copied, so no folder is named — the step used
+  // to promise `0 skills into .claude/skills/`, a folder nothing is written to.
+  // The positive first, because "names no folder" is satisfied by a step that
+  // is not drawn at all.
+  test("names no skills folder when nothing is ejected", async ({
+    configure,
+  }) => {
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText("ejects no skills")
+    await expect(configure.installDialog.root).not.toContainText(
+      ".claude/skills/"
+    )
   })
 })
 

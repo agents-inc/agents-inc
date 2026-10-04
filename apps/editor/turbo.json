@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // `agents-inc#build` beside the root's `^build`, because this suite runs
+    // the CLI as well as the app: `e2e/specs/preview-matches-install.spec.ts`
+    // installs an id with `packages/cli/bin/run.js` and holds the preview
+    // against what it wrote, and oclif resolves every command from that
+    // package's own dist/. The CLI is no dependency of this package, so
+    // `^build` never reaches it — and CI runs this task with
+    // `--filter='!agents-inc'`, which excludes the CLI's own tasks from the
+    // run but not a task one of the included ones depends on.
+    "test:e2e": {
+      "dependsOn": ["^build", "agents-inc#build"],
+      "cache": false,
+      // The suite's own port (playwright.config.ts). turbo's strict env mode
+      // strips anything unnamed, so without this the override is dropped and
+      // the run quietly takes the default.
+      "passThroughEnv": ["EDITOR_E2E_PORT"]
+    }
+  }
+}

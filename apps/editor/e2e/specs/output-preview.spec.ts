@@ -5,14 +5,18 @@ import {
   seedPayload,
 } from "@workspace/api-mocks/fixtures"
 import { CORPUS_CLI_VERSION } from "@workspace/compile/corpus"
+import { MATRIX, matrixSchema } from "@workspace/matrix"
 
 import { buildOutputPreview } from "@/features/configure/lib/output-preview"
 import { externalSkillId } from "@/stores/catalog-store"
 
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import { stubMarketplaceCatalogOf } from "../support/marketplace"
 import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
+
+import type { ConfigurePage } from "../pages/configure-page"
 
 /**
  * A PREVIEW IS WORTH BUILDING ONLY IF IT DRAWS THE BYTES AN INSTALL WRITES.
@@ -29,14 +33,20 @@ import { stubSkillIndex } from "../support/skill-index"
  *   · what is held here is everything a browser is needed for — that the rows
  *     move when the configuration does, that the pane renders the model's text
  *     without normalising it, that a stranger's bytes are not interpreted, and
- *     that the footer says what the preview cannot know.
+ *     that the footer says what the preview cannot know;
+ *   · and the bytes against a real install of the same id are
+ *     `preview-matches-install.spec.ts`'s, which runs the CLI.
  *
  * COPY IS MIRRORED, NEVER IMPORTED. Every string below that the product also
  * renders is written out here, for the reason `e2e/pages` writes its own
  * copies: an assertion that imports the constant it is checking cannot fail,
- * because both halves move together. `CORPUS_CLI_VERSION` is the one import,
- * and it is the exception that proves the rule — the claim is that the footer
- * names THE CORPUS's version, not that it names a particular release.
+ * because both halves move together. `CORPUS_CLI_VERSION` is one exception
+ * that proves the rule — the claim is that the footer names THE CORPUS's
+ * version, not that it names a particular release — and the vendored
+ * catalogue is the other: a skill's wizard label is read off `MATRIX` because
+ * the claim is that the preview does NOT draw it, whatever it says, and its
+ * SKILL.md sentence off `ACTIVATION_DESCRIPTIONS` because the claim is that
+ * the preview draws the one the table holds for that skill, whatever it says.
  */
 
 const { web } = DOMAINS
@@ -98,13 +108,27 @@ const REFERENCE_ONLY = "reference only"
 const CLEAN_MACHINE_CLAIM =
   "what installing this configuration on a machine with no existing agents-inc installation writes"
 
+// B3.5 rule 1: the footer states the premise both roots are drawn under. An
+// install run from `$HOME` writes one standalone pair instead of two, so the
+// tree is true only of an install run from a project directory — where the
+// Install dialog sends the visitor first.
+const PROJECT_DIRECTORY_PREMISE = "when it is run from a project directory"
+
+// The project root a configuration holding nothing project-scoped still owes:
+// its config pair and nothing else. `init --from` run from a project directory
+// — where the Install dialog sends the visitor first — writes the project's
+// pair whatever the project holds (`writeProjectConfig` passes
+// `projectInstallationExists: isProjectContext`), and nothing else lands there
+// for a configuration whose sub-agents and skills are all global.
+const PROJECT_PAIR_TREE = [PROJECT, SOURCE_DIR, CONFIG_TS, CONFIG_TYPES_TS]
+
 // The tree, as a list of row names, for a configuration holding one global
 // plugin skill. Written out rather than counted, because a count cannot tell a
 // swapped row from an unchanged one — and every correction in §0 shows up in
 // this list: the source folder beside `.claude/`, `config-types.ts` rather than
 // `config.d.ts`, and a plugin skill under a group that is deliberately not a
-// path.
-const GLOBAL_ONLY_TREE = [
+// path. The project's pair closes it, because the install writes that too.
+const WHOLLY_GLOBAL_TREE = [
   GLOBAL,
   SOURCE_DIR,
   CONFIG_TS,
@@ -114,12 +138,13 @@ const GLOBAL_ONLY_TREE = [
   ...REACHED_AGENTS.map((agent) => `${agent}.md`),
   "plugin skills",
   REACT_ID,
+  ...PROJECT_PAIR_TREE,
 ]
 
 // The same configuration with the developer written into the project instead.
-// The `.md` moves and takes a whole second root with it — this list is the
-// dialog's entire argument, and it is why there is no tab bar and no
-// breadcrumb: scope separates itself.
+// The `.md` moves under the second root and takes `.claude/agents/` with it —
+// this list is the dialog's entire argument, and it is why there is no tab bar
+// and no breadcrumb: scope separates itself.
 const SPLIT_TREE = [
   GLOBAL,
   SOURCE_DIR,
@@ -154,6 +179,7 @@ const EJECTED_TREE = [
   ...REACHED_AGENTS.map((agent) => `${agent}.md`),
   "skills/",
   `${REACT_ID}/`,
+  ...PROJECT_PAIR_TREE,
 ]
 
 const globalPath = (rest: string) => `${GLOBAL}${rest}`
@@ -251,13 +277,13 @@ test.describe("the tree", () => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
   })
 
-  test("draws one root, its two directories and every file under them", async ({
+  test("draws both roots, their directories and every file under them", async ({
     configure,
   }) => {
     await configure.roster.previewButton.click()
 
     expect(await configure.outputPreviewDialog.rowNames()).toStrictEqual(
-      GLOBAL_ONLY_TREE
+      WHOLLY_GLOBAL_TREE
     )
   })
 
@@ -283,9 +309,9 @@ test.describe("the tree", () => {
   /**
    * Criterion 4, and the dialog's whole argument: flipping an agent's scope
    * word in the roster visibly moves its `.md` from one root to the other, with
-   * no tab bar and no breadcrumb doing any of the work. The second root arrives
-   * with it, carrying its own config pair, because a root is emitted the moment
-   * it holds one agent or one skill.
+   * no tab bar and no breadcrumb doing any of the work. Both roots are drawn
+   * either way, each with its config pair, because an install from a project
+   * directory writes both pairs whatever the configuration holds.
    */
   test("flipping an agent's scope moves its markdown between the roots", async ({
     configure,
@@ -309,9 +335,9 @@ test.describe("the tree", () => {
 
   /**
    * Both roots carry the config pair, always. The source folder is the one
-   * directory an emitted root cannot be without, which is what makes "a root
-   * holding neither an agent nor a skill is ABSENT, not empty" a rule worth
-   * having: an empty root would show two files an install does not write there.
+   * directory a root cannot be without, because the pair is the one thing an
+   * install from a project directory writes under both roots whatever the
+   * configuration holds.
    */
   test("every emitted root holds the config pair", async ({ configure }) => {
     await configure.roster.setScope(DEVELOPER, "project")
@@ -378,13 +404,18 @@ test.describe("the tree", () => {
   })
 
   /**
-   * B3.2's "absent, not empty", asked of the browser rather than of the model:
-   * a configuration written entirely into the project has no global root at
-   * all. The scope words are flipped on the agents FIRST, so the skill's own
-   * flip never leaves a pair whose two scopes cannot meet — the error state is
-   * a different subject and would only be noise here.
+   * A configuration written entirely into the project still writes the global
+   * pair, and nothing else under `~/`: `ensureBlankPair` creates it before the
+   * project write runs, and the project's `config-types.ts` imports from it.
+   * B3.2's "absent, not empty" assumed an install writes nothing there; run
+   * from a project directory it writes exactly these two files.
+   *
+   * The scope words are flipped on the agents FIRST, so the skill's own flip
+   * never leaves a pair whose two scopes cannot meet — the error state is a
+   * different subject and would only be noise here. The global root's rows are
+   * asserted whole, so a root filled with the project's entries fails too.
    */
-  test("omits a root entirely when nothing is written there", async ({
+  test("draws the global pair for a configuration written wholly into the project", async ({
     configure,
   }) => {
     for (const agent of REACHED_AGENTS) {
@@ -396,8 +427,16 @@ test.describe("the tree", () => {
 
     const preview = configure.outputPreviewDialog
     await expect(preview.row(PROJECT_CONFIG_PATH)).toBeVisible()
-    await expect(preview.row(GLOBAL_CONFIG_PATH)).toHaveCount(0)
-    await expect(preview.row(GLOBAL)).toHaveCount(0)
+    expect(
+      (await preview.rowPaths()).filter(
+        (path) => path?.startsWith(GLOBAL) === true
+      )
+    ).toStrictEqual([
+      GLOBAL,
+      globalPath(SOURCE_DIR),
+      GLOBAL_CONFIG_PATH,
+      globalPath(`${SOURCE_DIR}${CONFIG_TYPES_TS}`),
+    ])
   })
 })
 
@@ -433,7 +472,7 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
   // derivation would be a second copy of `siblingPositions`, which would then
   // agree with the first about whatever it got wrong.
   const EJECTED_POSITIONS = [
-    { path: GLOBAL, level: "1", posinset: "1", setsize: "1" },
+    { path: GLOBAL, level: "1", posinset: "1", setsize: "2" },
     {
       path: globalPath(SOURCE_DIR),
       level: "2",
@@ -474,6 +513,22 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
       level: "4",
       posinset: "1",
       setsize: "1",
+    },
+    // The project root the install writes its pair under, the global root's
+    // sibling: one directory, holding the two config files.
+    { path: PROJECT, level: "1", posinset: "2", setsize: "2" },
+    {
+      path: projectPath(SOURCE_DIR),
+      level: "2",
+      posinset: "1",
+      setsize: "1",
+    },
+    { path: PROJECT_CONFIG_PATH, level: "3", posinset: "1", setsize: "2" },
+    {
+      path: projectPath(`${SOURCE_DIR}${CONFIG_TYPES_TS}`),
+      level: "3",
+      posinset: "2",
+      setsize: "2",
     },
   ]
 
@@ -535,11 +590,13 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
     // The selected row is the tab stop; every other row is arrow-reachable
     // only. Asserted as the whole roster rather than as "the selected one is 0",
     // because a second row at 0 would put a stray stop in the dialog's tab
-    // order and read the same from the selected row's side.
+    // order and read the same from the selected row's side. Nothing has been
+    // selected yet, so it is the default: the project root's `config.ts`, which
+    // the install writes for this configuration too.
     expect(await preview.rowTabStops()).toStrictEqual(
       (await preview.rowPaths()).map((path) => ({
         path,
-        tabIndex: path === GLOBAL_CONFIG_PATH ? 0 : -1,
+        tabIndex: path === PROJECT_CONFIG_PATH ? 0 : -1,
       }))
     )
 
@@ -570,19 +627,23 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
 
     // Subject guard: which rows the two ends ARE. Without it the two clamp
     // assertions below are satisfied by focus never having moved anywhere,
-    // which is also what a broken tree looks like.
+    // which is also what a broken tree looks like. The last row is the project
+    // pair's second file, because the install writes the project's pair for
+    // this configuration as well.
+    const LAST_ROW = projectPath(`${SOURCE_DIR}${CONFIG_TYPES_TS}`)
+
     expect(
       [(await preview.rowPaths()).at(0), (await preview.rowPaths()).at(-1)],
       "the ends of the tree are not the rows these presses are aimed at"
-    ).toStrictEqual([GLOBAL, REACT_ID])
+    ).toStrictEqual([GLOBAL, LAST_ROW])
 
     await preview.row(GLOBAL).focus()
     await page.keyboard.press("ArrowUp")
     expect(await preview.focusedRowPath()).toStrictEqual(GLOBAL)
 
-    await preview.row(REACT_ID).focus()
+    await preview.row(LAST_ROW).focus()
     await page.keyboard.press("ArrowDown")
-    expect(await preview.focusedRowPath()).toStrictEqual(REACT_ID)
+    expect(await preview.focusedRowPath()).toStrictEqual(LAST_ROW)
   })
 })
 
@@ -917,16 +978,20 @@ test.describe("the footer", () => {
   })
 
   /**
-   * Criterion 12. The preview cannot see disk: it cannot run
-   * `resolveEffectiveGlobalConfig`, cannot reconcile a project split against a
-   * global one, cannot mask a tombstone, and cannot populate the global
-   * config's `projects` array. None of that is fixed by sharing the renderer,
-   * so it is scoped out and SAID — as a claim rather than a hedge, which is the
-   * difference between an honest preview and a wrong one.
+   * Criterion 12. The preview cannot see disk: it cannot merge into a global
+   * config already installed, cannot reconcile a project split against one,
+   * cannot mask a tombstone, and cannot populate the global config's
+   * `projects` array. None of that is fixed by sharing the renderer, so it is
+   * scoped out and SAID — as a claim rather than a hedge, which is the
+   * difference between an honest preview and a wrong one. So is the directory
+   * the install runs from, which decides whether there is a project root.
    */
   test("states what it is a preview of", async ({ configure }) => {
     await expect(configure.outputPreviewDialog.footerNote).toContainText(
       CLEAN_MACHINE_CLAIM
+    )
+    await expect(configure.outputPreviewDialog.footerNote).toContainText(
+      PROJECT_DIRECTORY_PREMISE
     )
   })
 
@@ -946,15 +1011,19 @@ test.describe("the footer", () => {
 
   /**
    * The stat counts only files an install actually writes: the two config files
-   * per emitted root, plus one per compiled sub-agent. A plugin reference is
-   * not a file, and an ejected catalogue directory is copied rather than
-   * generated — the preview does not know what is in it, so it cannot count it.
+   * per root — and an install from a project directory writes both roots'
+   * pairs, whatever the configuration holds — plus one per compiled sub-agent.
+   * A plugin reference is not a file, and an ejected catalogue directory is
+   * copied rather than generated — the preview does not know what is in it,
+   * so it cannot count it.
    */
   test("counts the files an install writes and nothing else", async ({
     configure,
   }) => {
     const CONFIG_FILES_PER_ROOT = 2
-    const written = CONFIG_FILES_PER_ROOT + REACHED_AGENTS.length
+    const ROOTS_AN_INSTALL_WRITES = 2
+    const written =
+      CONFIG_FILES_PER_ROOT * ROOTS_AN_INSTALL_WRITES + REACHED_AGENTS.length
 
     await expect(configure.outputPreviewDialog.footerNote).toContainText(
       `${written} files`
@@ -1018,10 +1087,19 @@ test.describe("a stranger's bytes in the preview", () => {
   // spelled out because it is the identity helper both surfaces agree through;
   // reimplementing it here is how two surfaces come to disagree about an id.
   const CHOSEN_CATEGORY_ID = "web-framework"
-  const ADDED_SKILL_PATH = `${GLOBAL}.claude/skills/${externalSkillId(
-    CHOSEN_CATEGORY_ID,
-    SKILL_NAME
-  )}/${MANIFEST}`
+  const ADDED_SKILL_ID = externalSkillId(CHOSEN_CATEGORY_ID, SKILL_NAME)
+  const ADDED_SKILL_PATH = `${GLOBAL}.claude/skills/${ADDED_SKILL_ID}/${MANIFEST}`
+
+  // The one line of the stranger's manifest the install rewrites:
+  // `withInstalledName` in the CLI's `seed/external-skills.ts` names the skill
+  // by the id it installs under, and leaves every other byte as it came. It is
+  // the manifest's own line, written out rather than built from the index's
+  // `name` — the two fixtures agree today, and agreeing is not being one fact.
+  const UPSTREAM_NAME_LINE = "name: brainstorming"
+  const INSTALLED_MANIFEST_TEXT = MANIFEST_TEXT.replace(
+    UPSTREAM_NAME_LINE,
+    `name: ${ADDED_SKILL_ID}`
+  )
 
   test.beforeEach(async ({ page, configure }) => {
     stubSkillIndex(page)
@@ -1074,13 +1152,18 @@ test.describe("a stranger's bytes in the preview", () => {
     const preview = configure.outputPreviewDialog
 
     // The fixture really does carry the markup, so a version of it that stopped
-    // carrying it would fail here rather than passing vacuously.
+    // carrying it would fail here rather than passing vacuously — and it
+    // carries the line the install renames, so the expectation below differs
+    // from the fixture by exactly that line and by nothing a sanitiser touched.
     expect(MANIFEST_TEXT).toContain("<script>")
     expect(MANIFEST_TEXT).toContain("onerror=")
+    expect(MANIFEST_TEXT).toContain(UPSTREAM_NAME_LINE)
 
     await preview.select(ADDED_SKILL_PATH)
 
-    expect(await preview.lines()).toStrictEqual(MANIFEST_TEXT.split("\n"))
+    expect(await preview.lines()).toStrictEqual(
+      INSTALLED_MANIFEST_TEXT.split("\n")
+    )
     expect(await page.evaluate((name) => name in window, XSS_SENTINEL)).toBe(
       false
     )
@@ -1097,18 +1180,294 @@ test.describe("a stranger's bytes in the preview", () => {
     configure,
   }) => {
     const preview = configure.outputPreviewDialog
+    const tokens = () =>
+      preview.contentPane.evaluate(
+        (node) => node.querySelectorAll("[data-slot='preview-token']").length
+      )
 
     await preview.select(ADDED_SKILL_PATH)
-    const strangerTokens = await preview.contentPane.evaluate(
-      (node) => node.querySelectorAll("[data-slot='preview-token']").length
-    )
+    await expect(preview.subtitle).toHaveText(`${ADDED_SKILL_PATH} · ${NEW}`)
+    const strangerTokens = await tokens()
 
+    // Polled, because the grammar is a chunk of its own that colours a file a
+    // beat after its lines are on screen — and a file the preview has not
+    // drawn before in this session reaches that beat later than one it has.
+    // Which file that is moves with the default selection, so a single read
+    // here measured the selection rather than the grammar.
     await preview.select(GLOBAL_CONFIG_PATH)
-    const generatedTokens = await preview.contentPane.evaluate(
-      (node) => node.querySelectorAll("[data-slot='preview-token']").length
-    )
+    await expect(preview.subtitle).toHaveText(`${GLOBAL_CONFIG_PATH} · ${NEW}`)
+    await expect.poll(tokens).toBeGreaterThan(0)
 
     expect(strangerTokens).toBe(0)
-    expect(generatedTokens).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * The sentence a compiled sub-agent's activation table gives each skill, read
+ * off the row the table draws for it: `### <id>`, then `- Description: …`.
+ * `undefined` when the sub-agent has no row for the skill at all.
+ */
+const activationSentence = (lines: readonly string[], skillId: string) => {
+  const heading = lines.indexOf(`### ${skillId}`)
+  return heading === -1 ? undefined : lines[heading + 1]
+}
+
+const DESCRIPTION_PREFIX = "- Description: "
+
+// The developer's cell in a skill's assignment matrix, as the options panel
+// names it.
+const ASSIGNMENT_DOMAIN = "Web"
+const ASSIGNMENT_ROLE = "dev"
+
+/**
+ * React picked, and set to load on demand for the developer — which is what
+ * puts it in the developer's activation table: a preloaded skill is listed in
+ * the frontmatter instead, with no sentence beside it. Picking preloads it, so
+ * the cell goes round preloaded → unassigned → lazy.
+ */
+const pickReactOnDemand = async (configure: ConfigurePage) => {
+  const react = configure.skillIn(web, CATEGORY, REACT)
+
+  await react.toggle()
+  await react.openOptions()
+  await react.options.cycleAssignment(ASSIGNMENT_DOMAIN, ASSIGNMENT_ROLE)
+  await react.options.cycleAssignment(ASSIGNMENT_DOMAIN, ASSIGNMENT_ROLE)
+  await configure.roster.heading.click()
+}
+
+/**
+ * THE SEAT EVERY VISITOR STARTS ON (u03). A compiled sub-agent's activation
+ * table describes each skill with the sentence its SKILL.md states — that is
+ * what an install writes, because compile reads SKILL.md itself. The vendored
+ * catalogue carries only the wizard's short label, so a preview drawing from
+ * it draws a line no install has ever written.
+ *
+ * The label is read off the vendored catalogue rather than typed here, and
+ * the claim is held to the one skill whose row the line before it finds. The
+ * SKILL.md sentence is read off the vendored table `generate:types` copies out
+ * of each skill's SKILL.md, so the positive half of the claim is that the row
+ * says the sentence the table holds for THIS skill — a row merely differing
+ * from the label would pass on a lookup answering another skill's sentence.
+ * The table is imported only once the negative has held, so a tree that
+ * predates it fails on the label it draws rather than on the import.
+ */
+test.describe("the activation table on the public catalogue", () => {
+  test.beforeEach(async ({ configure }) => {
+    await pickReactOnDemand(configure)
+    await configure.roster.previewButton.click()
+  })
+
+  test("describes a skill with its SKILL.md sentence rather than the wizard's label", async ({
+    configure,
+  }) => {
+    const label = MATRIX.skills[REACT_ID]?.description
+    const preview = configure.outputPreviewDialog
+
+    expect(
+      label,
+      "the vendored catalogue no longer carries the skill this reads"
+    ).toBeDefined()
+
+    await preview.select(GLOBAL_DEVELOPER_PATH)
+    await expect(preview.subtitle).toHaveText(
+      `${GLOBAL_DEVELOPER_PATH} · ${NEW}`
+    )
+    const described = activationSentence(await preview.lines(), REACT_ID)
+
+    expect(
+      described,
+      "the compiled sub-agent draws no activation row for the skill"
+    ).toMatch(new RegExp(`^${DESCRIPTION_PREFIX}\\S`))
+    expect(described).not.toBe(`${DESCRIPTION_PREFIX}${label}`)
+
+    const { ACTIVATION_DESCRIPTIONS } =
+      await import("@workspace/matrix/activation-descriptions")
+    const sentence = ACTIVATION_DESCRIPTIONS[REACT_ID]
+
+    expect(
+      sentence,
+      "the vendored table holds no SKILL.md sentence for the skill this reads"
+    ).toBeDefined()
+    expect(described).toBe(`${DESCRIPTION_PREFIX}${sentence}`)
+  })
+})
+
+/**
+ * THE MARKETPLACE THE PUBLIC CATALOGUE INSTALLS FROM. A visitor who loads
+ * nothing mints a configuration naming no marketplace, and `init --from`
+ * installs one from the CLI's default and records it in `config.ts` — the
+ * project's always, and the global's once it holds anything. React is picked
+ * for the global developer here, so both files hold the line.
+ *
+ * React is a plugin, so the install also registers the marketplace with
+ * Claude Code, reads the name its manifest gives it, and records that on the
+ * line after the ref — in both files, as `init --from` wrote them on a clean
+ * machine. A configuration installed wholly by eject reads no manifest and
+ * records no name; `preview-matches-install.spec.ts`'s public case holds that
+ * half against a real install.
+ *
+ * The lines are mirrored rather than built, by this file's rule: they are
+ * text the install writes.
+ */
+test.describe("the marketplace on the public catalogue", () => {
+  const DEFAULT_MARKETPLACE_LINE = "  marketplace: 'github:agents-inc/skills',"
+  const DEFAULT_MARKETPLACE_NAME_LINE = "  marketplaceName: 'agents-inc',"
+
+  test.beforeEach(async ({ configure }) => {
+    await pickReactOnDemand(configure)
+    await configure.roster.previewButton.click()
+  })
+
+  for (const path of [GLOBAL_CONFIG_PATH, PROJECT_CONFIG_PATH]) {
+    test(`${path} records the marketplace an install reads when none is named`, async ({
+      configure,
+    }) => {
+      const preview = configure.outputPreviewDialog
+
+      await preview.select(path)
+      await expect(preview.subtitle).toHaveText(`${path} · ${NEW}`)
+
+      expect(await preview.lines()).toContain(DEFAULT_MARKETPLACE_LINE)
+    })
+
+    test(`${path} names that marketplace as its manifest does, on the line after its ref`, async ({
+      configure,
+    }) => {
+      const preview = configure.outputPreviewDialog
+
+      await preview.select(path)
+      await expect(preview.subtitle).toHaveText(`${path} · ${NEW}`)
+
+      const lines = await preview.lines()
+      const ref = lines.indexOf(DEFAULT_MARKETPLACE_LINE)
+
+      expect(
+        ref,
+        "the config.ts records no marketplace, so the line after it has no subject"
+      ).not.toBe(-1)
+      expect(lines[ref + 1]).toBe(DEFAULT_MARKETPLACE_NAME_LINE)
+    })
+  }
+})
+
+/**
+ * A MARKETPLACE LOADED UNDER THE SAME SELECTION. The preview is prepared
+ * before it is opened and rebuilt whenever the configuration moves — but
+ * loading a marketplace that carries every picked skill moves nothing in the
+ * configuration, and the catalogue it is drawn against is the only thing that
+ * changed. The preview has to answer for that catalogue at once: the
+ * marketplace its config.ts records and the sentences its sub-agents show are
+ * both the loaded one's.
+ *
+ * The catalogue is a fork of the public one with one sentence of its own on
+ * the picked skill, so loading it drops nothing from the selection and the
+ * one thing that can tell the two seats apart is on screen. A fork rather than
+ * the public repository itself, because the public catalogue's ref is what
+ * config.ts records before any load: loading it again would leave that line
+ * where it was, whether or not the preview answered for the load.
+ *
+ * An install from a marketplace other than the public one reads that
+ * marketplace's manifest whatever it installs, and records the name the
+ * manifest gives on the line after the ref. This browser reads the catalogue
+ * and no manifest — and the stub here answers every path in the repository
+ * with the catalogue, which names no marketplace — so the name is one only
+ * the install can read, drawn on a line of the installed line's shape the
+ * way the project's name is.
+ */
+test.describe("the preview after a marketplace loads under the same selection", () => {
+  const LOADED_REF = "public-fork/skills"
+  // The form a seated marketplace is recorded in, mirrored rather than built
+  // by the app's own formatter.
+  const LOADED_CANONICAL_REF = "github:public-fork/skills"
+  const LOADED_MARKETPLACE_LINE = `  marketplace: '${LOADED_CANONICAL_REF}',`
+  const NAME_ONLY_THE_INSTALL_READS =
+    "  marketplaceName: '<computed at install time>',"
+  const LOADED_SENTENCE =
+    "React, as this marketplace's own SKILL.md describes it. Load when the loaded catalogue is the one on screen."
+
+  const LOADED_CATALOG = matrixSchema.parse({
+    ...MATRIX,
+    version: "9.9.9-loaded",
+    generatedAt: "build",
+    skills: {
+      ...MATRIX.skills,
+      [REACT_ID]: {
+        ...MATRIX.skills[REACT_ID],
+        activationDescription: LOADED_SENTENCE,
+      },
+    },
+  })
+
+  test.beforeEach(async ({ configure, page }) => {
+    stubMarketplaceCatalogOf(page, LOADED_CATALOG)
+    const preview = configure.outputPreviewDialog
+
+    await pickReactOnDemand(configure)
+    // Opened once on the public catalogue first, so a preview is already
+    // built for this selection — the state a visitor who previews, then
+    // switches marketplace, is in.
+    await configure.roster.previewButton.click()
+    await expect(preview.row(GLOBAL_CONFIG_PATH)).toBeVisible()
+    await preview.close()
+
+    await configure.marketplaceButton.click()
+    await configure.marketplaceDialog.fill(LOADED_REF)
+    await configure.marketplaceDialog.load()
+    await expect(configure.marketplaceDialog.root).toBeHidden()
+
+    // Subject guard: the load kept the selection, so nothing in the
+    // configuration moved and the catalogue is the only thing that did.
+    await expect(configure.skillIn(web, CATEGORY, REACT).root).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+
+    await configure.roster.previewButton.click()
+  })
+
+  test("its config.ts records the marketplace just loaded", async ({
+    configure,
+  }) => {
+    const preview = configure.outputPreviewDialog
+
+    await preview.select(GLOBAL_CONFIG_PATH)
+    await expect(preview.subtitle).toHaveText(`${GLOBAL_CONFIG_PATH} · ${NEW}`)
+
+    expect(await preview.lines()).toContain(LOADED_MARKETPLACE_LINE)
+  })
+
+  for (const path of [GLOBAL_CONFIG_PATH, PROJECT_CONFIG_PATH]) {
+    test(`${path} names the marketplace just loaded on the line after its ref, as a value only the install reads`, async ({
+      configure,
+    }) => {
+      const preview = configure.outputPreviewDialog
+
+      await preview.select(path)
+      await expect(preview.subtitle).toHaveText(`${path} · ${NEW}`)
+
+      const lines = await preview.lines()
+      const ref = lines.indexOf(LOADED_MARKETPLACE_LINE)
+
+      expect(
+        ref,
+        "the config.ts records no loaded marketplace, so the line after it has no subject"
+      ).not.toBe(-1)
+      expect(lines[ref + 1]).toBe(NAME_ONLY_THE_INSTALL_READS)
+    })
+  }
+
+  test("its sub-agents describe the picked skill in the loaded catalogue's words", async ({
+    configure,
+  }) => {
+    const preview = configure.outputPreviewDialog
+
+    await preview.select(GLOBAL_DEVELOPER_PATH)
+    await expect(preview.subtitle).toHaveText(
+      `${GLOBAL_DEVELOPER_PATH} · ${NEW}`
+    )
+
+    expect(activationSentence(await preview.lines(), REACT_ID)).toBe(
+      `${DESCRIPTION_PREFIX}${LOADED_SENTENCE}`
+    )
   })
 })

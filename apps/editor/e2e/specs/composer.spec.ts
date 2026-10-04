@@ -1,3 +1,5 @@
+import { COMPOSE_URL } from "@workspace/api-mocks"
+
 import { expect, test } from "../fixtures"
 
 import type { Composer } from "../pages/composer"
@@ -11,16 +13,17 @@ import {
   PROPOSAL_NO_MODEL_REASON,
   SEND_KEY_SHORTCUTS,
 } from "../pages/composer"
+import { ConfigurePage } from "../pages/configure-page"
 import {
   holdCompose,
   stubCompose,
   stubComposeRefusal,
   stubComposeTooLong,
   stubComposeUnreachable,
+  stubSignedIn,
 } from "../support/auth"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 
-import type { ConfigurePage } from "../pages/configure-page"
 import type { SkillCell } from "../pages/skill-cell"
 import type { Page } from "@playwright/test"
 
@@ -58,14 +61,46 @@ const DEAD_MODE_LABEL = /^(build|adjust|ask)$/i
 // a round trip from a finished one.
 const THINKING_REASON = "Choosing skills…"
 
-// The other three members of the composer's refusal table. `PROPOSAL_NO_MODEL_REASON`
-// is the fourth — `signed-out`, which the suite's default stub produces — and it
-// lives in the page object because the specs written before EDITOR-54 already
-// asserted on it.
+// The composer's refusal table, every member the WORKER answers with.
+// `PROPOSAL_NO_MODEL_REASON` is not one of them: it is what a signed-out submit
+// says, and a signed-out submit never reaches the worker, so it lives in the
+// page object beside the copy the specs written before EDITOR-54 asserted on.
 const REFUSAL_TOO_MANY = "Too many requests in a minute. Try again shortly."
 const REFUSAL_REFUSED = "The model did not answer. Nothing changed."
 const REFUSAL_UNREACHABLE = "Could not reach the composer. Nothing changed."
 const REFUSAL_TOO_LONG = "That is too long to send. Shorten it and try again."
+// A 401 from a page that believed it was signed in: the session ended while
+// the tab was open. The request WAS sent, so this one may not say otherwise.
+const REFUSAL_SESSION_ENDED =
+  "Your session ended. Sign in again — nothing changed."
+
+/**
+ * Signed in, which is the only browser the worker answers `/compose` for.
+ *
+ * Its own `ConfigurePage` rather than the `configure` fixture, for the ordering
+ * reason `accounts.spec.ts` states: the fixture navigates during setup, so the
+ * session request has already gone out before any stub a test installs.
+ */
+const arriveSignedIn = async (page: Page) => {
+  stubSignedIn(page)
+  const configure = new ConfigurePage(page)
+  await configure.goto()
+  return configure
+}
+
+// Every sentence the page POSTed to the composer's route, answered or not.
+// Playwright reports the request either way, which is what lets a spec assert
+// that one was never sent.
+const composeRequests = (page: Page) => {
+  const sent: string[] = []
+
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url() === COMPOSE_URL)
+      sent.push((request.postDataJSON() as { sentence: string }).sentence)
+  })
+
+  return sent
+}
 
 // Comfortably past the cap `/compose` refuses at, and deliberately NOT that cap
 // plus one: what the specs below need is a draft the worker would refuse, and
@@ -180,22 +215,17 @@ const proposalToBandGap = async (configure: ConfigurePage) => {
   return band.y - (proposal.y + proposal.height)
 }
 
-// UNTIL IT STOPS MOVING, because one scroll does not reach the bottom of a page
-// this scroll makes taller: the filter bar's band grows as it pins, and that is
-// 31px of page the `scrollHeight` being aimed at had not counted yet. A single
-// pass lands 31px short, which is not the position these claims are about.
-const scrollToBottom = async (configure: ConfigurePage) => {
-  let previous = -1
-  let landed = 0
+// How far the keyboard walks from the top of the page. Past the first screen of
+// grid and well into what scrolls in under the dock: the walk that found this
+// had a third of its first sixty stops hidden there.
+const TAB_STOPS = 60
 
-  while (landed !== previous) {
-    previous = landed
-    landed = await configure.page.evaluate(() => {
-      window.scrollTo(0, document.documentElement.scrollHeight)
-      return window.scrollY
-    })
-  }
-}
+/**
+ * Every stop of a keyboard walk from the top of the page that landed on a
+ * control the dock covers. A control inside the dock is the dock's own.
+ */
+const stopsUnderTheDock = (configure: ConfigurePage) =>
+  configure.stopsCoveredBy(configure.composer.dock, "Tab", TAB_STOPS)
 
 test.describe("the docked composer", () => {
   test("is docked at the foot of the main column before any scroll", async ({
@@ -391,6 +421,31 @@ test.describe("submitting", () => {
     )
   })
 
+  // The reason line above says "nothing was sent", and it is only true if
+  // nothing was. Signed out, the worker can only refuse, so the request is a
+  // round trip that buys nothing and makes the sentence a lie. The second half
+  // is the channel: the same listener, signed in, does see the request.
+  test("sends nothing to the worker while signed out", async ({
+    configure,
+    page,
+  }) => {
+    const { composer } = configure
+    const sent = composeRequests(page)
+
+    await composer.type(SENTENCE)
+    await composer.send()
+    await expect(composer.proposalReason).toHaveText(PROPOSAL_NO_MODEL_REASON)
+
+    expect(sent).toStrictEqual([])
+
+    const signedIn = await arriveSignedIn(page)
+    await signedIn.composer.type(SENTENCE)
+    await signedIn.composer.send()
+    await settled(signedIn.composer)
+
+    expect(sent).toStrictEqual([SENTENCE])
+  })
+
   // `Apply` is disabled whenever a proposal carries zero changes — a general
   // rule rather than a phase carve-out. Disabled rather than absent, so the
   // footer does not change shape for a reason the visitor cannot see.
@@ -537,12 +592,14 @@ test.describe("submitting", () => {
 // and until EDITOR-58 nothing on screen said so: the button stayed live and the
 // chord stayed bound for the whole of it, so a second press was accepted and
 // swallowed by a guard the visitor could not see.
+//
+// Signed in, every one of them, and for the rest of this file wherever the
+// worker has to answer: signed out, nothing is sent for it to answer.
 test.describe("a submit in flight", () => {
   test("holds the send button disabled until the answer lands", async ({
-    configure,
     page,
   }) => {
-    const { composer } = configure
+    const { composer } = await arriveSignedIn(page)
     const compose = holdCompose(page)
 
     await composer.type(SENTENCE)
@@ -563,10 +620,9 @@ test.describe("a submit in flight", () => {
   // one input is the obvious somewhere, and it is where `Discard` hands focus
   // back for the same reason: what the visitor was in has just gone.
   test("hands the caret to the field when Send takes itself out of reach", async ({
-    configure,
     page,
   }) => {
-    const { composer } = configure
+    const { composer } = await arriveSignedIn(page)
     const compose = holdCompose(page)
 
     await composer.type(SENTENCE)
@@ -583,10 +639,9 @@ test.describe("a submit in flight", () => {
   // press it swallows and a press it never accepted are identical on screen.
   // What tells them apart is how many sentences reached the worker.
   test("sends one sentence however often the chord is pressed", async ({
-    configure,
     page,
   }) => {
-    const { composer } = configure
+    const { composer } = await arriveSignedIn(page)
     const compose = holdCompose(page)
 
     await composer.type(SENTENCE)
@@ -612,10 +667,9 @@ test.describe("a submit in flight", () => {
    * answer arrived late and drew itself".
    */
   test("stops waiting on an answer the moment the draft changes", async ({
-    configure,
     page,
   }) => {
-    const { composer } = configure
+    const { composer } = await arriveSignedIn(page)
     const compose = holdCompose(page)
     const edited = `${SENTENCE}!`
 
@@ -638,12 +692,17 @@ test.describe("a submit in flight", () => {
   })
 })
 
-// Five things can go wrong with a submit and the composer says a different
+// Six things can go wrong with a submit and the composer says a different
 // sentence about each, because only some of them name something the person at
-// the keyboard can do. The signed-out one is the suite's default and is
-// asserted above; these are the other four.
+// the keyboard can do. Being signed out is the suite's default and is asserted
+// above; these are the five the worker answers with.
 test.describe("a refusal", () => {
   const REFUSALS = [
+    {
+      what: "a session that ended while the tab was open",
+      stub: (page: Page) => stubComposeRefusal(page, 401),
+      copy: REFUSAL_SESSION_ENDED,
+    },
     {
       what: "a rate limit",
       stub: (page: Page) => stubComposeRefusal(page, 429),
@@ -672,10 +731,9 @@ test.describe("a refusal", () => {
 
   for (const { what, stub, copy } of REFUSALS) {
     test(`says so after ${what}, and offers nothing to apply`, async ({
-      configure,
       page,
     }) => {
-      const { composer } = configure
+      const { composer } = await arriveSignedIn(page)
       stub(page)
 
       await composer.type(SENTENCE)
@@ -699,10 +757,8 @@ test.describe("applying a proposal", () => {
    * moment that guard moved — which is why the ids are taken from the rows
    * rather than derived a second time.
    */
-  test("selects exactly the skills its rows named", async ({
-    configure,
-    page,
-  }) => {
+  test("selects exactly the skills its rows named", async ({ page }) => {
+    const configure = await arriveSignedIn(page)
     const { composer } = configure
     const cell = configure.skillIn(web, CATEGORY, SKILL)
     const skillId = await skillIdOf(configure, cell)
@@ -725,9 +781,9 @@ test.describe("applying a proposal", () => {
   // the rows do not have to: `Skills · 1 added` generalises to a changed group
   // with no new mechanism. One row per thing, and the count is the row count.
   test("heads the list with what it adds, and draws a row for each", async ({
-    configure,
     page,
   }) => {
+    const configure = await arriveSignedIn(page)
     const { composer } = configure
     const skillId = await skillIdOf(
       configure,
@@ -748,7 +804,8 @@ test.describe("applying a proposal", () => {
 
   // Applying is the one verb that clears the sentence: it is the only door out
   // of the composer where what the visitor asked for has actually happened.
-  test("clears the proposal", async ({ configure, page }) => {
+  test("clears the proposal", async ({ page }) => {
+    const configure = await arriveSignedIn(page)
     const { composer } = configure
     const skillId = await skillIdOf(
       configure,
@@ -837,7 +894,7 @@ test.describe("the composer's geometry", () => {
   test("leaves the marketplace button clear at maximum scroll", async ({
     configure,
   }) => {
-    await scrollToBottom(configure)
+    await configure.scrollToBottom()
 
     expect(await dockGap(configure)).toBeGreaterThanOrEqual(0)
   })
@@ -952,7 +1009,7 @@ test.describe("the composer's geometry", () => {
   test("does not permanently cover the end of the grid", async ({
     configure,
   }) => {
-    await scrollToBottom(configure)
+    await configure.scrollToBottom()
 
     const cell = await configure.skillCells.last().boundingBox()
     const band = await configure.composer.band.boundingBox()
@@ -960,6 +1017,33 @@ test.describe("the composer's geometry", () => {
       throw new Error("the last cell and the band must be drawn")
 
     expect(band.y - (cell.y + cell.height)).toBeGreaterThanOrEqual(0)
+  })
+
+  // A control the keyboard is on has to be SEEN to be on, and the dock sits
+  // over the foot of the column: a control scrolled in from below stops at the
+  // viewport's edge, which is under the dock. The walk has to have left the
+  // first screen for this to be about anything, which the scroll says.
+  test("never covers the control the keyboard is on", async ({ configure }) => {
+    expect(await stopsUnderTheDock(configure)).toStrictEqual([])
+    expect(await configure.scrollY()).toBeGreaterThan(0)
+  })
+
+  // The same walk with the dock at its TALLEST, a proposal open above the
+  // band: whatever keeps a control clear has to grow with the dock rather than
+  // know its resting height.
+  test("never covers the control the keyboard is on with a proposal open", async ({
+    configure,
+  }) => {
+    await configure.composer.type(SENTENCE)
+    await configure.composer.send()
+    await settled(configure.composer)
+    // Back to the top of the page and of the keyboard order, without a reload
+    // that would take the proposal with it.
+    await configure.editorLink.focus()
+    await configure.scrollTo(0)
+
+    expect(await stopsUnderTheDock(configure)).toStrictEqual([])
+    expect(await configure.scrollY()).toBeGreaterThan(0)
   })
 
   // The field grows with what it holds and then stops, because the dock is

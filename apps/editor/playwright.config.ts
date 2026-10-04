@@ -1,6 +1,13 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const PORT = 5173
+// Its own port rather than Vite's default 5173, which is where anyone's
+// `bun run dev` listens — and a suite that reused whatever answered there ran
+// in one tree, tested another, and reported green. So the server is always one
+// this run started: `reuseExistingServer: false` below refuses a port that is
+// already answering, and `--strictPort` makes a busy one a startup failure
+// rather than a quiet move to the next. EDITOR_E2E_PORT moves it, for two runs
+// at once.
+const PORT = Number(process.env.EDITOR_E2E_PORT ?? 5199)
 const BASE_URL = `http://localhost:${PORT}`
 
 // The editor is a desktop-only screen with a floor of its own, below which the
@@ -83,14 +90,19 @@ export default defineConfig({
       name: "a11y",
       testMatch: AUDIT_SUITE,
       workers: 1,
+      // axe over the grid is CPU-bound, so it slows with the machine rather
+      // than with the app. The grid-bearing audits take 10–12s idle; at a load
+      // average near 90 eight of them ran past the default 30s, and the slowest
+      // took 32s once allowed to finish. 90s covers that.
+      timeout: 90_000,
       use: CHROMIUM,
     },
   ],
 
   webServer: {
-    command: `bun run dev --port ${PORT}`,
+    command: `bun run dev --port ${PORT} --strictPort`,
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     stdout: "ignore",
     stderr: "pipe",
   },

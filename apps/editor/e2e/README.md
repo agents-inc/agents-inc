@@ -38,8 +38,7 @@ blanket route over `/api/auth/**` is exactly what this replaced, and it answered
 a sign-in with the session body — see `packages/api-mocks/README.md`.
 
 It is there because EDITOR-57 made "who is signed in?" part of the baseline page
-load — the nav rail asks on mount, on every route — and EDITOR-54's composer
-route is signed-in only, so the submit specs need its refusal too. It is the
+load — the nav rail asks on mount, on every route. It is the
 INITIAL set rather than the first stub, so anything a spec adds still wins and
 `stubSignedIn` outranks it.
 

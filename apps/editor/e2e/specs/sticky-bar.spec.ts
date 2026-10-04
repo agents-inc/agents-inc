@@ -12,6 +12,12 @@ const PIN_STEP = 4
 const BELOW_THE_BAR = 200
 const PAST_THE_BAR = 1500
 
+// How far the keyboard walks back up the page. The walk starts at the foot of
+// the catalogue, and its first screen of stops is already in the window, so it
+// has to climb past all of them before anything scrolls in from above — sixty
+// from there never left the first screen and covered nothing.
+const BACKWARD_STOPS = 150
+
 // `#242320` — the page's one dark surface, shared with the add-skill block.
 const DARK_BAND = "rgb(36, 35, 32)"
 
@@ -253,6 +259,31 @@ test.describe("sticky filter bar", () => {
 
     await expect.poll(() => configure.isBarStuck()).toBe(true)
     await expect(configure.focusedSkillCell).toHaveCount(1)
+  })
+
+  // A control the keyboard is on has to be SEEN to be on, and the pinned bar
+  // sits over the head of the column: walking back up the page, a control
+  // scrolled in from above stops at the window's top edge — under the bar, with
+  // its focus ring hidden. The dock's walk down the page is the same defect at
+  // the other edge, and `composer.spec.ts` holds it.
+  //
+  // From the composer's field, the last stop in the column, so the walk starts
+  // at the foot of the catalogue and climbs it with the bar pinned the whole
+  // way — which the last line says, because a walk under a bar that never
+  // pinned is a walk past nothing that could cover it.
+  test("never hides the control the keyboard is on, walking back up", async ({
+    configure,
+  }) => {
+    await configure.composer.field.focus()
+
+    expect(
+      await configure.stopsCoveredBy(
+        configure.filterBar,
+        "Shift+Tab",
+        BACKWARD_STOPS
+      )
+    ).toStrictEqual([])
+    expect(await configure.isBarStuck()).toBe(true)
   })
 
   // Design 84a on this control: the filled block becomes an outlined one the

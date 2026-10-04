@@ -10,6 +10,7 @@ import {
   SkillContentsDialog,
   StackSwitchDialog,
 } from "./dialogs"
+import { OptionsPanel } from "./options-panel"
 import { ProviderControl } from "./provider-control"
 import { RosterPanel } from "./roster-panel"
 import { SkillCell } from "./skill-cell"
@@ -62,6 +63,11 @@ export type StoredUi = {
 
 // Every skill cell on the screen. The filter bar sits outside every section,
 // so nothing on the bar can ever match this.
+// One frame whose layout the observer reports, one the report defers its write
+// to — where a callback requested in the frame before runs ahead of that write —
+// and one to read the page after it.
+const FRAMES_UNTIL_A_DEFERRED_WRITE_IS_LAID_OUT = 3
+
 const SKILL_CELL = 'main section [data-slot="lattice-cell"]'
 
 // The collapsed hairline grid itself, scoped by whoever asks for it. Read for
@@ -76,6 +82,36 @@ const MARKETPLACE_SECTION = '[data-slot="marketplace-row"]'
 // seventy stops from the bar; this is headroom, and a walk that spends it all
 // leaves the bar unstuck for the spec to fail on.
 const MAX_TAB_STEPS = 200
+
+/**
+ * The focused control, named, and how far `cover` hides it or its focus ring —
+ * or `null` when it hides none of either. A control INSIDE the cover is the
+ * cover's own and is never hidden by it. Runs in the page.
+ *
+ * THE RING COUNTS. The package's one focus treatment is `ring-1`, drawn a
+ * pixel OUTSIDE the control's box, so a control parked flush against the cover
+ * shows everything but the side of its ring that says it is focused. That
+ * pixel is part of what must not be covered, and a cover over it alone reads
+ * as `by 1px` or less.
+ */
+const focusCoveredBy = (cover: HTMLElement) => {
+  const focused = document.activeElement
+  if (!(focused instanceof HTMLElement) || cover.contains(focused)) return null
+
+  const ring = 1
+  const control = focused.getBoundingClientRect()
+  const over = cover.getBoundingClientRect()
+  const across =
+    Math.min(control.right + ring, over.right) -
+    Math.max(control.left - ring, over.left)
+  const down =
+    Math.min(control.bottom + ring, over.bottom) -
+    Math.max(control.top - ring, over.top)
+  if (across <= 0 || down <= 0) return null
+
+  const name = focused.getAttribute("aria-label") ?? focused.innerText
+  return `${name} by ${down.toFixed(1)}px`
+}
 
 // The saved snapshot's cell. The app names this one rather than the generated
 // catalogue, so it lives here beside the grid rather than in
@@ -189,6 +225,16 @@ export class ConfigurePage {
   // `importNotice` — both are `role="alert"`, and an unscoped locator would
   // match whichever the page happened to be drawing.
   readonly accountNotice: Locator
+  // The rail's link to this screen. Its `aria-current` is the rail saying which
+  // page you are on, which is the claim a spec about it makes.
+  readonly editorLink: Locator
+  // The nav rail itself: sticky and exactly one screen tall, so its top edge
+  // is where the app's frame sits in the window. A frame that moved under a
+  // scroll moved this.
+  readonly navRail: Locator
+  // Whichever skill's ••• panel is open. Only one can be, so it is the page's
+  // rather than a cell's — the same object every `SkillCell.options` builds.
+  readonly skillOptions: OptionsPanel
 
   constructor(readonly page: Page) {
     this.stacks = page.getByRole("group", { name: "Stacks" })
@@ -233,6 +279,11 @@ export class ConfigurePage {
     this.themeToggle = page.locator('[data-slot="theme-toggle"]')
     this.githubLink = page.getByRole("link", { name: "GitHub" })
     this.accountNotice = page.locator("nav").getByRole("alert")
+    this.editorLink = page
+      .getByRole("navigation")
+      .getByRole("link", { name: "Editor", exact: true })
+    this.navRail = page.getByRole("navigation")
+    this.skillOptions = new OptionsPanel(page)
   }
 
   // What the browser kept, read back rather than inferred from the screen: the
@@ -531,6 +582,17 @@ export class ConfigurePage {
     return this.page.locator(`${SKILL_CELL}:focus-within`)
   }
 
+  // The ••• of whichever cell the column ends on — the cell with the least page
+  // left beneath it, which is where a panel has nowhere to go. Asked of the
+  // grid rather than of a named skill, so no amount of catalogue drift changes
+  // which cell this is about.
+  async openLastSkillOptions() {
+    await this.skillCells
+      .last()
+      .getByRole("button", { name: /^Options for / })
+      .click()
+  }
+
   // ── Scroll ─────────────────────────────────────────────────────────────
 
   async scrollTo(y: number) {
@@ -539,6 +601,58 @@ export class ConfigurePage {
 
   async scrollY() {
     return this.page.evaluate(() => window.scrollY)
+  }
+
+  // UNTIL IT STOPS MOVING, because one scroll does not reach the bottom of a
+  // page this scroll makes taller: the filter bar's band grows as it pins, and
+  // that is 31px of page the `scrollHeight` being aimed at had not counted yet.
+  // A single pass lands 31px short, which is not the position a claim about
+  // the bottom of the page is about.
+  //
+  // And each pass reads only once a deferred write could have landed. The room
+  // `use-panel-room.ts` keeps under an options panel is written in the frame
+  // AFTER its ResizeObserver reports, so two reads with no frame between them
+  // agree while that write is still pending: opening the Meta fold and scrolling
+  // straight down stopped 127px above a bottom the page grew to a frame later.
+  async scrollToBottom() {
+    let previous = -1
+    let landed = 0
+
+    while (landed !== previous) {
+      previous = landed
+      landed = await this.page.evaluate(async (frames) => {
+        window.scrollTo(0, document.documentElement.scrollHeight)
+        for (let frame = 0; frame < frames; frame++) {
+          await new Promise((resolve) => requestAnimationFrame(resolve))
+        }
+        return window.scrollY
+      }, FRAMES_UNTIL_A_DEFERRED_WRITE_IS_LAID_OUT)
+    }
+  }
+
+  /**
+   * Every stop of a keyboard walk that landed on a control `cover` hides.
+   * Judged in the page at each stop rather than collected and judged here, so
+   * a failure prints which controls and by how many pixels.
+   *
+   * @param key `Tab` walks down the page and `Shift+Tab` back up it — the two
+   *   directions put a control at opposite edges of the window, so each edge's
+   *   cover is asked about the walk that ends at it.
+   */
+  async stopsCoveredBy(
+    cover: Locator,
+    key: "Tab" | "Shift+Tab",
+    stops: number
+  ) {
+    const covered: string[] = []
+
+    for (let stop = 1; stop <= stops; stop++) {
+      await this.page.keyboard.press(key)
+      const hidden = await cover.evaluate(focusCoveredBy)
+      if (hidden) covered.push(`stop ${stop}: ${hidden}`)
+    }
+
+    return covered
   }
 
   // True once the filter bar has reached the top and changed shape.

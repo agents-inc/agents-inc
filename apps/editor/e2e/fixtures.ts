@@ -58,8 +58,7 @@ export const test = base.extend<Fixtures>({
       //
       // EDITOR-57 made "who is signed in?" part of the baseline page load — the
       // nav rail asks on mount, on every route — so it is no longer something a
-      // spec opts into, and EDITOR-54's composer route is signed-in only, so the
-      // submit specs need its refusal here too. It is the INITIAL set rather
+      // spec opts into. It is the INITIAL set rather
       // than the first `use()`, so anything a spec adds still wins.
       //
       // Without it the guard above fires on every existing spec at once, which

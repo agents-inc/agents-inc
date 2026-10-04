@@ -6,6 +6,9 @@ export class InstallDialog {
   readonly skillsPane: Locator
   readonly agentsPane: Locator
   readonly footerNote: Locator
+  // The command the footer names for changing the install later, located by
+  // its text because that is what has to stay whole.
+  readonly footerCommand: Locator
   // The line under the title: which marketplace this install comes from, and
   // which stack it was built with. Scoped to the header rather than read off
   // the whole sheet, because both commands below carry the CLI's own
@@ -22,6 +25,9 @@ export class InstallDialog {
     this.skillsPane = this.root.locator('[data-slot="dialog-pane"]').first()
     this.agentsPane = this.root.locator('[data-slot="dialog-pane"]').last()
     this.footerNote = this.root.locator('[data-slot="dialog-footer-note"]')
+    this.footerCommand = this.footerNote.getByText("npx agents-inc edit", {
+      exact: true,
+    })
     this.header = this.root.locator('[data-slot="dialog-header"]')
     this.closeButton = this.root
       .locator('[data-slot="dialog-footer"]')
@@ -244,6 +250,14 @@ export class OutputPreviewDialog {
     return this.row(path).getAttribute("data-marker")
   }
 
+  /** The paths of every row carrying one state label, in emission order. */
+  async pathsMarked(marker: string) {
+    await this.waitForTree()
+    return this.root
+      .locator(`${ROW_SELECTOR}[data-marker="${marker}"]`)
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-path")))
+  }
+
   /**
    * The selected file's text, one entry per line.
    *
@@ -259,6 +273,30 @@ export class OutputPreviewDialog {
 
   async select(path: string) {
     await this.row(path).click()
+  }
+
+  /**
+   * Every file the tree says an install writes — its `new` rows — with the
+   * text the pane shows for it, keyed by path.
+   *
+   * Each file is read only once its own row holds the selection: `lines()` is
+   * a single read of whatever the pane holds at that instant, and the pane is
+   * still showing the previous file for as long as the click has not landed.
+   */
+  async writtenFiles() {
+    const files: Record<string, string> = {}
+
+    for (const path of await this.pathsMarked("new")) {
+      if (path === null) continue
+
+      await this.select(path)
+      await this.row(path)
+        .and(this.root.locator('[aria-selected="true"]'))
+        .waitFor({ state: "visible" })
+      files[path] = (await this.lines()).join("\n")
+    }
+
+    return files
   }
 
   async close() {

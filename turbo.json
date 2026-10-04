@@ -48,11 +48,10 @@
       "cache": false,
       "persistent": true
     },
-    // `^build` is right for the editor: its Playwright config starts a Vite
-    // dev server, so only the packages it depends on need building first. The
-    // CLI is different — its suite drives its own built dist/index.js — so it
-    // adds `build` to this list in packages/cli/turbo.json rather than
-    // widening the rule for everyone.
+    // `^build` is the default. A package whose suite needs more than its
+    // dependencies built adds it in its own turbo.json rather than widening
+    // the rule for everyone, and says why there: packages/cli/turbo.json and
+    // apps/editor/turbo.json both do.
     "test:e2e": {
       "dependsOn": ["^build"],
       "cache": false,

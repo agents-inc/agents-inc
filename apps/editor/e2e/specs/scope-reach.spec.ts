@@ -31,6 +31,27 @@ const SCOPE_ERROR = "This sub-agent must be set to project scope too"
 // the browser, so it is also the one that names something already on screen.
 const SAVE_SCOPE_CONFLICT = "Scope conflict — fix marked rows"
 
+// The least air a label may keep from its button's edge — the inset the Save,
+// Share and Preview cells above Install keep (`px-1.5` at the root's 110%).
+const MIN_LABEL_INSET_PX = 6
+
+/**
+ * How the Install button's words sit in it: how far they run past its box, and
+ * the air between them and each side. Runs in the page.
+ */
+const fitOfLabel = (button: HTMLElement) => {
+  const words = document.createRange()
+  words.selectNodeContents(button)
+  const text = words.getBoundingClientRect()
+  const box = button.getBoundingClientRect()
+
+  return {
+    overflow: button.scrollWidth - button.clientWidth,
+    left: Math.round(text.left - box.left),
+    right: Math.round(box.right - text.right),
+  }
+}
+
 // EDITOR-08. A global sub-agent's front-matter is written to `~/.claude`, where
 // every project on the machine sees it; a project-scoped skill is installed
 // under one project's `.claude`. So a global agent carrying a project skill
@@ -220,6 +241,33 @@ test.describe("a project skill on a global sub-agent", () => {
     await expect(
       configure.roster.scopeError(REACT, "api-developer")
     ).toBeVisible()
+  })
+})
+
+// The refusal is the label, and the label is the one place it is written: a
+// disabled button suppresses pointer events, so no tooltip on it ever opens.
+// So the words have to be READABLE where they are — inside the button and off
+// its edges — rather than merely present in the accessibility tree, which every
+// assertion above already settles.
+test.describe("the blocked Install button", () => {
+  test.beforeEach(async ({ configure }) => {
+    const skill = configure.skillIn(web, CATEGORY, REACT)
+    await skill.toggle()
+    await skill.flipScope()
+    await expect(configure.roster.installButton).toBeDisabled()
+    await expect(configure.roster.installButton).toContainText(
+      /\d+ sub-agents need project scope/
+    )
+  })
+
+  test("keeps its words inside it, clear of its edges", async ({
+    configure,
+  }) => {
+    const fit = await configure.roster.installButton.evaluate(fitOfLabel)
+
+    expect(fit.overflow).toBe(0)
+    expect(fit.left).toBeGreaterThanOrEqual(MIN_LABEL_INSET_PX)
+    expect(fit.right).toBeGreaterThanOrEqual(MIN_LABEL_INSET_PX)
   })
 })
 

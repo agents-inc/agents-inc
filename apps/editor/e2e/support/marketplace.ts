@@ -14,6 +14,7 @@ import { HttpResponse, delay, http } from "msw"
 import { stubWith } from "./stub"
 
 import type { Page } from "@playwright/test"
+import type { Matrix } from "@workspace/matrix"
 
 // A marketplace's `catalog.json`. What these specs test is the editor's half —
 // the dialog, the swap, and what a failure looks like on screen — not GitHub,
@@ -71,6 +72,14 @@ const stubCatalogWith = (
  */
 export const stubMarketplaceCatalog = (page: Page) =>
   stubCatalogWith(page, () => HttpResponse.json(MARKETPLACE_CATALOG))
+
+/**
+ * The same, publishing a catalogue the spec built — for a spec whose subject
+ * is what a catalogue SAYS about a skill the public one carries too, which no
+ * fixture above can be made to say without changing it for every spec.
+ */
+export const stubMarketplaceCatalogOf = (page: Page, catalog: Matrix) =>
+  stubCatalogWith(page, () => HttpResponse.json(catalog))
 
 /**
  * Three marketplaces at once: two anyone may read, and one that answers only to

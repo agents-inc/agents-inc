@@ -6,6 +6,8 @@ import { DOMAIN_REACH, DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import { stubSkillContents } from "../support/skill-contents"
 import { stubSkillIndex } from "../support/skill-index"
 
+import type { ConfigurePage } from "../pages/configure-page"
+
 const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
 const MATRIX_DOMAIN = "Web"
@@ -15,23 +17,45 @@ const MATRIX_ROLE = "dev"
 const FIRST_META_AGENT = "agent-summoner"
 
 // The design system draws one focus ring and nothing machine-decidable can
-// check it — axe does not look at focus indicators — so reading the drawn
-// box-shadow is the whole gate, exactly as it is in the package's own stories.
+// check it — axe does not look at focus indicators — so photographing it is
+// the whole gate. A computed box-shadow is not enough: a parent's clip hid
+// every pixel of the skill cell's ring while its shadow read back fine (audit
+// issue 23). So the control's neighbourhood is photographed twice with focus
+// left where it is, once as drawn and once with the ring's colour made
+// transparent, and identical pictures mean nobody could see the ring. Blurring
+// instead would also hide the •••, since focus is what reveals it.
 //
-// Two things make the ring tests read oddly, and both are the app's:
-//
-// Focus has to arrive by keyboard rather than through `focus()`. Chromium only
-// matches `:focus-visible` on a programmatic move when the element it left
-// matched too, and every control here is reached past a click.
-//
-// And one snapshot rather than two reads, because the app moves focus in
-// effects, so "is it focused" and "what is it drawing" asked separately can
-// answer about two different moments.
-const focusRing = (locator: Locator) =>
-  locator.evaluate((node) => ({
-    focused: node === document.activeElement,
-    shadow: getComputedStyle(node).boxShadow,
-  }))
+// Focus has to arrive by keyboard rather than through `focus()`, which makes
+// these tests read oddly: Chromium only matches `:focus-visible` on a
+// programmatic move when the element it left matched too, and every control
+// here is reached past a click.
+const RING_ROOM = 4
+
+const focusRing = async (locator: Locator) => {
+  const focused = await locator.evaluate(
+    (node) => node === document.activeElement
+  )
+  const box = await locator.boundingBox()
+  if (!box) throw new Error("the focused control has no box on screen")
+
+  const clip = {
+    x: box.x - RING_ROOM,
+    y: box.y - RING_ROOM,
+    width: box.width + 2 * RING_ROOM,
+    height: box.height + 2 * RING_ROOM,
+  }
+  const photograph = () =>
+    locator.page().screenshot({ clip, animations: "disabled" })
+
+  const drawn = await photograph()
+  await locator.evaluate((node) =>
+    node.style.setProperty("--tw-ring-color", "transparent")
+  )
+  const withoutTheRing = await photograph()
+  await locator.evaluate((node) => node.style.removeProperty("--tw-ring-color"))
+
+  return { focused, ringVisible: !drawn.equals(withoutTheRing) }
+}
 
 // The one piece of explanatory copy in the panel, behind the info glyph.
 const SCOPE_TIP =
@@ -108,9 +132,9 @@ test.describe("skill options panel", () => {
     await skill.root.focus()
     await page.keyboard.press("Tab")
 
-    const { focused, shadow } = await focusRing(skill.optionsButton)
+    const { focused, ringVisible } = await focusRing(skill.optionsButton)
     expect(focused).toBe(true)
-    expect(shadow).not.toBe("none")
+    expect(ringVisible).toBe(true)
   })
 
   test("the ellipsis stays out while the panel is open", async ({
@@ -273,9 +297,9 @@ test.describe("source code link", () => {
     await skill.options.root.getByRole("button", { name: "Meta" }).focus()
     await page.keyboard.press("Tab")
 
-    const { focused, shadow } = await focusRing(skill.options.sourceLink)
+    const { focused, ringVisible } = await focusRing(skill.options.sourceLink)
     expect(focused).toBe(true)
-    expect(shadow).not.toBe("none")
+    expect(ringVisible).toBe(true)
   })
 
   // An added skill is a directory in a repository that is not ours, and the
@@ -427,11 +451,11 @@ test.describe("sub-agent assignment", () => {
     await fold.focus()
     await page.keyboard.press("Tab")
 
-    const { focused, shadow } = await focusRing(
+    const { focused, ringVisible } = await focusRing(
       skill.options.option(FIRST_META_AGENT)
     )
     expect(focused).toBe(true)
-    expect(shadow).not.toBe("none")
+    expect(ringVisible).toBe(true)
   })
 
   // A meta-flavor agent is never auto-assigned, so the fold is the only path
@@ -473,5 +497,77 @@ test.describe("sub-agent assignment", () => {
 
     await expect(cell).toHaveText("lazy")
     await expect(row).toHaveAttribute("aria-pressed", "true")
+  })
+})
+
+/**
+ * Where the app's frame sits in the window: the top edge of the nav rail, which
+ * is sticky and one screen tall, so it reads 0 for as long as the frame holds
+ * still. Positive is the frame lifted off the top of the window by that many
+ * pixels, with a strip of bare page under it.
+ *
+ * Compared to the nearest pixel rather than exactly: the grid's height is rem
+ * at a 110% root, so at the foot of the page the rail sits a fraction of a
+ * pixel off with no panel open at all — the page landing on a whole pixel, not
+ * the frame moving. The defect this is about lifted it by a hundred.
+ */
+const frameLift = async (configure: ConfigurePage) => {
+  const rail = await configure.navRail.boundingBox()
+  if (!rail) throw new Error("the rail must be drawn")
+
+  return -rail.y
+}
+
+/**
+ * How much air there is between the open panel's foot and the composer's top
+ * edge. Negative is the overlap, in pixels: the panel drawn past the dock.
+ */
+const panelToDockGap = async (configure: ConfigurePage) => {
+  const panel = await configure.skillOptions.root.boundingBox()
+  const dock = await configure.composer.dock.boundingBox()
+  if (!panel || !dock) throw new Error("the panel and the dock must be drawn")
+
+  return dock.y - (panel.y + panel.height)
+}
+
+// A PANEL OPENED AT THE FOOT OF THE COLUMN. It hangs from the top of its cell
+// and is taller than the cell, so on the last row it reached past the end of
+// the page — and the page grew to hold it, outside the frame: scrolling to
+// see it lifted the rail, the roster and the dock together, and drew the
+// panel's foot below the dock with bare page beneath the lot.
+//
+// Opened on whichever cell the column ends on and read at the bottom of the
+// page, which is the only scroll position this is about.
+test.describe("an options panel at the foot of the column", () => {
+  test.beforeEach(async ({ configure }) => {
+    await configure.openLastSkillOptions()
+    await expect(configure.skillOptions.root).toBeVisible()
+  })
+
+  test("leaves the frame where it is", async ({ configure }) => {
+    await configure.scrollToBottom()
+
+    expect(await frameLift(configure)).toBeCloseTo(0, 0)
+  })
+
+  test("is drawn above the composer", async ({ configure }) => {
+    await configure.scrollToBottom()
+
+    expect(await panelToDockGap(configure)).toBeGreaterThanOrEqual(0)
+  })
+
+  // The panel grows after it opens — the Meta fold adds a row per agent — so
+  // whatever holds the frame still has to follow the panel rather than know
+  // its first height.
+  test("leaves the frame where it is once the Meta fold opens", async ({
+    configure,
+  }) => {
+    await configure.skillOptions.root
+      .getByRole("button", { name: "Meta" })
+      .click()
+    await configure.scrollToBottom()
+
+    expect(await frameLift(configure)).toBeCloseTo(0, 0)
+    expect(await panelToDockGap(configure)).toBeGreaterThanOrEqual(0)
   })
 })

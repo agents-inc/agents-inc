@@ -324,10 +324,44 @@ test.describe("what the install dialog says a Codex install writes", () => {
   // Codex's OWN mechanism for a project skill, reaching the model in that repo
   // and nowhere else with no plugin, no marketplace and no trust entry. It is
   // not `.claude/skills/`, and it is not a degraded fallback.
+  //
+  // WITH A PROJECT SKILL EJECTED, because the step names an eject folder only
+  // for a scope that ejects something: one named for nothing is a folder
+  // nothing is copied to. Ejected first and moved second, because Codex has no
+  // plugin at project scope to pass through on the way.
   test("names where an ejected skill actually lands", async ({ configure }) => {
-    await expect(configure.installDialog.root).toContainText(".agents/skills")
+    await configure.installDialog.close()
+    const skill = configure.skillIn(
+      web,
+      SINGLE_AGENT_SKILL.category,
+      SINGLE_AGENT_SKILL.name
+    )
+    await skill.setInstallMode("eject")
+    await skill.setScope("project")
+    await configure.roster.setScope(SINGLE_AGENT_SKILL.agentId, "project")
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "into .agents/skills/"
+    )
     await expect(configure.installDialog.root).not.toContainText(
       ".claude/skills/"
+    )
+  })
+
+  // And a global one, which lands under the root Codex reads rather than in
+  // the repository: `$CODEX_HOME/skills`, which on a clean machine is
+  // `~/.codex/skills/`.
+  test("names where an ejected global skill lands", async ({ configure }) => {
+    await configure.installDialog.close()
+    await configure.skillIn(web, FRAMEWORK, REACT).flipInstall()
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "into ~/.codex/skills/"
+    )
+    await expect(configure.installDialog.root).not.toContainText(
+      ".agents/skills/"
     )
   })
 
