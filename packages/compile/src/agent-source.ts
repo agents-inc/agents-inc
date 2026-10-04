@@ -473,9 +473,8 @@ const AGENT_BODY_TEMPLATE = "agent-body"
  *
  * One value still has to be install-specific, which is what this token is for: `agent-summoner`'s
  * playbook tells an agent where to author a new sub-agent, and the answer is the source folder THIS
- * installation uses — `.agents-inc/claude/` for one created now, `.claude-src/` for one created
- * before the rename and not yet migrated. A literal is right for one of those and wrong for the
- * other, and the wrong one sends an agent to author into a folder the CLI does not read.
+ * installation uses, which differs per provider. A literal is right for one of those and wrong for
+ * the other, and the wrong one sends an agent to author into a folder the CLI does not read.
  *
  * So the substitution is an OPT-IN of exactly one token rather than a render of the whole file.
  * Spelled with delimiters no template language in this repository uses and no prose reaches by

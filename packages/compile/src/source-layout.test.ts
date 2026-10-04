@@ -2,7 +2,7 @@
  * The source folder's RELATIVE names, which is the whole of what this package
  * may hold about it.
  *
- * `.claude-src/` is becoming `.agents-inc/<provider>/`, and one installation is
+ * The source folder is `.agents-inc/<provider>/`, and one installation is
  * exactly one provider — the FOLDER is what says which, and nothing inside
  * `config.ts` records it. So the folder segment is the provider's own value, and
  * that equality is the thing this file pins: a table read the other way round
@@ -11,15 +11,11 @@
  * Names only, no machine. `paths.ts` and `install-layout.ts` follow the same
  * split — a browser holds the vocabulary, the CLI holds the `path.join` — which
  * is why `sourceDirName` answers a POSIX string rather than a joined path.
- *
- * The old name is pinned as a LITERAL on purpose. `.claude-src` is text already
- * written into directories on people's disks, and an assertion that imported the
- * constant it mirrors would move with it and could never fail.
  */
 
 import { describe, expect, it } from "vitest"
 
-import { LEGACY_SOURCE_DIR, SOURCE_ROOT_DIR } from "./paths.js"
+import { SOURCE_ROOT_DIR } from "./paths.js"
 import { PROVIDERS, sourceDirName, type Provider } from "./source-layout.js"
 
 /** Every provider the roster may name, as a roster rather than a count. */
@@ -70,17 +66,6 @@ describe("the providers a source folder can belong to", () => {
 describe("the names a source folder is written with", () => {
   it("roots every provider's folder under one parent", () => {
     expect(SOURCE_ROOT_DIR).toBe(".agents-inc")
-  })
-
-  it("keeps the old name, which existing installs are still read from", () => {
-    expect(LEGACY_SOURCE_DIR).toBe(".claude-src")
-  })
-
-  it("names the parent and the old folder differently", () => {
-    expect(
-      SOURCE_ROOT_DIR,
-      "the two names must stay distinct — a resolver that preferred one over the other could not, and `both` would be unreachable"
-    ).not.toBe(LEGACY_SOURCE_DIR)
   })
 })
 

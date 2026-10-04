@@ -6,8 +6,8 @@ import { baseConfig, typeCheckedConfig } from "@workspace/eslint-config/base"
  * The source folder's name, written anywhere but the two modules that declare it.
  *
  * The same ban `packages/cli/eslint.config.js` carries, for the same reason and with the same
- * regex: `.claude-src/` is becoming `.agents-inc/<provider>/`, both names are live at once, and
- * every path under one is resolved by one funnel. This package holds only the NAMES — `paths.ts`
+ * regex: the source folder is `.agents-inc/<provider>/`, and every path under it is resolved by
+ * one funnel. This package holds only the NAMES — `paths.ts`
  * declares them and `source-layout.ts` composes them — so those two are the exemption and
  * everything else reaches for them by symbol.
  *
@@ -16,10 +16,10 @@ import { baseConfig, typeCheckedConfig } from "@workspace/eslint-config/base"
  * people's disks, so an assertion importing the constant the product writes would move with it and
  * could never fail.
  */
-const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](claude-src|agents-inc)([^\\w-]|$)/"
+const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](agents-inc)([^\\w-]|$)/"
 
 const SOURCE_FOLDER_MESSAGE =
-  "The source folder's name is declared in src/paths.ts and composed in src/source-layout.ts — import SOURCE_ROOT_DIR, LEGACY_SOURCE_DIR or sourceDirName rather than writing either name."
+  "The source folder's name is declared in src/paths.ts and composed in src/source-layout.ts — import SOURCE_ROOT_DIR or sourceDirName rather than writing the name."
 
 const SOURCE_FOLDER_LITERALS = [
   {

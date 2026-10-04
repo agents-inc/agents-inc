@@ -108,9 +108,8 @@ describe("the bytes an install writes", () => {
  *
  * These are a USER's settings and they match neither of this repository's on
  * purpose: the shared config is `singleQuote: false` at 80 columns and
- * `packages/cli`'s own is `semi: true`. Both files land in `.claude-src/`
- * inside somebody else's project — this repository's own copy is named in
- * `.prettierignore`, so nothing here ever formats them — and the style below is
+ * `packages/cli`'s own is `semi: true`. Both files land in the source folder
+ * inside somebody else's project, so nothing here ever formats them — and the style below is
  * the one confirmed against the sample an install is meant to produce. Pulling
  * them toward either of ours would only make the bytes agree with a config no
  * reader of them has.
