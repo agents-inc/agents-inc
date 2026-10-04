@@ -216,6 +216,7 @@
         "@workspace/matrix": "workspace:*",
         "liquidjs": "^10.24.0",
         "remeda": "^2.33.6",
+        "yaml": "^2.9.0",
       },
       "devDependencies": {
         "@types/node": "^24",

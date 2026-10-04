@@ -16,11 +16,8 @@
  * has no console the visitor reads.
  */
 
-/** Matches `warn` in the CLI's `utils/logger`, options and all, so it can be seated directly. */
-export type CompileWarn = (
-  message: string,
-  options?: { suppressInTest?: boolean }
-) => void
+/** Matches `warn` in the CLI's `utils/logger`, so it can be seated directly. */
+export type CompileWarn = (message: string) => void
 
 export type CompileDiagnostics = {
   warn: CompileWarn

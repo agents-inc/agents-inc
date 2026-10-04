@@ -11,7 +11,7 @@ import {
   type SeedPayload,
   type SkillTaxonomy,
 } from "@workspace/matrix"
-import { groupBy, indexBy, partition } from "remeda"
+import { groupBy, indexBy, omit, partition } from "remeda"
 
 import {
   byCategoryDeclarationOrder,
@@ -20,6 +20,7 @@ import {
   type CompileCatalog,
 } from "./catalog.js"
 import { seatedCatalog } from "./catalog-seat.js"
+import { HAND_WRITTEN_FIELDS } from "./config-source.js"
 import { diagnostics } from "./diagnostics.js"
 import { orderDomains } from "./domain-order.js"
 import {
@@ -457,7 +458,7 @@ function reportAbsentSkills(
   if (absentSkillIds.length === 0) return
 
   for (const skillId of absentSkillIds) {
-    diagnostics().warn(absentSkillWarning(skillId), { suppressInTest: true })
+    diagnostics().warn(absentSkillWarning(skillId))
   }
 
   const matrixSample = typedKeys<SkillId>(catalog.skills)
@@ -768,7 +769,7 @@ function splitAgentStack(
  * Skills with `scope: "global"` go to the global partition, `scope: "project"` to the project partition.
  * Agents are split based on which skills reference them in the stack.
  * Selected domains go to BOTH partitions, because a project owns its own domain selection
- * (owner ruling 2026-08-20).
+ * (owner ruling 2026-08-20). The hand-written fields go to the project partition alone.
  */
 export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   // Every entry is either active-global or project-owned (project-scoped, or an
@@ -816,8 +817,11 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   // said — the same word `buildStackForSelection` uses and for the same reason, since the
   // merger reads an absent stack as no statement and keeps the stale one. `generateConfigSource`
   // omits an empty stack from the file it writes, so nothing emits `stack: {}` on this account.
+  //
+  // What the project's author wrote by hand stays on the project partition, as `name` does: the
+  // global partition becomes the machine's own config.
   const globalConfig: ProjectConfig = {
-    ...config,
+    ...omit(config, HAND_WRITTEN_FIELDS),
     name: GLOBAL_CONFIG_NAME,
     agents: globalAgents,
     skills: globalSkills,

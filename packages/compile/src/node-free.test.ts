@@ -72,6 +72,8 @@ async function importEveryPublishedEntryPoint(): Promise<void> {
   await import("./agent-source")
   await import("./engine")
   await import("./seed-to-config")
+  await import("./global-config")
+  await import("./carried-skill")
   await import("./generated/corpus")
   await import("./preview")
 }

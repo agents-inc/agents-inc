@@ -1,3 +1,5 @@
+import { omit } from "remeda"
+
 import {
   byCategoryDeclarationOrder,
   isExclusiveCategory,
@@ -74,6 +76,24 @@ export type ConfigSourceOptions = {
    */
   globalImportPath?: string
 }
+
+/**
+ * The fields a config's author writes by hand and no install produces: the name
+ * the CLI prints itself under, and the layout a source repository declares
+ * itself with. Each belongs to the file that declares it and to no other, so a
+ * rewrite carries it across and nothing copies it to the other scope's file. A
+ * project's name in the global config would rename every installation that
+ * declares none of its own; the global's in a project's file would read as the
+ * project's own declaration, and keep the old value after the global changed.
+ */
+export const HAND_WRITTEN_FIELDS = [
+  "branding",
+  "skillsDir",
+  "agentsDir",
+  "stacksFile",
+  "categoriesFile",
+  "rulesFile",
+] as const satisfies readonly (keyof ProjectConfig)[]
 
 /** Fields that are extracted into typed named variables above the export default */
 const EXTRACTED_FIELDS = new Set([
@@ -668,13 +688,19 @@ function partitionInlinedConfigEntries(
  * first emission writes every global scalar into the project's own file, so on
  * the next re-emit those same keys arrive from the project half instead and two
  * blocks would order them differently for values that never changed.
+ *
+ * The global's {@link HAND_WRITTEN_FIELDS} are the exception: a project that
+ * declares none reads them at run time, so they are left in the global's file.
  */
 function mergeInlinedScalarFields(
   cleaned: Record<string, unknown>,
   cleanedGlobal: Record<string, unknown>
 ): [string, unknown][] {
   return Object.entries(
-    canonicalizeFieldOrder({ ...cleanedGlobal, ...cleaned })
+    canonicalizeFieldOrder({
+      ...omit(cleanedGlobal, HAND_WRITTEN_FIELDS),
+      ...cleaned,
+    })
   ).filter(([key]) => !EXTRACTED_FIELDS.has(key) && key !== "name")
 }
 
@@ -851,6 +877,22 @@ function compactCategoryAssignments(
     )
   }
   return compacted[0]
+}
+
+/**
+ * Throws what writing `stack` would throw — {@link compactCategoryAssignments}' refusal of a
+ * category that holds one skill given more — and writes nothing.
+ *
+ * For a caller whose write lands after changes it cannot take back: `edit --from` removes skills
+ * before it writes the config, so a stack the writer refuses is refused before the first removal.
+ */
+export function refuseUnwritableStack(
+  stack: ProjectConfig["stack"],
+  catalog: CompileCatalog
+): void {
+  for (const agentStack of Object.values(stack ?? {})) {
+    compactCategories(agentStack, catalog)
+  }
 }
 
 function compactCategories(

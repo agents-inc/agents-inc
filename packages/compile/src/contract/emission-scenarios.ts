@@ -156,6 +156,24 @@ export interface ProjectConfig {
   /** Selected domains from the wizard */
   selectedDomains?: Domain[]
 
+  /** Branding overrides for white-labeling the CLI */
+  branding?: { name?: string }
+
+  /** Custom skills directory override (default: "src/skills") */
+  skillsDir?: string
+
+  /** Custom agents directory override (default: "src/agents") */
+  agentsDir?: string
+
+  /** Custom stacks file path override (default: "config/stacks.ts") */
+  stacksFile?: string
+
+  /** Custom categories file path override (default: "config/skill-categories.ts") */
+  categoriesFile?: string
+
+  /** Custom rules file path override (default: "config/skill-rules.ts") */
+  rulesFile?: string
+
   /** Tracked project installation paths (global config only) */
   projects?: string[]
 }

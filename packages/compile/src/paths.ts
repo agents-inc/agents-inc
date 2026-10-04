@@ -56,6 +56,19 @@ export const DEFAULT_PLUGIN_NAME = "agents-inc"
  */
 export const DEFAULT_PUBLIC_SOURCE_NAME = DEFAULT_PLUGIN_NAME
 
+/** The scheme a GitHub repository is named under as a source: `github:<owner>/<repo>`. */
+export const GITHUB_PREFIX = "github:"
+
+/**
+ * The marketplace an install reads when nothing names one — no `--marketplace`,
+ * no `CC_MARKETPLACE`, no stored config — and therefore the one `config.ts`
+ * records for a configuration naming none. The CLI's `resolveSource` falls
+ * through to it, and the editor's output preview draws it for every
+ * configuration minted on the public catalogue, so the two read one
+ * declaration.
+ */
+export const DEFAULT_SOURCE = `${GITHUB_PREFIX}agents-inc/skills`
+
 /**
  * Promoted invocation prefix shown in user-facing messages (e.g. "Run '<CLI_INVOKE_COMMAND> init'").
  *

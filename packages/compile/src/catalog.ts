@@ -74,6 +74,15 @@ export function categoryDomain(
   return catalog.categories[category]?.domain
 }
 
+/** A skill's domain, by its category, or `undefined` for a skill the catalogue places nowhere. */
+export function skillDomain(
+  catalog: CompileCatalog,
+  skillId: string
+): string | undefined {
+  const skill = catalog.skills[skillId]
+  return skill && categoryDomain(catalog, skill.category)
+}
+
 /**
  * A comparator putting categories in the order the catalogue declares them, so
  * any surface that emits categories emits them in an order decided by the roster
