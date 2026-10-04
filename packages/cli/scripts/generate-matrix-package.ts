@@ -49,6 +49,7 @@ const VENDORED_TYPE_FILES = [
   "stacks.ts",
   "generated/matrix.ts",
   "generated/source-types.ts",
+  "generated/activation-descriptions.ts",
 ];
 
 /** One file the generator owns. `path` is relative to the matrix package root. */

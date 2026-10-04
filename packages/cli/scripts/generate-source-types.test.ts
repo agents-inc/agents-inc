@@ -20,6 +20,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { createTempDir, cleanupTempDir } from "../src/cli/lib/__tests__/test-fs-utils";
 import { createMockExtractedSkill } from "../src/cli/lib/__tests__/factories/skill-factories.js";
 import { renderSkillMd } from "../src/cli/lib/__tests__/content-generators";
+import { extractAllSkills } from "../src/cli/lib/matrix/matrix-loader";
 
 import {
   sortedGroupBy,
@@ -40,7 +41,7 @@ const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 const GENERATED_DIR = path.join(CLI_ROOT, "src/cli/types/generated");
 
 /** Every file the generator owns, in emission order. */
-const EMITTED_FILES = ["source-types.ts", "matrix.ts"];
+const EMITTED_FILES = ["source-types.ts", "matrix.ts", "activation-descriptions.ts"];
 
 const DRIFTED_FILE = "source-types.ts";
 const DRIFTED_CONTENT = "// hand-edited after generation\n";
@@ -383,6 +384,36 @@ describe("extractSkills", () => {
 
     expect(result).toHaveLength(1);
     expect(firstElement(result).usageGuidance).toBe("Use when building React apps");
+  });
+
+  /**
+   * This extractor feeds the vendored catalogue, which is the editor's default seat, and the
+   * output preview draws each skill's activation row from what it carries. An install writes the
+   * SKILL.md description into that row, and the catalog.json extractor already carries it, so the
+   * two must agree on it when they read the same skill.
+   */
+  it("carries the SKILL.md description an install writes, as the catalog.json extractor does", async () => {
+    const skillMdDescription = "What SKILL.md says, and what the install writes";
+    createSkillDir(
+      "react",
+      {
+        slug: "react",
+        category: "web-framework",
+        domain: "web",
+        author: "@test",
+        displayName: "React",
+        cliDescription: "React framework skill",
+      },
+      renderSkillMd("web-framework-react", skillMdDescription),
+    );
+
+    const catalogJson = firstElement(await extractAllSkills(path.join(tempDir, "src/skills")));
+
+    expect(
+      catalogJson.activationDescription,
+      "the catalog.json extractor no longer carries the SKILL.md description, so there is nothing to agree with",
+    ).toBe(skillMdDescription);
+    expect(firstElement(extractSkills(tempDir)).activationDescription).toBe(skillMdDescription);
   });
 });
 
@@ -783,7 +814,7 @@ describe("check mode", () => {
     return outDir;
   }
 
-  it("emits both files and reports no drift against what it just wrote", async () => {
+  it("emits every file and reports no drift against what it just wrote", async () => {
     const outDir = await generatedFixture("types-check-clean-");
 
     expect(readdirSync(outDir).sort()).toStrictEqual([...EMITTED_FILES].sort());

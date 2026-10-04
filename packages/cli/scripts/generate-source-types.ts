@@ -1,9 +1,10 @@
 /**
- * Generates TypeScript types from skills source and agent metadata — the writer of both files in
+ * Generates TypeScript types from skills source and agent metadata — the writer of every file in
  * `src/cli/types/generated/`.
  *
  * Phase 1: source-types.ts (unions, SKILL_MAP, const arrays)
  * Phase 2: matrix.ts (full MergedSkillsMatrix + derived lookup maps)
+ * Phase 3: activation-descriptions.ts (each skill's SKILL.md description, by id)
  *
  * Run: bun run generate:types [skills-source-path] — or generate:types:check, which reports drift
  * and writes nothing. Both go through scripts/run-generate-source-types.ts: nothing runs at module
@@ -40,6 +41,7 @@ const TYPESCRIPT_PARSER = "typescript";
 /** Emitted paths, relative to the output directory and in emission order. */
 const SOURCE_TYPES_FILE = "source-types.ts";
 const MATRIX_FILE = "matrix.ts";
+const ACTIVATION_DESCRIPTIONS_FILE = "activation-descriptions.ts";
 
 export type AgentEntry = {
   id: string;
@@ -89,8 +91,12 @@ const skillMetadataSchema = z.object({
 
 /** `name` is required: a SKILL.md without one has no id, and an id of
  * `undefined` written into the generated unions is a compile error a long way
- * from its cause. */
-const skillFrontmatterSchema = z.object({ name: z.string() });
+ * from its cause. `description` is the sentence a compiled sub-agent's
+ * skill-activation table shows, because compile reads SKILL.md itself. */
+const skillFrontmatterSchema = z.object({
+  name: z.string(),
+  description: z.string().exactOptional(),
+});
 
 const agentMetadataSchema = z.object({
   custom: z.boolean().exactOptional(),
@@ -162,6 +168,9 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
       domain: metadata.domain as ExtractedSkillMetadata["domain"],
       displayName: metadata.displayName,
       description: metadata.cliDescription,
+      // The rule `extractAllSkills` applies when it writes catalog.json, so the two catalogues
+      // agree on every skill they both read.
+      ...(frontmatter.description && { activationDescription: frontmatter.description }),
       ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
       author: metadata.author || "",
       directoryPath: dir.name,
@@ -318,7 +327,22 @@ export function sortedGroupBy<T>(
 
 // -- Phase 2: Generate matrix.ts ---------------------------------------------
 
-/** The TypeScript source of `matrix.ts`, before Prettier. */
+/**
+ * A skill as `BUILT_IN_MATRIX` records it: without the sentence
+ * {@link renderActivationDescriptions} carries.
+ */
+const withoutActivationDescription = ({
+  activationDescription: _carriedSeparately,
+  ...recorded
+}: ExtractedSkillMetadata): ExtractedSkillMetadata => recorded;
+
+/**
+ * The TypeScript source of `matrix.ts`, before Prettier.
+ *
+ * Each skill's SKILL.md description is left out. The editor vendors `BUILT_IN_MATRIX` into its
+ * first paint, and only its output preview reads that sentence, behind a click — so it is emitted
+ * as a file of its own, which the preview loads with itself.
+ */
 export function renderMatrix(
   skills: ExtractedSkillMetadata[],
   agentEntries: AgentEntry[],
@@ -333,7 +357,9 @@ export function renderMatrix(
   // with no locale argument reads the process's default collation from LC_ALL /
   // LANG, not the ICU build, so a contributor whose desktop language orders
   // these ids differently regenerates this file in a different order.
-  const sortedSkills = [...skills].sort((a, b) => bytewise(a.id, b.id));
+  const sortedSkills = skills
+    .map(withoutActivationDescription)
+    .sort((a, b) => bytewise(a.id, b.id));
   const sortedAgentEntries = [...agentEntries].sort((a, b) => bytewise(a.id, b.id));
 
   // Through the same arrangement the CLI's own loader makes of these three inputs: the
@@ -401,6 +427,31 @@ export function renderMatrix(
   ];
 
   return lines.join("\n");
+}
+
+/** A skill's `[id, sentence]` row, or none for a skill whose SKILL.md states no description. */
+const activationDescriptionEntry = ({ id, activationDescription }: ExtractedSkillMetadata) =>
+  activationDescription === undefined ? [] : [[id, activationDescription] as const];
+
+/**
+ * The TypeScript source of `activation-descriptions.ts`, before Prettier: each skill's SKILL.md
+ * description by id, in id order — the sentence a compiled sub-agent's skill-activation table
+ * shows. {@link renderMatrix} says why it is not on `BUILT_IN_MATRIX`.
+ */
+function renderActivationDescriptions(skills: ExtractedSkillMetadata[]): string {
+  const descriptionsById = Object.fromEntries(
+    [...skills].sort((a, b) => bytewise(a.id, b.id)).flatMap(activationDescriptionEntry),
+  );
+
+  return [
+    "// AUTO-GENERATED from skills source — do not edit manually",
+    "// Run: bun run generate:types",
+    "",
+    'import type { SkillId } from "../skills";',
+    "",
+    `export const ACTIVATION_DESCRIPTIONS: Readonly<Partial<Record<SkillId, string>>> = ${JSON.stringify(descriptionsById, null, 2)};`,
+    "",
+  ].join("\n");
 }
 
 // -- Stack resolution --------------------------------------------------------
@@ -497,6 +548,7 @@ async function emittedFiles({ skillsSource, cliRoot = CLI_ROOT }: SourceRoots): 
     files: await formatEmitted([
       { path: SOURCE_TYPES_FILE, content: sourceTypes },
       { path: MATRIX_FILE, content: matrix },
+      { path: ACTIVATION_DESCRIPTIONS_FILE, content: renderActivationDescriptions(skills) },
     ]),
     counts: catalogueCounts(skills, agentEntries),
   };
