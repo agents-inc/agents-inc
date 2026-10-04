@@ -32,7 +32,9 @@ import {
   CHANGELOGS,
   FINDING_DIRECTORIES,
   NO_FINDING_DIRECTORY,
+  NO_PLAN_DIRECTORY,
   NO_SCOPE_DIRECTORY,
+  PLANS,
   SCOPES,
   SPECS,
   TRACKERS,
@@ -42,6 +44,9 @@ import { expectRefusal } from "./refusal-expectations.js";
 const A_LIVE_FINDING = "2026-08-19-a-finding-that-is-still-on-disk";
 const A_DELETED_FINDING = "2026-08-19-a-finding-a-batch-removed";
 const A_SUGGESTION = "2026-08-19-a-proposal-in-the-sibling-directory";
+
+const A_PLAN = "2026-08-19-a-plan-named-date-first";
+const A_PLAN_NOBODY_WROTE = "2026-08-19-a-plan-nobody-ever-wrote";
 
 const TRACKER = "cli.md";
 const RELEASE_NOTE = "0.99.0.md";
@@ -63,7 +68,7 @@ async function writeFixtureTree(documents: Record<string, string>): Promise<stri
   const root = await createTempDir("finding-citations-");
   roots.push(root);
 
-  for (const directory of [...FINDING_DIRECTORIES, TRACKERS, CHANGELOGS, SPECS]) {
+  for (const directory of [...FINDING_DIRECTORIES, TRACKERS, PLANS, CHANGELOGS, SPECS]) {
     mkdirSync(path.join(root, directory), { recursive: true });
   }
   writeFileSync(path.join(root, AGENT_FINDINGS, `${A_LIVE_FINDING}.md`), "# on disk\n");
@@ -166,6 +171,50 @@ describe("a tracker naming a finding", () => {
 });
 
 /**
+ * `todo/plans/` names its plans and their lane folders date-first, so a plan's name has exactly a
+ * finding's shape. What separates the two is the disk, not the path a link points along: a dated
+ * name a plan carries resolves, and one that nothing carries is still a dangling citation.
+ */
+describe("a tracker naming a dated plan", () => {
+  it("says nothing when the name is a plan document on disk", async () => {
+    const root = await writeFixtureTree({
+      [`${PLANS}/${A_PLAN}.md`]: "# a plan\n",
+      [`${TRACKERS}/${TRACKER}`]: `The detail is in [\`${A_PLAN}.md\`](./plans/${A_PLAN}.md).\n`,
+    });
+
+    expect(
+      trackerCitations(root),
+      "a plan named date-first is a plan, and reporting it names a finding that never existed",
+    ).toStrictEqual([]);
+  });
+
+  it("says nothing when the name is a plan's lane folder on disk", async () => {
+    const root = await writeFixtureTree({
+      [`${PLANS}/${A_PLAN}/a-lane.md`]: "# one lane's evidence\n",
+      [`${TRACKERS}/${TRACKER}`]: `One lane is in [a-lane.md](./plans/${A_PLAN}/a-lane.md).\n`,
+    });
+
+    expect(
+      trackerCitations(root),
+      "a folder carries the plan's name as surely as a document does",
+    ).toStrictEqual([]);
+  });
+
+  it("still reports a dated name that nothing on disk carries, though its link points into the plans", async () => {
+    const root = await writeFixtureTree({
+      [`${TRACKERS}/${TRACKER}`]: `The detail is in [the plan](./plans/${A_PLAN_NOBODY_WROTE}.md).\n`,
+    });
+
+    expect(
+      trackerCitations(root),
+      "a plan is recognised by being on disk, so a path into the plans is no licence for a name that resolves to nothing",
+    ).toStrictEqual([
+      { document: `${TRACKERS}/${TRACKER}`, name: A_PLAN_NOBODY_WROTE, form: "link" },
+    ]);
+  });
+});
+
+/**
  * The scope split `agent-findings/INDEX.md` states and the one exception it carries. A release note
  * naming a finding is a dated statement about a past version and stays true after the file goes;
  * rewriting one would falsify the record of what the release said. A LINK is different — it offers
@@ -224,6 +273,17 @@ describe("the scan", () => {
       () => check({ repositoryRoot: root }),
       NO_FINDING_DIRECTORY,
       "a resolution set missing one of its halves calls every citation of that half dangling",
+    );
+  });
+
+  it("refuses a plan directory that is not there, rather than calling every plan a gone finding", async () => {
+    const root = await writeFixtureTree({});
+    rmSync(path.join(root, PLANS), { recursive: true });
+
+    expectRefusal(
+      () => check({ repositoryRoot: root }),
+      NO_PLAN_DIRECTORY,
+      "a dated plan read against no plans is reported as a finding that is gone, which names the wrong thing",
     );
   });
 
@@ -340,13 +400,17 @@ describe("a spec citing a finding", () => {
  * left `warn-suppression-stops-at-the-harness.e2e.test.ts`'s fixture modeling a state `compile` no
  * longer produces. The rebuilt fixture's JSDoc cites that finding by basename to say why the fixture
  * changed shape, which is itself a citation — the spec scope's first.
+ *
+ * It moved back on 2026-10-02, under the same ruling: the stack warning that spec existed to carry
+ * to a user was deleted on the owner's word, the option suppressing it went with it, and so did the
+ * spec — and its JSDoc was the spec tree's only citation.
  */
 type ScopePopulation = "cites findings" | "cites none today";
 
 const SCOPE_POPULATIONS: Record<string, ScopePopulation> = {
   [TRACKERS]: "cites findings",
   [CHANGELOGS]: "cites findings",
-  [SPECS]: "cites findings",
+  [SPECS]: "cites none today",
 };
 
 /** One scope read on its own, so no scope's silence can be covered by another's population. */

@@ -71,8 +71,17 @@ export const AGENT_SUGGESTIONS = "packages/cli/.ai-docs/agent-suggestions";
  */
 export const FINDING_DIRECTORIES = [AGENT_FINDINGS, AGENT_SUGGESTIONS];
 
+/**
+ * Where a dated name may resolve as a plan rather than a finding. `todo/plans/` names its plans
+ * and their lane folders date-first, so a plan's name has a finding's shape and {@link FINDING_NAME}
+ * cannot tell the two apart — only the disk can. It sits inside {@link TRACKERS}, so the task
+ * hashing that scope already hashes it.
+ */
+export const PLANS = `${TRACKERS}/plans`;
+
 export const NO_SCOPE_DIRECTORY = "names a scope directory that does not exist";
 export const NO_FINDING_DIRECTORY = "names a finding directory that does not exist";
+export const NO_PLAN_DIRECTORY = "names a plan directory that does not exist";
 
 /** Whether a citation is a pointer a reader can follow or a name standing in prose. */
 export type CitationForm = "link" | "mention";
@@ -113,8 +122,12 @@ export function check({
   scopes?: CitationScope[] | undefined;
   findingDirectories?: string[] | undefined;
 } = {}): CheckResult {
-  const onDisk = findingsOnDisk(repositoryRoot, findingDirectories);
+  // Scopes first: the plans live inside one, and a missing scope is the refusal that names the cause.
   const examined = scopes.flatMap((scope) => citationsUnder(repositoryRoot, scope));
+  const onDisk = new Set([
+    ...findingsOnDisk(repositoryRoot, findingDirectories),
+    ...plansOnDisk(repositoryRoot),
+  ]);
   const dangling = examined.filter((scoped) => isDangling(scoped, onDisk));
 
   return {
@@ -125,7 +138,7 @@ export function check({
 }
 
 /**
- * Every name a citation may resolve to, without its extension, which is how prose writes it. A
+ * Every finding a citation may resolve to, without its extension, which is how prose writes it. A
  * directory that is not there is refused rather than read as empty — a resolution set missing one
  * of its halves calls every citation of that half dangling.
  */
@@ -139,6 +152,21 @@ function findingsOnDisk(repositoryRoot: string, directories: string[]): Set<stri
         .filter((entry) => entry.endsWith(MARKDOWN_EXTENSION))
         .map(withoutExtension);
     }),
+  );
+}
+
+/**
+ * Every name under {@link PLANS} a dated citation may be pointing at: each plan document without
+ * its extension, and each lane folder as it stands. Read to any depth, because a dated file inside
+ * a lane folder is the same trap one level down. Refused when absent for the reason the finding
+ * directories are — without it, every dated plan reads as a finding that is gone.
+ */
+function plansOnDisk(repositoryRoot: string): string[] {
+  const plansPath = path.join(repositoryRoot, PLANS);
+  if (!existsSync(plansPath)) throw refusal(NO_PLAN_DIRECTORY, PLANS);
+
+  return readdirSync(plansPath, { recursive: true, withFileTypes: true }).map((entry) =>
+    entry.isDirectory() ? entry.name : withoutExtension(entry.name),
   );
 }
 

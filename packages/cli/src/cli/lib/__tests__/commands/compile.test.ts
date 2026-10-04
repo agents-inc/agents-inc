@@ -15,6 +15,7 @@ import {
 import { CLAUDE_DIR, CLAUDE_SRC_DIR, STANDARD_FILES } from "../../../consts";
 import { expectValidAgentMarkdown } from "../assertions";
 import { writeTestTsConfig } from "../helpers/config-io.js";
+import { flattenCliOutput } from "../helpers/flatten-cli-output.js";
 import { SKILLS } from "../test-fixtures";
 
 describe("compile command", () => {
@@ -110,6 +111,7 @@ describe("compile command", () => {
       // Skill should be discovered (not skipped)
       expect(output).not.toContain("missing metadata.yaml");
       expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
     });
 
     it("should skip a skill with SKILL.md but no metadata.yaml and emit a warning", async () => {
@@ -169,7 +171,7 @@ describe("compile command", () => {
       const { stdout, error } = await runCliCommand(["compile"]);
 
       const output = stdout + (error?.message || "");
-      expect(output).toMatch(/\d+ project agents rewritten, \d+ unchanged/);
+      expect(output).toMatch(/\d+ project agents? rewritten, \d+ unchanged/);
       expect(output).toContain("compile complete");
 
       const agentsDir = path.join(localDirs.projectDir, CLAUDE_DIR, "agents");
@@ -209,9 +211,11 @@ describe("compile command", () => {
 
       const output = stdout + (error?.message || "");
       expect(output).toContain("Discovered 1 local skill");
+      expect(output).not.toContain("Discovered 1 local skills");
       // First compile of a fresh source, so every agent is a genuine write — the
-      // summary's two numbers are what it counts, not the roster it walked.
-      expect(output).toMatch(/[1-9]\d* project agents rewritten, 0 unchanged/);
+      // summary's two numbers are what it counts, not the roster it walked. The noun follows
+      // the count, so a fixture rewriting one says "agent".
+      expect(output).toMatch(/[1-9]\d* project agents? rewritten, 0 unchanged/);
     });
   });
 
@@ -249,7 +253,8 @@ describe("compile command", () => {
 
       const { stdout, stderr, error } = await runCliCommand(["compile"]);
 
-      const output = stdout + stderr + (error?.message || "");
+      // The warning carries a temp path, so where oclif wraps it depends on how long TMPDIR is.
+      const output = flattenCliOutput(stdout + stderr + (error?.message || ""));
       expect(output, "the run must say why the catalogue could not be loaded").toContain(
         "Local marketplace not found",
       );
