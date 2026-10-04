@@ -6763,3 +6763,5 @@ at 1364 was therefore below the floor and already scrolling sideways; re-run at 
   - **Gates:** green on this tree after each round. The final round passed with nothing re-run.
   - **Open:** CLI-908 to CLI-919 and EDITOR-80 to EDITOR-91. Wizard-only failures are dropped, because the wizard is
     being removed.
+- **2026-10-04 — CLI-913:** the CLI no longer reads or writes `.claude-src/`; a run that finds it in the project or HOME prints one line telling the user to move it to `.agents-inc/claude/`. The fallback, the two-folder refusal and doctor's legacy rows are gone. Proven by `e2e/commands/claude-src-is-no-longer-supported.e2e.test.ts` (9 of 10 failed on HEAD) and green CLI gates.
+- **2026-10-04 — CLI-913 follow-up:** the name `.claude-src` is now spelled once, `RETIRED_SOURCE_FOLDER` in `install-layout.ts`, behind the startup line; every other mention left code, tests, tooling and live docs (changelogs and findings kept as history). CLI gates green.

@@ -122,3 +122,5 @@ removed. And the only changes that should exist ... should be changes to make th
   Playwright suite. Fix what's left in file-owning lanes, with a verifier that never fixes.
 - Hand-run the CLI on a Codex install and on a Claude install.
 - Docs residue sweep.
+- 2026-10-04: CLI-913 (drop .claude-src/ support + startup notice) dispatched to one cli-developer agent, in the real repo, no workflow.
+- 2026-10-04: CLI-913 follow-up (purge every .claude-src mention except the printed line) dispatched to one cli-developer agent.

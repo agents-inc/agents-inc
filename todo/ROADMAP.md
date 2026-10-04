@@ -25,7 +25,10 @@ fix it, and repeat. Six rounds have landed, all uncommitted.
 
 **Open, filed 2026-10-04:**
 
-- **CLI:** CLI-908 to CLI-917.
+- **CLI:** CLI-910 to CLI-912, CLI-915 to CLI-917, and CLI-921 (the doubled cancel message). CLI-913 landed
+  2026-10-04 (`.claude-src/` support dropped).
+- **CLI, deferred by owner:** CLI-908 and CLI-909 (`edit --from` shows the info table), CLI-914 (`CLAUDE_CONFIG_DIR`).
+- **CLI, parked with Codex:** CLI-920.
 - **Owner rulings owed:** CLI-918 and CLI-919.
 - **Editor, logged but not fixed by owner ruling:** EDITOR-80 to EDITOR-89, plus EDITOR-91.
 - **Editor, owner rulings owed:** EDITOR-90.
