@@ -357,6 +357,16 @@ export const REGISTRY: RegistryEntry[] = [
       // `--ui` now opens whatever `--from` names rather than refusing the pair. A boundary anchored
       // on a NEIGHBOUR breaks when the neighbour goes, which is a second row reddening for a reason
       // that has nothing to do with its own subject.
+      to: "| `SHARED_CONFIG_ARRIVALS`",
+      states: "code-spans",
+    },
+  },
+  {
+    claim: "SHARED_CONFIG_ARRIVALS in reference/commands/index.md",
+    source: { file: MESSAGES, symbol: "SHARED_CONFIG_ARRIVALS" },
+    document: {
+      document: COMMANDS_INDEX,
+      from: "| `SHARED_CONFIG_ARRIVALS`",
       to: "| `INCOMPLETE_WORK_RECOVERY`",
       states: "code-spans",
     },
@@ -479,7 +489,7 @@ export const REGISTRY: RegistryEntry[] = [
     document: {
       document: UTILITIES,
       from: "| `UNINSTALL_PLAN`",
-      to: "**The two `GLOBAL_*` headings",
+      to: "**Two independent gates, and neither subsumes the other.**",
       states: "code-spans",
     },
   },

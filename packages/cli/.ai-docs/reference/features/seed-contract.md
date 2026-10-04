@@ -899,20 +899,21 @@ readCarriedSkills(owned: OwnedSkillDir[]): Promise<ContentReading>
 
 Per directory, `readCarriedSkill` answers one of three ways:
 
-| Condition                                  | Result                                                                                                                                                          |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provenance.path === undefined`            | `carries: "nothing"` — a catalogue resolves this id, so the receiver installs it from there and the bytes stay home                                             |
-| `provenance.source` is not a `github:` ref | `carries: "unshareable"` — a repository this contract has no word for                                                                                           |
-| `metadata.yaml` unusable                   | `carries: "unshareable"`, carrying the reader's own reason                                                                                                      |
-| `seedExternalSkillSchema.safeParse` fails  | `carries: "unshareable"`, carrying every issue message joined with `; ` — this is where the weight cap and the manifest requirement are enforced on the way out |
-| Otherwise                                  | `carries: "content"` — the rebuilt `SeedExternalSkill`                                                                                                          |
+| Condition                                             | Result                                                                                                                            |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `provenance.path === undefined`                       | `carries: "nothing"` — a catalogue resolves this id, so the receiver installs it from there and the bytes stay home               |
+| `provenance.source` is not a `github:` ref            | `carries: "unshareable"` — a repository this contract has no word for                                                             |
+| `metadata.yaml` unusable                              | `carries: "unshareable"`, carrying the reader's own reason                                                                        |
+| No SKILL.md, or its frontmatter states no description | `carries: "unshareable"` — the description is the manifest's own, never the shortened `cliDescription`                            |
+| `seedExternalSkillSchema.safeParse` fails             | `carries: "unshareable"`, carrying every issue message joined with `; ` — this is where the weight cap is enforced on the way out |
+| Otherwise                                             | `carries: "content"` — the rebuilt `SeedExternalSkill`                                                                            |
 
 **The bytes as they stand, not as they arrived.** The manifest was renamed to the id this install
 recorded, and a user may have edited the skill since; what is installed here is what a share carries.
 `readSkillTree` globs `**/*` with `dot: true`, so dotfiles and nesting both travel.
 
 **Validated against the contract's own schema rather than by rules restated here** — that is what
-makes the weight limit, the manifest requirement and every field's shape one definition rather than
+makes the weight limit and every field's shape one definition rather than
 two that can drift.
 
 ## The `init --from` Consumer Path

@@ -106,6 +106,7 @@ ls e2e/*/*guard*
 - NEVER put TODO/task IDs in test names (`describe()`, `it()`), assertion messages (2nd arg to `expect`), or inline test comments. Task IDs belong in file-level JSDoc ONLY, if anywhere. Test names describe BEHAVIOR ("version field is not emitted on init"), not tickets. Assertion messages describe the INVARIANT ("config.ts must not contain version field"), not the ticket that added it. Names rot — IDs look authoritative but become meaningless once the task is closed.
 - NEVER define path/timeout/text constants locally in E2E test files — use `DIRS`, `FILES`, `TIMEOUTS`, `SOURCE_PATHS`, `STEP_TEXT`, `EXIT_CODES` from `e2e/pages/constants.ts`
 - NEVER write a helper function in an E2E test file without first grepping `e2e/helpers/test-utils.ts` and `e2e/fixtures/` for an existing one
+- NEVER stand a spec at a terminal by setting `process.stdin.isTTY = true` — call `standAtTerminal()` from `__tests__/helpers/terminal-input.ts`. `isTTY` is half a terminal: vitest forks its workers with stdin on a pipe, which has no `setRawMode`, and every prompt puts the terminal into raw mode before it paints, so a spec that reaches one dies inside the command on `input.setRawMode is not a function`. A spec setting `isTTY` alone passes only for as long as it never reaches a prompt, which is how `edit-ui.test.ts` and `edit-from.test.ts` carried it. The census should come back empty: `grep -rn "stdin.isTTY = true" src e2e scripts --include='*.ts' --include='*.tsx'`
 
 ### Code Style
 

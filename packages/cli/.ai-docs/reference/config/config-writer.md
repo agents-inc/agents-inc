@@ -63,16 +63,17 @@ composed; [concepts/scope-system.md](../concepts/scope-system.md) owns the resol
 
 **File:** `src/cli/lib/configuration/config-writer.ts`
 
-Replaced the former `writeProjectSourceConfig()`. **Renders only — it writes nothing.** Every function below returns a TypeScript source string; the module has held no filesystem call since the config-gate landed, because a rendered pair half that any caller may then write is exactly the ungated write the gate exists to prevent.
+Replaced the former `writeProjectSourceConfig()`. **Renders only — it writes nothing.** Every function below returns a TypeScript source string, save `refuseUnwritableStack()`, which a `--from` producer asks before anything is removed; the module has held no filesystem call since the config-gate landed, because a rendered pair half that any caller may then write is exactly the ungated write the gate exists to prevent.
 
 **The renderers themselves live in `@workspace/compile/config-source`**, which
 `config-writer.ts` re-exports — the editor's output preview draws the bytes an install writes
 rather than a second implementation of them, and the table below is bound to the package module:
 
-| Function                            | Purpose                                       |
-| ----------------------------------- | --------------------------------------------- |
-| `generateConfigSource()`            | Main entry: generates config.ts source string |
-| `generateBlankGlobalConfigSource()` | Blank global config (empty arrays)            |
+| Function                            | Purpose                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `generateConfigSource()`            | Main entry: generates config.ts source string                                                                |
+| `generateBlankGlobalConfigSource()` | Blank global config (empty arrays)                                                                           |
+| `refuseUnwritableStack()`           | Throws what rendering a stack would throw — a category that holds one skill given more — and renders nothing |
 
 `generateBlankGlobalConfigTypesSource()` (blank config-types.ts, all types `never`) moved with the
 types-half renderers and is listed with them below. What still LIVES in `config-writer.ts` is one

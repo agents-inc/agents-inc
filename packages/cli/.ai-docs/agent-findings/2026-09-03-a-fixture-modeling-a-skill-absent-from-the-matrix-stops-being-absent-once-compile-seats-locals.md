@@ -2,7 +2,6 @@
 type: anti-pattern
 severity: medium
 affected_files:
-  - packages/cli/e2e/commands/warn-suppression-stops-at-the-harness.e2e.test.ts
   - packages/cli/src/cli/commands/compile.ts
   - packages/cli/src/cli/lib/stacks/stacks-loader.ts
 standards_docs:

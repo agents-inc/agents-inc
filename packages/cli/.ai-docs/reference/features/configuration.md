@@ -738,10 +738,11 @@ Replaced the former `writeProjectSourceConfig()`. **Renders only — writes noth
 The renderers live in `@workspace/compile/config-source` and `config-writer.ts` re-exports them,
 so the editor's output preview draws the bytes an install writes:
 
-| Function                            | Purpose                                       |
-| ----------------------------------- | --------------------------------------------- |
-| `generateConfigSource()`            | Main entry: generates config.ts source string |
-| `generateBlankGlobalConfigSource()` | Blank global config (empty arrays)            |
+| Function                            | Purpose                                                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `generateConfigSource()`            | Main entry: generates config.ts source string                                                                |
+| `generateBlankGlobalConfigSource()` | Blank global config (empty arrays)                                                                           |
+| `refuseUnwritableStack()`           | Throws what rendering a stack would throw — a category that holds one skill given more — and renders nothing |
 
 `generateBlankGlobalConfigTypesSource()` moved with the types-half renderers. One function still
 lives in `config-writer.ts`: `getGlobalConfigImportPath()`, the absolute path to the global scope's own source folder,
