@@ -42,7 +42,7 @@
     "@playwright/test": "1.56.1",
     "@sentry/vite-plugin": "^5.4.0",
     "@tailwindcss/vite": "^4",
-    "@types/node": "^24",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6",
