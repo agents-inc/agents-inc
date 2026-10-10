@@ -78,7 +78,7 @@ jobs:
           PAYLOAD_SHA: ${{ github.event.client_payload.sha }}
         run: echo "ref=${PAYLOAD_SHA:-main}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # The checkout that no other job in this repository has. generate:types
       # reads the marketplace directly, which is exactly why
@@ -92,13 +92,13 @@ jobs:
       # this step is what breaks, and it will read as an authentication failure
       # rather than a visibility change.
       - name: Check out the skills marketplace
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: agents-inc/skills
           ref: ${{ steps.trigger.outputs.ref }}
           path: ${{ env.SKILLS_CHECKOUT }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
