@@ -13,7 +13,13 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Latest — 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
+## Next — CLI-923: remove the wizard (ruled 2026-10-14)
+
+0.168.0 (EDITOR-09 Phase H) is committed and pushed, with its deploy and `npm publish` pending. CLI-923 is the next
+CLI programme: spec first (`plans/CLI-923-remove-the-wizard.md`), then lanes. 0.168.0 is the last version published
+with the wizard.
+
+## 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
 
 Following CLI-902, the owner asked for a cycle: run every suite and every user journey by hand, test every new failure,
 fix it, and repeat. Six rounds have landed, all uncommitted.
@@ -490,7 +496,7 @@ section**, which only orders it.
 | E — the proposal diagram: `MatrixGrid` becomes a diff, so a proposal can draw a REMOVAL                                                                                                                                                                                                                                                                                                                | EDITOR-56 | **Ready for dev** — owner-ruled and fully designed in `phase-c-spec.md` §11.1/§11.9/§11.10                                                                                                                               |
 | F — the 2026-08-30 design refresh: sign-in up the rail, the theme glyph, domain titles as tabs, the filters out of the search field, the composer's new drawing                                                                                                                                                                                                                                        | EDITOR-09 | **LANDED 2026-08-30** — five items in one session, no dispatch; it REVERSED the composer's starter chips, which Phase C had shipped                                                                                      |
 | G — the 2026-09-05 design refresh: `selected` onto the skills hinge, full-width domain tabs, the first stack cell as the reset, a full-row assignment pulse, three action cells over Install, the preview's fullscreen + splitter, the composer's field filling its band, one icon set, receding disabled cells, the `#faf8f2` column, the amber field on the active nav item and the grouping control | EDITOR-09 | **LANDED 2026-09-05** — eleven items in one session, audited by an 11-lane workflow and implemented directly; it REVERSED Phase F's `selected` chip, its `N skills selected ✕` block and its 25px-Inter active tab label |
-| H — the 2026-10-11 v6 handoff: inset card outline, providers as step 01, sub-agent cards, filters in the search field, sliding domain indicator, rail 05 header and group-by tags, named saves, real Codex models                                                                                                                                                                                      | EDITOR-09 | **LANDED 2026-10-11** (uncommitted) — 9 lanes by workflow; seed v6 only; Argos baselines await approval; follow-ups EDITOR-93, EDITOR-96                                                                                 |
+| H — the 2026-10-11 v6 handoff: inset card outline, providers as step 01, sub-agent cards, filters in the search field, sliding domain indicator, rail 05 header and group-by tags, named saves, real Codex models                                                                                                                                                                                      | EDITOR-09 | **LANDED 2026-10-11**, released 0.168.0 2026-10-14 — 9 lanes by workflow; seed v6 only; Argos baselines await approval; follow-ups EDITOR-93, EDITOR-96                                                                  |
 
 **Four rows were found landed-but-open while Phase G was closing**, all staged before it began:
 EDITOR-76 and EDITOR-79 were finished and are retired with archive lines; EDITOR-77 and EDITOR-78
