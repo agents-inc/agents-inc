@@ -21,14 +21,9 @@ export {
 } from "./read-model/sub-agents"
 export type { SubAgent, SubAgentGroup } from "./read-model/sub-agents"
 
-// The roster as the CLI's own metadata.yaml files declare it, beside the read
-// model built from it. `SubAgent` is the shape the grid and the roster need —
-// a label, a domain, a flavor — and it deliberately drops `tools`,
-// `disallowedTools` and `permissionMode`, which nothing on screen shows. A
-// COMPILED sub-agent's frontmatter is written from exactly those, so the
-// editor's output preview needs the definitions rather than the read model:
-// `tools: {{ agent.tools | join: ", " }}` is the third line of every agent the
-// CLI writes, and a preview built from `SubAgent` would emit it empty.
+// The roster as the CLI's metadata.yaml files declare it. The output preview
+// needs these definitions: `SubAgent` drops `tools`, which compiled frontmatter
+// is written from.
 export { AGENT_DEFINITIONS } from "./generated/agents"
 export type { GeneratedAgentDefinition } from "./generated/agents"
 
@@ -86,11 +81,8 @@ export type {
   SkillRequirementFacts,
 } from "./read-model/selection-semantics"
 
-// The vendored catalogue in its wire shape, beside the version taken off it.
-// Exported because the editor's catalogue seat derives from a matrix rather
-// than holding a built `Catalog`: a skill added from outside is merged into
-// this and the read models are rebuilt, so it is placed, sorted and judged by
-// exactly the rules every other skill is — one derivation, no second path.
+// The vendored catalogue in its wire shape. The editor merges external skills
+// into it and rebuilds the read models, so they follow every other skill's rules.
 export { MATRIX, MATRIX_VERSION } from "./read-model/source"
 
 export {
@@ -165,16 +157,14 @@ export type {
   AgentName,
 } from "./vendor/generated/source-types"
 
-// The CLI's own domain types, vendored here byte-for-byte by
-// scripts/generate-matrix-package.ts and surfaced so `@workspace/compile` can
-// render against the SAME declarations the CLI writes with rather than a second
-// copy of them. A structurally-equal duplicate would type-check on the day it
-// was written and diverge silently on the first field either side added, which
-// is the whole failure the vendoring exists to prevent.
-export { EFFORT_NAMES, MODEL_NAMES } from "./vendor/matrix"
+// The CLI's own domain types, vendored byte-for-byte by
+// scripts/generate-matrix-package.ts so `@workspace/compile` renders against the
+// same declarations the CLI writes with.
+export { CODEX_MODEL_NAMES, EFFORT_NAMES, MODEL_NAMES } from "./vendor/matrix"
 export type {
   CategoryDefinition,
   CategoryMap,
+  CodexModelName,
   DomainSelections,
   EffortLevel,
   MergedSkillsMatrix,
