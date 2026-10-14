@@ -24,7 +24,7 @@ Its subtitle names what you're installing _from_: `marketplace <ref> · stack <n
 
 **Two panes.** On the left, **Skills** — grouped `Project` and `Global` by each skill's own scope, each row the skill's name plus `plugin` or `eject`. A skill you added yourself has its name as a button, so you can read its files from inside the list of what's about to be written to your disk. On the right, **Agents** — the same project/global split, each row reading `web · developer`, with `no skills — base agent` on one you pinned on without assigning anything.
 
-**Two steps.** The first is `cd` to your project root, explained as the folder holding `package.json` because project-scoped skills are written relative to it. The second names what the installer writes — `.agents-inc/claude/config.ts` and sub-agent front-matter, the ejected skills into `.claude/skills/`, the rest linked as plugins, and global skills into `~/.claude` — and then gives you the command. With the [provider row](#the-provider-row-and-what-moves-with-it) on Codex the same sentence names `.agents-inc/codex/config.ts`, sub-agent role files, `.agents/skills/` and `~/.codex`.
+**Two steps.** The first is `cd` to your project root, explained as the folder holding `package.json` because project-scoped skills are written relative to it. The second names what the installer writes — `.agents-inc/claude/config.ts` and sub-agent front-matter, the ejected skills into `.claude/skills/`, the rest linked as plugins, and global skills into `~/.claude` — and then gives you the command. With the [provider](#the-provider-step-and-what-moves-with-it) on Codex the same sentence names `.agents-inc/codex/config.ts`, sub-agent role files, `.agents/skills/` and `~/.codex`.
 
 **Click the command block to copy it.** The line beneath it says what just happened, one phrase per ending:
 
@@ -53,19 +53,19 @@ An id is the configuration's own content address: a SHA-256 of the serialized pa
 
 [CLI or web](/docs/cli-or-web) carries the rest of the contract — how `--from` behaves headless, what happens to ids the catalogue no longer knows, and why an older payload version fails loudly.
 
-## The provider row, and what moves with it
+## The provider step, and what moves with it
 
-A **provider** row sits in the roster footer, above the action cells: `claude | codex`, resting on Claude. It says which coding agent this configuration is for. The CLI's Codex support, `--provider` included, is not in a release yet — see [Claude or Codex](/docs/configuration/providers).
+Step **01 choose your provider** holds two cards, **Claude Code** and **Codex**, resting on Claude. It says which coding agent this configuration is for. The CLI's Codex support, `--provider` included, is not in a release yet — see [Claude or Codex](/docs/configuration/providers).
 
 **It changes nothing in the configuration.** Set it to Codex and the install dialog hands you `npx agents-inc init --from <id> --provider codex`; the id itself is byte-identical either way.
 
-That is deliberate rather than incidental. **The provider is not saved with a configuration.** It is not in the payload, it is not in the id, and it is not in a saved stack — so one saved setup installs onto either provider, and adding the provider changed no id. It is a fact about the machine you are installing on, made at the moment you copy the command, and a reload puts the row back on Claude.
+That is deliberate rather than incidental. **The provider is not saved with a configuration.** It is not in the payload, it is not in the id, and it is not in a saved stack — so one saved setup installs onto either provider, and adding the provider changed no id. It is a fact about the machine you are installing on, made at the moment you copy the command, and a reload puts it back on Claude.
 
 What moves with it on screen is what the command will write, and what Codex can take:
 
 - **The paths.** The install dialog's second step and the output preview name Codex's places — `.agents-inc/codex/`, `.codex/agents/<name>.toml`, `.agents/skills/` at project scope, `~/.codex` at global.
 
-- **`plugin` + `project` becomes a disabled cell with a reason** on a skill, because Codex has no way to install a plugin for one repository. A skill already sitting in that cell when you switch is not silently changed for you: the roster says which skills need a Codex placement and Install says so too, until you move them or go back to Claude.
+- **`plugin` + `project` is not offered**, because Codex has no way to install a plugin for one repository: `project` is disabled on a plugin skill, and `plugin` on a project skill moves it to global. A selected skill already in that cell when you switch is not silently changed for you: its cell is marked _Codex has no project-level plugins_ and Install says how many need a Codex placement, until you move them or go back to Claude. Unselected skills in that cell move to global on the switch.
 - **`agent-summoner` and `skill-summoner` show disabled, with the reason**, because a Codex install ships neither. They stay in the payload — the CLI drops them at install and says so once — which is what lets a later release re-enable them without a new id.
 - **One note that only Codex needs.** Under the command: Codex reads a project's sub-agents only once the project is trusted — until then the skills still reach the model and the rest is ignored silently.
 
@@ -73,7 +73,7 @@ What moves with it on screen is what the command will write, and what Codex can 
 
 **Preview** — its tooltip says _Preview generated code_ — sits between Share and Install, because you preview and then you install. It opens a dialog called **Output preview** showing every file the install would write, before one of them is.
 
-**On the left, a tree.** Up to two roots — `~/` and `./` — and a root nothing is written to isn't drawn at all. Under each, `.agents-inc/claude/` with `config.ts` and `config-types.ts`, `.claude/` with `agents/<name>.md` and `skills/<id>/`, and a group called `plugin skills` — or, with the provider row on Codex, `.agents-inc/codex/`, `.codex/` with `agents/<name>.toml`, the skills under `.agents/skills/` at project scope and `.codex/skills/` at global, and the same `plugin skills` group. That group is not a directory, deliberately: a plugin skill has no path under either root, so giving it one would be a lie. Each row carries a marker:
+**On the left, a tree.** Up to two roots — `~/` and `./` — and a root nothing is written to isn't drawn at all. Under each, `.agents-inc/claude/` with `config.ts` and `config-types.ts`, `.claude/` with `agents/<name>.md` and `skills/<id>/`, and a group called `plugin skills` — or, with the provider on Codex, `.agents-inc/codex/`, `.codex/` with `agents/<name>.toml`, the skills under `.agents/skills/` at project scope and `.codex/skills/` at global, and the same `plugin skills` group. That group is not a directory, deliberately: a plugin skill has no path under either root, so giving it one would be a lie. Each row carries a marker:
 
 | Marker   | Means                                                                       |
 | -------- | --------------------------------------------------------------------------- |

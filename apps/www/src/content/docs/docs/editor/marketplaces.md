@@ -37,7 +37,7 @@ Skills the incoming catalogue doesn't carry are **dropped**, and they're precise
 
 A skill hidden from the grid but left in the configuration would still be in the install list and in every link you minted afterwards, under a marketplace ref that can't resolve it — so the link would install a subset and you'd never be told.
 
-**The sub-agent roster is the same whatever catalogue is loaded.** A marketplace publishes skills, categories and stacks — never sub-agents — so every per-agent decision you made survives a switch untouched. Your saved stack survives too; it's a snapshot in its own slot rather than part of the configuration. What doesn't survive is the stack you're _on_, if the incoming catalogue doesn't carry it: that clears back to no stack, and your selection stays as it was.
+**The sub-agent roster is the same whatever catalogue is loaded.** A marketplace publishes skills, categories and stacks — never sub-agents — so every per-agent decision you made survives a switch untouched. Your saved stacks survive too; they're kept in their own slot rather than in the configuration. What doesn't survive is the stack you're _on_, if the incoming catalogue doesn't carry it: that clears back to no stack, and your selection stays as it was.
 
 ## Private marketplaces
 

@@ -58,7 +58,7 @@ Press `s` on the focused row in the wizard's Skills step to flip that skill's sc
 
 Global skills reach any sub-agent; project skills reach only project ones. A global sub-agent's front-matter is written to `~/.claude`, where every project on the machine sees it, so it can't name a skill installed under one project's `.claude` — from anywhere else, that skill isn't there.
 
-Both front doors enforce that from the same rule. Hand a project skill to a sub-agent still resting at global and the editor marks the roster row `This sub-agent must be set to project scope too`, and holds both Install and Share until you move one of the two — the sub-agent's own scope word, one line above, opens the panel that resolves it. `compile` states the same pair from the other side: it drops it, compiles the sub-agent without it, and says so on every run.
+Both front doors enforce that from the same rule. Hand a project skill to a sub-agent still resting at global and the editor marks the roster row `This sub-agent must be set to project scope too`, and holds both Install and Share until you move one of the two — the scope pair on that sub-agent's card, in step 03, resolves it. `compile` states the same pair from the other side: it drops it, compiles the sub-agent without it, and says so on every run.
 
 ## What goes where
 

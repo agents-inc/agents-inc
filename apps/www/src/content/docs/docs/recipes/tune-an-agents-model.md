@@ -9,9 +9,9 @@ Every sub-agent runs on a model, and every shipped one names `opus`. Choosing di
 
 ## Quick start
 
-On the roster, each sub-agent's row carries its model and its effort as words. Click either and a panel opens over the row with every value in a column — `opus`, `fable`, `sonnet` and `haiku` for the model, `low`, `medium`, `high`, `xhigh` and `max` for the effort — and picking one sets it and closes the panel. The effort word turns amber the moment it leaves that sub-agent's resting value.
+In step 03, each sub-agent's card carries its model as a row — `opus`, `fable`, `sonnet` and `haiku` — and its effort as a track from `low` through `medium`, `high` and `xhigh` to `max`. A click sets either.
 
-The editor offers those four models and no more, so `inherit` isn't reachable there. Effort rests at `medium` for every sub-agent, since the shipped metadata carries none to read, and a sub-agent whose metadata names a model outside the four rests on `sonnet`. See [The editor](/docs/editor).
+On Claude Code the editor offers those four models and no more, so `inherit` isn't reachable there. Effort rests at `medium` for every sub-agent, since the shipped metadata carries none to read, and a sub-agent whose metadata names a model outside the four rests on `sonnet`. See [The editor](/docs/editor).
 
 ## The terminal route is a hand edit
 

@@ -12,7 +12,7 @@ The editor is the browser front door onto the same catalogue the CLI reads. Pick
 ## Quick start
 
 1. Open [agentsinc.sh/editor](/editor).
-2. Click a stack in the grid at the top. Its skills are selected and handed to the sub-agents that want them.
+2. Click a stack in the stack grid. Its skills are selected and handed to the sub-agents that want them.
 3. Press **Install** at the foot of the right-hand column.
 4. Copy the command out of the dialog and run it from your project root.
 
@@ -31,10 +31,10 @@ Three columns. Both outer ones are pinned to the viewport and only the middle on
 | Column | What it holds                                                                                                                                                                                                                                                                                                                 |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Left   | The nav rail — the `a-i` monogram and **Editor** both bring you back to this screen, **About** and **Docs** go to this site, **Marketplace** names the catalogue the grid is showing, **Sign in** sits under it — replaced by your name and **Sign out** once you are — and a theme switch and a GitHub link are at the foot. |
-| Middle | The stack grid, the filter bar, and every skill in the catalogue laid out in cells under its domain. [The composer](/docs/editor/composer) is docked at its foot.                                                                                                                                                             |
+| Middle | The provider cards, the stack grid, the sub-agent cards, the filter bar, and every skill in the catalogue laid out in cells under its domain. [The composer](/docs/editor/composer) is docked at its foot.                                                                                                                    |
 | Right  | The roster — every sub-agent there is, with the skills each one carries listed underneath, and the four buttons that do something with all of it.                                                                                                                                                                             |
 
-Two headings divide the middle column: **choose your stack** over the grid, and **then customise `<stack name>`** — or **then pick your skills** before you've chosen one — over everything else. The `−` button beside the first one folds the grid away. Folding it doesn't unpick anything: the stack stays chosen, the heading below still names it, and Install writes exactly what it would have written.
+Four numbered headings divide the middle column: **01 choose your provider** over the provider cards, **02 then your stack** over the grid, **03 then your sub-agents** over the sub-agent cards, and **04 then customise `<stack name>`** — or **then pick your skills** before you've chosen one — over everything else. Pressing a heading folds its step away, and pressing it again brings it back. Folding doesn't unpick anything: the stack stays chosen, the heading below still names it, and Install writes exactly what it would have written. The roster's heading is **05 then assign skills**.
 
 The editor wants a wide window. The page grid has a fixed minimum width and no layout beneath it, so a narrow window scrolls sideways rather than reflowing.
 
@@ -44,29 +44,33 @@ The grid's first cell is **Start from scratch**, which is the state a first visi
 
 **Switching between stacks with an untouched selection prompts nothing** — a stack's own expansion isn't something you chose, so there's nothing to lose. Once you've edited away from it, though — a changed install mode or scope, a changed assignment, any per-agent decision — switching asks first: _"Switch to `<name>`?"_, with **Keep my setup** and **Switch**, and a sentence counting the skills, options and assignments it would discard.
 
-**Save** in the roster footer snapshots the current selection into the grid as a cell called **Saved stack**, sitting right after Start from scratch. It's a starting point like any other stack from then on. Signed out there's one slot, so saving again overwrites it. Signed in, the grid shows your account's saved stacks instead — as many as you like, on any machine — and the local slot is kept rather than shown. Either way it's recognized as the stack you're on by the selection _being_ the snapshot rather than by any id — a snapshot taken from scratch lights up its own cell rather than Start from scratch.
+**Save** in the roster footer opens **Save stack**, which asks for a name. A name the grid already shows, in any case, is refused in place — nothing is ever overwritten — and each save becomes its own cell right after Start from scratch, newest first. It's a starting point like any other stack from then on. Signed out, saves stay in this browser. Signed in, they go to your account, on any machine, and the grid shows the account's stacks; a first sign-in carries this browser's saves into an empty account under their own names, and any the account refuses stay on the grid with a sentence saying why. Either way a save is recognized as the stack you're on by the selection _being_ it rather than by any id — a save taken from scratch lights up its own cell rather than Start from scratch.
 
 Save uses the same serialization Share does, so a saved stack and a shared link can never restore different things.
 
+## Sub-agents
+
+The sub-agent cards are grouped by domain. Pressing a card switches that sub-agent on or off, as clicking its name in the roster does, and each card carries its settings with every value on screen at once:
+
+| Control | Values                                          | Where it rests                                           |
+| ------- | ----------------------------------------------- | -------------------------------------------------------- |
+| model   | `opus` `fable` `sonnet` `haiku`                 | whatever the sub-agent's own metadata names, or `sonnet` |
+| effort  | `low` `medium` `high` `xhigh` `max`, as a track | `medium`                                                 |
+| scope   | `project` `global`                              | `global`                                                 |
+
+On Codex the model row offers Codex's own models instead.
+
 ## The roster
 
-The right column groups every sub-agent under sticky bands. The control in its header reads `domain ▾` or `scope ▾` and switches between the two bandings: by domain, or by where each agent's file is written — `~/.claude · global` and `./.claude · project`, global first. Each band's right edge reads `N of M`, and clicking a band collapses it.
+The right column groups every sub-agent under sticky bands. A **group by** pair in its header, `domain | scope`, switches between the two bandings: by domain, or by where each agent's file is written — `~/.claude · global` and `./.claude · project`, global first. Clicking a band collapses it.
 
 **Every sub-agent is listed whether it's on or off.** An agent is on when it holds at least one enabled skill; clicking its name pins it to the opposite of whatever it works out to. So you can switch on an agent that carries nothing — it reads `no skills — base agent`, and installs as front-matter alone — or switch off one that carries plenty.
 
-**Three words on each agent row state its settings, and clicking any of them opens one panel holding all three.** Each column sits directly under the word it belongs to, every value is on screen at once, and picking one sets it and closes the panel. One panel is open across the whole roster at a time; press the word again, press Escape, or press anywhere outside the roster to close it without choosing.
-
-| Word   | Values                              | Where it rests                                           |
-| ------ | ----------------------------------- | -------------------------------------------------------- |
-| model  | `opus` `fable` `sonnet` `haiku`     | whatever the sub-agent's own metadata names, or `sonnet` |
-| effort | `low` `medium` `high` `xhigh` `max` | `medium`, and turns amber the moment it leaves it        |
-| scope  | `project` `global`                  | `global`                                                 |
-
-Under each agent sits one row per skill it carries. Hover or put focus anywhere in that agent's block and two more things appear on the right of every row: a load word — `pre` or `lazy`, click to flip it for this agent alone — and, when the skill reaches more than one switched-on agent, a count that opens a list naming all of them. Clicking a row itself switches that copy off without removing it; it stays listed, recessed.
+Under each agent sits one row per skill it carries, ending in a load word — `pre` or `lazy`, click to flip it for this agent alone. Hovering or focusing a row lists every switched-on sub-agent carrying that skill. Clicking a row itself switches that copy off without removing it; it stays listed, recessed.
 
 **A project skill on a sub-agent resting at global cannot install.** That row gets a `!` marker whose text is the fix — _"This sub-agent must be set to project scope too"_ — and Install and Share both stay disabled while any of them stand. Both ways out are real: flip each marked sub-agent to project scope, or set the skill back to global. The disabled Install button carries the count as its own label. The CLI refuses that pair outright, so a link minted from one would fail on whoever you sent it to.
 
-The footer's actions are **Save**, **Share**, **Preview** and **Install**, in that order, under the `provider` row. The first three are disabled until something is selected. [Installing and sharing](/docs/editor/install-and-share) covers the last three and the provider row.
+The footer's actions are **Save**, **Share**, **Preview** and **Install**, in that order. The first three are disabled until something is selected. [Installing and sharing](/docs/editor/install-and-share) covers the last three and the provider step.
 
 ## What survives a reload
 
@@ -75,9 +79,9 @@ Four slots in this browser's own storage, plus the URL — and, once you sign in
 | What               | Holds                                                                                                                                                                                          |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Your configuration | the stack, every selected skill with its install mode, scope and sub-agent assignments, the options you set on skills you _haven't_ selected, and every per-agent model, effort, scope and pin |
-| Your saved stack   | the one snapshot Save wrote                                                                                                                                                                    |
+| Your saved stacks  | every stack you saved while signed out                                                                                                                                                         |
 | Your marketplaces  | every marketplace a load has succeeded against, and the token that reached it                                                                                                                  |
-| Arrangement        | which roster bands are collapsed, whether you're grouped by domain or scope, whether the stack grid is folded, and the theme                                                                   |
+| Arrangement        | which roster bands are collapsed, whether you're grouped by domain or scope, which of steps 01–03 are folded, and the theme                                                                    |
 
 The filter state — the search text, the domain the strip last jumped to, and the `all | selected` toggle — lives in the URL along with `fromId`, so a filtered grid is an address you can send.
 
