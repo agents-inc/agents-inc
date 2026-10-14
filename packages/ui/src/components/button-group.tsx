@@ -4,52 +4,16 @@ import type { ComponentProps } from "react"
 import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
 import { cn } from "@workspace/ui/lib/utils"
 
-/**
- * BUTTED CELLS THAT SHOW EVERY OPTION AT REST — the design's answer to the
- * control that used to be one word you clicked to cycle.
- *
- * The rule the whole part exists for: THE INACTIVE CELL IS THE AFFORDANCE. It
- * is what you read to know what a click will do, so it stays legible — the
- * active cell is marked by going amber on the accent wash, never by the others
- * going pale. Lightening the inactive cell to signal inactivity was built and
- * rejected by name.
- *
- * A `radiogroup`, not a row of toggles, and that is a claim about the options
- * rather than a styling choice: they are mutually exclusive, one field holds
- * the answer, and only the role says so to a screen reader. It also buys the
- * row ONE tab stop instead of one per cell — see `radio-row.ts` for the arrow
- * keys that then do the moving.
- *
- * Two sizes, because the same idiom is drawn at two scales:
- *
- * · `badge` — the `plugin|eject` and `project|global` pairs inside a skill
- *   cell. No chrome at all: the cells butt, and the fill is the only edge. At
- *   this scale the skill's own name carries the meaning, so the cells may be
- *   quiet.
- * · `field` — the `all 42 | selected 14` filter on the skills hinge. A bordered
- *   box with a rule between the cells, sized to the accordion button opposite
- *   it. Here the two cells ARE the control, with no name above them to lean on,
- *   so the ink is a step darker than `badge`'s.
- */
-const buttonGroupVariants = cva("inline-flex w-fit items-stretch", {
-  variants: {
-    size: {
-      badge: "",
-      // Border and height match `HingeButton`, which sits at the other end of
-      // the same rule. `whitespace-nowrap` because the cells carry counts and a
-      // wrap here would break the 24px box the rule is threaded through.
-      field: "h-6 border border-rule bg-column whitespace-nowrap",
-    },
-  },
-  defaultVariants: { size: "badge" },
-})
+// The inactive cell stays legible: it is what tells you what a click will do,
+// so the active cell is marked by going amber, never by the others going pale.
+// A `radiogroup` with one tab stop; `radio-row.ts` moves the arrow keys.
+const buttonGroupVariants = cva("inline-flex w-fit items-stretch")
 
 function ButtonGroup({
   className,
-  size,
   onKeyDown,
   ...props
-}: ComponentProps<"div"> & VariantProps<typeof buttonGroupVariants>) {
+}: ComponentProps<"div">) {
   return (
     <div
       data-slot="button-group"
@@ -58,63 +22,132 @@ function ButtonGroup({
         onKeyDown?.(event)
         moveToAdjacentRadio(event)
       }}
-      className={cn(buttonGroupVariants({ size }), className)}
+      className={cn(buttonGroupVariants(), className)}
       {...props}
     />
   )
 }
 
-/**
- * One cell. The divider between cells is a `border-left` on every cell but the
- * first, which is what keeps a group of two and a group of five drawn by the
- * same rule — a wrapper-level divider would have to know how many there are.
- *
- * `badge` draws no divider at all: the cells butt, and the design's point is
- * that a pair reads as ONE control, which a rule down the middle undoes.
- */
+// `badge` is a skill cell's placement pairs; `segment` is every other pair,
+// with `preset` setting padding and `tone` the surface. Amber has no hover
+// step: nothing the pointer does may mask the visitor's choice.
 const buttonGroupItemVariants = cva(
   "flex cursor-pointer items-center font-mono font-medium whitespace-nowrap uppercase",
   {
     variants: {
       size: {
         badge: "px-[0.3125rem] py-[0.1875rem] text-8 tracking-[.06em]",
-        field:
-          "px-[0.5625rem] text-9 tracking-[.07em] [&+&]:border-l [&+&]:border-rule",
+        segment: "text-8",
       },
-      active: { true: "bg-wash text-brand-ink", false: "" },
+      preset: { card: "", rail: "", search: "" },
+      tone: { plain: "", recede: "", onDark: "" },
+      active: { true: "", false: "" },
+      unavailable: { true: "", false: "" },
+      error: { true: "", false: "" },
     },
     compoundVariants: [
+      { size: "badge", active: false, class: "bg-badge text-field-faint" },
+      { size: "badge", active: true, class: "bg-wash text-brand-ink" },
+      // A refused cell takes no hover: there is nothing a press would do.
       {
         size: "badge",
         active: false,
+        unavailable: false,
+        error: false,
         class:
-          "bg-badge text-muted-foreground hover:text-brand-ink hover:shadow-[inset_0_0_0_1px_var(--color-brand-glow)]",
+          "hover:text-brand-ink hover:shadow-[inset_0_0_0_1px_var(--color-brand-glow)]",
       },
       {
-        size: "field",
-        active: false,
-        class: "bg-badge text-matrix-ink hover:bg-muted hover:text-ink",
+        size: "badge",
+        unavailable: true,
+        class: "cursor-not-allowed text-unavailable",
       },
-      // Amber has no hover step: amber means the user chose this, so nothing
-      // the pointer does may mask it. `field` is the exception the design draws
-      // — a whole bordered cell needs SOME acknowledgement of the pointer, and
-      // it deepens the wash rather than moving the ink.
-      { size: "field", active: true, class: "hover:bg-brand-glow" },
+      {
+        size: "badge",
+        error: true,
+        class: "cursor-not-allowed bg-error-wash text-error-ink",
+      },
+
+      {
+        size: "segment",
+        preset: "card",
+        class: "px-[0.25rem] py-[0.1875rem] tracking-[.02em]",
+      },
+      {
+        size: "segment",
+        preset: "rail",
+        class: "px-[0.375rem] py-[0.1875rem] tracking-[.06em]",
+      },
+      {
+        size: "segment",
+        preset: "search",
+        class: "px-[0.4375rem] py-[0.25rem] tracking-[.06em]",
+      },
+      {
+        size: "segment",
+        tone: "plain",
+        active: false,
+        class: "bg-badge text-field-faint hover:text-title-ink",
+      },
+      {
+        size: "segment",
+        tone: "plain",
+        active: true,
+        class: "bg-wash text-brand-ink",
+      },
+      // No hover: an off card should not look less off under the pointer.
+      {
+        size: "segment",
+        tone: "recede",
+        active: false,
+        class: "bg-transparent text-recede-ink",
+      },
+      {
+        size: "segment",
+        tone: "recede",
+        active: true,
+        class: "bg-recede-wash text-faint",
+      },
+      {
+        size: "segment",
+        tone: "onDark",
+        active: false,
+        class: "bg-band-chip text-band-dim hover:text-band-hover",
+      },
+      {
+        size: "segment",
+        tone: "onDark",
+        active: true,
+        class: "bg-band-wash text-band-brand",
+      },
     ],
-    defaultVariants: { size: "badge", active: false },
+    defaultVariants: {
+      size: "badge",
+      preset: "card",
+      tone: "plain",
+      active: false,
+      unavailable: false,
+      error: false,
+    },
   }
 )
 
 function ButtonGroupItem({
   className,
   size,
+  preset,
+  tone,
   active = false,
+  error = false,
   type = "button",
   ...props
-}: ComponentProps<"button"> & VariantProps<typeof buttonGroupItemVariants>) {
+}: ComponentProps<"button"> &
+  Omit<VariantProps<typeof buttonGroupItemVariants>, "unavailable">) {
   // `null` as well as `undefined`, because that is what the cva's own variant
   // type admits and `aria-checked` does not.
   const checked = active ?? false
+  // Read from `aria-disabled` so one attribute drives both semantics and paint.
+  const unavailable = isRefused(props["aria-disabled"])
 
   return (
     <button
@@ -126,17 +159,27 @@ function ButtonGroupItem({
       // arrow keys move from there.
       tabIndex={checked ? 0 : -1}
       className={cn(
-        buttonGroupItemVariants({ size, active: checked }),
-        // The package's one focus ring, on the element rather than in the cva,
-        // because `buttonGroupItemVariants` is exported for the one caller that
-        // needs the look without the control — a skill with no plugin form,
-        // whose install mode is a statement rather than a choice.
+        buttonGroupItemVariants({
+          size,
+          preset,
+          tone,
+          active: checked,
+          unavailable,
+          error,
+        }),
+        // On the element rather than in the cva, because the cva is exported
+        // for a caller that renders the look without the control.
         "outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className
       )}
       {...props}
     />
   )
+}
+
+// `aria-disabled` admits the string forms as well as the boolean.
+function isRefused(ariaDisabled: ComponentProps<"button">["aria-disabled"]) {
+  return ariaDisabled === true || ariaDisabled === "true"
 }
 
 export {

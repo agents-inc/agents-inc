@@ -14,9 +14,7 @@ type Story = StoryObj<typeof meta>
 
 export const Plus: Story = {}
 
-// The sizes the app actually draws: 13px is the default everywhere, 11px is
-// the small pair (the proposal's bullets, the add-skill rows' stage marker),
-// and 10px is the grouping control's caret.
+// The sizes the app draws, in design px.
 export const EverySize: Story = {
   render: () => (
     <div className="flex items-center gap-4 text-ink">

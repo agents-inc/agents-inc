@@ -11,8 +11,7 @@ import {
 
 import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
-// Cells are pulled back 1px so every shared edge lands on one physical line.
-// That only reads correctly against the page ground, so the stories carry it.
+// The inset lines only read against the page ground.
 const meta = {
   title: "Components/Lattice",
   component: Lattice,
@@ -41,8 +40,6 @@ export const FourColumns: Story = {
   },
 }
 
-// A partial row — the case the design file's grid-level border gets wrong, and
-// the reason the border lives on the cell here.
 export const PartialRow: Story = {
   args: {
     columns: 4,
@@ -54,11 +51,6 @@ export const PartialRow: Story = {
   },
 }
 
-// Selected is an amber outline. Incompatible RECEDES — it stops being white and
-// drops to the colour of the column it sits on — rather than fading: the 40%
-// opacity this replaced took the cell's own hairlines with it, so the lattice
-// broke and it read as a rendering fault rather than a state. Never hidden, and
-// deliberately still hoverable so its tooltip can explain why.
 export const CellStates: Story = {
   args: {
     columns: 3,
@@ -83,11 +75,31 @@ export const CellStates: Story = {
 
 const CELL = "react"
 const OPTIONS = "Options for react"
+const STACK = "Next.js Full-Stack"
 
-// A cell that holds controls of its own cannot BE a control: `role="button"` on
-// the cell would make everything inside it presentational. So the surface is
-// this button and the cell stays a container. The claim here is that the
-// surface is reachable without a pointer at all.
+export const FocusableCellDrawsTheRing: Story = {
+  args: {
+    columns: 1,
+    children: (
+      <LatticeCell
+        role="button"
+        tabIndex={0}
+        aria-label={STACK}
+        className="p-3 font-mono text-11"
+      >
+        {STACK}
+      </LatticeCell>
+    ),
+  },
+  play: async ({ canvas }) => {
+    const cell = canvas.getByRole("button", { name: STACK })
+
+    cell.focus()
+
+    await expectVisibleFocusRing(cell)
+  },
+}
+
 export const CellButtonTakesKeyboardFocus: Story = {
   args: {
     columns: 1,
@@ -105,9 +117,6 @@ export const CellButtonTakesKeyboardFocus: Story = {
   },
 }
 
-// And the half that is the whole reason for the division: the cell's own
-// control is reachable too. A cell that was itself the button announced
-// neither — axe calls that `nested-interactive`.
 export const CellButtonLeavesItsNeighbourReachable: Story = {
   args: {
     columns: 1,
@@ -135,9 +144,6 @@ export const CellButtonLeavesItsNeighbourReachable: Story = {
   },
 }
 
-// The package draws one focus ring on every focusable control it ships, and
-// axe cannot check a focus indicator — it is not machine-decidable — so this is
-// the only thing holding the cell's surface to that ring.
 export const CellButtonFocusDrawsTheRing: Story = {
   args: {
     columns: 1,
@@ -160,7 +166,6 @@ export const CellButtonFocusDrawsTheRing: Story = {
 const ROW = "agents-inc/skills"
 const SELECTED_ROW = "agents-inc/cli"
 
-// The row variant: full-width cells rather than grid columns.
 export const Rows: Story = {
   render: () => (
     <LatticeRows>
@@ -172,9 +177,6 @@ export const Rows: Story = {
   ),
 }
 
-// The add-skill dialog's result row is the only way to stage a skill, and a
-// hand cursor is a picture of an affordance rather than one. This is the claim
-// that the row is reachable without a pointer at all.
 export const RowTakesKeyboardFocus: Story = {
   render: () => (
     <LatticeRows>
@@ -188,8 +190,6 @@ export const RowTakesKeyboardFocus: Story = {
   },
 }
 
-// Enter reaches the caller's `onClick` — the same handler the pointer path
-// uses, so the two devices cannot drift into meaning different things.
 export const RowEnterReachesHandler: Story = {
   args: { onClick: fn() },
   render: (args) => (
@@ -207,8 +207,6 @@ export const RowEnterReachesHandler: Story = {
   },
 }
 
-// Space is the other half of what a native button answers, and the row claims
-// to be one. It is the key a screen reader user reaches for first.
 export const RowSpaceReachesHandler: Story = {
   args: { onClick: fn() },
   render: (args) => (
@@ -226,9 +224,6 @@ export const RowSpaceReachesHandler: Story = {
   },
 }
 
-// The package draws one focus ring on every focusable control it ships. Axe
-// cannot check a focus indicator — it is not machine-decidable — so this is the
-// only thing holding the row to that ring.
 export const RowFocusDrawsTheRing: Story = {
   render: () => (
     <LatticeRows>
@@ -244,9 +239,6 @@ export const RowFocusDrawsTheRing: Story = {
   },
 }
 
-// Selected is the row's state rather than its look, so it is on the element as
-// well as in the classes — a staged row that only goes amber says nothing to a
-// screen reader.
 export const SelectedRowIsPressed: Story = {
   render: () => (
     <LatticeRows>
@@ -262,11 +254,7 @@ export const SelectedRowIsPressed: Story = {
   },
 }
 
-// The focus ring is drawn with `ring`, and the selection with `outline` — so
-// the row's `outline-none` sits in the UNSELECTED branch rather than the cva
-// base. Tailwind emits `.outline-none` after `.outline-1`, at equal
-// specificity, so a base `outline-none` would silently erase the amber
-// selection every staged row is recognised by. This is the story that says so.
+// Guards `outline-none` staying out of the cva base; see `latticeRowVariants`.
 export const SelectedRowKeepsItsOutlineWhileFocused: Story = {
   render: () => (
     <LatticeRows>

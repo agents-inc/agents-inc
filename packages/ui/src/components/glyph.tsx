@@ -67,8 +67,8 @@ const RINGED = new Set<GlyphName>(["info", "warning"])
  * `aria-hidden` by default and not by accident.
  *
  * Every glyph in this design sits inside a control that already names itself —
- * the add-skill block says "add skill", the hinge square says "Hide stacks",
- * the grouping control says which grouping it is on. A glyph that published a
+ * the add-skill block says "add skill", a step title and a roster band say
+ * their own words. A glyph that published a
  * name of its own would put a second, worse name into the accessible one.
  * Passing `aria-hidden={false}` alongside a `role`/`aria-label` is available
  * for the case that is genuinely the only content of its control, and there is
@@ -81,14 +81,17 @@ function Glyph({
   ...props
 }: Omit<ComponentProps<"svg">, "children"> & {
   name: GlyphName
+  /** Design px, drawn in rem so the root's 110% scales it like every length. */
   size?: number
 }) {
+  const side = `${size / 16}rem`
+
   return (
     <svg
       data-slot="glyph"
       data-glyph={name}
-      width={size}
-      height={size}
+      width={side}
+      height={side}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

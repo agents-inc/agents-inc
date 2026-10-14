@@ -25,8 +25,9 @@ import { cn } from "@workspace/ui/lib/utils"
 //
 // `onDark` is the 84a stuck filter bar: the band around this button is already
 // the ink it is filled with, so the fill goes and a hairline takes over —
-// leaving it the only bordered thing on the band. Named for the surface rather
-// than for the bar's own state, so the primitive never has to know why.
+// leaving it the only bordered thing on the band — and the block shrinks to
+// its own padding. Named for the surface rather than for the bar's own state,
+// so the primitive never has to know why.
 const buttonVariants = cva(
   "inline-flex shrink-0 cursor-pointer items-center justify-center font-mono font-semibold whitespace-nowrap uppercase outline-none select-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
   {
@@ -52,7 +53,7 @@ const buttonVariants = cva(
         variant: "block",
         onDark: true,
         class:
-          "bg-transparent shadow-[inset_0_0_0_1px_var(--color-band-edge)] hover:bg-transparent hover:shadow-[inset_0_0_0_1px_var(--color-band-edge-hover)]",
+          "bg-transparent px-[0.9375rem] py-2 shadow-[inset_0_0_0_1px_var(--color-band-edge)] hover:bg-transparent hover:shadow-[inset_0_0_0_1px_var(--color-band-edge-hover)]",
       },
     ],
     defaultVariants: { variant: "outline", onDark: false },

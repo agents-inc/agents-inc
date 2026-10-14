@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { useState } from "react"
-import { expect, userEvent } from "storybook/test"
+import { expect, screen, userEvent } from "storybook/test"
 
 import {
   ButtonGroup,
@@ -8,12 +8,13 @@ import {
 } from "@workspace/ui/components/button-group"
 
 import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
+import { resolvedColor } from "../../.storybook/resolved-color"
 
 const INSTALL_MODES = ["plugin", "eject"] as const
 const SCOPES = ["project", "global"] as const
+const MODELS = ["opus", "fable", "sonnet", "haiku"] as const
+const GROUPINGS = ["domain", "scope"] as const
 
-// Drawn on the cell colour at `badge` scale and on the column at `field`, which
-// is where each of them actually lives.
 const meta = {
   title: "Components/ButtonGroup",
   component: ButtonGroup,
@@ -29,7 +30,6 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// A skill cell's install mode: both values on screen, the active one amber.
 export const InstallMode: Story = {
   args: {
     "aria-label": "Install mode",
@@ -41,10 +41,15 @@ export const InstallMode: Story = {
   },
 }
 
-// THE TWO PAIRS AS A SKILL CELL DRAWS THEM. 0px inside a pair and 10px between
-// them: the pair butts so it reads as one control, and the gap is what
-// separates mode from scope. Getting it the other way round reads as four
-// unrelated chips.
+export const InactiveBadgeTakesTheFieldFaintInk: Story = {
+  ...InstallMode,
+  play: async ({ canvas }) => {
+    await expect(
+      getComputedStyle(canvas.getByRole("radio", { name: "eject" })).color
+    ).toBe(resolvedColor("--color-field-faint"))
+  },
+}
+
 export const TwoPairsOnASkillCell: Story = {
   render: () => (
     <div className="flex items-center gap-[0.625rem]">
@@ -66,26 +71,193 @@ export const TwoPairsOnASkillCell: Story = {
   ),
 }
 
-// The hinge filter: a bordered box sized to the accordion button opposite it,
-// with a rule between the cells and both counts on screen at once.
-export const FieldSize: Story = {
+export const UnavailableCell: Story = {
+  render: () => (
+    <ButtonGroup aria-label="Scope">
+      <ButtonGroupItem aria-disabled title="Codex has no project-level plugins">
+        project
+      </ButtonGroupItem>
+      <ButtonGroupItem active>global</ButtonGroupItem>
+    </ButtonGroup>
+  ),
+}
+
+export const UnavailableCellTakesTheUnavailableInk: Story = {
+  ...UnavailableCell,
+  play: async ({ canvas }) => {
+    await expect(
+      getComputedStyle(canvas.getByRole("radio", { name: "project" })).color
+    ).toBe(resolvedColor("--color-unavailable"))
+  },
+}
+
+export const UnavailableCellRefusesThePointer: Story = {
+  ...UnavailableCell,
+  play: async ({ canvas }) => {
+    await expect(
+      getComputedStyle(canvas.getByRole("radio", { name: "project" })).cursor
+    ).toBe("not-allowed")
+  },
+}
+
+export const ErrorCell: Story = {
+  render: () => (
+    <ButtonGroup aria-label="Scope">
+      <ButtonGroupItem
+        active
+        error
+        aria-disabled
+        title="Codex has no project-level plugins"
+      >
+        project
+      </ButtonGroupItem>
+      <ButtonGroupItem>global</ButtonGroupItem>
+    </ButtonGroup>
+  ),
+}
+
+export const ErrorCellTakesTheErrorInk: Story = {
+  ...ErrorCell,
+  play: async ({ canvas }) => {
+    await expect(
+      getComputedStyle(canvas.getByRole("radio", { name: "project" })).color
+    ).toBe(resolvedColor("--color-error-ink"))
+  },
+}
+
+export const ErrorCellTakesTheErrorWash: Story = {
+  ...ErrorCell,
+  play: async ({ canvas }) => {
+    await expect(
+      getComputedStyle(canvas.getByRole("radio", { name: "project" }))
+        .backgroundColor
+    ).toBe(resolvedColor("--color-error-wash"))
+  },
+}
+
+export const CardPreset: Story = {
   args: {
-    size: "field",
+    "aria-label": "Model for web-developer",
+    children: MODELS.map((model) => (
+      <ButtonGroupItem
+        key={model}
+        size="segment"
+        preset="card"
+        active={model === "sonnet"}
+      >
+        {model}
+      </ButtonGroupItem>
+    )),
+  },
+}
+
+export const RailPreset: Story = {
+  args: {
+    "aria-label": "Group sub-agents by",
+    children: GROUPINGS.map((grouping) => (
+      <ButtonGroupItem
+        key={grouping}
+        size="segment"
+        preset="rail"
+        active={grouping === "domain"}
+      >
+        {grouping}
+      </ButtonGroupItem>
+    )),
+  },
+}
+
+export const SearchPreset: Story = {
+  args: {
     "aria-label": "Show only selected skills",
     children: (
       <>
-        <ButtonGroupItem size="field" active>
-          all 42
+        <ButtonGroupItem size="segment" preset="search" active>
+          all 238
         </ButtonGroupItem>
-        <ButtonGroupItem size="field">selected 14</ButtonGroupItem>
+        <ButtonGroupItem size="segment" preset="search">
+          selected 14
+        </ButtonGroupItem>
       </>
     ),
   },
 }
 
-// `ButtonGroup` holds no state — the caller owns which cell is active, exactly
-// as the skill cell does, where one store field decides the pair. So every
-// story that moves the choice has to hold it.
+export const RecedeTone: Story = {
+  args: {
+    "aria-label": "Model for web-developer",
+    children: MODELS.map((model) => (
+      <ButtonGroupItem
+        key={model}
+        size="segment"
+        preset="card"
+        tone="recede"
+        active={model === "sonnet"}
+      >
+        {model}
+      </ButtonGroupItem>
+    )),
+  },
+}
+
+export const OnDarkTone: Story = {
+  decorators: [
+    (Story) => (
+      <div className="bg-ink p-4">
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    "aria-label": "Show only selected skills",
+    children: (
+      <>
+        <ButtonGroupItem size="segment" preset="search" tone="onDark">
+          all 238
+        </ButtonGroupItem>
+        <ButtonGroupItem size="segment" preset="search" tone="onDark" active>
+          selected 14
+        </ButtonGroupItem>
+      </>
+    ),
+  },
+}
+
+// One ring story per preset, because each preset's padding makes its own box.
+export const CardPresetFocusDrawsTheRing: Story = {
+  ...CardPreset,
+  play: async () => {
+    const cell = screen.getByRole("radio", { name: "sonnet" })
+
+    cell.focus()
+
+    await expectVisibleFocusRing(cell)
+  },
+}
+
+export const RailPresetFocusDrawsTheRing: Story = {
+  ...RailPreset,
+  play: async () => {
+    const cell = screen.getByRole("radio", { name: "domain" })
+
+    cell.focus()
+
+    await expectVisibleFocusRing(cell)
+  },
+}
+
+export const SearchPresetFocusDrawsTheRing: Story = {
+  ...SearchPreset,
+  play: async () => {
+    const cell = screen.getByRole("radio", { name: "all 238" })
+
+    cell.focus()
+
+    await expectVisibleFocusRing(cell)
+  },
+}
+
+// `ButtonGroup` holds no state, so a story that moves the choice has to.
 function ControlledPair() {
   const [selected, setSelected] = useState<string>("plugin")
 
@@ -106,8 +278,6 @@ function ControlledPair() {
   )
 }
 
-// What the component owes: a click reaches the caller, and `active` reads back
-// as checked.
 export const ClickPicksACellDirectly: Story = {
   render: () => <ControlledPair />,
   play: async ({ canvas }) => {
@@ -123,9 +293,6 @@ export const ClickPicksACellDirectly: Story = {
   },
 }
 
-// THE CLAIM THE GROUP EXISTS TO MAKE. Two independent toggles say nothing about
-// being alternatives; a radiogroup does, and it is the only thing that says it
-// to a screen reader.
 export const TheGroupAnnouncesOneExclusiveChoice: Story = {
   render: () => <ControlledPair />,
   play: async ({ canvas }) => {
@@ -135,7 +302,6 @@ export const TheGroupAnnouncesOneExclusiveChoice: Story = {
   },
 }
 
-// One tab stop for the group rather than one per cell.
 export const OnlyTheActiveCellIsATabStop: Story = {
   render: () => <ControlledPair />,
   play: async ({ canvas }) => {
@@ -146,9 +312,6 @@ export const OnlyTheActiveCellIsATabStop: Story = {
   },
 }
 
-// Selection follows focus, as it does in a native radio group, and it goes
-// through the cell's own click so the caller's handler stays the only place a
-// choice is made.
 export const ArrowKeysMoveTheChoice: Story = {
   render: () => <ControlledPair />,
   play: async ({ canvas }) => {
@@ -163,8 +326,6 @@ export const ArrowKeysMoveTheChoice: Story = {
   },
 }
 
-// The focus ring, which axe cannot check — a focus indicator is not
-// machine-decidable, so the assertion is the gate.
 export const TheFocusedCellDrawsARing: Story = {
   render: () => <ControlledPair />,
   play: async ({ canvas }) => {

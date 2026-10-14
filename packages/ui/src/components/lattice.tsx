@@ -5,14 +5,9 @@ import { cn } from "@workspace/ui/lib/utils"
 
 const ACTIVATION_KEYS = ["Enter", " "]
 
-// The collapsed hairline grid: every line and surface belongs to a cell, and
-// the container is a layout device rather than a box. Cells draw a full border
-// and are pulled back 1px so each shared edge lands on one physical line.
-//
-// The design file puts the border on the *grid* instead, which is equivalent
-// only while every row is full — and ours are often partial, where that paints
-// white across the empty columns and runs a rule past the last cell.
-const latticeVariants = cva("grid", {
+// The grid draws nothing. Its padding equals each card's line inset, so the
+// edge cards carry the same white as the inner ones.
+const latticeVariants = cva("grid p-lattice", {
   variants: {
     columns: {
       1: "grid-cols-1",
@@ -38,45 +33,41 @@ function Lattice({
   )
 }
 
+// The card's line is an inset `::after` outline, so it takes no room. Selected
+// changes only the line's colour and takes no hover tint.
 const latticeCellVariants = cva(
-  "relative -mt-px -ml-px flex min-w-0 flex-col border border-hairline bg-cell",
+  "relative flex min-w-0 flex-col bg-cell after:pointer-events-none after:absolute after:inset-lattice after:outline-1 after:-outline-offset-1 after:outline-hairline after:content-['']",
   {
     variants: {
       interactive: {
-        true: "cursor-pointer hover:bg-cell-hover",
+        true: "cursor-pointer",
         false: "",
       },
       selected: {
-        true: "z-1 outline-1 -outline-offset-1 outline-brand",
+        true: "after:outline-brand",
         false: "",
       },
-      // INCOMPATIBLE CELLS RECEDE, THEY DO NOT FADE. A cell is white because it
-      // is available; one that is not simply stops being white and sinks into
-      // the column it sits on. That is the whole treatment — no opacity, no ink
-      // change, no border change.
-      //
-      // `opacity: .4` was the previous drawing and is rejected by name. It put
-      // the skill's own name at roughly 2.1:1, and it faded the cell's
-      // HAIRLINES with it, breaking the lattice's continuity — which read as a
-      // rendering fault rather than as a state. The name stays at 14.8:1 here.
-      //
-      // Adjacent receded cells merging into one field is correct rather than a
-      // side effect: they are one exclusive group losing to the same choice.
-      //
-      // Deliberately not `pointer-events-none`: the cell has to stay hoverable
-      // or the tooltip explaining *why* it is out never opens. Callers pass
-      // `interactive={false}` and guard their own handlers instead.
+      // Incompatible cells recede to the column colour rather than fade. Not
+      // `pointer-events-none`: the tooltip explaining why has to open. Callers
+      // pass `interactive={false}` and guard their own handlers.
       disabled: {
         true: "cursor-default bg-column",
         false: "",
       },
-      // Clipped so a long name cannot bleed across a hairline, except when
+      // Clipped so a long name cannot bleed past the card's line, except when
       // hosting the popover, which is positioned just outside the cell.
       overflow: {
         clip: "overflow-hidden",
         visible: "overflow-visible",
       },
     },
+    compoundVariants: [
+      {
+        interactive: true,
+        selected: false,
+        class: "hover:bg-cell-hover",
+      },
+    ],
     defaultVariants: {
       interactive: true,
       selected: false,
@@ -86,20 +77,30 @@ const latticeCellVariants = cva(
   }
 )
 
+// Only for a cell that is itself the control. Inset because the cell clips
+// what overflows it.
+const FOCUSABLE_CELL =
+  "outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+
 function LatticeCell({
   className,
   interactive,
   selected,
   disabled,
   overflow,
+  tabIndex,
   ...props
 }: ComponentProps<"div"> & VariantProps<typeof latticeCellVariants>) {
+  const isItselfTheControl = tabIndex !== undefined
+
   return (
     <div
       data-slot="lattice-cell"
       data-selected={selected || undefined}
+      tabIndex={tabIndex}
       className={cn(
         latticeCellVariants({ interactive, selected, disabled, overflow }),
+        isItselfTheControl && FOCUSABLE_CELL,
         className
       )}
       {...props}
@@ -107,33 +108,14 @@ function LatticeCell({
   )
 }
 
-// The primary action of a cell that also holds controls of its own.
+// The primary action of a cell that holds controls of its own. `role="button"`
+// on the cell would make those controls presentational (axe's
+// `nested-interactive`), so the surface is a sibling <button> stretched over
+// the cell at `z-0`. The cell's controls take `relative z-1`, and the content
+// between is `pointer-events-none` so it does not swallow the click.
 //
-// A cell cannot be a control and a container at once. `role="button"` on the
-// cell makes everything inside it presentational, so a screen reader reaches
-// neither the badges nor the ••• — which is what axe's `nested-interactive`
-// reports, and what `skill-cell.tsx` did until this part existed. A cell with
-// nothing focusable inside it is still free to be the control itself, and
-// `stack-grid.tsx` is that case.
-//
-// So the surface is a real <button> stretched over the cell, and the cell's
-// own controls sit above it: transparent, it paints nothing, and `z-0` is what
-// puts it beneath the controls, which take `relative z-1` to stay reachable by
-// the pointer. The content between them is `pointer-events-none`, or it would
-// swallow the clicks this button exists to catch.
-//
-// `cursor-[inherit]` rather than a cursor of its own: the cell has already
-// chosen between the pointer and the arrow through `interactive`/`disabled`,
-// and `cursor` is an inherited property, so that one decision holds over the
-// whole surface.
-//
-// THE RING IS INSET, and it is the one ring in the package that has to be. The
-// button fills the cell's padding box exactly, so an outset ring is drawn
-// entirely in the band outside it — which is the cell's border, clipped by the
-// cell's `overflow-hidden` on an unselected cell and painted over by its
-// `-outline-offset-1` amber on a selected one. A focused cell and an unfocused
-// one rendered byte-identical. Inset, the ring lies just inside the hairline,
-// clear of both, and the cell's content keeps its padding away from it.
+// `cursor-[inherit]` keeps the cell's `interactive`/`disabled` cursor. The ring
+// is inset because the cell's `overflow-hidden` would clip an outset one.
 function LatticeCellButton({ className, ...props }: ComponentProps<"button">) {
   return (
     <button
@@ -148,21 +130,13 @@ function LatticeCellButton({ className, ...props }: ComponentProps<"button">) {
   )
 }
 
-// A lattice whose cells are full-width rows rather than grid columns.
 function LatticeRows({ className, ...props }: ComponentProps<"div">) {
   return <div data-slot="lattice-rows" className={cn(className)} {...props} />
 }
 
-// The package's one focus ring, in the cva base: every render of this cva is a
-// row, and every row is focusable.
-//
-// `outline-none` is the exception, and it sits in the UNSELECTED branch rather
-// than beside the ring. Selection is drawn with `outline` and focus with
-// `ring`, and Tailwind emits `.outline-none` AFTER `.outline-1` at equal
-// specificity — so `outline-none` in the base would win over the selected
-// branch and silently erase the amber every staged row is recognised by. A
-// selected row needs no `outline-none` anyway: it already states width, style
-// and colour, so nothing is left for the user agent to decide.
+// `outline-none` sits in the unselected branch, not the base: Tailwind emits
+// `.outline-none` after `.outline-1` at equal specificity, so in the base it
+// would erase the selected row's amber outline.
 const latticeRowVariants = cva(
   "relative -mt-px flex cursor-pointer items-start gap-3 border border-hairline bg-cell px-3 py-2.5 focus-visible:ring-1 focus-visible:ring-ring",
   {
@@ -176,19 +150,8 @@ const latticeRowVariants = cva(
   }
 )
 
-// A row whose whole surface is the click target — the add-skill dialog's result
-// rows, which are the only way to stage a skill.
-//
-// A `<div>` with the button semantics on it rather than a `<button>`: a row
-// holds a heading, a description and a provenance line, which is flow content,
-// and a `<button>` admits only phrasing content. `CommandBlock` reached the
-// same answer for the same reason, and this follows it down to the shared
-// handler.
-//
-// It follows that a row is a LEAF. Nothing focusable may be nested inside one —
-// the add-skill dialog's stage marker is a `<span>` dressed in `chipVariants`
-// precisely because of this, and axe's `nested-interactive` is what says so if
-// a later caller forgets.
+// A `<div>` with button semantics because a row holds flow content, which a
+// `<button>` does not admit. Nothing focusable may be nested inside one.
 function LatticeRow({
   className,
   selected,
@@ -201,8 +164,6 @@ function LatticeRow({
       data-selected={selected || undefined}
       role="button"
       tabIndex={0}
-      // Selection stated to assistive technology as well as in the classes, the
-      // way `Chip` does it — a staged row that only goes amber says nothing.
       aria-pressed={selected ?? false}
       onKeyDown={(event) => {
         onKeyDown?.(event)
@@ -214,10 +175,8 @@ function LatticeRow({
   )
 }
 
-// A real click rather than a call to `onClick`: it is what a native button does
-// with these two keys, and it keeps the pointer and the keyboard on one
-// handler — including the caller that deliberately passes none, whose row then
-// refuses both devices alike.
+// A real click rather than a call to `onClick`, so the pointer and the keyboard
+// share one handler.
 function activateOnEnterOrSpace(event: KeyboardEvent<HTMLDivElement>) {
   if (!ACTIVATION_KEYS.includes(event.key)) return
 
