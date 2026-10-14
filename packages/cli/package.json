@@ -44,7 +44,10 @@
     "prompt-engineering",
     "ai-tools"
   ],
-  "sideEffects": false,
+  "//sideEffects": "compile-seat.ts is imported bare to seat @workspace/compile's warnings; with plain false, esbuild drops that import and every warning the compile package raises goes nowhere.",
+  "sideEffects": [
+    "./src/cli/lib/compile-seat.ts"
+  ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
