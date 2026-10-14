@@ -46,11 +46,7 @@ vi.mock("../utils/logger", async (importOriginal) => ({
 
 import { warn } from "../utils/logger";
 
-/**
- * The three key names the rename moves between, written out here because the assertions are
- * about the KEYS themselves — a test that read them off the type would agree with whatever
- * the type happened to say.
- */
+/** Written out: a test reading the keys off the type would agree with whatever it said. */
 const PRE_RENAME_CONFIG_KEY = "source";
 const RENAMED_CONFIG_KEY = "marketplace";
 const MARKETPLACE_NAME_KEY = "marketplaceName";
@@ -66,7 +62,6 @@ const PROJECT_SOURCE_CONFIG_SCHEMA_PATH = path.join(
   "project-source-config.schema.json",
 );
 
-/** The two hand-maintained schema files, read for the field names they publish to editors. */
 type JsonSchemaFile = {
   properties: Record<string, unknown>;
   required?: string[];
@@ -104,7 +99,6 @@ describe("schema utilities", () => {
     });
 
     it("should handle depth limit of 0", () => {
-      // At depth 0, only primitives should pass
       expect(validateNestingDepth("hello", 0)).toBe(true);
       expect(validateNestingDepth({ a: 1 }, 0)).toBe(false);
     });
@@ -140,12 +134,10 @@ describe("schema utilities", () => {
           },
         ],
       };
-      // This is about 4 levels deep, should pass with limit of 10
       expect(validateNestingDepth(marketplace, 10)).toBe(true);
     });
 
     it("should reject maliciously deeply nested JSON", () => {
-      // Build a 15-level deep structure
       let deep: unknown = "payload";
       for (let i = 0; i < 15; i++) {
         deep = { nested: deep };
@@ -250,14 +242,11 @@ describe("projectConfigLoaderSchema", () => {
         agents: buildAgentConfigs(["web-developer"]),
         stack: {
           "web-developer": {
-            // Format 1: bare string
             "web-framework": "web-framework-react",
-            // Format 2: array of objects
             "shared-methodology": [
               { id: "meta-methodology-investigation-requirements", preloaded: true },
               { id: "meta-methodology-anti-over-engineering", preloaded: true },
             ],
-            // Format 3: single object
             "web-styling": { id: "web-styling-scss-modules", preloaded: true },
           },
         },
@@ -297,7 +286,7 @@ describe("projectConfigLoaderSchema", () => {
         },
       };
 
-      // Lenient loader accepts any string; strict validation happens at build time
+      // Lenient loader; strict validation happens at build time.
       const result = projectConfigLoaderSchema.safeParse(config);
       expect(result.success).toBe(true);
     });
@@ -344,11 +333,63 @@ describe("projectConfigLoaderSchema", () => {
   });
 });
 
+/** On disk the field is the CLI's enum, refused exactly as an unknown `model` is. */
+describe("a sub-agent's Codex model in config.ts", () => {
+  const PINNED_CODEX_MODEL = "gpt-5.6-terra";
+
+  function configWithAgent(entry: Record<string, unknown>) {
+    return {
+      name: "codex-model",
+      agents: [{ name: "web-developer", scope: "project", ...entry }],
+    };
+  }
+
+  it("keeps an offered id beside the Claude model", () => {
+    const result = projectConfigLoaderSchema.safeParse(
+      configWithAgent({ model: "haiku", codexModel: PINNED_CODEX_MODEL }),
+    );
+
+    expect(result.data?.agents?.[0]).toStrictEqual({
+      name: "web-developer",
+      scope: "project",
+      model: "haiku",
+      codexModel: PINNED_CODEX_MODEL,
+    });
+  });
+
+  it.each(["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])(
+    "accepts %s",
+    (codexModel) => {
+      expect(projectConfigLoaderSchema.safeParse(configWithAgent({ codexModel })).success).toBe(
+        true,
+      );
+    },
+  );
+
+  it("refuses an id it does not offer at the same place an unknown model is refused", () => {
+    const badModel = projectConfigLoaderSchema.safeParse(configWithAgent({ model: "nope" }));
+    const badCodexModel = projectConfigLoaderSchema.safeParse(
+      configWithAgent({ codexModel: "nope" }),
+    );
+
+    expect(badModel.error?.issues.map((issue) => issue.path.join("."))).toStrictEqual([
+      "agents.0.model",
+    ]);
+    expect(badCodexModel.error?.issues.map((issue) => issue.path.join("."))).toStrictEqual([
+      "agents.0.codexModel",
+    ]);
+  });
+
+  it("refuses a Claude selector as a Codex model", () => {
+    expect(
+      projectConfigLoaderSchema.safeParse(configWithAgent({ codexModel: "opus" })).success,
+    ).toBe(false);
+  });
+});
+
 /**
- * Whether `marketplace` holds a REF or a NAME is invisible to a schema — both are strings —
- * so the meaning of that key is pinned where it is read, in the resolveSource specs. What a
- * schema CAN answer is whether a key is declared at all, which is what these ask: a declared
- * `z.string()` refuses a number where `.passthrough()` waves it through.
+ * Whether `marketplace` holds a ref or a name is pinned in the resolveSource specs. These ask only
+ * whether a key is declared: a declared `z.string()` refuses a number `.passthrough()` would admit.
  */
 describe("the marketplace fields the loader schemas name", () => {
   it("types marketplaceName rather than admitting it as an unrecognised passthrough key", () => {
@@ -387,32 +428,19 @@ describe("the marketplace fields the loader schemas name", () => {
 });
 
 /**
- * A marketplace's name is the namespace Claude Code registers its plugins under, so what this
- * schema will LOAD has to be what that registration will accept. The rule was already written and
- * already enforced one direction only: `build marketplace` refuses to PUBLISH a non-kebab name
- * (`marketplaceNameNotPublishable` in `utils/messages.ts`), while the load side took any non-empty
- * string — so a third-party manifest naming `@acme/skills` read clean here and named plugins that
- * could never install. Owner ruling 2026-08-20: piggyback on what Claude Code accepts, both ways.
- *
- * A third-party marketplace whose name is not kebab-case now fails to load where it used to load.
- * That is the intent, which is why the refusal is asserted as prose a reader can act on rather
- * than as a boolean.
+ * A marketplace name is Claude Code's plugin namespace, so loading enforces the kebab-case rule
+ * publishing does (owner ruling 2026-08-20). Asserted as prose a reader can act on.
  */
 describe("the name a marketplace may be loaded under", () => {
-  /** The one plugin `marketplaceSchema.plugins.min(1)` requires before `name` is ever reached. */
+  /** `marketplaceSchema.plugins.min(1)` requires one before `name` is reached. */
   const ONE_PLUGIN = [createMockMarketplacePlugin("web-framework-react")];
 
-  /** An npm scoped package name: legitimate on npm, and not a name a marketplace may carry. */
   const SCOPED_PACKAGE_NAME = "@acme/skills";
   const TITLE_CASED_NAME = "Acme Skills";
   const LEADING_DIGIT_NAME = "2acme";
   const KEBAB_NAME = "acme-skills";
 
-  /**
-   * A fragment every kebab-case regex opens with, mirrored as a LITERAL rather than imported
-   * from `consts.ts`. The assertion is that the refusal does NOT hand the pattern back, and a
-   * test reading the very constant the product reads would move with it and stop asserting.
-   */
+  /** A literal, not imported: the refusal must NOT hand the pattern back. */
   const RAW_PATTERN_FRAGMENT = "^[a-z]";
 
   function refusalFor(name: string): string {
@@ -527,15 +555,7 @@ describe("branding via projectSourceConfigSchema", () => {
     expect(result.data?.branding).toStrictEqual({ name: "Acme Dev Tools" });
   });
 
-  /**
-   * `branding` is the ONE field this schema publishes, and the assertion is `toStrictEqual`
-   * rather than a check on `name`, because stripping is the whole subject: `brandingConfigSchema`
-   * is a bare `z.object`, so an unpublished key is dropped silently rather than refused, and a
-   * `name`-only assertion passes whether or not the drop happened.
-   *
-   * A configured `tagline` used to survive this parse and reach `ResolvedBranding`, where nothing
-   * read it — the field promised a wizard header the product never rendered.
-   */
+  /** `toStrictEqual`, because the subject is that the unpublished key is silently stripped. */
   it("drops a tagline, which the schema no longer publishes", () => {
     const result = projectSourceConfigSchema.safeParse({
       branding: { name: "Acme Dev Tools", tagline: "Build faster with Acme" },
@@ -557,10 +577,7 @@ describe("branding via projectSourceConfigSchema", () => {
   });
 
   /**
-   * The published artefact, checked separately from the parser because they are generated from
-   * one source and read by different consumers — an editor validating a user's `config.ts`
-   * against the JSON schema sees `additionalProperties: false`, so for that reader a leftover
-   * `tagline` is an ERROR rather than the silent drop the parser performs.
+   * The JSON schema has `additionalProperties: false`, so for an editor a `tagline` is an error.
    */
   it("publishes only a name under branding", async () => {
     const schema = await readTestJson<JsonSchemaFile>(PROJECT_SOURCE_CONFIG_SCHEMA_PATH);
@@ -635,12 +652,7 @@ describe("custom: true in schemas", () => {
     expect(result.success).toBe(true);
   });
 
-  /**
-   * The whole parsed category, not one field of it. A `required` flag a marketplace still ships
-   * has to arrive on the other side of this schema STRIPPED rather than carried, because what a
-   * source declares and what the CLI acts on are different questions — and every surface
-   * downstream reads the parsed object rather than the file.
-   */
+  /** A shipped `required` flag must arrive stripped: downstream reads the parsed object. */
   it("should carry a parsed category without a required flag", () => {
     const parsed = skillCategoriesFileSchema.parse(VALID_SKILL_CATEGORIES_FILE);
 
@@ -656,7 +668,6 @@ describe("custom: true in schemas", () => {
 });
 
 describe("splitMetadataValidationIssues", () => {
-  /** Parses raw metadata with the strict schema and asserts it failed. */
   function failStrictParse(rawMetadata: unknown): z.ZodError {
     const result = metadataValidationSchema.safeParse(rawMetadata);
     expect(result.success, "fixture must fail strict validation").toBe(false);
@@ -1025,25 +1036,12 @@ describe("formatZodIssues", () => {
 });
 
 /**
- * The three keys `agent.liquid` writes conditionally, judged on the side that READS the
- * `metadata.yaml` a user hand-authors.
- *
- * A compiled agent is written by one schema and read back by another: `agentYamlConfigSchema`
- * loads the `metadata.yaml`, `agent.liquid` emits `isolation:`, `experimental:` and `hooks:` from
- * what that load returned, and `agentFrontmatterValidationSchema` parses the result back —
- * `validateAgentFrontmatter` in `lib/plugins/plugin-validator.ts` behind `doctor`, and
- * `parseAgentFrontmatter` in `lib/agents/agent-plugin-compiler.ts` behind `compileAgentPlugin`.
- * The two schemas therefore have to name one contract per key, and for two of the three they did
- * not.
- *
- * The refusals are the subject rather than the acceptances, and they belong HERE rather than only
- * on the reading side, because the loader is the only boundary that still knows which file the
- * value came from: `loadAgentsFromDir` names `metadata.yaml`'s full path in its warning, while a
- * refusal arriving at the frontmatter reader names a compiled `.md` the user never wrote and a
- * value the loader has already emptied.
+ * `agentYamlConfigSchema` loads metadata.yaml and `agentFrontmatterValidationSchema` reads the
+ * compiled result back, so both must name one contract for `isolation`, `experimental` and
+ * `hooks`. The refusals belong on the loader: it is the last boundary that knows which file the
+ * value came from.
  */
 describe("the agent metadata a compiled agent is written from, against the schema that reads it back", () => {
-  /** Every fixture below is this agent plus exactly one of the three keys. */
   const AGENT_METADATA = {
     id: AGENT_DEFS.webDev.name,
     title: AGENT_DEFS.webDev.title,
@@ -1051,7 +1049,6 @@ describe("the agent metadata a compiled agent is written from, against the schem
     tools: AGENT_DEFS.webDev.tools,
   };
 
-  /** The frontmatter the template writes for {@link AGENT_METADATA}, minus the key under test. */
   const COMPILED_FRONTMATTER = {
     name: AGENT_DEFS.webDev.name,
     description: AGENT_DEFS.webDev.description,
@@ -1059,27 +1056,20 @@ describe("the agent metadata a compiled agent is written from, against the schem
 
   const HOOK_EVENT = "SubagentStop";
 
-  /** A hooks block in the shape Claude Code documents: a matcher, and the actions it fires. */
   const DECLARED_HOOKS = {
     [HOOK_EVENT]: [{ matcher: "Write", hooks: [{ type: "command", command: "npm run lint" }] }],
   } as const satisfies NonNullable<AgentYamlConfig["hooks"]>;
 
-  /**
-   * The same intent written one level flat — the action list hung straight off the event, with no
-   * definition around it. Not a foreign shape: it is what a hooks block looks like with the
-   * `hooks:` wrapper forgotten, and every key in it is a key the action schema declares.
-   */
+  /** The same intent with the `hooks:` wrapper forgotten; every key is one the action declares. */
   const ACTIONS_WITHOUT_A_DEFINITION = {
     [HOOK_EVENT]: [{ type: "command", command: "npm run lint" }],
   };
 
-  /** Where a definition carrying no actions is refused, in both schemas' path vocabulary. */
   const NO_ACTIONS_DECLARED = [["hooks", HOOK_EVENT, 0, "hooks"]];
 
-  /** Zod's own issue code for a key a `.strict()` object does not name. */
   const UNRECOGNIZED_KEY = "unrecognized_keys";
 
-  /** A near miss of `cacheTtl`, because a mistyped option name is what strictness exists to report. */
+  /** A near miss of `cacheTtl`: mistyped options are what strictness reports. */
   const UNDOCUMENTED_EXPERIMENTAL_KEY = "cacheTtlSeconds";
 
   it("carries every hook action the metadata declares", () => {

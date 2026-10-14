@@ -24,18 +24,14 @@ import type { FixtureProjectConfig } from "../helpers/wizard-simulation.js";
 export function buildSourceConfig(
   overrides?: Partial<ResolvedConfig> & Record<string, unknown>,
 ): Record<string, unknown> {
-  // Record return kept: source config is parse-boundary data callers vary with arbitrary fields.
+  // A plain record: source config is parse-boundary data callers vary freely.
   return {
     marketplace: "github:test-org/skills",
     ...overrides,
   };
 }
 
-/**
- * The report a gated config write returns. Defaults to a write that changed the
- * global pair and reached nobody; pass `propagatedTo` for a fan-out, whose
- * projects are all reported as having had their agents rewritten.
- */
+/** Defaults to a write that changed the global pair and reached nobody. */
 export function buildGateReport(
   propagatedTo: string[] = [],
   overrides?: Partial<GateReport>,
@@ -50,14 +46,8 @@ export function buildGateReport(
 }
 
 /**
- * What `writeProjectConfig` answers, for a spec that stubs it: a fresh write, not a merge, whose
- * gate reached nobody.
- *
- * `config` and `configPath` have no default, because a command reads both back after the write —
- * the agent count it reports, the skills it warns are unassigned, the path it names — so a caller
- * states the config the command will believe it wrote. Typed against `ConfigWriteResult`, which is
- * the point: when the product retired `filesWritten`, three hand-written results kept returning it
- * and nothing noticed.
+ * A fresh write whose gate reached nobody. `config` and `configPath` have no default: a command
+ * reads both back. Typed against `ConfigWriteResult` so a retired field cannot linger.
  */
 export function buildConfigWriteResult(
   config: ProjectConfig,
@@ -68,11 +58,8 @@ export function buildConfigWriteResult(
 }
 
 /**
- * Overloaded rather than widened outright: a caller that names catalogue skills
- * still gets a `ProjectConfig` back, and only one that names ids outside the
- * generated union — a fixture marketplace's, see {@link FixtureProjectConfig} —
- * gets the widened shape. Widening the single signature made every unit caller
- * that feeds the result to a production function fail instead.
+ * Overloaded: catalogue ids get a `ProjectConfig`; only ids outside the generated union (see
+ * {@link FixtureProjectConfig}) get the widened shape.
  */
 export function buildProjectConfig(overrides?: Partial<ProjectConfig>): ProjectConfig;
 export function buildProjectConfig(overrides: Partial<FixtureProjectConfig>): FixtureProjectConfig;
@@ -88,26 +75,14 @@ export function buildProjectConfig(
 }
 
 /**
- * A saved config whose PROJECT-LEVEL source ref still sits under the field name it carried
- * before the rename. Deliberately-invalid parse-boundary data — the shape the loader has to
- * refuse rather than pass through — so it is a plain record: `ProjectConfig` has no place to
- * put the key any more. One definition because the schema, the loader and `resolveSource`
- * all have to refuse the same file.
- *
- * The ref is deliberately NOT the default public one: a loader that ignores the stale key
- * falls through to `DEFAULT_SOURCE`, and if the two were the same string nothing could tell
- * a silent repoint from a correct read.
+ * Invalid parse-boundary data: the project-level ref under its pre-rename key. The ref is not the
+ * default public one, so a loader ignoring the stale key cannot pass by coincidence.
  */
 export function buildPreRenameProjectConfig(): Record<string, unknown> {
   return { ...buildProjectConfig(), source: TEST_CUSTOM_SOURCE_URL };
 }
 
-/**
- * A saved config one of whose SKILL ENTRIES still carries its provenance under the field
- * name it had before the rename. The entry is spelled out rather than taken from
- * `buildSkillConfigs`, which follows the type and therefore stops producing the old shape
- * the moment the rename lands.
- */
+/** Spelled out, because `buildSkillConfigs` follows the type and cannot produce the old shape. */
 export function buildPreRenameSkillEntryConfig(): Record<string, unknown> {
   return {
     ...buildProjectConfig(),
@@ -120,10 +95,8 @@ export function buildWizardResult(
   overrides?: Partial<WizardResultV2>,
 ): WizardResultV2 {
   const selectedAgents = overrides?.selectedAgents ?? [];
-  // Keep agentConfigs in sync with selectedAgents by default — the production
-  // pipeline (generateProjectConfigFromSkills) requires every selected agent
-  // to have a matching AgentScopeConfig. Callers can override agentConfigs
-  // explicitly to test mismatch behavior.
+  // generateProjectConfigFromSkills requires a config per selected agent; override to test a
+  // mismatch.
   const defaultAgentConfigs =
     selectedAgents.length > 0 ? buildAgentConfigs([...selectedAgents]) : [];
   return {
@@ -149,6 +122,7 @@ export function buildAgentConfigs(
     scope: overrides?.scope ?? FACTORY_DEFAULT_SCOPE,
     ...(overrides?.excluded !== undefined && { excluded: overrides.excluded }),
     ...(overrides?.model !== undefined && { model: overrides.model }),
+    ...(overrides?.codexModel !== undefined && { codexModel: overrides.codexModel }),
     ...(overrides?.effort !== undefined && { effort: overrides.effort }),
   }));
 }
@@ -167,18 +141,12 @@ export function buildSourceResult(
     sourceConfig,
     sourcePath,
     isLocal: true,
-    // A load with nothing merged or seated on top: the marketplace carries every skill it holds.
     marketplaceSkillIds: new Set(typedKeys<SkillId>(matrix.skills)),
     ...overrides,
   };
 }
 
-/**
- * Registers the matrix with the provider and returns a SourceLoadResult for it.
- * Composes initializeMatrix + buildSourceResult — the common per-test arrange
- * step for integration tests that both set the active matrix and pass a source
- * result into an install/copy operation.
- */
+/** initializeMatrix + buildSourceResult, the common arrange step. */
 export function initMatrixAndSource(
   matrix: MergedSkillsMatrix,
   sourcePath: string,
@@ -197,9 +165,7 @@ export function buildTestProjectConfig(
   return {
     name: "test-project",
     description: "Test project",
-    // Boundary cast: test callers pass loose string agent/skill identifiers
-    // (some fictional). Emit the object-shaped config the loader schema requires —
-    // buildAgentConfigs/buildSkillConfigs do no matrix lookups, so loose IDs are safe.
+    // Boundary cast: loose test identifiers, some fictional; the builders do no matrix lookups.
     agents: buildAgentConfigs(agents as AgentName[]),
     skills: buildSkillConfigs(skillIds as SkillId[]),
     ...overrides,

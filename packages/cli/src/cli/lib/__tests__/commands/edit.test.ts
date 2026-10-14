@@ -53,8 +53,6 @@ import Edit, {
 } from "../../../commands/edit.js";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
-// --- Module mocks (hoisted by vitest) ---
-
 const {
   mockRender,
   mockDetectInstallation,
@@ -74,11 +72,7 @@ const {
   mockLoadSkillsMatrixFromSource: vi.fn<typeof loadSkillsMatrixFromSource>(),
   mockLoadProjectConfig: vi.fn<typeof loadProjectConfig>().mockResolvedValue(null),
   mockDiscoverAllPluginSkills: vi.fn<typeof discoverAllPluginSkills>().mockResolvedValue({}),
-  // `copySkillsToLocalFlattened` resolves `CopiedSkill[]`, never `undefined` — the empty
-  // array is the shape of a copy that did nothing. It read `undefined` while the eject
-  // migration wrapped its whole pass in one `try`, which turned the resulting TypeError
-  // into a warning and let the run continue; the migration now reports a failed copy
-  // structurally and hard-errors on it, so a mock of the wrong shape stops the command.
+  // An empty array is a copy that did nothing; `undefined` would now stop the command.
   mockCopySkillsToLocalFlattened: vi.fn<typeof copySkillsToLocalFlattened>().mockResolvedValue([]),
   mockDeleteLocalSkill: vi.fn<typeof deleteLocalSkill>().mockResolvedValue(undefined),
   mockEnsureDir: vi.fn<typeof ensureDir>().mockResolvedValue(undefined),
@@ -156,20 +150,12 @@ vi.mock("../../../utils/fs.js", async (importOriginal) => {
   };
 });
 
-/**
- * Every folder an installation's `config.ts` can be written into, as a user writes one.
- *
- * An assertion that a config was NOT written has to ask after every name it could have been
- * written under. Naming just the folder this run happens to resolve makes the absence true of the
- * other for free — and an absence that cannot fail is the shape `packages/cli/CLAUDE.md` calls a
- * gap encoded in an assertion.
- */
+/** Every name a config could be written under, so a "not written" assertion can fail. */
 const CONFIG_PATHS_UNDER_EVERY_PROVIDER = [
   ".agents-inc/claude/config.ts",
   ".agents-inc/codex/config.ts",
 ] as const;
 
-/** Every config.ts actually on disk under `projectDir`, by the relative path it was found at. */
 async function configsWrittenUnder(projectDir: string): Promise<string[]> {
   const found = await Promise.all(
     CONFIG_PATHS_UNDER_EVERY_PROVIDER.map(async (relative) =>
@@ -180,11 +166,6 @@ async function configsWrittenUnder(projectDir: string): Promise<string[]> {
   return found.filter((relative) => relative !== null);
 }
 
-/**
- * Mocks loadProjectConfig with what it answers for a Claude installation:
- * the config, the path it was read from, and the provider that folder belongs to. `provider` was
- * missing here while the mock was an untyped `vi.fn()`, and nothing said so.
- */
 function mockProjectConfig(projectDir: string, config: ProjectConfig): void {
   mockLoadProjectConfig.mockResolvedValue({
     config,
@@ -193,12 +174,7 @@ function mockProjectConfig(projectDir: string, config: ProjectConfig): void {
   });
 }
 
-/**
- * A detected eject installation rooted at `projectDir` rather than at the factory's `/project`,
- * because these specs run the command inside that directory. Typed through `buildInstallation`, so
- * a field `Installation` no longer declares is a compile error here — a `scope` this helper kept
- * returning after the type dropped it went unreported while its return type was inferred.
- */
+/** Rooted at `projectDir` because these specs run the command inside that directory. */
 function buildEjectInstallation(projectDir: string): Installation {
   return buildInstallation({
     mode: "eject",
@@ -209,10 +185,6 @@ function buildEjectInstallation(projectDir: string): Installation {
   });
 }
 
-/**
- * Mocks the Ink render call so the edit wizard immediately completes with the
- * given wizard result (generalizes the removal-wizard mock).
- */
 function mockWizardCompletion(wizardResult: unknown): void {
   mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
     const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
@@ -223,17 +195,11 @@ function mockWizardCompletion(wizardResult: unknown): void {
   });
 }
 
-/** The phrase `ConfigLoadError` builds its message around. */
 const CONFIG_LOAD_FAILED_PHRASE = "could not be loaded";
 
-/** The instruction that separates an unreadable config from a missing one. */
 const RECREATE_PHRASE = "recreate the configuration";
 
-/**
- * The terminal every wizard run in this file stands at. The mocked render stands in for one, and
- * `edit` refuses to mount its wizard where stdin is not a terminal — so the file states it rather
- * than inheriting whatever the runner was started from, and means the same in CI as at a desk.
- */
+/** `edit` refuses to mount its wizard without a terminal, so the file stands at one. */
 standAtTerminal();
 
 describe("edit command", () => {
@@ -248,7 +214,6 @@ describe("edit command", () => {
     await mkdir(projectDir, { recursive: true });
     process.chdir(projectDir);
 
-    // Ensure detectInstallation returns null (no installation) for these tests
     mockDetectInstallation.mockResolvedValue(null);
   });
 
@@ -259,10 +224,8 @@ describe("edit command", () => {
 
   describe("no installation found", () => {
     it("when no source folder is present under either name, should exit with error code", async () => {
-      // Clean temp dir holds neither an installed `.claude/` nor a source folder of either name
       const { error } = await runCliCommand(["edit"]);
 
-      // Should exit with EXIT_CODES.ERROR (1) because detectInstallation returns null
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     });
 
@@ -273,12 +236,7 @@ describe("edit command", () => {
     });
   });
 
-  /**
-   * A config file that exists but cannot be loaded is not a missing one: `edit` refuses it
-   * up front, before the wizard, and says the way out is to recreate the configuration.
-   * These load the real file from disk — the guard reads it directly, so the mocked
-   * `loadProjectConfig` above is not in play.
-   */
+  /** Loaded from disk: the guard reads the file directly, so the mocked loader is not in play. */
   describe("unreadable config", () => {
     const fakeHome = useFakeHome(() => tempDir);
 
@@ -343,7 +301,6 @@ describe("edit command", () => {
   });
 });
 
-// Explicit domain assignments — these tests verify domain filtering, so domains must be correct
 const EDIT_CATEGORIES = {
   "web-framework": { ...TEST_CATEGORIES.framework, displayName: "Web Framework" },
   "web-client-state": TEST_CATEGORIES.clientState,
@@ -358,11 +315,8 @@ const EDIT_SKILLS = {
   "web-testing-vitest": SKILLS.vitest,
 };
 
-// The edit command uses populateFromSkillIds() on the Zustand wizard store
-// to restore prior selections. Testing at the store level because the edit
-// command itself launches an interactive wizard that cannot be driven from
-// runCliCommand. This validates the same code path used by
-// use-wizard-initialization.ts when edit mode is active.
+// The wizard cannot be driven from runCliCommand, so pre-selection is tested at the store, on
+// the path use-wizard-initialization.ts takes in edit mode.
 
 describe("edit wizard pre-selection via populateFromSkillIds", () => {
   beforeEach(() => {
@@ -384,11 +338,9 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
 
     const { domainSelections } = useWizardStore.getState();
 
-    // Web skills should appear under the web domain
     expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
     expect(domainSelections.web?.["web-client-state"]).toStrictEqual(["web-state-zustand"]);
 
-    // API skill should appear under the api domain
     expect(domainSelections.api?.["api-api"]).toStrictEqual(["api-framework-hono"]);
   });
 
@@ -399,10 +351,8 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
 
     const { domainSelections } = useWizardStore.getState();
 
-    // Only web/framework should be populated
     expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
 
-    // Other categories should not exist
     expect(domainSelections.web?.["web-client-state"]).toBeUndefined();
     expect(domainSelections.api).toBeUndefined();
   });
@@ -414,7 +364,6 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
 
     const { selectedDomains } = useWizardStore.getState();
 
-    // populateFromSkillIds sets only domains derived from the skill IDs
     expect(selectedDomains).toContain("web");
     expect(selectedDomains).not.toContain("api");
     expect(selectedDomains).not.toContain("shared");
@@ -427,10 +376,8 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
 
     const { domainSelections } = useWizardStore.getState();
 
-    // Testing category maps to the shared domain
     expect(domainSelections.shared?.["web-testing"]).toStrictEqual(["web-testing-vitest"]);
 
-    // No web or api entries should exist
     expect(domainSelections.web).toBeUndefined();
     expect(domainSelections.api).toBeUndefined();
   });
@@ -448,8 +395,7 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
   it("should skip skills missing a category", () => {
     const sparseSkills = {
       "web-framework-react": SKILLS.react,
-      // Boundary cast: intentionally testing skill with no category
-      // Boundary cast: fictional skill ID for testing missing-category handling
+      // Boundary cast: a fictional skill id with no category
       "web-framework-unknown": createMockSkill("web-framework-unknown" as SkillId, {
         category: undefined as unknown as CategoryPath,
       }),
@@ -461,14 +407,13 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
       }),
     );
 
-    // Boundary cast: fake ID to test unknown-skill handling
+    // Boundary cast: a fake id to test unknown-skill handling
     const installedSkills: SkillId[] = ["web-framework-react", "web-framework-unknown" as SkillId];
 
     useWizardStore.getState().populateFromSkillIds(installedSkills);
 
     const { domainSelections } = useWizardStore.getState();
 
-    // Only the skill with a valid category should be populated
     expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
     expect(domainSelections.web?.["web-framework"]).toHaveLength(1);
   });
@@ -476,8 +421,7 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
   it("should skip skills whose category has no domain mapping", () => {
     const extraSkills = {
       "web-framework-react": SKILLS.react,
-      // Boundary cast: intentionally testing unmapped category handling
-      // Boundary cast: fictional skill ID for testing unmapped-category handling
+      // Boundary cast: a fictional skill id in an unmapped category
       "infra-tooling-linter": createMockSkill("infra-tooling-linter" as SkillId),
     };
 
@@ -487,16 +431,14 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
       }),
     );
 
-    // Boundary cast: fake ID to test unmapped-category handling
+    // Boundary cast: a fake id to test unmapped-category handling
     const installedSkills: SkillId[] = ["web-framework-react", "infra-tooling-linter" as SkillId];
 
     useWizardStore.getState().populateFromSkillIds(installedSkills);
 
     const { domainSelections } = useWizardStore.getState();
 
-    // Only the resolvable skill should be populated
     expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
-    // No domain should contain the unresolvable skill
     const allTechs = useWizardStore.getState().getAllSelectedTechnologies();
     expect(allTechs).not.toContain("infra-tooling-linter");
   });
@@ -508,16 +450,15 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
 
     const { domainSelections } = useWizardStore.getState();
 
-    // Should deduplicate
     expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
     expect(domainSelections.web?.["web-framework"]).toHaveLength(1);
   });
 
   it("should populate multiple skills within the same category (non-exclusive)", () => {
-    // testing category is non-exclusive, so multiple selections are valid
+    // Testing is non-exclusive, so multiple selections are valid.
     const multiSkills = {
       ...EDIT_SKILLS,
-      // Boundary cast: fictional skill ID for testing multi-skill category population
+      // Boundary cast: a fictional skill id for multi-skill population
       "web-testing-playwright": createMockSkill("web-testing-playwright" as SkillId),
     };
 
@@ -527,7 +468,7 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
       }),
     );
 
-    // Boundary cast: fake ID to test multi-selection in same category
+    // Boundary cast: a fake id to test multi-selection in one category
     const installedSkills: SkillId[] = ["web-testing-vitest", "web-testing-playwright" as SkillId];
 
     useWizardStore.getState().populateFromSkillIds(installedSkills);
@@ -540,10 +481,7 @@ describe("edit wizard pre-selection via populateFromSkillIds", () => {
   });
 });
 
-// After populateFromSkillIds, the wizard uses getSelectedTechnologiesPerDomain()
-// to determine which domains have active selections. Domains not in this result
-// can be filtered out of the build step UI. This tests that the store correctly
-// omits domains with zero selections.
+// Domains with zero selections are omitted, so the build step can filter them out.
 
 describe("edit wizard domain filtering", () => {
   beforeEach(() => {
@@ -561,10 +499,8 @@ describe("edit wizard domain filtering", () => {
 
     const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
 
-    // Web should have selections
     expect(perDomain.web).toStrictEqual(EXPECTED_SKILLS.WEB_DEFAULT);
 
-    // API, CLI, mobile should be absent (no selections)
     expect(perDomain.api).toBeUndefined();
     expect(perDomain.cli).toBeUndefined();
     expect(perDomain.mobile).toBeUndefined();
@@ -589,10 +525,8 @@ describe("edit wizard domain filtering", () => {
 
     const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
 
-    // Only shared domain should have selections
     expect(perDomain.shared).toStrictEqual(["web-testing-vitest"]);
 
-    // All other domains should be absent
     expect(perDomain.web).toBeUndefined();
     expect(perDomain.api).toBeUndefined();
     expect(perDomain.cli).toBeUndefined();
@@ -606,7 +540,6 @@ describe("edit wizard domain filtering", () => {
 
     const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
 
-    // All domains should be absent
     expect(Object.keys(perDomain)).toHaveLength(0);
   });
 
@@ -622,24 +555,18 @@ describe("edit wizard domain filtering", () => {
 
     const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
 
-    // Web has 2 skills (framework + client-state)
     expect(perDomain.web).toHaveLength(2);
 
-    // API has 1 skill
     expect(perDomain.api).toHaveLength(1);
 
-    // Shared has 1 skill (testing)
     expect(perDomain.shared).toHaveLength(1);
 
-    // CLI and mobile still absent
     expect(perDomain.cli).toBeUndefined();
     expect(perDomain.mobile).toBeUndefined();
   });
 });
 
-// The edit command has an eject-mode fallback: when discoverAllPluginSkills returns
-// empty (no plugin-based skills found), it falls back to project config skills.
-// These tests verify that the correct installedSkillIds reach the Wizard component.
+// With no plugin-based skills found, edit falls back to the project config's skills.
 
 describe("edit command eject-mode skill fallback", () => {
   let tempDir: string;
@@ -656,10 +583,8 @@ describe("edit command eject-mode skill fallback", () => {
   let hydrateSpy: ReturnType<typeof vi.spyOn>;
 
   function getRenderedInstalledSkillIds(): SkillId[] | undefined {
-    // edit.tsx passes the merged (plugin + config) skill id list to BOTH
-    // hydrateWizardStore({ installedSkillIds }) and <Wizard installedSkillIds />.
-    // We inspect the hydrate call because it's easy to spy on; the Wizard prop
-    // receives the same value (currentSkillIds) so either signal is valid.
+    // The hydrate call and the Wizard prop receive the same list; the hydrate call is easier to
+    // spy.
     const hydrateCall = hydrateSpy.mock.calls[0];
     if (!hydrateCall) return undefined;
     const options = hydrateCall[0] as { installedSkillIds?: SkillId[] };
@@ -675,7 +600,6 @@ describe("edit command eject-mode skill fallback", () => {
 
     hydrateSpy = vi.spyOn(wizardStore, "hydrateWizardStore");
 
-    // Reset all mocks to known state for each test
     mockRender.mockClear();
     mockRender.mockReturnValue(stubInkInstance());
 
@@ -712,14 +636,11 @@ describe("edit command eject-mode skill fallback", () => {
 
     expect(mockRender).toHaveBeenCalledTimes(2);
     const installedSkillIds = getRenderedInstalledSkillIds();
-    // Plugin discovery found react; config also has hono — both should be included
     expect(installedSkillIds).toStrictEqual(CONFIG_SKILL_IDS);
   });
 });
 
-// Bug regression: edit command must detect when agents are added/removed,
-// not just skill changes. Without the fix, adding a new agent (with no skill
-// changes) would cause the command to print "No changes made" and exit early.
+// Adding an agent with no skill change must not end in "No changes made".
 
 describe("edit command detects added agents", () => {
   let tempDir: string;
@@ -756,14 +677,11 @@ describe("edit command detects added agents", () => {
   });
 
   it("should NOT report 'No changes made' when only agents are added", async () => {
-    // Old config has one agent: web-developer
     mockProjectConfig(
       projectDir,
       buildProjectConfig({ agents: buildAgentConfigs(["web-developer"]), skills: EXISTING_SKILLS }),
     );
 
-    // Mock render to invoke onComplete with a wizard result that adds web-tester
-    // (same skills, but a new agent)
     mockWizardCompletion(
       buildWizardResult(EXISTING_SKILLS, {
         agentConfigs: buildAgentConfigs(["web-developer", "web-tester"]),
@@ -772,16 +690,12 @@ describe("edit command detects added agents", () => {
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    // With the fix, the command detects agent changes and proceeds past the
-    // early return into agent loading (loadAgentDefs -> getAgentDefinitions).
-    // Without the fix, the command exits early and getAgentDefinitions is never called.
+    // Reaching agent loading proves the command did not return early.
     expect(mockGetAgentDefinitions).toHaveBeenCalledTimes(1);
   });
 });
 
-// Bug regression: edit command must copy newly added local-source skills to
-// .claude/skills/. Without the fix, the addedLocalSkills copy block was missing,
-// so skills switched to local source during edit were never copied.
+// Skills switched to local source during edit are copied to .claude/skills/.
 
 describe("edit command copies newly added local skills", () => {
   let tempDir: string;
@@ -814,7 +728,6 @@ describe("edit command copies newly added local skills", () => {
   });
 
   it("should call copySkillsToLocalFlattened when a local skill is added", async () => {
-    // Old config has no skills
     mockProjectConfig(
       projectDir,
       buildProjectConfig({ agents: buildAgentConfigs(["web-developer"]), skills: [] }),
@@ -825,7 +738,6 @@ describe("edit command copies newly added local skills", () => {
       origin: "eject",
     });
 
-    // Mock render to invoke onComplete with a wizard result that adds a local skill
     mockWizardCompletion(
       buildWizardResult(newLocalSkills, {
         agentConfigs: buildAgentConfigs(["web-developer"]),
@@ -834,7 +746,6 @@ describe("edit command copies newly added local skills", () => {
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    // The copy function should have been called for the newly added local skill
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledOnce();
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledWith(
       ["web-framework-react"],
@@ -890,7 +801,7 @@ describe("edit command removes deselected local skills", () => {
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    // Project-scope eject skill dir is removed from the project directory (cwd), not home.
+    // Removed from the project directory (cwd), not home.
     expect(mockDeleteLocalSkill).toHaveBeenCalledWith(
       process.cwd(),
       "web-framework-react",
@@ -910,9 +821,7 @@ describe("edit command removes deselected local skills", () => {
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    // Global-scope eject skill dir is removed at GLOBAL scope, not the project's: the scope is
-    // handed over and `deleteLocalSkill` resolves the home directory's skills folder for the host
-    // (CLI-895, 2026-09-26 — it used to be handed `os.homedir()` and join `.claude/skills` to it).
+    // Removed at global scope: `deleteLocalSkill` resolves the home skills folder for the host.
     expect(mockDeleteLocalSkill).toHaveBeenCalledWith(
       process.cwd(),
       "web-framework-react",
@@ -939,10 +848,8 @@ describe("edit command removes deselected local skills", () => {
   });
 });
 
-// A project-context edit performs install-mode migrations for GLOBAL-scoped skills on disk
-// under $HOME and in the user-scope plugin registry. The global config must record exactly
-// those migrations — and nothing else — so the recorded source never contradicts the
-// filesystem.
+// A project-context edit's migrations of global-scoped skills happen under $HOME, so the global
+// config records exactly those, and nothing else.
 
 const GLOBAL_PLUGIN_REACT = buildSkillConfigs(["web-framework-react"], {
   scope: "global",
@@ -1071,15 +978,12 @@ describe("edit command source switches on inherited global-active skills", () =>
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    // The switch is a real change: the command runs the migration + config write path
-    // instead of returning early at "No changes made.".
+    // A real change: the run reaches the migration and config write.
     expect(mockGetAgentDefinitions).toHaveBeenCalled();
   });
 });
 
-// An eject→plugin mode migration whose `claude plugin install` fails is the twin of the
-// newly-added-skill failure already guarded in applyPluginChanges: the run must hard-error
-// before any config records a marketplace source for a skill with no plugin registration.
+// A failed eject→plugin install hard-errors before any config records a marketplace origin.
 
 describe("edit command mode migration with a failing plugin install", () => {
   let tempDir: string;
@@ -1105,9 +1009,7 @@ describe("edit command mode migration with a failing plugin install", () => {
     process.chdir(projectDir);
 
     stderrChunks = [];
-    // Saved to be assigned straight back onto the same object in afterEach, so
-    // it is called with the receiver it came from. Binding would restore a
-    // wrapper rather than the original method.
+    // Restored onto the same object in afterEach; binding would restore a wrapper.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
     origStderrWrite = process.stderr.write;
     process.stderr.write = function (str: unknown): boolean {
@@ -1122,8 +1024,7 @@ describe("edit command mode migration with a failing plugin install", () => {
     initializeMatrix(testSourceResult.matrix);
     mockDiscoverAllPluginSkills.mockResolvedValue({});
     installSpy.mockReset().mockRejectedValue(new Error("plugin ref not found"));
-    // The marketplace precondition is already satisfied — this test isolates the
-    // per-skill install failure, not marketplace resolution.
+    // Isolates the per-skill install failure from marketplace resolution.
     marketplaceExistsSpy.mockReset().mockResolvedValue(true);
     marketplaceUpdateSpy.mockReset().mockResolvedValue(undefined);
   });
@@ -1149,8 +1050,7 @@ describe("edit command mode migration with a failing plugin install", () => {
       ),
     );
 
-    // `this.error()` throws a CLIError carrying the exit code; `Errors.CLIError` is the
-    // oclif type for it, partial because only `oclif.exit` and `message` are asserted.
+    // `Errors.CLIError`, partial: only `oclif.exit` and `message` are asserted.
     let thrown: (Error & Partial<Errors.CLIError>) | undefined;
     try {
       await Edit.run([], { root: CLI_ROOT });
@@ -1173,21 +1073,10 @@ describe("edit command mode migration with a failing plugin install", () => {
   });
 });
 
-// A project-scoped skill never reaches a global-scoped sub-agent. The rule is
-// correct and enforced at four layers; what no layer does is SAY it fired. Picked
-// alongside nothing but global sub-agents, the skill is copied to disk, assigned to
-// nothing, and reported as a clean install — so nothing tells the user it will
-// never be loaded.
-//
-// The command's own output is the only implementation-agnostic surface for this:
-// the warning may be raised by the generator, by the save, or by the command, and
-// all three reach here.
+// A project-scoped skill picked with only global sub-agents reaches none, and the run must say
+// so. Asserted on output, since the generator, the save or the command may raise it.
 
-/**
- * The phrase the warning is asserted on. Mirrors `STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT`
- * in `e2e/pages/constants.ts`, which carries the reasoning and is the one place an
- * acceptable rewording has to land — this constant follows it.
- */
+/** Mirrors `STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT` in `e2e/pages/constants.ts`. */
 const ASSIGNED_TO_NO_AGENT_PHRASE = "is assigned to no sub-agent";
 
 describe("edit command reports a selected skill the scope filter left unassigned", () => {
@@ -1203,17 +1092,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
     origin: EJECT_SOURCE,
   });
   const testSourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, "/test/source");
-  /**
-   * The save WRITES the global scope (`writeScopedFromWizard`'s project branch
-   * resolves the global source folder through `os.homedir()` at runtime), so without this
-   * the run would write into the developer's own home.
-   *
-   * It reaches every read too, which it once did not: `discoverInstalledSkills`
-   * used to find the global skills through a `consts.ts` constant evaluated at
-   * module load, which no spy and no `HOME` could reach, so the developer's own
-   * `~/.claude/skills/` entries surfaced as missing-metadata warnings in every
-   * `commands/` spec that ran `Edit.run`. It calls `globalInstallRoot()` now.
-   */
+  /** The save writes the global scope through `os.homedir()`, so it must not be the real one. */
   const homedirSpy = vi.spyOn(os, "homedir");
 
   beforeEach(async () => {
@@ -1227,8 +1106,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
     process.chdir(projectDir);
 
     stderrChunks = [];
-    // Saved to be assigned straight back onto the same object in afterEach, so it
-    // is called with the receiver it came from. Binding would restore a wrapper.
+    // Restored onto the same object in afterEach; binding would restore a wrapper.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
     origStderrWrite = process.stderr.write;
     process.stderr.write = function (str: unknown): boolean {
@@ -1241,9 +1119,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
     mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
     initializeMatrix(testSourceResult.matrix);
     mockDiscoverAllPluginSkills.mockResolvedValue({});
-    // The copy is what makes the skill real on disk while reaching no agent — the
-    // whole shape of the defect. Returning the copied entry keeps the run going
-    // past `copyNewLocalSkills` into the save that builds the stack.
+    // The copy makes the skill real on disk while it reaches no agent, and keeps the run going.
     mockCopySkillsToLocalFlattened.mockReset().mockResolvedValue([
       {
         skillId: "web-framework-react",
@@ -1267,9 +1143,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
 
     await Edit.run([], { root: CLI_ROOT }).catch(() => {});
 
-    // Proof of execution: the skill really was added and copied, so the run
-    // reached the save that builds the stack. Without this the warning assertion
-    // could pass vacuously on a run that never selected the skill at all.
+    // Proof the run selected and copied the skill, so the warning assertion is not vacuous.
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledOnce();
 
     const stderr = stderrChunks.join("");
@@ -1278,9 +1152,7 @@ describe("edit command reports a selected skill the scope filter left unassigned
   });
 });
 
-// Bug regression: migratePluginSkillScopes must NOT uninstall the global plugin when re-scoping
-// from global to project. The global registration is shared across projects and must remain
-// intact. Only project→global should uninstall.
+// Global→project must not uninstall the shared global registration; only project→global does.
 
 describe("migratePluginSkillScopes", () => {
   const installSpy = vi.mocked(hostAt("/any-root").installPlugin);
@@ -1354,7 +1226,6 @@ describe("migratePluginSkillScopes", () => {
 
     expect(result.migrated).toHaveLength(2);
 
-    // React global→project: NO uninstall, install at project
     expect(uninstallSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
       "global",
@@ -1366,7 +1237,6 @@ describe("migratePluginSkillScopes", () => {
       "/project",
     );
 
-    // Zustand project→global: uninstall project, install at global
     expect(uninstallSpy).toHaveBeenCalledWith(
       "web-state-zustand@agents-inc",
       "project",
@@ -1385,13 +1255,11 @@ describe("migratePluginSkillScopes", () => {
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
-    // Should NOT have uninstalled global
     expect(uninstallSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
       "global",
       "/project",
     );
-    // Should report failure
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
     expect(firstElement(result.failed).id).toBe("web-framework-react");
@@ -1407,19 +1275,17 @@ describe("migratePluginSkillScopes", () => {
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
-    // Should have tried to uninstall
     expect(uninstallSpy).toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
       "project",
       "/project",
     );
-    // Should NOT have installed at global (uninstall failed, catch fired)
+    // The uninstall failed, so nothing was installed at global.
     expect(installSpy).not.toHaveBeenCalledWith(
       "web-framework-react@agents-inc",
       "global",
       "/project",
     );
-    // Should report failure
     expect(result.migrated).toHaveLength(0);
     expect(result.failed).toHaveLength(1);
   });
@@ -1428,7 +1294,6 @@ describe("migratePluginSkillScopes", () => {
     const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
       ["web-framework-react", { from: "global" as const, to: "project" as const }],
     ]);
-    // Empty skills array — skill not found
     const skills = buildSkillConfigs<SkillId>([]);
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
@@ -1452,16 +1317,11 @@ describe("migratePluginSkillScopes", () => {
 
     const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
 
-    // First skill failed, second succeeded
     expect(result.migrated).toStrictEqual(["web-state-zustand"]);
     expect(result.failed).toHaveLength(1);
     expect(firstElement(result.failed).id).toBe("web-framework-react");
   });
 });
-
-// detectConfigChanges is a pure function that compares old and new configs
-// to produce a structured diff. These tests verify each change type is
-// correctly detected without requiring the full command lifecycle.
 
 describe("detectConfigChanges", () => {
   it("should detect added skills", () => {
@@ -1508,7 +1368,6 @@ describe("detectConfigChanges", () => {
       from: "global",
       to: "project",
     });
-    // Skill is not added or removed — just scope-changed
     expect(changes.addedSkills).toStrictEqual([]);
     expect(changes.removedSkills).toStrictEqual([]);
   });
@@ -1557,10 +1416,48 @@ describe("detectConfigChanges", () => {
 
     const changes = detectConfigChanges(oldConfig, wizardResult);
 
-    // Boundary cast: buildAgentConfigs uses AgentName cast for test names
     expect(changes.agentScopeChanges.get("web-developer")).toStrictEqual({
       from: "project",
       to: "global",
+    });
+  });
+
+  // One sentence per sub-agent, in entry order: model, Codex model, effort.
+  it("names a change to a sub-agent's Codex model alone", () => {
+    const oldConfig = buildProjectConfig({
+      skills: [],
+      agents: buildAgentConfigs(["web-developer"], { model: "haiku", effort: "high" }),
+    });
+    const wizardResult = buildWizardResult([], {
+      agentConfigs: buildAgentConfigs(["web-developer"], {
+        model: "haiku",
+        codexModel: "gpt-5.6-terra",
+        effort: "high",
+      }),
+    });
+
+    const changes = detectConfigChanges(oldConfig, wizardResult);
+
+    expect(changes.tuningChanges.get("web-developer")).toStrictEqual({
+      from: "model haiku, effort high",
+      to: "model haiku, codex model gpt-5.6-terra, effort high",
+    });
+  });
+
+  it("names a Codex model pinned on a sub-agent resting on its defaults", () => {
+    const oldConfig = buildProjectConfig({
+      skills: [],
+      agents: buildAgentConfigs(["web-developer"]),
+    });
+    const wizardResult = buildWizardResult([], {
+      agentConfigs: buildAgentConfigs(["web-developer"], { codexModel: "gpt-5.6-luna" }),
+    });
+
+    const changes = detectConfigChanges(oldConfig, wizardResult);
+
+    expect(changes.tuningChanges.get("web-developer")).toStrictEqual({
+      from: "defaults",
+      to: "codex model gpt-5.6-luna",
     });
   });
 
@@ -1619,10 +1516,8 @@ describe("detectConfigChanges", () => {
 
     const changes = detectConfigChanges(oldConfig, wizardResult);
 
-    // Added hono, removed vitest
     expect(changes.addedSkills).toStrictEqual(["api-framework-hono"]);
     expect(changes.removedSkills).toStrictEqual(["web-testing-vitest"]);
-    // React: scope G→P and source eject→agents-inc
     expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
       from: "global",
       to: "project",
@@ -1631,16 +1526,12 @@ describe("detectConfigChanges", () => {
       from: "eject",
       to: "agents-inc",
     });
-    // Added api-developer agent
     expect(changes.addedAgents).toStrictEqual(["api-developer"]);
     expect(changes.removedAgents).toStrictEqual([]);
   });
 
-  // A dual-scope addition (adding project scope to an already-global install)
-  // produces TWO new entries for the same id: an active project entry plus an
-  // excluded global tombstone. The active-only diff sees only the project entry
-  // and would misread it as a G→P migration. detectConfigChanges must flag it as
-  // a dual-scope transition using the tombstone-inclusive `fullEntries`.
+  // A dual-scope addition yields an active project entry and a global tombstone; the active-only
+  // diff would misread it as a G→P migration, so `fullEntries` classifies it.
   it("classifies a G→P dual-scope skill addition as a dual-scope transition, not a migration", () => {
     const oldConfig = buildProjectConfig({
       skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
@@ -1661,13 +1552,12 @@ describe("detectConfigChanges", () => {
 
     const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
 
-    // The scope change stays in scopeChanges — it still drives the disk-side
-    // project-scope install and keeps hasAnyChanges truthy.
+    // Still a scope change: it drives the project-scope install and keeps hasAnyChanges true.
     expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
       from: "global",
       to: "project",
     });
-    // ...but it is flagged so the summary renders it as a project-scope addition.
+    // ...but flagged, so the summary renders it as a project-scope addition.
     expect(changes.dualScopeSkillTransitions.has("web-framework-react")).toBe(true);
   });
 
@@ -1699,10 +1589,8 @@ describe("detectConfigChanges", () => {
   });
 
   /**
-   * A collapsed pair removes the project's half and leaves the global install it masked, so its
-   * origin is measured against that install. Against the removed half, a project plugin dropped
-   * over a global copy read as a switch to eject, and the edit announced a mode change and a copy
-   * that never happened.
+   * Measured against the removed half, a project plugin dropped over a global copy would read as a
+   * switch to eject.
    */
   it("measures a collapsed pair's origin against the global install it masked", () => {
     const projectHalf = buildSkillConfigs(["web-framework-react"], {
@@ -1741,11 +1629,7 @@ describe("detectConfigChanges", () => {
     ).toStrictEqual(new Map());
   });
 
-  /**
-   * `s` and the selection key collapse a pair into the same config entry when its halves share a
-   * mode, so the entry cannot say which was pressed. The wizard result can, and a fold is the one
-   * collapse that writes the project's copy into the global install.
-   */
+  /** The config entry cannot tell `s` from the selection key; the wizard result can. */
   it("marks a collapsed pair folded when the wizard result says `s` folded it", () => {
     const projectHalf = buildSkillConfigs(["web-framework-react"], {
       scope: "project",
@@ -1856,7 +1740,6 @@ describe("detectConfigChanges", () => {
 
     const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
 
-    // Boundary cast: buildAgentConfigs uses AgentName cast for test names
     expect(changes.agentScopeChanges.get("web-developer")).toStrictEqual({
       from: "global",
       to: "project",
@@ -1881,10 +1764,6 @@ describe("detectConfigChanges", () => {
   });
 });
 
-// The change summary must display human-readable names, scope labels, and
-// appropriate change prefixes. These tests drive the edit command through
-// the full flow to capture stdout and verify the formatted output.
-
 describe("edit change summary display", () => {
   let tempDir: string;
   let projectDir: string;
@@ -1903,9 +1782,7 @@ describe("edit change summary display", () => {
     process.chdir(projectDir);
 
     stdoutChunks = [];
-    // Saved to be assigned straight back onto the same object in afterEach, so
-    // it is called with the receiver it came from. Binding would restore a
-    // wrapper rather than the original method.
+    // Restored onto the same object in afterEach; binding would restore a wrapper.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
     origWrite = process.stdout.write;
     process.stdout.write = function (str: unknown): boolean {
@@ -1943,7 +1820,6 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // Should use display name "React", not raw ID "web-framework-react"
     expect(output).toContain("React");
     expect(output).not.toContain("web-framework-react");
   });
@@ -1964,7 +1840,6 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // Should show [G] scope label for the globally-scoped added skill
     expect(output).toContain("[G]");
   });
 
@@ -1987,12 +1862,10 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // G→P scope change should show "+" prefix (treat as addition to project)
-    // and show scope transition labels
+    // G→P reads as an addition to the project.
     expect(output).toContain("+ React");
     expect(output).toContain("[G]");
     expect(output).toContain("[P]");
-    // Should NOT show "~" for G→P changes
     expect(output).not.toContain("~ React");
   });
 
@@ -2009,7 +1882,6 @@ describe("edit change summary display", () => {
       const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
       if (onComplete) {
         // Dual-scope shape: active project entry + excluded global tombstone.
-        // The global install survives; only project scope is added.
         onComplete(
           buildWizardResult(
             [
@@ -2030,10 +1902,8 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // Rendered as a project-scope addition
     expect(output).toContain("+ React");
     expect(output).toContain("[P]");
-    // Must NOT be rendered as a scope migration
     expect(output).not.toContain("[G] → [P]");
     expect(output).not.toContain("~ React");
   });
@@ -2057,11 +1927,10 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // P→G scope change should show "~" prefix (modification, not addition)
+    // P→G is a modification, not an addition.
     expect(output).toContain("~ React");
     expect(output).toContain("[P]");
     expect(output).toContain("[G]");
-    // Should NOT show "+" for P→G changes
     expect(output).not.toContain("+ React");
   });
 
@@ -2077,7 +1946,6 @@ describe("edit change summary display", () => {
     mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
       const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
       if (onComplete) {
-        // Remove all skills — wizard result has no skills
         onComplete(
           buildWizardResult([], {
             agentConfigs: buildAgentConfigs(["web-developer"]),
@@ -2091,10 +1959,8 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // Should use display name "React", not raw ID "web-framework-react"
     expect(output).toContain("React");
     expect(output).not.toContain("web-framework-react");
-    // Should show scope label for removed skill (from old config)
     expect(output).toContain("[P]");
   });
 
@@ -2117,10 +1983,8 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // Should show display name, not raw skill ID
     expect(output).toContain("React");
     expect(output).not.toContain("web-framework-react");
-    // Should show formatted source labels (Eject → Agents Inc)
     expect(output).toContain("Eject");
     expect(output).toContain("Agents Inc");
   });
@@ -2144,10 +2008,7 @@ describe("edit change summary display", () => {
 
     const output = stdoutChunks.join("");
 
-    // A mode switch keeps the same skill installed — it moves between eject and
-    // plugin. One amber line says so; a `- React` / `+ React` pair would read as an
-    // uninstall followed by an install of something else. `-`/`+` stay correct for
-    // the scope moves the sibling specs above cover.
+    // A mode switch keeps the skill installed, so one `~` line rather than `-`/`+`.
     expect(output).toContain("~ React");
     expect(output).not.toContain("- React");
     expect(output).not.toContain("+ React");

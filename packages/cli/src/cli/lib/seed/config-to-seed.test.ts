@@ -17,47 +17,29 @@ import { SKILLS } from "../__tests__/test-fixtures.js";
 
 import type { ContentReading } from "./external-skills";
 
-/**
- * The scope rule is replaceable here and nowhere else, so one spec can stand the mapper's own
- * catalogue-aware check down and see what the wire alone would do with the pair it was guarding.
- * Every other spec in this file runs the real rule straight through the same `vi.fn`.
- */
+/** Replaceable so one spec can stand the mapper's own check down; the rest run the real rule. */
 vi.mock("../configuration/config-generator", async (importOriginal) => {
   const original = await importOriginal<typeof import("../configuration/config-generator")>();
   return { ...original, isScopePairCompatible: vi.fn(original.isScopePairCompatible) };
 });
 
 /**
- * The inverse of `seed-to-wizard.ts`: an installed `ProjectConfig` back onto the wire, so the CLI
- * can mint an id rather than only consume one.
- *
- * The round trip is the contract these specs exist for. A payload this module mints and the
- * decoder reads back has to describe the same install — same skills at the same scopes from the
- * same origins, the same sub-agent roster with the same tuning, and the same per-agent curation.
- * Anything the config holds that the wire cannot say has to be refused by name instead, because a
- * silently thinner payload mints an id that installs a configuration nobody chose.
+ * The inverse of `seed-to-wizard.ts`. A minted payload must decode to the same install, and what
+ * the wire cannot say must be refused by name rather than shared thinner.
  */
 
 const WEB_DEV = "web-developer";
 const API_DEV = "api-developer";
 const REACT_CATEGORY = "web-framework";
 const HONO_CATEGORY = "api-api";
-/** A marketplace that is neither `eject` nor the default public one, as its manifest names it. */
 const PRIVATE_MARKETPLACE = "acme-internal";
-/** A second one, for the install that reads a different marketplace than a skill came from. */
 const OTHER_MARKETPLACE = "beta-internal";
-/** The id an added skill is minted under at intake — outside every catalogue, by construction. */
+/** Outside every catalogue, by construction. */
 const CARRIED_ID = "external-web-framework-brainstorming";
-/** What a config records about itself: a stack's own sentence, saved at install and never its id. */
 const SHARED_DESCRIPTION = "Minimal stack for E2E testing";
+const PINNED_CODEX_MODEL = "gpt-5.6-terra";
 
-/**
- * An installation with no added skills: nothing to carry, and nothing it cannot carry.
- *
- * What one carries is read off the disk this mapper never touches, so it arrives as an argument.
- * Stated rather than defaulted: the whole of the defect this parameter closed was a producer that
- * forgot the content, and a default would let the next one forget it again.
- */
+/** Stated rather than defaulted, so a producer cannot forget the content. */
 const CARRIES_NOTHING: ContentReading = { external: {}, uncarryable: [] };
 
 describe("configToSeedPayload", () => {
@@ -93,11 +75,35 @@ describe("configToSeedPayload", () => {
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
       );
 
-      // Every field the install pipeline reads, not a sample of them: a round trip that agrees
-      // about the skills and drops the tuning is exactly the failure this pins.
+      // Every field the install pipeline reads, tuning included.
       expect(result.skills).toStrictEqual(config.skills);
       expect(result.agentConfigs).toStrictEqual(config.agents);
       expect(result.assignedStack).toStrictEqual(config.stack);
+    });
+
+    it("carries a sub-agent's Codex model pin there and back", () => {
+      const config = buildProjectConfig({
+        skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
+        agents: buildAgentConfigs([WEB_DEV], {
+          scope: "global",
+          model: "haiku",
+          codexModel: PINNED_CODEX_MODEL,
+          effort: "xhigh",
+        }),
+        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
+      });
+
+      const payload = configToSeedPayload(config, CARRIES_NOTHING);
+      const { result } = seedToWizardResult(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX);
+
+      expect(payload.agents[WEB_DEV]).toStrictEqual({
+        on: true,
+        scope: "global",
+        model: "haiku",
+        codexModel: PINNED_CODEX_MODEL,
+        effort: "xhigh",
+      });
+      expect(result.agentConfigs).toStrictEqual(config.agents);
     });
 
     it("carries a sub-agent that owns no skill, which only the agents map can do", () => {
@@ -115,8 +121,7 @@ describe("configToSeedPayload", () => {
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
       );
 
-      // Sorted rather than positional: where a skill-less sub-agent lands in the roster is not
-      // part of the contract, that it is IN the roster is.
+      // Sorted: a skill-less sub-agent's roster position is not part of the contract.
       expect([...result.selectedAgents].sort()).toStrictEqual([API_DEV, WEB_DEV]);
     });
 
@@ -124,8 +129,7 @@ describe("configToSeedPayload", () => {
       const config = buildProjectConfig({
         skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
         agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
-        // The shape a saved config carries for a lazy skill: the writer emits `preloaded` only
-        // where it is true, so the key's absence is the user's curated lazy.
+        // The writer emits `preloaded` only where true, so its absence is the curated lazy.
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [saUnflagged(SKILLS.react.id)] } },
       });
 
@@ -134,9 +138,7 @@ describe("configToSeedPayload", () => {
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
       );
 
-      // `{ id }` and `{ id, preloaded: false }` are the same install — the writer drops a false
-      // flag on the way back to disk — so this is the one place the round trip is not byte-exact,
-      // and it is stated rather than asserted away.
+      // `{ id }` and `{ id, preloaded: false }` are the same install: the one non-byte-exact spot.
       expect(result.assignedStack).toStrictEqual({
         [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] },
       });
@@ -151,9 +153,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // The INSTALLABLE half, which is what the worker's POST route declares. Held against the
-      // lenient one this would pass for a payload the store would refuse — and the CLI is a
-      // minting client, so what it can hand over is the only question worth asking of it.
+      // The installable schema the worker's POST declares; the CLI is a minting client.
       const parsed = installableSeedPayloadSchema.safeParse(
         configToSeedPayload(config, CARRIES_NOTHING),
       );
@@ -170,8 +170,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // Naming an id the config never stored would make the receiver overlay a stack's own
-      // preload flags over the curation this payload carries in full.
+      // An id would make the receiver overlay a stack's preload flags over this curation.
       expect(configToSeedPayload(config, CARRIES_NOTHING).stackId).toBeNull();
     });
 
@@ -183,9 +182,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // The description and the stack's `preloaded` overlay are the only two things a resolvable
-      // `stackId` did on the receiving side, and the assignments above already carry the second.
-      // Carrying the first directly is what leaves nothing for the id to add.
+      // The description was the only thing a `stackId` added that the assignments do not carry.
       expect(configToSeedPayload(config, CARRIES_NOTHING).description).toBe(SHARED_DESCRIPTION);
     });
 
@@ -196,8 +193,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // Absent rather than empty, for the reason the marketplace ref is: an id is the hash of its
-      // body, so a key meaning what its absence already means would remint every ordinary payload.
+      // Absent rather than empty: an id is the hash of its body.
       expect(configToSeedPayload(config, CARRIES_NOTHING)).not.toHaveProperty("description");
     });
 
@@ -212,16 +208,13 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // The REF, not the name. An id already carries whose skill it is — its marketplace's own
-      // prefix — and what it cannot carry is where that marketplace is fetched from.
+      // The ref, not the name: the id's prefix already says whose skill it is.
       expect(configToSeedPayload(config, CARRIES_NOTHING).marketplace).toBe(TEST_CUSTOM_SOURCE_URL);
     });
 
     it("carries the content it was handed, keyed by the same id the skill row names", () => {
       const carried = buildSeedExternalSkill();
-      // A catalogue id rather than a minted one: this mapper never asks what an id resolves to —
-      // the reading handed to it already did — so keying the content by a real member says the
-      // same thing without casting a fabricated id into a union it is not in.
+      // A catalogue id, so no fabricated id is cast into a union it is not in.
       const config = buildProjectConfig({
         skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
         agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
@@ -232,8 +225,7 @@ describe("configToSeedPayload", () => {
         uncarryable: [],
       });
 
-      // One map read whichever kind of skill a selection names: `skills` is still what selects,
-      // and `external` is only where the bytes of the ones no catalogue resolves are.
+      // `skills` selects; `external` only holds bytes for ids no catalogue resolves.
       expect(payload.external).toStrictEqual({ [SKILLS.react.id]: carried });
       expect(Object.keys(payload.skills)).toStrictEqual([SKILLS.react.id]);
     });
@@ -257,9 +249,7 @@ describe("configToSeedPayload", () => {
         },
       });
 
-      // A ref this install happens to record is not a ref the payload needs: an ejected copy
-      // travels with the project and the public catalogue is what absent already means. Emitting
-      // one anyway would make two identical selections mint two different ids.
+      // An ejected copy travels with the project and absent means the public catalogue.
       expect(configToSeedPayload(config, CARRIES_NOTHING)).not.toHaveProperty("marketplace");
     });
 
@@ -270,9 +260,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // Absent rather than empty, for the reason the marketplace ref is: the id is the hash of
-      // the body, so an `external: {}` nobody asked for would remint every ordinary payload under
-      // a new id and mean exactly what its absence already means.
+      // Absent rather than empty: an id is the hash of its body.
       expect(configToSeedPayload(config, CARRIES_NOTHING)).not.toHaveProperty("external");
     });
   });
@@ -297,8 +285,7 @@ describe("configToSeedPayload", () => {
 
       const payload = configToSeedPayload(config, CARRIES_NOTHING);
 
-      // A tombstone is not an install. Presence is selection on the wire, so an excluded entry
-      // has nothing to say — and `--from` is greenfield, so there is no install for it to mask.
+      // A tombstone is not an install, and `--from` is greenfield.
       expect(Object.keys(payload.skills)).toStrictEqual([SKILLS.react.id]);
       expect(Object.keys(payload.agents)).toStrictEqual([WEB_DEV]);
     });
@@ -310,8 +297,7 @@ describe("configToSeedPayload", () => {
         stack: {
           [WEB_DEV]: {
             [REACT_CATEGORY]: [sa(SKILLS.react.id)],
-            // A stale row: `compile` already warns about it and drops it, so it is no part of
-            // what is installed here and carrying it would share more than this project has.
+            // A stale row `compile` already drops.
             [HONO_CATEGORY]: [sa(SKILLS.hono.id)],
           },
         },
@@ -343,7 +329,7 @@ describe("configToSeedPayload", () => {
   describe("refusing what the contract cannot say", () => {
     it("refuses a skill from a marketplace this installation records no location for", () => {
       const config = buildProjectConfig({
-        // No `marketplace` ref: the skill names a marketplace and nothing here says where it is.
+        // No `marketplace` ref, so nothing says where the skill's marketplace is.
         marketplaceName: PRIVATE_MARKETPLACE,
         skills: [
           buildSkillConfig(SKILLS.react.id, { scope: "global", origin: PRIVATE_MARKETPLACE }),
@@ -352,8 +338,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // Both halves: `install: "plugin"` says nothing about WHICH marketplace, so a payload that
-      // cannot name one has the receiver install a different repository's skill under the same id.
+      // `install: "plugin"` alone would install a different repository's skill under the same id.
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
         new RegExp(`${SKILLS.react.id}[\\s\\S]*${PRIVATE_MARKETPLACE}`),
       );
@@ -368,8 +353,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // One ref for the payload, because an install reads one marketplace. A skill from a second
-      // one would be fetched from the first under its own id, which is the same silent swap.
+      // An install reads one marketplace, so a second one's skill would be silently swapped.
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
         new RegExp(`${SKILLS.react.id}[\\s\\S]*${OTHER_MARKETPLACE}`),
       );
@@ -378,8 +362,7 @@ describe("configToSeedPayload", () => {
     it("refuses a sub-agent pinned to a model the contract has no word for", () => {
       const config = buildProjectConfig({
         skills: [buildSkillConfig(SKILLS.react.id, { scope: "global", origin: EJECT_SOURCE })],
-        // `inherit` overrides the sub-agent's own metadata down to the parent model, which an
-        // absent key does not — absence keeps the metadata's own choice.
+        // `inherit` differs from absence, which keeps the metadata's own choice.
         agents: buildAgentConfigs([WEB_DEV], { scope: "global", model: "inherit" }),
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
@@ -396,12 +379,8 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // The decoder refuses this same pair on the way in. Minting it anyway would produce an id
-      // that cannot be installed, which is the one outcome a share must never have.
-      //
-      // The wording is asserted, not just the two names: the schema below refuses the same pair
-      // and names the same two, so a test happy with either message could not tell which one
-      // reached the sharer — and only this one names both remedies.
+      // The decoder refuses this pair, so minting it would produce an uninstallable id. The wording
+      // is asserted: the schema names the same two, but only this message names both remedies.
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
         new RegExp(
           `cannot be shared as it stands[\\s\\S]*` +
@@ -417,9 +396,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // The mapper's own rule stood down, which is the drift the shared contract exists to make
-      // impossible: with it gone, the only thing between this config and a minted id is the
-      // schema the store's POST route declares — so that is the schema this parses against.
+      // With the mapper's rule stood down, the store's installable schema is the last guard.
       vi.mocked(isScopePairCompatible).mockReturnValueOnce(true);
 
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
@@ -434,9 +411,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      // The reader that rebuilds an added skill from disk finds its own reasons a directory
-      // cannot travel, and they belong in the same sentence as the rest: a sharer who fixes one
-      // only to be refused for the next learns nothing the first message could not have told them.
+      // The reader's own reasons share the sentence, so one message names everything.
       expect(() =>
         configToSeedPayload(config, {
           external: {},
@@ -460,8 +435,6 @@ describe("configToSeedPayload", () => {
         },
       });
 
-      // A sharer who fixes one only to be refused for the next learns nothing the first message
-      // could not have told them.
       expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
         new RegExp(
           `${SKILLS.react.id}[\\s\\S]*${SKILLS.hono.id}[\\s\\S]*${WEB_DEV}[\\s\\S]*inherit`,

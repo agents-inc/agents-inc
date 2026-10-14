@@ -41,8 +41,6 @@ import type {
   StackAgentConfig,
 } from "../types";
 
-// Skill definitions (single-consumer — only used in this test file)
-
 const REACT_DEFINITION = createMockSkillDefinition("web-framework-react", {
   path: "skills/web/framework/react/",
   description: "React component patterns",
@@ -67,8 +65,6 @@ const DRIZZLE_DEFINITION = createMockSkillDefinition("api-database-drizzle", {
   path: "skills/api/database/drizzle/",
   description: "Drizzle ORM",
 });
-
-// Composite skill maps (test-specific groupings of shared definitions)
 
 const RESOLVE_SKILL_MAP: Record<string, SkillDefinition> = {
   "web-framework-react": REACT_DEFINITION,
@@ -128,11 +124,8 @@ describe("buildSkillRefsFromConfig", () => {
       "web-framework": [sa("web-framework-react")],
     };
 
-    // Nothing in this file calls `initializeMatrix`, so the lookup runs against
-    // BUILT_IN_MATRIX — the shipped catalogue, where this skill states its own trigger
-    // sentence. Read rather than written out: the subject is the wiring, and a copy of the
-    // sentence here would redden on any edit to the skill's own metadata. The negative below
-    // is what stops that read from being vacuous.
+    // Read from BUILT_IN_MATRIX rather than written out, so a metadata edit cannot redden it; the
+    // negative below keeps the read from being vacuous.
     const stated = getSkillById("web-framework-react").usageGuidance;
 
     const result = buildSkillRefsFromConfig(agentStack);
@@ -198,10 +191,7 @@ describe("resolveSkillReference", () => {
       description: "React component patterns",
       usage: "when building React components",
       preloaded: true,
-      // The resolver propagates `source` from SkillReference onto the
-      // resolved Skill so the compiler can emit per-skill pluginRef formats.
-      // Absent on the input → absent on the output, no `source` key at all
-      // (see dedicated test below).
+      // `source` is threaded onto the resolved Skill so the compiler picks the pluginRef per skill.
     });
   });
 
@@ -238,8 +228,6 @@ describe("resolveSkillReference", () => {
     const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
 
     expect(result).not.toBeNull();
-    // The resolver must thread `source` through so the compiler can key off it
-    // per-skill — that is the contract this asserts.
     expect(result!.source).toBe("agents-inc");
   });
 
@@ -252,9 +240,7 @@ describe("resolveSkillReference", () => {
     const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
 
     expect(result).not.toBeNull();
-    // Absent on the input → undefined on the output. The compiler treats
-    // missing-source as eject (no pluginRef), so leaking a stale value
-    // would silently misclassify user-authored local skills.
+    // The compiler reads missing source as eject, so a stale value would misclassify local skills.
     expect(result!.source).toBeUndefined();
   });
 });
@@ -275,7 +261,6 @@ describe("resolveSkillReferences", () => {
         description: "React component patterns",
         usage: "for components",
         preloaded: false,
-        // See the resolveSkillReference test above for shape rationale.
       },
       {
         id: "web-state-zustand",
@@ -306,21 +291,12 @@ describe("resolveSkillReferences", () => {
 });
 
 /**
- * Rendered through the SHIPPED template, `agent.liquid` and the `agent-body` it includes, with the
- * context `buildAgentTemplateContext` builds — the two halves a compile runs.
- *
- * This block used to render through a template written out in this file to "mirror" the real one,
- * with the preloaded/dynamic split done by the test itself. Nothing in the product was on that
- * path, so no change to either half could redden it — and the mirror had already drifted: it still
- * rendered an "Available Skills" heading, a "Use when:" prefix and a skills note the shipped
- * template had stopped writing, while every spec here stayed green. The text asserted below is the
- * shipped template's own, as literals, for the reason `e2e/pages/constants.ts` mirrors product
- * strings rather than importing them.
+ * Rendered through the shipped `agent.liquid` with the context `buildAgentTemplateContext`
+ * builds. The expected text is the template's own, as literals.
  */
 describe("preloaded vs dynamic skills in compiled agent output", () => {
   let engine: Liquid;
 
-  /** The agent's own prose. The template renders it; no assertion here reads it. */
   const AGENT_FILES = {
     identity: "Test identity content",
     playbook: "Test playbook content",
@@ -330,7 +306,7 @@ describe("preloaded vs dynamic skills in compiled agent output", () => {
   };
 
   beforeEach(async () => {
-    // No project directory, so no project-local override can shadow the shipped template.
+    // No project directory, so no local override shadows the shipped template.
     engine = await createLiquidEngine();
   });
 
@@ -685,11 +661,8 @@ describe("resolveAgents", () => {
   });
 
   /**
-   * The agent's own metadata.yaml carries the default; the project config carries the user's
-   * choice. `RESOLVE_AGENTS_DEFINITIONS` pins `web-developer` at `model: sonnet`, which is neither
-   * the `haiku` the override spec sets nor the `opus` every bundled agent declares — so a value
-   * that survives resolution names which side it came from in both directions, and neither
-   * assertion can be satisfied by a resolver that ignored one of them.
+   * The definition pins `sonnet`, neither the override's `haiku` nor the bundled `opus`, so a
+   * surviving value names which side it came from.
    */
   describe("model and effort", () => {
     it("should prefer the config model and effort over the agent metadata default", async () => {
@@ -723,29 +696,28 @@ describe("resolveAgents", () => {
       expect(result["web-developer"]?.model).toBe("sonnet");
       expect(result["web-developer"]?.effort).toBe("low");
     });
+
+    it("should carry the config's Codex model beside the Claude one", async () => {
+      const pinnedConfig = createMockCompileConfig({
+        "web-developer": { model: "haiku", codexModel: "gpt-5.6-terra" },
+      });
+
+      const result = await resolveAgents(
+        RESOLVE_AGENTS_DEFINITIONS,
+        RESOLVE_AGENTS_SKILL_MAP,
+        pinnedConfig,
+        "/test/path",
+      );
+
+      expect(result["web-developer"]?.model).toBe("haiku");
+      expect(result["web-developer"]?.codexModel).toBe("gpt-5.6-terra");
+    });
   });
 
   /**
-   * `resolveAgents` builds its `AgentConfig` from an explicit field list rather than by spreading
-   * the definition, so a field the list omits is dropped between `metadata.yaml` and the template —
-   * silently, because the template runs `strictVariables: false` and renders a missing variable as
-   * nothing at all.
-   *
-   * Four fields were being dropped that way, and each is read by `agent.liquid`: an agent declaring
-   * `isolation` compiled without it, one declaring its own `hooks` silently got the emitted
-   * completion gate instead, and `disallowedTools` had never reached a compiled agent at all. The
-   * one spec that appeared to cover the pair — `WEB_DEV_TUNED_PERMISSIONS` in `compiler.test.ts` —
-   * hands `compileAgentForHost` an `AgentConfig` it built itself, so it enters the pipeline
-   * downstream of this function and could not see the gap.
-   *
-   * A roster rather than a field-by-field check: the subject is which fields survive, and a per-key
-   * assertion cannot see the next one to be dropped. Bound to {@link TUNED_OPTIONAL_FIELDS} rather
-   * than written twice, because a field once already went missing this way without either test
-   * reddening: `experimental` reached `resolveAgents`'s own field list correctly, but was added to
-   * the fixture below with no matching line in the assertion, so the roster passed on a field it
-   * never looked at. Binding both tests to one constant makes that class of drift a compile error
-   * instead of a silent gap — add a key here and it is fed to the fixture and checked by both
-   * assertions in the same edit.
+   * `resolveAgents` lists fields explicitly, and the template renders a missing one as nothing, so
+   * a dropped field is silent. One constant feeds both the fixture and the assertions, so adding a
+   * key checks it everywhere in one edit.
    */
   const TUNED_OPTIONAL_FIELDS = {
     disallowedTools: ["Bash", "WebFetch"],
@@ -777,8 +749,7 @@ describe("resolveAgents", () => {
     });
 
     it("leaves each of them off entirely when the metadata declares none", async () => {
-      // `createMockAgent` defaults `permissionMode`, so the shared definition declares one and
-      // cannot be the subject here. Dropping the key is what makes this the absent case.
+      // `createMockAgent` defaults `permissionMode`, so dropping it makes the absent case.
       const { permissionMode: _declared, ...declaresNone } = elementAt(
         Object.values(RESOLVE_AGENTS_DEFINITIONS),
         0,

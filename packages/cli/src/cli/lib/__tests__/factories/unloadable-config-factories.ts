@@ -1,12 +1,6 @@
 /**
- * The `config.ts` texts a loader has to refuse — each a file that EXISTS and cannot be loaded,
- * which the loader reports as `ConfigLoadError` rather than as a missing file.
- *
- * The config-side counterpart of `renderUnparseableMetadataYaml()` in `content-generators.ts`: an
- * error-path fixture asks for the breakage BY NAME rather than hand-rolling a broken string per
- * spec. Every renderer here produces text no product writer emits, so none of them may be written
- * through a fixture writer that goes via the product's own writer — `writeCorruptConfig` in
- * `e2e/helpers/test-utils.ts` and `writeRawTestConfig` in `helpers/config-io.ts` are the doors.
+ * `config.ts` texts that exist and cannot be loaded. No product writer emits them, so write them
+ * through `writeCorruptConfig` or `writeRawTestConfig`, never via the product's own writer.
  */
 
 import { renderConfigTs } from "../content-generators.js";
@@ -16,23 +10,14 @@ export function renderUnparseableConfigTs(): string {
   return "export default {{{ not valid typescript";
 }
 
-/**
- * `config` as a well-formed module that declares it and exports nothing — the file a user leaves
- * behind by deleting its `export default` line. It parses, so what the loader refuses is the
- * missing default export rather than the syntax.
- */
+/** Parses, so the loader refuses the missing default export rather than the syntax. */
 export function renderConfigTsWithoutDefaultExport(config: Record<string, unknown>): string {
   return `const config = ${JSON.stringify(config, null, 2)};\n`;
 }
 
 /**
- * A `config.ts` that loads and whose shape the loader schema rejects: `skills` is a string where
- * the schema requires an array. Everything else about it is valid, so the refusal can only be the
- * schema's.
- *
- * `marketplace`, when given, is written beside the fault. It is the one field here that a reader
- * judging the file by its settings alone would find usable, so it is how a fixture asks whether
- * such a reader still takes a marketplace out of a file the installation loader refuses.
+ * Loads, but `skills` is a string, so the refusal is the schema's. `marketplace` asks whether a
+ * settings-only reader still takes it from a file the loader refuses.
  */
 export function renderSchemaViolatingConfigTs(marketplace?: string): string {
   return renderConfigTs({
@@ -40,5 +25,14 @@ export function renderSchemaViolatingConfigTs(marketplace?: string): string {
     ...(marketplace !== undefined && { marketplace }),
     skills: "nope",
     agents: [],
+  });
+}
+
+/** Only `field` is wrong, so a refusal can only be about it. */
+export function renderConfigTsWithAgentField(field: "model" | "codexModel", value: string): string {
+  return renderConfigTs({
+    name: "agent-field-fixture",
+    skills: [],
+    agents: [{ name: "web-developer", scope: "project", [field]: value }],
   });
 }

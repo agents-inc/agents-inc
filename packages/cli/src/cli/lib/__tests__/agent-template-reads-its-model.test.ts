@@ -10,26 +10,17 @@ import type { AgentConfig } from "../../types/index.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/** Where the shipped Liquid templates live — the ones a compile renders when nothing overrides them. */
 const SHIPPED_TEMPLATES = "src/agents/_templates/**/*.liquid";
 
 /**
- * A value the COMPILER has proved carries every property of `AgentConfig`, optional ones
- * included, so `Object.keys` of it is the property roster rather than a second copy of one.
- *
- * `Required<AgentConfig>` is doing the binding, and it is the whole reason this is a gate rather
- * than a hand-maintained list: a field added to `AgentConfig` and forgotten here fails `tsc` at
- * this literal, so the roster cannot silently stop describing the type. A field REMOVED from the
- * type fails here too, which is the direction that matters more — a template still asking for it
- * would otherwise keep resolving to `undefined` in silence.
- *
- * The values are irrelevant and never rendered; only the keys are read.
+ * `Required<AgentConfig>` makes `tsc` hold this roster to the type both ways; only keys are read.
  */
 const EVERY_AGENT_CONFIG_FIELD: Required<AgentConfig> = {
   name: "web-developer",
   title: "Web Developer",
   description: "Builds web interfaces",
   model: "opus",
+  codexModel: "gpt-5.6-terra",
   effort: "high",
   tools: [],
   disallowedTools: [],
@@ -57,19 +48,8 @@ async function shippedTemplates(): Promise<Array<{ file: string; source: string 
 }
 
 /**
- * Every field a shipped template asks the model for is a field the model has.
- *
- * `agent.liquid` spelled two of them snake_case — `agent.permission_mode` and
- * `agent.disallowed_tools` — against a `AgentConfig` that has always been camelCase, so a
- * compiled sub-agent silently lost both. Four things that normally catch a name that no longer
- * names anything were all inapplicable at once: `tsc` does not open a `.liquid` file, ESLint
- * does not lint one, the engine runs `strictVariables: false` so the lookup does not throw, and
- * `permissionMode`'s `default:` filter kept emitting the key so the output still looked right.
- *
- * This is the missing fifth. It is deliberately one-directional — a field the type has and no
- * template reads is not a defect, since most of `AgentConfig` is not frontmatter — so the
- * assertion is a subset check rather than an equality, and the subject guard below is what stops
- * a subset check over an empty set from passing for free.
+ * `tsc`, ESLint and the engine (`strictVariables: false`) all ignore a template asking for a field
+ * the model lacks. A subset check: most of `AgentConfig` is not frontmatter.
  */
 describe("the shipped agent templates read fields the model carries", () => {
   it("asks for no field AgentConfig does not have", async () => {
@@ -88,12 +68,7 @@ describe("the shipped agent templates read fields the model carries", () => {
     ).toStrictEqual([]);
   });
 
-  /**
-   * The subject guard, and it carries the red for two failures the assertion above cannot
-   * distinguish from success: a glob that stopped matching any template, and a reader that
-   * stopped matching any lookup. Either leaves the check above comparing an empty list to an
-   * empty list, which is the shape every vacuous gate has.
-   */
+  /** Subject guard: an empty glob or reader would otherwise pass the subset check. */
   it("reads the fields the frontmatter block is built from", async () => {
     const templates = await shippedTemplates();
     const readEverywhere = new Set(templates.flatMap(({ source }) => agentFieldsReadBy(source)));
