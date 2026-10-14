@@ -1,23 +1,7 @@
 /**
- * The tool grant every compiled sub-agent carries.
- *
- * `tools:` in a sub-agent's frontmatter is an ALLOWLIST — an agent that
- * declares one gets exactly what it names, where an agent that omits the key
- * inherits every tool the session has. Every agent this product compiles
- * declares one, and none of the eighteen `metadata.yaml` files names `Skill`,
- * so every agent it has ever written was unable to invoke a skill.
- *
- * The `skills:` key does not close that: it preloads skill content into the
- * agent's startup context and grants no tool, so an agent can list skills and
- * still have no way to load one. That independence is why the defect survived
- * — a compiled agent looked fully skill-aware from its frontmatter — and it is
- * what these tests are really pinning.
- *
- * The two render cases go through `renderAgentFromCorpus`, which is the same
- * Liquid render an install performs, so what they assert is the literal
- * frontmatter line rather than a field on an object. They keep `"Skill"` as a
- * literal on purpose: an assertion that imported the constant the renderer
- * writes would move with it and could not fail.
+ * `tools:` is an allowlist, so every compiled sub-agent needs `Skill` in it to invoke a skill;
+ * `skills:` only preloads content and grants no tool. Rendered through `renderAgentFromCorpus`,
+ * and `"Skill"` stays a literal so the assertion can fail when the renderer's constant moves.
  */
 
 import { describe, expect, it } from "vitest"
@@ -37,7 +21,6 @@ import {
   buildSkill,
 } from "./__tests__/factories/agent-config-factories"
 
-/** The partials are not this file's subject; every case renders the same empty set. */
 const NO_FILES: AgentFiles = {
   identity: "",
   playbook: "",
@@ -196,58 +179,22 @@ describe("the frontmatter an install writes", () => {
 })
 
 /**
- * The file's second subject: everything author-supplied that reaches the Liquid
- * engine has its delimiters stripped on the way.
- *
- * `sanitizeCompiledAgentData` covers the agent by ENUMERATION — one conditional
- * spread per field, over a leading `...data.agent` that passes everything else
- * through untouched — and an enumeration held against nothing has already fallen
- * behind the template three times: `hooks` when hooks were first rendered,
- * `experimental` when that key arrived, and `hooks[].hooks[].type`, which rode the
- * `...action` spread past `command`, `script` and `prompt` and which this gate
- * caught on its first run. All three reached the renderer unsanitised with every
- * other gate green, because nothing compared the two lists.
- *
- * So neither list is written down here. The fixture is annotated
- * `Required<AgentConfig>`, which is the COMPILER holding one side against the
- * model: a field added to `AgentConfig` and forgotten below fails `tsc` at the
- * literal, and a field removed from the type fails there too. The other side is
- * read from BEHAVIOUR — every field carries a marker built out of Liquid
- * delimiters, the agent renders through the same corpus path an install renders,
- * and a marker that comes back with its delimiters intact is a field nothing
- * stripped. The marker names its own field, so the failure names it too.
- *
- * **Why the roster is the type's rather than the template's.** Reading the
- * template would answer the narrower question directly, and the only sound reader
- * of one is `agentFieldsReadBy` in the CLI's `__tests__/helpers/template-field-reads.ts`
- * — tested, and carrying two traps (a `\b` boundary that must not split
- * `agentBaseDir`, a first-segment capture that must not read Liquid's `.size` as a
- * field) that are the argument for it having tests at all. It cannot be imported
- * here: `packages/cli` depends on this package and not the other way round.
- * Restating it inline would put an untested extractor in a spec file, which is
- * exactly what this repository's test rules forbid. `Required<AgentConfig>` also
- * covers strictly MORE than the template's roster — a template that starts
- * rendering `agent.domain` tomorrow finds `domain` already poisoned and fails on
- * the day it ships — and the one thing it cannot see, a template reading a name
- * `AgentConfig` does not carry, resolves to nothing at all under
- * `strictVariables: false` and so can carry no author string into the output.
+ * Every author-supplied string reaching Liquid has its delimiters stripped.
+ * `sanitizeCompiledAgentData` enumerates fields, so the fixture is `Required<AgentConfig>`: a
+ * field added to the type and forgotten here fails `tsc`, and every field carries a marker whose
+ * surviving delimiters name it. The roster is the type's, not the template's: the template reader
+ * lives in the CLI, which this package cannot import, and the type covers strictly more.
  */
 
-/** Distinguishes a marker from anything the vendored partials happen to contain. */
 const POISON_PREFIX = "POISON:"
 
-/**
- * The `agent.*` fields that hold author text, each named as the marker planted in
- * it reports itself.
- *
- * Constrained to `keyof AgentConfig` so a renamed or retired field reddens this
- * line rather than exporting its error to whatever reads the roster.
- */
+/** Constrained to `keyof AgentConfig`, so a renamed field reddens here. */
 const POISONED_AGENT_KEYS = [
   "name",
   "title",
   "description",
   "model",
+  "codexModel",
   "effort",
   "tools",
   "disallowedTools",
@@ -260,12 +207,7 @@ const POISONED_AGENT_KEYS = [
   "domain",
 ] as const satisfies readonly (keyof AgentConfig)[]
 
-/**
- * The author strings that sit BELOW a field rather than in it. `hooks` and
- * `experimental` are where all three misses happened, and both are objects — the
- * field itself holds no text, so naming the field in the enumeration is not the
- * same as covering it, and the coverage question is about what is inside.
- */
+/** Author strings inside object fields: naming `hooks` or `experimental` does not cover them. */
 const POISONED_NESTED_FIELDS = [
   "experimental.cacheTtl",
   "hooks.event",
@@ -284,40 +226,14 @@ const EVERY_POISONED_FIELD: readonly PoisonedField[] = [
   ...POISONED_NESTED_FIELDS,
 ]
 
-/** What a field carries before rendering: Liquid delimiters wrapped around its own name. */
 const marker = (field: PoisonedField): string => `{{${POISON_PREFIX}${field}}}`
 
-/** What the same marker leaves behind once `sanitizeLiquidSyntax` has taken its delimiters. */
 const residue = (field: PoisonedField): string => `${POISON_PREFIX}${field}`
 
 /**
- * {@link marker}, cast into whatever closed vocabulary the field it fills declares.
- *
- * `model`, `effort`, `permissionMode`, `isolation`, `experimental.cacheTtl` and
- * `hooks.action.type` are unions, so a value carrying Liquid syntax is by
- * construction not a member of any of them. That reads as an argument for leaving
- * them out of the sanitiser, and it is wrong in a way worth writing down here,
- * because a reader who checks only the CLI concludes this whole block is dead
- * weight and deletes it.
- *
- * **The CLI route is closed; the browser route is not, and that asymmetry is the
- * subject.** Every one of those fields is enum-validated in
- * `agentYamlConfigSchema` (the CLI's `lib/schemas.ts`), and `loadAgentsFromDir`
- * parses each `metadata.yaml` inside a `try` whose `catch` warns and skips THE
- * WHOLE FILE — so a poisoned `type` does not reach a compiled agent carrying a bad
- * value, it stops that agent being compiled at all. Demonstrated rather than
- * argued: `agentYamlConfigSchema.safeParse` of a definition whose hook action
- * declares `type: "{{POISON:hooks.action.type}}"` answers `success: false` with one
- * issue at path `hooks.SubagentStop.0.hooks.0.type` — `Invalid option: expected one
- * of "command"|"script"|"prompt"`. {@link renderAgent} is also the editor's output
- * preview, reached through `renderAgentFromCorpus` from a browser where none of
- * that has run, so the hole exists on exactly one of the two front doors.
- *
- * Which is why the closed vocabularies are the interesting half. `name`, `title`,
- * `description` and `tools` are `z.string()` on the CLI side too, so both routes
- * reach the renderer with whatever the author wrote; these six are the fields where
- * the two routes DIVERGE, and the only evidence that they diverge is a spec that
- * renders through the browser path.
+ * Cast into the field's closed vocabulary. The CLI's schemas reject these values, but the
+ * editor's preview reaches {@link renderAgent} from a browser without them, so these are the
+ * fields where the two routes diverge.
  */
 function poisoned<T extends string>(field: PoisonedField): T {
   // Deliberately invalid test data: the subject is a value the field's own type forbids.
@@ -344,20 +260,13 @@ const POISONED_EXPERIMENTAL: Required<
   NonNullable<AgentConfig["experimental"]>
 > = { cacheTtl: poisoned("experimental.cacheTtl") }
 
-/**
- * One agent definition with author text in every field that can hold it.
- *
- * `Required<AgentConfig>` is doing the binding, and it is the whole reason this is
- * a gate rather than a hand-kept list — the same shape the CLI's
- * `agent-template-reads-its-model.test.ts` uses to hold a roster against the model.
- * `custom` is the one field with no poisoned form: it is a boolean, so no author
- * string can reach the renderer through it.
- */
+/** `custom` is a boolean, so it has no poisoned form. */
 const POISONED_AGENT: Required<AgentConfig> = {
   name: poisoned("name"),
   title: poisoned("title"),
   description: poisoned("description"),
   model: poisoned("model"),
+  codexModel: poisoned("codexModel"),
   effort: poisoned("effort"),
   tools: [poisoned("tools")],
   disallowedTools: [poisoned("disallowedTools")],
@@ -374,29 +283,17 @@ const POISONED_AGENT: Required<AgentConfig> = {
   skills: [DYNAMIC_SKILL],
 }
 
-/**
- * Which corpus entry supplies the partials. Any real sub-agent does — the agent's
- * OWN name is poisoned, and this one only selects the identity and playbook the
- * render wraps around it.
- */
+/** Any real sub-agent: it only supplies the partials wrapped around the poisoned agent. */
 const PARTIALS_FROM = "cli-developer"
 
-/** Somewhere an author string can sit: a string, or a list of them. */
 const holdsAuthorText = (value: unknown): boolean =>
   typeof value === "string" ||
   (Array.isArray(value) &&
     value.every((entry: unknown) => typeof entry === "string"))
 
 /**
- * The fields whose markers reach the rendered file, in {@link EVERY_POISONED_FIELD}
- * order.
- *
- * This is the subject guard, and it carries the red for the failure the assertion
- * after it cannot tell from success: a render that stopped emitting the frontmatter
- * at all leaves that assertion comparing an empty list to an empty list, which is
- * the shape every vacuous gate has. The five absent from it — `outputFormat`,
- * `path`, `sourceRoot`, `agentBaseDir`, `domain` — are fields of the definition the
- * template does not read, and a template that starts reading one reddens here first.
+ * The subject guard: a render that lost its frontmatter would otherwise compare two empty lists.
+ * The six absent fields are ones the template does not read.
  */
 const FIELDS_THE_TEMPLATE_RENDERS: readonly PoisonedField[] = [
   "name",
@@ -460,62 +357,30 @@ describe("the Liquid syntax a rendered sub-agent must not carry", () => {
 })
 
 /**
- * The file's third subject: the completion gate a writing sub-agent stops
- * against.
- *
- * It reaches the frontmatter through `withCompletionGate` rather than through a
- * branch in the template, and every case here renders through
- * `renderAgentFromCorpus` and asserts on the raw `hooks:` line — the line IS the
- * contract, because Claude Code reads the frontmatter rather than the object the
- * renderer was handed. Nothing below picks that line out of the render: an
- * extractor living in a spec file would need tests of its own before anything it
- * returned could be believed, so the assertions are whole-line `toContain`s
- * anchored on the newline in front of `hooks:`.
- *
- * The gate's own text stays a literal rather than an import of
- * `COMPLETION_GATE_COMMAND`. An assertion that imports the constant the product
- * renders moves with it and so cannot fail; the CLI's `wizard-layout.test.tsx`
- * states that at the top of its own file for the same reason.
- *
- * **The pair that has to stay in one file** is "declares a hook for another
- * event" and "declares its own `Stop`". A refusal pinned on its own cannot tell a
- * correctly scoped guard from one that has swallowed its whole domain, and this
- * gate has already been on the wrong side of exactly that: the template decided
- * it with an `if agent.hooks` / `elsif tools contains Write` pair, so an agent
- * declaring a `PostToolUse` formatter silently lost its gate with every gate in
- * the repository green.
+ * The completion gate a writing sub-agent stops against, asserted as the raw `hooks:` line Claude
+ * Code reads. The command stays a literal rather than importing `COMPLETION_GATE_COMMAND`.
+ * "declares a hook for another event" and "declares its own `Stop`" stay together: a refusal
+ * alone cannot tell a scoped guard from one that swallowed its domain.
  */
 
-/** A definition holding `Write`, which is the whole of what makes an agent one the gate is for. */
+/** `Write` is what makes an agent one the gate is for. */
 const WRITING_AGENT = buildAgentConfig("cli-developer", {
   tools: ["Read", "Write"],
   skills: [DYNAMIC_SKILL],
 })
 
-/** The same shape with no writing tool — an agent the gate has nothing to say about. */
 const READ_ONLY_AGENT = buildAgentConfig("cli-researcher", {
   tools: ["Read", "Grep"],
   skills: [DYNAMIC_SKILL],
 })
 
-/** A project's own completion gate: what a declared `Stop` is entitled to replace this one with. */
 const DECLARED_GATE_COMMAND = "make check"
 
-/** A hook on an event that has nothing to do with completion, which must not cost an agent its gate. */
+/** A non-completion hook, which must not cost an agent its gate. */
 const FORMATTER_MATCHER = "Write"
 const FORMATTER_COMMAND = "prettier --write"
 
-/**
- * The gate exactly as it renders, byte for byte.
- *
- * Kept as a literal, and deliberately not a `toMatchInlineSnapshot`: snapshotting
- * this alone would mean extracting the line out of the render first, and a
- * snapshot is also the one assertion in the suite a maintainer can retire by
- * running `vitest -u` without reading what changed. A literal has to be edited on
- * purpose. Either way the property is the same — the JSON shape of this record is
- * the frontmatter of every writing agent an install writes, so a change to it that
- * nobody intended rewrites all of them at once.
- */
+/** Byte for byte, as a literal: it is the frontmatter of every writing agent an install writes. */
 const GATE_HOOKS_LINE = String.raw`hooks: {"Stop":[{"hooks":[{"type":"command","command":"command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0; out=$(npm run --if-present --silent typecheck 2>&1) || { printf '%s\\n' \"$out\" >&2; exit 2; }"}]}]}`
 
 describe("the completion gate a writing sub-agent stops against", () => {
@@ -642,39 +507,12 @@ describe("the completion gate a writing sub-agent stops against", () => {
 })
 
 /**
- * The file's fourth subject, which is its second and third meeting: a writing
- * agent's OWN declared hooks, sanitised while the gate is composed beside them.
- *
- * The poison suite above cannot reach this. Its fixture's `tools` is a single
- * poisoned string, so the definition holds neither `Write` nor `Edit`,
- * `withCompletionGate` returns it untouched, and every one of its hook
- * assertions runs on the branch where no gate exists. A fixture cannot test a
- * branch it does not enter — so the composition path, which is the one every
- * shipped writing agent takes, had no coverage of its own.
- *
- * Both branches of `withCompletionGate` are pinned here because they hand the
- * sanitiser different records. A declared `PostToolUse` SURVIVES: the record
- * reaching `sanitizeHooks` is the author's entry plus the gate's, and the walk
- * has to cover both. A declared `Stop` REPLACES: the gate is never composed and
- * the record is the author's alone. Neither assertion means anything without the
- * other — one of them is a permitted case and the other a refusal, and a refusal
- * pinned by itself cannot tell a correctly scoped guard from one that swallowed
- * its domain.
- *
- * The markers, the residues and the poisoned hook fixture are the poison suite's
- * own, reused rather than restated: one vocabulary for one claim, and a hook
- * field renamed on `AgentHookAction` reddens in one place.
+ * A writing agent's own hooks, sanitised while the gate is composed beside them; the poison suite
+ * above never enters this branch. A declared `PostToolUse` survives beside the gate and a declared
+ * `Stop` replaces it, so both are pinned.
  */
 
-/**
- * The hook fields `sanitizeHooks` enumerates below the event key.
- *
- * Read off the function against `AgentHookDefinition` and `AgentHookAction`
- * rather than remembered: the definition declares exactly `matcher` and `hooks`,
- * an action exactly `type`, `command`, `script` and `prompt`, and all six are
- * named in the enumeration. Nothing rides the `...definition` / `...action`
- * spreads uncovered as the types stand.
- */
+/** Every field `sanitizeHooks` enumerates below the event key; none rides a spread uncovered. */
 const SANITISED_HOOK_FIELDS: readonly PoisonedField[] = [
   "hooks.matcher",
   "hooks.action.type",
@@ -683,11 +521,7 @@ const SANITISED_HOOK_FIELDS: readonly PoisonedField[] = [
   "hooks.action.prompt",
 ]
 
-/**
- * The same fields plus the event key, which only a hook whose event is NOT a
- * completion event can carry — a key the sanitiser would have to repair is by
- * construction not the `Stop` that `declaresOwnGate` matches on.
- */
+/** Plus the event key, which only a non-completion hook can carry. */
 const SANITISED_HOOK_FIELDS_WITH_EVENT: readonly PoisonedField[] = [
   "hooks.event",
   ...SANITISED_HOOK_FIELDS,
@@ -746,37 +580,21 @@ describe("the Liquid syntax an author's own hooks must not carry", () => {
 })
 
 /**
- * The file's fifth subject: the one token a partial may carry, and the refusal behind it.
- *
- * `agent-summoner`'s playbook tells an agent where to author a sub-agent, and the answer is the
- * source folder THIS install writes — so that one value is substituted into the five partials
- * before they are inlined. `@@SOURCE_FOLDER@@` is spelled out as a literal here rather than
- * imported: it is a contract between the substitution and the shipped `.md` files, and an
- * assertion importing it would move with a rename while every partial on disk still said the
- * old thing.
- *
- * **The refusal and its permitted twin are both here, because neither says anything alone.** A
- * folder-less engine must refuse a partial that ASKS for the folder — `strictVariables` is off in
- * both engines, so a missing global renders to an empty string and the partial would otherwise
- * compile to a path naming no installation. The same engine must still COMPILE a partial that only
- * names the token behind its escape, because that one asks for no folder. Pin the refusal alone and
- * a guard that refused every partial carrying the token, escape or not, would read as correct — and
- * it would take out the one paragraph that teaches an author how to write it.
+ * `@@SOURCE_FOLDER@@` is substituted into the partials before inlining, and stays a literal: it is
+ * a contract with the shipped `.md` files. A folder-less engine refuses a partial asking for the
+ * folder, yet still compiles one naming the escaped token; both are pinned.
  */
 
-/** What a partial writes to ask for the folder, and what it writes to name the token instead. */
 const SOURCE_FOLDER_TOKEN = "@@SOURCE_FOLDER@@"
 const SOURCE_FOLDER_ESCAPE = `\\${SOURCE_FOLDER_TOKEN}`
 
-/** A folder an install is really on, as test data rather than as the product's own constant. */
+/** Test data, not the product's own constant. */
 const AN_INSTALL_FOLDER = ".agents-inc/claude"
 
-/** The five partials with `playbook` carrying `line` — the others are not this block's subject. */
 function partialsSaying(line: string): AgentFiles {
   return { ...NO_FILES, playbook: line }
 }
 
-/** That agent rendered over the vendored templates, through an engine naming `folder` or none. */
 function renderedWith(
   files: AgentFiles,
   globals: Readonly<Record<string, string>>

@@ -28,63 +28,27 @@ import type {
 } from "./types.js"
 
 /**
- * This module renders `config.ts` sources; it writes nothing, and neither does
- * anything it is called from. Putting either half of a config pair on disk is
- * `config-gate/`'s exclusive privilege in the CLI, because that write owes
- * consequences no caller can be relied on to remember — a rendered half any
- * caller may then write is exactly the ungated write the gate exists to prevent.
+ * Renders `config.ts` sources and writes nothing: writing a config half is `config-gate/`'s alone.
  */
 
 /**
- * Which of the three emissions is wanted.
- *
- * At least one of `globalConfig` and `globalImportPath` accompanies
- * `isProjectConfig: true`, and {@link generateProjectConfig} enforces it —
- * `globalConfig` wins where both are given. The invalid pairing is refused at
- * runtime rather than made unrepresentable, which is the repository's usual
- * answer and was measured before it was rejected: the discrimination has to be
- * on `isProjectConfig`'s LITERAL type, and an un-annotated `const options = cond
- * ? { isProjectConfig: true, globalConfig } : undefined` widens that property to
- * `boolean`, so the call stops compiling with a message about inference rather
- * than about the mistake. It costs a file the union's author never opened — the
- * same shape as the Storybook-args collapse in
- * `.ai-docs/agent-findings/2026-08-26-a-discriminated-union-on-component-props-collapses-storybook-args-to-never.md`.
+ * `isProjectConfig: true` needs `globalConfig` or `globalImportPath` (`globalConfig` wins).
+ * {@link generateProjectConfig} enforces it at runtime: a discriminated union on the literal widens
+ * to `boolean` at un-annotated call sites.
  */
 export type ConfigSourceOptions = {
-  /**
-   * When true, generates a project config — inlining the global config's entries
-   * when `globalConfig` is given, importing and spreading them when
-   * `globalImportPath` is.
-   */
   isProjectConfig?: boolean
 
-  /**
-   * When provided alongside `isProjectConfig`, inlines global skills/agents directly.
-   * Produces a self-contained, readable config snapshot.
-   */
+  /** Inlines global skills/agents for a self-contained snapshot. */
   globalConfig?: ProjectConfig
 
-  /**
-   * Absolute path to the global scope's source folder, for the spread form that
-   * imports from it rather than inlining it.
-   *
-   * A PARAMETER rather than a read, because the value is `os.homedir()` and this
-   * package runs in a browser. `getGlobalConfigImportPath()` in the CLI's
-   * `config-writer.ts` is the one producer, and it has no production caller:
-   * `writeProjectConfigPair` is the only site passing `isProjectConfig` and it
-   * always passes `globalConfig` too, which takes the inlining branch above.
-   */
+  /** For the spread form. A parameter because this package runs in a browser. */
   globalImportPath?: string
 }
 
 /**
- * The fields a config's author writes by hand and no install produces: the name
- * the CLI prints itself under, and the layout a source repository declares
- * itself with. Each belongs to the file that declares it and to no other, so a
- * rewrite carries it across and nothing copies it to the other scope's file. A
- * project's name in the global config would rename every installation that
- * declares none of its own; the global's in a project's file would read as the
- * project's own declaration, and keep the old value after the global changed.
+ * Fields an author writes by hand and no install produces. Each stays in the file that declares
+ * it: a project's name in the global config would rename every installation without one.
  */
 export const HAND_WRITTEN_FIELDS = [
   "branding",
@@ -104,11 +68,8 @@ const EXTRACTED_FIELDS = new Set([
 ])
 
 /**
- * The loader schema's own field order, which is the order a config read back off
- * disk arrives in. Emitting in it is what makes the writer a fixed point: the
- * three producers of an in-memory config — the wizard's literal, a Zod-parsed
- * load, a merge that appends at the tail — insert their keys in three different
- * orders, and without this the same values would emit as three different files.
+ * The loader schema's field order, so the writer is a fixed point: the wizard, a Zod load and a
+ * merge insert keys in different orders.
  */
 const CANONICAL_FIELD_ORDER = [
   "name",
@@ -124,20 +85,7 @@ const CANONICAL_FIELD_ORDER = [
   "projects",
 ] as const satisfies readonly (keyof ProjectConfig)[]
 
-/**
- * The same rule one level in, for the three record shapes a config carries
- * INSIDE an array. {@link CANONICAL_FIELD_ORDER} reaches the top-level fields
- * and {@link canonicalizeStackOrder} reaches the stack's keys; an entry's own
- * keys were left to whoever minted it, and the printer emits a record's keys in
- * the order it is handed them, so they reached disk in the producer's own.
- *
- * The loader rebuilds every entry through its schema, so a producer that
- * disagrees with the schema is not a fixed point: `toggleSkillScope` mints a
- * tombstone as `{ id, scope, excluded, origin }`, and re-emitting the same
- * config after a load moved the line. An `edit` run that changed nothing about
- * that skill still rewrote it, and a second implementation drawing these bytes
- * drew a line no install writes.
- */
+/** The same rule for the entries inside `skills` and `agents`. */
 const CANONICAL_SKILL_ENTRY_ORDER = [
   "id",
   "scope",
@@ -149,6 +97,7 @@ const CANONICAL_AGENT_ENTRY_ORDER = [
   "name",
   "scope",
   "model",
+  "codexModel",
   "effort",
   "excluded",
 ] as const satisfies readonly (keyof AgentScopeConfig)[]
@@ -160,11 +109,7 @@ const CANONICAL_ASSIGNMENT_ORDER = [
   "path",
 ] as const satisfies readonly (keyof SkillAssignment)[]
 
-/**
- * A record rebuilt with the keys the schema names first and in its order. A key
- * the schema does not name is passthrough data the writer has no order of its
- * own to impose, so those keep the order they arrived in, after every named one.
- */
+/** Unnamed (passthrough) keys keep their arrival order, after every named one. */
 function withKeysInSchemaOrder(
   record: Record<string, unknown>,
   schemaOrder: readonly string[]
@@ -178,20 +123,13 @@ function withKeysInSchemaOrder(
   return Object.fromEntries([...inSchemaOrder, ...passthrough])
 }
 
-/** The cleaned config rebuilt in the loader schema's top-level field order. */
 function canonicalizeFieldOrder(
   cleaned: Record<string, unknown>
 ): Record<string, unknown> {
   return withKeysInSchemaOrder(cleaned, CANONICAL_FIELD_ORDER)
 }
 
-/**
- * The cleaned config with the elements of `skills` and `agents` rebuilt in their
- * own schema's key order.
- *
- * An array the config does not carry stays absent: assigning would mint the key,
- * and the emission tells an absent array from an empty one.
- */
+/** An absent array stays absent: the emission tells it from an empty one. */
 function withEntriesInSchemaOrder(
   cleaned: Record<string, unknown>
 ): Record<string, unknown> {
@@ -211,12 +149,7 @@ function withEntriesInSchemaOrder(
   return reordered
 }
 
-/**
- * Every element of one entry array rebuilt in the schema's key order. The writer
- * emits whatever it is handed, and these arrive off a `JSON.parse`, so an
- * element that is not a keyed record has no keys to order and passes through
- * whole rather than being flattened by `Object.entries`.
- */
+/** Elements that are not keyed records (off `JSON.parse`) pass through whole. */
 function entriesInSchemaOrder(
   entries: unknown[],
   schemaOrder: readonly string[]
@@ -226,7 +159,6 @@ function entriesInSchemaOrder(
   )
 }
 
-/** A record rebuilt with its keys reordered; the values themselves are untouched. */
 function withKeysOrderedBy<T>(
   record: Record<string, T>,
   compareKeys: (a: string, b: string) => number
@@ -236,30 +168,15 @@ function withKeysOrderedBy<T>(
   )
 }
 
-/**
- * Code-unit order over two names — what a bare `.sort()` gives, and so what
- * `generateProjectConfigFromSkills` already emits its sub-agent keys in.
- * `localeCompare` is deliberately not used: it orders the same two names
- * differently under different locales, which would make the emitted bytes a
- * property of the machine.
- */
+/** Code units, as a bare `.sort()`; `localeCompare` would make the bytes depend on the machine. */
 function compareNamesInCodeUnitOrder(a: string, b: string): number {
   if (a === b) return 0
   return a < b ? -1 : 1
 }
 
 /**
- * The stack's key order, decided by the roster rather than by whoever assembled
- * the stack: sub-agents by name, and each sub-agent's categories in the
- * catalogue's declaration order — the two orders the generator already builds a
- * stack in.
- *
- * The generator is not the only producer. The seed decode assembles a stack from
- * a shared payload, in the order that payload lists its skills, so the same
- * curation reached disk as different bytes depending on which end of a share
- * round trip wrote it. That is not merely a noisy diff: a compiled sub-agent
- * lists its dynamic skills in the order its stack entry carries them, so the two
- * ends compiled different files from identical configuration.
+ * Sub-agents by name and categories in catalogue declaration order, whoever assembled the stack: a
+ * compiled sub-agent lists its skills in stack order, so producer order would change its file.
  */
 function canonicalizeStackOrder(
   stack: Record<string, Record<string, unknown>>,
@@ -277,27 +194,19 @@ function canonicalizeStackOrder(
   )
 }
 
-/** The specifier both emitted config roots import their types from. */
 const CONFIG_TYPES_SPECIFIER = "./config-types"
 
-/** The annotation the emitted `stack` declaration carries. */
 const STACK_TYPE = "Partial<Record<ProjectAgentName, StackAgentConfig>>"
 
-/** Where a top-level `const <name>: <type> = …` declaration puts its value. */
 function declarationPosition(name: string, type: string): LinePosition {
   return { indent: 0, prefix: `const ${name}: ${type} = `, suffix: "" }
 }
 
-/**
- * One `const <name>: <type> = <value>` declaration, and the blank line the
- * writer puts before it. Both together, because every declaration is separated
- * from the last and the emitted pair's readers key on that blank line.
- */
+/** Every declaration is preceded by a blank line, which the emitted pair's readers key on. */
 function declaration(name: string, type: string, value: unknown): string[] {
   return ["", renderValueLine(value, declarationPosition(name, type))]
 }
 
-/** The same, for an array whose entries carry comments or written-out source. */
 function entryDeclaration(
   name: string,
   type: string,
@@ -306,7 +215,6 @@ function entryDeclaration(
   return ["", renderArrayLine(entries, declarationPosition(name, type))]
 }
 
-/** Where one property of the `export default` table of contents sits. */
 function exportFieldPosition(key: string): LinePosition {
   return {
     indent: INDENT_STEP,
@@ -315,7 +223,6 @@ function exportFieldPosition(key: string): LinePosition {
   }
 }
 
-/** One scalar field as a line of the `export default` table of contents. */
 function renderScalarField(key: string, value: unknown): string {
   return renderValueLine(value, exportFieldPosition(key))
 }
@@ -327,12 +234,9 @@ type ConfigArrays = {
   selectedDomains: unknown[]
 }
 
-/** The four extracted array/stack fields of a cleaned config, defaulted for emission. */
 function extractConfigArrays(cleaned: Record<string, unknown>): ConfigArrays {
-  // Boundary cast: cleaned comes from JSON.parse(JSON.stringify(...)) so arrays are plain JSON
-  // values. The `??` runs BEFORE the cast on purpose — `cleaned` is a Record of `unknown`, and
-  // casting first would tell the checker the value is present when the round-trip drops any key
-  // whose value was undefined.
+  // Boundary cast: plain JSON values. `??` runs first because the round trip drops
+  // undefined-valued keys.
   return {
     skills: (cleaned.skills ?? []) as unknown[],
     agents: (cleaned.agents ?? []) as unknown[],
@@ -342,22 +246,15 @@ function extractConfigArrays(cleaned: Record<string, unknown>): ConfigArrays {
 }
 
 /**
- * Shared pre-emission cleanup: JSON round-trip (drops undefined values), optional
- * `projects` removal (project configs never emit the global tracking list),
- * stack compaction (strip flag-less assignments to bare strings while preserving
- * SkillAssignment[] arrays), and canonical key ordering at all three levels the
- * emitted bytes expose — the top-level fields, the stack's own keys, and each
- * entry inside the `skills`, `agents` and stack-assignment arrays. Every level
- * is ordered here rather than by its producer, so the bytes are decided by the
- * config's values alone.
+ * JSON round trip (drops undefined), `projects` removed for project configs, stack compaction, and
+ * canonical key order at every level the bytes expose, so the bytes depend on values alone.
  */
 function cleanForEmission(
   config: ProjectConfig,
   catalog: CompileCatalog,
   options: { dropProjects: boolean }
 ): Record<string, unknown> {
-  // Boundary cast: `JSON.parse` is typed `any`, and round-tripping an object always
-  // yields one — dropping its undefined-valued keys is exactly why this is here.
+  // Boundary cast: `JSON.parse` is typed `any`.
   const cleaned = JSON.parse(JSON.stringify(config)) as Record<string, unknown>
   if (options.dropProjects) {
     delete cleaned.projects
@@ -375,15 +272,8 @@ function cleanForEmission(
 }
 
 /**
- * Generates a TypeScript config file source from a ProjectConfig object.
- * The typed named variables (skills, agents, stack, selectedDomains) are declared
- * first, with the export default below them acting as a table of contents that
- * refers to each by name.
- *
- * The catalogue is a parameter and never a module this file reaches: the bytes
- * depend on which categories are exclusive and on the order the catalogue
- * declares them, so a renderer reading a singleton would answer differently in
- * the CLI (which merges the machine's local skills in) and in the editor.
+ * Typed named declarations first, then an `export default` referring to each. The catalogue is a
+ * parameter: exclusivity and declaration order differ between the CLI's catalogue and the editor's.
  */
 export function generateConfigSource(
   config: ProjectConfig,
@@ -400,16 +290,8 @@ export function generateConfigSource(
 }
 
 /**
- * The project emission the options name — inlining the global config's entries,
- * or importing and spreading them.
- *
- * Those are the only two, so naming neither is refused rather than answered.
- * Falling through to the standalone writer answered a project request with a
- * GLOBAL-shaped file: `dropProjects` is false there, so the emitted config
- * carries the global `projects` tracking array, which a project root must never
- * hold. Nothing in the CLI reaches this today, but `generateConfigSource` is a
- * public export of this package and the caller that cannot be seen from here is
- * the editor's.
+ * Refuses options naming neither emission: the standalone writer would answer a project request
+ * with a global-shaped file carrying `projects`.
  */
 function generateProjectConfig(
   config: ProjectConfig,
@@ -439,12 +321,7 @@ function generateProjectConfig(
   )
 }
 
-/**
- * Generates a project config source that imports from the global config and extends it.
- * Typed named variables are declared above the export default. The export default at
- * the bottom acts as a table of contents. Arrays (skills, agents, selectedDomains) are
- * spread with globalConfig first, then project items.
- */
+/** Spreads the global config's arrays first, then the project's. */
 function generateProjectConfigWithGlobalImport(
   cleaned: Record<string, unknown>,
   globalImportPath: string
@@ -458,7 +335,6 @@ function generateProjectConfigWithGlobalImport(
   const hasStack = stack != null && Object.keys(stack).length > 0
 
   const typeImports = buildTypeImports({
-    // Always present, spread from global.
     hasSkills: true,
     hasAgents: true,
     hasStack,
@@ -519,10 +395,6 @@ function generateProjectConfigWithGlobalImport(
   return lines.join("\n")
 }
 
-/**
- * Generates a standalone config source with typed named variables above the export default.
- * The export default at the bottom acts as a table of contents, referencing the named variables.
- */
 function generateStandaloneConfig(cleaned: Record<string, unknown>): string {
   const { skills, agents, stack, selectedDomains } =
     extractConfigArrays(cleaned)
@@ -559,8 +431,7 @@ function generateStandaloneConfig(cleaned: Record<string, unknown>): string {
     lines.push(...declaration("selectedDomains", "Domain[]", selectedDomains))
   }
 
-  // Extracted fields reference their named variable (or an empty literal when the
-  // variable was not emitted); `stack` is omitted entirely when absent.
+  // Extracted fields reference their variable, or an empty literal when none was emitted.
   const renderExportField = (key: string, value: unknown): string[] => {
     if (!EXTRACTED_FIELDS.has(key)) return [renderScalarField(key, value)]
     if (key === "skills") return [`  skills${hasSkills ? "" : ": []"},`]
@@ -581,10 +452,6 @@ function generateStandaloneConfig(cleaned: Record<string, unknown>): string {
   return lines.join("\n")
 }
 
-/**
- * Builds the type import list based on which extracted fields are present.
- * ProjectConfig is always included. Other types are included only when used.
- */
 function buildTypeImports(flags: {
   hasSkills: boolean
   hasAgents: boolean
@@ -612,25 +479,15 @@ type InlinedGlobalPartition = {
   /** Global entries with active entries replaced by their project tombstones. */
   globalSkills: unknown[]
   globalAgents: unknown[]
-  /** Active (non-excluded) project entries. */
   projectSkills: unknown[]
   projectAgents: unknown[]
-  /** Project stack filtered to project-scoped agents only. */
   filteredStack: Record<string, unknown> | undefined
-  /** Merged unique global + project values. */
   selectedDomains: unknown[]
 }
 
 /**
- * Pure partition of project + global entries for the inlined snapshot.
- *
- * Excluded globals are routed to the project partition by splitConfigByScope,
- * but render under "// global" in the output for readability. When inlining,
- * active global entries are replaced by their excluded tombstones — the
- * tombstone masks the global entry for this project; the active project entry
- * (if any) appears separately in the project section. The project stack keeps
- * only project-scoped agents: global agents' stack entries live in the global
- * config only.
+ * Excluded globals render under `// global`; an active global entry is replaced by its tombstone,
+ * which masks it for this project. Global agents' stacks stay in the global config.
  */
 function partitionInlinedConfigEntries(
   cleaned: Record<string, unknown>,
@@ -682,15 +539,8 @@ function partitionInlinedConfigEntries(
 }
 
 /**
- * Every scalar the inlined snapshot emits, as ONE canonically-ordered sequence.
- * The project's value wins where it carries one, and the global supplies the
- * rest. A global block followed by a project block could not promise this: the
- * first emission writes every global scalar into the project's own file, so on
- * the next re-emit those same keys arrive from the project half instead and two
- * blocks would order them differently for values that never changed.
- *
- * The global's {@link HAND_WRITTEN_FIELDS} are the exception: a project that
- * declares none reads them at run time, so they are left in the global's file.
+ * One canonically ordered sequence, project values winning, so a re-emit moves no line. The
+ * global's {@link HAND_WRITTEN_FIELDS} stay in the global's file.
  */
 function mergeInlinedScalarFields(
   cleaned: Record<string, unknown>,
@@ -704,12 +554,7 @@ function mergeInlinedScalarFields(
   ).filter(([key]) => !EXTRACTED_FIELDS.has(key) && key !== "name")
 }
 
-/**
- * Generates a project config with global skills/agents inlined directly.
- * No `import globalConfig` — the output is a self-contained readable snapshot.
- * Global items appear first with a `// global` comment, followed by project items
- * with a `// project` comment (only when project items exist).
- */
+/** Self-contained: global items under `// global`, then project items under `// project`. */
 function generateProjectConfigWithInlinedGlobal(
   cleaned: Record<string, unknown>,
   cleanedGlobal: Record<string, unknown>
@@ -796,15 +641,7 @@ function generateProjectConfigWithInlinedGlobal(
   return lines.join("\n")
 }
 
-/**
- * The two halves of an inlined array, each under the comment naming its scope.
- *
- * The comments are entries rather than lines a caller writes around the printer
- * because they are what holds the array open: a `//` line cannot be folded back
- * onto one line, so an array carrying one stays one entry per line however
- * short it is — which is the whole of what keeps these sections legible when a
- * root holds a single skill.
- */
+/** The scope comments are entries: a `//` line keeps the array one entry per line. */
 function scopeSectionEntries(
   global: unknown[],
   project: unknown[]
@@ -819,16 +656,11 @@ function scopeSectionEntries(
   ]
 }
 
-/** True when the assignment asserts something a bare id could not say on its own. */
 function carriesFlags(assignment: SkillAssignment): boolean {
   return Boolean(assignment.preloaded || assignment.local || assignment.path)
 }
 
-/**
- * Structural check for a SkillAssignment object (`{ id, preloaded? }`).
- * The id's SkillId-ness is structural, not union-checked: assignments flow from
- * runtime sources whose skills may not be in the generated union.
- */
+/** Structural only: assignments may name skills outside the generated union. */
 function isSkillAssignment(value: unknown): value is SkillAssignment {
   if (typeof value !== "object" || value === null) return false
   // Boundary cast: probing an unknown object's field inside the guard
@@ -836,15 +668,8 @@ function isSkillAssignment(value: unknown): value is SkillAssignment {
 }
 
 /**
- * Compacts one SkillAssignment down to the smallest form that still carries its information.
- * - { id: "..." } and { id: "...", preloaded: false } → "..." (the id says everything)
- * - anything carrying a flag (preloaded, local, path) keeps the object form, flags intact
- *
- * The surviving object form is the third member of the entry-order class above:
- * `toStackPropertyAssignment` in `seed-to-config.ts` answers a flag-less
- * assignment with `{ ...assignment, preloaded: true }`, which appends the key at
- * the tail, while the loader's `skillAssignmentSchema` rebuilds it before
- * `local` and `path`.
+ * A flag-less (or `preloaded: false`) assignment collapses to its bare id; one carrying a flag
+ * keeps the object form.
  */
 function compactAssignment(assignment: unknown): unknown {
   if (!isSkillAssignment(assignment)) return assignment
@@ -853,15 +678,8 @@ function compactAssignment(assignment: unknown): unknown {
 }
 
 /**
- * The emitted value for one category's assignments.
- *
- * An exclusive category can only ever hold one skill, so its array wrapper carries nothing the
- * reader needs and the bare value IS the assignment. Non-exclusive categories keep their array
- * even at length one — there the wrapper is load-bearing, because a second skill may join.
- *
- * Two skills in an exclusive category means the caller built something the config cannot express.
- * Dropping the extra would write a config that does not match what was selected, and nothing
- * downstream could tell, so it fails here instead.
+ * An exclusive category emits its one assignment bare; a non-exclusive one keeps its array. Two
+ * skills in an exclusive category cannot be expressed, so it throws rather than drop one.
  */
 function compactCategoryAssignments(
   category: string,
@@ -879,13 +697,7 @@ function compactCategoryAssignments(
   return compacted[0]
 }
 
-/**
- * Throws what writing `stack` would throw — {@link compactCategoryAssignments}' refusal of a
- * category that holds one skill given more — and writes nothing.
- *
- * For a caller whose write lands after changes it cannot take back: `edit --from` removes skills
- * before it writes the config, so a stack the writer refuses is refused before the first removal.
- */
+/** For `edit --from`, which removes skills before writing: refuses before the first removal. */
 export function refuseUnwritableStack(
   stack: ProjectConfig["stack"],
   catalog: CompileCatalog
@@ -926,9 +738,6 @@ function compactStackAssignments(
   )
 }
 
-/**
- * Generates a blank global config source (empty arrays, no import preamble).
- */
 export function generateBlankGlobalConfigSource(): string {
   return `import type { ProjectConfig } from ${quoteText(CONFIG_TYPES_SPECIFIER)}
 

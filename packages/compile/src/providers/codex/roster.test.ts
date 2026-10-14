@@ -30,15 +30,9 @@
  *     `effort` is the one of those with a Codex home, which is why it is not in
  *     {@link UNEXPRESSIBLE_ON_CODEX}: a configuration can still set one per
  *     sub-agent, and `agent-role-toml.ts` carries it as `model_reasoning_effort`;
- *   - `model = "opus"` parses and REGISTERS on Codex (both probe roles reached
- *     the model's `spawn_agent` roster with it set). _Corrected 2026-09-26:_
- *     this said `model` was therefore carried rather than reported. On a real
- *     subscription (codex-cli 0.157.1) no role naming a Claude model can be
- *     SPAWNED, so `model` is now never written and "Claude models" is reported
- *     with the rest. `model_reasoning_effort` was measured on the same run and
- *     does resolve.
- *
- * Written before `./roster` existed and red on the missing module.
+ *   - `model = "opus"` parses and registers on Codex, but on a real subscription
+ *     (codex-cli 0.157.1) no role naming a Claude model can be spawned, so a
+ *     Claude model is never written and "Claude models" is reported with the rest.
  */
 
 import { describe, expect, it } from "vitest"

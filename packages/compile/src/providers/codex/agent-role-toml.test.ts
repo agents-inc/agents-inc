@@ -1,53 +1,9 @@
 /**
- * The Codex agent ROLE DEFINITION renderer, pinned against what the pinned
- * binary actually does with the file — not against a schema anybody wrote down.
- *
- * **Why every claim here is a measurement.** Codex 0.155.1 parses
- * `$CODEX_HOME/agents/<file>.toml` and `<project>/.codex/agents/<file>.toml`
- * with a STRICT deserializer: one unlisted key and the WHOLE FILE is dropped,
- * with a startup warning nothing in a normal run shows. So "we emitted an extra
- * key" is not a cosmetic defect, it is sixteen sub-agents that silently do not
- * exist. Re-derived here, 2026-09-22, against the pinned `@openai/codex`
- * 0.155.1, each run under its own `HOME` and `CODEX_HOME` with the global
- * `config.toml` deleted first:
- *
- *     # accepted, no startup warning
- *     name / description / developer_instructions / model /
- *     model_reasoning_effort / sandbox_mode / approval_policy / instructions /
- *     [[hooks.pre_tool_use]] / [features] shell_tool / skills = { enabled = true }
- *
- *     # REJECTED — "Ignoring malformed agent role definition: failed to
- *     # deserialize agent role file at <path>: unknown field `<key>`"
- *     reasoning_effort, effort, disallowed_tools, permissionMode, isolation,
- *     experimental, and any unlisted key (`color` was the control)
- *     tools = [...]    -> "data did not match any variant of untagged enum
- *                          WebSearchToolConfigInput"
- *     skills = ["a"]   -> "invalid type: string \"a\", expected struct
- *                          BundledSkillsConfig"
- *
- * The three required keys were measured the same way, each omission on its own:
- * no `name` -> "must define a non-empty `name`"; no `description` -> "agent role
- * `p` must define a description"; no `developer_instructions`, and
- * `instructions` supplied in its place, both -> "must define
- * `developer_instructions`"; an EMPTY one -> "`.developer_instructions` cannot
- * be blank".
- *
- * **The role id is the `name` key, never the filename.** Measured twice: a
- * global role in `web-developer-role.toml` whose `name` was `web-developer`
- * reached the model's `spawn_agent` roster as `web-developer`, and a project
- * role in `anything.toml` whose `name` was `proj-role` reached it as
- * `proj-role`. That is why the id is asserted from the rendered file's `name`
- * key rather than from a path this renderer never sees.
- *
- * **What this file cannot answer**, and what therefore sits on the owner's
- * end-of-programme hand-check list rather than being guessed at here: whether a
- * SPAWNED sub-agent's context actually receives its `developer_instructions`
- * whole. Registration is measurable offline and delivery is not.
- *
- * Written before `./agent-role-toml` existed and red on the missing module.
+ * Held to what the pinned Codex binary accepts (the measured keys are in `agent-role-toml.ts`):
+ * one unlisted key drops the whole file, so every render is parsed back with a real TOML parser.
  */
 
-import { EFFORT_NAMES, MODEL_NAMES } from "@workspace/matrix"
+import { CODEX_MODEL_NAMES, EFFORT_NAMES, MODEL_NAMES } from "@workspace/matrix"
 import { parse } from "smol-toml"
 import { describe, expect, it } from "vitest"
 
@@ -60,33 +16,14 @@ import { provenanceMarker } from "../../agent-source"
 import type { AgentConfig } from "../../types"
 import { buildAgentConfig } from "../../__tests__/factories/agent-config-factories"
 
-/**
- * Every reasoning effort this product can express, read off the vocabulary rather than spelled
- * out beside it.
- *
- * Derived on purpose, and it is the one place in this file that is: the claim below is universally
- * quantified over the product's OWN effort levels, so a sixth level added to `EFFORT_NAMES` must
- * be covered the day it ships rather than the day somebody remembers this list. `EFFORT_NAMES` is
- * not the subject here — the renderer is — so nothing moves with the thing under test.
- */
+/** Read off the vocabularies, so a new member is covered the day it ships. */
 const EVERY_EFFORT_LEVEL = EFFORT_NAMES
+const EVERY_CLAUDE_MODEL = MODEL_NAMES
+const EVERY_CODEX_MODEL = CODEX_MODEL_NAMES
 
-/**
- * Every model this product can name — all of them Claude's — read off the vocabulary for the same
- * reason as {@link EVERY_EFFORT_LEVEL}: a model added to `MODEL_NAMES` must be kept out of a Codex
- * role the day it ships.
- */
-const EVERY_MODEL = MODEL_NAMES
+const PINNED_CODEX_MODEL = "gpt-5.6-terra"
 
-/**
- * The body a role's `developer_instructions` carries, standing in for the
- * compiled markdown an install renders.
- *
- * Multi-line and carrying a double quote on purpose: TOML has three string
- * forms and only one of them survives both, so a renderer that concatenated
- * strings instead of encoding them fails here rather than in a user's home
- * directory.
- */
+/** Multi-line and quoted on purpose: only one of TOML's string forms survives both. */
 const BODY = [
   provenanceMarker(),
   "",
@@ -111,30 +48,21 @@ const READ_ONLY = buildAgentConfig("web-researcher", {
   skills: [],
 })
 
-/**
- * An agent granted no Bash.
- *
- * **Synthetic on purpose, and the spec below says so.** Of the eighteen shipped
- * definitions exactly one omits Bash — `skill-summoner` — and that is one of the
- * two Codex does not compile, so `[features] shell_tool = false` is emitted for
- * NO shipped agent today. The rule is still rendered and still tested, because
- * a user-authored agent reaches the same renderer.
- */
+/** Synthetic: no shipped agent Codex compiles omits Bash, but a user-authored one can. */
 const NO_BASH = buildAgentConfig("no-bash", {
   tools: ["Read", "Write", "Edit", "Grep", "Glob"],
   model: "opus",
   skills: [],
 })
 
-/**
- * The keys Codex's deserializer refuses, each one taking the whole file with it.
- *
- * A named constant compared by MEMBER rather than a count: a count cannot see a
- * swap, and the population here is the difference between sixteen sub-agents and
- * zero. Spelled out here rather than imported into the expectation for the
- * reason the repository's own rule gives — an assertion bound to the constant it
- * is checking moves with it and cannot fail.
- */
+const PINNED = buildAgentConfig("web-developer", {
+  tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
+  model: "opus",
+  codexModel: PINNED_CODEX_MODEL,
+  skills: [],
+})
+
+/** The keys Codex refuses, spelled out rather than imported from the module under test. */
 const REJECTED_BY_CODEX = [
   "disallowed_tools",
   "effort",
@@ -145,26 +73,17 @@ const REJECTED_BY_CODEX = [
   "tools",
 ] as const
 
-/** What a role file must carry, or Codex drops it whole. */
 const REQUIRED_BY_CODEX = [
   "description",
   "developer_instructions",
   "name",
 ] as const
 
-/** The rendered file's TOML, parsed — the only way a key claim is checked. */
 function rolesKeysOf(rendered: string): string[] {
   return Object.keys(parse(rendered)).sort()
 }
 
-/**
- * A parsed value held to being a string before anything reads it.
- *
- * Stronger than the `String(value)` these call sites used to spell, which any object satisfies by
- * stringifying to `[object Object]` — so a `developer_instructions` that came back as a table
- * would have been compared as that literal rather than reported. Three lines and no parsing: this
- * is a type narrowing, not a helper that would need tests of its own.
- */
+/** A parsed value narrowed to a string, so a table cannot compare as `[object Object]`. */
 function asString(value: unknown, key: string): string {
   if (typeof value !== "string")
     throw new Error(`${key} did not parse back as a string`)
@@ -196,9 +115,6 @@ describe("what Codex requires of an agent role file", () => {
     expect(typeof parsed.developer_instructions).toBe("string")
   })
 
-  // The refusal the spec above names and its input never reaches: BODY is not blank, so that spec
-  // passed with nothing between an empty compiled body and a role file Codex drops. A body of
-  // nothing but whitespace is refused the same way, because the renderer judges it trimmed.
   it.each([
     ["an empty body", ""],
     ["a body of nothing but whitespace", "\n\n \t\n"],
@@ -270,17 +186,6 @@ describe("the keys Codex's deserializer refuses", () => {
     ).toStrictEqual([])
   })
 
-  /**
-   * The four frontmatter fields with no Codex expression at all still render byte-identically to
-   * an agent that declares none of them.
-   *
-   * `effort` was the fifth member of this case until 2026-09-22 and is deliberately no longer in
-   * it. The KEY `effort` is still refused and is still never emitted — the case above is where
-   * that is asserted — but the VALUE has a Codex home, `model_reasoning_effort`, so an agent that
-   * sets it no longer renders like one that does not. Splitting the two keeps this a claim about
-   * silence rather than one that quietly acquired an exception, and it is a byte comparison rather
-   * than a key comparison because "renders identically" is the claim.
-   */
   it("renders an agent setting the four unexpressible fields exactly like one that sets none", () => {
     const unexpressible: AgentConfig = {
       ...WRITER,
@@ -310,7 +215,7 @@ describe("the keys Codex's deserializer refuses", () => {
       "skills",
     ]
 
-    for (const agent of [WRITER, READ_ONLY, NO_BASH]) {
+    for (const agent of [WRITER, READ_ONLY, NO_BASH, PINNED]) {
       const emitted = rolesKeysOf(renderAgentRoleToml(agent, BODY))
 
       expect(
@@ -322,15 +227,10 @@ describe("the keys Codex's deserializer refuses", () => {
 })
 
 describe("the settings Codex can express", () => {
-  /**
-   * **Found on a real subscription, not by the rig.** `model = "opus"` parses and registers, so
-   * every offline spec passed while no compiled sub-agent could be spawned: codex-cli 0.157.1
-   * refused each with `The 'opus' model is not supported when using Codex with a ChatGPT
-   * account.` (2026-09-26). This spec asserted the opposite — "passes the agent's model through" —
-   * until then. Every model this product names is Claude's, so none may reach a role.
-   */
-  it("never writes a model, because every model this product names is Claude's", () => {
-    for (const model of EVERY_MODEL) {
+  // `model = "opus"` registers and then cannot be spawned on a ChatGPT account (codex-cli 0.157.1,
+  // 2026-09-26), so no Claude selector may reach a role.
+  it("never writes a Claude model into a role with no Codex pin", () => {
+    for (const model of EVERY_CLAUDE_MODEL) {
       const rendered = renderAgentRoleToml({ ...WRITER, model }, BODY)
 
       expect(
@@ -341,8 +241,6 @@ describe("the settings Codex can express", () => {
     }
   })
 
-  // The control: the renderer still writes the per-agent setting Codex CAN take, so the absence
-  // above is the model being dropped and not every tuning line going with it.
   it("still carries the effort of an agent that declares one alongside a model", () => {
     const parsed = parse(
       renderAgentRoleToml({ ...WRITER, model: "opus", effort: "high" }, BODY)
@@ -364,28 +262,12 @@ describe("the settings Codex can express", () => {
     expect(parse(renderAgentRoleToml(READ_ONLY, BODY)).features).toBeUndefined()
   })
 
-  /**
-   * `effort` travels as `model_reasoning_effort`, which is a translation rather than a pass-through
-   * and is the only one this renderer performs.
-   *
-   * Measured on the pinned 0.155.1, 2026-09-22, each run under its own `HOME` and `CODEX_HOME`
-   * with the global `config.toml` deleted first and a valid control role beside the subject:
-   * a role carrying `effort = "high"` is dropped whole (`unknown field \`effort\`` and the
-   * subject absent from `spawn_agent`'s roster while the control is present), and the same role
-   * carrying `model_reasoning_effort = "high"` registers. Every one of this product's five effort
-   * levels was put through that rig and every one registered, and Codex's own effort vocabulary
-   * — `minimal low medium high xhigh max ultra`, read off the pinned binary's interned variant
-   * list — is a superset of ours, so no value of ours is left without a counterpart.
-   *
-   * Written before the renderer emitted the key, and red on a `model_reasoning_effort` that was
-   * `undefined`.
-   */
+  // `effort = "high"` drops the whole file; `model_reasoning_effort = "high"` registers.
   it("carries the agent's effort as model_reasoning_effort, the key Codex takes", () => {
     const tuned: AgentConfig = { ...WRITER, effort: "high" }
     const parsed = parse(renderAgentRoleToml(tuned, BODY))
 
     expect(parsed.model_reasoning_effort).toBe("high")
-    // And never under the spelling that costs the whole file.
     expect(parsed.effort).toBeUndefined()
   })
 
@@ -408,20 +290,68 @@ describe("the settings Codex can express", () => {
   })
 })
 
+/**
+ * A role carrying its own `model` runs on it, and one with no effort inherits the parent's — which
+ * a small model may refuse at spawn. So a pin always brings an effort: the configured one, else
+ * `medium`, which every offered id accepts.
+ */
+describe("a Codex model pin", () => {
+  it("writes the pinned id as the role's model, never the Claude model beside it", () => {
+    const parsed = parse(renderAgentRoleToml(PINNED, BODY))
+
+    expect(parsed.model).toBe(PINNED_CODEX_MODEL)
+  })
+
+  it("writes every offered id it is handed", () => {
+    for (const codexModel of EVERY_CODEX_MODEL) {
+      const parsed = parse(renderAgentRoleToml({ ...PINNED, codexModel }, BODY))
+
+      expect(parsed.model, `${codexModel} did not reach the role file`).toBe(
+        codexModel
+      )
+    }
+  })
+
+  it("brings medium effort with a pin when the agent declares none", () => {
+    const parsed = parse(renderAgentRoleToml(PINNED, BODY))
+
+    expect(parsed.model_reasoning_effort).toBe("medium")
+  })
+
+  it("brings the agent's own effort with a pin when it declares one", () => {
+    const parsed = parse(
+      renderAgentRoleToml({ ...PINNED, effort: "high" }, BODY)
+    )
+
+    expect(parsed.model_reasoning_effort).toBe("high")
+  })
+
+  it("names the model and its effort after who the role is and before the prose", () => {
+    const lines = renderAgentRoleToml(PINNED, BODY).split("\n")
+
+    expect(lines.slice(0, 5)).toStrictEqual([
+      'name = "web-developer"',
+      'description = "The web-developer sub-agent"',
+      `model = "${PINNED_CODEX_MODEL}"`,
+      'model_reasoning_effort = "medium"',
+      'developer_instructions = """',
+    ])
+  })
+
+  it("leaves a role with no pin exactly as it was: no model and no invented effort", () => {
+    const { codexModel: _unpinned, ...unpinned } = PINNED
+
+    expect(rolesKeysOf(renderAgentRoleToml(unpinned, BODY))).toStrictEqual([
+      "description",
+      "developer_instructions",
+      "name",
+    ])
+  })
+})
+
 describe("the rendered file as TOML", () => {
-  /**
-   * The body as TOML hands it back: the compiled prose and one newline.
-   *
-   * **Stated rather than trimmed away, which is the whole point of the assertion.** This read
-   * `.trimEnd()` until 2026-09-22, and a round-trip that normalises one end before comparing
-   * cannot see anything the renderer does to that end — a body whose own trailing blank line was
-   * dropped, or a closing delimiter that acquired a second newline, both satisfy a trimmed
-   * comparison exactly as well as a correct render does.
-   *
-   * The newline is the renderer's and is not optional: TOML's closing `"""` must start a line of
-   * its own, and TOML discards the newline immediately after the OPENING delimiter, so exactly one
-   * of the two survives into the value.
-   */
+  // The closing `"""` starts its own line and TOML drops the newline after the opening one, so
+  // exactly one trailing newline survives. Stated rather than trimmed, so either end can fail.
   const BODY_AS_TOML_RETURNS_IT = `${BODY}\n`
 
   it("round-trips: every scalar parses back to what was rendered", () => {
@@ -434,10 +364,6 @@ describe("the rendered file as TOML", () => {
     ).toBe(BODY_AS_TOML_RETURNS_IT)
   })
 
-  /**
-   * A body ending in a blank line keeps it — the case the trimmed comparison above could not
-   * have failed on, and the reason it was a gap rather than a style point.
-   */
   it("does not eat a trailing blank line the compiled body carries", () => {
     const withTrailingBlank = `${BODY}\n\n`
     const parsed = parse(renderAgentRoleToml(WRITER, withTrailingBlank))

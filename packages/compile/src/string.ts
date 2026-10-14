@@ -1,11 +1,16 @@
 /**
- * Locale-free string ordering for anything emitted into a file somebody commits. `localeCompare`
- * with no locale argument reads the process's default collation, which Node takes from LC_ALL /
- * LANG — so it is a colleague's desktop language, not a future ICU build, that reorders a
- * regenerated catalogue. Lithuanian and Latvian both place `y` immediately after `i`, which is
- * enough to swap the shipped `mobile-storage` and `mobile-styling`. `<` compares code units and
- * cannot.
+ * Locale-free ordering for anything emitted into a committed file. `localeCompare` follows the
+ * process locale (LC_ALL / LANG), so a colleague's desktop language can reorder output; `<`
+ * compares code units and cannot.
  */
 export function bytewise(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
+}
+
+export function inAnEnglishList(items: readonly string[]): string {
+  const last = items.at(-1)
+  if (last === undefined) return ""
+  if (items.length === 1) return last
+
+  return `${items.slice(0, -1).join(", ")} and ${last}`
 }

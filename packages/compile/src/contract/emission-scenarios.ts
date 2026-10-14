@@ -1,62 +1,11 @@
 /**
- * What an install writes, written down once, as data.
+ * What an install writes, as data: each scenario is a configuration and the exact bytes the two
+ * renderers must produce for it. The CLI writes these files and the editor previews them, so both
+ * are held to one answer. `emission-scenarios.test.ts` is the only runner, and it also holds every
+ * output to being a fixed point of the prettier settings an install is read with.
  *
- * The renderers in this package produce the two files every installed root
- * carries, and two surfaces now read them: the CLI's write path, which puts
- * them on disk, and the editor's output preview, which draws them in a browser.
- * These scenarios are what holds those two to one answer — the arrangement
- * `contract/selection-scenarios.ts` in `@workspace/matrix` already uses for the
- * selection semantics, and for the reason recorded there: two implementations
- * of one question do not stay in agreement on their own.
- *
- * Nothing here imports either side. A scenario is a configuration and the exact
- * bytes it must produce, and `emission-scenarios.test.ts` beside this file is the
- * ONE runner that maps an API onto those fields.
- *
- * One rather than two, which is worth writing down because the arrangement this
- * copies has three. `packages/cli/e2e/lifecycle/preview-matches-install.e2e.test.ts`
- * checks the same subject from the other end — it installs for real and holds what
- * landed on disk against these renderers — but it drives none of the scenarios
- * below and cannot: this module is absent from the package's `exports` map and off
- * the barrel, where `@workspace/matrix` re-exports `contract/selection-scenarios`
- * from its `src/index.ts` and three runners reach `SELECTION_SCENARIOS` through it.
- * So a scenario added below buys coverage on this side alone.
- *
- * **The expected bytes were the CLI's**, captured from `generateConfigSource`
- * and `generateConfigTypesSource` as they stood before the extraction moved
- * them here — which is what made this a contract rather than a snapshot of
- * whatever the package happens to do: the extraction was correct only if the
- * bytes did not move, and a scenario going red said they had.
- *
- * That held until 2026-08-26, when an owner ruling moved the format: both files
- * an install writes now land ALREADY FORMATTED, as a fixed point of the
- * prettier settings named in `emission-scenarios.test.ts` as
- * `INSTALLED_SOURCE_FORMAT`. The bytes below were re-captured from the
- * renderers on that date and the extraction-fidelity claim above is true up to
- * it and no further. What still keeps this from being a snapshot of itself is
- * the second property that test asserts: prettier, run over what the emitters
- * produce, has to hand it back unchanged — so a golden re-captured from a
- * renderer that has gone wrong disagrees with prettier and fails there.
- *
- * Every scenario renders against the built-in public catalogue, which both
- * sides seat — the editor draws against the catalogue it shipped with, and the
- * matrix is a parameter of every renderer here precisely so neither side can
- * silently reach a different one. A visitor's locally-authored skills are not
- * in that catalogue, and the preview says so rather than covering it.
- *
- * The scenarios deliberately do not carry a `SeedPayload`. The renderers this
- * package owns take a `ProjectConfig`; turning a payload into one runs
- * `buildInstallConfig` and `mergeWithExistingConfig`, both of which read disk
- * and both of which stay in the CLI. A payload-keyed scenario would name an
- * input this package cannot consume.
- *
- * The configurations below are written out rather than built from a factory,
- * for the reason `selection-scenarios.ts` writes its selections out: a contract
- * module IS the single declaration, so a factory between it and the reader
- * would put a second thing in the way of seeing what produced these bytes. The
- * CLI's own test factories are not reachable from here in any case — the
- * dependency runs the other way — and a copy of them in this package would be
- * exactly the second implementation the file exists to prevent.
+ * Configurations are written out rather than built from a factory, so nothing stands between a
+ * scenario and the bytes it pins. Every scenario renders against the built-in public catalogue.
  */
 
 import type { AgentName, ProjectConfig } from "../index"
@@ -64,16 +13,8 @@ import { STANDARD_FILES } from "../paths.js"
 import { sourceDirName, type Provider } from "../source-layout.js"
 
 /**
- * Where each emitted file lands, relative to the root it is written under. A
- * root is a base directory — the user's home, or a project directory — and the
- * config pair lives in its source folder, never in its `.claude/`.
- *
- * Composed from the declared names rather than spelled out, so the scenarios
- * cannot go on describing a folder the product has stopped writing.
- *
- * The provider is named here rather than defaulted: every scenario in this file
- * describes a Claude install's bytes, and `source-layout.ts` hands out no default
- * for a caller to leave unsaid.
+ * Relative to the root (home or a project); the config pair lives in its source folder, never in
+ * `.claude/`. The provider is named because `source-layout.ts` hands out no default.
  */
 const SCENARIO_PROVIDER: Provider = "claude"
 
@@ -82,14 +23,11 @@ export const CONFIG_TYPES_TS = `${sourceDirName(SCENARIO_PROVIDER)}/${STANDARD_F
 
 export type EmissionScenario = {
   id: string
-  // Phrased as the behaviour a test name would describe.
   title: string
   // Which writer the root selects. `"global"` renders standalone; `"project"`
   // renders the inlined-global form and carries the `globalConfig` it inlines.
   root: "global" | "project"
-  // The configuration being written.
   config: ProjectConfig
-  // The global root's configuration, for a project root that inlines it.
   globalConfig?: ProjectConfig
   // The sub-agent roster the types half is generated against. The CLI walks
   // `src/agents/` for it; a browser has no such directory, so it travels here.
@@ -218,6 +156,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: 'sonnet' | 'opus' | 'haiku' | 'fable' | 'inherit'
+  codexModel?: 'gpt-6-astra' | 'gpt-5.6-sol' | 'gpt-5.6-terra' | 'gpt-5.6-luna'
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   excluded?: boolean
 }
@@ -285,6 +224,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: 'sonnet' | 'opus' | 'haiku' | 'fable' | 'inherit'
+  codexModel?: 'gpt-6-astra' | 'gpt-5.6-sol' | 'gpt-5.6-terra' | 'gpt-5.6-luna'
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   excluded?: boolean
 }
@@ -357,6 +297,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: 'sonnet' | 'opus' | 'haiku' | 'fable' | 'inherit'
+  codexModel?: 'gpt-6-astra' | 'gpt-5.6-sol' | 'gpt-5.6-terra' | 'gpt-5.6-luna'
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   excluded?: boolean
 }
@@ -422,6 +363,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: 'sonnet' | 'opus' | 'haiku' | 'fable' | 'inherit'
+  codexModel?: 'gpt-6-astra' | 'gpt-5.6-sol' | 'gpt-5.6-terra' | 'gpt-5.6-luna'
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   excluded?: boolean
 }
@@ -485,6 +427,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: 'sonnet' | 'opus' | 'haiku' | 'fable' | 'inherit'
+  codexModel?: 'gpt-6-astra' | 'gpt-5.6-sol' | 'gpt-5.6-terra' | 'gpt-5.6-luna'
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   excluded?: boolean
 }
@@ -552,6 +495,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: 'sonnet' | 'opus' | 'haiku' | 'fable' | 'inherit'
+  codexModel?: 'gpt-6-astra' | 'gpt-5.6-sol' | 'gpt-5.6-terra' | 'gpt-5.6-luna'
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   excluded?: boolean
 }
@@ -573,6 +517,57 @@ const GLOBAL_HALF: ProjectConfig = {
   skills: [{ id: REACT, scope: "global", origin: AGENTS_INC }],
   stack: { [WEB_DEVELOPER]: { "web-framework": [{ id: REACT }] } },
 }
+
+const AGENT_TUNING_CONFIG_TS = `import type { ProjectConfig, AgentScopeConfig } from './config-types'
+
+const agents: AgentScopeConfig[] = [
+  { name: 'pm', scope: 'global', model: 'haiku', codexModel: 'gpt-5.6-terra', effort: 'high' },
+]
+
+export default {
+  name: 'agent-tuning',
+  agents,
+  skills: [],
+} satisfies ProjectConfig
+`
+
+const AGENT_TUNING_CONFIG_TYPES_TS =
+  `// AUTO-GENERATED by agents-inc — DO NOT EDIT
+
+export type SkillId = never
+
+export type AgentName = 'pm'
+
+export type SelectedAgentName = 'pm'
+
+export type ProjectAgentName = SelectedAgentName
+
+export type Domain = never
+
+export type Category = never
+
+export type InstallMode = 'eject' | 'plugin' | 'mixed'
+
+export type SkillConfig = {
+  id: SkillId
+  scope: 'project' | 'global'
+  origin: string
+  excluded?: boolean
+}
+
+export type AgentScopeConfig = {
+  name: AgentName
+  scope: 'project' | 'global'
+  model?: 'sonnet' | 'opus' | 'haiku' | 'fable' | 'inherit'
+  codexModel?: 'gpt-6-astra' | 'gpt-5.6-sol' | 'gpt-5.6-terra' | 'gpt-5.6-luna'
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  excluded?: boolean
+}
+
+export type SkillAssignment<S extends SkillId = SkillId> = S | { id: S; preloaded: boolean }
+
+export type StackAgentConfig = Partial<Record<Category, SkillAssignment | SkillAssignment[]>>` +
+  CONFIG_TYPES_INTERFACE
 
 export const EMISSION_SCENARIOS: readonly EmissionScenario[] = [
   {
@@ -771,5 +766,34 @@ export const EMISSION_SCENARIOS: readonly EmissionScenario[] = [
       "branch the CLI takes when no global config-types.ts exists on disk — the only one a " +
       "browser can render, since the import form's specifier is path.relative() against the " +
       "visitor's own $HOME and the preview draws a placeholder for it instead.",
+  },
+  {
+    id: "agent-tuning",
+    title:
+      "writes a sub-agent's tuning in entry order, the Codex model between model and effort",
+    root: "global",
+    config: {
+      name: "agent-tuning",
+      agents: [
+        {
+          effort: "high",
+          codexModel: "gpt-5.6-terra",
+          model: "haiku",
+          scope: "global",
+          name: "pm",
+        },
+      ],
+      skills: [],
+    },
+    agentNames: ["pm"],
+    expected: {
+      [CONFIG_TS]: AGENT_TUNING_CONFIG_TS,
+      [CONFIG_TYPES_TS]: AGENT_TUNING_CONFIG_TYPES_TS,
+    },
+    why:
+      "The entry arrives in the reverse of its order and comes back as name, scope, model, " +
+      "codexModel, effort: the loader's own order, so a re-emit after a load moves no line. Both " +
+      "pins travel because each provider reads its own. The types half offers the four Codex ids " +
+      "on one line inside the print width.",
   },
 ]

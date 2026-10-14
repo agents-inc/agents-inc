@@ -1,4 +1,4 @@
-import { EFFORT_NAMES, MODEL_NAMES } from "@workspace/matrix"
+import { CODEX_MODEL_NAMES, EFFORT_NAMES, MODEL_NAMES } from "@workspace/matrix"
 import { groupBy, unique } from "remeda"
 
 import { isExclusiveCategory, type CompileCatalog } from "./catalog.js"
@@ -28,28 +28,15 @@ import type {
   SkillId,
 } from "./types.js"
 
-/**
- * Renders `config-types.ts`; writes nothing. The disk-probing half — deciding
- * whether a project extends a global types file, and computing the relative
- * specifier to it — stayed in the CLI's `config-types-writer.ts`, because a
- * browser has no disk to probe and `path.relative` between two scopes' source
- * folders is a fact about one machine.
- */
+/** Renders `config-types.ts`; writes nothing. Probing for a global types file stays in the CLI. */
 
 /**
- * Emitted for a union with no members. `never` is the identity element for a
- * union: an empty install must accept NO member, and `never | "web-framework-react"`
- * reduces to `"web-framework-react"`, so a project types file that extends an empty
- * global union still narrows. Emitting `string` here would instead absorb every
- * literal and silently disable type checking of the generated config.ts.
+ * `never` is the union identity, so a project extending an empty global union still narrows.
+ * `string` would absorb every literal and disable type checking of config.ts.
  */
 const EMPTY_UNION_TYPE = "never"
 
-/**
- * Extra just-created skill IDs / agent names / domains / categories to fold into
- * a regenerated config-types.ts (entities that exist in config but not yet in the
- * loaded matrix). buildProjectTypesExtras returns Required<ConfigTypesExtras>.
- */
+/** Entities just written to config but not yet in the loaded matrix. */
 export type ConfigTypesExtras = {
   extraSkillIds?: string[]
   extraAgentNames?: string[]
@@ -58,24 +45,12 @@ export type ConfigTypesExtras = {
 }
 
 /**
- * A vocabulary constant as a single-line TypeScript literal union, inside an
- * emitted property where a break would need a layout of its own.
- *
- * That it stays on one line is an assumption about the lists — both are
- * generated from the matrix and both are short — rather than something this
- * function arranges. Nothing guards it here; what does is the fixed-point
- * assertion in `contract/emission-scenarios.test.ts`, which renders both of
- * these lines in every scenario and reddens the moment either grows past the
- * print width, because prettier would then break what this does not.
+ * Width is the lists' concern; `contract/emission-scenarios.test.ts` reddens if one outgrows it.
  */
 function formatLiteralUnion(members: readonly string[]): string {
   return flatUnion(members.map(quoteText))
 }
 
-/**
- * Types emitted before the dynamically-generated StackAgentConfig.
- * Includes InstallMode, SkillConfig, AgentScopeConfig, and the generic SkillAssignment.
- */
 export const PROJECT_CONFIG_TYPES_BEFORE = `export type InstallMode = 'eject' | 'plugin' | 'mixed'
 
 export type SkillConfig = {
@@ -89,6 +64,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: ${formatLiteralUnion(MODEL_NAMES)}
+  codexModel?: ${formatLiteralUnion(CODEX_MODEL_NAMES)}
   effort?: ${formatLiteralUnion(EFFORT_NAMES)}
   excluded?: boolean
 }
@@ -96,9 +72,6 @@ export type AgentScopeConfig = {
 export type SkillAssignment<S extends SkillId = SkillId> = S | { id: S; preloaded: boolean }
 `
 
-/**
- * The ProjectConfig interface, emitted after StackAgentConfig.
- */
 export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
   /** Project/plugin name (kebab-case) */
   name: string
@@ -153,26 +126,14 @@ export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
 }
 `
 
-/**
- * Loose StackAgentConfig line emitted when no per-category skill constraint applies. Admits a
- * single assignment as well as an array: project configs always get this line, and they carry the
- * bare (unwrapped) form for exclusive categories.
- */
+/** Admits a single assignment too: project configs carry the bare form for exclusive categories. */
 export const STACK_AGENT_CONFIG_LOOSE_LINE =
   "export type StackAgentConfig = Partial<Record<Category, SkillAssignment | SkillAssignment[]>>"
 
 /**
- * Assembles a config-types.ts source from its per-alias union lines — the single
- * template shared by generateConfigTypesSource, generateProjectConfigTypesSource,
- * and generateBlankGlobalConfigTypesSource. Their emitted text is identical apart
- * from the alias contents, the StackAgentConfig line, and the optional
- * (project-only) import block.
- *
- * The emitted ProjectConfig interface (PROJECT_CONFIG_INTERFACE_AFTER) deliberately
- * diverges from types/config.ts: it uses the narrowed generated aliases
- * (SelectedAgentName, ProjectAgentName, per-category StackAgentConfig) so a user's
- * config.ts is type-checked against only the installed skills/agents rather than
- * the full runtime union.
+ * The one template for every config-types.ts. Its ProjectConfig deliberately diverges from
+ * types/config.ts, using the narrowed generated aliases so config.ts is checked against only what
+ * is installed.
  */
 export function assembleConfigTypesSource(parts: {
   importBlock?: string
@@ -205,14 +166,7 @@ ${parts.stackAgentConfig}
 ${PROJECT_CONFIG_INTERFACE_AFTER}`
 }
 
-/**
- * What one emitted type alias is assigned.
- *
- * Members rather than the finished text, because whether they sit on the
- * declaration's own line, on an indented line below it, or one per line under a
- * leading `|` is decided by how wide they are once the alias NAME is in front
- * of them — which only the assembler knows.
- */
+/** Members rather than text: the layout depends on their width after the alias name. */
 export type AliasRhs =
   | { kind: "plain"; members: readonly string[] }
   | {
@@ -221,19 +175,17 @@ export type AliasRhs =
       marketplace: readonly string[]
     }
 
-/** A union over quoted string literals, or `never` when it has no members. */
 function literalUnion(members: readonly string[]): AliasRhs {
   return members.length === 0
     ? typeReference(EMPTY_UNION_TYPE)
     : { kind: "plain", members: members.map(quoteText) }
 }
 
-/** A bare type name as an alias's whole right-hand side. */
 function typeReference(name: string): AliasRhs {
   return { kind: "plain", members: [name] }
 }
 
-/** `export type <name> = <rhs>`, laid out the way prettier lays a union out. */
+/** Laid out the way prettier lays a union out. */
 function renderAlias(name: string, rhs: AliasRhs): string {
   const head = `export type ${name} =`
   if (rhs.kind === "sectioned") {
@@ -252,14 +204,8 @@ function renderAlias(name: string, rhs: AliasRhs): string {
 }
 
 /**
- * A union under its `// Custom` and `// Marketplace` headings.
- *
- * `custom` is non-empty by construction — {@link formatMaybeSectionedUnion} is
- * the only producer of a sectioned right-hand side and it answers with a plain
- * one when nothing is custom. Both headings present puts a comment BETWEEN two
- * members, which prettier cannot fold away, so that union stays one member per
- * line however short it is; a single heading only pushes the members off the
- * declaration's line, and they rejoin below it when they fit.
+ * `custom` is non-empty by construction. Two headings put a comment between members, which
+ * prettier cannot fold, so that union stays one member per line.
  */
 function renderSectionedUnion(
   custom: readonly string[],
@@ -284,19 +230,14 @@ function renderSectionedUnion(
   ].join("\n")
 }
 
-/** A `// Custom` or `// Marketplace` line above the members it introduces. */
 function sectionHeading(text: string): string {
   return `${spaces(INDENT_STEP)}// ${text}`
 }
 
 /**
- * Generates a per-category constrained StackAgentConfig type from skill-by-category groupings.
- * Falls back to the loose line when no categories have skills.
- *
- * The union is over WHICH skill may be assigned; exclusivity is about HOW MANY, so an exclusive
- * category emits a bare `SkillAssignment<...>` (no array) however long its candidate list is. A
- * category the catalogue does not declare is not treated as exclusive, on the same reasoning
- * `isExclusiveCategory` takes: a constraint must fire on a flag the data actually carries.
+ * The union says WHICH skill; exclusivity says HOW MANY, so an exclusive category emits a bare
+ * `SkillAssignment<...>`. An undeclared category is not exclusive: a constraint fires only on a
+ * flag the data carries.
  */
 function generateStackAgentConfig(
   skillsByCategory: Map<Category, SkillId[]>,
@@ -307,23 +248,14 @@ function generateStackAgentConfig(
   }
 
   const properties = [...skillsByCategory.entries()]
-    // A project commits its config-types.ts, so the key order has to be the comparator's rather
-    // than the collation of whichever machine last ran the CLI.
+    // Committed bytes: comparator order, not the machine's collation.
     .sort(([a], [b]) => bytewise(a, b))
     .map(([category, skills]) => renderStackProperty(category, skills, catalog))
 
   return ["export type StackAgentConfig = {", ...properties, "}"].join("\n")
 }
 
-/**
- * One category's property, with its candidate skills laid out where they sit.
- *
- * The union is inside a type ARGUMENT rather than on a declaration's own line,
- * so its indented and one-per-line forms carry the closing `>` down with them —
- * but the widths that choose between the three are the same ones everywhere
- * else, which is why the decision comes from the shared layout rather than from
- * a count of members.
- */
+/** The union sits in a type argument, so its multi-line forms carry the closing `>` down. */
 function renderStackProperty(
   category: Category,
   skills: SkillId[],
@@ -348,10 +280,6 @@ function renderStackProperty(
   ].join("\n")
 }
 
-/**
- * Builds a Map of Category -> SkillId[] from the catalogue, filtered to only include
- * categories and skills that are in the provided arrays.
- */
 function buildSkillsByCategory(
   skillIds: SkillId[],
   categories: Category[],
@@ -364,9 +292,8 @@ function buildSkillsByCategory(
       (entry): entry is { id: SkillId; category: Category } =>
         entry.category !== undefined &&
         entry.category !== LOCAL_PSEUDO_CATEGORY &&
-        // Boundary cast: a catalogue skill's `category` is a Category, typed `string` on the
-        // narrow catalogue shape so the wire `Matrix` satisfies it too. The `has` below IS the
-        // runtime check the predicate rests on, so the cast only lets the probe be written.
+        // Boundary cast: typed `string` on the narrow catalogue shape; the `has` is the runtime
+        // check.
         categorySet.has(entry.category as Category)
     )
 
@@ -378,13 +305,8 @@ function buildSkillsByCategory(
 }
 
 /**
- * A category no loaded catalogue declares, which is the whole of what makes one custom.
- *
- * Deliberately not "a category a custom skill is in": a custom skill is PLACED in a category that
- * already exists rather than bringing one, so the skills that REFERENCE a category say nothing
- * about who declared it — and reading them that way labelled a category the public catalogue
- * ships as the user's own. The same holds for a category arriving as an extra: an extra is every
- * literal a just-written config.ts holds, most of them the catalogue's.
+ * A category no loaded catalogue declares. Not "a category a custom skill is in": custom skills
+ * are placed in existing categories.
  */
 function isUndeclaredCategory(
   category: Category,
@@ -394,29 +316,14 @@ function isUndeclaredCategory(
 }
 
 /**
- * A skill the loaded catalogue does not declare, or declares as the user's own.
- *
- * The same rule the category axis takes, plus the one signal skills carry that categories do not:
- * `custom: true` is written into a skill's own metadata, so a skill the catalogue holds AND flags
- * is the user's however it got there. What is NOT read is which argument the id arrived in — an
- * extra is a literal the just-written config.ts holds, and on the project standalone path that is
- * the whole configuration, most of it the catalogue's.
- *
- * `local: true` is deliberately not a second signal: an ejected catalogue skill is copied into
- * `.claude/skills/` and rediscovered as local, so it would label the catalogue's own work custom.
+ * Undeclared, or declared with `custom: true`. `local: true` is not a signal: an ejected catalogue
+ * skill is rediscovered as local.
  */
 function isCustomSkill(skillId: SkillId, catalog: CompileCatalog): boolean {
   const declared = catalog.skills[skillId]
   return declared === undefined || declared.custom === true
 }
 
-/**
- * An agent the loaded source does not declare, or declares as the user's own.
- *
- * `agentNames` is every agent that source ships and `customAgentNames` the ones it marks custom,
- * so the pair is the agent axis's equivalent of the catalogue: anything outside the first is
- * nobody's declaration, anything inside the second is declared as the user's.
- */
 function isCustomAgent(
   agentName: AgentName,
   declared: ReadonlySet<AgentName>,
@@ -425,9 +332,6 @@ function isCustomAgent(
   return !declared.has(agentName) || flaggedCustom.has(agentName)
 }
 
-/**
- * A domain no category the loaded catalogue declares carries.
- */
 function isCustomDomain(
   domain: string,
   declared: ReadonlySet<string>
@@ -436,14 +340,8 @@ function isCustomDomain(
 }
 
 /**
- * Generates a config-types.ts source from catalogue data.
- * The generated file provides type safety for config.ts via `import type` + `satisfies`.
- *
- * @param customAgentNames Agent names that are custom (from sources with `custom: true`)
- * @param extras Optional extra skill IDs or agent names to include (for just-created entities)
- * @param config Optional ProjectConfig to narrow unions to only installed items.
- *               When provided, SkillId/AgentName/Category/Domain are derived from
- *               the config's skills[] and agents[] rather than the full catalogue.
+ * @param config Narrows SkillId/AgentName/Category/Domain to the config's skills and agents
+ *               rather than the full catalogue.
  */
 export function generateConfigTypesSource(
   catalog: CompileCatalog,
@@ -452,7 +350,7 @@ export function generateConfigTypesSource(
   extras?: ConfigTypesExtras,
   config?: ProjectConfig
 ): string {
-  // Boundary cast: extra IDs from CLI args may not match strict union patterns
+  // Boundary cast: extra ids from CLI args may not match the strict unions.
   const extraSkillIds = (extras?.extraSkillIds ?? []) as SkillId[]
   const extraAgentNamesArr = (extras?.extraAgentNames ?? []) as AgentName[]
   const extraDomainsArr = extras?.extraDomains ?? []
@@ -464,7 +362,6 @@ export function generateConfigTypesSource(
   let categories: Category[]
 
   if (config) {
-    // Narrow to only installed/configured items
     const configSkillIds = config.skills.map((s) => s.id)
     skillIds = unique([...configSkillIds, ...extraSkillIds]).sort()
 
@@ -474,7 +371,7 @@ export function generateConfigTypesSource(
     const configCategories = deriveCategories(configSkillIds, catalog)
     categories = unique([...configCategories, ...extraCategoriesArr]).sort()
 
-    // Also include config.selectedDomains (user-selected) that may not have skills in this scope
+    // selectedDomains may carry domains with no skills in this scope.
     const configDomains = deriveDomains(categories, catalog)
     domains = unique([
       ...configDomains,
@@ -482,7 +379,7 @@ export function generateConfigTypesSource(
       ...extraDomainsArr,
     ]).sort()
   } else {
-    // Fall back to the full catalogue (e.g., blank global config)
+    // No config: the full catalogue (e.g., a blank global config).
     skillIds = unique([
       ...typedKeys<SkillId>(catalog.skills),
       ...extraSkillIds,
@@ -543,38 +440,28 @@ export function generateConfigTypesSource(
   })
 }
 
-// Sorted deriveDomains over every category — kept separate: this is the full-catalogue domain
-// union for the standalone types file, not a per-selection derivation.
+// The full-catalogue domain union for the standalone types file.
 function extractDomains(catalog: CompileCatalog): string[] {
   return deriveDomains(typedKeys<Category>(catalog.categories), catalog).sort()
 }
 
-/** Category present and not the "local" pseudo-category. */
 const isNonLocalCategory = (
   category: CategoryPath | undefined
 ): category is Category =>
   Boolean(category) && category !== LOCAL_PSEUDO_CATEGORY
 
-/**
- * Derives the set of categories that the given skill IDs belong to,
- * by looking up each skill's category in the catalogue.
- */
 export function deriveCategories(
   skillIds: SkillId[],
   catalog: CompileCatalog
 ): Category[] {
   return unique(
     skillIds
-      // Boundary cast: CategoryPath to Category for catalogue key lookup
+      // Boundary cast: CategoryPath to Category for the catalogue lookup.
       .map((id) => catalog.skills[id]?.category as CategoryPath | undefined)
       .filter(isNonLocalCategory)
   )
 }
 
-/**
- * Derives the set of domains that the given categories belong to,
- * by looking up each category's domain in the catalogue.
- */
 export function deriveDomains(
   categories: Category[],
   catalog: CompileCatalog
@@ -586,10 +473,6 @@ export function deriveDomains(
   )
 }
 
-/**
- * A union split into its `// Custom` and `// Marketplace` sections when it has
- * custom members, and a plain one when it has none.
- */
 function formatMaybeSectionedUnion<T extends string>(
   members: T[],
   isCustom: (member: T) => boolean
@@ -601,7 +484,6 @@ function formatMaybeSectionedUnion<T extends string>(
   const custom = members.filter(isCustom)
   const marketplace = members.filter((m) => !isCustom(m))
 
-  // No custom members: no headings to draw, so the union is an ordinary one.
   if (custom.length === 0) {
     return literalUnion(members)
   }
@@ -614,30 +496,19 @@ function formatMaybeSectionedUnion<T extends string>(
 }
 
 export type ProjectConfigTypesOptions = {
-  /**
-   * Absolute path to the global scope's source folder.
-   * When set, generates import statements that extend global types.
-   */
+  /** The global scope's source folder; extends its types. */
   globalTypesImportPath: string
-  /** Project-only skill IDs (not including global) */
   projectSkillIds: string[]
-  /** Project-only agent names (not including global) */
   projectAgentNames: string[]
-  /** Project-only domains (not including global) */
   projectDomains: string[]
-  /** Project-only categories (not including global) */
   projectCategories?: string[]
-  /** Selected agent names from config (narrows SelectedAgentName) */
+  /** Narrows SelectedAgentName */
   selectedAgentNames?: string[]
-  /** Project-scoped agent names (narrows ProjectAgentName for stack keys) */
+  /** Narrows ProjectAgentName for stack keys */
   projectScopedAgentNames?: string[]
 }
 
-/**
- * Generates a project config-types.ts source that imports global types and extends them.
- * Each type union is `GlobalType | "project-item-1" | "project-item-2"`.
- * When projectCategories are provided, Category extends GlobalCategory instead of being `string`.
- */
+/** Each union is `GlobalType | "project-item"`; Category extends GlobalCategory when given. */
 export function generateProjectConfigTypesSource(
   options: ProjectConfigTypesOptions
 ): string {
@@ -667,8 +538,7 @@ export function generateProjectConfigTypesSource(
     ? literalUnion(options.projectScopedAgentNames)
     : typeReference("SelectedAgentName")
 
-  // Category comes across as GlobalCategory whether or not this project adds
-  // any of its own, because the alias is re-exported either way.
+  // Category is re-exported either way, so it is always imported.
   const importBlock = renderTypeImportLine(
     [
       "SkillId as GlobalSkillId",
@@ -691,9 +561,6 @@ export function generateProjectConfigTypesSource(
   })
 }
 
-/**
- * Generates blank global config-types source (all types are `never`).
- */
 export function generateBlankGlobalConfigTypesSource(): string {
   return assembleConfigTypesSource({
     skillId: typeReference(EMPTY_UNION_TYPE),
@@ -706,10 +573,6 @@ export function generateBlankGlobalConfigTypesSource(): string {
   })
 }
 
-/**
- * A union that extends a global type alias: `GlobalType` on its own when this
- * project adds nothing, and `GlobalType | "a" | "b"` when it does.
- */
 function formatExtendedUnion(
   globalTypeName: string,
   projectMembers: readonly string[]
