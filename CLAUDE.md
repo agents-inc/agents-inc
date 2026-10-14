@@ -19,13 +19,16 @@ publishes to npm.
 | `packages/ui`        | the design system the editor and the site both build on                   |
 | `packages/*-config`  | shared eslint, prettier, typescript and vitest configs                    |
 
-[`README.md`](./README.md) carries the full layout and how to work in the repository.
+[`README.md`](./README.md) carries how to work in the repository.
 
 ## Where things live
 
-- **[`packages/cli/.ai-docs/DOCUMENTATION_MAP.md`](./packages/cli/.ai-docs/DOCUMENTATION_MAP.md)** is
-  the documentation index, and **[`packages/cli/CLAUDE.md`](./packages/cli/CLAUDE.md)** is the guide
-  for CLI work specifically. Read both when the work is in that package — neither loads from here.
+- **[`docs/architecture.md`](./docs/architecture.md)** is the overview — the workspaces, how a
+  configuration flows from the editor to installed sub-agents, generated code, tests and gates — and
+  **[`packages/cli/CLAUDE.md`](./packages/cli/CLAUDE.md)** is the guide for CLI work specifically.
+  Read both when the work is in that package — neither loads from here.
+- **[`packages/cli/.ai-docs/standards/commit-protocol.md`](./packages/cli/.ai-docs/standards/commit-protocol.md)**
+  — commit rules and the release checklist.
 - **[`todo/`](./todo/)** holds everything outstanding, one file per workspace:
   [`cli.md`](./todo/cli.md), [`editor.md`](./todo/editor.md), [`www.md`](./todo/www.md),
   [`server.md`](./todo/server.md), [`repo.md`](./todo/repo.md) for the repository itself, and
@@ -79,8 +82,8 @@ Agreed process. It applies to every item in `todo/`, and the order is the point.
 4. **Then run it by hand through the CLI** and confirm it does what it claims. Passing tests and a
    working command are different claims; the `--from` work proved that when a green-looking path
    exited 13 on an unsettled Ink render that no assertion covered.
-5. **Then update the docs**, through the `codex-keeper` agent rather than inline — beyond the counts
-   a change's own diff moved.
+5. **Then update the thin docs where something became false** — `docs/`, the READMEs and the
+   `CLAUDE.md` files.
 6. **Then update `todo/`, in the same turn the work lands.** Delete the row from its tracker, append
    one line to [`archive.md`](./todo/archive.md), and update [`ROADMAP.md`](./todo/ROADMAP.md) if a
    phase moved. All three, always — a finished task still sitting in a tracker is indistinguishable

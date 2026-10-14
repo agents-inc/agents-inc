@@ -5,14 +5,14 @@
 
 3. After any fix, trace ALL scenarios through the code before calling it done.
 
-4. ALWAYS read [.ai-docs/DOCUMENTATION_MAP.md](./.ai-docs/DOCUMENTATION_MAP.md) before working on any area of the codebase. It indexes verified documentation for every major system.
+4. ALWAYS read [docs/architecture.md](../../docs/architecture.md) before working on an area of the codebase you have not worked in.
 
 5. NEVER run ANY git command that WRITES — no `git add`, `commit`, `reset`, `stash` (push/pop/drop), `checkout`, `restore`, `clean`, `push`, `rebase`, `merge`, amend. READ-ONLY git is allowed (owner clarification 2026-08-09): `git status`, `log`, `show`, `diff`, `blame`, `stash list` — use it to check history and verify changes. The user curates their staging area intentionally. This applies to sub-agents too — state both halves when delegating.
 </critical-requirement>
 
 # Project Memory for Claude
 
-This file provides behavioral rules and conventions. For codebase reference documentation, see `.ai-docs/`.
+This file provides behavioral rules and conventions. For how the codebase fits together, see [`docs/architecture.md`](../../docs/architecture.md).
 
 ## Workspace Directories
 
@@ -67,7 +67,7 @@ This file provides behavioral rules and conventions. For codebase reference docu
 
 ### Test Assertions
 
-- NEVER define local parser/extractor helpers inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If the helper has non-trivial logic it would need its OWN tests to be trusted. Instead: assert directly on the raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g., `loadProjectConfig` for config.ts). If a helper is genuinely reusable across tests, live it in `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. A tested helper lives where a vitest project COLLECTS its test: `src/cli/lib/__tests__/helpers/` for one shared across the CLI, or a `__tests__/helpers/` beside the code it serves for one that is not (`src/cli/lib/hosts/__tests__/helpers/fake-child-process.ts` and its `fake-child-process.test.ts`, collected by the `src/**` project, are the live example). What is forbidden is a helper test somewhere no project looks: no vitest project collects `*.test.ts` under `e2e/helpers/` — the projects in `vitest.config.ts` include only `src/**` and `scripts/**`, and those in `e2e/vitest.config.ts` require an `.e2e.test.ts` or `.smoke.test.ts` suffix — so a helper test written there never runs while looking like coverage. E2E specs reach these helpers through `e2e/helpers/test-utils.ts`, which imports each one by name and names it in its single `export { ... }` block; `normalizeGlobalConfig` and `writeTestPackageJson` are the live examples of that route, and `journey-page.ts` is one carrying its own `journey-page.test.ts` beside it.
+- NEVER define local parser/extractor helpers inside a test file (loops, regex scans, state machines that pick data out of rendered output or config text). If the helper has non-trivial logic it would need its OWN tests to be trusted. Instead: assert directly on the raw output with `toContain`, `toMatchInlineSnapshot`, or a structural load (e.g., `loadProjectConfig` for config.ts). If a helper is genuinely reusable across tests, live it in `src/cli/lib/__tests__/helpers/` WITH its own tests — never inline and untested. A tested helper lives where a vitest project COLLECTS its test: `src/cli/lib/__tests__/helpers/` for one shared across the CLI, or a `__tests__/helpers/` beside the code it serves for one that is not (`src/cli/lib/hosts/__tests__/helpers/fake-child-process.ts` and its `fake-child-process.test.ts`, collected by the `src/**` project, are the live example). What is forbidden is a helper test somewhere no project looks: no vitest project collects `*.test.ts` under `e2e/helpers/` — the projects in `vitest.config.ts` include only `src/**` and `scripts/**`, and those in `e2e/vitest.config.ts` require an `.e2e.test.ts` or `.smoke.test.ts` suffix — so a helper test written there never runs while looking like coverage. E2E specs reach these helpers through `e2e/helpers/test-utils.ts`, which imports each one by name and names it in its single `export { ... }` block; `normalizeGlobalConfig` and `writeTestPackageJson` are the live examples of that route.
 - NEVER let a shared assertion helper's signature overstate what it checks. Nobody opens a helper they are calling, so the signature is what every call site believes, and two halves of it fail silently. The TYPE: `skillIds?: readonly string[]` where `SkillId[]` is meant, on all four expectation types that have call sites — `ConfigExpectations` (`toHaveConfig`), `expectPhaseSuccess`, `expectDualScopeInstallation` and `toHaveAgentDynamicSkills` — so a typo, a display name or a slug is accepted and reported about. This is the factory rule below ("ALWAYS type factory function parameters with the narrowest union type") arriving from the assertion end. And the MECHANISM: `toHaveConfig` checks `marketplace` and `origin` by loading the file through `loadConfigOrFail`, each with a comment saying an unkeyed `includes` was answered by whichever occurrence came first — while its `skillIds` check, a few statements above that load, is `content.includes(id)`, a substring scan satisfied by an id inside a comment, inside a tombstone the expectation never named, or inside a longer id containing it. **Where a matcher already loads the artefact structurally for one field, every field it claims is checked structurally**; a mixed matcher is worse than a wholly textual one, because the rigorous fields make the others look rigorous. The option-NAME half is `clean-code-standards.md` 15.11 and is not restated. The type census is a worklist rather than a verdict — an id at a boundary that genuinely accepts unvalidated input stays `string`, as `skippedUnknownSkills` in `utils/messages.ts` correctly does:
 
 ```
@@ -231,11 +231,11 @@ Items not already covered by NEVER/ALWAYS rules above:
 
 ## Key Documentation
 
-| Document                                                           | Purpose                                                |
-| ------------------------------------------------------------------ | ------------------------------------------------------ |
-| [.ai-docs/DOCUMENTATION_MAP.md](./.ai-docs/DOCUMENTATION_MAP.md)   | Codebase documentation index                           |
-| [.ai-docs/standards/briefing.md](./.ai-docs/standards/briefing.md) | How a brief states a fact, and what a report owes back |
-| [todo/cli.md](../../todo/cli.md)                                   | Active tasks and blockers                              |
+| Document                                                           | Purpose                                                 |
+| ------------------------------------------------------------------ | ------------------------------------------------------- |
+| [docs/architecture.md](../../docs/architecture.md)                 | How the workspaces fit, generated code, tests and gates |
+| [.ai-docs/standards/briefing.md](./.ai-docs/standards/briefing.md) | How a brief states a fact, and what a report owes back  |
+| [todo/cli.md](../../todo/cli.md)                                   | Active tasks and blockers                               |
 
 <critical-reminder>
 1. You do NOT write code. Delegate to sub-agents. Tell them to read CLAUDE.md.

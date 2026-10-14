@@ -1,30 +1,18 @@
 # @workspace/matrix
 
-The skill catalog — every skill, category, domain, stack and sub-agent the editor can show.
+The skill catalogue: every skill, category, domain, stack and sub-agent the editor can show. It also
+holds the wire contracts that more than one workspace reads. It is browser-safe.
 
-## Where the data comes from
+| Path                   | What                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `src/vendor/`          | verbatim copies of `packages/cli/src/cli/types/`; generated, never edit              |
+| `src/generated/`       | `AGENT_DEFINITIONS`, from the CLI's per-agent `metadata.yaml`; generated, never edit |
+| `src/read-model/`      | the catalogue's read models and selection semantics                                  |
+| `src/seed.ts`          | a share id's payload (`seedPayloadSchema`, `SEED_VERSION`)                           |
+| `src/matrix-schema.ts` | a marketplace's `catalog.json`                                                       |
+| `src/skill-index.ts`   | the index the worker serves at `GET /skills`                                         |
 
-`src/vendor/` and `src/generated/` are written from `packages/cli`, the CLI package next door in
-this repository, by its `scripts/generate-matrix-package.ts` — their single writer. Nothing under
-either is authored by hand.
+Import through the `exports` map in `package.json`, never from `vendor/` or `generated/`.
 
-| Path                     | What                                                                    |
-| ------------------------ | ----------------------------------------------------------------------- |
-| `src/vendor/`            | Verbatim copies of files in the CLI's `src/cli/types/`. **Never edit.** |
-| `src/generated/`         | `AGENT_DEFINITIONS`, derived from the CLI's per-agent `metadata.yaml`   |
-| `src/built-in-matrix.ts` | Zod boundary for `BUILT_IN_MATRIX`, the vendored catalogue              |
-| `src/built-in-agents.ts` | Zod boundary for `AGENT_DEFINITIONS`, the built-in sub-agent roster     |
-
-Regenerate after the CLI's catalog changes — this runs `generate:matrix` in `packages/cli`, and
-`generate:matrix:check` there reports drift and writes nothing:
-
-```sh
-bun run generate
-```
-
-## Entry points
-
-The `exports` map in `package.json` is the list. Import through it, never from `vendor/` or
-`generated/`. Beside the catalogue's read models (`src/index.ts`), it carries the wire contracts more
-than one workspace reads, each authored here: `seed.ts` (a share id's payload), `matrix-schema.ts`
-(a marketplace's `catalog.json`) and `skill-index.ts` (the index the worker serves at `GET /skills`).
+Regenerate after the CLI's catalogue changes. `bun run generate` here runs `generate:matrix` in
+`packages/cli`, and `generate:matrix:check` there reports drift without writing.
