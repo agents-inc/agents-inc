@@ -17,15 +17,9 @@ import { z } from "zod";
 
 import { cleanupTempDir, createTempDir } from "../src/cli/lib/__tests__/test-fs-utils.js";
 
-import {
-  BINDING_DOCUMENTS,
-  BRIEFING_CONTRACT,
-  DOCUMENTATION_MAP,
-  STANDARDS_DIRECTORY,
-} from "./check-briefing-contract.js";
+import { BINDING_DOCUMENTS, BRIEFING_CONTRACT } from "./check-briefing-contract.js";
 import {
   AGENT_FINDINGS,
-  AGENT_SUGGESTIONS,
   check,
   type Citation,
   type CitationScope,
@@ -43,7 +37,6 @@ import { expectRefusal } from "./refusal-expectations.js";
 
 const A_LIVE_FINDING = "2026-08-19-a-finding-that-is-still-on-disk";
 const A_DELETED_FINDING = "2026-08-19-a-finding-a-batch-removed";
-const A_SUGGESTION = "2026-08-19-a-proposal-in-the-sibling-directory";
 
 const A_PLAN = "2026-08-19-a-plan-named-date-first";
 const A_PLAN_NOBODY_WROTE = "2026-08-19-a-plan-nobody-ever-wrote";
@@ -61,8 +54,8 @@ afterEach(async () => {
 });
 
 /**
- * A tree with both finding directories and both scopes, written from one description so a test
- * states only the documents whose text it is about.
+ * A tree with the finding directory and every scope, written from one description so a test states
+ * only the documents whose text it is about.
  */
 async function writeFixtureTree(documents: Record<string, string>): Promise<string> {
   const root = await createTempDir("finding-citations-");
@@ -72,7 +65,6 @@ async function writeFixtureTree(documents: Record<string, string>): Promise<stri
     mkdirSync(path.join(root, directory), { recursive: true });
   }
   writeFileSync(path.join(root, AGENT_FINDINGS, `${A_LIVE_FINDING}.md`), "# on disk\n");
-  writeFileSync(path.join(root, AGENT_SUGGESTIONS, `${A_SUGGESTION}.md`), "# a proposal\n");
 
   for (const [document, text] of Object.entries(documents)) {
     const documentPath = path.join(root, document);
@@ -105,17 +97,6 @@ describe("a tracker naming a finding", () => {
     });
 
     expect(trackerCitations(root)).toStrictEqual([]);
-  });
-
-  it("resolves a name in the suggestions directory, which the shape cannot distinguish", async () => {
-    const root = await writeFixtureTree({
-      [`${TRACKERS}/${TRACKER}`]: `See \`${A_SUGGESTION}.md\`.\n`,
-    });
-
-    expect(
-      trackerCitations(root),
-      "a suggestion is dated and named exactly like a finding, and a scan reading one directory calls every one of them dangling",
-    ).toStrictEqual([]);
   });
 
   it("reports a name whether it is written with the extension or without", async () => {
@@ -265,14 +246,14 @@ describe("the scan", () => {
 
   it("refuses a finding directory that is not there, rather than resolving nothing", async () => {
     const root = await writeFixtureTree({
-      [`${TRACKERS}/${TRACKER}`]: `See \`${A_SUGGESTION}.md\`.\n`,
+      [`${TRACKERS}/${TRACKER}`]: `See \`${A_LIVE_FINDING}.md\`.\n`,
     });
-    rmSync(path.join(root, AGENT_SUGGESTIONS), { recursive: true });
+    rmSync(path.join(root, AGENT_FINDINGS), { recursive: true });
 
     expectRefusal(
       () => check({ repositoryRoot: root }),
       NO_FINDING_DIRECTORY,
-      "a resolution set missing one of its halves calls every citation of that half dangling",
+      "a resolution set missing its directory calls every citation dangling",
     );
   });
 
@@ -484,8 +465,6 @@ function everyTreeTheGatesRead(): string[] {
     ...SCOPES.map((scope) => scope.directory),
     ...FINDING_DIRECTORIES,
     ...BINDING_DOCUMENTS,
-    STANDARDS_DIRECTORY,
-    DOCUMENTATION_MAP,
     BRIEFING_CONTRACT,
   ];
 }

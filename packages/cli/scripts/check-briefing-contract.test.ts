@@ -4,7 +4,7 @@
  *
  * Two halves, like the checks beside it. The first drives it against fixture trees, because the
  * shapes that decide the answer — a link that resolves, a URL that is nobody's promise here, a
- * directory row standing for eight files — cannot all be present in the real tree at once. The
+ * document that stops linking the contract — cannot all be present in the real tree at once. The
  * second runs it against this repository, which is the assertion that holds the rule.
  */
 import { mkdirSync, rmSync, writeFileSync } from "fs";
@@ -20,31 +20,21 @@ import {
   BRIEFING_CONTRACT,
   BROKEN_LINK,
   check,
-  DOCUMENTATION_MAP,
   NO_BINDING_DOCUMENT,
-  NO_DOCUMENTATION_MAP,
-  NO_STANDARDS_DIRECTORY,
-  STANDARDS_DIRECTORY,
   UNBOUND_CONTRACT,
-  UNINDEXED_STANDARD,
   type Unreachable,
 } from "./check-briefing-contract.js";
 
 const ROOT_CLAUDE_MD = "CLAUDE.md";
 const PACKAGE_CLAUDE_MD = "packages/cli/CLAUDE.md";
 
-const A_SUBDIRECTORY_STANDARD = "standards/e2e/assertions.md";
-const A_STANDARD_NOTHING_INDEXES = "standards/a-rule-set-nobody-can-find.md";
 const A_PATH_NOTHING_HOLDS = "todo/plans/a-programme-that-never-ran.md";
 
 /** What each `CLAUDE.md` says when the tree is exactly as the rule wants it. */
 const BINDS_THE_CONTRACT: Record<string, string> = {
-  [ROOT_CLAUDE_MD]: `See [briefing](./${BRIEFING_CONTRACT}) and [the map](./${DOCUMENTATION_MAP}).\n`,
+  [ROOT_CLAUDE_MD]: `See [briefing](./${BRIEFING_CONTRACT}).\n`,
   [PACKAGE_CLAUDE_MD]: `See [briefing](./.ai-docs/standards/briefing.md).\n`,
 };
-
-/** A map naming every standard the fixture writes, one row apiece plus the directory row. */
-const INDEXES_EVERYTHING = `# Map\n\n| \`standards/briefing.md\` |\n| \`standards/e2e/\` |\n`;
 
 const roots: string[] = [];
 
@@ -53,8 +43,8 @@ afterEach(async () => {
 });
 
 /**
- * A tree with both binding documents, a map and a standards directory, written from one description
- * so a test states only the documents whose text it is about.
+ * A tree with both binding documents and the contract, written from one description so a test
+ * states only the documents whose text it is about.
  */
 async function writeFixtureTree(documents: Record<string, string> = {}): Promise<string> {
   const root = await createTempDir("briefing-contract-");
@@ -62,9 +52,7 @@ async function writeFixtureTree(documents: Record<string, string> = {}): Promise
 
   const tree: Record<string, string> = {
     ...BINDS_THE_CONTRACT,
-    [DOCUMENTATION_MAP]: INDEXES_EVERYTHING,
-    [`${STANDARDS_DIRECTORY}/briefing.md`]: "# The briefing contract\n",
-    [`${STANDARDS_DIRECTORY}/e2e/assertions.md`]: "# Assertions\n",
+    [BRIEFING_CONTRACT]: "# The briefing contract\n",
     ...documents,
   };
 
@@ -115,7 +103,7 @@ describe("a binding document", () => {
 
   it("follows a link past its anchor to the file the path names", async () => {
     const root = await writeFixtureTree({
-      [ROOT_CLAUDE_MD]: `[briefing](./${BRIEFING_CONTRACT}#the-rules) and [the map](./${DOCUMENTATION_MAP})\n`,
+      [ROOT_CLAUDE_MD]: `[briefing](./${BRIEFING_CONTRACT}#the-rules)\n`,
     });
 
     expect(findingsFor(root)).toStrictEqual([]);
@@ -123,7 +111,7 @@ describe("a binding document", () => {
 
   it("reports the document that does not link the contract at all", async () => {
     const root = await writeFixtureTree({
-      [ROOT_CLAUDE_MD]: `Everything outstanding is in [the map](./${DOCUMENTATION_MAP}).\n`,
+      [ROOT_CLAUDE_MD]: `Everything outstanding is in [the guide](./${PACKAGE_CLAUDE_MD}).\n`,
     });
 
     expect(
@@ -172,91 +160,17 @@ describe("the briefing contract", () => {
   });
 });
 
-describe("a standard", () => {
-  it("reports one the map names nowhere", async () => {
-    const root = await writeFixtureTree({
-      [`packages/cli/.ai-docs/${A_STANDARD_NOTHING_INDEXES}`]: "# A rule set\n",
-    });
-
-    expect(findingsFor(root)).toStrictEqual([
-      {
-        document: DOCUMENTATION_MAP,
-        target: A_STANDARD_NOTHING_INDEXES,
-        reason: UNINDEXED_STANDARD,
-      },
-    ]);
-  });
-
-  it("accepts a subdirectory row standing for the files under it", async () => {
-    const root = await writeFixtureTree();
-
-    expect(
-      check({ repositoryRoot: root }).unreachable.filter(
-        (finding) => finding.target === A_SUBDIRECTORY_STANDARD,
-      ),
-      "`standards/e2e/` is one row for eight files, which is the map working as intended",
-    ).toStrictEqual([]);
-  });
-
-  it("does not let a bare mention of the standards root answer for the tree", async () => {
-    const root = await writeFixtureTree({
-      [DOCUMENTATION_MAP]: "# Map\n\nConventions: `standards/`.\n",
-    });
-
-    expect(
-      findingsFor(root).map((finding) => finding.target),
-      "the map's own prose contains that string, so accepting it would make the check vacuous",
-    ).toStrictEqual(["standards/briefing.md", A_SUBDIRECTORY_STANDARD]);
-  });
-
-  it("refuses a tree with no standards directory rather than reporting none", async () => {
-    const root = await writeFixtureTree();
-    rmSync(path.join(root, STANDARDS_DIRECTORY), { recursive: true });
-
-    expectRefusal(() => check({ repositoryRoot: root }), NO_STANDARDS_DIRECTORY);
-  });
-
-  it("refuses a tree with no documentation map rather than reporting every standard", async () => {
-    const root = await writeFixtureTree();
-    rmSync(path.join(root, DOCUMENTATION_MAP));
-
-    expectRefusal(() => check({ repositoryRoot: root }), NO_DOCUMENTATION_MAP);
-  });
-});
-
-/** What each surface must be reading here, so neither one's silence hides behind the other's work. */
-const SURFACE_POPULATIONS = { links: "reads some", standards: "reads some" };
-
-function populationOf(examined: number): string {
-  return examined > 0 ? "reads some" : "reads none";
-}
-
 describe("this repository", () => {
   const repository = check();
 
-  it("reads both surfaces rather than letting one answer for the other", () => {
-    const populations = {
-      links: populationOf(repository.examined.links),
-      standards: populationOf(repository.examined.standards),
-    };
-
-    expect(
-      populations,
-      "a reader that matched nothing reports exactly what a fully-reachable tree reports",
-    ).toStrictEqual(SURFACE_POPULATIONS);
+  it("reads some links, since a reader that matched nothing reports what a reachable tree does", () => {
+    expect(repository.examined).toBeGreaterThan(0);
   });
 
   it("has both CLAUDE.md files binding the briefing contract", () => {
     expect(
       repository.unreachable.filter((finding) => finding.reason === UNBOUND_CONTRACT),
       "a brief is not a tracked file, so the link from the two documents an agent opens is the whole of what makes the contract binding",
-    ).toStrictEqual([]);
-  });
-
-  it("has no standard the documentation map fails to name", () => {
-    expect(
-      repository.unreachable.filter((finding) => finding.reason === UNINDEXED_STANDARD),
-      "a standard absent from the map is a document no loading instruction reaches",
     ).toStrictEqual([]);
   });
 

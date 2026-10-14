@@ -62,14 +62,9 @@ export const CHANGELOGS = "packages/cli/changelogs";
 export const SPECS = "packages/cli/e2e";
 
 export const AGENT_FINDINGS = "packages/cli/.ai-docs/agent-findings";
-export const AGENT_SUGGESTIONS = "packages/cli/.ai-docs/agent-suggestions";
 
-/**
- * Both directories a cited name may resolve in. A suggestion is dated and named exactly like a
- * finding, so a scan reading only `agent-findings/` calls every citation of one dangling — which is
- * two of the fifteen the census first reported.
- */
-export const FINDING_DIRECTORIES = [AGENT_FINDINGS, AGENT_SUGGESTIONS];
+/** The directories a cited name may resolve in. */
+export const FINDING_DIRECTORIES = [AGENT_FINDINGS];
 
 /**
  * Where a dated name may resolve as a plan rather than a finding. `todo/plans/` names its plans

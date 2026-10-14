@@ -320,7 +320,7 @@ function documentNaming(names: string[]): string {
   ].join("\n");
 }
 
-/** A table keyed by its first column, which is how `reference/commands/index.md` states its lists. */
+/** A table keyed by its first column. */
 function documentTabulating(keys: string[]): string {
   return [
     `## A Section`,
@@ -373,7 +373,7 @@ function tableKeyedBy(column: string, keys: string[]): string[] {
 
 /**
  * An enumeration a document splits across several tables, with a table on another subject standing
- * between them — which is `zod-schemas.md`'s shape, four `Schema` tables around one keyed `Union`.
+ * between them.
  */
 function documentPartitioning(groups: string[][], bystanders: string[]): string {
   return [
@@ -391,67 +391,6 @@ function documentPartitioning(groups: string[][], bystanders: string[]): string 
     ``,
   ].join("\n");
 }
-
-/** The three lists whose declarations were unreadable until `unwrap` read through `satisfies`. */
-const SATISFIES_BOUND_CLAIMS = [
-  "SKILLS in reference/testing/mock-data.md",
-  "E2E_SKILL_TITLES in reference/testing/e2e-infrastructure.md",
-  "WIZARD_STEP_ORDER in reference/wizard/state-transitions.md",
-];
-
-/** The claims that read a whole directory, which no row could express before. */
-const DIRECTORY_BOUND_CLAIMS = [
-  "the exported values of __tests__/factories/ in reference/testing/factories.md",
-  "the exported values of __tests__/helpers/ in reference/testing/factories.md",
-  "the exported values of __tests__/assertions/ in reference/testing/factories.md",
-  "the command roster of src/cli/commands/ in reference/commands/index.md",
-];
-
-/**
- * Every claim read as `key = value` rather than as keys alone.
- *
- * The first is the row the shape was written for: bound as `table-rows` it reported `agrees` while
- * five of the document's value cells were wrong, because the keys — all either half could reach —
- * were right. The other two are the survey that followed (2026-08-19), and each was measured
- * against the real repository rather than inferred. Every further table the survey looked at was
- * refused, each for a reason in the SOURCE rather than in the document:
- *
- * - `STANDARD_FILES` binds `METADATA_YAML`, `AGENT_METADATA_YAML` and `PLUGIN_JSON` to identifiers
- *   (`METADATA_YAML_FILE`, `PLUGIN_MANIFEST_FILE`) rather than to string literals, and `DIRS` binds
- *   `skills` to `SKILLS_DIR_PATH` — a value `valueOf` refuses rather than guess at.
- * - `SCHEMA_PATHS` writes every value as a template with a substitution, and its document's
- *   value column states the suffix rather than the value — so resolving the templates would still
- *   not agree.
- * - `EXIT_CODES` is numeric, and reading it as pairs needs a deliberate widening of `valueOf`.
- * - `UI_SYMBOLS` is refused twice over: the members bound to the module-private `CHECK_GLYPH` /
- *   `EN_DASH_GLYPH` are identifiers too, and its documents' value column is prose — `unicode
- *   chevron`, `space` — rather than the glyph, which is a correct choice for a table a human reads.
- *
- * Converting any of those is a scope call rather than a mechanical sweep.
- */
-const PAIR_BOUND_CLAIMS = [
-  "E2E_SKILL_TITLES in reference/testing/e2e-infrastructure.md",
-  "STANDARD_DIRS in reference/utilities.md",
-  "CLI_COLORS in reference/component-patterns.md",
-];
-
-/** The claim that reads a module's RE-EXPORT surface, which neither file reader answers. */
-const REEXPORT_BOUND_CLAIMS = [
-  "the re-exports of e2e/helpers/test-utils.ts in reference/testing/e2e-infrastructure.md",
-];
-
-/**
- * The two documents that each tabulate the whole export list of `configuration/scope-predicates.ts`.
- *
- * Duplication across documents is allowed (owner ruling 2026-08-20) and the checker watches both,
- * which is what a row per document is for: one of them was bound and one was not, so the ninth
- * export would have reddened the owner's table and left the copy in `scope-system.md` reading as
- * authoritative and short by one.
- */
-const SCOPE_PREDICATE_CLAIMS = [
-  "the exported functions of configuration/scope-predicates.ts in reference/features/configuration.md",
-  "the exported functions of configuration/scope-predicates.ts in reference/concepts/scope-system.md",
-];
 
 function symbolEntry(claim: DocumentClaim): RegistryEntry {
   return { claim: CLAIM, source: { file: SOURCE_FILE, symbol: SENTINELS }, document: claim };
@@ -666,10 +605,9 @@ describe("what the source is read from", () => {
 });
 
 /**
- * A directory's own export surface, which is what the three test-utility tables in
- * `reference/testing/factories.md` and the command roster in `reference/commands/index.md` state.
- * None of the four could be expressed while a row named one file: a barrel declares nothing of its
- * own, and there is no file whose members are "the commands under this tree".
+ * A directory's own export surface. It could not be expressed while a row named one file: a barrel
+ * declares nothing of its own, and there is no file whose members are "the commands under this
+ * tree".
  */
 describe("a source enumeration that is a directory", () => {
   const KIT_FILES = {
@@ -841,8 +779,7 @@ describe("a source enumeration that is a directory", () => {
 
 /**
  * A file's RE-EXPORT surface — what a consumer imports from a module that did not write it. The
- * fourth shape, and the one `reference/testing/e2e-infrastructure.md`'s 31-row table needs: the
- * two file readers answer what a module DECLARES, and the directory reader answers a different and
+ * fourth shape: the two file readers answer what a module DECLARES, and the directory reader answers a different and
  * larger set from a subject no row naming a file can name.
  *
  * **The design question it turns on: what does a locally-imported-then-re-exported name resolve
@@ -1334,9 +1271,8 @@ describe("what the document is read from", () => {
 });
 
 /**
- * An enumeration a document states as several tables rather than one. `zod-schemas.md` partitions
- * its 34 schemas across four, and `table-rows` reads the first and stops — so the row could not be
- * written at all, and the four sub-lists went unbound while the total beside them was maintained.
+ * An enumeration a document states as several tables rather than one. `table-rows` reads the first
+ * and stops, so without this the row could not be written at all.
  */
 describe("a document that partitions one enumeration across several tables", () => {
   it("reads every table the section keys the same way", async () => {
@@ -1542,86 +1478,8 @@ describe("a registry row that would judge nothing", () => {
 });
 
 describe("this repository", () => {
-  it("registers more than one document family, since a single-family check caught one of five", () => {
+  it("registers something to scan", () => {
     expect(REGISTRY.length, "the scan must have something to scan").toBeGreaterThan(0);
-    expect(new Set(REGISTRY.map((entry) => entry.document.document)).size).toBeGreaterThan(1);
-  });
-
-  it("binds every enumeration whose source is a directory rather than one file", () => {
-    const rows = REGISTRY.filter((entry) => DIRECTORY_BOUND_CLAIMS.includes(entry.claim));
-
-    expect(
-      rows.map((entry) => entry.claim).sort(),
-      "a barrel declares nothing and a command tree is no symbol, so each of these was unregisterable",
-    ).toStrictEqual([...DIRECTORY_BOUND_CLAIMS].sort());
-    expect(
-      check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
-    ).toStrictEqual([]);
-  });
-
-  it("binds the one enumeration whose source is a module's re-exports rather than its declarations", () => {
-    const rows = REGISTRY.filter((entry) => "reexports" in entry.source);
-
-    expect(
-      rows.map((entry) => entry.claim).sort(),
-      "`exports` skips every `export { … }` and the directory reader answers a larger set, so this table was bindable by neither",
-    ).toStrictEqual([...REEXPORT_BOUND_CLAIMS].sort());
-    expect(
-      check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
-    ).toStrictEqual([]);
-  });
-
-  it("binds the one enumeration a document states as four tables rather than one", () => {
-    const rows = REGISTRY.filter((entry) => entry.document.states === "partitioned-tables");
-
-    expect(rows.map((entry) => entry.claim)).toStrictEqual([
-      "the exported schemas of lib/schemas.ts in reference/types/zod-schemas.md",
-    ]);
-    expect(
-      check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
-    ).toStrictEqual([]);
-  });
-
-  it("binds every list a `satisfies` annotation used to hide from the source reader", () => {
-    const rows = REGISTRY.filter((entry) => SATISFIES_BOUND_CLAIMS.includes(entry.claim));
-
-    expect(
-      rows.map((entry) => entry.claim).sort(),
-      "a list left unregistered is one nothing re-derives, which is what the widening was for",
-    ).toStrictEqual([...SATISFIES_BOUND_CLAIMS].sort());
-    expect(
-      check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
-    ).toStrictEqual([]);
-  });
-
-  it("binds one enumeration duplicated across two documents to both of them", () => {
-    const rows = REGISTRY.filter((entry) => SCOPE_PREDICATE_CLAIMS.includes(entry.claim));
-
-    expect(
-      rows.map((entry) => entry.claim).sort(),
-      "a second copy nothing reads is the one a reader trusts and the ninth export leaves behind",
-    ).toStrictEqual([...SCOPE_PREDICATE_CLAIMS].sort());
-    const distinctSources = new Set(rows.map((entry) => JSON.stringify(entry.source)));
-
-    expect(
-      distinctSources.size,
-      "one source read twice — two rows over two sources would not be this claim at all",
-    ).toBe(1);
-    expect(
-      check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
-    ).toStrictEqual([]);
-  });
-
-  it("binds every enumeration read as key-value pairs rather than keys alone", () => {
-    const rows = REGISTRY.filter((entry) => entry.document.states === "table-pairs");
-
-    expect(
-      rows.map((entry) => entry.claim).sort(),
-      "a keys-only binding covers the half of a two-column table that cannot break, and reports agrees while every value cell is wrong",
-    ).toStrictEqual([...PAIR_BOUND_CLAIMS].sort());
-    expect(
-      check({ registry: rows }).verdicts.filter((verdict) => verdict.outcome === "drifted"),
-    ).toStrictEqual([]);
   });
 
   it("states markdown's cell escape identically in both files that carry it", () => {
