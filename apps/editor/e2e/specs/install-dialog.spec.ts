@@ -274,7 +274,7 @@ test.describe("install dialog counts", () => {
     await configure
       .skillIn(web, SINGLE_AGENT_SKILL.category, SINGLE_AGENT_SKILL.name)
       .flipScope()
-    await configure.roster.setScope(SINGLE_AGENT_SKILL.agentId, "project")
+    await configure.subAgents.setScope(SINGLE_AGENT_SKILL.agentId, "project")
 
     await configure.roster.installButton.click()
 
@@ -356,7 +356,7 @@ test.describe("install dialog, where ejected skills go", () => {
     )
     await projectSkill.setInstallMode("eject")
     await projectSkill.setScope("project")
-    await configure.roster.setScope(SINGLE_AGENT_SKILL.agentId, "project")
+    await configure.subAgents.setScope(SINGLE_AGENT_SKILL.agentId, "project")
     await configure.skillIn(web, CATEGORY, STACK_MEMBER_SKILL).flipInstall()
 
     await configure.roster.installButton.click()

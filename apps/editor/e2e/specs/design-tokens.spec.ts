@@ -2,52 +2,49 @@ import type { Page } from "@playwright/test"
 
 import { expect, test } from "../fixtures"
 
-// The five design colours that had no name.
-//
-// The hexes are quoted from the design file rather than imported from the
-// stylesheet, for the reason `e2e/pages` mirrors the product's copy: an
-// assertion that reads the very declaration it is checking cannot fail.
-//
-// `--color-tree-border` NO LONGER HOLDS ITS OWN HEX. The 2026-08-29 palette
-// merge collapsed `#ece9e0` into `#eeece4` at ΔE 2.18 — imperceptible — so the
-// preview dialog's pane split and the roster band now paint the same colour.
-// That was a distinction somebody drew on purpose (its old comment said "one
-// hex digit from --color-roster-band, and a different surface"), and it is
-// gone. Recorded here rather than quietly restated, because the next reader
-// should know the token survived and its separate value did not.
+// Quoted from the design file rather than imported from the stylesheet, so the
+// assertion can fail. `--color-tree-border` shares the roster band's hex since
+// the palette merge.
 const NEW_TOKENS = {
   "--color-track": "#eeece4",
   "--color-track-hover": "#e7e4d9",
   "--color-track-ink": "#3d3b33",
   "--color-field-faint": "#a19d90",
   "--color-tree-border": "#eeece4",
+  // v6's step-title ink and the Codex error pair.
+  "--color-title-ink": "#5f5c52",
+  "--color-error-ink": "#b5442c",
+  "--color-error-wash": "#f8e8e2",
 } as const
 
-// Tokens whose drawing was retired, gone rather than left resolving to a value
-// nobody reads. This project is pre-1.0, so they go rather than linger.
-//
-//   meter-border / meter-off — the effort meter's empty square and its fill on
-//     a switched-off agent. A cycling word needs no square.
-//   tab-label / tab-count / tab-field — the domain strip's own three greys,
-//     which existed for a drawing where the active tab was 25px Inter over a
-//     wash and every other one was a quieter mono label. Every cell holds the
-//     same type at the same size now, so the strip needs one grey of its own
-//     (`--color-tab-index`) and takes the ordinary mono grey for the rest.
+// Tokens whose drawing was retired, gone rather than left resolving.
 const RETIRED_TOKENS = [
   "--color-meter-border",
   "--color-meter-off",
   "--color-tab-label",
   "--color-tab-count",
   "--color-tab-field",
+  "--color-tab-index",
 ] as const
 
-// An existing token with no utility consumer and no `var()` reference
-// anywhere. It is the channel: if THIS resolves, the stylesheet publishes
-// unused theme variables, and the assertions above and below are about the
-// tokens rather than about how Tailwind treats a variable nobody reads.
+// v6's semantics, pinned by the core each points at.
+const V6_SEMANTICS = [
+  ["--color-title-ink", "--warm-23"],
+  ["--color-title-hover", "--warm-06"],
+  ["--color-strip-stuck", "--warm-06"],
+  ["--color-recede-wash", "--warm-06"],
+  ["--color-recede-ink", "--warm-13"],
+  // #f6f4ed, the tip surface.
+  ["--color-tip-field", "--warm-06"],
+  ["--color-unavailable", "--warm-11"],
+  ["--color-error-wash", "--rust-01"],
+  ["--color-error-ink", "--rust-02"],
+] as const
+
+// The control: a token nothing consumes still resolves, so the assertions here
+// are about the tokens rather than Tailwind pruning an unread variable.
 const UNCONSUMED_TOKEN = {
   name: "--color-logo-slot",
-  // Was `#f4f2ec` until the palette merge folded it into `--warm-05`.
   value: "#faf9f5",
 } as const
 
@@ -60,29 +57,36 @@ const tokenValue = (page: Page, name: string) =>
     name
   )
 
+// The WCAG contrast ratio of the error ink on the error wash.
+const errorPairContrast = (page: Page) =>
+  page.evaluate(() => {
+    const luminance = (token: string) => {
+      const probe = document.createElement("span")
+      probe.style.color = `var(${token})`
+      document.body.append(probe)
+      const channels = getComputedStyle(probe).color.match(/\d+/g) ?? []
+      probe.remove()
+      const [r = 0, g = 0, b = 0] = channels.map((channel) => {
+        const c = Number(channel) / 255
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const [lighter, darker] = [
+      luminance("--color-error-ink"),
+      luminance("--color-error-wash"),
+    ].sort((a, b) => b - a)
+    return (lighter! + 0.05) / (darker! + 0.05)
+  })
+
 test.describe("design tokens", () => {
-  // THE CLAIM THE TWO-TIER PALETTE EXISTS FOR, and it was false until
-  // 2026-08-29. `@theme inline` substitutes a token's value into every utility
-  // it generates, so while the design's tokens were literal hexes there,
-  // `bg-column` compiled to `background-color: #fdfdfc` and redefining the
-  // token changed nothing — a dark theme would have had to be a second
-  // stylesheet. Pointed at `var(--column)` instead, the utility follows the
-  // variable, which is the whole mechanism dark mode will use.
-  //
-  // It asserts the MECHANISM and not a palette. A dark palette now exists —
-  // generated, not designed (EDITOR-07) — and this stays pointed at the
-  // mechanism on purpose: an override at the root rather than a `.dark` class
-  // or a `[data-theme]` stamp, so it keeps holding however the theme ends up
-  // being switched, and so re-cutting the ramp cannot redden it.
+  // The mechanism, not a palette: `@theme inline` points each utility at the
+  // variable, so a root override re-points what is painted.
   test("redefining a token re-points what is painted with it", async ({
     configure,
   }) => {
     const dock = configure.composer.dock
-    // #faf8f2 — the main column, which the dock carries as its own ground so
-    // there is no seam when it sticks. It moved off #fdfdfc with the substrate
-    // change: the cells stayed white and the column stepped away from them, so
-    // a cell reads as an object on a surface and a ruled-out one has somewhere
-    // to recede to.
+    // #faf8f2, the main column, which the dock carries as its own ground.
     await expect(dock).toHaveCSS("background-color", "rgb(250, 248, 242)")
 
     await configure.page.addStyleTag({ content: ":root { --column: #ff0000 }" })
@@ -90,12 +94,8 @@ test.describe("design tokens", () => {
     await expect(dock).toHaveCSS("background-color", "rgb(255, 0, 0)")
   })
 
-  // THE TWO-TIER INVARIANT. Every semantic name points at a core colour and
-  // holds no value of its own, so the check that matters is not "is this hex
-  // right" but "do these two names resolve to the same thing". Written against
-  // the tier below rather than against a literal, this survives a re-cut of the
-  // ramp — which a hardcoded hex does not, as the four edits above this line
-  // prove.
+  // Against the core tier rather than a literal, so a re-cut of the ramp
+  // cannot redden it.
   test("a semantic token resolves to the core colour it points at", async ({
     configure,
   }) => {
@@ -108,6 +108,29 @@ test.describe("design tokens", () => {
       expect(want, `${core} must exist`).not.toBe("")
       expect(await tokenValue(configure.page, semantic), semantic).toBe(want)
     }
+  })
+
+  for (const [semantic, core] of V6_SEMANTICS) {
+    test(`${semantic} points at ${core}`, async ({ configure }) => {
+      const want = await tokenValue(configure.page, core)
+      expect(want, `${core} must exist`).not.toBe("")
+      expect(await tokenValue(configure.page, semantic)).toBe(want)
+    })
+  }
+
+  // The one new ink-on-wash pair, so its dark complement is held to the light
+  // pair's legibility.
+  test("the error ink is as legible on its wash in dark as in light", async ({
+    configure,
+  }) => {
+    const light = await errorPairContrast(configure.page)
+
+    await configure.themeToggle.click()
+    expect(await configure.theme()).toBe("dark")
+
+    expect(await errorPairContrast(configure.page)).toBeGreaterThanOrEqual(
+      light
+    )
   })
 
   test("a token nobody consumes still resolves at the root", async ({

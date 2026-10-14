@@ -18,10 +18,8 @@ import {
 
 const REACT_ID = "web-framework-react"
 
-// Longer than `RESET_DELAY_MS` in `use-share-link.ts`, with room for a render
-// after it. The one fixed wait in this suite, and here it IS the assertion
-// rather than a workaround for a flaky one: what is being checked is that
-// nothing happens.
+// Longer than `RESET_DELAY_MS` in `use-share-link.ts`. A fixed wait, because
+// what is checked is that nothing happens.
 const PAST_THE_DECAY_WINDOW_MS = 3_000
 
 test.describe("sharing a configuration", () => {
@@ -42,11 +40,7 @@ test.describe("sharing a configuration", () => {
     ).toBeVisible()
 
     const copied = await page.evaluate(() => navigator.clipboard.readText())
-    // THE PATH IS HALF THE ASSERTION. This read `toContain("?fromId=…")`
-    // until the apex was split, which passed whether or not the link carried
-    // the app's own base path — so a Share button minting
-    // `agentsinc.sh/?fromId=…`, which lands a recipient on the landing
-    // page with the configuration silently dropped, was green here.
+    // The base path matters: without it the link lands on the landing page.
     expect(copied).toContain(`/editor/?fromId=${STORED_ID}`)
   })
 
@@ -54,9 +48,7 @@ test.describe("sharing a configuration", () => {
     await expect(configure.roster.shareButton).toBeDisabled()
   })
 
-  // What actually leaves the browser. Model and effort are the agent's now, so
-  // a skill carries neither, and the agents map is what makes a bare pinned
-  // agent shareable at all — v1 could not express one.
+  // Model and effort are the agent's, so a skill carries neither.
   test("posts the v2 shape: skills without model, agents in their own map", async ({
     configure,
     page,
@@ -66,9 +58,7 @@ test.describe("sharing a configuration", () => {
     await configure
       .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
       .toggle()
-    // Pinned on with nothing assigned — the base agent case. Relevance keeps
-    // the web skill inside its own domain, so any agent outside it can be
-    // pinned on bare — a state the broadcast era reserved for the meta roster.
+    // Pinned on with nothing assigned: the base agent case.
     await configure.roster.agentButton("api", "developer").click()
 
     await configure.roster.shareButton.click()
@@ -87,16 +77,11 @@ test.describe("sharing a configuration", () => {
     expect(skill).not.toHaveProperty("effort")
     expect(skill.assignments).toMatchObject({ "web-developer": "preloaded" })
 
-    // Only the pin has anything to say: every agent the rule reached rests on
-    // its catalogue model and medium effort, so they say nothing.
+    // Every agent the rule reached rests, so only the pin has an entry.
     expect(body!.agents).toStrictEqual({ "api-developer": { on: true } })
   })
 
-  // The stale tab, and the one ending that names an action. This bundle
-  // predates the last deploy, so it mints a seed version the worker no longer
-  // serves and is refused on this click and on every click after it — which is
-  // why the words say what to do, and why they have to survive being looked
-  // away from. Every other ending clears itself inside the window below.
+  // A stale bundle is refused on every click, so this ending does not decay.
   test("a stale page is told to reload, and the instruction stays", async ({
     configure,
     page,
@@ -117,8 +102,6 @@ test.describe("sharing a configuration", () => {
     await expect(instruction).toBeVisible()
   })
 
-  // The worker answered and would not take it — an outage, a quota, or a bug
-  // here. Nothing to do but try later, so it reports and clears.
   test("a refused store reads as failure and recovers", async ({
     configure,
     page,
@@ -133,13 +116,10 @@ test.describe("sharing a configuration", () => {
     await expect(
       configure.roster.root.getByRole("button", { name: "Sharing failed" })
     ).toBeVisible()
-    // The terminal state decays back to an actionable button.
     await expect(configure.roster.shareButton).toBeVisible()
   })
 
-  // Aborting is the request never getting an answer at all, which is the
-  // unreachable path and not a refusal — the worker never saw it. Retrying is
-  // the whole of what a laptop off the network can do, so the words say so.
+  // No answer at all: the unreachable path, not a refusal.
   test("an unreachable worker reads as offline and recovers", async ({
     configure,
     page,
@@ -154,7 +134,6 @@ test.describe("sharing a configuration", () => {
     await expect(
       configure.roster.root.getByRole("button", { name: "Offline — try again" })
     ).toBeVisible()
-    // The terminal state decays back to an actionable button.
     await expect(configure.roster.shareButton).toBeVisible()
   })
 })
@@ -174,9 +153,7 @@ test.describe("opening a share link", () => {
       EXCLUSIVE_CATEGORY.first
     )
     await expect(react.root).toHaveAttribute("aria-pressed", "true")
-    // The address of a shared configuration rather than a one-shot command
-    // (EDITOR-37): stripping it is what left a reload with no idea it had ever
-    // been a shared link. `shared-link.spec.ts` covers what the address buys.
+    // Kept (EDITOR-37); `shared-link.spec.ts` covers what it buys.
     await expect(page).toHaveURL(`/editor/?fromId=${STORED_ID}`)
   })
 
@@ -207,16 +184,12 @@ test.describe("opening a share link", () => {
 
     await page.goto(`/?fromId=${STORED_ID}`)
 
-    await expect(
-      configure.roster.modelWord("web-developer")
-    ).toHaveAccessibleName("Model for web-developer: haiku")
-    await expect(
-      configure.roster.effortWord("web-developer")
-    ).toHaveAccessibleName("Effort for web-developer: max")
+    const cards = configure.subAgents
+    await expect(cards.modelOption("web-developer", "haiku")).toBeChecked()
+    await expect(cards.effortOption("web-developer", "max")).toBeChecked()
   })
 
-  // The capability v2 added: an agent with no skills at all can now travel,
-  // because `on: true` says so rather than being inferred from assignments.
+  // `on: true` lets an agent with no skills travel.
   test("a bare pinned agent arrives as a base agent", async ({
     configure,
     page,
@@ -228,8 +201,11 @@ test.describe("opening a share link", () => {
     await expect(
       configure.roster.agentButton("api", "developer")
     ).toHaveAttribute("aria-pressed", "true")
+    await expect(configure.subAgents.card("API", "Developer")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
     await expect(configure.roster.root).toContainText("no skills — base agent")
-    await expect(configure.roster.domainBand("api")).toContainText("1 of")
   })
 
   test("a dead link reports itself and leaves the config alone", async ({
@@ -244,17 +220,14 @@ test.describe("opening a share link", () => {
     await page.goto(`/?fromId=${DEAD_LINK_ID}`)
 
     await expect(page.getByRole("alert")).toContainText("points to nothing")
-    // Vue was selected before following the link and must still be: an id that
-    // names nothing has no shared state to govern, so this IS the visitor's own
-    // editor and it opens as one.
+    // A dead id governs nothing, so the visitor's own selection stands.
     const vue = configure.skillIn(
       DOMAINS.web,
       EXCLUSIVE_CATEGORY.name,
       EXCLUSIVE_CATEGORY.second
     )
     await expect(vue.root).toHaveAttribute("aria-pressed", "true")
-    // Kept, like every other id: retrying a worker that was briefly down is
-    // then a reload rather than a lost link.
+    // Kept, so retrying a worker that was briefly down is a reload.
     await expect(page).toHaveURL(`/editor/?fromId=${DEAD_LINK_ID}`)
   })
 })

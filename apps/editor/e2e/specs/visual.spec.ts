@@ -2,93 +2,34 @@ import { argosScreenshot } from "@argos-ci/playwright"
 
 import { expect, test } from "../fixtures"
 import type { ConfigurePage } from "../pages/configure-page"
-import { EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
+import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
 
-// The appearance suite. What it asserts is about the harness rather than about
-// the app — see `capture` below; every claim it makes about the app is a
-// picture.
+// Each capture is one state of the assembled app, diffed by Argos against the
+// last accepted render; packages/ui's Chromatic baselines cover components
+// alone. The states are chosen rather than swept: adding a screen is adding a
+// `test` here.
 //
-// Every other spec in this directory drives the app through the accessibility
-// tree and checks a claim about behaviour — a role appeared, a count moved, a
-// slot holds the right shape. None of them can see what the screen LOOKS like,
-// and that is not an oversight: a panel that loses its padding, a dialog that
-// overlaps the sticky bar, a band that goes the wrong colour will pass every
-// assertion in this suite, because a `getByRole` query does not have an
-// opinion about pixels. Argos does. Each capture below is one state of the
-// assembled app, uploaded from CI and diffed against the render somebody last
-// accepted.
-//
-// This is the app-level counterpart to packages/ui's Chromatic baselines,
-// which cover components standing alone. The two do not overlap: a component
-// that is correct in isolation and wrong in composition is invisible to that
-// one and visible here.
-//
-// THE STATES ARE DELIBERATELY CHOSEN RATHER THAN SWEPT. Scattering captures
-// through the behavioural specs would double every one of their failures — a
-// spec would go red for a padding change it was never about — and would tie
-// what is covered visually to what happens to be tested functionally. This
-// file is the list, it is meant to be read as one, and adding a screen is
-// adding a `test` here.
-//
-// Captures are VIEWPORT-sized rather than full page. The grid runs several
-// thousand pixels down a generated catalogue, so a full-page capture would be
-// mostly vendored content — every regeneration of packages/matrix would light
-// up as a visual change and the real design diffs would be lost in it. What is
-// below the fold is more catalogue; what is worth watching is the chrome
-// around it. Flip `fullPage` per capture if a specific screen disagrees.
+// Viewport-sized rather than full page, because below the fold is generated
+// catalogue that would change on every regeneration of packages/matrix.
 
-// EVERY STATE IS CAPTURED IN BOTH THEMES, and the doubling was argued rather
-// than assumed. The second pass is an EMULATION rather than a click on the
-// rail's theme glyph, and that is deliberate now that the glyph exists: it
-// writes `data-theme` on the root, so a capture taken through it would leave
-// the attribute set for every state after it and there would be no way to tell
-// a light capture from one the toggle happened to land on. Emulating the media
-// query exercises the same palette through the branch every visitor gets
-// without ever touching the control, and leaves the document as it found it.
-//
-// A DARK SUBSET WAS THE ALTERNATIVE, AND IT WAS COSTED BEFORE IT WAS DROPPED.
-// A theme here is a palette substitution and nothing else — the DOM and the box
-// model are identical either way — so a dark capture can only ever show what a
-// COLOUR does, and a state that repaints no surface another state already
-// paints buys a baseline that can change only in lockstep with its twin. Some
-// of the states below really are of that kind: `configure-stacks-folded` and
-// `roster-grouped-by-scope` differ from a state above them by which elements
-// are present rather than by which colours are painted. Too few of them to pay,
-// though — and the opt-out list would cost the one rule this file has, that
-// adding a screen is adding a `test` with no second decision to forget. Re-run
-// the argument if the list ever grows enough that the quota is a question.
-//
-// The pass is taken on the SAME page rather than in a second Playwright
-// project. Two projects over one spec file would give two screenshots the same
-// name — the Argos reporter names an upload by the string passed here and by
-// nothing else, so the project would not disambiguate them — and would pay for
-// a second navigation to reach a state the first one already built. A media
-// emulation re-evaluates the query in place.
+// Both themes, by emulating the media query rather than clicking the theme
+// glyph, which would leave `data-theme` set for every capture after it. On the
+// same page rather than a second project, because Argos names an upload by the
+// string passed here alone.
 const THEMES = ["light", "dark"] as const
 type Theme = (typeof THEMES)[number]
 
-// THE LIGHT HALF KEEPS THE NAME IT HAS ALWAYS HAD. A renamed screenshot is a
-// new screenshot to Argos, so suffixing both halves would discard every
-// accepted light baseline as an addition; only the dark half is new. Named
-// rather than inlined at the call because it is a rule about baseline custody
-// and not a string.
+// The light half keeps its unsuffixed name: a renamed screenshot is a new
+// baseline to Argos.
 const screenshotName = (name: string, theme: Theme) =>
   theme === "light" ? name : `${name}-dark`
 
 // What `--warm-01` resolves to in each theme, and `body` is painted with it
-// (`--background: var(--warm-01)` in @workspace/ui's globals.css). Quoted from
-// the design's palette rather than read back out of the stylesheet, for the
-// reason e2e/pages mirrors the product's copy: an assertion that reads the very
-// declaration it is checking cannot fail.
-//
-// The assertion below is about the harness rather than about the app. Argos
-// compares a capture to a baseline; it has no way to know a capture was
-// taken in the wrong theme, so a dark pass that silently rendered light would
-// be accepted once and then guard nothing forever. That is not hypothetical —
-// it is exactly what this file did before the `emulateMedia` call below was
-// added, and the assertion is what said so.
+// (`--background: var(--warm-01)` in @workspace/ui's globals.css). Quoted
+// rather than read from the stylesheet, so the assertion can fail. It guards
+// the harness: Argos cannot tell that a dark pass rendered light.
 const PAGE_BACKGROUND = {
   light: "rgb(255, 255, 255)",
   dark: "rgb(22, 21, 19)",
@@ -101,25 +42,19 @@ const capture = async (configure: ConfigurePage, name: string) => {
       "background-color",
       PAGE_BACKGROUND[theme]
     )
-    // Tagged so the dark half can be reviewed as a group in Argos, which is how
-    // a palette change is read: all of one theme at once, rather than screen by
-    // screen through both.
+    // Tagged so each theme can be reviewed as a group in Argos.
     await argosScreenshot(configure.page, screenshotName(name, theme), {
       fullPage: false,
       tag: theme,
     })
   }
 
-  // Back to light, so a capture added after this one is not silently taken in
-  // dark. Every test below ends on its capture today; this is what keeps that
-  // from being load-bearing.
+  // Back to light, so a capture added after this one is not taken in dark.
   await configure.page.emulateMedia({ colorScheme: "light" })
 }
 
 // Enough of a selection that the roster, the sticky bar and both footer
-// buttons have something to draw. The scratch stack starts empty, and an empty
-// right-hand column is a state worth one capture rather than the basis for all
-// of them.
+// buttons have something to draw.
 const withSelection = async (configure: ConfigurePage) => {
   await configure.chooseStack(STACKS.nextjs)
   await configure.roster.root.waitFor()
@@ -136,7 +71,7 @@ test.describe("the configure screen", () => {
   })
 
   test("with the stack grid folded away", async ({ configure }) => {
-    await configure.stackToggle.click()
+    await configure.stepTitle("then your stack").click()
     await capture(configure, "configure-stacks-folded")
   })
 
@@ -147,7 +82,8 @@ test.describe("the configure screen", () => {
 
   test("with the filter bar pinned", async ({ configure }) => {
     await withSelection(configure)
-    await configure.scrollTo(1200)
+    await configure.scrollPastThePin()
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
     await capture(configure, "configure-bar-pinned")
   })
 
@@ -156,22 +92,35 @@ test.describe("the configure screen", () => {
     await configure.emptyState.waitFor()
     await capture(configure, "configure-empty-filter")
   })
+
+  // v6-08. The reason overhangs the cell to its right, so this guards its
+  // stacking.
+  test("with a Codex error mark's reason open", async ({ configure }) => {
+    await withSelection(configure)
+    const skill = configure.skillIn(
+      DOMAINS.web,
+      EXCLUSIVE_CATEGORY.name,
+      EXCLUSIVE_CATEGORY.first
+    )
+    await skill.flipScope()
+    await configure.provider.choose("codex")
+    await skill.errorMark.focus()
+    await expect(skill.errorTip).toBeVisible()
+    await capture(configure, "configure-codex-error-tip")
+  })
 })
 
 test.describe("the roster panel", () => {
   test("grouped by scope rather than domain", async ({ configure }) => {
     await withSelection(configure)
-    await configure.roster.groupControl.click()
-    await configure.roster.groupOption("scope").click()
+    await configure.roster.groupBy("scope")
     await capture(configure, "roster-grouped-by-scope")
   })
 })
 
 test.describe("the dialogs", () => {
-  // The install dialog mints a share link on the way up, so opening it is a
-  // request to the worker. Stubbed rather than allowed through — the fixture
-  // refuses anything unstubbed, and a capture whose content came off somebody
-  // else's server is a baseline that moves when their server does.
+  // Opening the dialog mints a share link, and the fixture refuses anything
+  // unstubbed.
   test("install", async ({ configure, page }) => {
     stubCreateConfig(page)
     await withSelection(configure)
@@ -187,16 +136,8 @@ test.describe("the dialogs", () => {
     await capture(configure, "dialog-output-preview")
   })
 
-  // ITS OWN SCREEN, because it is the one state in this app where the sheet
-  // stops being a sheet: it drops its 760px width and its 96px top for the
-  // viewport's own inset on all four edges, and every proportion inside it —
-  // the tree against the code, the header's controls against the subtitle, the
-  // footer's note against Close — is measured against a different box. The
-  // design ships it as a capture of its own for the same reason.
-  //
-  // It is also the state the reason for the whole feature is visible in: at
-  // 760px the code pane is ~60 characters and generated source WRAPS, which is
-  // exactly what a picture catches and `getByRole` cannot.
+  // Its own screen: the sheet trades its width for the viewport's inset, so
+  // every proportion inside it is measured against a different box.
   test("output preview in fullscreen", async ({ configure }) => {
     await withSelection(configure)
     await configure.roster.previewButton.click()

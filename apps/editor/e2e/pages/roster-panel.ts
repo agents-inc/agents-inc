@@ -1,174 +1,105 @@
 import type { Locator, Page } from "@playwright/test"
 
-// The whole text of each scope-mode band, destination and count together. The
-// `~` and the `.` are regex metacharacters, so the two are written out rather
-// than built from the paths — a builder would need escaping logic, and logic
-// in a page object is logic nothing tests.
-//
-// The paths appear again, as literals, in the specs that assert on them. That
-// duplication is the design and not an oversight: an assertion that imports
-// the string its own locator was built from cannot fail, because both halves
-// move together. Locating is this file's job; expecting is the spec's.
+// Locating is this file's job; expecting is the spec's. The specs write these
+// strings out again rather than importing them, so an assertion cannot agree
+// with its own locator by construction.
 const SCOPE_BAND_TEXT = {
-  global: /^~\/\.claude · global \d+ of \d+$/,
-  project: /^\.\/\.claude · project \d+ of \d+$/,
+  global: /^~\/\.(claude|codex) · global$/,
+  project: /^\.\/\.(claude|codex) · project$/,
 } as const
 
-// The panel header's label. Sentence case in the DOM, uppercased by CSS, so
-// this is the text node rather than what is painted — and it is the LOCATOR's
-// copy of it, for the reason above.
-const ROSTER_HEADER_LABEL = "Sub-agents grouped by"
+// Sentence case in the DOM, uppercased by CSS.
+const ROSTER_HEADER_LABEL = "then assign skills"
+const GROUP_BY_CAPTION = "group by"
 
-// What the Share button says once the link is on the clipboard — the only
-// feedback a share has. Mirrored for the reason above; `shareLink` waits on it.
 const LINK_COPIED = "Link copied"
 
-// The right column: domain accordions, agents with their assignments inline,
-// and the footer pair of buttons. Everything is derived from `assignments` +
-// `agents`, so it is the natural place to assert that a change in the grid
-// propagated.
+// Step 05, the right rail: bands of agents with their assignments inline, and
+// the footer's action row over Install.
 export class RosterPanel {
   readonly root: Locator
+  // The 05 title, and its words and index.
+  readonly header: Locator
   readonly heading: Locator
+  readonly headerIndex: Locator
+  readonly groupByCaption: Locator
+  readonly groupControl: Locator
   readonly installButton: Locator
   readonly shareButton: Locator
   readonly saveButton: Locator
-  // The third cell of the action row, after Save and Share and above Install —
-  // "you preview, then you install". Its label is the only one of the three
-  // that never narrates, so unlike its neighbours it is located by its whole
-  // name rather than by a resting word.
   readonly previewButton: Locator
-  // The grouping control in the panel header, and the flat two-item menu it
-  // opens. Located by an `aria-label` rather than by its visible text, because
-  // that text is the current VALUE — `domain` says nothing about what the
-  // control does, and it changes the moment the control is used.
-  readonly groupControl: Locator
 
   constructor(private page: Page) {
     this.root = page.getByRole("complementary")
+    this.header = this.root.locator('[data-slot="hinge"]')
     this.heading = this.root.getByText(ROSTER_HEADER_LABEL, { exact: true })
-    // Its label carries the counts — `Install 4 agents · 1 skill` — so
-    // specs assert the numbers on the button itself.
+    this.headerIndex = this.header.locator('[data-slot="hinge-index"]')
+    this.groupByCaption = this.root.getByText(GROUP_BY_CAPTION, {
+      exact: true,
+    })
+    this.groupControl = this.root.getByRole("radiogroup", {
+      name: "Group sub-agents by",
+    })
+    // Its label carries the counts or the refusal: `Install 4 agents · 1 skill`.
     this.installButton = this.root.getByRole("button", { name: /^Install / })
-    // Its accessible name narrates the share lifecycle ("Share", "Link
-    // copied", …), so specs asserting an outcome locate it by that state.
     this.shareButton = this.root.getByRole("button", { name: "Share" })
-    // Sits first on the action row, before Share, and snapshots the selection
-    // into the stack grid — so like Share it has nothing to offer a selection
-    // holding no skills.
     this.saveButton = this.root.getByRole("button", { name: "Save" })
     this.previewButton = this.root.getByRole("button", {
       name: "Preview",
       exact: true,
     })
-    this.groupControl = this.root.getByRole("button", {
-      name: /^Group sub-agents by/,
-    })
   }
 
-  /**
-   * WHAT THE CHOSEN PROVIDER CANNOT INSTALL, and which skill is asking for it.
-   *
-   * An ALERT, and that is the whole reason it is located by role rather than by
-   * slot: it appears in answer to a press — switching provider — and it BLOCKS
-   * Install while it is up. A change that takes a button away from someone is
-   * a change they are owed a word about, and `role="alert"` is the only way to
-   * give it to a reader who is not looking at the panel.
-   *
-   * Unambiguous inside the panel: `main`'s alert is the catalogue notice and
-   * `nav`'s is the account refusal, which is why both of those are scoped by
-   * their own landmark in `ConfigurePage`. The complementary landmark has no
-   * other alert, so this one is reached the way the README says everything
-   * should be.
-   */
-  get placementNotice(): Locator {
-    return this.root.getByRole("alert")
-  }
-
-  // One row of the grouping menu. The tick beside the active one is decorative
-  // — the state is `aria-checked` — so the name is the bare mode.
   groupOption(value: "domain" | "scope"): Locator {
-    return this.page.getByRole("menuitemradio", { name: value, exact: true })
+    return this.groupControl.getByRole("radio", { name: value, exact: true })
   }
 
-  // The Save button wearing the words a refusal gave it. `saveButton` locates
-  // by the resting word, so it stops matching the instant the button narrates
-  // — and narrating is the only feedback a save has, since a refused one puts
-  // no cell in the grid to read.
-  //
-  // Parameterised rather than one locator per ending, the shape `skillRow` and
-  // `agentNamed` already take: the endings are the roster panel's own table and
-  // a copy of it here would be a second statement of what the button says.
-  saveNarrating(label: string): Locator {
-    return this.root.getByRole("button", { name: label, exact: true })
-  }
-
-  // The Share button wearing the words its own ending gave it, for the reason
-  // `saveNarrating` exists: `shareButton` locates by the resting word, so it
-  // stops matching the instant the button narrates — and the button is the only
-  // feedback a share has, since the link goes to the clipboard where no
-  // assertion can see it.
-  //
-  // Here rather than in each spec, which is this suite's rule about where a
-  // locator may be built. Specs written before it wrote the same
-  // `getByRole` inline.
+  // The Share button wearing a narration: the button is the only feedback a
+  // share has.
   shareNarrating(label: string): Locator {
     return this.root.getByRole("button", { name: label, exact: true })
   }
 
-  /**
-   * Shares, and waits for the link to reach the clipboard.
-   *
-   * The two acts every spec reading a minted payload takes before it reads
-   * one: the POST is made on the press, and the narration is what says it was
-   * answered. A `waitFor` rather than an expectation, because this file locates
-   * and the specs expect — a share that never narrates fails the spec at its
-   * timeout, before any assertion reads a payload that was not answered.
-   */
+  /** Shares, and waits for the link to reach the clipboard. */
   async shareLink() {
     await this.shareButton.click()
     await this.shareNarrating(LINK_COPIED).waitFor()
   }
 
-  // The sticky band, named by its whole text: "web 4 of 7".
+  // The sticky band, named by its bare label: `web`.
   domainBand(domainId: string): Locator {
-    return this.root.getByRole("button", {
-      name: new RegExp(`^${domainId} \\d+ of \\d+$`),
-    })
+    return this.root.getByRole("button", { name: domainId, exact: true })
   }
 
-  // The scope-mode band, named by its destination rather than by a domain:
-  // "~/.claude · global 13 of 23". Added beside `domainBand` rather than
-  // widening it — a regex loose enough to match both would match a band that
-  // is neither.
+  // The scope-mode band, named by its destination: `~/.claude · global`.
   scopeBand(scope: keyof typeof SCOPE_BAND_TEXT): Locator {
     return this.root.getByRole("button", { name: SCOPE_BAND_TEXT[scope] })
   }
 
-  // The band's own label span. The button spans the panel, so its box says
-  // nothing about where its ink starts — and where its ink starts is the 17px
-  // flush edge the header, the agent names and the skill bullets all share.
+  // The band's label span — where its ink starts, which the band's own box
+  // does not say.
   bandLabel(domainId: string): Locator {
     return this.domainBand(domainId).locator("span").first()
   }
 
-  // The header's trailing rule. A hairline carries no role and no text, so it
-  // cannot be reached the way everything else in this file is; it is located
-  // as the hinge's last span, with the reason written here — the exception
-  // `InstallDialog.sheet` documents, for the same cause.
-  get headerRule(): Locator {
-    return this.root.locator('[data-slot="hinge"] > span').last()
+  // The band's `−` / `+`: `data-glyph` names which.
+  bandGlyph(domainId: string): Locator {
+    return this.domainBand(domainId).locator('[data-slot="glyph"]')
   }
 
   domainSection(domainId: string): Locator {
     return this.root.locator("section").filter({
-      has: this.page.getByRole("button", {
-        name: new RegExp(`^${domainId} \\d+ of \\d+$`),
-      }),
+      has: this.page.getByRole("button", { name: domainId, exact: true }),
     })
   }
 
-  // The agent's own row — colour-only state, exposed as `aria-pressed`.
+  scopeSection(scope: keyof typeof SCOPE_BAND_TEXT): Locator {
+    return this.root.locator("section").filter({
+      has: this.page.getByRole("button", { name: SCOPE_BAND_TEXT[scope] }),
+    })
+  }
+
+  // The agent's pin — colour-only state, exposed as `aria-pressed`.
   agentButton(domainId: string, role: string): Locator {
     return this.domainSection(domainId).getByRole("button", {
       name: role,
@@ -176,11 +107,14 @@ export class RosterPanel {
     })
   }
 
-  // The whole agent row — the pin button AND the three option words beside it
-  // — which is the box the assignment pulse paints. Located by slot for the
-  // reason `headerRule` is: the row is a semantics-free wrapper, so there is no
-  // role or name to reach it by, and an `xpath=..` hop off the pin button would
-  // break in silence the next time the row gains an element.
+  // The same pin in scope mode, where the row names its own domain:
+  // `web · developer`.
+  scopeAgent(scope: keyof typeof SCOPE_BAND_TEXT, name: string): Locator {
+    return this.scopeSection(scope).getByRole("button", { name, exact: true })
+  }
+
+  // The agent's name row, the box the assignment pulse paints. A semantics-free
+  // wrapper, so it is reached by slot.
   agentRow(domainId: string, role: string): Locator {
     return this.domainSection(domainId)
       .locator('[data-slot="agent-row"]')
@@ -189,120 +123,27 @@ export class RosterPanel {
       })
   }
 
-  // The same row reached by its whole name instead of through its band, which
-  // is the only way to reach it in scope mode: the band no longer names the
-  // domain, so the row does — `web · developer` there, the bare `developer`
-  // in domain mode. Asserting the absence of one form needs the other to be
-  // reachable over the same locator, or the negative carries nothing.
+  // A pin by its whole name, band-blind: `web · developer` in scope mode.
   agentNamed(name: string): Locator {
     return this.root.getByRole("button", { name, exact: true })
   }
 
-  // THE THREE WORDS ON THE AGENT'S NAME ROW, each stating its current value.
-  // Siblings of the pin button rather than children of it, so pressing one
-  // configures the agent without also flipping it on or off.
-  //
-  // SINCE THE 2026-09-06 REFRESH A PRESS OPENS THE OPTIONS PANEL rather than
-  // cycling the value — so these READ, and `setModel`/`setEffort`/`setScope`
-  // below are what WRITE.
-  //
-  // Each locator resolves to exactly one element in both states, which is not a
-  // coincidence: while the panel is open the closed row is `visibility:hidden`
-  // and so out of the accessibility tree, and the panel's header — the same
-  // word, in the same place, closing what it opened — is in it under the same
-  // name. Playwright's role engine sees whichever of the pair is on screen.
-  modelWord(agentId: string): Locator {
-    return this.root.getByRole("button", {
-      name: new RegExp(`^Model for ${agentId}:`),
-    })
-  }
-
-  effortWord(agentId: string): Locator {
-    return this.root.getByRole("button", {
-      name: new RegExp(`^Effort for ${agentId}:`),
-    })
-  }
-
-  // Where this agent's front-matter is written: the project, or the user's own
-  // ~/.claude. Named like the other two, since there is no room on the row to
-  // write the value out in full.
-  scopeControl(agentId: string): Locator {
-    return this.root.getByRole("button", {
-      name: new RegExp(`^Scope for ${agentId}:`),
-    })
-  }
-
-  // The panel any of the three words opens: one per agent, and one open across
-  // the whole roster at a time.
-  agentOptions(agentId: string): Locator {
-    return this.root.locator('[data-slot="agent-options"]').filter({
-      has: this.page.getByRole("radiogroup", {
-        name: `Model for ${agentId}`,
-      }),
-    })
-  }
-
-  // One column of it. Every option is on screen at once, which is the point of
-  // the panel — effort's five steps were invisible until you had clicked past
-  // four.
-  agentOptionColumn(agentId: string, field: string): Locator {
-    return this.root.getByRole("radiogroup", {
-      name: `${field} for ${agentId}`,
-    })
-  }
-
-  agentOption(agentId: string, field: string, value: string): Locator {
-    return this.agentOptionColumn(agentId, field).getByRole("radio", {
-      name: value,
-      exact: true,
-    })
-  }
-
-  // OPEN, THEN PICK — the two acts a value change now takes, and picking closes
-  // the panel again. Every spec that used to click a word N times to cycle to a
-  // value says the value instead.
-  private async setAgentOption(agentId: string, field: string, value: string) {
-    await this.modelWord(agentId).click()
-    await this.agentOption(agentId, field, value).click()
-  }
-
-  async setModel(agentId: string, value: string) {
-    await this.setAgentOption(agentId, "Model", value)
-  }
-
-  async setEffort(agentId: string, value: string) {
-    await this.setAgentOption(agentId, "Effort", value)
-  }
-
-  async setScope(agentId: string, value: string) {
-    await this.setAgentOption(agentId, "Scope", value)
-  }
-
-  // The assignment line's SELECTION TARGET, e.g. "React on web-developer".
-  //
-  // Kept as the button because that is what a spec clicks and what carries the
-  // row's state. Its container is `skillRowCell`, and the two stopped being the
-  // same element on 2026-08-29: EDITOR-58's `nested-interactive` fix made this
-  // an overlay button that is a SIBLING of the row's content rather than its
-  // wrapper, because a button holding other buttons is unreachable to a screen
-  // reader. Anything found INSIDE the row now has to be found from the cell.
+  // An assignment line's toggle, e.g. "React on web-developer": a button
+  // stretched over the line as its sibling, so whatever sits INSIDE the line is
+  // found from `skillRowCell`.
   skillRow(skillName: string, agentId: string): Locator {
     return this.root.getByRole("button", {
       name: `${skillName} on ${agentId}`,
     })
   }
 
-  // EVERY ROW THIS SKILL HAS, across all its sub-agents — which is to say how
-  // many sub-agents carry it. The cell used to state that as `N agents` under
-  // its own badges; the label was removed on 2026-09-07, so the roster is the
-  // one place the number is legible, and it always was the place it was true.
+  // Every row this skill has, which is how many sub-agents carry it.
   skillRowsFor(skillName: string): Locator {
     return this.root.getByRole("button", {
       name: new RegExp(`^${skillName} on `),
     })
   }
 
-  /** What contains that target — the load word, the marker and the count. */
   skillRowCell(skillName: string, agentId: string): Locator {
     return this.skillRow(skillName, agentId).locator("..")
   }
@@ -314,16 +155,15 @@ export class RosterPanel {
     })
   }
 
-  // The error marker on a row whose two scopes cannot meet. A real button, like
-  // the options panel's info glyph, so the explanation is reachable without a
-  // pointer — and its accessible name IS the explanation.
+  // The marker on a row whose two scopes cannot meet; its name is the reason.
   scopeError(skillName: string, agentId: string): Locator {
     return this.skillRowCell(skillName, agentId).getByRole("button", {
       name: /must be set to project scope/,
     })
   }
 
-  whereUsed(skillName: string, agentId: string): Locator {
+  // The count button the where-used list used to hang from.
+  whereUsedCount(skillName: string, agentId: string): Locator {
     return this.skillRowCell(skillName, agentId).getByRole("button", {
       name: /^Used by /,
     })
@@ -333,12 +173,17 @@ export class RosterPanel {
     return this.page.getByRole("tooltip")
   }
 
+  // Hovering anywhere on the row opens the where-used list.
+  async whereUsed(skillName: string, agentId: string) {
+    await this.skillRow(skillName, agentId).hover()
+    return this.whereUsedTip
+  }
+
   async toggleDomain(domainId: string) {
     await this.domainBand(domainId).click()
   }
 
   async groupBy(value: "domain" | "scope") {
-    await this.groupControl.click()
     await this.groupOption(value).click()
   }
 }

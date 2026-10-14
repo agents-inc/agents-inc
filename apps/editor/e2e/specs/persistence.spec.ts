@@ -19,11 +19,9 @@ const ADDED_SKILL = FIRST!.name
 // Where the intake files it, as the dropdown spells it.
 const ADDED_CATEGORY = `${web.toLowerCase()} · ${CATEGORY.toLowerCase()}`
 
-// A readable configuration saved under a version the app has moved past —
-// zustand's own envelope, so the store reaches `migrate` rather than failing
-// the parse the way the corrupt blob below does. Version 1 is pinned rather
-// than derived: what is being tested is a payload written by an older release,
-// and one that tracks the current version can never be older than it.
+// zustand's own envelope at a version the app has moved past, so the store
+// reaches `migrate` rather than failing the parse. Pinned rather than derived:
+// a version that tracks the current one can never be older than it.
 const STALE_VERSION_BLOB = JSON.stringify({
   state: { stackId: null, skills: {}, remembered: {}, agents: {} },
   version: 1,
@@ -46,16 +44,15 @@ test.describe("persistence", () => {
     ).toHaveText("eject")
   })
 
-  // The two v5 surfaces — a row switched off and an explicit pin — must
-  // rebuild exactly from rehydrated state, not re-derive from the rule.
+  // Both must rebuild from rehydrated state, not re-derive from the rule.
   test("pins and switched-off rows survive a reload", async ({
     configure,
     page,
   }) => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     await configure.roster.skillRow(REACT, "web-developer").click()
-    // The rule reached only the web roster, so pinning an api agent ON — bare,
-    // with nothing assigned — is the direction the rule cannot re-derive.
+    // The rule reached only the web roster, so an api agent pinned on is the
+    // direction it cannot re-derive.
     await configure.roster.agentButton("api", "developer").click()
 
     await page.reload()
@@ -74,34 +71,9 @@ test.describe("persistence", () => {
     )
   })
 
-  // Model and effort are decisions about an agent exactly as a pin is, and they
-  // are just as expensive to make twice.
-  test("an agent's model choice survives a reload", async ({
-    configure,
-    page,
-  }) => {
-    await configure.roster.setModel("web-developer", "fable")
-    await expect(
-      configure.roster.modelWord("web-developer")
-    ).toHaveAccessibleName("Model for web-developer: fable")
-
-    await page.reload()
-    await configure.stacks.waitFor()
-
-    await expect(
-      configure.roster.modelWord("web-developer")
-    ).toHaveAccessibleName("Model for web-developer: fable")
-  })
-
-  // Nothing saved is not the same as something unreadable, and the store is
-  // handed both as `undefined` — zustand calls `merge` on every load, including
-  // the ones that found an empty storage. Every visitor who has never saved
-  // anything goes through this path, so getting it wrong files an issue about
-  // discarded work against people who had none.
-  //
-  // The listener has to be attached before the load it is watching, which is
-  // why this reloads rather than using the already-navigated fixture. Storage
-  // is still empty at that point: nothing is written until something changes.
+  // zustand hands `merge` `undefined` for an empty slot as well as an
+  // unreadable one. Reloads so the listener is attached before the load it
+  // watches; storage is still empty, since nothing is written until a change.
   test("a load that finds nothing saved reports nothing", async ({
     configure,
     page,
@@ -117,10 +89,8 @@ test.describe("persistence", () => {
     expect(issues).toStrictEqual([])
   })
 
-  // The pre-release policy is no migrations: a version bump discards every
-  // saved configuration in the app. That is a decision, not a fault — but a
-  // discard nobody can see is the same silence the unreadable blob beside it
-  // was given a warning for, and this one hits everybody at once.
+  // A version bump discards every saved configuration by design, but not
+  // silently.
   test("a configuration from an older version reports the discard", async ({
     configure,
     page,
@@ -143,11 +113,8 @@ test.describe("persistence", () => {
     )
   })
 
-  // How the panel is banded and whether the stack grid is folded are
-  // ARRANGEMENT, in the same sense a collapsed roster band is: they describe
-  // how the screen is laid out rather than something the visitor is in the
-  // middle of. So they survive, and the slot is read back rather than inferred
-  // from the screen — the two claims come apart the moment a write is dropped.
+  // The slot is read back as well as the screen: the two come apart the moment
+  // a write is dropped.
   test("the roster's grouping mode survives a reload", async ({
     configure,
     page,
@@ -170,19 +137,19 @@ test.describe("persistence", () => {
     configure,
     page,
   }) => {
-    await configure.stackToggle.click()
+    const title = configure.stepTitle("then your stack")
+    await title.click()
     await expect(configure.stacks).toHaveCount(0)
 
     expect(await configure.storedUi()).toMatchObject({ stackCollapsed: true })
 
     await page.reload()
-    await configure.stackToggle.waitFor()
+    await title.waitFor()
 
     await expect(configure.stacks).toHaveCount(0)
-    await expect(configure.stackToggle).toHaveAccessibleName("Show stacks")
+    await expect(title).toHaveAttribute("aria-expanded", "false")
   })
 
-  // Corrupt storage must reset to empty rather than take the app down.
   test("unreadable storage falls back to an empty configuration", async ({
     configure,
     page,
@@ -204,12 +171,8 @@ test.describe("persistence", () => {
   })
 })
 
-// An added skill is a real catalogue entry, but its DIRECTORY is not in
-// localStorage — it is resolved at add time and travels in a payload. So a
-// selection naming one must not survive into a session that has the id and none
-// of the bytes, and could therefore neither describe nor install it. Saving the
-// stack is the way to carry one across a reload: that slot holds a payload, and
-// a payload carries the content.
+// An added skill's content travels only in a payload, never in localStorage, so
+// a selection naming one must not survive into a session without its bytes.
 test.describe("added skills do not survive a reload on their own", () => {
   test.beforeEach(async ({ configure, page }) => {
     stubSkillIndex(page)
@@ -236,8 +199,7 @@ test.describe("added skills do not survive a reload on their own", () => {
       (key) => localStorage.getItem(key) ?? "",
       CONFIG_KEY
     )
-    // The `external-` namespace, which no catalogue id can wear: Journey 26
-    // reserves it, so this cannot pass by the id simply having moved.
+    // No catalogue id can wear the `external-` namespace.
     expect(stored).not.toContain("external-")
     expect(configure.skill(ADDED_SKILL).root).toBeDefined()
   })

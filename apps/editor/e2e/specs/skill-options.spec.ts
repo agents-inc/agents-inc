@@ -12,23 +12,16 @@ const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
 const MATRIX_DOMAIN = "Web"
 const MATRIX_ROLE = "dev"
-// The first agent behind the Meta fold, and so the first cell a Tab out of the
-// fold's own toggle reaches.
+// The first agent behind the Meta fold: a Tab out of the fold's toggle lands
+// on it.
 const FIRST_META_AGENT = "agent-summoner"
 
-// The design system draws one focus ring and nothing machine-decidable can
-// check it — axe does not look at focus indicators — so photographing it is
-// the whole gate. A computed box-shadow is not enough: a parent's clip hid
-// every pixel of the skill cell's ring while its shadow read back fine (audit
-// issue 23). So the control's neighbourhood is photographed twice with focus
-// left where it is, once as drawn and once with the ring's colour made
-// transparent, and identical pictures mean nobody could see the ring. Blurring
-// instead would also hide the •••, since focus is what reveals it.
-//
-// Focus has to arrive by keyboard rather than through `focus()`, which makes
-// these tests read oddly: Chromium only matches `:focus-visible` on a
-// programmatic move when the element it left matched too, and every control
-// here is reached past a click.
+// A ring is only proven by pixels: a parent's clip once hid every pixel of a
+// ring whose computed box-shadow read back fine. So the neighbourhood is
+// photographed with the ring and with its colour made transparent; identical
+// pictures mean nobody could see it. Focus arrives by keyboard, because
+// Chromium matches `:focus-visible` on a programmatic move only when the
+// element it left matched too.
 const RING_ROOM = 4
 
 const focusRing = async (locator: Locator) => {
@@ -61,16 +54,12 @@ const focusRing = async (locator: Locator) => {
 const SCOPE_TIP =
   "Determines where the skill is installed to. Project-level skills inherit global, but not vice versa."
 
-// Where React's own directory sits in the marketplace repository, written out
-// rather than rebuilt from the app's own rule — a spec that derives the URL the
-// same way the code does would agree with it however wrong both were. Resolved
-// by hand against GitHub, and it is `EXCLUSIVE_CATEGORY.first`'s id, so a
-// catalogue that renames the skill fails here naming this line.
+// Written out rather than derived the way the code derives it. Resolved by hand
+// against GitHub; it is `EXCLUSIVE_CATEGORY.first`'s directory.
 const CATALOG_SOURCE_URL =
   "https://github.com/agents-inc/skills/tree/HEAD/src/skills/web-framework-react"
 
-// An entry of the mocked index, which is a real skill in a real repository —
-// the index only holds skills whose SKILL.md was read.
+// An entry of the mocked index: a real skill in a real repository.
 const [ADDED] = SKILL_INDEX.skills
 const ADDED_NAME = ADDED!.name
 const ADDED_SOURCE_URL = `https://github.com/${ADDED!.repo}/tree/HEAD/${ADDED!.path}`
@@ -86,8 +75,8 @@ test.describe("skill options panel", () => {
     await expect(skill.options.root).toBeVisible()
   })
 
-  // The ••• configures a skill; it is not a way of choosing one. It shows what
-  // picking the skill would give — the rule's assignments already in place.
+  // The ••• configures a skill without choosing it, showing the assignments
+  // picking it would give.
   test("opening on an unselected skill does not select it", async ({
     configure,
   }) => {
@@ -111,9 +100,8 @@ test.describe("skill options panel", () => {
     await expect(skill.options.root).toBeHidden()
   })
 
-  // It stays in the layout at zero opacity, so revealing it cannot reflow the
-  // row — which means "hidden" is asserted on opacity, not visibility, and the
-  // 120ms fade has to be polled rather than read once.
+  // Hidden by opacity, so revealing it cannot reflow the row; the fade is
+  // polled.
   test("the ellipsis only shows on hover", async ({ configure }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 
@@ -123,9 +111,6 @@ test.describe("skill options panel", () => {
     await expect.poll(() => skill.optionsOpacity()).toBe(1)
   })
 
-  // Focus reveals the ••• as hover does, but being visible is not the same as
-  // being marked as focused: the ring is what says which control the keyboard
-  // is on.
   test("the ellipsis draws a focus ring", async ({ configure, page }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 
@@ -160,15 +145,8 @@ test.describe("skill options panel", () => {
     await expect(skill.root).toHaveAttribute("aria-pressed", "true")
   })
 
-  // Configuring an unselected skill is kept, so picking it later arrives with
-  // the setup already applied rather than starting over.
-  //
-  // Install mode is the exclusive row under test rather than install scope, and
-  // that is EDITOR-08 rather than an arbitrary pick: every sub-agent rests at
-  // global, so choosing `project` here would put the whole matrix out of reach
-  // and there would be no assignment left to unmake. `scope-reach.spec.ts`
-  // covers that on its own terms; the claim here is that an option and an
-  // assignment both survive, which needs a pair that can coexist.
+  // Install mode rather than scope: every sub-agent rests at global, so a
+  // project scope would leave no assignment to unmake (EDITOR-08).
   test("options set before selecting survive being selected", async ({
     configure,
   }) => {
@@ -193,12 +171,6 @@ test.describe("skill options panel", () => {
     )
   })
 
-  // A test that the cell's `N agents` label could not open the panel stood here
-  // until 2026-09-07. The label is gone, so the claim has nothing to be true
-  // of — deleted rather than re-pointed at some other span, since "this
-  // particular non-control is not a control" is only worth asserting about a
-  // thing that exists.
-
   test("Escape closes the panel", async ({ configure, page }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 
@@ -215,8 +187,8 @@ test.describe("skill options panel", () => {
     await expect(skill.options.root).toBeHidden()
   })
 
-  // A skill is a plugin from someone else's repo — it configures where it
-  // installs and which agents carry it, and nothing about how they think.
+  // A skill configures where it installs and which agents carry it, nothing
+  // about how they think.
   test("the panel is install mode, install scope and sub-agents", async ({
     configure,
   }) => {
@@ -226,8 +198,6 @@ test.describe("skill options panel", () => {
 
     await expect(labels).toHaveCount(3)
     await expect(labels.nth(0)).toContainText("Install mode")
-    // Scope used to share the install-mode label; it names itself now, because
-    // the info affordance hangs off that name.
     await expect(labels.nth(1)).toContainText("Install scope")
     await expect(labels.nth(2)).toContainText("Sub-agents")
   })
@@ -270,8 +240,6 @@ test.describe("skill options panel", () => {
   })
 })
 
-// A skill is somebody else's repository, and until now the panel described
-// everything about installing one and nothing about where it comes from.
 test.describe("source code link", () => {
   test("a catalogue skill links into the marketplace repository", async ({
     configure,
@@ -285,11 +253,7 @@ test.describe("source code link", () => {
     )
   })
 
-  // The link owes the keyboard the same ring as the cells above it. This is
-  // the panel's last tab stop, so reaching it pulls the panel's foot into view
-  // — which is precisely the Tab that used to lose its focus to the filter
-  // bar, and why this test could not be written until the bar stopped taking
-  // it. With the Meta fold shut the link is the stop straight after it.
+  // With the Meta fold shut, the link is the stop straight after it.
   test("the source link draws a focus ring", async ({ configure, page }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
     await skill.openOptions()
@@ -302,8 +266,6 @@ test.describe("source code link", () => {
     expect(ringVisible).toBe(true)
   })
 
-  // An added skill is a directory in a repository that is not ours, and the
-  // index it arrived through carries both halves of that address.
   test("an added skill links into the repository it came from", async ({
     configure,
     page,
@@ -325,9 +287,6 @@ test.describe("source code link", () => {
   })
 })
 
-// Project versus global is the one option in the panel whose consequence is not
-// self-evident, so it is the one that gets explained — on demand, not as
-// standing hint text.
 test.describe("install scope info affordance", () => {
   test("the scope label carries an info glyph", async ({ configure }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
@@ -344,7 +303,6 @@ test.describe("install scope info affordance", () => {
     await skill.openOptions()
     const tip = page.getByText(SCOPE_TIP)
 
-    // Nothing is on screen until it is asked for.
     await expect(tip).toBeHidden()
 
     await skill.options.infoGlyph("install scope").hover()
@@ -352,8 +310,6 @@ test.describe("install scope info affordance", () => {
     await expect(tip).toBeVisible()
   })
 
-  // Keyboard equivalence: the glyph is focusable precisely so the explanation
-  // is not pointer-only.
   test("focusing it explains the same thing", async ({ configure, page }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
     await skill.openOptions()
@@ -365,8 +321,7 @@ test.describe("install scope info affordance", () => {
 })
 
 test.describe("sub-agent assignment", () => {
-  // Selecting a framework already assigned it, preloaded, to the domain's
-  // core agents — so the cycle starts from `pre` and wraps through empty.
+  // A selected framework starts preloaded, so the cycle wraps through empty.
   test("a matrix cell cycles preloaded, unassigned, lazy", async ({
     configure,
   }) => {
@@ -383,9 +338,6 @@ test.describe("sub-agent assignment", () => {
     await expect(cell).toHaveText("pre")
   })
 
-  // Read off the roster, which is the surface that both shows the assignments
-  // and loses one — the cell used to state the number under its own badges and
-  // no longer does.
   test("unassigning drops the skill's row from that agent", async ({
     configure,
   }) => {
@@ -402,23 +354,21 @@ test.describe("sub-agent assignment", () => {
     )
   })
 
-  // A web skill never reaches API on its own — relevance keeps it inside its
-  // domain — so the out-of-domain cell arrives empty, and assigning it by hand
-  // is what brings the agent into the roster.
+  // Relevance keeps a web skill out of API until it is assigned by hand.
   test("an out-of-domain agent stays out until assigned by hand", async ({
     configure,
   }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
-    // The roster only carries a selected skill's assignments.
     await skill.toggle()
     await skill.openOptions()
 
-    await expect(configure.roster.domainBand("api")).toContainText("0 of")
+    const apiDeveloper = configure.roster.agentButton("api", "developer")
+    await expect(apiDeveloper).toHaveAttribute("aria-pressed", "false")
     await expect(configure.roster.skillRow(SKILL, "api-developer")).toBeHidden()
 
     await skill.options.cycleAssignment("API", MATRIX_ROLE)
 
-    await expect(configure.roster.domainBand("api")).toContainText("1 of")
+    await expect(apiDeveloper).toHaveAttribute("aria-pressed", "true")
     await expect(
       configure.roster.skillRow(SKILL, "api-developer")
     ).toBeVisible()
@@ -436,9 +386,6 @@ test.describe("sub-agent assignment", () => {
     await expect(metaAgent).toBeVisible()
   })
 
-  // A labelled agent cell is drawn from the grid's own cell variants and is
-  // just as much a button, so it owes the keyboard the same ring the cells
-  // beside it draw.
   test("a cell behind the meta fold draws a focus ring", async ({
     configure,
     page,
@@ -458,9 +405,7 @@ test.describe("sub-agent assignment", () => {
     expect(ringVisible).toBe(true)
   })
 
-  // A meta-flavor agent is never auto-assigned, so the fold is the only path
-  // to it. The band starts at two, not zero: the consolidated `pm` and
-  // `reviewer` share the meta group and auto-carry the selected web skill.
+  // A meta-flavor agent is never auto-assigned; the fold is the only path.
   test("assigning through the meta fold reaches the roster", async ({
     configure,
   }) => {
@@ -469,17 +414,16 @@ test.describe("sub-agent assignment", () => {
     await skill.openOptions()
     await skill.options.root.getByRole("button", { name: "Meta" }).click()
 
-    await expect(configure.roster.domainBand("meta")).toContainText("2 of")
+    const summoner = configure.roster.agentButton("meta", "agent summoner")
+    await expect(summoner).toHaveAttribute("aria-pressed", "false")
     await skill.options.option("agent-summoner").click()
 
-    await expect(configure.roster.domainBand("meta")).toContainText("3 of")
+    await expect(summoner).toHaveAttribute("aria-pressed", "true")
     await expect(
       configure.roster.skillRow(SKILL, "agent-summoner")
     ).toBeVisible()
   })
 
-  // A row the roster switched off reads as unassigned in the matrix, and
-  // cycling it starts over at lazy — with the row itself re-enabled.
   test("cycling a switched-off cell re-enables it at lazy", async ({
     configure,
   }) => {
@@ -500,17 +444,9 @@ test.describe("sub-agent assignment", () => {
   })
 })
 
-/**
- * Where the app's frame sits in the window: the top edge of the nav rail, which
- * is sticky and one screen tall, so it reads 0 for as long as the frame holds
- * still. Positive is the frame lifted off the top of the window by that many
- * pixels, with a strip of bare page under it.
- *
- * Compared to the nearest pixel rather than exactly: the grid's height is rem
- * at a 110% root, so at the foot of the page the rail sits a fraction of a
- * pixel off with no panel open at all — the page landing on a whole pixel, not
- * the frame moving. The defect this is about lifted it by a hundred.
- */
+// How far the frame is lifted off the top of the window: the sticky nav rail's
+// top edge, negated. Compared to the nearest pixel, since rem at a 110% root
+// lands a fraction off.
 const frameLift = async (configure: ConfigurePage) => {
   const rail = await configure.navRail.boundingBox()
   if (!rail) throw new Error("the rail must be drawn")
@@ -518,10 +454,7 @@ const frameLift = async (configure: ConfigurePage) => {
   return -rail.y
 }
 
-/**
- * How much air there is between the open panel's foot and the composer's top
- * edge. Negative is the overlap, in pixels: the panel drawn past the dock.
- */
+// Air between the open panel's foot and the composer; negative is overlap.
 const panelToDockGap = async (configure: ConfigurePage) => {
   const panel = await configure.skillOptions.root.boundingBox()
   const dock = await configure.composer.dock.boundingBox()
@@ -530,14 +463,8 @@ const panelToDockGap = async (configure: ConfigurePage) => {
   return dock.y - (panel.y + panel.height)
 }
 
-// A PANEL OPENED AT THE FOOT OF THE COLUMN. It hangs from the top of its cell
-// and is taller than the cell, so on the last row it reached past the end of
-// the page — and the page grew to hold it, outside the frame: scrolling to
-// see it lifted the rail, the roster and the dock together, and drew the
-// panel's foot below the dock with bare page beneath the lot.
-//
-// Opened on whichever cell the column ends on and read at the bottom of the
-// page, which is the only scroll position this is about.
+// A panel on the column's last cell once grew the page past the frame, lifting
+// the rail and drawing its foot below the dock.
 test.describe("an options panel at the foot of the column", () => {
   test.beforeEach(async ({ configure }) => {
     await configure.openLastSkillOptions()
@@ -556,9 +483,7 @@ test.describe("an options panel at the foot of the column", () => {
     expect(await panelToDockGap(configure)).toBeGreaterThanOrEqual(0)
   })
 
-  // The panel grows after it opens — the Meta fold adds a row per agent — so
-  // whatever holds the frame still has to follow the panel rather than know
-  // its first height.
+  // The Meta fold grows the panel after it opens.
   test("leaves the frame where it is once the Meta fold opens", async ({
     configure,
   }) => {

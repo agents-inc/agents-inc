@@ -7,6 +7,7 @@ import {
   MarketplaceDialog,
   MarketplaceSwitchDialog,
   OutputPreviewDialog,
+  SaveStackDialog,
   SkillContentsDialog,
   StackSwitchDialog,
 } from "./dialogs"
@@ -14,6 +15,7 @@ import { OptionsPanel } from "./options-panel"
 import { ProviderControl } from "./provider-control"
 import { RosterPanel } from "./roster-panel"
 import { SkillCell } from "./skill-cell"
+import { SubAgentCards } from "./sub-agent-cards"
 
 const CONFIGURE_URL = "/"
 
@@ -25,10 +27,7 @@ const CONFIG_STORAGE_KEY = "agents-inc:config:v1"
 
 const SAVED_STACK_STORAGE_KEY = "agents-inc:saved-stack:v1"
 
-// The SHAPE this release writes, which the `v1` in the key above is not. Seeded
-// blobs carry it so a slot written by hand is the one the app would have
-// written, and an OLDER number is how a spec asks for a shape that has since
-// been migrated.
+// The persist version this release writes; the key's `v1` is not it.
 const MARKETPLACE_PERSIST_VERSION = 2
 
 // The keyed shape before the ref was normalised: its keys are the bare
@@ -36,63 +35,47 @@ const MARKETPLACE_PERSIST_VERSION = 2
 const UNNORMALISED_PERSIST_VERSION = 1
 
 /**
- * What the marketplace slot holds, keyed by marketplace.
- *
- * `current` is which catalogue this browser CHOSE — a third thing again from
- * which one is loaded in the tab — and `saved` is every marketplace it has
- * loaded against the token that reached it, empty for one that needed none.
+ * `current` is the catalogue this browser chose, not necessarily the one loaded
+ * in the tab. `saved` maps each loaded marketplace to its token, empty when it
+ * needed none.
  */
 export type SavedMarketplaces = {
   current: string
   saved: Record<string, string>
 }
 
-/**
- * The arrangement slot: how the panel is banded, which bands are shut, and
- * whether the stack grid is folded away.
- *
- * Everything else this store holds is transient — an open dialog, a pending
- * confirmation, a decaying flash — and reloading into any of it is never
- * right, so none of it reaches storage.
- */
+/** The arrangement slot, as `ui-store` persists it. */
 export type StoredUi = {
   rosterCollapsed: Record<string, boolean>
   rosterGroupBy: string
+  providerCollapsed: boolean
   stackCollapsed: boolean
+  agentsCollapsed: boolean
 }
 
-// Every skill cell on the screen. The filter bar sits outside every section,
-// so nothing on the bar can ever match this.
-// One frame whose layout the observer reports, one the report defers its write
-// to — where a callback requested in the frame before runs ahead of that write —
-// and one to read the page after it.
+// The frame the observer reports in, the one its deferred write lands in, and
+// one to read the page after.
 const FRAMES_UNTIL_A_DEFERRED_WRITE_IS_LAID_OUT = 3
 
+// Every skill cell. Nothing on the filter bar can match it.
 const SKILL_CELL = 'main section [data-slot="lattice-cell"]'
 
-// The collapsed hairline grid itself, scoped by whoever asks for it. Read for
-// its track count, which is the one thing about it the viewport changes.
+// A category's grid, read for its track count.
 const LATTICE = '[data-slot="lattice"]'
 
-// The rail's marketplace row, claimed twice below: once as an element and once
-// as an element of the navigation landmark.
 const MARKETPLACE_SECTION = '[data-slot="marketplace-row"]'
 
-// How far the keyboard may walk looking for the pin. Reaching it takes around
-// seventy stops from the bar; this is headroom, and a walk that spends it all
-// leaves the bar unstuck for the spec to fail on.
+// Far enough past the bar's own top that it has pinned and changed shape.
+const PAST_THE_PIN = 400
+
+// Headroom for the keyboard walk to the pin. A walk that spends it all leaves
+// the bar unstuck for the spec to fail on.
 const MAX_TAB_STEPS = 200
 
 /**
- * The focused control, named, and how far `cover` hides it or its focus ring —
- * or `null` when it hides none of either. A control INSIDE the cover is the
- * cover's own and is never hidden by it. Runs in the page.
- *
- * THE RING COUNTS. The package's one focus treatment is `ring-1`, drawn a
- * pixel OUTSIDE the control's box, so a control parked flush against the cover
- * shows everything but the side of its ring that says it is focused. That
- * pixel is part of what must not be covered, and a cover over it alone reads
- * as `by 1px` or less.
+ * The focused control, named, and how far `cover` hides it or its `ring-1`
+ * focus ring (drawn a pixel outside its box) — or `null`. A control inside the
+ * cover is never hidden by it. Runs in the page.
  */
 const focusCoveredBy = (cover: HTMLElement) => {
   const focused = document.activeElement
@@ -113,86 +96,45 @@ const focusCoveredBy = (cover: HTMLElement) => {
   return `${name} by ${down.toFixed(1)}px`
 }
 
-// The saved snapshot's cell. The app names this one rather than the generated
-// catalogue, so it lives here beside the grid rather than in
-// `support/catalog.ts` — no amount of catalog drift can move it.
+// The retired single slot's cell name.
 export const SAVED_STACK = "Saved stack"
 
-// The Configure screen. Composed of smaller objects rather than holding every
-// locator itself — a skill cell and the options panel each have enough surface
-// to be worth their own file.
-//
-// Scoping goes through landmarks (`group`, `region`) rather than CSS, so a
-// class rename cannot break the suite and the locators double as a check that
-// the page is navigable.
+// Scoped through landmarks rather than CSS, so a class rename cannot break the
+// suite and the locators double as a check that the page is navigable.
 export class ConfigurePage {
   readonly stacks: Locator
-  // The 24px square on the first hinge's content edge, which folds the stack
-  // grid away. Its accessible NAME carries the state — `Show stacks` while the
-  // grid is gone, `Hide stacks` while it is there — so a spec can locate it
-  // through either and assert on the other, the same shape `shareButton` uses.
-  readonly stackToggle: Locator
   readonly searchInput: Locator
-  // The bordered box the search input sits in. Named because the selection
-  // filters are asserted to be OUTSIDE it — the field holds search and nothing
-  // else — and "not in the field" is a claim no locator on the chips can make.
+  // The bordered box the search input sits in, and the box the `all | selected`
+  // pair is asserted against.
   readonly searchField: Locator
   readonly addSkillButton: Locator
-  // The sticky wrapper — the element that pins — and the band inside it that
-  // takes the dark treatment once it does. Two locators rather than one,
-  // because only the band goes dark: the domain strip below it stays on the
-  // column colour, and that edge is what separates them.
+  // The sticky wrapper that pins, and the band inside it that goes dark.
   readonly filterBar: Locator
   readonly filterBand: Locator
   // The domain strip under the band: one tab per domain in the catalogue,
-  // scoped as a group. Nothing else shares the row any more — `selected` moved
-  // to the skills hinge and the clear control to the first stack cell — but the
-  // group stays, because a bare `button` under the bar would still match the
-  // add-skill block above it.
+  // scoped as a group, because a bare `button` under the bar would still match
+  // the add-skill block above it.
   readonly domainTabs: Locator
-  // The skills hinge's own control: `all 42 | selected 14`, drawn only once
-  // something is selected. Located by the GROUP's accessible name, which is
-  // fixed — the two cells' visible words are the values and change with every
-  // click in the grid.
-  //
-  // It was one cell whose words changed with its own state until the
-  // 2026-09-06 refresh. Both counts are on screen now, so "which is on" is
-  // `selectedFilterOn` rather than an attribute on a single control.
+  // The `all 42 | selected 14` pair, drawn only once something is selected.
+  // By the group's name, which is fixed while the cells' counts move. Page
+  // wide, because where it sits is a claim of its own.
   readonly selectedFilter: Locator
   readonly emptyState: Locator
-  // The control in the rail's marketplace section that opens the dialog. Its
-  // accessible name carries the catalogue it is on as well as the word
-  // `Marketplace`, so the locator is a SUBSTRING match and specs assert the ref
-  // on the same node.
+  // A substring match: the name carries the catalogue as well as the word.
   readonly marketplaceButton: Locator
-  // The rail's marketplace section as a whole — the word, the catalogue it
-  // names, and the switcher when there is one. Located by SLOT for the reason
-  // `accountRow` is: the row has to be MEASURED against the rows around it,
-  // whichever of its faces it happens to be wearing.
+  // By slot, so the row can be measured whichever face it is wearing.
   readonly marketplaceSection: Locator
-  // The same node, claimed through the navigation landmark. Two locators for
-  // one element because "it is drawn" and "it is drawn INSIDE the rail" are two
-  // claims, and only the second says the control stopped floating over the
-  // grid.
+  // The same node through the navigation landmark: "inside the rail" is a
+  // claim of its own.
   readonly railMarketplaceSection: Locator
-  // What an arriving share link had to say for itself, above the grid. Scoped
-  // to `main` because a dialog's own status line is an alert too, and a parked
-  // import shows both at once.
+  // Scoped to `main` because a dialog's status line is an alert too.
   readonly importNotice: Locator
-  // What the grid says when a first sign-in could not carry the local snapshot
-  // into the account. Located by SLOT rather than by role, unlike everything
-  // else here: it is an alert inside `main` and so is `importNotice`, so a
-  // role-based locator would match whichever the page happened to be drawing.
+  // By slot: it is an alert inside `main`, as `importNotice` is.
   readonly adoptionNotice: Locator
 
   readonly roster: RosterPanel
-  // Which coding agent this configuration is being installed onto. LOCAL TO
-  // THIS TAB: it never enters a payload and never enters the saved selection,
-  // so one saved setup installs on either and every existing share id keeps
-  // working. What it changes is the command the app prints.
   readonly provider: ProviderControl
-  // The docked natural-language composer at the foot of the main column, and
-  // the one thing still floating there.
+  readonly subAgents: SubAgentCards
   readonly composer: Composer
   readonly installDialog: InstallDialog
   readonly addSkillDialog: AddSkillDialog
@@ -201,46 +143,28 @@ export class ConfigurePage {
   readonly marketplaceDialog: MarketplaceDialog
   readonly marketplaceSwitchDialog: MarketplaceSwitchDialog
   readonly stackSwitchDialog: StackSwitchDialog
-  // The saved marketplaces the visitor is not currently on, offered under the
-  // control that names where they are. Absent entirely until there is more than
-  // one to choose between, because a switcher with one entry is furniture.
+  readonly saveStackDialog: SaveStackDialog
+  // The saved marketplaces the visitor is not on. Absent until there are two.
   readonly marketplaceSwitcher: Locator
-  // The account, at the foot of the nav rail. Located by role and by a
-  // `data-slot` rather than by the person's name, which is data.
+  // Not by the person's name, which is data.
   readonly signInButton: Locator
   readonly signOutButton: Locator
   readonly accountName: Locator
-  // The rail's account row, which the two buttons above are the two faces of.
-  // Located by slot rather than by role so the ROW can be measured against the
-  // rest of the rail whichever face it is wearing.
+  // By slot, so the row can be measured whichever face it is wearing.
   readonly accountRow: Locator
-  // The single glyph in the rail's footer. Only the active theme's icon is
-  // drawn, so its accessible name is the action rather than the state.
+  // Its accessible name is the action rather than the state.
   readonly themeToggle: Locator
-  // The mark beside it, and the reason it is named: it is what the floating
-  // marketplace button covered outright in EDITOR-35, so it is what the section
-  // that replaced that button has to clear.
   readonly githubLink: Locator
-  // The rail's own refusal line, scoped to the `nav` so it cannot pick up
-  // `importNotice` — both are `role="alert"`, and an unscoped locator would
-  // match whichever the page happened to be drawing.
+  // Scoped to the `nav`, because `importNotice` is an alert too.
   readonly accountNotice: Locator
-  // The rail's link to this screen. Its `aria-current` is the rail saying which
-  // page you are on, which is the claim a spec about it makes.
   readonly editorLink: Locator
-  // The nav rail itself: sticky and exactly one screen tall, so its top edge
-  // is where the app's frame sits in the window. A frame that moved under a
-  // scroll moved this.
+  // Sticky and one screen tall, so its top edge is where the frame sits.
   readonly navRail: Locator
-  // Whichever skill's ••• panel is open. Only one can be, so it is the page's
-  // rather than a cell's — the same object every `SkillCell.options` builds.
+  // Whichever skill's ••• panel is open; only one can be.
   readonly skillOptions: OptionsPanel
 
   constructor(readonly page: Page) {
     this.stacks = page.getByRole("group", { name: "Stacks" })
-    this.stackToggle = page.getByRole("button", {
-      name: /^(Show|Hide) stacks$/,
-    })
     this.searchInput = page.getByLabel("Search skills")
     this.searchField = page.locator('[data-slot="search-field"]')
     this.addSkillButton = page.getByRole("button", { name: "Add skill" })
@@ -261,6 +185,7 @@ export class ConfigurePage {
 
     this.roster = new RosterPanel(page)
     this.provider = new ProviderControl(page)
+    this.subAgents = new SubAgentCards(page)
     this.composer = new Composer(page)
     this.installDialog = new InstallDialog(page)
     this.addSkillDialog = new AddSkillDialog(page)
@@ -269,6 +194,7 @@ export class ConfigurePage {
     this.marketplaceDialog = new MarketplaceDialog(page)
     this.marketplaceSwitchDialog = new MarketplaceSwitchDialog(page)
     this.stackSwitchDialog = new StackSwitchDialog(page)
+    this.saveStackDialog = new SaveStackDialog(page)
     this.marketplaceSwitcher = page.getByRole("group", {
       name: "Saved marketplaces",
     })
@@ -286,14 +212,8 @@ export class ConfigurePage {
     this.skillOptions = new OptionsPanel(page)
   }
 
-  // What the browser kept, read back rather than inferred from the screen: the
-  // dialog's two fields survive a reload only if they really reached storage.
-  //
-  // PARSED rather than matched as a string, and that is not tidying. A blob
-  // that files the token under the wrong marketplace — or names one marketplace
-  // and holds another's credential — still CONTAINS both strings, so
-  // `toContain` passes on exactly the reshape this slot exists to make
-  // impossible. What is asserted has to be the shape.
+  // Parsed rather than matched as a string: a blob filing the token under the
+  // wrong marketplace still contains both strings.
   async savedMarketplaces(): Promise<SavedMarketplaces | null> {
     const raw = await this.page.evaluate(
       (key) => window.localStorage.getItem(key),
@@ -325,7 +245,7 @@ export class ConfigurePage {
     return slot === null ? [] : Object.keys(slot.saved)
   }
 
-  /** Seeds the local saved-stack slot, as a visitor with no account has it. */
+  /** Seeds the retired single saved-stack slot. */
   async seedSavedStack(payload: unknown) {
     await this.page.evaluate(
       ([key, blob]) => window.localStorage.setItem(key!, blob!),
@@ -382,10 +302,8 @@ export class ConfigurePage {
     })
   }
 
-  // The visitor's own saved selection, read the same way. What is on screen and
-  // what is in the slot are two different claims wherever a configuration that
-  // is not this browser's is showing — a shared link, or a saved marketplace
-  // still waiting on its token — so the slot has to be asked directly.
+  // The visitor's own saved selection, read from the slot because the screen
+  // may be showing a configuration that is not this browser's.
   async storedConfig() {
     return this.page.evaluate(
       (key) => window.localStorage.getItem(key) ?? "",
@@ -393,10 +311,7 @@ export class ConfigurePage {
     )
   }
 
-  // The arrangement slot, PARSED for the reason `savedMarketplaces` is: what
-  // is asserted has to be the shape. A blob holding the right words in the
-  // wrong fields still contains both strings, so `toContain` passes on exactly
-  // the reshape this slot exists to make impossible.
+  // Parsed, for the reason `savedMarketplaces` is.
   async storedUi(): Promise<StoredUi | null> {
     const raw = await this.page.evaluate(
       (key) => window.localStorage.getItem(key),
@@ -415,17 +330,11 @@ export class ConfigurePage {
   async goto(search = "") {
     await this.page.goto(`${CONFIGURE_URL}${search}`)
     await this.stacks.waitFor()
-    // Wait for the skill grids too, not just the stacks. They are what makes
-    // the page taller than the viewport, so scrolling before they exist
-    // silently lands somewhere other than where the test asked for.
+    // The grids make the page tall enough to scroll, and a late webfont swap
+    // reflows it, so both are waited for before any spec scrolls.
     await this.skillCells.first().waitFor()
-    // And for webfonts: the design is set in Inter and IBM Plex Mono at a
-    // dozen sizes, so a late swap reflows the page under a test that has
-    // already scrolled.
     await this.page.evaluate(() => document.fonts.ready)
   }
-
-  // ── Stacks ─────────────────────────────────────────────────────────────
 
   stack(name: string): Locator {
     return this.stacks.getByRole("button", { name, exact: true })
@@ -435,71 +344,66 @@ export class ConfigurePage {
     await this.stack(name).click()
   }
 
-  // The saved snapshot behaves like a stack, so it is located like one.
-  get savedStack(): Locator {
-    return this.stack(SAVED_STACK)
-  }
-
-  // Where a cell sits is part of the contract for the saved snapshot — it takes
-  // the slot straight after scratch — so cells are reachable by position as
-  // well as by name.
+  // By position: where a cell sits is part of its contract.
   stackCell(index: number): Locator {
     return this.stacks.locator('[data-slot="lattice-cell"]').nth(index)
   }
 
-  // The labelled section dividers. The second carries the instructional copy.
+  // By any part of the hinge's copy.
   hinge(label: string): Locator {
     return this.page.locator('[data-slot="hinge"]').filter({ hasText: label })
   }
 
-  // ── Filters ────────────────────────────────────────────────────────────
+  // A step title's fold button, named by its words; the index is `aria-hidden`.
+  // A pattern for the 04 title, whose words follow the chosen stack.
+  stepTitle(words: string | RegExp): Locator {
+    return this.page
+      .getByRole("main")
+      .getByRole("button", { name: words, exact: true })
+  }
+
+  // The box that carries a step title's margins.
+  stepHinge(words: string | RegExp): Locator {
+    return this.page
+      .getByRole("main")
+      .locator('[data-slot="hinge"]')
+      .filter({
+        has: this.page.getByRole("button", { name: words, exact: true }),
+      })
+  }
 
   async search(term: string) {
     await this.searchInput.fill(term)
   }
 
-  // ── Skills ─────────────────────────────────────────────────────────────
-
   domain(label: string): Locator {
     return this.page.getByRole("region", { name: `${label} skills` })
   }
 
-  // One cell of the skills hinge's filter, by the word it starts with: `all` or
-  // `selected`. A substring match, because the visible words carry a count that
-  // moves with the catalogue and with the selection — pinning either here would
-  // be writing down a number the page derives.
+  // By its first word. The count is matched rather than pinned because the page
+  // derives it.
   selectedFilterCell(word: "all" | "selected"): Locator {
     return this.selectedFilter.getByRole("radio", {
       name: new RegExp(`^${word} \\d+$`),
     })
   }
 
-  // Whichever cell is on. What every spec that used to read the single
-  // control's text is actually asking.
   get selectedFilterOn(): Locator {
     return this.selectedFilter.locator('[aria-checked="true"]')
   }
 
-  // One tab in the domain strip, by the domain's own label — the whole of its
-  // accessible name. The index and the count beside it are `aria-hidden`, so a
-  // tab announces the domain and nothing else.
+  // The tab's count is `aria-hidden`, so its name is the label.
   domainTab(label: string): Locator {
     return this.domainTabs.getByRole("button", { name: label, exact: true })
   }
 
-  // Whichever tab the strip is drawing as current. `data-active` rather than
-  // `aria-pressed`, and the two are deliberately different claims: pressed is
-  // "this domain is FILTERED to", active is "this is the domain you are looking
-  // at", and with no filter the strip is a scroll indicator carrying only the
-  // second.
+  // `data-active` is the domain in view.
   get activeDomainTab(): Locator {
     return this.domainTabs.locator("[data-active]")
   }
 
-  // Puts a domain's own top edge at the top of the window, which is what the
-  // strip reads to decide who is current. Scrolls by MEASUREMENT rather than to
-  // a coordinate: the grid's height is the generated catalogue's, so any figure
-  // written here would name a different section every time it is regenerated.
+  // Measured rather than a coordinate, because the grid's height is the
+  // generated catalogue's.
   async scrollToDomain(domainId: string) {
     await this.page.evaluate((id) => {
       const anchor = document.querySelector(`[data-domain-anchor="${id}"]`)
@@ -509,14 +413,8 @@ export class ConfigurePage {
     }, domainId)
   }
 
-  // How far a domain's top edge sits BELOW the bar's underside — the one
-  // measurement that says a jump landed the section in view rather than
-  // underneath the thing that pins over it. Negative means the section's top
-  // is hidden behind the bar; a large positive means the jump undershot.
-  //
-  // Measured rather than compared against a figure written here: the bar's
-  // height is the design's, in rem against a root set to 110%, so any constant
-  // in this file would be a second copy of it going stale on its own.
+  // How far a domain's top edge sits below the bar's underside. Negative is
+  // hidden behind the bar; a large positive means the jump undershot.
   async domainGapUnderBar(domainId: string) {
     return this.page.evaluate((id) => {
       const anchor = document.querySelector(`[data-domain-anchor="${id}"]`)
@@ -529,13 +427,24 @@ export class ConfigurePage {
     }, domainId)
   }
 
-  // Which theme the document is painted in, read off the root the palette
-  // switches on rather than off a colour — `null` is "whatever the OS asked
-  // for", which is the state a browser that has never been told arrives in.
+  // `null` is "whatever the OS asked for".
   async theme() {
     return this.page.evaluate(
       () => document.documentElement.dataset.theme ?? null
     )
+  }
+
+  // A colour token as the page resolves it now, in `rgb(…)` form. Read through
+  // a throwaway element because the root reports a token as declared.
+  async tokenColor(token: `--color-${string}`) {
+    return this.page.evaluate((name) => {
+      const probe = document.createElement("span")
+      probe.style.color = `var(${name})`
+      document.body.append(probe)
+      const resolved = getComputedStyle(probe).color
+      probe.remove()
+      return resolved
+    }, token)
   }
 
   category(domainLabel: string, categoryName: string): Locator {
@@ -545,16 +454,11 @@ export class ConfigurePage {
     })
   }
 
-  // The grid a category's cells are laid out in, as distinct from the cells
-  // themselves. Named because its track count is what the viewport threshold
-  // moves, and `grid-template-columns` is the only place that count is stated.
   skillLattice(domainLabel: string, categoryName: string): Locator {
     return this.category(domainLabel, categoryName).locator(LATTICE)
   }
 
-  // How many tracks a lattice is drawing. Computed style rather than a class
-  // name: `grid-cols-3` and `grid-cols-4` are strings a test can be told, and
-  // resolved tracks are what the browser actually laid out.
+  // Computed style rather than a class name: what the browser laid out.
   async latticeTracks(lattice: Locator) {
     return lattice.evaluate(
       (node) => getComputedStyle(node).gridTemplateColumns.split(" ").length
@@ -582,18 +486,13 @@ export class ConfigurePage {
     return this.page.locator(`${SKILL_CELL}:focus-within`)
   }
 
-  // The ••• of whichever cell the column ends on — the cell with the least page
-  // left beneath it, which is where a panel has nowhere to go. Asked of the
-  // grid rather than of a named skill, so no amount of catalogue drift changes
-  // which cell this is about.
+  // The last cell's •••, where a panel has the least page beneath it.
   async openLastSkillOptions() {
     await this.skillCells
       .last()
       .getByRole("button", { name: /^Options for / })
       .click()
   }
-
-  // ── Scroll ─────────────────────────────────────────────────────────────
 
   async scrollTo(y: number) {
     await this.page.evaluate((value) => window.scrollTo(0, value), y)
@@ -603,17 +502,17 @@ export class ConfigurePage {
     return this.page.evaluate(() => window.scrollY)
   }
 
-  // UNTIL IT STOPS MOVING, because one scroll does not reach the bottom of a
-  // page this scroll makes taller: the filter bar's band grows as it pins, and
-  // that is 31px of page the `scrollHeight` being aimed at had not counted yet.
-  // A single pass lands 31px short, which is not the position a claim about
-  // the bottom of the page is about.
-  //
-  // And each pass reads only once a deferred write could have landed. The room
-  // `use-panel-room.ts` keeps under an options panel is written in the frame
-  // AFTER its ResizeObserver reports, so two reads with no frame between them
-  // agree while that write is still pending: opening the Meta fold and scrolling
-  // straight down stopped 127px above a bottom the page grew to a frame later.
+  // Measured, because the steps above the bar decide where it pins.
+  async scrollPastThePin() {
+    const pin = await this.filterBar.evaluate(
+      (bar) => window.scrollY + bar.getBoundingClientRect().top
+    )
+    await this.scrollTo(pin + PAST_THE_PIN)
+  }
+
+  // Until it stops moving: the bar's band grows as it pins, and the panel room
+  // is written a frame after its ResizeObserver reports, so one pass lands
+  // short of the bottom.
   async scrollToBottom() {
     let previous = -1
     let landed = 0
@@ -631,13 +530,10 @@ export class ConfigurePage {
   }
 
   /**
-   * Every stop of a keyboard walk that landed on a control `cover` hides.
-   * Judged in the page at each stop rather than collected and judged here, so
-   * a failure prints which controls and by how many pixels.
+   * Every stop of a keyboard walk that landed on a control `cover` hides, so a
+   * failure prints which controls and by how many pixels.
    *
-   * @param key `Tab` walks down the page and `Shift+Tab` back up it — the two
-   *   directions put a control at opposite edges of the window, so each edge's
-   *   cover is asked about the walk that ends at it.
+   * @param key `Tab` puts a control at the bottom edge, `Shift+Tab` at the top.
    */
   async stopsCoveredBy(
     cover: Locator,
@@ -662,10 +558,8 @@ export class ConfigurePage {
     )
   }
 
-  // Walks the keyboard down the page one control at a time. Each Tab that
-  // reaches a control the viewport is not showing scrolls it into view, and
-  // one of those scrolls crosses the pin — which is how a keyboard user
-  // sticks the bar without ever asking to scroll.
+  // Each Tab scrolls the next control into view, and one of those scrolls
+  // crosses the pin.
   async tabUntilBarSticks() {
     for (let step = 0; step < MAX_TAB_STEPS; step++) {
       if (await this.isBarStuck()) return

@@ -3,56 +3,20 @@ import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "../fixtures"
 import { ConfigurePage } from "../pages/configure-page"
 import { stubCompose, stubSignedIn } from "../support/auth"
-import {
-  DOMAINS,
-  EXCLUSIVE_CATEGORY,
-  SINGLE_AGENT_SKILL,
-  STACKS,
-} from "../support/catalog"
+import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
 
-// The accessibility suite, over the ASSEMBLED app.
+// axe over the assembled app; `packages/ui` gates each component alone. Every
+// state `visual.spec.ts` captures has an audit here.
 //
-// `packages/ui` already gates axe per component at `test: "error"`, and that is
-// not this. A component can be perfectly labelled alone and still land in a
-// page with two `main` landmarks, a heading level skipped between sections, a
-// dialog that leaves focus behind it, or an accessible name that is unique in
-// isolation and duplicated six times once the grid renders. **Composition is
-// where these appear, and nothing here could see them until now.**
-//
-// EVERY STATE `visual.spec.ts` CAPTURES HAS AN AUDIT HERE. That is a rule
-// rather than a count, because a count is wrong the first time either file
-// grows and a reader cannot tell which of the two moved: the same screens are
-// worth both questions, so a capture without an audit is a gap and adding one
-// means adding the other. It is stated because it has been false — four of that
-// file's captures had no audit for as long as this comment claimed they were
-// "the same states" — and it is not symmetrical: the composer's PROPOSAL is
-// audited and not captured, since a live region and a pair of buttons are a
-// question about announcement rather than about pixels.
-//
-// TWO RULES ARE HELD OUT, AND THEY ARE NOT THE SAME KIND OF THING.
-//
-// `color-contrast` is a PERMANENT owner ruling (2026-08-07), recorded in
-// packages/ui/.storybook/preview.ts and held out there for the same reason: the
-// palette is a taste decision for this project, no rule will ever gate it, and
-// running the check would report the design as a defect forever.
-//
-// `scrollable-region-focusable` is a PENDING FIX — the last of the three real
-// defects this suite found on its first run, filed as EDITOR-58. The output
-// preview's content pane scrolls and holds nothing focusable, so its file
-// cannot be read past the fold without a mouse. It is the only one left: the
-// other two came out on 2026-08-29 with the cell and the row that carried
-// them, and the shell that now names the page.
-//
-// **Held out so the suite can gate everything else.** The alternative was
-// leaving it failing, which gates nothing and gets ignored. The line below
-// comes out as the defect is fixed — and the difference between it and the
-// line above it is the whole reason both are annotated rather than listed.
+// Two rules are held out. `color-contrast` is a permanent owner ruling (see
+// packages/ui/.storybook/preview.ts). `scrollable-region-focusable` is a
+// pending fix, EDITOR-58: the output preview's content pane scrolls and holds
+// nothing focusable. It comes out of the list once that is fixed.
+
 // Enough of a selection that the roster and the sticky bar have something to
-// draw. The same preamble `visual.spec.ts` gives its captures, and named here
-// for the same reason: an empty right-hand column is its own state rather than
-// the basis for the states below.
+// draw.
 const withSelection = async (configure: ConfigurePage) => {
   await configure.chooseStack(STACKS.nextjs)
   await configure.roster.root.waitFor()
@@ -63,8 +27,7 @@ const audit = async (configure: ConfigurePage) => {
     .disableRules(["color-contrast", "scrollable-region-focusable"])
     .analyze()
 
-  // The ids alone. A violation's full node list runs to hundreds of lines and
-  // buries the one thing a reader needs, which is which rule broke and where.
+  // Rule and target only; the full node list buries which rule broke.
   return violations.map((violation) => ({
     id: violation.id,
     nodes: violation.nodes.map((node) => node.target.join(" ")),
@@ -96,28 +59,21 @@ test.describe("the configure screen", () => {
   })
 
   test("with the stack grid folded away", async ({ configure }) => {
-    await configure.stackToggle.click()
+    await configure.stepTitle("then your stack").click()
     await expect(configure.stacks).toBeHidden()
 
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // Pinning is what CHANGES the bar — it takes the top of the window and goes
-  // dark — so the audit has to wait for the pin rather than for the scroll.
-  // Auditing a bar that never stuck audits the state above it, which is the
-  // state "at rest" already covers.
+  // Waits for the pin rather than the scroll: an unstuck bar is "at rest".
   test("with the filter bar pinned", async ({ configure }) => {
     await withSelection(configure)
-    await configure.scrollTo(1200)
+    await configure.scrollPastThePin()
     await expect.poll(() => configure.isBarStuck()).toBe(true)
 
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // The provider control adds a fourth radiogroup to a screen that already
-  // draws three, and choosing Codex turns rows in the roster and cells in the
-  // grid inert — `aria-disabled` with a reason, which is a shape axe has
-  // opinions about and a shape no state above this one puts on screen.
   test("with Codex chosen as the provider", async ({ configure }) => {
     await withSelection(configure)
     await configure.provider.choose("codex")
@@ -126,30 +82,23 @@ test.describe("the configure screen", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // And the one state that introduces an ALERT inside the roster panel, which
-  // is a live region announced over whatever the visitor was doing.
-  test("with a placement Codex does not offer left to resolve", async ({
-    configure,
-  }) => {
+  test("with a Codex error mark's reason open", async ({ configure }) => {
     await withSelection(configure)
-    await configure
-      .skillIn(
-        DOMAINS.web,
-        SINGLE_AGENT_SKILL.category,
-        SINGLE_AGENT_SKILL.name
-      )
-      .flipScope()
-    await configure.roster.setScope(SINGLE_AGENT_SKILL.agentId, "project")
+    const skill = configure.skillIn(
+      DOMAINS.web,
+      EXCLUSIVE_CATEGORY.name,
+      EXCLUSIVE_CATEGORY.first
+    )
+    await skill.flipScope()
     await configure.provider.choose("codex")
-    await expect(configure.roster.placementNotice).toBeVisible()
+    await skill.errorMark.focus()
+    await expect(skill.errorTip).toBeVisible()
 
     expect(await audit(configure)).toStrictEqual([])
   })
 })
 
 test.describe("the roster panel", () => {
-  // The bands are the whole of this state: they change from a domain's name to
-  // a destination path, and they are the panel's only interactive headers.
   test("grouped by scope rather than domain", async ({ configure }) => {
     await withSelection(configure)
     await configure.roster.groupBy("scope")
@@ -159,9 +108,6 @@ test.describe("the roster panel", () => {
   })
 })
 
-// A dialog is where accessibility goes wrong most often and most invisibly —
-// focus that never enters, focus that escapes behind it, a surface with no
-// accessible name, content underneath left reachable to a screen reader.
 test.describe("the dialogs", () => {
   test("install", async ({ configure, page }) => {
     stubCreateConfig(page)
@@ -180,11 +126,7 @@ test.describe("the dialogs", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // The capture in `visual.spec.ts` has an audit here, which is this file's own
-  // rule — and fullscreen is not the same page with a bigger box. It swaps the
-  // maximise control's accessible name for its opposite, and the splitter it
-  // draws is a `separator` carrying a value, which is a shape axe has opinions
-  // about that no other dialog in this app presents it with.
+  // Fullscreen renames the maximise control and draws a valued `separator`.
   test("output preview in fullscreen", async ({ configure }) => {
     await withSelection(configure)
     await configure.roster.previewButton.click()
@@ -210,10 +152,8 @@ test.describe("the dialogs", () => {
   })
 })
 
-// The composer, and the one surface here neither suite reached. Two states
-// rather than one, because they publish through different channels: the field
-// and its button are ordinary controls, and the proposal announces itself
-// through a live region and offers two verbs that act on the selection.
+// Two states: the draft is ordinary controls, and the proposal announces
+// itself through a live region.
 test.describe("the composer", () => {
   test("with a sentence drafted", async ({ configure }) => {
     await configure.composer.type("a react app with tailwind and vitest")
@@ -222,9 +162,8 @@ test.describe("the composer", () => {
     expect(await audit(configure)).toStrictEqual([])
   })
 
-  // Signed in, and building its own `ConfigurePage` for the ordering reason
-  // `accounts.spec.ts` states: the `configure` fixture navigates during setup,
-  // so the session request has already gone out by the time a spec routes it.
+  // Builds its own `ConfigurePage`: the `configure` fixture navigates during
+  // setup, before a spec could route the session request.
   test("with a proposal to apply or discard", async ({ page }) => {
     stubSignedIn(page)
     stubCompose(page, ["web-framework-react"])

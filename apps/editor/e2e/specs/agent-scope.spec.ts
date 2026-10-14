@@ -1,5 +1,7 @@
+import { SEED_VERSION } from "@workspace/matrix/seed"
+
 import { expect, test } from "../fixtures"
-import { AGENT_OPTIONS, DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
+import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 import { captureCreateConfig, stubCreateConfig } from "../support/sharing"
 
 const { web } = DOMAINS
@@ -9,90 +11,63 @@ const REACT_ID = "web-framework-react"
 const DEVELOPER = "web-developer"
 const REVIEWER = "reviewer"
 
-// The CLI already carries scope on every `AgentScopeConfig`; the web had no
-// surface for it, so `--from` wrote `project` unconditionally. The field is
-// additive-optional, but the CLI's vendored zod object strips what it does not
-// know — so the version is what says the field is really there.
-const SEED_VERSION = 5
-
-// Scope is a decision about the agent, exactly as model and effort are, and it
-// sits with them on the agent's own row.
+// Scope is set on the agent's 03 card, beside its model and effort.
 test.describe("agent scope", () => {
-  test("the scope control rests on global", async ({ configure }) => {
-    await expect(configure.roster.scopeControl(DEVELOPER)).toHaveAccessibleName(
-      `Scope for ${DEVELOPER}: ${AGENT_OPTIONS.restingScope}`
-    )
-  })
+  test("each scope is picked directly", async ({ configure }) => {
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
 
-  // PICKED RATHER THAN CYCLED. The word stepped to the next value until the
-  // 2026-09-06 refresh; it opens the options panel now, and the value you want
-  // is pressed directly in it. Both directions, because a panel that can only
-  // move a setting one way is a cycle wearing a menu.
-  test("each scope is picked directly from the panel", async ({
-    configure,
-  }) => {
-    const scope = configure.roster.scopeControl(DEVELOPER)
+    await cards.setScope(DEVELOPER, "project")
+    await expect(cards.scopeOption(DEVELOPER, "project")).toBeChecked()
 
-    await configure.roster.setScope(DEVELOPER, "project")
-    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: project`)
-
-    await configure.roster.setScope(DEVELOPER, "global")
-    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: global`)
-  })
-
-  // It sits on the agent's row, so the one thing it must never do is pin it —
-  // the same guard the model word and the effort word carry.
-  test("choosing a scope does not switch the agent on", async ({
-    configure,
-  }) => {
-    const developer = configure.roster.agentButton("web", "developer")
-
-    await expect(developer).toHaveAttribute("aria-pressed", "false")
-    await configure.roster.setScope(DEVELOPER, "project")
-
-    await expect(developer).toHaveAttribute("aria-pressed", "false")
-    await expect(configure.roster.installButton).toContainText("0 agents")
+    await cards.setScope(DEVELOPER, "global")
+    await expect(cards.scopeOption(DEVELOPER, "global")).toBeChecked()
   })
 
   test("the choice belongs to one agent, not the domain", async ({
     configure,
   }) => {
-    await configure.roster.setScope(DEVELOPER, "project")
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
 
-    await expect(configure.roster.scopeControl(REVIEWER)).toHaveAccessibleName(
-      `Scope for ${REVIEWER}: global`
-    )
+    await cards.setScope(DEVELOPER, "project")
+
+    await expect(cards.scopeOption(DEVELOPER, "project")).toBeChecked()
+    await expect(cards.scopeOption(REVIEWER, "global")).toBeChecked()
   })
 
-  // As expensive to make twice as a model or an effort, and stored the same
-  // way — so it has to rebuild from storage rather than re-derive.
   test("a scope choice survives a reload", async ({ configure, page }) => {
-    await configure.roster.setScope(DEVELOPER, "project")
-    await expect(configure.roster.scopeControl(DEVELOPER)).toHaveAccessibleName(
-      `Scope for ${DEVELOPER}: project`
-    )
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
+    await cards.setScope(DEVELOPER, "project")
+    await expect(cards.scopeOption(DEVELOPER, "project")).toBeChecked()
 
     await page.reload()
     await configure.stacks.waitFor()
 
-    await expect(configure.roster.scopeControl(DEVELOPER)).toHaveAccessibleName(
-      `Scope for ${DEVELOPER}: project`
-    )
+    await expect(cards.scopeOption(DEVELOPER, "project")).toBeChecked()
   })
 
-  test("a pinned-off agent keeps its scope control", async ({ configure }) => {
+  test("a pinned-off agent keeps a working scope control", async ({
+    configure,
+  }) => {
+    const cards = configure.subAgents
+    await expect(cards.card("Web", "Developer")).toBeVisible()
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    const developer = configure.roster.agentButton("web", "developer")
 
-    await developer.click()
-    await expect(developer).toHaveAttribute("aria-pressed", "false")
+    await cards.toggle("Web", "Developer")
+    await expect(cards.card("Web", "Developer")).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    )
 
-    await expect(configure.roster.scopeControl(DEVELOPER)).toBeVisible()
+    await cards.setScope(DEVELOPER, "project")
+    await expect(cards.scopeOption(DEVELOPER, "project")).toBeChecked()
   })
 })
 
-// What actually leaves the browser. Scope travels on the agent's entry, and
-// only when it is the user's choice rather than the resting default.
+// Scope travels on the agent's entry, and only when it is not the resting
+// global.
 test.describe("sharing an agent's scope", () => {
   test.use({ permissions: ["clipboard-read", "clipboard-write"] })
 
@@ -101,16 +76,16 @@ test.describe("sharing an agent's scope", () => {
     page,
   }) => {
     const posted = captureCreateConfig(page)
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await configure.roster.setScope(DEVELOPER, "project")
+    await cards.setScope(DEVELOPER, "project")
 
     await configure.roster.shareLink()
 
     const [body] = posted
-    // The skill's own `scope` is a different field with the same name — where
-    // the plugin is installed, not where the agent is written — and scope on
-    // the agent must leave it exactly as it was.
+    // The skill's own `scope` is where the plugin installs, a different field.
     expect(body).toStrictEqual({
       v: SEED_VERSION,
       matrixVersion: expect.any(String),
@@ -126,18 +101,17 @@ test.describe("sharing an agent's scope", () => {
     })
   })
 
-  // Absent means global, matching the shared selection default, so the resting
-  // value is the one thing the payload never says.
   test("an agent left at global travels no scope key", async ({
     configure,
     page,
   }) => {
     const posted = captureCreateConfig(page)
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await configure.roster.setScope(DEVELOPER, "project")
-    // An entry of its own, earned by the model — and still no scope on it.
-    await configure.roster.setModel(REVIEWER, "sonnet")
+    await cards.setScope(DEVELOPER, "project")
+    await cards.setModel(REVIEWER, "sonnet")
 
     await configure.roster.shareLink()
 
@@ -148,28 +122,20 @@ test.describe("sharing an agent's scope", () => {
     })
   })
 
-  // The same drop-on-resting rule model and effort follow: picking the default
-  // again removes the choice rather than recording it.
-  //
-  // THE SCOPE HAS TO LEAVE GLOBAL FIRST, and the word itself cannot take it
-  // there: since the 2026-09-06 refresh a press on it opens the options panel,
-  // and a second press closes it again. Two presses left the scope where it
-  // started, so an empty map was the answer whatever the store did with a
-  // choice returned to its default. The value is picked in the panel both
-  // ways, and the departure is asserted before the return.
   test("returning an agent to global drops the key again", async ({
     configure,
     page,
   }) => {
     const posted = captureCreateConfig(page)
-    const scope = configure.roster.scopeControl(DEVELOPER)
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await configure.roster.setScope(DEVELOPER, "project")
-    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: project`)
+    await cards.setScope(DEVELOPER, "project")
+    await expect(cards.scopeOption(DEVELOPER, "project")).toBeChecked()
 
-    await configure.roster.setScope(DEVELOPER, "global")
-    await expect(scope).toHaveAccessibleName(`Scope for ${DEVELOPER}: global`)
+    await cards.setScope(DEVELOPER, "global")
+    await expect(cards.scopeOption(DEVELOPER, "global")).toBeChecked()
 
     await configure.roster.shareLink()
 
@@ -178,17 +144,16 @@ test.describe("sharing an agent's scope", () => {
   })
 })
 
-// The pane's Project heading used to be unconditional, because sub-agent
-// front-matter was always written into the project. Scope is what makes it a
-// real split, exactly as the skills pane already splits.
 test.describe("install dialog agent scope", () => {
   test.beforeEach(({ page }) => {
     stubCreateConfig(page)
   })
 
   test("groups the agents pane by scope", async ({ configure }) => {
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await configure.roster.setScope(DEVELOPER, "project")
+    await cards.setScope(DEVELOPER, "project")
 
     await configure.roster.installButton.click()
 
@@ -200,6 +165,8 @@ test.describe("install dialog agent scope", () => {
   test("the Project group appears only once an agent is project", async ({
     configure,
   }) => {
+    const cards = configure.subAgents
+    await expect(cards.scopeGroup(DEVELOPER)).toBeVisible()
     await configure.skillIn(web, CATEGORY, REACT).toggle()
 
     await configure.roster.installButton.click()
@@ -209,7 +176,7 @@ test.describe("install dialog agent scope", () => {
     )
     await configure.installDialog.close()
 
-    await configure.roster.setScope(DEVELOPER, "project")
+    await cards.setScope(DEVELOPER, "project")
     await configure.roster.installButton.click()
 
     await expect(configure.installDialog.agentsPane).toContainText("Project")

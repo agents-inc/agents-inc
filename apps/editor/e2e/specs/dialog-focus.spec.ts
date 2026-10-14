@@ -14,25 +14,16 @@ import { stubSkillIndex } from "../support/skill-index"
 import type { ConfigurePage } from "../pages/configure-page"
 
 // A dialog hands focus back to the control that opened it, however it closes.
-// Focus is a keyboard user's whole position on the page: dropped to `<body>`,
-// the next Tab starts again from the top of the document.
-//
-// Both dialogs here put the caret in a field as they open, and that is exactly
-// what lost the way back — a field focused as it MOUNTS is focused before the
-// dialog has recorded what had focus, so what it recorded was the field, and
-// the field is gone by the time the dialog closes. So each case also asserts
-// where focus lands on opening: the fix may not cost the caret.
-//
-// Every dialog is opened from the keyboard, which is the path this is for.
+// A field focused as it MOUNTS is focused before the dialog records what had
+// focus, which loses the way back — so each case also asserts the caret's
+// landing on open. Every dialog is opened from the keyboard.
 
 const [FIRST] = SKILL_INDEX.skills
 const FIRST_NAME = FIRST!.name
 
-// Where a staged skill is filed, as the dropdown spells it. The same category
-// `add-skill.spec.ts` files under, for the same reason.
+// As the add-skill dropdown spells it.
 const CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.name.toLowerCase()}`
 
-// One way a dialog ends, named for the failure message.
 type Closing = {
   how: string
   close: (configure: ConfigurePage) => Promise<void>
@@ -89,8 +80,7 @@ test.describe("the marketplace dialog", () => {
       how: "Cancel",
       close: (configure) => configure.marketplaceDialog.cancel(),
     },
-    // An empty field is the public catalogue, so Load seats it and closes —
-    // the one way this dialog ends by doing what it is for.
+    // An empty field is the public catalogue, so Load seats it and closes.
     {
       how: "loading the public catalogue",
       close: (configure) => configure.marketplaceDialog.load(),
@@ -109,9 +99,7 @@ test.describe("the marketplace dialog", () => {
     })
   }
 
-  // The OTHER field the dialog can open on: with a token saved for the
-  // marketplace it names, the token field is drawn from the start and is the
-  // open question. A second field focused on mount, and the same way back.
+  // With a token saved, the token field is the one it opens on.
   test("hands focus back to the rail when it opened on the token", async ({
     configure,
     page,
@@ -133,10 +121,45 @@ test.describe("the marketplace dialog", () => {
   })
 })
 
-// The control. The install dialog focuses no field as it opens, and it has
-// always handed focus back — so the assertion above can pass, and a red one
-// there is about the dialog rather than about the channel. It mints the
-// install command's id as it opens, which is the stub.
+test.describe("the save dialog", () => {
+  const CLOSINGS: Closing[] = [
+    {
+      how: "Escape",
+      close: (configure) => configure.page.keyboard.press("Escape"),
+    },
+    {
+      how: "Cancel",
+      close: (configure) => configure.saveStackDialog.cancel(),
+    },
+    {
+      how: "saving",
+      close: async (configure) => {
+        await configure.page.keyboard.type("Weekday")
+        await configure.page.keyboard.press("Enter")
+      },
+    },
+  ]
+
+  for (const { how, close } of CLOSINGS) {
+    test(`hands focus back to Save after ${how}`, async ({ configure }) => {
+      const dialog = configure.saveStackDialog
+      await configure
+        .skillIn(DOMAINS.web, EXCLUSIVE_CATEGORY.name, EXCLUSIVE_CATEGORY.first)
+        .toggle()
+
+      await configure.roster.saveButton.press("Enter")
+      await expect(dialog.nameInput).toBeFocused()
+
+      await close(configure)
+
+      await expect(dialog.root).toBeHidden()
+      await expect(configure.roster.saveButton).toBeFocused()
+    })
+  }
+})
+
+// The control: the install dialog focuses no field on open and has always
+// handed focus back. Opening it mints the command's id, hence the stub.
 test("the install dialog hands focus back to Install", async ({
   configure,
   page,

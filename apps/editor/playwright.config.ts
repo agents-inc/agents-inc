@@ -21,8 +21,8 @@ const BASE_URL = `http://localhost:${PORT}`
 //
 // The viewport is fixed above the app's one media query — the 1500px threshold
 // in `src/lib/viewport.ts` — which is why every spec here is written against the
-// WIDE drawing: four lattice tracks, and a domain tab carrying its index and its
-// count. `viewport-threshold.spec.ts` overrides this to reach the other one, and
+// WIDE drawing: four lattice tracks, and a domain tab carrying its count.
+// `viewport-threshold.spec.ts` overrides this to reach the other one, and
 // it is the only file that should.
 const VIEWPORT = { width: 1600, height: 1000 }
 

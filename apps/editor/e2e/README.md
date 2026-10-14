@@ -215,7 +215,7 @@ as well as at the pinned one.
 file that overrides it.** Every project in `playwright.config.ts` runs at
 1600×1000, which is above the app's one media query — the 1500px threshold in
 `src/lib/viewport.ts`, where the skill lattice and the stack grid go from three
-tracks to four and each domain tab picks up its index and its count. So every
+tracks to four and each domain tab picks up its count. So every
 other spec in this directory is written against the WIDE drawing, and a spec
 that wants the other one says so with a `test.use({ viewport })` of its own.
 Keep that to the file whose subject is the threshold: a viewport override

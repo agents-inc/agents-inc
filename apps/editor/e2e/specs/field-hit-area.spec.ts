@@ -1,42 +1,22 @@
 import type { Locator, Page } from "@playwright/test"
 
 import { expect, test } from "../fixtures"
+import type { ConfigurePage } from "../pages/configure-page"
+import { STACKS } from "../support/catalog"
 import { stubPrivateMarketplaceCatalog } from "../support/marketplace"
 import { stubSkillIndex } from "../support/skill-index"
 
-/**
- * EVERY BORDERED FIELD IS THE WHOLE OF ITS BORDER.
- *
- * The shared `Input` is a bare field — no border, no fill, no padding — meant
- * to sit inside a box that draws the border. Every one of those boxes used to
- * keep the padding as well, so the ring between the border and the text was
- * dead: it looked like the field, it was inside the field's border, and a click
- * on it landed on the wrapper and moved the caret nowhere. The field was a
- * strip in the middle of its own box.
- *
- * So the acceptance is a CLICK rather than a class or a screenshot. A rule
- * about which element owns the padding is satisfied by any number of
- * arrangements that still leave a dead ring; only pressing the mouse in the
- * corner of the drawn box says whether the box is the field.
- *
- * The corners specifically, because they are the two paddings at once and the
- * furthest a pointer can be from the text while still being inside the border.
- */
+// Every bordered field is the whole of its border, asserted by pressing the
+// drawn box's corners: the furthest a pointer can be from the text inside it.
 
-// Far enough inside the 1px border to be unambiguously within the drawn box,
-// close enough to it that anything but a field filling the box misses.
+// Inside the 1px border, close enough that anything but a filling field misses.
 const INSET = 2
 
-// The fixture marketplace that answers 404, which is what makes the dialog
-// offer a token field at all. Mirrored rather than imported, as every other
-// product string in this suite is.
+// The fixture marketplace that answers 404, which makes the dialog offer a
+// token field.
 const PRIVATE_MARKETPLACE = "acme/private-skills"
 
-/**
- * Drops focus onto the body between presses. Without it a corner that does
- * nothing inherits the previous corner's pass, so a field with one live corner
- * and a field with four are the same green.
- */
+// Between presses, or a dead corner inherits the previous corner's pass.
 const dropFocus = (page: Page) =>
   page.evaluate(() => {
     const active = document.activeElement
@@ -57,14 +37,7 @@ const cornersOf = (box: Box): Press[] => [
   },
 ]
 
-/**
- * Presses each point and reports, BY NAME, which of them left `field` focused.
- *
- * A list rather than an assertion per press, so a failure names every point
- * that missed instead of stopping at the first — three dead corners and one
- * dead corner are different defects, and the first assertion to fail cannot
- * tell them apart.
- */
+// Which presses left `field` focused, by name, so a failure lists every miss.
 const pressesReaching = async (
   page: Page,
   field: Locator,
@@ -95,15 +68,19 @@ const cornersReaching = async (page: Page, box: Locator, field: Locator) =>
 
 const ALL_FOUR = ["top left", "top right", "bottom left", "bottom right"]
 
-/**
- * Where the caret ended up, as an offset into what the field holds.
- *
- * The second half of the claim, and the half a `<label>` wrapper satisfies by
- * accident: activating a label focuses the field but drops the caret at the end
- * of the value, wherever the pointer was. A field that really fills its box
- * puts the caret under the pointer — so pressing left of the first character
- * has to answer 0, and only a box the field itself owns can.
- */
+// Measured from the bar rather than fixed: the steps above it grow.
+const PAST_THE_PIN = 400
+
+const stick = async (configure: ConfigurePage) => {
+  const pin = await configure.filterBar.evaluate(
+    (bar) => window.scrollY + bar.getBoundingClientRect().top
+  )
+  await configure.scrollTo(pin + PAST_THE_PIN)
+  await expect.poll(() => configure.isBarStuck()).toBe(true)
+}
+
+// A `<label>` wrapper focuses the field but drops the caret at the end; a field
+// that fills its box puts it under the pointer, so left of the text answers 0.
 const caretAfterClickingLeftEdge = async (
   page: Page,
   box: Locator,
@@ -116,9 +93,6 @@ const caretAfterClickingLeftEdge = async (
   await dropFocus(page)
   await page.mouse.click(rect.x + INSET, rect.y + rect.height / 2)
   return field.evaluate((node) => {
-    // Narrowed rather than cast: `selectionStart` exists on two elements and on
-    // nothing else, so a locator that has drifted onto a third says which node
-    // it landed on instead of reading `undefined` and comparing it to 0.
     if (!(
       node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement
     ))
@@ -133,6 +107,27 @@ test.describe("the search field in the filter bar", () => {
   test("takes the caret from every corner of its border", async ({
     configure,
   }) => {
+    // A press outside the window lands on nothing.
+    await configure.searchField.scrollIntoViewIfNeeded()
+
+    expect(
+      await cornersReaching(
+        configure.page,
+        configure.searchField,
+        configure.searchInput
+      )
+    ).toStrictEqual(ALL_FOUR)
+  })
+
+  // The pair is an island: the box around it, beside and past it, is still the
+  // field's.
+  test("takes the caret from every corner with the pair drawn", async ({
+    configure,
+  }) => {
+    await configure.chooseStack(STACKS.nextjs)
+    await expect(configure.selectedFilter).toBeVisible()
+    await configure.searchField.scrollIntoViewIfNeeded()
+
     expect(
       await cornersReaching(
         configure.page,
@@ -155,14 +150,11 @@ test.describe("the search field in the filter bar", () => {
     ).toBe(0)
   })
 
-  // The stuck bar swaps the field's padding for a single gutter on the left and
-  // none on the right, and animates between the two. The box moves with it, so
-  // the claim above has to hold in both states or the padding only moved in one.
+  // The stuck bar swaps the field's padding, so the claim holds in both states.
   test("takes the caret from every corner while the bar is stuck", async ({
     configure,
   }) => {
-    await configure.scrollTo(1500)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     expect(
       await cornersReaching(
@@ -173,15 +165,12 @@ test.describe("the search field in the filter bar", () => {
     ).toStrictEqual(ALL_FOUR)
   })
 
-  // AND THE BOX IS THE BAND'S OWN, which four live corners cannot say: the
-  // field is absolute once stuck and reaches both bleed edges and the full
-  // height, so the dark run a visitor sees IS the field rather than a strip
-  // inside it. Equal rects are the only form of that claim.
+  // Four live corners cannot say the field is the whole dark band; equal rects
+  // can.
   test("is the whole of the band once the bar is stuck", async ({
     configure,
   }) => {
-    await configure.scrollTo(1500)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     const band = await boxOf(configure.filterBand, "the band")
     const field = await boxOf(configure.searchField, "the field")
@@ -192,18 +181,14 @@ test.describe("the search field in the filter bar", () => {
     expect(field.height).toBeCloseTo(band.height, 0)
   })
 
-  // The one island in it, and the pair is the claim — the same pair the
-  // composer's control row makes below. An absolutely positioned sibling paints
-  // over a flex item, so the field now covers the add block's box: level with
-  // the block, the run to its left has to reach the field, and the block itself
-  // has to take its own press back rather than handing it to the caret.
+  // The field covers the add block's box once stuck: the run beside the block
+  // reaches the field, and the block still takes its own press.
   test("takes the run beside the add block, and the block still opens", async ({
     configure,
     page,
   }) => {
     stubSkillIndex(page)
-    await configure.scrollTo(1500)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     const band = await boxOf(configure.filterBand, "the band")
     const block = await boxOf(configure.addSkillButton, "the add block")
@@ -223,14 +208,7 @@ test.describe("the search field in the filter bar", () => {
 })
 
 test.describe("the composer's field", () => {
-  // The band has no side border — it is full-bleed and notched into the grid —
-  // so the box the field must fill is the band's own, all four corners of it.
-  //
-  // This replaces a two-point press taken LEVEL WITH the field, whose comment
-  // said "the band's lower half is the control row, which is a second child and
-  // not the field". That was a description of the defect: the row is drawn OVER
-  // the field's foot now, so the ~69px beside the Send button takes the caret
-  // instead of swallowing the press.
+  // The band has no side border, so the box the field must fill is the band's.
   test("takes the caret from every corner of the band", async ({
     configure,
   }) => {
@@ -241,10 +219,7 @@ test.describe("the composer's field", () => {
     ).toStrictEqual(ALL_FOUR)
   })
 
-  // The claim a press cannot make on its own, and the one that keeps the focus
-  // ring right: the field's box IS the band's box. Four live corners are
-  // satisfied by a wrapper that forwards clicks; only equal boxes say the ring
-  // outlines the whole band rather than a strip across its top.
+  // Equal boxes keep the focus ring around the whole band.
   test("is the whole of the band it is drawn in", async ({ configure }) => {
     const { composer } = configure
     const band = await boxOf(composer.band, "the band")
@@ -256,16 +231,9 @@ test.describe("the composer's field", () => {
     expect(field.height).toBeCloseTo(band.height, 0)
   })
 
-  // The one island in it. The control row is `pointer-events-none`, so its empty
-  // run falls through to the field underneath — and the button has to take its
-  // own presses back, or the composer has no way to send at all.
-  //
-  // Two presses at the SAME HEIGHT, and the pair is the claim: level with the
-  // button, the empty run to its left reaches the field and the button itself
-  // still submits. Asserted by consequence rather than by which element took
-  // focus, because a submit deliberately focuses the field on its way past — a
-  // disabled control cannot hold focus, and the press that disables the button
-  // comes from the button.
+  // The control row is `pointer-events-none`: its empty run reaches the field,
+  // and the button still submits. Asserted by consequence, because a submit
+  // focuses the field on its way past.
   test("takes the row's empty run and still submits from the button", async ({
     configure,
   }) => {
@@ -322,11 +290,7 @@ test.describe("the dialog fields", () => {
     ).toStrictEqual(ALL_FOUR)
   })
 
-  // THE LAST BORDERED FIELD IN THE APP, and the only one that is conditional:
-  // it appears when a repository answers 404, which is the one thing a token
-  // might fix. It shares `FIELD_INSET` with the field above it, so a regression
-  // would redden both — but "would redden something else" is not coverage, and
-  // this is the population's fifth member rather than a variant of its fourth.
+  // Conditional: drawn only when a repository answers 404.
   test("the access-token field takes the caret from every corner", async ({
     configure,
     page,
@@ -343,10 +307,7 @@ test.describe("the dialog fields", () => {
     ).toStrictEqual(ALL_FOUR)
   })
 
-  // The one field already wrapped in a `<label>`, which is why the corners
-  // above were reaching it before any of this. The label is not the fix: it
-  // focuses the field and leaves the caret at the end of what is typed, so the
-  // padded ring still is not the field — it is a button that opens it.
+  // Wrapped in a `<label>`, which reaches the corners but not the caret.
   test("the marketplace field puts the caret where the pointer went", async ({
     configure,
     page,

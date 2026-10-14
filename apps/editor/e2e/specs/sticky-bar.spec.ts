@@ -4,58 +4,77 @@ import type { ConfigurePage } from "../pages/configure-page"
 import { expect, test } from "../fixtures"
 import { DOMAINS } from "../support/catalog"
 
-// How far either side of the bar's own document offset the pin is crossed.
-// Small, because the transition is what is under test and the two positions
-// have to straddle it rather than sit at two round numbers.
+// Either side of the bar's document offset: the transition is what is under
+// test, so the two positions straddle it.
 const PIN_STEP = 4
 
 const BELOW_THE_BAR = 200
-const PAST_THE_BAR = 1500
+// Measured from the bar rather than fixed: the steps above it grow.
+const PAST_THE_PIN = 400
 
-// How far the keyboard walks back up the page. The walk starts at the foot of
-// the catalogue, and its first screen of stops is already in the window, so it
-// has to climb past all of them before anything scrolls in from above — sixty
-// from there never left the first screen and covered nothing.
+// The walk starts at the foot of the catalogue and has to climb past its first
+// screen of stops before anything scrolls in from above.
 const BACKWARD_STOPS = 150
+
+const FRAMES_PAST_THE_PIN = 30
 
 // `#242320` — the page's one dark surface, shared with the add-skill block.
 const DARK_BAND = "rgb(36, 35, 32)"
 
-// `#55524a` — the hairline the add-skill block trades its fill for once the
-// bar pins, drawn as an inset shadow so the block's box never changes size.
-//
-// Matched as a MEMBER of the computed list rather than as the whole of it:
-// the package's focus-ring plumbing contributes four empty shadows ahead of
-// whatever a utility declares, and pinning those four would be asserting the
-// ring's internals from a spec about the add-skill block.
+// `#55524a`, as a member of the computed list: the focus-ring plumbing adds
+// empty shadows ahead of it.
 const BAND_EDGE_INSET = /rgb\(85, 82, 74\) 0px 0px 0px 1px inset/
 
-// Chromium's spelling of no background at all.
 const NO_FILL = "rgba(0, 0, 0, 0)"
 
-// `#242320` and `#6a675c` — what the visitor typed, and the prompt they typed
-// over. Two different things, and the resting field must not render them the
-// same: a query set in the same grey as its own placeholder reads as
-// unconfirmed.
+// `#242320` and `#6a675c`: a typed query must not read as its own placeholder.
 const TYPED_TEXT = "rgb(36, 35, 32)"
 const PLACEHOLDER_TEXT = "rgb(106, 103, 92)"
 
-// The placeholder's colour cannot be reached through `toHaveCSS` — it lives on
-// a pseudo-element — so it is read the same way `opacityOf` reads the roster's
-// reveal: one direct computed-style lookup, no parsing.
+// Owner 2026-10-11, over v6's 26px.
+const STUCK_TAB_REM = 3
+// v6 `.barwrap.stuck .barband`: 18px above and below a 34px row.
+const STUCK_BAND_DESIGN_PX = 70
+// `.barwrap.stuck .bigadd{padding:8px 15px}` against the resting `0 18px`.
+// Against the label's line rather than a total: `line-height: normal` rounds
+// per font size, so the design's own 34 is a platform's figure.
+const STUCK_BLOCK_PADDING_DESIGN_PX = 16
+const STUCK_BLOCK_NARROWING = 6
+
+// Any shadow drawn in an opaque colour; the ring plumbing's empty shadows are
+// `rgba(0, 0, 0, 0)`.
+const OPAQUE_COLOUR = /rgb\(/
+
+const shadowOf = (locator: Locator) =>
+  locator.evaluate((node) => getComputedStyle(node).boxShadow)
+
 const placeholderColorOf = (locator: Locator) =>
   locator.evaluate((node) => getComputedStyle(node, "::placeholder").color)
 
-// The add-skill block's box, and how much band runs on past its right edge.
-//
-// Both read live and compared against their own RESTING values rather than
-// against a coordinate: the block ends on the content edge in both states, so
-// the air beside it is the page's 60px gutter without this spec ever naming the
-// number or converting a rem by hand.
+const boxOf = async (locator: Locator, what: string) => {
+  const box = await locator.boundingBox()
+  if (!box) throw new Error(`${what} must be drawn`)
+  return box
+}
+
+// Whole pixels: the window scrolls in them, so a fractional target lands up to
+// half a pixel off the scroll requested.
+const barDocumentTop = (configure: ConfigurePage) =>
+  configure.page.evaluate(() => {
+    const bar = document.querySelector('[data-slot="filter-bar"]')
+    if (!bar) throw new Error("the bar must be drawn")
+    return Math.round(window.scrollY + bar.getBoundingClientRect().top)
+  })
+
+const stick = async (configure: ConfigurePage) => {
+  await configure.scrollTo((await barDocumentTop(configure)) + PAST_THE_PIN)
+  await expect.poll(() => configure.isBarStuck()).toBe(true)
+}
+
+// The add-skill block's width, and how much band runs on past its right edge.
 const blockGeometry = async (configure: ConfigurePage) => {
-  const block = await configure.addSkillButton.boundingBox()
-  const band = await configure.filterBand.boundingBox()
-  if (!block || !band) throw new Error("the block and the band must be drawn")
+  const block = await boxOf(configure.addSkillButton, "the block")
+  const band = await boxOf(configure.filterBand, "the band")
 
   return {
     width: block.width,
@@ -63,21 +82,23 @@ const blockGeometry = async (configure: ConfigurePage) => {
   }
 }
 
-// Where the page's own content sits in the window, and the bar's document
-// offset — the two figures the pin's continuity is measured with.
-//
-// A domain anchor rather than a cell: it is zero-height and marks a position
-// rather than occupying one, so nothing about the grid's own layout can move it.
-//
-// READ IN A SEPARATE ROUND TRIP FROM THE SCROLL, which is the whole of why this
-// is its own call: pinning is raised from a scroll listener, so a rect measured
-// in the same `evaluate` that scrolled is the layout the scroll displaced and
-// the growth under test has not happened yet. It reported continuity either way.
-//
-// Paired with the scroll position it was read at, because the position is not
-// the one that was asked for: holding the page still across the band's growth
-// MEANS moving the scroll by that growth, so the claim is the relationship
-// between the two rather than either figure.
+// How much taller the block is than its label's line.
+const blockPastItsLine = (configure: ConfigurePage) =>
+  configure.addSkillButton.evaluate((node) => {
+    const label = [...node.childNodes].find(
+      (child) => child.nodeType === Node.TEXT_NODE
+    )
+    if (!label) throw new Error("the block must carry its label as text")
+    const range = document.createRange()
+    range.selectNodeContents(label)
+    return (
+      node.getBoundingClientRect().height - range.getBoundingClientRect().height
+    )
+  })
+
+// Read in a separate round trip from the scroll: pinning is raised from a
+// scroll listener, so a rect read in the same `evaluate` that scrolled is the
+// layout before the bar changed height.
 const columnAndScroll = (configure: ConfigurePage) =>
   configure.page.evaluate(() => {
     const anchor = document.querySelector("[data-domain-anchor]")
@@ -85,16 +106,9 @@ const columnAndScroll = (configure: ConfigurePage) =>
     return { top: anchor.getBoundingClientRect().top, scrollY: window.scrollY }
   })
 
-// SCROLLS ACROSS THE TRANSITION AND ASSERTS THE COLUMN MOVED BY WHAT WAS ASKED
-// FOR, and by nothing else — scrolling down `n` puts the content `n` higher in
-// the window, and a band growing under the reader is the one thing on this
-// screen that can break that.
-//
-// Against the scroll REQUESTED — where the page was sent, less where it already
-// was — rather than against where it ended up. Holding the page still across
-// the band's growth MEANS moving the scroll by that growth, so the two figures
-// differ by exactly the 31px this is about, and the second would call the
-// correction a success for having happened at all.
+// The column must move by exactly the scroll REQUESTED. Holding it still while
+// the bar changes height means moving the scroll by that change, so the scroll
+// it ended at is not the figure to compare against.
 const scrollAcrossThePin = async (
   configure: ConfigurePage,
   target: number,
@@ -110,16 +124,61 @@ const scrollAcrossThePin = async (
   expect(before.top - after.top).toBeCloseTo(asked, 0)
 }
 
-const barDocumentTop = (configure: ConfigurePage) =>
+const stuckInEachFrame = (configure: ConfigurePage, frames: number) =>
+  configure.page.evaluate(async (count) => {
+    const samples: boolean[] = []
+    for (let frame = 0; frame < count; frame++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      samples.push(document.documentElement.hasAttribute("data-bar-stuck"))
+    }
+    return samples
+  }, frames)
+
+const rootFontSize = (configure: ConfigurePage) =>
+  configure.page.evaluate(() =>
+    Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+  )
+
+const designPx = async (configure: ConfigurePage, px: number) =>
+  px / ((await rootFontSize(configure)) / 16)
+
+const gutterWidth = (configure: ConfigurePage) =>
   configure.page.evaluate(() => {
-    const bar = document.querySelector('[data-slot="filter-bar"]')
-    if (!bar) throw new Error("the bar must be drawn")
-    return window.scrollY + bar.getBoundingClientRect().top
+    const probe = document.createElement("div")
+    probe.style.width = "var(--spacing-gutter)"
+    document.body.append(probe)
+    const width = probe.getBoundingClientRect().width
+    probe.remove()
+    return width
   })
 
-// The bar changes shape at the moment CSS pins it. That state is published as
-// a root attribute rather than as React state, so these read the attribute —
-// which is also what the styling reads.
+const tabHeights = (configure: ConfigurePage) =>
+  configure.domainTabs
+    .getByRole("button")
+    .evaluateAll((tabs) =>
+      tabs.map((tab) => tab.getBoundingClientRect().height)
+    )
+
+const tabRun = (configure: ConfigurePage) =>
+  configure.domainTabs.getByRole("button").evaluateAll((tabs) => {
+    const first = tabs.at(0)
+    const last = tabs.at(-1)
+    if (!first || !last) throw new Error("the strip must draw its tabs")
+
+    const textOf = (tab: Element) => {
+      const range = document.createRange()
+      range.selectNodeContents(tab)
+      return range.getBoundingClientRect()
+    }
+
+    return {
+      firstCellLeft: first.getBoundingClientRect().left,
+      lastCellRight: last.getBoundingClientRect().right,
+      firstTextLeft: textOf(first).left,
+      lastTextRight: textOf(last).right,
+    }
+  })
+
 test.describe("sticky filter bar", () => {
   test("is not stuck at rest", async ({ configure }) => {
     await expect.poll(() => configure.isBarStuck()).toBe(false)
@@ -131,27 +190,47 @@ test.describe("sticky filter bar", () => {
   })
 
   test("sticks once it reaches the top", async ({ configure }) => {
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
   })
 
   test("releases on the way back up", async ({ configure }) => {
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await configure.scrollTo(0)
     await expect.poll(() => configure.isBarStuck()).toBe(false)
   })
 
-  // PINNING MUST NOT MOVE THE PAGE, and this is the one moment it can: the band
-  // grows to 80px as it goes dark, and a sticky element's own growth pushes
-  // everything under it down by the difference. Uncompensated the column leapt
-  // 31px at the exact pixel the bar went dark, which reads as the catalogue
-  // jumping rather than the bar arriving.
-  //
-  // Measured either side of the bar's own document offset rather than at two
-  // round numbers: the transition is what is under test, so the two positions
-  // have to straddle it.
+  // `use-pinned.ts` reads the bar's previous sibling: anything else there moves
+  // the pin.
+  test("pins from a zero-height sentinel right before it", async ({
+    configure,
+  }) => {
+    const sentinel = configure.filterBar.locator(
+      "xpath=preceding-sibling::*[1]"
+    )
+
+    await expect(sentinel).toHaveAttribute("data-slot", "pin-sentinel")
+    expect(
+      await sentinel.evaluate((node) => node.getBoundingClientRect().height)
+    ).toBe(0)
+  })
+
+  // A pin decided by measuring the sticky element flipped every frame, since
+  // pinning changes that element's own height.
+  test("stays stuck in every frame just past the pin", async ({
+    configure,
+  }) => {
+    const pin = await barDocumentTop(configure)
+    await configure.scrollTo(pin + PIN_STEP)
+    await expect.poll(() => configure.isBarStuck()).toBe(true)
+
+    expect(
+      await stuckInEachFrame(configure, FRAMES_PAST_THE_PIN)
+    ).toStrictEqual(Array<boolean>(FRAMES_PAST_THE_PIN).fill(true))
+  })
+
+  // The bar changes height as it pins, and a sticky element's own growth
+  // pushes everything under it by the difference.
   test("does not move the column as it sticks", async ({ configure }) => {
     const pin = await barDocumentTop(configure)
 
@@ -161,9 +240,7 @@ test.describe("sticky filter bar", () => {
     await scrollAcrossThePin(configure, pin + PIN_STEP, true)
   })
 
-  // AND THE SAME ON THE WAY BACK UP, which is not the test above run backwards:
-  // the band shrinks on release, so the correction has to be negative, and a
-  // fix that only handled growth would leave the release jumping the other way.
+  // Not the test above run backwards: the correction has the opposite sign.
   test("does not move the column as it releases", async ({ configure }) => {
     const pin = await barDocumentTop(configure)
 
@@ -174,84 +251,57 @@ test.describe("sticky filter bar", () => {
   })
 
   test("stays usable while stuck", async ({ configure }) => {
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await expect(configure.searchInput).toBeVisible()
     await expect(configure.addSkillButton).toBeVisible()
   })
 
-  // Only the colour bleeds: the bar becomes a full-bleed dark band while the
-  // container keeps its gutters, so the dark/white edge is what separates the
-  // bar from the domain header pinning beneath it.
+  test("pins at 70 design px tall", async ({ configure }) => {
+    await stick(configure)
+
+    await expect
+      .poll(async () =>
+        designPx(
+          configure,
+          (await boxOf(configure.filterBand, "the band")).height
+        )
+      )
+      .toBeCloseTo(STUCK_BAND_DESIGN_PX, 0)
+  })
+
   test("becomes a dark band once stuck", async ({ configure }) => {
     await expect(configure.filterBand).not.toHaveCSS(
       "background-color",
       DARK_BAND
     )
 
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await expect(configure.filterBand).toHaveCSS("background-color", DARK_BAND)
   })
 
-  // ONLY THE BAND GOES DARK. The domain strip below it stays on the column
-  // colour — the dark/light edge is what separates the two rows, and there is
-  // no divider under the search field to do it instead. Asserted against the
-  // band in the same test, because "is not dark" is satisfied by an element
-  // that is not drawn at all.
-  test("leaves the domain strip on the column colour", async ({
-    configure,
-  }) => {
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
-
-    await expect(configure.filterBand).toHaveCSS("background-color", DARK_BAND)
-    await expect(configure.domainTabs).not.toHaveCSS(
-      "background-color",
-      DARK_BAND
-    )
-  })
-
-  // The claim this replaces was that the selection filters, riding at the far
-  // end of the strip, kept their resting treatment while the band above them
-  // went dark. There are no filters on the strip any more — `selected` is on
-  // the skills hinge, which never sticks at all — so the claim has nothing left
-  // to be true of. It is deleted rather than rewritten: the treatment it was
-  // guarding cannot regress from a row it is not on.
-
-  // Sticking is a scroll position, not an instruction. The bar used to put the
-  // caret in its own search field the moment it pinned — on the theory that
-  // reaching the top is the moment searching becomes obvious — and that grab
-  // is gone (owner ruling 2026-08-09). It moves focus never.
+  // Sticking is a scroll position, not an instruction (owner ruling
+  // 2026-08-09): the bar never takes the caret.
   test("takes no focus as it sticks", async ({ configure }) => {
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await expect(configure.searchInput).not.toBeFocused()
   })
 
-  // …and not on the way past either: scrolling on while pinned leaves the
-  // caret wherever the user put it.
   test("leaves the caret alone while the page scrolls on", async ({
     configure,
   }) => {
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await configure.addSkillButton.focus()
-    await configure.scrollTo(PAST_THE_BAR + 200)
+    await configure.scrollTo((await configure.scrollY()) + 200)
 
     await expect(configure.addSkillButton).toBeFocused()
   })
 
-  // The reverse direction, and the one the grab was never designed for: focus
-  // can cause the scroll. Tabbing to a control the viewport is not showing
-  // scrolls it into view, and that scroll can cross the pin — so a bar that
-  // stuck is a keyboard user on their way *down* the page, not somebody
-  // arriving at the top. Taking the caret here threw them back to it, and it
-  // happened on the Tab that revealed anything below the fold.
+  // Focus can cause the scroll: a Tab that reveals a control below the fold
+  // crosses the pin, and the caret has to stay where the Tab put it.
   test("a Tab that sticks the bar keeps its focus", async ({ configure }) => {
     await configure.addSkillButton.focus()
 
@@ -261,16 +311,8 @@ test.describe("sticky filter bar", () => {
     await expect(configure.focusedSkillCell).toHaveCount(1)
   })
 
-  // A control the keyboard is on has to be SEEN to be on, and the pinned bar
-  // sits over the head of the column: walking back up the page, a control
-  // scrolled in from above stops at the window's top edge — under the bar, with
-  // its focus ring hidden. The dock's walk down the page is the same defect at
-  // the other edge, and `composer.spec.ts` holds it.
-  //
-  // From the composer's field, the last stop in the column, so the walk starts
-  // at the foot of the catalogue and climbs it with the bar pinned the whole
-  // way — which the last line says, because a walk under a bar that never
-  // pinned is a walk past nothing that could cover it.
+  // Walking back up, a control scrolled in from above stops at the window's
+  // top edge, under the pinned bar. `composer.spec.ts` holds the other edge.
   test("never hides the control the keyboard is on, walking back up", async ({
     configure,
   }) => {
@@ -286,17 +328,10 @@ test.describe("sticky filter bar", () => {
     expect(await configure.isBarStuck()).toBe(true)
   })
 
-  // Design 84a on this control: the filled block becomes an outlined one the
-  // moment the bar pins, so it reads as a control ON the dark band rather than
-  // a second dark block sitting in it. The rule shipped with no test at all —
-  // the suite asserted only that the button was still VISIBLE while stuck,
-  // which is true of every possible treatment.
+  // Design 84a: the filled block becomes an outlined one on the dark band.
   test("add-skill trades its fill for a hairline once stuck", async ({
     configure,
   }) => {
-    // The resting state first, over both channels: it establishes that they
-    // carry a value at all, and it pins that the resting fill is the same ink
-    // as the band the block is about to sit on.
     await expect(configure.addSkillButton).toHaveCSS(
       "background-color",
       DARK_BAND
@@ -306,8 +341,7 @@ test.describe("sticky filter bar", () => {
       BAND_EDGE_INSET
     )
 
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await expect(configure.addSkillButton).toHaveCSS(
       "background-color",
@@ -319,45 +353,55 @@ test.describe("sticky filter bar", () => {
     )
   })
 
-  // THE BLOCK IS A CONTROL ON THE BAND, NOT THE BAND'S RIGHT-HAND END. It used
-  // to take the bar's right gutter as its own padding once pinned, which walked
-  // its box out to the bleed edge — so the hairline the test above pins was
-  // drawn around a strip with the label adrift inside it, which is a filled
-  // band's shape rather than a button's. The gutter is space BESIDE the block;
-  // the block hugs its label in both states.
-  test("keeps its width once the bar sticks", async ({ configure }) => {
+  test("narrows by 3 design px a side once stuck", async ({ configure }) => {
     const atRest = await blockGeometry(configure)
 
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await expect
-      .poll(async () => (await blockGeometry(configure)).width)
-      .toBeCloseTo(atRest.width, 1)
+      .poll(async () =>
+        designPx(
+          configure,
+          atRest.width - (await blockGeometry(configure)).width
+        )
+      )
+      .toBeCloseTo(STUCK_BLOCK_NARROWING, 0)
   })
 
-  // The other half, and the one that says where the gutter went. The resting
-  // clearance is asserted first because it is the channel: a run where the band
-  // and the block share a right edge in BOTH states would satisfy a stuck-only
-  // assertion for the wrong reason.
+  // v6 `.barwrap.stuck .barrow{align-items:center}`: the block stops
+  // stretching to the band.
+  test("hugs its label by 8 design px, centred in the band, once stuck", async ({
+    configure,
+  }) => {
+    await stick(configure)
+
+    await expect
+      .poll(async () => designPx(configure, await blockPastItsLine(configure)))
+      .toBeCloseTo(STUCK_BLOCK_PADDING_DESIGN_PX, 0)
+
+    const block = await boxOf(configure.addSkillButton, "the block")
+    const band = await boxOf(configure.filterBand, "the band")
+    expect(block.y - band.y).toBeCloseTo(
+      band.y + band.height - (block.y + block.height),
+      0
+    )
+  })
+
+  // The resting clearance is the channel: a band and block sharing a right
+  // edge in both states would pass a stuck-only assertion.
   test("keeps the band running on past it once stuck", async ({
     configure,
   }) => {
     const atRest = await blockGeometry(configure)
     expect(atRest.clearance).toBeGreaterThan(0)
 
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
     await expect
       .poll(async () => (await blockGeometry(configure)).clearance)
       .toBeCloseTo(atRest.clearance, 1)
   })
 
-  // A typed query is a decision the visitor made and the prompt is not, so the
-  // resting field has to draw them apart. Both halves asserted, because a
-  // field that renders BOTH in ink is as wrong as one that renders both grey —
-  // and the value-only assertion cannot tell the two apart.
   test("a typed query is set in ink, not in the placeholder's grey", async ({
     configure,
   }) => {
@@ -374,18 +418,101 @@ test.describe("sticky filter bar", () => {
   })
 })
 
-// THE DOMAIN TITLE IS A TAB NOW, and the in-column header that used to pin
-// under this bar is gone with it — a title that is always on screen cannot also
-// be a thing that arrives. What replaced it is asserted in `domain-tabs.spec.ts`;
-// what is asserted here is the absence, because a header left behind would sit
-// under the strip repeating a name the strip already carries.
+test.describe("the domain strip once the bar is stuck", () => {
+  test("fills with its own grey, not the band's dark", async ({
+    configure,
+  }) => {
+    await stick(configure)
+
+    await expect(configure.domainTabs).toHaveCSS(
+      "background-color",
+      await configure.tokenColor("--color-strip-stuck")
+    )
+    await expect(configure.domainTabs).not.toHaveCSS(
+      "background-color",
+      DARK_BAND
+    )
+  })
+
+  // The fill and the hairline are the strip's own, so its box is their extent.
+  test("runs its fill and hairline the bar's full width", async ({
+    configure,
+  }) => {
+    await stick(configure)
+
+    const bar = await boxOf(configure.filterBar, "the bar")
+    const strip = await boxOf(configure.domainTabs, "the strip")
+
+    expect(strip.x).toBeCloseTo(bar.x, 0)
+    expect(strip.width).toBeCloseTo(bar.width, 0)
+  })
+
+  // Owner 2026-10-11: only the fill and hairline bleed.
+  test("keeps its first and last tab where they rest, inside the page padding", async ({
+    configure,
+  }) => {
+    const atRest = await tabRun(configure)
+
+    await stick(configure)
+
+    await expect
+      .poll(() => tabRun(configure))
+      .toStrictEqual({
+        firstCellLeft: expect.closeTo(atRest.firstCellLeft, 0),
+        lastCellRight: expect.closeTo(atRest.lastCellRight, 0),
+        firstTextLeft: expect.closeTo(atRest.firstTextLeft, 0),
+        lastTextRight: expect.closeTo(atRest.lastTextRight, 0),
+      })
+
+    const bar = await boxOf(configure.filterBar, "the bar")
+    const gutter = await gutterWidth(configure)
+    const stuck = await tabRun(configure)
+    expect(stuck.firstTextLeft).toBeGreaterThan(bar.x + gutter)
+    expect(stuck.lastTextRight).toBeLessThan(bar.x + bar.width - gutter)
+  })
+
+  // A resting tab is the channel: the same string is its own rule. The last
+  // tab, because the current one may draw something else.
+  test("draws one hairline under the strip and none under its tabs", async ({
+    configure,
+  }) => {
+    const hairline = `${await configure.tokenColor("--color-hairline")} 0px -1px 0px 0px inset`
+    const tab = configure.domainTabs.getByRole("button").last()
+    await expect.poll(() => shadowOf(tab)).toContain(hairline)
+
+    await stick(configure)
+
+    await expect.poll(() => shadowOf(configure.domainTabs)).toContain(hairline)
+    await expect.poll(() => shadowOf(tab)).not.toMatch(OPAQUE_COLOUR)
+  })
+
+  test("butts the band, with no gap between them", async ({ configure }) => {
+    await stick(configure)
+
+    const band = await boxOf(configure.filterBand, "the band")
+    const strip = await boxOf(configure.domainTabs, "the strip")
+
+    expect(strip.y).toBeCloseTo(band.y + band.height, 0)
+  })
+
+  test("draws every tab 3rem tall", async ({ configure }) => {
+    const stuckTab = STUCK_TAB_REM * (await rootFontSize(configure))
+
+    await stick(configure)
+
+    const count = await configure.domainTabs.getByRole("button").count()
+    await expect
+      .poll(() => tabHeights(configure))
+      .toStrictEqual(Array<unknown>(count).fill(expect.closeTo(stuckTab, 1)))
+  })
+})
+
+// The strip is the domains' only title; a heading left in a section would
+// repeat the name under it.
 test.describe("the domain sections", () => {
   test("carry no heading of their own", async ({ configure }) => {
-    await configure.scrollTo(PAST_THE_BAR)
-    await expect.poll(() => configure.isBarStuck()).toBe(true)
+    await stick(configure)
 
-    // The channel: the section is really there, so the count below is a claim
-    // about its contents rather than about a locator that matched nothing.
     await expect(configure.domain(DOMAINS.web)).toBeVisible()
     await expect(
       configure.domain(DOMAINS.web).getByRole("heading", { name: DOMAINS.web })
