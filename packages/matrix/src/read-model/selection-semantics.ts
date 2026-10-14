@@ -49,7 +49,7 @@ export type SelectionCatalogFacts = {
 // once the selection has made it impossible, never merely because the host it
 // prefers has not been clicked. The `compatibleWith` whitelist stated the
 // second reading and was deleted on the owner's 2026-08-07 ruling (CLI-389
-// phase C) — see `.ai-docs/reference/features/skills-and-matrix.md`.
+// phase C).
 export type IncompatibilityCause =
   // Something the selection reaches conflicts with it outright.
   | { kind: "conflict"; skillId: string }

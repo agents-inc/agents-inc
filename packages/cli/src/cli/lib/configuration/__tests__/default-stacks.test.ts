@@ -6,18 +6,9 @@ import type { AgentName, Category, ResolvedSkill, SkillAssignment, SkillId } fro
 
 const EXPECTED_STACK_COUNT = 17;
 
-/**
- * The quantities `.ai-docs/reference/features/built-in-catalogue.md` § "Structural invariants"
- * states about this module, and which the count-ownership rule makes that document's alone.
- *
- * They are here because they were hand-maintained until they were not: every number in that
- * section — assignment total, alias count, agent roster — had rotted at once by the time an
- * audit read them, and nothing had gone red. `EXPECTED_STACK_COUNT` above was the only one the
- * suite held, so it was the only one still true.
- */
 const EXPECTED_ASSIGNMENT_TOTAL = 1542;
 
-/** Agent slots holding each hoisted array. One number for both, and the document says so. */
+/** Agent slots holding each hoisted array — one number for both. */
 const EXPECTED_SHARED_ALIAS_SLOTS = 47;
 
 /**
@@ -33,16 +24,10 @@ const SHARED_ALIAS_MEMBERS = {
 const SHARED_ALIAS_CATEGORIES = typedKeys(SHARED_ALIAS_MEMBERS);
 
 /**
- * The sub-agents the whole catalogue assigns to, and how many stacks each one appears on — which
- * the document states as a count and then as a sentence ("six appear in all 17, two in 16 …").
+ * The sub-agents the whole catalogue assigns to, and how many stacks each one appears on. Keyed by
+ * name rather than counted: a count cannot tell a retired agent from a swapped one.
  *
- * One constant for both halves, keyed by name rather than counted: a count cannot tell a retired
- * agent from a swapped one, and the two retired names this list once carried were exactly that
- * shape. The tally is the half that had nothing holding it at all, and it is the half that says
- * whether a stack quietly stopped assigning to an agent it still declares elsewhere.
- *
- * Fewer than `AGENT_NAMES` on purpose — five built-ins sit on no stack at all, which is the
- * document's own claim in the same paragraph.
+ * Fewer than `AGENT_NAMES` on purpose — five built-ins sit on no stack at all.
  */
 const EXPECTED_STACKS_PER_AGENT = {
   "agent-summoner": 17,
@@ -60,13 +45,7 @@ const EXPECTED_STACKS_PER_AGENT = {
   "web-tester": 16,
 } as const satisfies Partial<Record<AgentName, number>>;
 
-/**
- * How many sub-agents each stack assigns to. The document states the distinct values ("8, 9, 10
- * or 12") and names two of them in its stack table, and nothing held either reading — the table's
- * `cli-ink-oclif` note said 10 against a stack of 9 until an audit read it by hand.
- *
- * Keyed by stack id, so the keys are also the stack roster the document lists rather than counts.
- */
+/** How many sub-agents each stack assigns to, keyed by stack id so the keys are the roster too. */
 const EXPECTED_AGENT_COUNT_PER_STACK = {
   "nextjs-fullstack": 12,
   "nextjs-t3-stack": 10,
@@ -90,10 +69,9 @@ const EXPECTED_AGENT_COUNT_PER_STACK = {
 /**
  * The (stack, sub-agent) pairs where a stack names an agent and files nothing under it.
  *
- * Named rather than absorbed. The tally above counts DECLARED slots, which is the reading the
- * document's own invocation takes, and under it `cli-developer` and `cli-tester` sit on "the same
- * 8" — while seven of `cli-tester`'s eight are `{}`, so `cli-ink-oclif` is the only stack that
- * hands it a skill. A count cannot say which of the two readings it is, and an empty slot is the
+ * Named rather than absorbed. The tally above counts DECLARED slots, and under it `cli-developer`
+ * and `cli-tester` sit on the same 8 — while seven of `cli-tester`'s eight are `{}`, so
+ * `cli-ink-oclif` is the only stack that hands it a skill. A count cannot say which of the two readings it is, and an empty slot is the
  * only shape that makes them differ, so the difference is pinned by name instead of averaged away.
  */
 const EXPECTED_EMPTY_AGENT_SLOTS = [
@@ -107,9 +85,8 @@ const EXPECTED_EMPTY_AGENT_SLOTS = [
 ] as const;
 
 /**
- * Every category the catalogue files an assignment under, which the document states as a count.
- * Members rather than the count, for the reason the roster above is: two categories exchanged
- * leave 35 intact, and a stack keyed under a category its skill has left is the stale-key shape
+ * Every category the catalogue files an assignment under. Members rather than a count, for the
+ * reason the roster above is: two categories exchanged leave 35 intact, and a stack keyed under a category its skill has left is the stale-key shape
  * that goes schema-invalid the moment the enum regenerates.
  */
 const EXPECTED_ASSIGNED_CATEGORIES = [
@@ -151,7 +128,7 @@ const EXPECTED_ASSIGNED_CATEGORIES = [
 ] as const satisfies readonly Category[];
 
 /**
- * Every skill the catalogue names, which the document states as a count. Members again, and here
+ * Every skill the catalogue names. Members rather than a count, and here
  * the members buy a second thing the count cannot: the clause binds each id to the generated
  * `SkillId` union, so a marketplace retiring a skill reddens the line that owns its name rather
  * than scattering unassignable-union errors across the consumers of an inferred type.
@@ -258,14 +235,14 @@ function stacksDeclaring(agentName: AgentName): number {
   return declaredAgentNames.filter((name) => name === agentName).length;
 }
 
-/** The document's per-agent tally: each declared sub-agent against the stacks naming it. */
+/** Each declared sub-agent against the stacks naming it. */
 const stacksPerAgent = typedFromEntries(
   [...new Set(declaredAgentNames)].map(
     (agentName) => [agentName, stacksDeclaring(agentName)] as const,
   ),
 );
 
-/** The document's per-stack tally, keyed by the stack ids its table lists. */
+/** Each stack's declared sub-agent count, keyed by stack id. */
 const agentCountPerStack = Object.fromEntries(
   defaultStacks.map((stack) => [stack.id, typedKeys(stack.agents).length]),
 );
@@ -294,18 +271,17 @@ describe("defaultStacks", () => {
     expect(defaultStacks).toHaveLength(EXPECTED_STACK_COUNT);
   });
 
-  it("reaches the sub-agents the catalogue document names, on the stack counts it states", () => {
+  it("reaches each sub-agent on the expected number of stacks", () => {
     expect(
       stacksPerAgent,
-      "built-in-catalogue.md names which sub-agents the catalogue reaches, which built-ins it leaves empty, and how many stacks each one appears on",
+      "which sub-agents the catalogue reaches, and how many stacks each one appears on",
     ).toStrictEqual(EXPECTED_STACKS_PER_AGENT);
   });
 
-  it("gives each stack the number of sub-agents the catalogue document states", () => {
-    expect(
-      agentCountPerStack,
-      "built-in-catalogue.md states the distinct per-stack agent counts, and names two of them in its stack table",
-    ).toStrictEqual(EXPECTED_AGENT_COUNT_PER_STACK);
+  it("gives each stack the expected number of sub-agents", () => {
+    expect(agentCountPerStack, "how many sub-agents each stack assigns to").toStrictEqual(
+      EXPECTED_AGENT_COUNT_PER_STACK,
+    );
   });
 
   // The pin needs the filled case beside it: an empty list and a catalogue that files nothing at
@@ -321,10 +297,10 @@ describe("defaultStacks", () => {
     ).toBe(true);
   });
 
-  it("files assignments under exactly the categories the catalogue document names", () => {
+  it("files assignments under exactly the expected categories", () => {
     expect(
       assignedCategories,
-      "built-in-catalogue.md states how many distinct categories this catalogue assigns under",
+      "the distinct categories this catalogue assigns under",
     ).toStrictEqual([...EXPECTED_ASSIGNED_CATEGORIES]);
   });
 
@@ -332,29 +308,27 @@ describe("defaultStacks", () => {
   // not carry — so a stale id passes that spec rather than failing it. This is where one fails.
   // Both assertions belong here together: the roster alone cannot say the ids are real, and the
   // membership check alone is satisfied for free by the empty list a broken derivation hands it.
-  it("names exactly the skills the catalogue document states, all of them in the vendored matrix", () => {
+  it("names exactly the expected skills, all of them in the vendored matrix", () => {
     const absent = assignedSkillIds.filter((id) => !(id in BUILT_IN_MATRIX.skills));
 
-    expect(
-      assignedSkillIds,
-      "built-in-catalogue.md states how many distinct skill ids this catalogue names",
-    ).toStrictEqual([...EXPECTED_ASSIGNED_SKILL_IDS]);
+    expect(assignedSkillIds, "the distinct skill ids this catalogue names").toStrictEqual([
+      ...EXPECTED_ASSIGNED_SKILL_IDS,
+    ]);
     expect(
       absent,
       "a stack naming a skill the matrix does not carry is dropped silently at generation and warns once per occurrence at runtime, so this is the only place it fails",
     ).toStrictEqual([]);
   });
 
-  it("holds the assignment total the catalogue document states", () => {
-    expect(
-      everyAssignment.length,
-      "built-in-catalogue.md states this catalogue's assignment total — move the number there in the same change",
-    ).toBe(EXPECTED_ASSIGNMENT_TOTAL);
+  it("holds the expected assignment total", () => {
+    expect(everyAssignment.length, "this catalogue's assignment total").toBe(
+      EXPECTED_ASSIGNMENT_TOTAL,
+    );
   });
 
   // The per-slot spec below says no INDIVIDUAL slot states a load. This says the same thing
-  // about the catalogue as one body, which is the form built-in-catalogue.md states it in — a
-  // slot the flattening above misses would satisfy the per-slot spec by never being visited.
+  // about the catalogue as one body — a slot the flattening above misses would satisfy the
+  // per-slot spec by never being visited.
   it("states no load opinion anywhere in the catalogue", () => {
     const flagged = everyAssignment.filter((assignment) => assignment.preloaded !== undefined);
 
@@ -370,10 +344,9 @@ describe("defaultStacks", () => {
       const slots = slotsFiledUnder(category);
       const distinct = [...new Set(slots)];
 
-      expect(
-        slots,
-        `built-in-catalogue.md states how many agent slots alias the hoisted ${category} array`,
-      ).toHaveLength(EXPECTED_SHARED_ALIAS_SLOTS);
+      expect(slots, `how many agent slots alias the hoisted ${category} array`).toHaveLength(
+        EXPECTED_SHARED_ALIAS_SLOTS,
+      );
       expect(
         distinct,
         `every ${category} slot must hold the SAME array object — editing the hoisted constant is what edits all of them, and an inlined copy silently opts one stack out`,

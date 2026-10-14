@@ -29,10 +29,9 @@ import {
 
 /**
  * Every file a Claude install leaves behind, pinned byte for byte against a golden tree recorded
- * from the product as it stood before the Codex target work began (`todo/plans/CLI-codex-target-plan.md`,
- * Step 0a).
+ * from the product as it stood before the Codex target work began.
  *
- * **What this is for.** Each later step of that plan claims "no behaviour change for Claude users",
+ * **What this is for.** Each later step of that work claims "no behaviour change for Claude users",
  * and the path-funnel refactor in particular moves every place an install path is spelled. The
  * existing specs each assert what THEY are about; none of them can see a file that moved, appeared
  * or changed by a byte outside its subject. These three journeys read the WHOLE tree — the fake

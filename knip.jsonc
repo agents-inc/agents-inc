@@ -32,10 +32,9 @@
         // knip's oclif plugin looks for {,src/}commands/**, which this layout does not match.
         "src/cli/commands/**/*.{ts,tsx}",
         "src/cli/hooks/**/*.ts",
-        // Development entry points, neither published nor imported (see
-        // .ai-docs/reference/build-and-packaging.md). `bin/run.js` is what every E2E spec spawns —
-        // `execa("node", [BIN_RUN, …])` in e2e/helpers/test-utils.ts, a path string no import graph
-        // can see. `bin/dev.js` is its `npx tsx` twin.
+        // Development entry points, neither published nor imported. `bin/run.js` is what every E2E
+        // spec spawns — `execa("node", [BIN_RUN, …])` in e2e/helpers/test-utils.ts, a path string
+        // no import graph can see. `bin/dev.js` is its `npx tsx` twin.
         "bin/*.js",
         // vitest resolves `globalSetup` from the project root; knip resolves it from the config
         // file's own directory, so e2e/vitest.config.ts's "./e2e/global-setup.ts" lands one level

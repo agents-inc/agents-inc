@@ -40,8 +40,7 @@
  * **And the ban has a second half these selectors cannot see.** A path is composed as often as it
  * is written — `path.join(root, SOURCE_ROOT_DIR, provider)` spells neither banned name, and
  * `sourceDirName("claude")` spells a bare provider name — so `eslint.config.js` pairs them with a
- * `no-restricted-imports` group on the SYMBOLS, which
- * `todo/plans/CLI-source-folder-rename-plan.md` :145 asks for and :157 asks this guard of. Its
+ * `no-restricted-imports` group on the SYMBOLS. Its
  * zones are not these zones: `no-restricted-imports` is declared in a different set of blocks and
  * reaches no spec at all, so it gets its own roster below.
  */
@@ -359,9 +358,7 @@ describe("a name that merely shares a prefix with the source folder", () => {
 });
 
 /**
- * The shape the plan asks this guard to fail on, written out:
- * "any `path.join(..., SOURCE_ROOT_DIR)` outside the funnel"
- * (`todo/plans/CLI-source-folder-rename-plan.md` :157).
+ * The shape this guard must fail on: any `path.join(..., SOURCE_ROOT_DIR)` outside the funnel.
  *
  * The composition is what makes the symbol ban necessary rather than redundant — the fixture
  * writes no banned spelling, so the literal selectors above are silent on it.

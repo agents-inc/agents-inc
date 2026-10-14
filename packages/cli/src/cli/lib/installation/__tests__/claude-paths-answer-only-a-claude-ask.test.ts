@@ -2,12 +2,10 @@
  * Claude's installation does not move when the provider is threaded through every path builder,
  * and nothing the layout answers for Codex lands where Claude's installation already is.
  *
- * Step C2 of `todo/plans/CLI-codex-provider-plan.md` — "the provider reaches every path". The one
- * thing the step must not change is every Claude installation on every disk, and the step's own
- * failure mode is the mirror of that: a path builder the threading missed keeps answering
- * `.claude/` and `.agents-inc/claude/` for BOTH providers, so a Codex run writes into the Claude
- * installation with every test green. The plan calls it a half-routed path, and it is the reason
- * the `--provider` flag was kept off the help screens until C7b shipped it.
+ * The one thing threading the provider must not change is every Claude installation on every
+ * disk, and its own failure mode is the mirror of that: a path builder the threading missed keeps
+ * answering `.claude/` and `.agents-inc/claude/` for BOTH providers, so a Codex run writes into the
+ * Claude installation with every test green.
  *
  * **Asserted through what a real install RECORDED, not by restating paths.** The three golden
  * trees under `e2e/fixtures/claude-golden-trees/` are walked by

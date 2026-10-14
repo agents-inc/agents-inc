@@ -26,8 +26,7 @@
  * file states the same rule for the source folder's two names.
  *
  * **What is MEASURED and what is this spec's PROPOSAL**, because the difference decides who may
- * overturn a line here. Measured on the pinned `@openai/codex@0.155.1` and recorded in
- * `todo/plans/CLI-codex-provider-plan.md`:
+ * overturn a line here. Measured on the pinned `@openai/codex@0.155.1`:
  *
  * - a Codex sub-agent role registers from `$CODEX_HOME/agents/<name>.toml` AND from
  *   `<project-root>/.codex/agents/<anything>.toml` — the latter only while the GLOBAL
@@ -54,8 +53,7 @@
  *
  * **The provider is a required argument on every role.** `resolveInstallPaths(projectDir, scope)`
  * defaults its scope and has ~20 call sites; a host role that defaulted its provider would let a
- * missed call site write into `.claude/` and exit 0 — the plan's Risk 7, one level down from the
- * `DEFAULT_PROVIDER` deletion that C2 uses as its own proof.
+ * missed call site write into `.claude/` and exit 0.
  *
  * **The import list below IS the roster assertion.** A role this step does not add cannot be
  * imported, so the module graph reports it by name before a single assertion runs; a separate

@@ -28,8 +28,7 @@ export const HOME_PATH = "/"
  * `agents-inc-editor` Worker behind the Cloudflare Route `agentsinc.sh/editor*`
  * while this build holds the apex as a Custom Domain. That is the one-hostname
  * split decided on 2026-08-03 and landed under WWW-03 ("Domains and the app
- * split") in todo/www.md, which carries the old identifier: item 10 of
- * docs/web/editor-todo.md.
+ * split") in todo/www.md.
  *
  * RELATIVE, AND SO NOT VERIFIABLE LOCALLY. It crosses a Worker boundary that
  * only production has: `astro dev` and `astro preview` serve this build alone,

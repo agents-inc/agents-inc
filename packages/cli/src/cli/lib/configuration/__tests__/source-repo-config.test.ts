@@ -3,8 +3,7 @@
  * installation's and now gets its own door.
  *
  * `loadProjectSourceConfig` serves both today: "what does this installation's config say" and
- * "what layout does this source repo declare". They part company at the rename
- * (`todo/plans/CLI-source-folder-rename-plan.md`, Step R1 and D5):
+ * "what layout does this source repo declare". They part company at the rename:
  *
  *   - an INSTALLATION's config lives inside a provider folder, `.agents-inc/<provider>/`,
  *     because one installation is exactly one provider and the folder is what says which;

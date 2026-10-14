@@ -1,8 +1,8 @@
 /**
  * What a run finds when it asks the disk which installations are there.
  *
- * Step C2 of `todo/plans/CLI-codex-provider-plan.md` adds `detectInstallations(cwd)`, answering
- * `{provider, scope, configPath}` per installation. It is the surface every command reads the
+ * `detectInstallations(cwd)` answers `{provider, scope, configPath}` per installation. It is the
+ * surface every command reads the
  * provider off, and the reason it exists is that the folder is the only record of one: there is
  * no `provider` field in `config.ts` and nothing in the payload carries it, so discovery reading
  * the folder is the whole of "the provider is derivable after the install".
@@ -25,7 +25,7 @@
  *   files, and reading a subfolder of it as a provider would invent an installation out of them.
  * - **a root holding both** — two entries, each single-provider. This is the one that reddens if
  *   discovery keeps the defaulting behaviour: today every path builder under a two-folder root
- *   answers Claude and says nothing, which is the plan's Risk 8.
+ *   answers Claude and says nothing.
  * - **run from the home directory** — the two scopes are one directory there, and an installation
  *   counted twice is a second installation that does not exist.
  *

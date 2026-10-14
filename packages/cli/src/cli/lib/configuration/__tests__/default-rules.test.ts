@@ -6,16 +6,6 @@ import { validateSelection } from "../../matrix/matrix-resolver";
 import { typedKeys } from "../../../utils/typed-object";
 import type { RelationshipDefinitions, SkillId, SkillSlug } from "../../../types";
 
-/**
- * The quantities `.ai-docs/reference/features/built-in-catalogue.md` § "`defaultRules`" states
- * about this module, and which the count-ownership rule makes that document's alone.
- *
- * The docblock is the point of them. Three of these were already pinned here as bare literals
- * carrying no reference to that page, which is the arrangement that guarantees drift rather than
- * catching it: a rule added or removed reddens this file, the repair is a one-digit edit, and
- * nothing puts the person making it in front of the table stating the same number elsewhere. The
- * sibling `defaultStacks` suite had the pointer and this one did not.
- */
 const EXPECTED_CONFLICT_GROUP_COUNT = 12;
 const EXPECTED_REQUIRES_COUNT = 98;
 const EXPECTED_ALTERNATIVES_COUNT = 42;
@@ -24,8 +14,8 @@ const EXPECTED_DISTINCT_SLUG_COUNT = 176;
 
 /**
  * Every slug a rule set names, whichever kind names it, deduplicated. A `requires` rule
- * contributes its own `skill` as well as its `needs` — the reading the document's total counts,
- * and the one `relationshipsForSource` narrows against.
+ * contributes its own `skill` as well as its `needs` — the reading `relationshipsForSource`
+ * narrows against.
  */
 function collectEveryRuleSlug({
   conflicts,
@@ -191,10 +181,9 @@ describe("defaultRules", () => {
   it("states most requirements as a choice rather than a conjunction", () => {
     const choices = defaultRules.relationships.requires.filter((rule) => rule.needsAny === true);
 
-    expect(
-      choices,
-      "built-in-catalogue.md states how many requires rules take the OR reading — move the number there in the same change",
-    ).toHaveLength(EXPECTED_NEEDS_ANY_COUNT);
+    expect(choices, "how many requires rules take the OR reading").toHaveLength(
+      EXPECTED_NEEDS_ANY_COUNT,
+    );
   });
 
   it("has alternative groups", () => {
@@ -221,10 +210,9 @@ describe("defaultRules", () => {
       (slug) => BUILT_IN_MATRIX.slugMap.slugToId[slug] === undefined,
     );
 
-    expect(
-      everyRuleSlug,
-      "built-in-catalogue.md states how many distinct slugs the built-in rules name",
-    ).toHaveLength(EXPECTED_DISTINCT_SLUG_COUNT);
+    expect(everyRuleSlug, "how many distinct slugs the built-in rules name").toHaveLength(
+      EXPECTED_DISTINCT_SLUG_COUNT,
+    );
     expect(
       unresolvable,
       "a built-in slug naming nothing is narrowed out before resolution and warns about nothing, so this is the only place it is ever reported",

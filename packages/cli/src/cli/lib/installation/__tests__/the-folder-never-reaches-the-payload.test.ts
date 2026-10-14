@@ -1,14 +1,13 @@
 /**
  * The folder an installation is read out of never reaches what `share` posts.
  *
- * Step C2 of `todo/plans/CLI-codex-provider-plan.md` rules that the provider comes from the
- * folder on disk and from `--provider` on `init --from`, and from nowhere else — *"not from
- * `config.ts`, not from the payload, not from the share id"*. That third exclusion is what keeps
- * every share id ever minted installable on either provider, and it is the one an assertion can
- * hold: a payload that carried a provider would make one folder's share id refuse to install into
- * the other.
+ * The provider comes from the folder on disk and from `--provider` on `init --from`, and from
+ * nowhere else — *"not from `config.ts`, not from the payload, not from the share id"*. That third
+ * exclusion is what keeps every share id ever minted installable on either provider, and it is the
+ * one an assertion can hold: a payload that carried a provider would make one folder's share id
+ * refuse to install into the other.
  *
- * **The plan names this spec as the replacement for a test it deleted.** "config-to-seed of a
+ * **This spec replaces a deleted test.** "config-to-seed of a
  * Codex config equals the Claude one" was about a `target` field ruling 1 removed before it was
  * ever written; what survives is the property that field would have broken, stated over the two
  * FOLDERS instead: *"sharing from either folder gives identical payload bytes"*.

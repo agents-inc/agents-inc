@@ -5,8 +5,7 @@ import type { AddressInfo } from "node:net";
  * A scripted stand-in for the OpenAI Responses API, for driving the REAL pinned Codex binary
  * offline: the binary runs its real tools and real hooks, and only the model's turns are scripted.
  *
- * A TypeScript port of the critic's rig from the Codex target research (`mock_responses.py`), which
- * is where every runtime claim in `todo/plans/CLI-codex-target-plan.md` marked [CV] was measured.
+ * A TypeScript port of the critic's rig from the Codex target research (`mock_responses.py`).
  * What was ported is the mechanism — the SSE framing, the event shapes Codex 0.155.1 accepts, the
  * `/models` probe it makes first, the refusal of any POST that is not `/responses`, and the two
  * readers a scenario decides with. What was NOT ported is the rig's own scenarios: each encoded one

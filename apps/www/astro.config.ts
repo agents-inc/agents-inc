@@ -100,9 +100,7 @@ export default defineConfig({
    * THE APEX IS SPLIT BY PATH, which is why this is a bare hostname and not a
    * subpath: `agentsinc.sh/` is the landing page in this build, `/docs` these
    * docs, and `agentsinc.sh/editor*` is a Cloudflare Route on the editor's own
-   * Worker. WWW-03 in todo/www.md records the decision, and carries the old
-   * identifier this comment used to cite (item 10 of
-   * docs/web/editor-todo.md). Both paths this
+   * Worker. WWW-03 in todo/www.md records the decision. Both paths this
    * build owns sit at the root of that hostname, so no `base` is needed and the
    * URLs generated from this are already the ones that will be correct.
    */

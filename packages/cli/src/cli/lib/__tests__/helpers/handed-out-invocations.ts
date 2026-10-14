@@ -3,9 +3,8 @@
  *
  * `compile`'s no-skills refusal told the reader to run `agents-inc add <skill>` for as long as
  * the message existed. There has never been an `add` command, so the one instruction a stuck
- * user was given exited 127. Specs covered that message, `reference/commands/index.md` quoted it
- * faithfully, and every one of them was correct about what the CLI printed — none asked whether
- * the thing it named exists.
+ * user was given exited 127. Specs covered that message and were correct about what the CLI
+ * printed — none asked whether the thing it named exists.
  *
  * Nothing static can answer that: a message is a string and the command roster is a directory,
  * and `scripts/check-enumeration-drift.ts` binds a file to a symbol rather than to directory

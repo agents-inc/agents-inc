@@ -2,12 +2,11 @@
  * Which config a run reads when a scope holds an installation of each provider, and what the
  * read tells the caller about the one it landed on.
  *
- * Step C2 of `todo/plans/CLI-codex-provider-plan.md` — "the provider reaches every path". The
- * provider is not a field in `config.ts`: the FOLDER is the answer, so `.agents-inc/claude/` and
- * `.agents-inc/codex/` under one root are TWO installations, each of exactly one provider, and
+ * The provider is not a field in `config.ts`: the FOLDER is the answer, so `.agents-inc/claude/`
+ * and `.agents-inc/codex/` under one root are TWO installations, each of exactly one provider, and
  * every question about where something goes has to say which of them it is about.
  *
- * **The state these specs are written for is the one the plan names as its Risk 8:** with both
+ * **The state these specs are written for:** with both
  * folders on disk, `getProjectConfigPath(dir)` takes no provider at all, so the preference order
  * inside `sourceFolderInUse` picks Claude and every command silently acts on the Claude half of a
  * root that holds two installations. Nothing reports it, and nothing can: the answer is a path,

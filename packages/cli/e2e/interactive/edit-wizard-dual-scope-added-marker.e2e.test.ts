@@ -18,8 +18,7 @@ import { EditWizard } from "../pages/wizards/edit-wizard.js";
 /**
  * Adopting a globally-installed skill at project scope creates a NEW project
  * slot for it — `s` on a `[G]`-only row is the sole dual-scope toggle and
- * produces the persisted `[P][G]` pair (see
- * .ai-docs/reference/concepts/tombstone-pattern.md). That project slot is an
+ * produces the persisted `[P][G]` pair. That project slot is an
  * addition, exactly as the confirm step's `computeScopeDiff` classifies it: the
  * diff keys on the `(id, scope)` SLOT, so a skill already installed globally
  * still counts as added once a project entry appears.

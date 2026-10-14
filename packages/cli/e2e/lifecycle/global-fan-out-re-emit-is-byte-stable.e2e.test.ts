@@ -28,10 +28,8 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-si
  * A `compile` at the home directory fans the global config out to every
  * registered project, rewriting each project's `config.ts` from the values
  * already on that project's disk. Nothing about those values changes, so the
- * file must come back byte-for-byte identical — the invariant
- * `reference/config/config-writer.md` states as
- * "byte-identical-for-unaffected-projects", and the reason `writeIfChanged` can
- * skip a write at all.
+ * file must come back byte-for-byte identical, which is the reason
+ * `writeIfChanged` can skip a write at all.
  *
  * Running the same fan-out twice is the smallest way to state it: the second
  * run's input is the first run's own output, so a writer whose field order

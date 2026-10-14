@@ -39,7 +39,6 @@ e2e/helpers/*.gen.mjs
 # never sees when `format`/`format:check` run from this directory. Restating them
 # here keeps `prettier --check .` agreeing with git from either place.
 CLAUDE.md
-V2.md
 todo/*
 !todo/TODO.md
 !todo/TODO-completed.md

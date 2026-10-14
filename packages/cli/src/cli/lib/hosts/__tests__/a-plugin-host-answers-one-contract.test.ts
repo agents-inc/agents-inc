@@ -26,14 +26,6 @@
  * only Claude could satisfy fails here instead of being discovered in C4 — and the contract IS its
  * test: every assertion it appears in is a statement about it as much as about the interface. A
  * shared helper would need tests of its own to be trusted, and those tests would be these.
- *
- * **Everything below is this lane's PROPOSAL where the plan does not settle it**, and each such
- * line says so where it is declared. The plan (`todo/plans/CLI-codex-provider-plan.md`, step C3)
- * fixes the member roster, `PluginRemovalOutcome`, `HostPlugin`'s three fields and that
- * `offeredPlacements` answers four cells for Claude and three for Codex. It does not fix the shape
- * of a placement cell, whether a host is a value object, what `hostFor` does with a provider this
- * release has no host for, or the trailing options parameter — those are named as proposals in this
- * lane's report, for the implementer or the owner to overturn.
  */
 
 import { describe, expect, it } from "vitest";
@@ -48,7 +40,7 @@ import { bindsItsOfferedPlacements, refuseUnofferedPlacement } from "../offered-
  *
  * Written out rather than derived from the type: a roster read off `keyof PluginHost` would move
  * with the interface and could never report a member being added, removed or renamed, which is the
- * one thing a seam's roster is for. The plan's C3 entry is where this list comes from.
+ * one thing a seam's roster is for.
  *
  * The `satisfies` clause checks the list against the interface without deriving it: a member the
  * interface drops or renames stops compiling on this line, and one it gains is still reported by

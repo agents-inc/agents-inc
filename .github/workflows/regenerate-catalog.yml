@@ -82,8 +82,7 @@ jobs:
 
       # The checkout that no other job in this repository has. generate:types
       # reads the marketplace directly, which is exactly why
-      # generate:types:check is deliberately absent from ci.yml — see
-      # packages/cli/.ai-docs/reference/features/code-generation.md. This
+      # generate:types:check is deliberately absent from ci.yml. This
       # workflow is the first runner anywhere that can run it.
       #
       # No token: agents-inc/skills is public, and GITHUB_TOKEN — which is
@@ -114,10 +113,8 @@ jobs:
       # read what it wrote: generate:schemas copies SKILL_SLUGS and CATEGORIES
       # verbatim into metadata.schema.json's enums, and generate:matrix vendors
       # the generated files wholesale into packages/matrix. Running either
-      # before types republishes the previous run's vocabulary — the exact drift
-      # recorded in
-      # packages/cli/.ai-docs/agent-findings/2026-04-21-r73-atomicity-bible-drift.md,
-      # where the shipped schema rejected legitimate slugs and categories.
+      # before types republishes the previous run's vocabulary, and the shipped
+      # schema rejects legitimate slugs and categories.
       #
       # The schemas step is here even though a marketplace merge is not
       # obviously about JSON schemas. Leave it out and the pull request looks

@@ -233,8 +233,7 @@ const SOURCE_FOLDER_LITERALS = [
  * matter write no banned spelling at all. `path.join(root, SOURCE_ROOT_DIR, provider)` writes
  * nothing, and `sourceDirName("claude")` writes a bare provider name that no boundary-anchored
  * regex could condemn without condemning the word "claude". So the two selectors are the same ban
- * reaching the two ways a folder name arrives, and `todo/plans/CLI-source-folder-rename-plan.md`
- * :145 asks for exactly this pairing.
+ * reaching the two ways a folder name arrives.
  *
  * `no-restricted-imports` rather than another `no-restricted-syntax` selector, deliberately: that
  * rule's options do not merge, so a file exempt from one of its selectors is exempt from ALL of

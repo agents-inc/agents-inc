@@ -10,8 +10,8 @@ import type { AgentName } from "../../types.js"
  */
 
 /**
- * Left out of every Codex install for v1 because their roster mechanics on Codex are not proven
- * (D8 of `todo/plans/CLI-codex-provider-plan.md`). Not a capability claim: both compile as roles.
+ * Left out of every Codex install for v1 because their roster mechanics on Codex are not proven.
+ * Not a capability claim: both compile as roles.
  */
 export const AGENTS_NOT_ON_CODEX = [
   "agent-summoner",

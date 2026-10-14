@@ -2,8 +2,7 @@
  * A global installation rewrites the registered projects of its OWN provider, and its writer
  * refuses a pair aimed anywhere else.
  *
- * Step C2 of `todo/plans/CLI-codex-provider-plan.md` asks for two things here, and they are not
- * the same guard:
+ * Two things are asked for here, and they are not the same guard:
  *
  * - *"a Claude global never propagates into a Codex project"* — a POLICY, applied per registered
  *   project inside the fan-out. `globalConfig.projects[]` is a list of directories with nothing
@@ -12,8 +11,8 @@
  *   installation that happens to be reachable, and rewriting its pair from this global's data is
  *   the cross-installation write the folders exist to prevent.
  * - *"the runtime assertion fires when the path is forced wrong"* — an ASSERTION, inside the
- *   single writer both the fan-out and the wizard write go through. The plan states why it cannot
- *   be a compile-time proof: propagation resolves its destination from a config-derived STRING,
+ *   single writer both the fan-out and the wizard write go through. It cannot be a
+ *   compile-time proof: propagation resolves its destination from a config-derived STRING,
  *   so deleting `DEFAULT_PROVIDER` found every typed caller and none of these.
  *
  * **The assertion was a tautology until this file existed, and that is what this file is written

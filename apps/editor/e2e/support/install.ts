@@ -36,10 +36,9 @@ import type { AddressInfo } from "node:net"
 // The output preview says it draws what `agents-inc init --from <id>` writes.
 // Every other spec in this directory checks the preview against itself or
 // against `@workspace/compile` called directly, so none of them can see the
-// preview and the install disagree — which is where every defect in
-// todo/plans/2026-10-02-journey-fixes' u03 and u04 sat. This module runs the
-// CLI this repository builds against the same id the browser opens, so a spec
-// can hold the two outputs against each other.
+// preview and the install disagree. This module runs the CLI this repository
+// builds against the same id the browser opens, so a spec can hold the two
+// outputs against each other.
 //
 // What the CLI reaches is stood in for by ONE local server, in the two roles
 // the browser's are stubbed in: the worker (`GET /configs/<id>`, answered by

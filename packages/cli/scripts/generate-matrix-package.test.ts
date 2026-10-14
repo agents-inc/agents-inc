@@ -4,7 +4,6 @@
  *
  * The acceptance criterion is byte-identity. The writer moves out of
  * `packages/matrix/scripts/generate-from-cli.mjs`; the emitted bytes must not change.
- * Design record: `todo/plans/D-239-web-ui-shared-matrix-package.md`.
  *
  * Testability is part of the contract: roots are parameters, and importing the module must not
  * write anything — the failure mode `scripts/generate-json-schemas.ts` is stuck with.

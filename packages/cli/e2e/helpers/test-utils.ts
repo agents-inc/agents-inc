@@ -730,10 +730,8 @@ export async function writeAgentStubs(projectDir: string, agents: string[]): Pro
  * Ensures `.claude/settings.json` grants the default allow permission.
  *
  * This works around the permission checker that renders a blocking Ink component
- * after install completes (see `.ai-docs/reference/testing/harness-decisions.md`
- * § 1.1, "The post-install permission notice has no exit of its own"). Without
- * this file, the PTY process never exits because the permission prompt waits for
- * input.
+ * after install completes. Without this file, the PTY process never exits because
+ * the permission prompt waits for input.
  *
  * MERGES rather than overwrites: when the file already exists (e.g. a plugin
  * install wrote `enabledPlugins` / `extraKnownMarketplaces` before an

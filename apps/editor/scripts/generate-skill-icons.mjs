@@ -1,4 +1,4 @@
-// Regenerates src/lib/skill-icon-map.ts.
+// Regenerates src/lib/skill-icons.ts.
 //
 //   bun scripts/generate-skill-icons.mjs
 //
