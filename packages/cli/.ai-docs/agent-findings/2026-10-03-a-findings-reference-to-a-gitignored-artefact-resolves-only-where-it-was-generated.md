@@ -12,7 +12,11 @@ reporting_agent: cli-tester
 category: testing
 domain: infra
 root_cause: enforcement-gap
-status: open
+status: resolved
+resolved_by: >-
+  Owner ruling 2026-10-14 took the other branch: a reference onto a path git ignores is skipped,
+  not reported. `isCarriedByRepository` in scripts/check-findings-frontmatter.ts skips it, and
+  `gitIgnoresUnder` asks git check-ignore about an absent path, so CI gets the same answer.
 ---
 
 ## What Was Wrong

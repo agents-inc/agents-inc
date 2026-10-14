@@ -2,7 +2,7 @@
 type: anti-pattern
 severity: high
 affected_files:
-  - ../compile/src/config-source.ts
+  - packages/compile/src/config-source.ts
   - src/cli/base-command.ts
   - src/cli/lib/seed/seed-apply.ts
   - e2e/interactive/edit-from-kept-skill-shares-a-category.e2e.test.ts

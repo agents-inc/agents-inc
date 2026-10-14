@@ -6,7 +6,7 @@ affected_files:
   - src/cli/components/wizard/utils.ts
   - src/cli/lib/wizard/domain-order.ts
   - src/cli/components/wizard/domain-selection.tsx
-  - ../matrix/src/read-model/domains.ts
+  - packages/matrix/src/read-model/domains.ts
 standards_docs:
   - .ai-docs/standards/clean-code-standards.md
 date: 2026-08-07
