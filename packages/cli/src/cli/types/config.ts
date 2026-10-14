@@ -3,17 +3,15 @@
 // `generate:matrix:check` is the gate.
 
 import type { AgentName } from "./agents";
-import type { Domain, EffortLevel, ModelName } from "./matrix";
+import type { CodexModelName, Domain, EffortLevel, ModelName } from "./matrix";
 import type { SkillId, SkillReference } from "./skills";
 import type { StackAgentConfig } from "./stacks";
 
-/** Scope of a skill or agent install: project-local or user-global. */
 export type SkillScope = "project" | "global";
 
 /** Claude CLI plugin scope (`--project`/`--user` install target). */
 export type ClaudePluginScope = "project" | "user";
 
-/** An additional skills source (private marketplace, custom repo) */
 export type SourceEntry = {
   name: string;
   url: string;
@@ -21,13 +19,10 @@ export type SourceEntry = {
   ref?: string;
 };
 
-/** Branding overrides for white-labeling the CLI */
 export type BrandingConfig = {
-  /** Custom CLI name (e.g., "Acme Dev Tools") */
   name?: string;
 };
 
-/** Per-skill configuration with scope and provenance */
 export type SkillConfig = {
   id: SkillId;
   scope: SkillScope;
@@ -36,46 +31,41 @@ export type SkillConfig = {
   excluded?: boolean;
 };
 
-/** Per-agent configuration with scope (mirrors SkillConfig pattern) */
 export type AgentScopeConfig = {
   name: AgentName;
   scope: SkillScope;
-  /** Overrides the model from the agent's own metadata. Absent means "keep the metadata default". */
+  /** Absent keeps the agent metadata's model. */
   model?: ModelName;
-  /** Overrides the reasoning effort from the agent's own metadata. */
+  /** The model a Codex role runs on. Absent means the session's model. */
+  codexModel?: CodexModelName;
   effort?: EffortLevel;
   excluded?: boolean;
 };
 
-/** Agent configuration for compilation - contains skills for a specific agent */
 export type CompileAgentConfig = {
   skills?: SkillReference[];
-  /** Config-level model override, preferred over the agent definition's own value. */
+  /** Preferred over the agent definition's own value. */
   model?: ModelName;
-  /** Config-level effort override, preferred over the agent definition's own value. */
+  codexModel?: CodexModelName;
+  /** Preferred over the agent definition's own value. */
   effort?: EffortLevel;
 };
 
-/** Compile configuration derived from stack (agents to compile from keys of `agents`) */
 export type CompileConfig = {
   name: string;
   description: string;
-  /** Stack reference - resolves stack skills for agents */
   stack?: string;
-  /** Keys determine which agents to compile */
+  /** Its keys decide which agents compile. */
   agents: Partial<Record<AgentName, CompileAgentConfig>>;
 };
 
-/** Generic validation result with errors and warnings */
 export type ValidationResult = {
   valid: boolean;
   errors: string[];
   warnings: string[];
 };
 
-/** Unified project configuration stored at the scope's source folder config.ts */
 export type ProjectConfig = {
-  /** Project/plugin name (kebab-case) */
   name: string;
 
   description?: string;
@@ -84,46 +74,30 @@ export type ProjectConfig = {
 
   skills: SkillConfig[];
 
-  /** Author handle (e.g., "@vince") */
   author?: string;
 
-  /**
-   * Resolved stack configuration with agent->skill mappings.
-   * Keys are agent IDs, values are category->SkillAssignment[] mappings.
-   * Values are normalized to SkillAssignment[] at load time (same as stacks.ts).
-   * Generated during `npx agents-inc init` when a stack is selected.
-   */
+  /** Agent -> category -> SkillAssignment[], normalized at load time. */
   stack?: Record<string, StackAgentConfig>;
 
   /**
-   * The marketplace this install reads skills from, as a path or URL.
-   * Saved when --source is provided during init/eject.
+   * A path or URL, saved when --source is given.
    * @example "/home/user/my-skills" or "github:my-org/skills"
    */
   marketplace?: string;
 
   /**
-   * The name that marketplace's own manifest gives it, which its plugins are registered under.
-   * Known only once the marketplace has been fetched, which is why it cannot fold into the ref
-   * above.
+   * The name the marketplace's manifest gives it, which plugins are registered under. Known only
+   * after a fetch, so it cannot fold into the ref.
    * @example "agents-inc"
    */
   marketplaceName?: string;
 
-  /**
-   * Agents source path or URL (when agents come from a different source than skills).
-   * If not specified, uses the same source as skills.
-   */
+  /** Defaults to the skills source. */
   agentsSource?: string;
 
-  /**
-   * Selected domains from the wizard.
-   * Persisted so edit mode can restore the user's domain selection.
-   * Omitted when empty (sparse output).
-   */
+  /** Persisted so edit mode restores the selection; omitted when empty. */
   selectedDomains?: Domain[];
 
-  /** Branding overrides for white-labeling the CLI */
   branding?: BrandingConfig;
 
   /** Custom skills directory override (default: "src/skills") */
