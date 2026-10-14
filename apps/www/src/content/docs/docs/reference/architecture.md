@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-A rough overview of the Agents Inc. CLI codebase. For granular implementation details, see the verified documentation in [`.ai-docs/`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/.ai-docs/DOCUMENTATION_MAP.md).
+A rough overview of the Agents Inc. CLI codebase.
 
 ---
 
