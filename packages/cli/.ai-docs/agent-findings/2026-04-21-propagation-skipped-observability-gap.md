@@ -22,7 +22,6 @@ affected_files:
   - src/cli/lib/installation/local-installer.ts
   - src/cli/lib/operations/project/write-project-config.ts
 standards_docs:
-  - .ai-docs/reference/config/config-writer.md
   - .ai-docs/standards/clean-code-standards.md
 date: 2026-04-21
 reporting_agent: codex-keeper

@@ -4,8 +4,7 @@ severity: medium
 affected_files:
   - packages/cli/src/cli/lib/configuration/config-generator.ts
   - packages/matrix/src/read-model/assignment-defaults.ts
-standards_docs:
-  - .ai-docs/reference/features/configuration.md
+standards_docs: []
 date: 2026-08-06
 reporting_agent: general-purpose
 category: architecture

@@ -3,8 +3,7 @@ type: standard-gap
 severity: low
 affected_files:
   - src/cli/lib/config-gate/propagate.ts
-standards_docs:
-  - .ai-docs/reference/config/config-writer.md
+standards_docs: []
 date: 2026-04-21
 reporting_agent: codex-keeper
 category: architecture

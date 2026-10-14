@@ -5,8 +5,7 @@ affected_files:
   - src/cli/lib/config-gate/propagate.ts
   - src/cli/lib/configuration/__tests__/config-writer.test.ts
   - src/cli/lib/configuration/config-writer.ts
-standards_docs:
-  - .ai-docs/reference/config/config-writer.md
+standards_docs: []
 date: 2026-08-26
 reporting_agent: pm
 category: architecture
