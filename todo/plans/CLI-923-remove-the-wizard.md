@@ -13,6 +13,12 @@
     `SkillAgentSummary`), extracted out of the wizard.
   - `init` on an existing installation keeps an Ink dashboard, and one of its options is to edit in the web editor.
   - `init --marketplace` is removed entirely. A custom marketplace is added in the editor, which has a button for it.
+- **2026-10-14, spec Q1–Q3 (this supersedes the line above):**
+  - The editor's fallback install line stays a bare `npx agents-inc init`.
+  - `--marketplace` stays beside `--from`, unchanged.
+  - A bare `init --marketplace <ref>` opens the editor and says to add `<ref>` with its Marketplace button (a local
+    folder has to be pushed first). Keep it simple; opening the editor with the marketplace already loaded comes later.
+  - 0.168.0 is published first, so it is the last version with the wizard.
 
 ## Scope
 
@@ -34,7 +40,11 @@
 - Bare `npx agents-inc init` is the editor's fallback install line when it can't mint an id. Once bare `init` opens
   the editor, that line loops back to the editor.
 
-## Open for the spec
+## Spec
+
+[`CLI-923-spec.md`](./CLI-923-spec.md) (pm, 2026-10-14): lanes L1–L5, and the owner's Q1–Q3 in its §8.
+
+## Open for the spec (superseded by the spec's §8)
 
 - **The editor's fallback install line** (a bare `npx agents-inc init` when no id can be minted) would loop back to
   the editor.
