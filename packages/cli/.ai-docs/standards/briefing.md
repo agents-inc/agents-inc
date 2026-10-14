@@ -261,7 +261,7 @@ each owned elsewhere, listed so a brief-side rule is not re-implemented:
 
 **What the gate beside this file does hold** is one class and only one: that these rules stay
 reachable. `scripts/check-briefing-contract.ts` refuses a tree where either `CLAUDE.md` has stopped
-linking this contract, where a standard is absent from `DOCUMENTATION_MAP.md`, or where either
+linking this contract, or where either
 binding document points an agent at a path that is not on disk. A rule set nobody is handed binds
 nobody, and it fails silently — it stays on disk, reads as adopted, and stops arriving.
 
