@@ -144,7 +144,7 @@ Behavior by mode:
 export type WizardResultV2 = {
   skills: SkillConfig[]; // { id, scope, origin } per skill (excluded tombstones appended)
   selectedAgents: AgentName[];
-  agentConfigs: AgentScopeConfig[]; // { name, scope, model?, effort? } per agent
+  agentConfigs: AgentScopeConfig[]; // { name, scope, model?, codexModel?, effort? } per agent
   assignedStack?: Partial<Record<AgentName, StackAgentConfig>>; // shared-config producer only
   selectedStackId: string | null;
   description?: string; // shared-config producer only

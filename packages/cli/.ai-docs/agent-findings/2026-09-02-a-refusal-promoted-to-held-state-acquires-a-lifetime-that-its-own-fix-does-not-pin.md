@@ -15,8 +15,8 @@ root_cause: rule-not-specific-enough
 status: resolved
 resolved_by: >-
   EDITOR-73 (2026-09-03). `save` stopped writing `unadopted` at all — a writer that cannot know what
-  it is asserting should not assert it — and `adoptLocalStack`'s account-has-stacks branch now
-  recomputes the reason from the write contract locally, without a request. The second axis this
+  it is asserting should not assert it — and adoption now recomputes the reason from the write
+  contract locally, without a request (`refusalsReadable` in `account-store.ts`). The second axis this
   finding proposed (drive one unrelated successful operation between the refusal and the assertion)
   is now pinned in `accounts.spec.ts` with its permitted twin, and in a new
   `account-store.test.ts` that pins the store's decision table directly.

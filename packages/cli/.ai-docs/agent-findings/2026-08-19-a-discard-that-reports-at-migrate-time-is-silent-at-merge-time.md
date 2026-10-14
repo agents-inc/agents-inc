@@ -18,8 +18,8 @@ partial_note: >-
   Item 1 landed. `readSavedMarketplaces` now distinguishes an absent slot from an unreadable one and
   reports the second, carrying the failing field's own name and the issue code and nothing past it;
   the store's unit spec pins both branches and pins that no repository the visitor named appears in
-  what was reported. Still open, both in code. `readSavedStack` is unchanged and still answers an
-  unreadable snapshot with silence, and no note records that as deliberate. And the third question
+  what was reported. Still open, both in code. `readSavedStacks`, which replaced the single-slot reader, still answers
+  an unreadable entry with silence, and no note records that as deliberate. And the third question
   the finding asked to be decided rather than inherited is undecided — `savedMarketplacesSchema` is
   still a whole-slot parse, so one malformed entry still costs every credential beside it.
 ---

@@ -390,16 +390,14 @@ population. `pruneToCatalog` above is the worked example, and `addExternal` and 
 what their returns save is a re-seat of the read model rather than a write. A rule read off that store
 alone would carry the shape and miss the reason.
 
-**Two hits survive a deliberate reading rather than an oversight, and each is a different answer to
-the question** — which is why they are recorded here instead of being left to be re-derived:
+**One hit survives a deliberate reading rather than an oversight** — which is why it is recorded here
+instead of being left to be re-derived:
 
-| Hit                                  | Can it return an equal value?                                                                                                                                                        |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `setAgentOption` (`config-store.ts`) | Possible in the type, unreachable in fact — all three callers are `roster-panel.tsx` and each passes `nextInCycle(...)`, whose cycles are 4, 5 and 2 long, so the value always moves |
-| `remember` (`marketplace-store.ts`)  | Reachable — a second successful load of the same marketplace on the same token — and harmless, because the store carries no `skipHydration`, so slot and memory never disagree       |
+| Hit                                 | Can it return an equal value?                                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `remember` (`marketplace-store.ts`) | Reachable — a second successful load of the same marketplace on the same token — and harmless, because the store carries no `skipHydration`, so slot and memory never disagree |
 
-The second is the more useful entry: an equal value being reachable is not on its own the argument
-for an early return. What made `pruneToCatalog`'s return load-bearing is the window `skipHydration`
+An equal value being reachable is not on its own the argument for an early return. What made `pruneToCatalog`'s return load-bearing is the window `skipHydration`
 opens, where the slot holds a configuration memory does not — and `marketplace-store` hydrates at
 import, so a redundant write there rewrites what is already under it. If that store ever takes
 `skipHydration`, `remember` owes the guard the same day.
@@ -510,15 +508,15 @@ the one already carrying `skipHydration`. Only `config-store` can be made to hol
 configuration without being asked, and it is the one carrying the machinery above. What keeps each of
 the other three out is a different fact each time, and the differences are the point:
 
-| Store               | What actually keeps foreign state out                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ui-store`          | `partialize` reduces the write to four arrangement fields — `rosterCollapsed`, `rosterGroupBy`, `stackCollapsed`, `theme` — every one of which only the visitor's own clicks can populate. Structurally out of reach. The list is pinned whole by `PERSISTED_UI_KEYS` in `ui-store.test.ts`, and pinned WHOLE rather than counted because one arrangement field traded for another is what a length assertion sleeps through |
-| `marketplace-store` | `remember` is called only from the dialog, and the opening deliberately does not call it for a marketplace a link named. A rule being kept rather than a shape that forbids it — so this is the one to re-read when a new caller appears                                                                                                                                                                                     |
-| `saved-stack-store` | Nothing. It takes foreign state today, and that is correct — see below                                                                                                                                                                                                                                                                                                                                                       |
+| Store               | What actually keeps foreign state out                                                                                                                                                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ui-store`          | `partialize` reduces the write to arrangement fields, every one of which only the visitor's own clicks can populate. Structurally out of reach. The list is pinned whole by `PERSISTED_UI_KEYS` in `ui-store.test.ts`, and pinned WHOLE rather than counted because one arrangement field traded for another is what a length assertion sleeps through |
+| `marketplace-store` | `remember` is called only from the dialog, and the opening deliberately does not call it for a marketplace a link named. A rule being kept rather than a shape that forbids it — so this is the one to re-read when a new caller appears                                                                                                               |
+| `saved-stack-store` | Nothing. It takes foreign state today, and that is correct — see below                                                                                                                                                                                                                                                                                 |
 
-`RosterPanel` renders on a shared address like any other, and its Save button writes
+`SaveStackDialog` renders on a shared address like any other, and signed out it writes
 `toSeedPayload(config)` — whatever configuration is on screen, sharer's or not — into
-`agents-inc:saved-stack:v1`. `detachSavedConfig` does not cover it: it swaps `config-store`'s storage
+`agents-inc:saved-stacks:v1`. `detachSavedConfig` does not cover it: it swaps `config-store`'s storage
 and nothing else's.
 
 **What makes that correct rather than an instance of this defect is the discriminator the whole
@@ -837,30 +835,25 @@ reads as general rather than as one case, and holds the quoted 503 beside them.
 The two read identically on the happy path and diverge exactly where the work failed, which is the
 one state the surface was drawn to handle.
 
-The editor's stack grid shows an account's stacks in place of the browser's local slot — one list
-rather than two that can disagree. What must hide the slot is the account **holding this browser's
-work**, not adoption having been tried. `adoptLocalStack` in `apps/editor/src/stores/account-store.ts`
-does not re-upload into an account that already has rows, and its early return once answered `null`
+Signed in, the editor's stack grid shows an account's stacks in place of the browser's local saves —
+one list rather than two that can disagree. What must hide a save is the account **holding this
+browser's work**, not adoption having been tried. `adoptLocalSaves` in
+`apps/editor/src/stores/account-store.ts` carries every save into an empty account and, once it has
+rows, only the saves still `owed`. When the browser held one slot, its early return answered `null`
 for both readings: NOT ATTEMPTED and ADOPTED came back the same, so a reload after a refused sign-in
 found one unrelated row in the account, never re-tried adoption, and dropped the refused slot off the
-grid in silence. It now recomputes the reason on that branch from `writeContractRefusal` — a
+grid in silence. Every refresh now answers each save's reason from `writeContractRefusal` — a
 `safeParse` against `installableSeedPayloadSchema`, needing no request — because a payload the write
 contract refuses could not have reached that account by any route, so the answer is free and it is
 certain.
 
 **The corollary is that the flag is a fact about the SUBJECT, not about the container.** `unadopted`
-says why THIS SNAPSHOT is not in the account; it is not shorthand for "the account's list is empty".
-Read the second way it acquires an invariant somebody then has to maintain, and `save` maintained it
-by clearing the flag on every save — including a save of a different selection, which leaves the
-snapshot exactly where it was and drops its notice one save later. **Only what actually reaches the
-subject may clear the flag**: adoption carrying the snapshot in, or a sign-out handing the grid back
-to it.
-
-Both halves cost a guarantee that was never worth what it bought. Two cells reading "Saved stack" is
-now reachable, and is the accepted outcome rather than a case the store rules out — every signed-in
-save is named that anyway, and the two are told apart by their second line, since the local slot
-lists the skills it holds where an account's row can only say it is in the account. **Sharing a name
-is a smaller harm than losing the work.**
+says why EACH SAVE it names is not in the account; it is not shorthand for "the account's list is
+empty". Read the second way it acquires an invariant somebody then has to maintain, and `save`
+maintained it by clearing the flag on every save — including a save of a different selection, which
+leaves the refused save exactly where it was and drops its notice one save later. **Only what
+actually reaches the subject may clear the flag**: adoption carrying the save in, or a sign-out
+handing the grid back to it.
 
 ---
 

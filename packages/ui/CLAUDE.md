@@ -159,7 +159,7 @@ caller's to supply — `LatticeRow` carries its own (`role="button"`,
 `tabIndex={0}` and an Enter/Space handler that issues a real click), and a cell
 carries none.
 
-**The two call sites answer that differently, and the difference is this rule
+**The call sites answer that differently, and the difference is this rule
 meeting `nested-interactive`.** `stack-grid.tsx` passes the full set onto the
 cell itself, which it is free to do: a stack cell holds nothing focusable, so
 being the control costs it nothing. `skill-cell.tsx` passes none of it — its
@@ -168,8 +168,10 @@ cell holds the ••• and two badges, and a control cannot contain controls, 
 Its operability is a SIBLING instead: `LatticeCellButton`, a real `<button>`
 stretched over the cell and sitting beneath its controls, whose own comment in
 [`lattice.tsx`](./src/components/lattice.tsx) carries the reasoning.
+`provider-grid.tsx` takes the stack cell's shape, as radios; `sub-agent-card.tsx`
+takes the skill cell's.
 
-A third call site that renders a plain cell and stops at `onClick` inherits the
+A call site that renders a plain cell and stops at `onClick` inherits the
 picture of an affordance without one, and neither the component nor the type
 system will say so.
 

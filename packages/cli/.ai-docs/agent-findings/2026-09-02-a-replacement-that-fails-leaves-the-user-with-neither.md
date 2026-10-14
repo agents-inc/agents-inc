@@ -16,12 +16,12 @@ status: partial
 partial_note: >-
   The production site this finding names is closed — a refused adoption keeps the local slot and
   names the conflict. **Its CLASS is not.** Executing the path on 2026-09-02 showed the kept slot
-  disappears on the next unrelated Save, because `save` clears `unadopted` and `adoptLocalStack`
-  never recomputes it once the account holds stacks. Filed as EDITOR-73 and pinned with
+  disappears on the next unrelated Save, because `save` clears `unadopted` and adoption
+  never recomputed it once the account holds stacks. Filed as EDITOR-73 and pinned with
   `test.fail()`. The rule this finding states — the condition hiding B must be "A arrived", never
   "A was attempted" — is correct and was obeyed; what it does not say is how long "A arrived" has to
   keep being true.
-resolved_by: "`adoptLocalStack` returns the refusal instead of swallowing it, and the grid keeps drawing the local slot with a sentence naming the scope conflict. EDITOR-67."
+resolved_by: "`adoptLocalSaves` returns the refusal instead of swallowing it, and the grid keeps drawing each refused save with a sentence naming the scope conflict. EDITOR-67."
 ---
 
 # A replacement that fails leaves the user with neither

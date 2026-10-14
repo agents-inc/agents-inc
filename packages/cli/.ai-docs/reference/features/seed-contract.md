@@ -194,7 +194,7 @@ server's, then the editor's:
 | `apps/editor/src/features/configure/lib/seed.ts`                | `SEED_VERSION`, `seedPayloadSchema`; `SeedAgent`, `SeedExternalSkill`, `SeedPayload`, `SeedSkill` (type-only) — through the barrel                   | The editor's mint, `toSeedPayload`. It `parse`s with the lenient base schema on purpose, so a configuration carrying an unwritable pair survives local Save and the preview                                                                                                                             |
 | `apps/editor/src/lib/api/configs.ts`                            | `installableSeedPayloadSchema`, `seedPayloadSchema`; `SeedPayload` (type-only) — through the barrel                                                  | The editor's write gate: every POST it makes crosses `writeContractProblems`, which asks the INSTALLABLE schema. `fetchSharedConfig` decodes a fetched body with the base one                                                                                                                           |
 | `apps/editor/src/stores/account-store.ts`                       | `installableSeedPayloadSchema`; `SeedPayload` (type-only) — through the barrel                                                                       | `writeContractRefusal` asks the same schema whether a local snapshot can be carried into an account                                                                                                                                                                                                     |
-| `apps/editor/src/stores/saved-stack-store.ts`                   | `seedPayloadSchema`; `SeedPayload` (type-only) — through the barrel                                                                                  | `readSavedStack` decodes the saved-stack slot with it                                                                                                                                                                                                                                                   |
+| `apps/editor/src/stores/saved-stack-store.ts`                   | `seedPayloadSchema`; `SeedPayload` (type-only) — through the barrel                                                                                  | `readSavedStacks` decodes each save with it                                                                                                                                                                                                                                                             |
 | `apps/editor/src/features/configure/lib/use-install-command.ts` | `seedPayloadSchema` — through the barrel                                                                                                             | `useInstallCommand` re-`parse`s its own serialised payload before posting it                                                                                                                                                                                                                            |
 | `apps/editor/src/lib/api/skill-contents.ts`                     | `MAX_EXTERNAL_SKILL_BYTES`; `SeedSkillTree` (type-only) — through the barrel                                                                         | `isPastCarryLimit` and `carryLimitRefusal`: the byte limit on a carried skill                                                                                                                                                                                                                           |
 | `apps/editor/src/stores/persisted-schema.ts`                    | `isSeedScopePairWritable` — through the barrel                                                                                                       | `isScopePairCompatible` is the wire's pair rule                                                                                                                                                                                                                                                         |
@@ -253,15 +253,15 @@ detail: [`reference/build-and-packaging.md`](../build-and-packaging.md).
 > meantime `z.object` strips what that build does not declare. A field surviving a round trip is
 > therefore still not evidence the two ends agree — only the version literal is.
 >
-> That is why the last three versions exist at all: `seedAgentSchema.scope` (v3), the envelope's
-> `marketplace` (v4) and the envelope's `external` (v5) are all additive-optional and would not
+> That is why v3 to v6 exist at all: `seedAgentSchema.scope` (v3), the envelope's `marketplace`
+> (v4), the envelope's `external` (v5) and `seedAgentSchema.codexModel` (v6) are all additive-optional and would not
 > normally need a version, but the version is what tells a sharing app the field survives the trip.
-> For `external` the stakes are higher than for the other two: a consumer built against v4 would
+> For `external` the stakes are higher than for the others: a consumer built against v4 would
 > STRIP it and install a configuration quietly missing the skills the sharer picked, which is the
 > same defect the field exists to fix, moved one step later.
 
-**What enforces it, and what does not.** `seed-schema.test.ts` hardcodes `v: 5` in its payload and
-asserts `v: 4` is refused, so **changing `SEED_VERSION` without editing that spec fails the suite** —
+**What enforces it, and what does not.** `seed-schema.test.ts` hardcodes `v: 6` in its payload and
+asserts `v: 5` is refused, so **changing `SEED_VERSION` without editing that spec fails the suite** —
 the bump cannot happen silently. A shape change _without_ a bump still passes; nothing detects that,
 and it is listed under Known Limitations.
 
@@ -277,7 +277,7 @@ can carry no CLI runtime.
 | A stale id fails to decode **loudly**; there is no migration path, and none is wanted pre-1.0       | `packages/matrix/src/seed.ts` header   |
 | A rejected version surfaces as the same message as a malformed body                                 | `src/cli/lib/seed/fetch-seed.ts`       |
 | That holds for READING. On the WRITE side a rejected version is told apart — 409 and a reload       | `apps/server/src/index.ts`             |
-| The policy is pinned by a spec that refuses `v: 4` and asserts `["v"]` is the **only** failing path | `src/cli/lib/seed/seed-schema.test.ts` |
+| The policy is pinned by a spec that refuses `v: 5` and asserts `["v"]` is the **only** failing path | `src/cli/lib/seed/seed-schema.test.ts` |
 
 **Why one version is safe here, and why it would not be elsewhere.** The worker content-addresses an
 id (SHA-256 of the re-serialized validated body, base64url, truncated) and serves it
@@ -312,7 +312,7 @@ a status — it lands in `fetchSeedConfig`'s schema-failure message alongside ev
 payload stops parsing, and re-sharing is the one remedy true of all of them. See
 [Failure is a message, never a throw](#failure-is-a-message-never-a-throw).
 
-**Version history, from the schema's own comments:**
+**Version history:**
 
 | Version | Change                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -321,6 +321,7 @@ payload stops parsing, and re-sharing is the one remedy true of all of them. See
 | v3      | Gave the sub-agent its own `scope`. Before it, `--from` wrote `project` for every agent                                                                                                                                                                                                                                                                                                                 |
 | v4      | Gave the payload the **marketplace** its skills are fetched from. An id names whose skill it is (a marketplace's name is the author-time prefix on every id it ships) but cannot say WHERE that marketplace lives; absent still means the default public catalogue                                                                                                                                      |
 | v5      | Made the payload carry **content**. Every id above it is resolved by the receiver against a catalogue it already has; a skill added from outside answers to no catalogue, so its whole directory travels inline under `external`. That is what makes a shared id self-contained — `--from` reaches into no third-party repository at install time, and two people installing one id get identical bytes |
+| v6      | Gave the sub-agent a `codexModel`. A non-empty string rather than an enum, because Codex retires ids; each consumer drops one it does not offer                                                                                                                                                                                                                                                         |
 
 ## The Wire Contract
 
@@ -362,8 +363,8 @@ because the mint also serves the output-preview dialog and local Save, where a c
 carrying an unwritable pair has to round-trip untouched — opening one and repairing it in a click is
 what the lenient read schema exists for. So the stricter half applies at the one moment a payload
 becomes a WRITE. Every POST the editor makes crosses that function — Share (`use-share-link.ts`), the
-install dialog (`use-install-command.ts`), a signed-in Save (`roster-panel.tsx`) and the local slot a
-first sign-in adopts (`stores/account-store.ts`) — which is what stops a fifth arriving unprotected.
+install dialog (`use-install-command.ts`), a signed-in Save (`saveStack` in `save-stack.ts`) and the local saves
+a first sign-in adopts (`stores/account-store.ts`) — which is what stops a fifth arriving unprotected.
 
 It asks the SCHEMA rather than `unwritableSeedAssignments`, so a rule added to the write contract
 later is enforced there without anyone remembering to come back. A refusal returns the `unwritable`
@@ -377,23 +378,23 @@ SECOND write is unspent too — a signed-in save is a mint and then a stored poi
 return dropped from the handler would file a row whose `configId` is the empty string.
 
 **A refusal at the SIGN-IN seam is not a no-op, and the fourth POST is where that matters.**
-`adoptLocalStack` in `apps/editor/src/stores/account-store.ts` carries the browser's local snapshot
-into an account on a first sign-in, and adoption is a mint and then a write — so it ends at whichever
+`adoptLocalSaves` in `apps/editor/src/stores/account-store.ts` carries the browser's local saves
+into an account on a first sign-in, each a mint and then a write — so each ends at whichever
 refused, and both refusal sets meet in `AdoptionRefusal = ShareRefusal | StackRefusal`. What comes
 back is a VALUE rather than a dialog, because this runs on a path nobody asked for at the moment they
-finish signing in: the store keeps `unadopted`, the grid keeps drawing the local slot beside the
-account's list, and `stack-grid.tsx` renders `WHY_NOT_ADOPTED[refusal]` above the grid. Silence was
+finish signing in: the store keeps `unadopted` per save, the grid keeps drawing each refused save
+beside the account's list, and `stack-grid.tsx` renders `WHY_NOT_ADOPTED[refusal]` above the grid. Silence was
 defensible only while every ending here was transient — a payload the write contract refuses is
 refused identically forever, so the snapshot left the grid on sign-in with nothing saying why.
 
 Two consequences follow and both are the accepted outcome rather than cases the store rules out.
-**Both lists at once is reachable** — the local slot and the account's rows are told apart by their
-second line, since the slot lists the skills it holds where an account's row can only say it is in
-the account. And **`unadopted` is a fact about the SNAPSHOT rather than about the account's list**:
-only what actually reaches the snapshot may clear it, which is adoption carrying it in or a sign-out
+**Both lists at once is reachable** — a local save and the account's rows are told apart by their
+second line, since a local save lists the skills it holds where an account's row can only say it is in
+the account. And **`unadopted` is a fact about each SAVE rather than about the account's list**:
+only what actually reaches the save may clear it, which is adoption carrying it in or a sign-out
 handing the grid back to it. A `save` that cleared it on every save kept a tidier invariant and
-dropped a refused slot off the grid one save later. A non-empty account is still asked
-`writeContractRefusal` (declared beside `adoptLocalStack` in that same store) — a `safeParse`
+dropped a refused slot off the grid one save later. Every save is still asked
+`writeContractRefusal` (declared in that same store), whatever the account holds — a `safeParse`
 against `installableSeedPayloadSchema` needing no request at all — because "we did not try" and "it
 is in there" are different answers, and a payload the contract refuses could not have reached that
 account by any route.
@@ -443,12 +444,13 @@ a key meaning what its absence already means would remint every ordinary payload
 **Every field is optional, and each says something different on its own.** This is the only place a
 configuration can speak about an agent that no skill mentions.
 
-| Field    | Type                                              | Absent means                                                                                                                                           |
-| -------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `on`     | `boolean`                                         | "whatever the assignments imply". `true` is the **only** way a skill-less agent travels; `false` removes the agent _and_ the assignment rows naming it |
-| `model`  | `"opus" \| "fable" \| "sonnet" \| "haiku"`        | "keep whatever the agent's own metadata says"                                                                                                          |
-| `effort` | `"low" \| "medium" \| "high" \| "xhigh" \| "max"` | Same                                                                                                                                                   |
-| `scope`  | `"project" \| "global"`                           | The shared selection default — `DEFAULT_SELECTION_OPTIONS.scope` in `@workspace/matrix`, currently `global` — so a resting choice never has to travel  |
+| Field        | Type                                              | Absent means                                                                                                                                           |
+| ------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `on`         | `boolean`                                         | "whatever the assignments imply". `true` is the **only** way a skill-less agent travels; `false` removes the agent _and_ the assignment rows naming it |
+| `model`      | `"opus" \| "fable" \| "sonnet" \| "haiku"`        | "keep whatever the agent's own metadata says"                                                                                                          |
+| `codexModel` | non-empty `string`                                | The session's model, on Codex. Each consumer drops an id it does not offer                                                                             |
+| `effort`     | `"low" \| "medium" \| "high" \| "xhigh" \| "max"` | Same                                                                                                                                                   |
+| `scope`      | `"project" \| "global"`                           | The shared selection default — `DEFAULT_SELECTION_OPTIONS.scope` in `@workspace/matrix`, currently `global` — so a resting choice never has to travel  |
 
 **An entry naming only a model does NOT switch the agent on.** `readAgentMap` files such an entry
 under `known`, and the bare-agent loop admits only `entry.on === true`. Pinned by

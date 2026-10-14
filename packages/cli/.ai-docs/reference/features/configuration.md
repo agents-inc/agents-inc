@@ -313,6 +313,7 @@ type AgentScopeConfig = {
   name: AgentName;
   scope: SkillScope; // "project" | "global"
   model?: ModelName; // overrides the model in the agent's own metadata
+  codexModel?: CodexModelName; // the model a Codex role runs on; absent means the session's
   effort?: EffortLevel; // overrides the reasoning effort in the agent's own metadata
   excluded?: boolean;
 };

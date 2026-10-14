@@ -886,7 +886,7 @@ After `writeScopedFromWizard` persists `config.ts`, the same final `ProjectConfi
 
 ### `buildCompileAgents(config, agents)`
 
-Returns `Partial<Record<AgentName, CompileAgentConfig>>`. `CompileAgentConfig` (`src/cli/types/config.ts`) is **three** optional fields, not one: `skills?: SkillReference[]`, `model?: ModelName`, `effort?: EffortLevel`.
+Returns `Partial<Record<AgentName, CompileAgentConfig>>`. `CompileAgentConfig` (`src/cli/types/config.ts`) is **four** optional fields, not one: `skills?: SkillReference[]`, `model?: ModelName`, `codexModel?: CodexModelName`, `effort?: EffortLevel`.
 
 It emits one entry per **active** agent — `config.agents` filtered to `!excluded`, then further filtered to names present in the loaded `agents` record. Each entry starts as a `tuning` object carrying whatever `model` / `effort` the agent's own `AgentScopeConfig` declares, conditionally spread so an absent override writes no key. **`tuning` is built before the skill work and is what a stack-less agent returns**: model and effort are the agent's own settings, not its skills', so a bare agent with no stack entry still carries them. A missing `config.stack?.[name]` therefore yields `tuning` (possibly `{}`), never a guaranteed `{}`.
 

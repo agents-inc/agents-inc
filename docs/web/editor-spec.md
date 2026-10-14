@@ -37,7 +37,7 @@ BUILT_IN_MATRIX + AGENT_DEFINITIONS       (packages/matrix/src/{vendor,generated
           └─ export from "@workspace/matrix"
               └─ apps/editor/src/stores/catalog-store   THE SEAT — one Matrix and everything built from it
                   ├─ stores/config-store         the selection           (persisted, read on demand)
-                  ├─ stores/saved-stack-store    one snapshot payload    (persisted)
+                  ├─ stores/saved-stack-store    named saves             (persisted)
                   ├─ stores/marketplace-store    saved catalogues + tokens (persisted)
                   ├─ stores/ui-store             panels, dialogs, flash  (rosterCollapsed persisted)
                   ├─ router search params        view state, and which configuration is on screen
@@ -367,9 +367,8 @@ confirmation — see §5.
 
 ### Saved-stack slot — `apps/editor/src/stores/saved-stack-store.ts` (persisted)
 
-One `SeedPayload`, which is the same serialization sharing sends, so a saved stack and a shared link
-can never restore different things. A single slot: saving again overwrites, so the stack grid gains
-exactly one cell however often Save is used.
+Each save carries a `SeedPayload`, which is the same serialization sharing sends, so a saved stack and
+a shared link can never restore different things.
 
 Deliberately its own slice rather than a field of the config store: that one is versioned by
 `PERSIST_VERSION` and discarded wholesale on a bump, and a snapshot someone made on purpose must not
@@ -382,7 +381,7 @@ guessed at.
 | Field                | Holds                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
 | `openPanelSkillId`   | Which skill's ••• options panel is showing. One at a time.                                              |
-| `pendingStack`       | A `StackRequest` awaiting confirmation: `{ kind: "stack"; stackId }` or `{ kind: "saved" }`             |
+| `pendingStack`       | A `StackRequest` awaiting confirmation                                                                  |
 | `pendingMarketplace` | Which saved marketplace a switch has been asked for, awaiting the confirmation that names what it costs |
 | `dialog`             | `"none" \| "install" \| "add" \| "marketplace"`                                                         |
 | `previewSkillId`     | Which added skill's contents are on show, over whatever else is open                                    |
@@ -403,7 +402,7 @@ can be described before it happens, and only that one has a catalogue to fetch f
 
 | Concern    | Approach                                                                                                                                                                                                                                                                                                                    |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Keys       | `agents-inc:config:v1` · `agents-inc:ui:v1` · `agents-inc:marketplace:v1` · `agents-inc:saved-stack:v1`                                                                                                                                                                                                                     |
+| Keys       | `agents-inc:config:v1` · `agents-inc:ui:v1` · `agents-inc:marketplace:v1` · `agents-inc:saved-stacks:v1`                                                                                                                                                                                                                    |
 | Validation | `merge` → `safeParse`; on failure **return current** and report the issue with paths and codes only, never values                                                                                                                                                                                                           |
 | Stale ids  | `pruneUnknownIds` drops ids nothing can resolve, the `agents` map included, and the difference is counted and reported. Skills and stacks are judged by the **seated** catalogue; agents by `SUB_AGENTS_BY_ID`, because marketplaces do not ship sub-agents                                                                 |
 | Hydration  | `skipHydration: true` on the config store. `readSavedConfig()` is the only reader — see §4                                                                                                                                                                                                                                  |
@@ -411,7 +410,7 @@ can be described before it happens, and only that one has a catalogue to fetch f
 
 `partialize` writes only what the next session can describe: an external skill's directory is not in
 localStorage, so a selection naming one is stripped (`onlyPersistableSkills`). Saving the stack is
-what carries an added skill across a reload, because the slot holds a payload and a payload carries
+what carries an added skill across a reload, because each save holds a payload and a payload carries
 the content.
 
 **The config slot can be detached.** `detachSavedConfig()` swaps the store's storage for
@@ -420,7 +419,7 @@ slot emptied is a slot written. Guarding every write would be a rule every actio
 keep; taking the pen away is one statement made once. `readSavedConfig()` hands it back, and whether
 it had been held is the same question as "is what is in memory this browser's?".
 
-Both untrusted reads outside the config store — `readSavedMarketplaces` and `readSavedStack` — are
+Both untrusted reads outside the config store — `readSavedMarketplaces` and `readSavedStacks` — are
 pure functions over `unknown`, so they are unit-tested without a browser. An unreadable slot and an
 empty one are the same answer on purpose: there is nothing to restore either way.
 
@@ -720,7 +719,7 @@ them used to be refused at the end of the funnel.
 
 ### Content travels inline
 
-`SEED_VERSION` is **5**, and v5 is what made the payload carry content. Every other id in a payload
+Since `SEED_VERSION` 5 the payload carries content. Every other id in a payload
 is resolved by the receiver against a catalogue it already has; a skill added from outside answers to
 no catalogue, so its whole directory travels in the `external` map keyed by the same id `skills`
 uses. That is what makes a shared id self-contained: `--from` reaches into no third-party repository
@@ -858,12 +857,12 @@ as a token is what lets `-mx-gutter` bleed a rule out to touch both vertical div
 
 Four layers, in order of preference. Nothing that could sit lower sits higher.
 
-| Layer              | Holds                                                             | Files                                                                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Pure functions** | Every derivation and transform. No React, independently testable. | `features/configure/lib/{derive,seed,default-assignments,marketplace-switch}.ts`, `stores/persisted-schema.ts`, the parsers in `lib/api/*`, `readSavedMarketplaces`, `migrateSavedMarketplaces`, `readSavedStack`, `withoutWrites` |
-| **Stores**         | Shared mutable state and the actions that write it.               | `catalog-store` · `config-store` · `ui-store` · `marketplace-store` · `saved-stack-store`                                                                                                                                          |
-| **Hooks**          | Reusable _behaviour_ — the only thing hooks are for here.         | `lib/use-pinned.ts` · `lib/use-catalog-first.ts` · `lib/use-share-link.ts` · `lib/use-install-command.ts` · `lib/use-apply-stack-request.ts`                                                                                       |
-| **Components**     | Composition and event wiring only.                                | everything in `features/configure/components/`                                                                                                                                                                                     |
+| Layer              | Holds                                                             | Files                                                                                                                                                                                                                               |
+| ------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pure functions** | Every derivation and transform. No React, independently testable. | `features/configure/lib/{derive,seed,default-assignments,marketplace-switch}.ts`, `stores/persisted-schema.ts`, the parsers in `lib/api/*`, `readSavedMarketplaces`, `migrateSavedMarketplaces`, `readSavedStacks`, `withoutWrites` |
+| **Stores**         | Shared mutable state and the actions that write it.               | `catalog-store` · `config-store` · `ui-store` · `marketplace-store` · `saved-stack-store`                                                                                                                                           |
+| **Hooks**          | Reusable _behaviour_ — the only thing hooks are for here.         | `lib/use-pinned.ts` · `lib/use-catalog-first.ts` · `lib/use-share-link.ts` · `lib/use-install-command.ts` · `lib/use-apply-stack-request.ts`                                                                                        |
+| **Components**     | Composition and event wiring only.                                | everything in `features/configure/components/`                                                                                                                                                                                      |
 
 Five component files hold a `useEffect`, and each one is genuinely local: the add-skill dialog
 (fetching the index, and settling the search before the analytics event), the install dialog (the one
@@ -1049,7 +1048,7 @@ belong in a unit test:
   `selectDomainViews` crosses four filters with two provenances of skill. Each case is one browser
   round-trip end-to-end and microseconds in-process.
 - **The path is a boundary against untrusted or legacy data.** `migrateConfig`, `pruneUnknownIds`,
-  `readSavedMarketplaces`, `migrateSavedMarketplaces` and `readSavedStack` read whatever localStorage
+  `readSavedMarketplaces`, `migrateSavedMarketplaces` and `readSavedStacks` read whatever localStorage
   happens to hold. This is the only place in the app where a bug is _silent_ — a broken migration
   does not throw, it quietly returns a configuration missing someone's afternoon of work.
 - **Failure needs localising.** An E2E failure says the roster shows the wrong count; a unit failure

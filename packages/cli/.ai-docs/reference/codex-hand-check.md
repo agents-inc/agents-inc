@@ -214,14 +214,15 @@ sub-agents — spawned `cli-developer` and `reviewer`. The install does not writ
 
 **Answered 2026-09-26, and the answer changed the product.** On codex-cli 0.157.1 with a ChatGPT
 login, every role compiled with `model = "opus"` registered and then refused to start: `The 'opus'
-model is not supported when using Codex with a ChatGPT account.` Every model this product can name is
-Claude's, so a role file now carries NO `model` and runs on the session's model, and the compile names
+model is not supported when using Codex with a ChatGPT account.` Every `MODEL_NAMES` member is
+Claude's, so a role file never carries one: it names a `model` only for a `codexModel` pin, and
+otherwise runs on the session's model. The compile names
 "Claude models" among what Codex cannot express. `model_reasoning_effort` was measured on the same
 run and does resolve. This check now confirms the fix.
 
 |            |                                                                                                                                                                       |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Set up** | Compile an installation whose `web-developer` names a model and an effort, e.g. `opus` and `high`.                                                                    |
+| **Set up** | Compile an installation whose `web-developer` names a model and an effort, e.g. `opus` and `high`, and no `codexModel`.                                               |
 | **Look**   | `grep -n '^model' <roles dir>/*.toml` prints nothing; `web-developer.toml` holds `model_reasoning_effort = "high"`. The install lists "Claude models" as not carried. |
 | **Run**    | Delegate to `web-developer` and ask it which model and reasoning effort it runs on.                                                                                   |
 | **PASS**   | The sub-agent STARTS, on the session's model, and the child session log under `$CODEX_HOME/sessions/` records `reasoning_effort: high`.                               |

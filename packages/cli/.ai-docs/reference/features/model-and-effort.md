@@ -9,6 +9,9 @@ keywords:
     ModelName,
     EFFORT_NAMES,
     MODEL_NAMES,
+    CODEX_MODEL_NAMES,
+    CodexModelName,
+    codexModel,
     effortLevelSchema,
     modelNameSchema,
     agent-tuning,
@@ -121,13 +124,13 @@ Checked against Claude Code's documentation: the levels are exactly `low` `mediu
 model effort level and no config can name it. It was briefly carried in the wire contract and
 removed under a version bump on both sides. Do not re-add it.
 
-## The two unions
+## The unions
 
-Both live in `src/cli/types/matrix.ts` and are **const-array-derived** — the array is the source of
+All three live in `src/cli/types/matrix.ts` and are **const-array-derived** — the array is the source of
 truth and the type is projected off it with `(typeof X)[number]`. Nothing declares the union
 members a second time in TypeScript.
 
-Both are stated below member by member, in source order, and **both are bound to source** by
+Each is stated below member by member, in source order, and **each is bound to source** by
 `scripts/check-enumeration-drift.ts` — adding or renaming a member fails `npx vitest run scripts/`
 until the matching row is written here. A one-cell comma list could not be bound: the checker's
 `code-spans` reader only matches CONSTANT-shaped backticked names and every member here is
@@ -142,6 +145,15 @@ The members of `MODEL_NAMES` (`ModelName`), exhaustive and in source order:
 | `haiku`   | A real model                                                       |
 | `fable`   | A real model                                                       |
 | `inherit` | The sentinel: the main conversation's model, never a calling agent |
+
+The members of `CODEX_MODEL_NAMES` (`CodexModelName`), exhaustive and in source order:
+
+| Member          | What it selects                                        |
+| --------------- | ------------------------------------------------------ |
+| `gpt-6-astra`   | A Codex model, read only through a role's `codexModel` |
+| `gpt-5.6-sol`   | ″                                                      |
+| `gpt-5.6-terra` | ″                                                      |
+| `gpt-5.6-luna`  | ″                                                      |
 
 The members of `EFFORT_NAMES` (`EffortLevel`), exhaustive and in source order:
 
@@ -182,18 +194,16 @@ plainly exists.
 
 Five distinct types carry the pair. They are not interchangeable; each answers a different question.
 
-| Type                 | File                          | Question it answers                         | Doc comment in source                                                                            |
-| -------------------- | ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `BaseAgentFields`    | `src/cli/types/agents.ts`     | What does the agent's own metadata declare? | on `effort`: _"Emitted into compiled frontmatter only when set — there is no default"_           |
-| `AgentScopeConfig`   | `src/cli/types/config.ts`     | What did the user choose, per project?      | _"Overrides the model from the agent's own metadata. Absent means 'keep the metadata default'."_ |
-| `CompileAgentConfig` | `src/cli/types/config.ts`     | What is handed to the compile pipeline?     | _"Config-level effort override, preferred over the agent definition's own value."_               |
-| `AgentFrontmatter`   | `src/cli/types/agents.ts`     | What shape is the compiled YAML block?      | on `model`: _"Use \"inherit\" to use parent model"_ — `effort` carries none                      |
-| `SeedAgent`          | `packages/matrix/src/seed.ts` | What can travel over a share link?          | see [`seed-contract.md`](./seed-contract.md)                                                     |
+| Type                 | File                          | Question it answers                         |
+| -------------------- | ----------------------------- | ------------------------------------------- |
+| `BaseAgentFields`    | `src/cli/types/agents.ts`     | What does the agent's own metadata declare? |
+| `AgentScopeConfig`   | `src/cli/types/config.ts`     | What did the user choose, per project?      |
+| `CompileAgentConfig` | `src/cli/types/config.ts`     | What is handed to the compile pipeline?     |
+| `AgentFrontmatter`   | `src/cli/types/agents.ts`     | What shape is the compiled YAML block?      |
+| `SeedAgent`          | `packages/matrix/src/seed.ts` | What can travel over a share link?          |
 
 `BaseAgentFields` is the shared base for **three** agent types — `AgentDefinition`, `AgentConfig`
 and `AgentYamlConfig` all extend it, so `model` and `effort` reach all three from one declaration.
-Its own header comment explains the extraction: it exists to avoid duplicating these fields across
-the three.
 
 **Both fields are optional everywhere.** There is no type in the codebase on which `model` or
 `effort` is required, including the frontmatter type. Absence is a meaningful, load-bearing state at
@@ -243,28 +253,25 @@ model: agentConfig?.model ?? definition.model,
 effort: agentConfig?.effort ?? definition.effort,
 ```
 
-**Config wins over metadata, silently, for both fields, using `??` (not `||`).** The source records
-the reasoning directly above those two lines: the project config carries the user's deliberate
-choice while the agent's own metadata carries the default, and _"warning on every compile for a
-setting someone made on purpose is noise."_ Do not add a divergence warning here — the silence is
-the decision, not an oversight.
+**Config wins over metadata, silently, for both fields, using `??` (not `||`).** Do not add a
+divergence warning here — the silence is the decision, not an oversight.
 
 `??` rather than `||` matters in principle (an empty-string override would survive), though in
 practice Zod narrows both fields to their unions before they reach this line, so no falsy-but-valid
 value exists.
 
 **`resolveAgents` returns an explicit field list, not a spread.** The `AgentConfig` it constructs
-names `name`, `title`, `description`, `model`, `effort`, `tools`, `disallowedTools`,
+names `name`, `title`, `description`, `model`, `codexModel`, `effort`, `tools`, `disallowedTools`,
 `permissionMode`, `isolation`, `hooks`, `experimental`, `skills`, `path`,
 `sourceRoot` and `agentBaseDir` — every optional field the render reads, each spread conditionally
 so that an explicit `undefined` cannot render as an empty key. `outputFormat` is declared on
 `BaseAgentFields` and is the one field **not** carried through.
 
 **Carried is not the same as tunable, and that is the distinction this section exists to draw.**
-Only `model` and `effort` take a `agentConfig.X ?? definition.X` step; every other field arrives
-from the agent's own `metadata.yaml` and from nowhere else, because `CompileAgentConfig`
-(`src/cli/types/config.ts`) declares `skills`, `model` and `effort` and has no key to hold a third
-override. Widening the axis to another field is therefore not a one-line change.
+Only `model` and `effort` take a `agentConfig.X ?? definition.X` step; `codexModel` comes from the
+config alone (no metadata names one), and every other field from the agent's own `metadata.yaml`
+alone, because `CompileAgentConfig` (`src/cli/types/config.ts`) declares `skills`, `model`,
+`codexModel` and `effort` and has no key to hold another override. Widening the axis to another field is therefore not a one-line change.
 
 ### Getting a config-level override into `CompileAgentConfig`
 
@@ -274,9 +281,7 @@ One function builds `CompileConfig.agents`, and it carries the tuning:
 | --------------------------------------------------- | ------------------------------------- | -------------------------------- |
 | `buildCompileAgents()` → `buildAgentCompileEntry()` | `lib/installation/local-installer.ts` | **Yes** — spread in when defined |
 
-`buildAgentCompileEntry` builds the `tuning` object **before** the skill-less early-out, and the
-source says why: _"Model/effort are the agent's own settings, not its skills' — a bare agent with no
-stack entry still carries them."_ An agent with no `config.stack` entry returns `tuning` and stops;
+`buildAgentCompileEntry` builds the `tuning` object **before** the skill-less early-out. An agent with no `config.stack` entry returns `tuning` and stops;
 an agent with one returns `{ ...tuning, skills }`. Reordering those two statements would silently
 drop the override for every bare agent.
 
@@ -343,12 +348,13 @@ Two consequences worth holding onto:
 ### Codex: the role `.toml`
 
 `renderAgentRoleToml(agent, body)` (`packages/compile/src/providers/codex/agent-role-toml.ts`)
-writes ONE of the two fields through `scalarLines`, after `name` and `description`:
+writes `codexModel` and `effort` through `modelLines`, after `name` and `description`. `model` is
+never written:
 
-| Key                            | Written when              | Differs from `agent.liquid`                                                                                                     |
-| ------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `model = "…"`                  | **never**                 | Every `MODEL_NAMES` value is a Claude model, and Codex refuses to spawn a role naming one. The role runs on the session's model |
-| `model_reasoning_effort = "…"` | `agent.effort` is defined | The key is `CODEX_EFFORT_KEY`: Codex drops the whole role file on a key named `effort`, which is in `CODEX_REJECTED_ROLE_KEYS`  |
+| Key                            | Written when                                                     | Differs from `agent.liquid`                                                                                                                                                    |
+| ------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model = "…"`                  | `agent.codexModel` is defined                                    | Carries `codexModel`, never `model`: every `MODEL_NAMES` value is a Claude model, and Codex refuses to spawn a role naming one. Unpinned, the role runs on the session's model |
+| `model_reasoning_effort = "…"` | `agent.effort` is defined, or a pin is (`medium` with no effort) | The key is `CODEX_EFFORT_KEY`: Codex drops the whole role file on a key named `effort`, which is in `CODEX_REJECTED_ROLE_KEYS`                                                 |
 
 Calling it directly: `{ model: "opus", effort: "max" }` gives `model_reasoning_effort = "max"` alone;
 `{}` and `{ model: "haiku" }` give neither line. _Corrected 2026-09-26:_ `model` was written whenever
@@ -429,7 +435,7 @@ gate — and the gate is runnable by whoever made the edit, since it reads no gi
 
 ### Generated `config-types.ts`
 
-`packages/compile/src/config-types-source.ts` renders **both arrays into every project's
+`packages/compile/src/config-types-source.ts` renders **all three arrays into every project's
 generated `config-types.ts`**, inside the `PROJECT_CONFIG_TYPES_BEFORE` template literal;
 `src/cli/lib/configuration/config-types-writer.ts` re-exports it:
 
@@ -438,6 +444,7 @@ export type AgentScopeConfig = {
   name: AgentName
   scope: 'project' | 'global'
   model?: ${formatLiteralUnion(MODEL_NAMES)}
+  codexModel?: ${formatLiteralUnion(CODEX_MODEL_NAMES)}
   effort?: ${formatLiteralUnion(EFFORT_NAMES)}
   excluded?: boolean
 }
@@ -452,7 +459,7 @@ settings rather than this repository's — [config/config-writer.md](../config/c
 line, once it no longer fits the print width, and either would be invalid inside an emitted
 property. Nothing in `formatLiteralUnion` guards that these lists stay short enough; what does is
 the fixed-point assertion in `packages/compile/src/contract/emission-scenarios.test.ts`, which
-renders both lines in every scenario and reddens the moment either grows past the width, because
+renders the lines in every scenario and reddens the moment one grows past the width, because
 prettier would then break what this does not.
 
 The consequence is the widest blast radius on this axis: **the union members are emitted content**.
@@ -463,19 +470,17 @@ the CLI already accepts at runtime.
 
 ## Persistence
 
-| Hop                   | Module                                                       | Behaviour                                                                                                    |
-| --------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Wizard roster rebuild | `stores/wizard-store.ts` (`buildAgentConfigForName`)         | Both preserved from the saved config through `tuningOf`, spread in when defined                              |
-| Config merge          | `lib/configuration/config-merger.ts`                         | Not part of the identity key; a changed value lands in place                                                 |
-| Serialization         | `packages/compile/src/config-source.ts` (`cleanForEmission`) | The whole entry, with its keys put in `CANONICAL_AGENT_ENTRY_ORDER` — `name, scope, model, effort, excluded` |
-| Load from disk        | `lib/configuration/project-config.ts`                        | Preserved; `projectConfigLoaderSchema` declares both, so the loader does not strip them                      |
-| Share link in / out   | `lib/seed/`                                                  | See [`seed-contract.md`](./seed-contract.md)                                                                 |
+| Hop                   | Module                                                       | Behaviour                                                                                                                |
+| --------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Wizard roster rebuild | `stores/wizard-store.ts` (`buildAgentConfigForName`)         | Both preserved from the saved config through `tuningOf`, spread in when defined                                          |
+| Config merge          | `lib/configuration/config-merger.ts`                         | Not part of the identity key; a changed value lands in place                                                             |
+| Serialization         | `packages/compile/src/config-source.ts` (`cleanForEmission`) | The whole entry, with its keys put in `CANONICAL_AGENT_ENTRY_ORDER` — `name, scope, model, codexModel, effort, excluded` |
+| Load from disk        | `lib/configuration/project-config.ts`                        | Preserved; `projectConfigLoaderSchema` declares both, so the loader does not strip them                                  |
+| Share link in / out   | `lib/seed/`                                                  | See [`seed-contract.md`](./seed-contract.md)                                                                             |
 
 **Wizard rebuild.** `preselectAgentsFromDomains` re-derives every rostered agent's config from
 scratch. `buildAgentConfigForName` carries `model` and `effort` across that rebuild by
-spreading `tuningOf(saved)`, on the same terms as `scope`, and the source says why: _"The tuning is
-the user's deliberate choice, not something the roster re-derives — it survives the rebuild on the
-same terms as scope."_
+spreading `tuningOf(saved)`, on the same terms as `scope`.
 
 **Merge identity.** `agentKey` is `` `${name}:${scope}${excluded ? ":excluded" : ""}` `` — **model
 and effort are not in it.** Two entries differing only in `model` collapse to one key, and on a key
@@ -516,14 +521,14 @@ whether or not it is still true. Re-derive each by grep before relying on it: `e
 
 The unit files below are the ones that pin this axis. Run them rather than reading a total off this page — after `bun run build`, because `npm test` is `vitest run` and builds nothing, and the suite refuses a stale `dist/`.
 
-| File                                                                                                          | What it pins                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/resolver.test.ts` — `describe("model and effort")`                                                       | Config beats metadata for both; an effort-only config leaves `model` at the metadata value                                               |
-| `lib/configuration/config-merger.test.ts`                                                                     | A changed model+effort lands on the existing `(name, scope)` row and does not duplicate it                                               |
-| `lib/configuration/project-config.test.ts`                                                                    | The loader round-trips both off disk without stripping them                                                                              |
-| `stores/wizard-store.test.ts`                                                                                 | Both survive `preselectAgentsFromDomains`'s roster rebuild                                                                               |
-| `lib/seed/seed-to-wizard.test.ts`                                                                             | Both are carried onto the named agent; an assignment-only agent stays bare                                                               |
-| `packages/compile/src/providers/codex/agent-role-toml.test.ts` — `describe("the settings Codex can express")` | The Codex role passes `model` through and carries `effort` as `model_reasoning_effort`, every level; no effort key when none is declared |
+| File                                                                                                                                           | What it pins                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/resolver.test.ts` — `describe("model and effort")`                                                                                        | Config beats metadata for both; an effort-only config leaves `model` at the metadata value                                                                                                               |
+| `lib/configuration/config-merger.test.ts`                                                                                                      | A changed model+effort lands on the existing `(name, scope)` row and does not duplicate it                                                                                                               |
+| `lib/configuration/project-config.test.ts`                                                                                                     | The loader round-trips both off disk without stripping them                                                                                                                                              |
+| `stores/wizard-store.test.ts`                                                                                                                  | Both survive `preselectAgentsFromDomains`'s roster rebuild                                                                                                                                               |
+| `lib/seed/seed-to-wizard.test.ts`                                                                                                              | Both are carried onto the named agent; an assignment-only agent stays bare                                                                                                                               |
+| `packages/compile/src/providers/codex/agent-role-toml.test.ts` — `describe("the settings Codex can express")`, `describe("a Codex model pin")` | No Claude model reaches the role; `effort` travels as `model_reasoning_effort`, every level, absent when none is declared; a pin writes `model = "<id>"` with its effort, `medium` when none is declared |
 
 The resolver suite's setup is the load-bearing part: `RESOLVE_AGENTS_DEFINITIONS` pins **both**
 agents at `model: opus`, so a config value that survives resolution can only have come from the

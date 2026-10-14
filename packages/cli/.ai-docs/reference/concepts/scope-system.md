@@ -113,6 +113,7 @@ type AgentScopeConfig = {
   name: AgentName;
   scope: SkillScope;
   model?: ModelName;
+  codexModel?: CodexModelName;
   effort?: EffortLevel;
   excluded?: boolean;
 };

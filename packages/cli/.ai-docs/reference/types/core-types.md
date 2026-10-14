@@ -356,10 +356,11 @@ Per-agent configuration entry used inside `ProjectConfig.agents` (mirrors `Skill
 - `name: AgentName`
 - `scope: "project" | "global"`
 - `model?: ModelName` — overrides the model from the agent's own metadata; absent means "keep the metadata default"
+- `codexModel?: CodexModelName` — the model a Codex role runs on; absent means the session's
 - `effort?: EffortLevel` — overrides the reasoning effort from the agent's own metadata
 - `excluded?: boolean`
 
-`model` / `effort` are the only two tunable fields that survive into a compiled agent; the wire-format mapping that produces them from a shared seed is in [features/seed-contract.md](../features/seed-contract.md), and the full resolution chain in [features/model-and-effort.md](../features/model-and-effort.md).
+`model`, `codexModel` and `effort` are the only tunable fields that survive into a compiled agent; the wire-format mapping that produces them from a shared seed is in [features/seed-contract.md](../features/seed-contract.md), and the full resolution chain in [features/model-and-effort.md](../features/model-and-effort.md).
 
 ### SkillScope & ClaudePluginScope (`src/cli/types/config.ts`)
 
@@ -434,9 +435,10 @@ Per-agent skills mapping — the value type of `CompileConfig.agents` and of the
 ```typescript
 export type CompileAgentConfig = {
   skills?: SkillReference[];
-  /** Config-level model override, preferred over the agent definition's own value. */
+  /** Preferred over the agent definition's own value. */
   model?: ModelName;
-  /** Config-level effort override, preferred over the agent definition's own value. */
+  codexModel?: CodexModelName;
+  /** Preferred over the agent definition's own value. */
   effort?: EffortLevel;
 };
 ```
@@ -454,6 +456,7 @@ Fully resolved agent for compilation:
 - All `AgentDefinition` fields (title, description, model, tools, etc.)
 - `name: string`
 - `skills: Skill[]` - Unified skills list
+- `codexModel?: CodexModelName` - from the project config only; no metadata names a Codex model
 
 ### CompiledAgentData (`src/cli/types/agents.ts`)
 
