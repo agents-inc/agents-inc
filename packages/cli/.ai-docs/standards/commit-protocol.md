@@ -85,11 +85,20 @@ first command deliberately does not match them, because a `*` is not in its char
 Every release MUST complete all steps. No exceptions.
 
 - [ ] Bump version in `package.json`
+- [ ] Run `bun run generate:compile` — the release commit carries `packages/compile/src/generated/corpus.ts`, which embeds the version, and `bun.lock` if `bun install` moved it
 - [ ] Create `changelogs/{version}.md` with full release notes
 - [ ] Prepend brief summary to `CHANGELOG.md` with link to detailed file
 - [ ] Release commit title uses em-dash (`—`, not `-`) separator: `chore(release): {version} — {summary}`
 - [ ] Summary references every task ID shipped in the release (e.g. `CLI-823`, `EDITOR-52`)
-- [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: `grep -oE '^### [A-Z]+-[0-9]+'` in the detailed file against the IDs inside that release's `CHANGELOG.md` block, diff the sets. **`D-` is no longer the only family** — `CLI-`, `EDITOR-`, `SERVER-`, `REPO-`, `WWW-` and `SKILLS-` all exist, so a grep written for `D-` alone reports parity over an empty set.
+- [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: `grep -oE '^### [A-Z]+-[0-9]+'` in the detailed file against the IDs inside that release's `CHANGELOG.md` block, diff the sets. **`D-` is no longer the only family** — `CLI-`, `EDITOR-`, `SERVER-`, `REPO-`, `WWW-` and `SKILLS-` all exist, so a grep written for `D-` alone reports parity over an empty set. Runnable from `packages/cli`; empty output passes:
+
+  ```sh
+  V=X.Y.Z && comm -3 \
+    <(grep -oE '^### [A-Z]+-[0-9]+' changelogs/$V.md | cut -c5- | sort -u) \
+    <(awk -v v="## [$V]" 'index($0,v)==1{f=1;next} /^## \[/{f=0} f' CHANGELOG.md \
+        | grep -oE '^- [A-Z]+-[0-9]+' | cut -c3- | sort -u)
+  ```
+
 - [ ] Every `.ai-docs/agent-findings/*.md` path cited in the changelog must exist on disk
 - [ ] Never edit old entries in `CHANGELOG.md` or old `changelogs/` files
 - [ ] Publish: `npm publish` from `packages/cli`
