@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.168.0] - 2026-10-14
+
+**A sub-agent can pin a Codex model, share links are version 6 only, and the editor takes the v6 design with named saves**
+
+- EDITOR-09: `config.ts` takes a per-agent `codexModel` (`gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`). A Codex role file writes it as `model` with `model_reasoning_effort`, Claude ignores it, and `init --from`, `edit` and `share` carry it. Seeds are version 6 only, so v5 links and saves must be re-shared. The editor is on the v6 design: providers first, sub-agent cards, filters in the search field, and named saves that must be unique.
+- EDITOR-95: a save made signed out whose name the account already has opens the Save dialog at sign-in, saying names must be unique.
+- The compile package's warnings reach the terminal again; since 0.161.0 the bundle had dropped the import that wires them.
+
+See [changelogs/0.168.0.md](./changelogs/0.168.0.md) for full details.
+
 ## [0.167.0] - 2026-10-04
 
 **`.claude-src/` is retired: nothing reads or writes it, and a run that finds it says to move it**
