@@ -4,13 +4,11 @@ import { E2E_AGENT } from "./expected-values.js";
 import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
 /**
- * The wire version a `--from`, `share` or `edit --ui` spec pins its payloads to, rather than the
- * vendored `SEED_VERSION` that `buildSeedPayload` defaults to. These specs pin the wire contract,
- * so they have to fail while the CLI is still on the old one instead of following it. `v` is typed
- * as that constant's literal, so after a bump this line stops compiling, and so does every payload
- * built with it.
+ * The wire version `--from`, `share` and `edit --ui` specs pin their payloads to, instead of
+ * following `SEED_VERSION`, so they fail while the CLI is on any other. `satisfies` makes a bump
+ * a compile error here.
  */
-export const PINNED_WIRE_VERSION = 5 satisfies SeedPayload["v"];
+export const PINNED_WIRE_VERSION = 6 satisfies SeedPayload["v"];
 
 /**
  * One skill row as the `--from` and `share` specs send it, lazily assigned to web-developer.

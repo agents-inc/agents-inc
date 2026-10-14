@@ -409,20 +409,13 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
   );
 
   /**
-   * **NO ROLE FILE NAMES A MODEL, EVEN ONE THE CONFIGURATION SET.** Every model this product can
-   * name is Claude's, and a role naming one registers on Codex and then cannot be spawned: on a
-   * real ChatGPT subscription, codex-cli 0.157.1, 2026-09-26, every compiled sub-agent failed with
-   * `The 'opus' model is not supported when using Codex with a ChatGPT account.` Nothing offline
-   * saw it, because every spec stopped at registration. The payload SETS a model, so a renderer
-   * that passed one through has something to pass. That the compile line then names "Claude
-   * models" is `codex-compile-reports-what-it-cannot-express.e2e.test.ts`'s, via `CODEX_UNEXPRESSIBLE`.
-   *
-   * Its control is the Claude case below: the same payload does put the model in Claude's
-   * frontmatter, so the absence here is the Codex renderer's decision, not a model that never
-   * arrived.
+   * A role naming a Claude model registers on Codex and then cannot be spawned (real ChatGPT
+   * subscription, codex-cli 0.157.1, 2026-09-26: `The 'opus' model is not supported when using
+   * Codex with a ChatGPT account.`). The payload sets only a Claude model; the Claude case below is
+   * the control that it arrived.
    */
   it(
-    "writes no model into the role file, even one the configuration set",
+    "writes no Claude model into the role file, even one the configuration set",
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       env = await createTestEnvironment({ permissions: false });
