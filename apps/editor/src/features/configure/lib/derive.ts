@@ -30,8 +30,6 @@ import {
   isAgentOn,
   reachesAgent,
   resolveAgentOptions,
-  type AgentEffort,
-  type AgentModel,
   type AgentScope,
   type LoadState,
   type PersistedConfig,
@@ -89,16 +87,9 @@ export type DomainView = {
 
 /** One tab in the strip under the search band. */
 export type DomainTab = {
-  // The catalogue's own id rather than a bare string, because picking a tab
-  // WRITES it to the URL — `ConfigureSearch.domain` is this enum, so a widened
-  // id here would make the strip the one control that could set a domain the
-  // address bar cannot hold.
+  // The catalogue's enum, since picking a tab writes it to the URL.
   id: Domain
   label: string
-  /** `01`, `02`, … — always rendered, at zero opacity when it is not showing,
-   *  so selecting a tab never shifts the ink inside its cell. The STRIP cannot
-   *  shift either way: its cells are equal and span the column. */
-  index: string
   /** Every skill the domain holds, filtered or not. */
   skillCount: number
 }
@@ -113,57 +104,24 @@ export const monogramOf = (displayName: string) => {
   ).toUpperCase()
 }
 
-// A skill is a directory in a repository, on both sides of the divide: the
-// catalogue is generated from the marketplace repo, and an added skill arrived
-// through the index carrying the repo and directory it was read from. So every
-// skill on this screen has an address, and neither kind needs a fallback.
-//
-// `HEAD` rather than a branch name — it resolves to whatever the repository
-// calls its default branch, which is what an added skill's index entry carries
-// none of, and what a marketplace named without one is asking for.
+// Every skill is a directory in a repository, so every skill has an address.
+// `HEAD` resolves to the repository's default branch.
 const DEFAULT_REF = "HEAD"
 
 const githubTreeUrl = (repo: string, path: string, ref = DEFAULT_REF) =>
   `https://github.com/${repo}/tree/${ref}/${path}`
 
-/**
- * The catalogue an app nobody has pointed anywhere runs on.
- *
- * Exported because the install dialog names the marketplace its command is
- * about to install from, and "none loaded" is not the name of one: a payload
- * carrying no marketplace installs from this repository, so this is what it is
- * called (EDITOR-44).
- */
+// The catalogue an app nobody has pointed anywhere runs on, and what the
+// install dialog names when no marketplace is loaded (EDITOR-44).
 export const PUBLIC_MARKETPLACE = "agents-inc/skills"
 
-// Where a marketplace keeps its skills, and a skill's catalogue id *is* its
-// directory name — `build marketplace` reads `src/skills/<id>`, so the layout
-// holds for every repository it built rather than for the public one alone.
-// Re-verified 2026-08-18 against the public catalogue: the mapping is 1:1 with
-// nothing on either side unaccounted for.
-//
-// No count here, deliberately. This note read "all 237 of them" from 2026-08-09
-// until the catalogue reached 238, and a verification line carrying a stale
-// number reads as freshly checked while being nine days out of date — the same
-// shape as the exhaustive tables that went stale six times over. The claim that
-// matters is that the mapping is total, and that survives the catalogue growing.
+// A skill's catalogue id is its directory name: `build marketplace` reads
+// `src/skills/<id>`.
 const MARKETPLACE_SKILLS_DIR = "src/skills"
 
-// The address of a skill the catalogue shipped, in the marketplace SEATED right
-// now. It used to be the public repository whatever was loaded, which made
-// every source link on a custom marketplace a 404 — the repository named does
-// not hold these skills and never did (EDITOR-44).
-//
-// Seated rather than chosen: the grid draws the seated catalogue, so these are
-// its skills, and a shared address seats a marketplace this browser never chose
-// (EDITOR-37) without changing where the skills on it live.
-//
-// Whatever was typed reaches the seat verbatim — a pasted browser URL and the
-// CLI's own `github:` prefix among them — so it is read back down with the
-// parser `fetchCatalog` already reduced it with rather than pasted into a
-// template. Nothing is seated that failed that parse; one that somehow did is
-// left as it stands, because naming the public repository instead is the single
-// thing this must never do.
+// In the SEATED marketplace, whose skills the grid draws (EDITOR-44). The seat
+// holds whatever was typed, so it is parsed back down; one that fails the parse
+// is used as it stands, never swapped for the public repository.
 const marketplaceSourceUrl = (skillId: string) => {
   const seated = activeMarketplace() ?? PUBLIC_MARKETPLACE
   const named = parseMarketplaceRef(seated)
@@ -201,8 +159,6 @@ const matchesQuery = (skill: GridSkill, query: string) => {
   )
 }
 
-// ── Reachability ─────────────────────────────────────────────────────────
-
 export type Reachability = {
   // Selected, plus everything the selection necessarily brings with it.
   reached: ReadonlySet<string>
@@ -210,13 +166,9 @@ export type Reachability = {
   outOfReach: ReadonlySet<string>
 }
 
-// The semantics live in `@workspace/matrix` — one implementation, shared with
-// the CLI — and reach them through the seat, so a loaded marketplace's skills
-// are judged by that marketplace's own relationships. An added skill is in the
-// catalogue too, and is judged with the rest: it declares no relationships and
-// is named by none, so it neither rules anything out nor is ruled out, but the
-// semantics have SEEN it. The filter is for the id a selection still names
-// after the catalogue dropped it, which is a different question.
+// Judged through the seat, so a loaded marketplace's own relationships apply.
+// The filter drops ids a selection still names after the catalogue dropped
+// them.
 const judgeSelectedSkills = (selectedIds: Iterable<string>) =>
   judgeActiveSelection(
     [...selectedIds].filter((skillId) => activeSkillById(skillId) !== undefined)
@@ -249,22 +201,9 @@ const incompatibleReasonOf = (cause: IncompatibilityCause): string => {
   }
 }
 
-/**
- * What the roster's marker says on a row whose two scopes cannot meet.
- *
- * The fix rather than the diagnosis: the row already names the skill and sits
- * under the sub-agent, so what it owes the reader is the thing to do about it.
- *
- * IT IS NOW ONE OF TWO SIGNALS RATHER THAN THREE. A line above the grid used to
- * say the same thing a third time, in a sentence at the top of a column the
- * marked row is often several screens down from; it is gone, and what is left
- * are the two signals that sit ON the problem — this marker, and the Install
- * button's disabled label counting what is outstanding.
- *
- * It is the sub-agent that is named because that is the one-click fix — its
- * scope word is on the row directly above. Setting the skill back to global is
- * the other way out.
- */
+// What the roster's marker says on a row whose two scopes cannot meet: the fix,
+// not the diagnosis. The fix is the sub-agent's scope on its 03 card; setting
+// the skill back to global is the other way out.
 export const SCOPE_ERROR = "This sub-agent must be set to project scope too"
 
 // An enabled row this sub-agent cannot carry, because a project skill is
@@ -301,8 +240,6 @@ const toCell = (
   ...(reason !== undefined && { incompatibleReason: reason }),
   ...(discouragedReason !== undefined && { discouragedReason }),
 })
-
-// ── Grid ─────────────────────────────────────────────────────────────────
 
 // Everything the grid derivation needs, gathered once rather than threaded.
 type GridContext = {
@@ -377,22 +314,9 @@ const toDomainView = (
     .filter(hasCells),
 })
 
-// Categories that filter down to nothing are dropped, and so are the domains
-// that lose all of theirs, so the page never renders an empty header.
-//
-// `search.domain` IS NOT READ HERE, and its absence is the whole of EDITOR-79:
-// picking a domain scrolls the column to that section rather than narrowing to
-// it, so a pick has no effect on what is drawn at all. Only the query and the
-// `selected` filter can remove anything. That also retires the design question
-// this function used to carry — a query could contradict the pick because the
-// pick was a mode, and a scroll target is not one.
-//
-// There is no trailing Added section, and its absence is the point: an added
-// skill is placed by the category the user confirmed, so it renders under a
-// real domain and is reached by the strip like its neighbours. The orphan
-// section used to be the only home for a skill `categoriseRepo` could not
-// guess a category for, and it was invisible to every filter (EDITOR-17,
-// EDITOR-19).
+// Empty categories and domains are dropped, so the page never renders an empty
+// header. `search.domain` is not read: a pick scrolls, it does not filter
+// (EDITOR-79).
 export const selectDomainViews = (
   config: ConfigSelection,
   search: ConfigureSearch
@@ -407,76 +331,22 @@ export const selectDomainViews = (
     .domains.map((domain) => toDomainView(domain, context))
     .filter(hasCategories)
 }
-/**
- * THE STRIP IS THE PAGE'S MAP, so it is derived from the catalogue alone.
- *
- * Every domain, always, in catalogue order — deliberately blind to the search
- * and to the `selected` filter, both of which `selectDomainViews` above
- * answers. A strip that shrank with the filter would be a map that redraws
- * itself the moment you use it, and the way back to everything else would be
- * gone.
- *
- * The count is the domain's WHOLE size for the same reason the category counts
- * read `x of y` against the whole category — a count against a filtered list
- * says nothing.
- */
+
+// The strip is the page's map: every domain, from the catalogue alone, blind
+// to every filter.
 export const selectDomainTabs = (): DomainTab[] =>
-  activeCatalog().domains.map((domain, position) => ({
+  activeCatalog().domains.map((domain) => ({
     id: domain.id,
     label: domain.label,
-    index: String(position + 1).padStart(2, "0"),
     skillCount: domain.skillCount,
   }))
 
-/**
- * How many skills the catalogue holds, which is the number the skills hinge's
- * toggle reads out at rest: `all 42`.
- *
- * Summed from the domains rather than counted from `skillsById`, so it answers
- * with exactly what the strip above it counts — a skill in the catalogue that
- * no domain renders would otherwise make the hinge's total and the strip's
- * totals disagree by one, and there would be no way to tell from the screen
- * which of the two was wrong.
- */
+// Summed from the domains, so it agrees with the strip's totals.
 export const catalogueSkillCount = (): number =>
   activeCatalog().domains.reduce(
     (total, domain) => total + domain.skillCount,
     0
   )
-
-/**
- * What the skills hinge's toggle READS OUT, which is its value rather than its
- * name: `all 238` is what you are looking at now, `selected 23` is what you
- * would be looking at instead.
- *
- * Here rather than inline in the JSX because the two halves count different
- * things — one the catalogue, one the selection — and a reader should not have
- * to work out which is which from a ternary. The accessible name stays fixed
- * and lives at the call site; this is only ever the drawn words.
- */
-/**
- * THE FILTER'S TWO CELLS, BOTH OF THEM, IN THE ORDER THEY ARE DRAWN.
- *
- * It was one label that changed with the value until the 2026-09-06 refresh —
- * `all 42` OR `selected 14`, never both — so the count you were about to switch
- * to was the one thing the control could not tell you. Now the pair states the
- * whole choice at rest, which is why this returns a list rather than a string.
- *
- * The words are the VALUE rather than the name: `all 42` is what you are
- * looking at, `selected 14` is what you would be looking at instead. Neither
- * count is written here — both are counted off the catalogue and the
- * selection, which is what keeps them honest as either moves.
- */
-export const selectedOnlyOptions = (
-  selectedCount: number,
-  catalogueCount: number
-) =>
-  [
-    { selectedOnly: false, label: `all ${catalogueCount}` },
-    { selectedOnly: true, label: `selected ${selectedCount}` },
-  ] as const
-
-// ── Roster ───────────────────────────────────────────────────────────────
 
 export type RosterSkillRow = {
   id: string
@@ -484,40 +354,31 @@ export type RosterSkillRow = {
   load: LoadState
   // The row's own switch; the agent being off recesses it separately.
   enabled: boolean
-  // Set when this sub-agent cannot carry this skill — the roster draws a marker
-  // and the two buttons refuse. Its own field rather than folded into
-  // `enabled`: that one is the user's decision and this is a problem to fix,
-  // and only this one has words to show.
+  // Kept apart from `enabled`: that is the user's decision, this is a problem
+  // to fix, and only this one has words to show.
   scopeError?: string
-  // Every on-agent carrying this skill live, in roster order. The where-used
-  // number appears only when the skill reaches beyond one agent.
+  // Every on-agent carrying this skill live, in roster order: the where-used
+  // list. Empty opens nothing.
   usedBy: SubAgent[]
 }
 
 export type RosterAgentRow = {
   agent: SubAgent
   on: boolean
-  // Resolved, never stored: the explicit choice if there is one, otherwise the
-  // agent's own resting value. The row draws all three whether it is on or off.
-  model: AgentModel
-  effort: AgentEffort
-  scope: AgentScope
   skills: RosterSkillRow[]
 }
 
 export type RosterGroup = {
-  // Domain mode writes the bare domain id; scope mode writes `scope:<scope>`.
-  // One `rosterCollapsed` record serves both, and the prefix is what keeps the
-  // two key spaces disjoint — a domain id can never contain a colon.
+  // Domain mode writes the bare domain id, scope mode `scope:<scope>`: one
+  // `rosterCollapsed` record serves both, and a domain id never holds a colon.
   key: string
   label: string
-  onCount: number
   agents: RosterAgentRow[]
 }
 
-// The catalogue answers for every skill on screen, added ones included, so
-// there is no second list to consult. An id it still misses is one a saved
-// selection named and the catalogue has since dropped, which renders as itself.
+// The catalogue answers for every skill on screen, added ones included. An id
+// it misses is one a saved selection named and the catalogue has since
+// dropped, which renders as itself.
 const displayNameOf = (skillId: string) =>
   activeSkillById(skillId)?.displayName ?? skillId
 
@@ -529,13 +390,9 @@ const byDisplayName = (
   b: { displayName: string }
 ) => a.displayName.localeCompare(b.displayName)
 
-// skill id → position in the catalogue, so roster rows list in the grid's
-// order — what the prototype does. Added skills fall to the end, by name.
-//
-// Built per derivation rather than once at module scope. A module-level map
-// would be the vendored catalogue's positions forever, which is precisely the
-// bug the seat exists to make unrepresentable — and it is the same reason
-// nothing else in this file holds a catalogue binding across a call.
+// skill id → position in the catalogue, so rows list in the grid's order and
+// added skills fall to the end by name. Built per derivation: a module-level
+// map would pin the vendored catalogue's positions forever.
 const catalogPositions = () =>
   new Map(
     activeCatalog()
@@ -553,13 +410,7 @@ const byCatalogPosition =
     (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity) ||
     a.displayName.localeCompare(b.displayName)
 
-type AgentSkill = {
-  id: string
-  displayName: string
-  load: LoadState
-  enabled: boolean
-  scopeError?: string
-}
+type AgentSkill = Omit<RosterSkillRow, "usedBy">
 
 const skillsByAgent = (config: ConfigSelection) => {
   const byAgent = new Map<string, AgentSkill[]>()
@@ -572,9 +423,8 @@ const skillsByAgent = (config: ConfigSelection) => {
         displayName: displayNameOf(skillId),
         load: assignment.load,
         enabled: assignment.enabled,
-        // Kept, shown, and marked: the row is where the user learns WHICH pair
-        // is wrong, and the sub-agent's own scope word one line above is the
-        // click that resolves it.
+        // Kept and marked: the row is where the user learns which pair is
+        // wrong. The fix is the sub-agent's scope on its 03 card.
         ...(isScopeError(config.agents, entry, agentId) && {
           scopeError: SCOPE_ERROR,
         }),
@@ -586,9 +436,8 @@ const skillsByAgent = (config: ConfigSelection) => {
   return byAgent
 }
 
-// skill id → the on-agents carrying it live, in roster order — what the
-// where-used tooltip lists. Off agents and switched-off rows do not count:
-// the number answers "where else will this actually install".
+// skill id → the on-agents carrying it live, in roster order. Off agents and
+// switched-off rows install nothing, so they are not uses.
 const liveUsesBySkill = (config: ConfigSelection) => {
   const uses = new Map<string, SubAgent[]>()
 
@@ -606,22 +455,23 @@ const liveUsesBySkill = (config: ConfigSelection) => {
   return uses
 }
 
-// The destination each scope band names, verbatim. Space, U+00B7 MIDDLE DOT,
-// space. Global first, which is the REVERSE of `AGENT_SCOPES` — that order is
-// the cycle the roster's scope word steps through and must not be re-sorted,
-// so the banding reverses it here instead.
-const SCOPE_BANDS = [
-  { scope: "global", label: "~/.claude · global" },
-  { scope: "project", label: "./.claude · project" },
-] as const satisfies readonly { scope: AgentScope; label: string }[]
+const HOST_DIRS = {
+  claude: ".claude",
+  codex: ".codex",
+} as const satisfies Record<Provider, ".claude" | ".codex">
 
-// One agent's whole row, identical whichever way the panel is banded — which
-// is what lets one renderer serve both modes.
-//
-// The three lookups are built once per derivation and closed over, rather than
-// once per agent: the roster draws eighteen rows and two of the three are the
-// whole catalogue. Closing over them is what makes that structural instead of
-// a note the caller has to honour.
+// Global first, the reverse of `AGENT_SCOPES`. Space, U+00B7 MIDDLE DOT, space.
+const scopeBands = (provider: Provider) => {
+  const dir = HOST_DIRS[provider]
+
+  return [
+    { scope: "global", label: `~/${dir} · global` },
+    { scope: "project", label: `./${dir} · project` },
+  ] as const satisfies readonly { scope: AgentScope; label: string }[]
+}
+
+// One agent's whole row, identical whichever way the panel is banded. The
+// lookups are built once per derivation and closed over.
 const agentRowBuilder = (config: ConfigSelection) => {
   const byAgent = skillsByAgent(config)
   const uses = liveUsesBySkill(config)
@@ -630,77 +480,54 @@ const agentRowBuilder = (config: ConfigSelection) => {
   return (agent: SubAgent): RosterAgentRow => ({
     agent,
     on: isAgentOn(config, agent.id),
-    ...resolveAgentOptions(config.agents, agent.id),
     skills: [...(byAgent.get(agent.id) ?? [])]
       .sort(inGridOrder)
-      .map((skill): RosterSkillRow => ({
-        ...skill,
-        usedBy: uses.get(skill.id) ?? [],
-      })),
+      .map((skill) => ({ ...skill, usedBy: uses.get(skill.id) ?? [] })),
   })
 }
 
 type ToRosterRow = ReturnType<typeof agentRowBuilder>
 
-const toGroup = (
-  key: string,
-  label: string,
-  agents: RosterAgentRow[]
-): RosterGroup => ({
-  key,
-  label,
-  // One expression, both bandings. Only the denominator's MEANING moves:
-  // "enabled Web agents of all Web agents", or "enabled agents writing to that
-  // destination of all agents writing to it".
-  onCount: agents.filter((row) => row.on).length,
-  agents,
-})
-
 const bandByDomain = (toRow: ToRosterRow): RosterGroup[] =>
-  SUB_AGENT_GROUPS.map((group) =>
-    toGroup(group.domainId, group.label, group.agents.map(toRow))
-  )
+  SUB_AGENT_GROUPS.map((group) => ({
+    key: group.domainId,
+    label: group.label,
+    agents: group.agents.map(toRow),
+  }))
+
+const writesTo =
+  (config: ConfigSelection, scope: AgentScope) => (agent: SubAgent) =>
+    resolveAgentOptions(config.agents, agent.id).scope === scope
 
 const bandByScope = (
   config: ConfigSelection,
+  provider: Provider,
   toRow: ToRosterRow
 ): RosterGroup[] =>
-  SCOPE_BANDS.map(({ scope, label }) =>
-    toGroup(
-      `scope:${scope}`,
-      label,
-      allAgents()
-        .filter(
-          (agent) =>
-            resolveAgentOptions(config.agents, agent.id).scope === scope
-        )
-        .map(toRow)
-    )
-  )
+  scopeBands(provider).map(({ scope, label }) => ({
+    key: `scope:${scope}`,
+    label,
+    agents: allAgents().filter(writesTo(config, scope)).map(toRow),
+  }))
 
 const hasAgents = (group: RosterGroup) => group.agents.length > 0
 
-// The whole right panel: every band that has agents, every agent it has — on
-// or off — and under each agent every assignment it holds, including the
-// switched-off ones, which render recessed rather than vanish.
-//
-// Two bandings, one shape. Only the key, the label and which agents fall into
-// which band differ; the rows themselves are byte-identical between modes.
-//
-// A band nobody writes to is not drawn empty; it is not drawn. The filter is a
-// no-op for domain mode, where `SUB_AGENT_GROUPS` is built BY grouping agents.
+// The whole rail: every band that has agents, every agent on or off, and under
+// each every assignment it holds, switched-off ones included. A band nobody
+// writes to is not drawn.
 export const selectRosterGroups = (
   config: ConfigSelection,
-  groupBy: RosterGroupBy = "domain"
+  groupBy: RosterGroupBy,
+  provider: Provider
 ): RosterGroup[] => {
   const toRow = agentRowBuilder(config)
 
   return (
-    groupBy === "scope" ? bandByScope(config, toRow) : bandByDomain(toRow)
+    groupBy === "scope"
+      ? bandByScope(config, provider, toRow)
+      : bandByDomain(toRow)
   ).filter(hasAgents)
 }
-
-// ── Summaries ────────────────────────────────────────────────────────────
 
 export type ConfigSummary = {
   skillCount: number
@@ -708,18 +535,8 @@ export type ConfigSummary = {
   assignmentCount: number
   preloadedCount: number
   ejectedCount: number
-  /**
-   * Sub-agents that must be moved to project scope before this can install.
-   *
-   * The whole of EDITOR-08's mechanism: one number, and Install and Share
-   * refuse while it is non-zero. There is exactly one rule to count today, so
-   * there is no rule registry, no error type and no problems panel — a second
-   * rule can be generalised for when a second rule exists.
-   *
-   * Distinct SUB-AGENTS rather than pairs, because that is how many clicks it
-   * takes to resolve: two project skills on one global sub-agent is one scope
-   * word away from working.
-   */
+  // Distinct sub-agents that must move to project scope before this installs;
+  // Install and Share refuse while it is non-zero (EDITOR-08).
   unscopedAgentCount: number
 }
 
@@ -730,10 +547,8 @@ const holdsAScopeError = (config: ConfigSelection, agentId: string) =>
     isScopeError(config.agents, entry, agentId)
   )
 
-// The sub-agents that have to move before any of this installs. Filtered from
-// the same `onIds` every other number here uses, which is what makes them
-// already distinct — and what leaves a pinned-off sub-agent, excluded from
-// every count on screen and from the payload, with nothing left to block.
+// From the same `onIds` every other count uses, so a pinned-off sub-agent
+// blocks nothing.
 const unscopedAgentIds = (
   config: ConfigSelection,
   onIds: ReadonlySet<string>
@@ -765,21 +580,8 @@ export const summarize = (config: ConfigSelection): ConfigSummary => {
   }
 }
 
-/**
- * The selected skills the chosen provider has no way to install, by the name the grid draws them
- * under.
- *
- * NOT A FIELD OF {@link ConfigSummary}: every number there is a fact about the configuration
- * alone, and this one is a fact about the configuration AND the provider — a pair that is
- * perfectly legal on Claude and has no mechanism on Codex. Folding it in would make every count on
- * screen depend on a control that is meant to change none of them.
- *
- * NAMES RATHER THAN A COUNT, because the notice has to say which skill is asking: a visitor who
- * switched provider with fourteen skills selected cannot act on "one placement is unavailable".
- *
- * Sorted, so the sentence does not reshuffle as skills are picked — `config.skills` is keyed in
- * selection order, which is an order nobody chose.
- */
+// The selected skills the provider cannot install, by display name, sorted.
+// A selector rather than a `ConfigSummary` field: it depends on the provider.
 export const selectUnofferedPlacements = (
   config: ConfigSelection,
   provider: Provider
@@ -790,21 +592,8 @@ export const selectUnofferedPlacements = (
     .sort(byDisplayName)
     .map((skill) => skill.displayName)
 
-/**
- * THE SUB-AGENTS AN INSTALL WOULD ACTUALLY WRITE, which is a fact about the configuration AND the
- * provider — so it is a selector rather than a field of {@link ConfigSummary}, for the reason
- * {@link selectUnofferedPlacements} is one.
- *
- * Every number in `summarize` is the configuration's own and must stay that way; this is the number
- * the Install button and the install dialog's footer state, and those two are claims about an
- * install. A Codex install drops `agent-summoner` and `skill-summoner` whatever the configuration
- * says (D8), so a provider-blind count there states a number no install produces — and it was
- * stating it beside an output preview that had already dropped them.
- *
- * THE CONFIGURATION IS UNTOUCHED. Ruling 3 keeps the payload provider-neutral: the pins are still
- * there, the roster still draws both rows with their reason, and going back to Claude counts them
- * again. This filters the ANSWER, never the selection.
- */
+// The sub-agents an install would write: a Codex install drops both summoners
+// (D8). Filters the answer, never the selection (ruling 3).
 export const selectInstalledAgents = (
   config: ConfigSelection,
   provider: Provider
@@ -813,14 +602,8 @@ export const selectInstalledAgents = (
     (agent) => isAgentOn(config, agent.id) && compilesAgent(provider, agent.id)
   )
 
-/**
- * The pinned-on sub-agents the chosen provider leaves out — the other half of the pair above, and
- * the half that lets a surface SAY so.
- *
- * Empty on Claude, and empty on Codex for a configuration that never pinned one: a summoner nobody
- * selected was not "left out", it was never in. That is what keeps the notice off every Codex
- * configuration rather than only off the ones with nothing to report.
- */
+// The on sub-agents the provider leaves out, so a surface can say so. A
+// summoner nobody turned on was never in, so it is not listed.
 export const selectAgentsLeftOut = (
   config: ConfigSelection,
   provider: Provider
@@ -828,8 +611,6 @@ export const selectAgentsLeftOut = (
   allAgents().filter(
     (agent) => isAgentOn(config, agent.id) && !compilesAgent(provider, agent.id)
   )
-
-// ── Install inventory ────────────────────────────────────────────────────
 
 export type InventorySkill = {
   id: string
@@ -854,17 +635,8 @@ export type InstallInventory = {
   global: InventorySkill[]
   /** Only what this provider writes — see {@link selectInstalledAgents}. */
   agents: InventoryAgent[]
-  /**
-   * The pinned-on sub-agents it does not, so the pane can name them rather than
-   * drawing one fewer row than the roster shows.
-   *
-   * D18's reasoning one surface over: a visitor who toggled Claude → Codex must
-   * not watch two sub-agents vanish unexplained. The roster answers it by
-   * keeping the rows and disabling them; this pane is the list of what is about
-   * to be WRITTEN, so a disabled row there would be a file that is not written
-   * sitting in the list of files that are. A line naming them is the honest
-   * shape here.
-   */
+  // The on sub-agents it does not, so the pane names them rather than drawing
+  // one fewer row than the roster (D18).
   leftOut: SubAgent[]
 }
 
@@ -910,16 +682,8 @@ export const selectInstallInventory = (
   }
 }
 
-// ── Contents ─────────────────────────────────────────────────────────────
-//
-// What an added skill actually holds, ready to read. A REQUIREMENT of the
-// EDITOR-03 inline-content ruling rather than a nicety: a shared link carries a
-// stranger's files and the CLI writes them to somebody's disk, so being able to
-// read them first is what makes carrying them acceptable.
-//
-// Pure, like everything else here, and over the bytes the seat already has —
-// added this session or arrived in a payload, both are seated before anything
-// renders, so there is nothing to fetch and no second reader to build.
+// What an added skill holds, readable before installing (EDITOR-03), over the
+// bytes already seated.
 
 /** One file of the directory, exactly as it was fetched. */
 export type SkillContentsFile = { path: string; text: string }
@@ -932,9 +696,8 @@ export type SkillContents = {
   files: SkillContentsFile[]
 }
 
-// The file Claude Code reads to learn a skill exists at all, which makes it the
-// one a reader is deciding about. Present in every directory that gets this
-// far: the fetch refuses one without it, and so does the payload schema.
+// Present in every directory that gets this far: the fetch and the payload
+// schema both refuse one without it.
 const SKILL_MANIFEST = "SKILL.md"
 
 const isManifest = (file: SkillContentsFile) => file.path === SKILL_MANIFEST
@@ -942,9 +705,8 @@ const isManifest = (file: SkillContentsFile) => file.path === SKILL_MANIFEST
 const byPath = (a: SkillContentsFile, b: SkillContentsFile) =>
   a.path.localeCompare(b.path)
 
-// The manifest first whatever it sorts as, then the rest in reading order.
-// Said as an ORDER rather than as a second "which one opens" field, so the
-// list and the opening file cannot disagree.
+// The manifest first, then the rest by path; the head of the list is the file
+// that opens.
 const inReadingOrder = (files: SkillContentsFile[]): SkillContentsFile[] => [
   ...files.filter(isManifest),
   ...files.filter((file) => !isManifest(file)).sort(byPath),
@@ -957,8 +719,6 @@ export const toSkillContents = (skill: ExternalSkill): SkillContents => ({
     Object.entries(skill.files).map(([path, text]) => ({ path, text }))
   ),
 })
-
-// ── Stack ────────────────────────────────────────────────────────────────
 
 const sameSet = (a: readonly string[], b: readonly string[]) => {
   if (a.length !== b.length) return false

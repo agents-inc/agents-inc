@@ -11,18 +11,15 @@ import {
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
 import { activeStacks } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
-import { SAVED_STACK_NAME } from "@/stores/saved-stack-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
 
-// The name in the question. The saved snapshot names itself, since no
-// catalogue entry describes it.
+import { SCRATCH_NAME } from "./stack-grid"
+
 const targetNameOf = (request: StackRequest) => {
-  if (request.kind === "saved") return SAVED_STACK_NAME
-  // An account's stack: the grid knows its name and this dialog does not, and
-  // the honest answer is the generic one rather than a second lookup that can
-  // disagree with the cell the person just clicked.
+  if (request.kind === "saved") return request.name
+  // The grid knows an account stack's name and this dialog does not.
   if (request.kind === "remote") return "your saved stack"
-  if (request.stackId === null) return "Start from scratch"
+  if (request.stackId === null) return SCRATCH_NAME
 
   return (
     activeStacks().find((stack) => stack.id === request.stackId)?.name ??
@@ -30,12 +27,8 @@ const targetNameOf = (request: StackRequest) => {
   )
 }
 
-// Applying a stack replaces every selection and assignment wholesale, so it
-// needs confirming once the user has something to lose. `StackGrid` applies
-// directly unless the configuration has been *edited* away from what the
-// current stack produces, so reaching this dialog always means real work is at
-// stake — never merely "a stack is currently applied". The saved snapshot
-// replaces just as much, so it arrives here by the same route.
+// Reached only when the selection holds work that exists nowhere else, since
+// `StackGrid` applies directly otherwise.
 export function StackSwitchDialog() {
   const pending = useUiStore((state) => state.pendingStack)
   const dismiss = useUiStore((state) => state.dismissStackRequest)

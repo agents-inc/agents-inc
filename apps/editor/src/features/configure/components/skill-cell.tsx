@@ -13,7 +13,12 @@ import { useEffect, useMemo, useRef } from "react"
 
 import { SkillIcon } from "@/components/skill-icon"
 import type { SkillCellView } from "@/features/configure/lib/derive"
-import { placementRefusal } from "@/features/configure/lib/provider"
+import {
+  UNOFFERED_PLACEMENT_ERROR,
+  offersPlacement,
+  patchForPress,
+  placementRefusal,
+} from "@/features/configure/lib/provider"
 import { track } from "@/lib/analytics/track"
 import { freshEntry, isEjectOnly, useConfigStore } from "@/stores/config-store"
 import {
@@ -22,35 +27,30 @@ import {
   type SkillOptions,
 } from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
+import { InfoTip } from "./info-tip"
 import { SkillOptionsPanel } from "./skill-options-panel"
 
-// The three squares of the ••• control, top to bottom. Named rather than
-// indexed so the keys mean something.
 const DOTS = ["top", "middle", "bottom"] as const
 
-/**
- * One cell of either butted pair, which may be a value the chosen provider has no mechanism for.
- *
- * `aria-disabled` RATHER THAN `disabled`, and the reason is what decides it: a truly disabled
- * control suppresses pointer events, so the `title` carrying the reason never opens — the same
- * route the incompatible cell takes, and the note the roster's own Install button carries in as
- * many words.
- */
+// `aria-disabled` rather than `disabled`, which would suppress the `title`
+// carrying the reason.
 function PairCell({
   value,
   active,
   refusal,
+  error = false,
   onPick,
 }: {
   value: string
   active: boolean
-  /** Why this value is unavailable, and `undefined` when it is not. */
   refusal: string | undefined
+  error?: boolean
   onPick: () => void
 }) {
   return (
     <ButtonGroupItem
       active={active}
+      error={error}
       aria-disabled={refusal !== undefined || undefined}
       title={refusal}
       onClick={onPick}
@@ -60,14 +60,8 @@ function PairCell({
   )
 }
 
-// The whole cell toggles selection — through a `LatticeCellButton` stretched
-// over it, not through the cell itself, because the cell also holds the •••
-// and two badges and a control cannot contain controls.
-//
-// The toggle is a SIBLING of those controls rather than their ancestor, which
-// is why none of them stops propagation any more: a press on a badge lands on
-// the badge and bubbles past nothing that would also flip the selection. It
-// had to, while the cell itself was the control (EDITOR-45).
+// Selection is a `LatticeCellButton` stretched over the cell as a SIBLING of
+// its controls, so no control needs to stop propagation (EDITOR-45).
 export function SkillCell({
   view,
   column,
@@ -80,8 +74,6 @@ export function SkillCell({
   const toggleSkill = useConfigStore((state) => state.toggleSkill)
   const setSkillOption = useConfigStore((state) => state.setSkillOption)
   const openPanelSkillId = useUiStore((state) => state.openPanelSkillId)
-  // Which provider this configuration is for, because two of the four cells
-  // below are a pair one of them has no mechanism for.
   const provider = useUiStore((state) => state.provider)
   const togglePanel = useUiStore((state) => state.togglePanel)
   const openPanel = useUiStore((state) => state.openPanel)
@@ -89,29 +81,20 @@ export function SkillCell({
 
   const { skill, entry, selected, incompatible } = view
   const open = openPanelSkillId === skill.id
-  // A skill from outside the catalogue has no plugin form, so its badge is a
-  // statement rather than a toggle — see `isEjectOnly`.
   const ejectOnly = isEjectOnly(skill.id)
   const cellRef = useRef<HTMLDivElement>(null)
 
-  // What the badges and the panel show. A selected skill's own entry, else
-  // whatever was configured before it was picked, else what picking it would
-  // create — the same three fallbacks the store applies when it writes, so the
-  // panel never shows one thing and saves another. Read here rather than in
-  // `derive`, which deliberately cannot see `remembered`.
+  // The same three fallbacks the store writes through, so the panel never
+  // shows one thing and saves another. `derive` cannot see `remembered`.
   const remembered = useConfigStore((state) => state.remembered[skill.id])
   const untouched = useMemo(() => freshEntry(skill.id), [skill.id])
   const options = entry ?? remembered ?? untouched
+  // Chosen before the switch to Codex: kept, and drawn as an error (D3).
+  const errored = selected && !offersPlacement(provider, options)
 
-  // Nothing inside an incompatible cell may select it — the whole cell, the
-  // •••, and both badges all funnel into `toggleSkill`, so each entry point
-  // has to check. The cell stays hoverable so its reason can be read.
+  // Every entry point checks: nothing inside an incompatible cell selects it.
   const select = () => {
-    // The refusal is the interesting half. A click here means the receded cell
-    // read as "broken" rather than "unavailable", and it is the only direct
-    // evidence there is for the catalog's unaudited relationships. It cannot
-    // be emitted from the store, because the whole point is that the store is
-    // never reached.
+    // Tracked here because the store is never reached.
     if (incompatible) {
       track({
         name: "skill_blocked",
@@ -124,29 +107,26 @@ export function SkillCell({
     toggleSkill(skill.id)
   }
 
-  // The ••• and the badges configure a skill; they never select one. On an
-  // unselected skill the store keeps what they set in `remembered`, so the
-  // controls stay live and picking the skill later restores exactly this.
+  // The ••• and the badges configure a skill without selecting it.
   const requestPanel = () => {
     if (!incompatible) togglePanel(skill.id)
   }
 
-  // WHY A CELL IS UNAVAILABLE, or `undefined` when it is not. Asked of the pair
-  // the press would PRODUCE rather than of the value it sets, which is what
-  // covers both ways into the cell Codex does not offer: `plugin` pressed on a
-  // project skill and `project` pressed on a plugin skill produce the same
-  // placement, and a guard on either one alone leaves the other wide open.
+  // Asked of the placement the press would produce, not of the value pressed.
   const refusalFor = (patch: Partial<SkillOptions>) =>
-    placementRefusal(provider, { ...options, ...patch })
+    placementRefusal(provider, {
+      ...options,
+      ...patchForPress(provider, patch),
+    })
 
   const flip = (patch: Partial<SkillOptions>) => {
     if (incompatible || refusalFor(patch) !== undefined) return
 
-    setSkillOption(skill.id, patch)
+    setSkillOption(skill.id, patchForPress(provider, patch))
   }
 
-  // `pointerdown`, not `click`, so the panel is gone before the press
-  // resolves. Presses inside are ignored, or the ••• would close then reopen.
+  // `pointerdown`, so the panel is gone before the press resolves. Presses
+  // inside are ignored, or the ••• would close then reopen.
   useEffect(() => {
     if (!open) return
 
@@ -172,14 +152,16 @@ export function SkillCell({
       disabled={incompatible}
       interactive={!incompatible}
       overflow={selected || open ? "visible" : "clip"}
-      className={`group/cell px-3 py-[0.6875rem] ${open ? "z-58" : ""}`}
+      className={cn(
+        "group/cell px-3 py-[0.6875rem]",
+        open && "z-58",
+        // Lifted so the error tip clears the cells after it.
+        errored && "focus-within:z-50 hover:z-50"
+      )}
     >
       <LatticeCellButton
         tabIndex={incompatible ? -1 : 0}
-        // Otherwise the accessible name is every string in the cell, run
-        // together. It stays the plain name even when the skill is ruled out —
-        // `title` becomes the accessible *description*, which is where a reason
-        // belongs, and a name that changes under you is its own problem.
+        // The plain name, ruled out or not: `title` is the description.
         aria-label={skill.displayName}
         aria-pressed={selected}
         aria-disabled={incompatible || undefined}
@@ -187,7 +169,8 @@ export function SkillCell({
         onClick={select}
       />
 
-      <div className="pointer-events-none relative z-1 flex items-start gap-2.5">
+      {/* Above the badge row, which the error tip overlaps. */}
+      <div className="pointer-events-none relative z-2 flex items-start gap-2.5">
         <SkillIcon
           monogram={skill.monogram}
           slug={skill.slug}
@@ -199,15 +182,7 @@ export function SkillCell({
             <span className="truncate text-12 leading-[1.25] font-semibold text-ink">
               {skill.displayName}
             </span>
-            {/* The provenance tag is also the way into what this skill holds
-                — one click, on the very thing that says it came from somewhere
-                else. Only added skills have contents to show: the catalogue's
-                own are generated from the marketplace repository this app is
-                built from, and the ••• already links their source.
-
-                No `incompatible` guard, unlike the ••• and the badges below:
-                reading is not configuring, and a cell stays hoverable so its
-                reason can be read — what it holds is part of that reason. */}
+            {/* No `incompatible` guard: reading is not configuring. */}
             {skill.added && (
               <Badge
                 variant="tag"
@@ -224,18 +199,29 @@ export function SkillCell({
                 added
               </Badge>
             )}
+            {errored && (
+              <span className="relative inline-flex flex-none self-center">
+                <InfoTip
+                  label={UNOFFERED_PLACEMENT_ERROR.lead}
+                  glyph="warning"
+                  flip={column === columns - 1}
+                  className="pointer-events-auto cursor-help text-error-ink outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <b className="font-medium text-error-ink">
+                    {UNOFFERED_PLACEMENT_ERROR.lead}
+                  </b>{" "}
+                  {UNOFFERED_PLACEMENT_ERROR.detail}
+                </InfoTip>
+              </span>
+            )}
           </div>
           <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 font-mono text-9 font-medium text-muted-foreground">
             <span className="truncate">{skill.description}</span>
           </div>
         </div>
 
-        {/* Three 2px squares, not a `•••` glyph — the design draws them as
-            boxes, and a font would never land on the same rhythm. They stay in
-            the layout at zero opacity so revealing one cannot reflow the row,
-            and focus reveals them too, or the keyboard could never find them.
-            Revealed and marked are two different things, so focus does both:
-            the ring is the design system's one focus treatment. */}
+        {/* Three 2px boxes, not a glyph. Zero opacity rather than absent, so
+            revealing them cannot reflow the row; focus reveals them too. */}
         <button
           type="button"
           aria-label={`Options for ${skill.displayName}`}
@@ -257,33 +243,12 @@ export function SkillCell({
         </button>
       </div>
 
-      {/* TWO BUTTED PAIRS, EVERY VALUE ON SCREEN. Each was one word that
-          flipped on click until the 2026-09-06 refresh, so what a press would
-          do was invisible until you had done it.
-
-          THE GAPS ARE THE WHOLE LAYOUT AND THEY ARE NOT INTERCHANGEABLE: 0px
-          inside a pair, which is what makes a pair read as one control, and
-          10px between them, which is what separates mode from scope. The other
-          way round draws four unrelated chips. `min-w-0` on the row and
-          `flex-none` on the groups, or four cells in a 222px box shrink and
-          wrap.
-
-          `pointer-events-auto` per group rather than per cell: the row is
-          inert so the selection overlay underneath it keeps the cell's own
-          clicks, and each group takes back exactly its own box. */}
+      {/* Two butted pairs: 0px inside a pair, 10px between. The row is inert
+          so the overlay keeps the cell's clicks; each group takes back its box. */}
       <div className="pointer-events-none relative z-1 mt-[0.5625rem] -ml-[0.3125rem] flex min-w-0 items-center gap-[0.625rem]">
         {ejectOnly ? (
-          // A STATEMENT RATHER THAN A CHOICE, and so not a group at all: an
-          // added skill has no plugin form, and a `PLUGIN` cell that refuses
-          // the press is a dead affordance the refresh's own rule forbids —
-          // the inactive cell is what you read to know what a click does, so
-          // one that does nothing is worse than absent.
-          //
-          // It still has to CATCH the press. While the cell was the control, a
-          // press falling through here TOGGLED SELECTION, which made one target
-          // on screen mean two different things depending on the kind of skill
-          // under it (EDITOR-45). It catches it by being the topmost thing at
-          // that point rather than by stopping anything.
+          // A statement, not a choice: an added skill has no plugin form. It
+          // still catches the press, so it never toggles selection (EDITOR-45).
           <span
             aria-label={`Install mode: ${options.install}`}
             className={cn(
@@ -320,6 +285,7 @@ export function SkillCell({
               value={scope}
               active={options.scope === scope}
               refusal={refusalFor({ scope })}
+              error={errored && options.scope === scope}
               onPick={() => flip({ scope })}
             />
           ))}

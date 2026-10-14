@@ -14,19 +14,15 @@ import {
 import type { MarketplaceRecovery } from "@/features/configure/lib/seat-catalog"
 import type { Provider } from "@workspace/compile"
 
-// How long the roster tints agents that a selection just reached — the design
-// prototype's `flashMs` default.
+// How long the roster tints agents a selection just reached.
 const FLASH_MS = 2600
 
 // What a confirmed switch would replace the selection with. `null` inside a
-// stack request is "Start from scratch"; the saved snapshot has no catalogue
-// id to travel as, so it says only which slot to read.
+// stack request is "Start from scratch". A local save travels as its id, and
+// an account's as the KV id its payload is behind.
 export type StackRequest =
   | { kind: "stack"; stackId: string | null }
-  | { kind: "saved" }
-  // An account's saved stack. It carries the KV id rather than the payload,
-  // because that is all a saved stack IS — applying one is a fetch, which is
-  // exactly what opening a share link already does.
+  | { kind: "saved"; saveId: string; name: string }
   | { kind: "remote"; configId: string }
 
 type UiState = {
@@ -35,85 +31,48 @@ type UiState = {
   // Switch awaiting confirmation because applying it would discard edits.
   pendingStack: StackRequest | null
   // Which saved marketplace a switch has been asked for, awaiting the
-  // confirmation that names what it costs. Its own field rather than a
-  // `StackRequest` variant: seating a different catalogue and applying a stack
-  // replace the same selection, but only one of them can be described before it
-  // happens, and only that one has a catalogue to fetch first.
+  // confirmation that names what it costs.
   pendingMarketplace: string | null
-  dialog: "none" | "install" | "add" | "marketplace" | "output"
-  // Which added skill's contents are on show, over whatever else is open.
-  //
-  // Its own field rather than another `dialog` value, because the install
-  // dialog is one of the two ways in: reading what a skill holds is a question
-  // asked ABOUT the list of what is going to be written, so that list has to
-  // still be there underneath and still be there afterwards.
+  dialog: "none" | "install" | "add" | "marketplace" | "output" | "save"
+  // Which added skill's contents are on show. Its own field rather than a
+  // `dialog` value because it opens over the install dialog, which has to stay
+  // open underneath.
   previewSkillId: string | null
-  // Which row of the output preview's tree is open, as its path.
-  //
-  // Here rather than inside the dialog, and that is the whole of criterion 8:
-  // the dialog unmounts on close, so a component-local selection would start
-  // over every time and the fallback would never have a stale selection to
-  // resolve. The tree is regenerated from live state on every render — flipping
-  // a scope relocates rows constantly — so a path that no longer names a row is
-  // the normal case rather than an error, and it resolves to the project root's
-  // `config.ts` rather than blanking the pane.
-  //
-  // Not persisted, like every other transient field here: reloading into a
-  // selection is never right.
+  // Which row of the output preview's tree is open, as its path. Here rather
+  // than in the dialog because the dialog unmounts on close. The tree is
+  // regenerated from live state, so a path that no longer names a row is normal
+  // and resolves to the project root's `config.ts`.
   outputSelection: string | null
   // Whether the output preview fills the sheet, and how wide its tree column
-  // is in DESIGN pixels.
-  //
-  // Here rather than inside the dialog for the reason `outputSelection` above
-  // is: `OutputPreviewDialog` renders its body only while open, so anything
-  // held in the dialog would start over on every open — and the design's rule
-  // is that both survive a close.
-  //
-  // NOT PERSISTED, like every other transient field here. The design's own
-  // mechanism is component state on a root that never unmounts, so "persists
-  // between opens" means within a session; reloading into a maximised sheet is
-  // a different promise, and one nobody made.
+  // is in DESIGN pixels. Here for the reason `outputSelection` is: both survive
+  // a close.
   outputFullscreen: boolean
   outputTreeWidth: number
   // Group key → that roster accordion is shut. Domain mode keys it by the bare
   // domain id and scope mode by `scope:<scope>`, so one record serves both.
   rosterCollapsed: Record<string, boolean>
-  // How the roster bands its agents. Arrangement, like the record above.
+  // How the roster bands its agents.
   rosterGroupBy: RosterGroupBy
-  // Whether the stack grid under the first hinge is folded away.
+  // One fold per step title. The skills fold is not persisted, so a reload or
+  // a `?domain=` link always lands on the grid.
+  providerCollapsed: boolean
   stackCollapsed: boolean
-  // Which palette to paint in, and `system` is the default rather than a
-  // fallback: a visitor who has never touched the glyph follows their machine,
-  // in both directions, for as long as they never touch it.
+  agentsCollapsed: boolean
+  skillsCollapsed: boolean
+  // Which palette to paint in. `system` follows the machine.
   theme: ThemePreference
-  // What the last act that seated a catalogue had to say for itself, in one
-  // line above the grid, and whatever is parked behind the marketplace dialog
-  // waiting on a catalogue that would not load.
-  //
-  // Here rather than in `useCatalogFirst`'s own `useState`, and that is
-  // EDITOR-59 rather than tidying. Opening an address is not the only thing
-  // that seats a catalogue: applying a saved stack fetches the same payload
-  // from the same route and owes the same three answers — seat first, park
-  // when it will not load, name what could not be placed. It is not an address
-  // change, so nothing keyed per address could ever reach it. One home,
-  // whichever door writes it.
+  // What the last act that seated a catalogue had to say, in one line above
+  // the grid, and whatever is parked behind the marketplace dialog waiting on a
+  // catalogue that would not load. Here rather than in `useCatalogFirst`
+  // because applying a saved stack seats a catalogue too.
   catalogueNotice: string | null
   marketplaceRecovery: MarketplaceRecovery | null
   // Agents currently pulsing in the roster because a selection reached them.
   flashedAgentIds: string[]
-  /**
-   * WHICH CODING AGENT THIS CONFIGURATION IS BEING INSTALLED ONTO.
-   *
-   * Here rather than in `config-store`, and that is ruling 3 rather than convenience: the provider
-   * never enters the payload and never enters the saved selection, so one saved setup installs on
-   * either and every already-minted share id keeps working. It travels on the COMMAND the dialog
-   * prints. What it changes on screen is that command, the paths the two dialogs name, and which
-   * placements and sub-agents the panel will let a visitor ask for.
-   *
-   * Transient, like every other field below the arrangement four: a reload lands on Claude, which
-   * is what `init --from <id>` with no flag installs — so what a returning visitor sees and what
-   * the bare command does are the same thing.
-   */
+  // Which coding agent this configuration is being installed onto. Not in
+  // `config-store`: it never enters the payload or the saved selection, and
+  // travels only on the printed command. Transient, so a reload lands on
+  // Claude, which is what `init --from <id>` with no flag installs.
   provider: Provider
 
   openPanel: (skillId: string | null) => void
@@ -130,7 +89,10 @@ type UiState = {
   setOutputTreeWidth: (width: number) => void
   toggleRosterDomain: (groupKey: string) => void
   setRosterGroupBy: (groupBy: RosterGroupBy) => void
+  toggleProviderCollapsed: () => void
   toggleStackCollapsed: () => void
+  toggleAgentsCollapsed: () => void
+  toggleSkillsCollapsed: () => void
   setTheme: (theme: ThemePreference) => void
   sayCatalogue: (notice: string | null) => void
   parkCatalogue: (recovery: MarketplaceRecovery, waiting: string) => void
@@ -156,7 +118,10 @@ export const useUiStore = create<UiState>()(
       outputTreeWidth: TREE_WIDTH_DEFAULT_PX,
       rosterCollapsed: {},
       rosterGroupBy: "domain",
+      providerCollapsed: false,
       stackCollapsed: false,
+      agentsCollapsed: false,
+      skillsCollapsed: false,
       theme: "system",
       catalogueNotice: null,
       marketplaceRecovery: null,
@@ -180,15 +145,10 @@ export const useUiStore = create<UiState>()(
 
       toggleOutputFullscreen: () =>
         set((state) => ({ outputFullscreen: !state.outputFullscreen })),
-      // Its own verb rather than the toggle reused, because `esc` has to be
-      // able to say "leave fullscreen" without asking what state it is in —
-      // the ladder it steps down is ordered, and a toggle at the bottom of it
-      // would put the reader back into fullscreen on the press that was meant
-      // to close the dialog.
+      // Not the toggle: `esc` has to leave fullscreen without asking which
+      // state it is in.
       exitOutputFullscreen: () => set({ outputFullscreen: false }),
-      // Clamped HERE rather than at the pointer handler, so the bound is stated
-      // once and every caller — a drag, a future keyboard nudge, a restored
-      // value — is held to it.
+      // Clamped here so every caller is held to the bound.
       setOutputTreeWidth: (width) =>
         set({ outputTreeWidth: clampTreeWidth(width) }),
 
@@ -200,36 +160,26 @@ export const useUiStore = create<UiState>()(
           },
         })),
 
-      // The banding changes; the collapsed record does NOT. The two modes key
-      // it in disjoint spaces, so switching cannot collapse a band the other
-      // mode's visitor never shut — which is why there is no reset here.
+      // No reset of `rosterCollapsed`: the two modes key it in disjoint spaces.
       setRosterGroupBy: (rosterGroupBy) => set({ rosterGroupBy }),
+      toggleProviderCollapsed: () =>
+        set((state) => ({ providerCollapsed: !state.providerCollapsed })),
       toggleStackCollapsed: () =>
         set((state) => ({ stackCollapsed: !state.stackCollapsed })),
+      toggleAgentsCollapsed: () =>
+        set((state) => ({ agentsCollapsed: !state.agentsCollapsed })),
+      toggleSkillsCollapsed: () =>
+        set((state) => ({ skillsCollapsed: !state.skillsCollapsed })),
 
-      // Set rather than toggled, because the toggle is not a property of the
-      // stored value: the glyph flips whatever is ON SCREEN, and what is on
-      // screen while the preference is `system` is the machine's answer. Only
-      // the rail can see that, so only the rail can name the other one.
+      // Set rather than toggled: under `system`, what is on screen is the
+      // machine's answer, which only the rail can see.
       setTheme: (theme) => set({ theme }),
 
-      // An outcome ENDS whatever was parked, which is why the two fields move
-      // together. A line saying what the seated catalogue cost is the answer
-      // the recovery was waiting for, and a recovery left standing beside it
-      // would go on offering to finish an import that has already finished.
+      // An outcome ends whatever was parked, so the recovery clears with it.
       sayCatalogue: (catalogueNotice) =>
         set({ catalogueNotice, marketplaceRecovery: null }),
 
-      // One `set` rather than three, because these are one state: the line
-      // above the grid, the thing waiting behind it, and the dialog that can
-      // resolve it. A render between any two of them is a dialog with nothing
-      // in it or a sentence with nothing behind it.
-      //
-      // The dialog stays the single owner of whether it is open, so the
-      // request arrives here the same way the floating button's does.
-      // Cancelling therefore closes it without discarding anything: the notice
-      // says what is still waiting, and re-opening it from the button offers
-      // the same pre-filled form and the same way to finish.
+      // One `set`: a render between any two of these would show half a state.
       parkCatalogue: (marketplaceRecovery, waiting) =>
         set({
           marketplaceRecovery,
@@ -237,9 +187,7 @@ export const useUiStore = create<UiState>()(
           dialog: "marketplace",
         }),
 
-      // Each pulse replaces the last: a second selection re-tints its own
-      // agents and the whole set decays together. Flashing nobody is how a
-      // caller says "that selection is gone" — no decay left to schedule.
+      // Each pulse replaces the last. An empty list schedules no decay.
       flashAgents: (agentIds) => {
         clearTimeout(flashTimer)
         set({ flashedAgentIds: agentIds })
@@ -248,14 +196,11 @@ export const useUiStore = create<UiState>()(
         flashTimer = setTimeout(() => set({ flashedAgentIds: [] }), FLASH_MS)
       },
 
-      // The whole of what the control writes. Nothing else moves: the provider
-      // decides where an install goes and which renderer writes it, so a press
-      // that touched a skill or a sub-agent would be changing something the
-      // visitor chose in order to answer a question about where it lands.
+      // Writes the provider only. What a switch to Codex does to remembered
+      // skills is `config-store`'s, called by the press that switches.
       setProvider: (provider) => set({ provider }),
 
-      // A pulse narrates a selection; when that selection is gone — deselect,
-      // stack switch, import — the pulse must not outlive it.
+      // For when the selection a pulse narrates is gone.
       clearFlash: () => {
         clearTimeout(flashTimer)
         set({ flashedAgentIds: [] })
@@ -263,23 +208,23 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "agents-inc:ui:v1",
-      // NOT bumped when a field is added. There is no `migrate` here, so a bump
-      // is not a migration — it is an unreported discard of every visitor's
-      // arrangement at once. New persisted keys are `.catch()`-ed instead.
+      // NOT bumped when a field is added: with no `migrate`, a bump silently
+      // discards every visitor's arrangement. New keys are `.catch()`-ed.
       version: 3,
-      // All four are ARRANGEMENT — how the screen is laid out and what it is
-      // painted in. Everything else is transient: reloading into an open panel,
-      // an open dialog, a pending confirmation or a decaying flash is never
-      // right.
+      // Arrangement only. Everything else is transient.
       partialize: ({
         rosterCollapsed,
         rosterGroupBy,
+        providerCollapsed,
         stackCollapsed,
+        agentsCollapsed,
         theme,
       }) => ({
         rosterCollapsed,
         rosterGroupBy,
+        providerCollapsed,
         stackCollapsed,
+        agentsCollapsed,
         theme,
       }),
       merge: (persisted, current) => {

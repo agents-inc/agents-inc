@@ -15,7 +15,7 @@ import {
 } from "./marketplace-store"
 
 // Which catalogues this browser saved, and the token each one needed. Kept as a
-// pure read for the reason `readSavedStack` is: the untrusted half can then be
+// pure read for the reason `readSavedStacks` is: the untrusted half can then be
 // exercised without a browser, and the browser half is proved end-to-end where
 // a real localStorage is.
 //

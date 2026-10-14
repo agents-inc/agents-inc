@@ -1,8 +1,11 @@
-import type { SeedPayload } from "@workspace/matrix"
 import { Lattice, LatticeCell } from "@workspace/ui/components/lattice"
 import { useMemo } from "react"
 
-import { isStackCustom } from "@/features/configure/lib/derive"
+import {
+  isStackCustom,
+  type ConfigSelection,
+} from "@/features/configure/lib/derive"
+import { useLocalSavesOnGrid } from "@/features/configure/lib/save-stack"
 import { matchesSavedStack } from "@/features/configure/lib/seed"
 import { useApplyStackRequest } from "@/features/configure/lib/use-apply-stack-request"
 import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
@@ -13,26 +16,25 @@ import {
 } from "@/stores/catalog-store"
 import { useConfigStore } from "@/stores/config-store"
 import {
-  SAVED_STACK_NAME,
-  useSavedStackStore,
-} from "@/stores/saved-stack-store"
-import { useAccountStore, type AdoptionRefusal } from "@/stores/account-store"
+  useAccountStore,
+  type AdoptionRefusal,
+  type Unadopted,
+} from "@/stores/account-store"
+import type { SavedStack } from "@/stores/saved-stack-store"
 import { useUiStore, type StackRequest } from "@/stores/ui-store"
 
+export const SCRATCH_NAME = "Start from scratch"
+export const CLEARED_SCRATCH_NAME = "Clear and start from scratch"
+
 type StackCell = {
-  // Its React key alone: the saved snapshot has no catalogue id to borrow.
   key: string
   name: string
   members: string
-  // What clicking it would apply, which is the only thing the saved cell does
-  // differently from the catalogue cells beside it.
   request: StackRequest
 }
 
 const MEMBER_LIMIT = 5
 
-// The cell's second line. The saved snapshot draws it from the ids its payload
-// holds, so a snapshot and a stack describe themselves the same way.
 const membersLine = (skillIds: readonly string[]) => {
   const names = skillIds
     .map((skillId) => activeSkillById(skillId)?.displayName ?? skillId)
@@ -44,37 +46,21 @@ const membersLine = (skillIds: readonly string[]) => {
     : names.join(" · ")
 }
 
-/**
- * THE FIRST CELL IS THE RESET, AND IT SAYS SO ONCE THERE IS SOMETHING TO
- * RESET.
- *
- * Applying it and clearing everything are the same act, so the design gives
- * clearing no control of its own: a separate `N skills selected ✕` block was
- * built and removed, because a cell that already means "nothing selected" is
- * where clearing belongs. What changes is the words — both lines of them, so
- * the cell states the cost rather than describing a starting point somebody is
- * no longer at.
- *
- * The app's own cell rather than any catalogue's, so it survives a marketplace
- * swap unchanged — every catalogue can be started from nothing.
- */
-// What the cell says while there is nothing to clear: it describes a starting
-// point, because that is all it can offer yet.
 const SCRATCH_AT_REST = {
-  name: "Start from scratch",
+  name: SCRATCH_NAME,
   members: "no stack · pick every skill yourself",
 } as const
 
-// And what it says once there is. "and every sub-agent" is the half that is on
-// screen nowhere else: the roster empties with the selection, and a cell
-// promising only to remove skills would understate what the press costs.
+// "and every sub-agent" because the roster empties with the selection.
 const clearedScratchWords = (selectedCount: number) => ({
-  name: "Clear and start from scratch",
+  name: CLEARED_SCRATCH_NAME,
   members: `removes ${selectedCount} ${
     selectedCount === 1 ? "skill" : "skills"
   } and every sub-agent`,
 })
 
+// The first cell is the reset, and once there is something to clear both its
+// lines say what the press costs.
 const scratchCell = (selectedCount: number): StackCell => ({
   key: "scratch",
   request: { kind: "stack", stackId: null },
@@ -93,21 +79,14 @@ const toCatalogueCells = (
     request: { kind: "stack", stackId: stack.id },
   }))
 
-const savedCell = (payload: SeedPayload): StackCell => ({
-  key: "saved",
-  name: SAVED_STACK_NAME,
+const localCell = ({ id, name, payload }: SavedStack): StackCell => ({
+  key: `saved:${id}`,
+  name,
   members: membersLine(Object.keys(payload.skills)),
-  request: { kind: "saved" },
+  request: { kind: "saved", saveId: id, name },
 })
 
-// An account's stacks, which REPLACE the local slot rather than sitting beside
-// it — one place a person looks for their own work, not two that disagree. The
-// local slot is not deleted, only unshown: signing out is not a reason to lose
-// what was saved before signing in.
-//
-// No members line. The payload is behind an id these cells hold rather than
-// carry, so listing what is in one would mean a fetch per cell at first paint,
-// for a line of text.
+// No members line: the payload is behind a fetch per cell.
 const accountCells = (
   stacks: readonly { id: string; name: string; configId: string }[]
 ): StackCell[] =>
@@ -118,25 +97,11 @@ const accountCells = (
     request: { kind: "remote", configId: saved.configId },
   }))
 
-/**
- * What the grid says when a first sign-in could not take the local snapshot.
- *
- * ONE FRAME AND FIVE TAILS, and the split is the whole design. The frame
- * answers the only question that matters in the moment — the work is still here
- * — and the tail says which ending stopped it, because four of these come back
- * on the next load and one of them never will.
- *
- * `unwritable` is that one, and it is the reason this copy exists at all: a
- * project-scoped skill assigned to a sub-agent resting at global scope is
- * refused by the write contract before the request leaves (CLI-851), so it
- * fails identically on every load forever. Its sentence names the PAIR rather
- * than the failure, and says to apply the snapshot first — the rows carrying
- * the fix are not on screen until it is, which is what makes the roster's own
- * "fix marked rows" wrong here.
- */
+// `unwritable` never comes back on its own: the write contract refuses the
+// pair before the request (CLI-851), so its words name the fix.
 const WHY_NOT_ADOPTED = {
   unwritable:
-    "a project-scoped skill is assigned to a sub-agent resting at global scope. Apply it, then fix the marked rows under Sub-agents",
+    "a project-scoped skill is assigned to a sub-agent resting at global scope. Apply it, then fix the marked rows under assign skills",
   "out-of-date":
     "this page is out of date. Reload, and it will be carried over",
   refused: "your account would not take it. It will be carried over next time",
@@ -146,28 +111,47 @@ const WHY_NOT_ADOPTED = {
     "your session lapsed. Sign in again, and it will be carried over",
 } as const satisfies Record<AdoptionRefusal, string>
 
-const unadoptedNotice = (refusal: AdoptionRefusal) =>
-  `Still saved in this browser, not in your account: ${WHY_NOT_ADOPTED[refusal]}.`
+const countedStacks = (count: number) =>
+  count === 1 ? "1 stack is" : `${count} stacks are`
 
-// The test is `isStackCustom`, not "is anything selected": a stack's own
-// expansion is not something the user chose, so browsing between stacks has
-// nothing to lose. Prompting every time trains people to dismiss it unread.
-// The saved snapshot is the second thing that cannot be lost — it is in the
-// slot, not merely on screen — so it reads as clean by the same argument.
+const countByRefusal = (unadopted: Unadopted) =>
+  Object.values(unadopted).reduce(
+    (counts, why) => counts.set(why, (counts.get(why) ?? 0) + 1),
+    new Map<AdoptionRefusal, number>()
+  )
+
+// One sentence per reason, each saying how many saves it kept.
+const unadoptedNotice = (unadopted: Unadopted) =>
+  [...countByRefusal(unadopted)]
+    .map(
+      ([why, count]) =>
+        `${countedStacks(count)} still saved in this browser, not in your account: ${WHY_NOT_ADOPTED[why]}.`
+    )
+    .join(" ")
+
+// The saves the selection on screen is, recognised by matching it whole.
+const appliedSaveIdsOf = (
+  config: ConfigSelection,
+  saves: readonly SavedStack[]
+) =>
+  new Set(
+    saves
+      .filter((save) => matchesSavedStack(config, save.payload))
+      .map((save) => save.id)
+  )
+
+// A stack's own expansion and a save already on the grid are nothing to lose,
+// so only work that exists nowhere else stands behind the confirm.
 export function StackGrid() {
   const stackId = useConfigStore((state) => state.stackId)
   const skills = useConfigStore((state) => state.skills)
   const agents = useConfigStore((state) => state.agents)
-  const saved = useSavedStackStore((state) => state.saved)
-  const account = useAccountStore((state) => state.session)
+  const localSaves = useLocalSavesOnGrid()
   const accountStacks = useAccountStore((state) => state.stacks)
   const unadopted = useAccountStore((state) => state.unadopted)
   const stacks = useCatalogStore((state) => state.stacks)
   const requestStack = useUiStore((state) => state.requestStack)
   const applyStackRequest = useApplyStackRequest()
-  // The same count the skill grid below is drawn at, and for the same reason:
-  // the two lattices are one language, and a stack row three across over skills
-  // four across reads as two grids rather than one page.
   const columns = useLatticeColumns()
 
   const edited = useMemo(
@@ -175,102 +159,48 @@ export function StackGrid() {
     [stackId, skills, agents]
   )
 
-  // Derived on every selection change rather than stored, so it is right the
-  // instant Save is clicked and again after a reload, with no second copy of
-  // the truth to keep in step. The serialisation behind it is memoised for the
-  // same reason the install command memoises its own: the grid re-renders on
-  // every store change, and an empty slot costs nothing either way.
-  const savedApplied = useMemo(
-    () => matchesSavedStack({ stackId, skills, agents }, saved),
-    [stackId, skills, agents, saved]
+  const appliedSaveIds = useMemo(
+    () => appliedSaveIdsOf({ stackId, skills, agents }, localSaves),
+    [stackId, skills, agents, localSaves]
   )
+  const onASave = appliedSaveIds.size > 0
 
-  // Work that exists nowhere else: an edit that is neither a stack's own
-  // expansion nor the snapshot already sitting in the slot.
-  const unsaved = edited && !savedApplied
+  const unsaved = edited && !onASave
 
-  // Memoised on the stacks rather than computed at module scope: expanding
-  // every stack per render would re-run on every keystroke in the filter bar,
-  // and a module-level constant would be the vendored catalogue forever.
   const catalogueCells = useMemo(() => toCatalogueCells(stacks), [stacks])
 
-  // Signed in, the account's stacks. Signed out, the one local slot. Normally
-  // never both: two lists of "your saved stacks" that can disagree is worse
-  // than either, and the local slot survives untouched under the account's.
-  //
-  // A slot the account REFUSED is the exception, and it is the whole of
-  // EDITOR-67. That snapshot is in neither list, so hiding it is not replacing
-  // it — it is losing it, in silence, at the moment somebody signs in.
-  //
-  // BOTH LISTS AT ONCE IS THEREFORE REACHABLE, and it is the accepted outcome
-  // rather than a case the store rules out. This comment used to claim the
-  // second, on the store's word that `unadopted` went null the moment the
-  // account held anything — and `save` kept that word by clearing it on every
-  // save, which is what dropped a refused slot off the grid one Save after
-  // EDITOR-67 drew it (EDITOR-73). Every signed-in save is named "Saved stack"
-  // anyway, so the guarantee was never worth what it cost. The two cells are
-  // told apart by their second line, which is the same reading the E2E pair
-  // relies on: the local slot lists the skills it holds, and an account's row
-  // can only say it is in the account.
-  const keepsLocalSlot = !account || unadopted !== null
-
-  // Straight after scratch, and only while a snapshot exists: it is a starting
-  // point rather than a stack the catalogue knows about.
   const cells = useMemo(
     () => [
       scratchCell(Object.keys(skills).length),
-      ...(saved && keepsLocalSlot ? [savedCell(saved)] : []),
+      ...localSaves.map(localCell),
       ...accountCells(accountStacks),
       ...catalogueCells,
     ],
-    [skills, keepsLocalSlot, accountStacks, saved, catalogueCells]
+    [skills, localSaves, accountStacks, catalogueCells]
   )
 
-  // The saved cell is drawn as the current stack by the selection *being* the
-  // snapshot, since that is all it can be recognised by. That reading wins over
-  // the id underneath: a snapshot restored whole is the stack the user is on,
-  // and one taken from scratch would otherwise light up "Start from scratch"
-  // over a selection they deliberately named.
-  // An account's stack never reads as applied. What it points at is behind a
-  // fetch, so answering would mean holding every payload the grid can offer
-  // just to draw a border — and `savedApplied` already covers the case that
-  // matters, which is the selection currently on screen having come from a
-  // snapshot rather than from a catalogue stack.
+  // A save is recognised only by the selection being it, and that wins over
+  // the `stackId` underneath. An account's stack is behind a fetch, so never.
   const isApplied = (request: StackRequest) => {
-    if (request.kind === "saved") return savedApplied
+    if (request.kind === "saved") return appliedSaveIds.has(request.saveId)
     if (request.kind === "remote") return false
 
-    return !savedApplied && request.stackId === stackId
+    return !onASave && request.stackId === stackId
   }
 
-  // Both kinds replace the whole selection, so both stand behind the same
-  // confirm — and behind nothing at all when there is no work to lose.
   const choose = (request: StackRequest) => {
     if (isApplied(request)) return
     if (unsaved) requestStack(request)
     else applyStackRequest(request)
   }
 
+  const hasRefusals = Object.keys(unadopted).length > 0
+
   return (
     <>
-      {/* Above the grid rather than on the cell, because it is a sentence about
-          what did NOT happen to the cell — and the person has to be able to
-          read it without hovering anything. `alert` for the reason the
-          catalogue notice above it is one: it reports what an arrival cost,
-          and this arrival is a sign-in the person just asked for. Located by
-          slot in the E2E suite, since `main` already draws an alert.
-
-          DELIBERATELY NOT DISMISSIBLE, ruled with EDITOR-73 when this stopped
-          being cleared by an unrelated save and so became a sentence that can
-          outlive a reload. A control here has only two honest behaviours and
-          both are worse than none: clear the notice and keep the cell, leaving
-          a slot with nothing to explain it — which is the confusion EDITOR-67
-          closed — or clear both, which is this row's own data loss with the
-          user's finger on it. It is already dismissible by the route its own
-          words name: repair the snapshot and save it, and the next refresh
-          finds nothing to report. A "hide this" button would be labelled
-          honestly only as "hide my work". */}
-      {unadopted && (
+      {/* Not dismissible (EDITOR-73): hiding it would hide the saves it
+          explains. Located by slot, since `main` already draws an alert. */}
+      {hasRefusals && (
         <p
           data-slot="adoption-notice"
           role="alert"

@@ -15,36 +15,20 @@ import { adoptSeedPayload, unknownPayloadIds } from "./seed"
 import type { StackRequest } from "@/stores/ui-store"
 import type { SeedPayload } from "@workspace/matrix"
 
-// What a stack is called in the sentence that says its catalogue would not
-// load. Generic for the reason `stack-switch-dialog.tsx` is generic in its own
-// question: the grid knows which cell was clicked and this does not, and a
-// second lookup that can disagree with the cell the person just pressed is
-// worse than the bare word.
+// Generic: the grid knows which cell was clicked and this does not.
 const A_STACK = "This stack"
 
-// What applying a `StackRequest` means, in one place. The grid applies
-// directly when there is nothing to lose and the dialog applies once the
-// switch is confirmed — two routes to the same dispatch, not two dispatches.
-// The saved snapshot is why that matters: its payload becoming a selection
-// through `fromSeedPayload` is a fact about the stored format rather than
-// about either component, and this is the single site where the baseline
-// `isStackCustom` measures edits against could later be repointed at that
-// payload.
-//
-// An empty slot applies nothing. The grid offers the saved cell only while a
-// snapshot exists, so a request that outlives one has nothing to restore.
+const localSaveById = (saveId: string) =>
+  useSavedStackStore.getState().saves.find((save) => save.id === saveId)
+
+// What applying a `StackRequest` means, for both the grid and the confirm.
 export const useApplyStackRequest = () => {
   const applyStack = useConfigStore((state) => state.applyStack)
   const applySavedStack = useConfigStore((state) => state.applySavedStack)
-  const saved = useSavedStackStore((state) => state.saved)
   const navigate = useNavigate({ from: "/" })
 
-  // CLEARING RELEASES THE `selected` FILTER, and it is half the act rather than
-  // a courtesy: the toggle that turned it on is drawn only while something is
-  // selected, so emptying the selection with it still on leaves an empty column
-  // and no control on screen to get back from it. Only the reset does this —
-  // applying a real stack with the filter on is a reader narrowing to what they
-  // just chose, which is the filter working.
+  // Clearing releases the `selected` filter: its toggle is drawn only while
+  // something is selected, so it would strand an empty column.
   const releaseSelectedOnly = () =>
     void navigate({
       search: (prev) => ({ ...prev, sel: false }),
@@ -52,20 +36,12 @@ export const useApplyStackRequest = () => {
       replace: true,
     })
 
-  // SAME PAYLOAD, SAME WELCOME, and that is EDITOR-59. A saved stack holds the
-  // payload a share link holds — the local slot outright, an account's stack
-  // behind a KV id — so it names the marketplace its ids were minted against
-  // for the same reason, and owes the same three answers `openShared` gives:
-  // seat that catalogue before reading a single id, park behind the marketplace
-  // dialog when it will not load, and name whatever the seated catalogue could
-  // not place. Without the first of them a stack saved under a marketplace was
-  // pruned to nothing on every other machine, in silence.
+  // A saved payload names its marketplace as a share link's does, so it gets
+  // the same welcome (EDITOR-59): seat that catalogue first, park when it will
+  // not load, and name what it could not place.
   const adopt = async (payload: SeedPayload) => {
     const { sayCatalogue, parkCatalogue } = useUiStore.getState()
 
-    // What the seated catalogue could not place, in the same words the
-    // share-link door has used since EDITOR-16 — and nothing at all when it
-    // placed everything, which is what `droppedNotice` answers `null` for.
     const apply = () => {
       const config = adoptSeedPayload(payload)
       applySavedStack(config)
@@ -75,10 +51,8 @@ export const useApplyStackRequest = () => {
     const unseated = await seatCatalog(payload.marketplace)
     if (!unseated) return apply()
 
-    // `STAYS_PARKED` for the reason an arriving link's import does: these ids
-    // belong to the marketplace the PAYLOAD names, so clearing the field for
-    // the public catalogue would prune every one of them rather than re-point
-    // anything.
+    // These ids belong to the payload's marketplace, so seating the public
+    // catalogue instead would prune them all.
     parkCatalogue(
       { ...unseated, onSeated: apply, onPublic: STAYS_PARKED },
       parkedNotice(A_STACK, unseated.marketplace)
@@ -91,16 +65,13 @@ export const useApplyStackRequest = () => {
       return applyStack(request.stackId)
     }
 
-    // An account's stack is a POINTER, so applying it is a fetch — the same
-    // one a share link makes, against the same route, returning the same
-    // payload. A failed fetch changes nothing on screen rather than clearing
-    // the selection: the id resolving to nothing is not a reason to discard
-    // what the person is looking at.
+    // A failed fetch leaves the selection alone.
     if (request.kind === "remote")
       return void fetchSharedConfig(request.configId).then((result) => {
         if (result.ok) void adopt(result.payload)
       })
 
-    if (saved) void adopt(saved)
+    const saved = localSaveById(request.saveId)
+    if (saved) void adopt(saved.payload)
   }
 }

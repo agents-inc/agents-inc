@@ -20,18 +20,22 @@ import {
   type MatrixGroup,
   type RoleColumn,
 } from "@/features/configure/lib/agent-placement"
-import { placementRefusal } from "@/features/configure/lib/provider"
+import {
+  patchForPress,
+  placementRefusal,
+} from "@/features/configure/lib/provider"
 import { usePanelRoom } from "@/features/configure/lib/use-panel-room"
 import { isEjectOnly, useConfigStore } from "@/stores/config-store"
-import type {
-  LoadState,
-  SkillEntry,
-  SkillOptions,
+import {
+  SKILL_INSTALL_MODES,
+  SKILL_SCOPES,
+  type LoadState,
+  type SkillEntry,
+  type SkillOptions,
 } from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
+import { InfoTip } from "./info-tip"
 
-// The one option in the panel whose consequence is not self-evident, so the
-// one that gets explained — on demand rather than as standing hint text.
 const SCOPE_TIP =
   "Determines where the skill is installed to. Project-level skills inherit global, but not vice versa."
 
@@ -46,41 +50,38 @@ const liveLoad = (entry: SkillEntry, agentId: string): LoadState | null => {
   return assignment?.enabled ? assignment.load : null
 }
 
-// 89a's glyph: an outlined circle at 12px, Lucide's geometry redrawn hard so
-// it holds at this size. A real button, not a hinted span — that is what makes
-// the explanation reachable without a pointer.
-//
-// The tip is a sibling rather than a child so `peer-*` can reveal it, and it
-// resolves against the panel (the nearest positioned ancestor), clearing the
-// panel's own edge instead of the label's. `:focus`, not `:focus-visible`:
-// asking for the explanation with the keyboard has to work whether or not the
-// browser decides the focus ring is warranted.
-function InfoTip({
-  label,
-  text,
-  flip,
+// A refused value takes the unavailable ink and no hover. A refused value that
+// is also chosen is an error the skill cell draws.
+const REFUSED_SEGMENT =
+  "cursor-not-allowed text-unavailable hover:border-divider"
+
+function PlacementSegment({
+  value,
+  active,
+  disabled,
+  refusal,
+  onPick,
 }: {
-  label: string
-  text: string
-  flip: boolean
+  value: string
+  active: boolean
+  disabled?: boolean
+  refusal: string | undefined
+  onPick: () => void
 }) {
+  const refused = refusal !== undefined
+
   return (
-    <>
-      <button
-        type="button"
-        aria-label={`About ${label}`}
-        className="peer ml-[0.3125rem] inline-flex cursor-pointer align-[-0.0625rem] text-faint hover:text-brand-ink focus-visible:text-brand-ink"
-      >
-        <Glyph name="info" size={12} />
-      </button>
-      <span
-        className={`absolute top-0 z-40 hidden w-[12.25rem] bg-tip-field px-[0.5625rem] py-[0.4375rem] font-mono text-8_5 leading-[1.65] font-normal tracking-normal text-matrix-ink normal-case peer-hover:block peer-focus:block ${
-          flip ? "right-[calc(100%+0.5rem)]" : "left-[calc(100%+0.5rem)]"
-        }`}
-      >
-        {text}
-      </span>
-    </>
+    <SegmentedItem
+      active={active}
+      disabled={disabled}
+      // Not `disabled`, which would suppress the `title` carrying the reason.
+      aria-disabled={refused || undefined}
+      title={refusal}
+      className={refused && !active ? REFUSED_SEGMENT : undefined}
+      onClick={onPick}
+    >
+      {value}
+    </SegmentedItem>
   )
 }
 
@@ -98,10 +99,7 @@ function LabelledAgentCell({
     <button
       type="button"
       onClick={onCycle}
-      // The tri-state styling comes from the one CVA so the two can never
-      // drift, and the focus ring is restated here for the same reason the
-      // grid's own cells carry it on the element: those variants also dress an
-      // inert gap, so the rule about being focused belongs to the button.
+      // The ring is restated: the matrix variants also dress an inert gap.
       className={cn(
         matrixCellVariants({ state: state ?? "empty" }),
         "justify-between px-[0.3125rem] outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -113,11 +111,7 @@ function LabelledAgentCell({
   )
 }
 
-// The `•••` popover. Opens to the right of its cell, top-aligned, and flips to
-// the left for cells in the last column so it cannot escape the main column.
-//
-// Sections are separated by whitespace only — the design uses no rules inside
-// the panel.
+// The `•••` popover: right of its cell, flipped left in the last column.
 export function SkillOptionsPanel({
   skillId,
   sourceUrl,
@@ -125,7 +119,6 @@ export function SkillOptionsPanel({
   flip,
 }: {
   skillId: string
-  // The skill's own directory on GitHub, derived in `derive.ts`.
   sourceUrl: string
   entry: SkillEntry
   flip: boolean
@@ -135,28 +128,21 @@ export function SkillOptionsPanel({
   const provider = useUiStore((state) => state.provider)
   const [metaOpen, setMetaOpen] = useState(false)
 
-  // Hung from the top of its cell, so on the last rows it reaches past the
-  // end of the column — which makes room for it rather than leave the page to.
   const panelRef = useRef<HTMLDivElement>(null)
   usePanelRoom(panelRef)
 
   const ejectOnly = isEjectOnly(skillId)
 
-  // The panel is the SECOND door onto the two values the cell's butted pairs
-  // set, so it asks the same question of the same rule — a guard on one door
-  // is a guard the other walks around, which is the shape the eject-only rule
-  // above already answers by being enforced twice.
+  // The second door onto the cell's pairs, so it asks the same rule.
   const refusalFor = (patch: Partial<SkillOptions>) =>
-    placementRefusal(provider, { ...entry, ...patch })
+    placementRefusal(provider, { ...entry, ...patchForPress(provider, patch) })
 
   const pick = (patch: Partial<SkillOptions>) => {
     if (refusalFor(patch) !== undefined) return
 
-    setSkillOption(skillId, patch)
+    setSkillOption(skillId, patchForPress(provider, patch))
   }
 
-  // Both close over the open skill, so they live here rather than at module
-  // scope — but they are still named, so the grid below reads as one line.
   const toMatrixCell = (group: MatrixGroup, role: RoleColumn) => {
     const agent = group.byRole.get(role.id)
     if (!agent) return null
@@ -182,66 +168,49 @@ export function SkillOptionsPanel({
       ref={panelRef}
       role="group"
       aria-label="Skill options"
-      // Kept, and no longer for the reason it was written. The panel used to sit
-      // inside a cell that was itself a button, so a click reaching the ancestor
-      // toggled the selection. Since EDITOR-58 the target is a sibling and nothing
-      // above the panel handles a click — this guards against the cell becoming an
-      // ancestor handler again rather than against one that exists today. Without
-      // this, configuring a skill would also deselect it.
+      // A guard: no ancestor handles a click since EDITOR-58, and one that did
+      // would deselect the skill being configured.
       onClick={(event) => event.stopPropagation()}
       className={`absolute top-0 z-30 w-[18.5rem] border border-rule bg-cell pt-1 pb-2 text-left shadow-panel ${
         flip ? "right-[calc(100%+0.3125rem)]" : "left-[calc(100%+0.3125rem)]"
       }`}
     >
-      {/* Mirrors the cell's two badges — the design requires they stay in sync,
-          which they do by both reading and writing the same store fields.
-          Model and thinking effort were the two sections above these until v7;
-          they belong to the sub-agent, and the roster is where they live now —
-          a skill is a plugin from someone else's repo and configures where it
-          installs, not how anyone thinks. */}
       <FieldLabel first>Install mode</FieldLabel>
       <Segmented>
-        {(["plugin", "eject"] as const).map((install) => (
-          <SegmentedItem
+        {SKILL_INSTALL_MODES.map((install) => (
+          <PlacementSegment
             key={install}
+            value={install}
             active={entry.install === install}
-            // A skill from outside the catalogue has no plugin form to offer:
-            // a plugin install serves the third party's content as-is, and our
-            // generated metadata cannot be written into their repository. So
-            // the control cannot express it rather than expressing it and
-            // being overruled — the store refuses it too, and neither half is
-            // a fallback for the other.
+            // An added skill has no plugin form; the store refuses it too.
             disabled={ejectOnly && install === "plugin"}
-            // `aria-disabled` rather than `disabled` for the provider's own
-            // refusal, and the difference is the reason: this one HAS a reason
-            // to read, and a disabled control suppresses the pointer events
-            // that would open it.
-            aria-disabled={refusalFor({ install }) !== undefined || undefined}
-            title={refusalFor({ install })}
-            onClick={() => pick({ install })}
-          >
-            {install}
-          </SegmentedItem>
+            refusal={refusalFor({ install })}
+            onPick={() => pick({ install })}
+          />
         ))}
       </Segmented>
 
-      {/* Scope rode under the install-mode label until the explanation arrived:
-          the info affordance hangs off a section name, so scope needed its own. */}
       <FieldLabel>
         Install scope
-        <InfoTip label="install scope" text={SCOPE_TIP} flip={flip} />
+        {/* The tip hangs from the panel, clearing its edge. */}
+        <InfoTip
+          label="About install scope"
+          glyph="info"
+          flip={flip}
+          className="ml-[0.3125rem] cursor-pointer align-[-0.0625rem] text-faint hover:text-brand-ink focus-visible:text-brand-ink"
+        >
+          {SCOPE_TIP}
+        </InfoTip>
       </FieldLabel>
       <Segmented>
-        {(["project", "global"] as const).map((scope) => (
-          <SegmentedItem
+        {SKILL_SCOPES.map((scope) => (
+          <PlacementSegment
             key={scope}
+            value={scope}
             active={entry.scope === scope}
-            aria-disabled={refusalFor({ scope }) !== undefined || undefined}
-            title={refusalFor({ scope })}
-            onClick={() => pick({ scope })}
-          >
-            {scope}
-          </SegmentedItem>
+            refusal={refusalFor({ scope })}
+            onPick={() => pick({ scope })}
+          />
         ))}
       </Segmented>
 
@@ -280,21 +249,13 @@ export function SkillOptionsPanel({
         )}
       </div>
 
-      {/* The panel's one outward link, and the only thing in it that is about
-          the skill rather than about installing it. A new tab rather than a
-          navigation: added skills live for this session only, so leaving the
-          page would take them with it. `↗` stays a TEXT glyph, and that is not
-          an oversight: the design's icon set is a closed list of nine shapes
-          and an outbound arrow is not one of them — as `✕` and `✓` are not —
-          so drawing one here would be inventing a tenth. It is hidden from the
-          tree so the link is announced by its words. */}
+      {/* A new tab: added skills live for this session only. `↗` is text
+          because the design's icon set has no outbound arrow. */}
       <a
         href={sourceUrl}
         target="_blank"
         rel="noreferrer"
-        // The panel's gutter as a margin rather than padding: the ring hugs
-        // the words that way, which is what keeps it reading as a link rather
-        // than as one more full-width cell under the ones above it.
+        // A margin, so the ring hugs the words.
         className="mt-[0.5625rem] ml-[0.625rem] inline-flex w-fit items-center gap-[0.3125rem] font-mono text-8 font-semibold tracking-[.06em] text-muted-foreground uppercase outline-none hover:text-brand-ink focus-visible:ring-1 focus-visible:ring-ring"
       >
         Source code

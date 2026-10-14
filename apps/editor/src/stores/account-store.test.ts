@@ -9,171 +9,282 @@ import {
   signedInHandlers,
 } from "@workspace/api-mocks"
 import { configMockServer } from "@workspace/api-mocks/node"
-import { HttpResponse, http } from "msw"
+import { HttpResponse, http, type PathParams } from "msw"
 import { beforeEach, describe, expect, it } from "vitest"
 
 import { useAccountStore } from "./account-store"
-import { SAVED_STACK_NAME, useSavedStackStore } from "./saved-stack-store"
+import { useSavedStackStore } from "./saved-stack-store"
 
 import type { SeedPayload } from "@workspace/matrix"
 
-// EDITOR-73. `unadopted` is the reason this browser's snapshot is not in the
-// account, and the defect it closes was a LIFETIME rather than a value: the
-// reason was produced correctly at sign-in and then dropped by the next
-// unrelated save, and never recomputed after it — so the local slot left the
-// grid one Save after EDITOR-67 put it there.
-//
-// Driven through `refresh` and `save` rather than against `adoptLocalStack`,
-// which is not exported and should not be: what the grid reads is the store's
-// answer, and a test of the private step could go on passing while the answer
-// the component sees changed underneath it.
+// Driven through `refresh` and `save`, since the grid reads the store's answer.
 
-// What the grid is deciding between, in the one line it decides it on. Kept
-// here so a rename of the field is a compile error in this file rather than a
-// spec that silently stops asserting anything.
-// A name that is NOT the local slot's, which is the whole point of both saves
-// below: the defect was `save` reading "a save landed" as "this browser's
-// snapshot reached the account".
 const NEXT_JS = "Next.js"
+
+const local = (name: string, payload: SeedPayload) => ({
+  id: `local-${name}`,
+  name,
+  payload,
+})
+
+// Newest first, as the store keeps them.
+const withLocalSaves = (...saves: ReturnType<typeof local>[]) =>
+  useSavedStackStore.setState({ saves })
 
 const answer = () => {
   const { stacks, unadopted } = useAccountStore.getState()
   return { stacks, unadopted }
 }
 
-const withSavedSlot = (payload: SeedPayload) =>
-  useSavedStackStore.setState({ saved: payload })
-
-// This person's stacks, ahead of `signedInHandlers` so it outranks the two the
-// fixture list otherwise answers with — the order `use()` matches in.
+// Ahead of `signedInHandlers`, so it outranks the fixture's own list.
 const accountHolding = (stacks: readonly unknown[]) =>
   configMockServer.use(
     http.get(STACKS_URL, () => HttpResponse.json(stacks)),
     ...signedInHandlers
   )
 
-// Every write the adoption path could make, recorded rather than blocked. A
-// branch that must not upload is only pinned by watching the wire: the store's
-// own `stacks` looks identical whether a duplicate was minted or not, because
-// the list is re-read from the worker either way.
-const recordWrites = () => {
+// A reload: only the list changes, so the recorded writes stay ahead of it.
+const accountNowLists = (stacks: readonly unknown[]) =>
+  configMockServer.use(http.get(STACKS_URL, () => HttpResponse.json(stacks)))
+
+const SERVICE_UNAVAILABLE = 503
+
+// Every write adoption could make, recorded rather than blocked: the store's
+// `stacks` reads the same whether a duplicate was minted or not. `named` holds
+// the names stored; a name in `refusing` is answered 503.
+const recordWrites = (refusing: ReadonlySet<string> = new Set()) => {
   const posted: string[] = []
+  const named: string[] = []
 
   configMockServer.use(
     http.post(CONFIGS_URL, () => {
       posted.push(CONFIGS_URL)
       return HttpResponse.json({ id: STORED_ID })
     }),
-    http.post(STACKS_URL, () => {
-      posted.push(STACKS_URL)
-      return HttpResponse.json(savedStack(SAVED_STACK_NAME), { status: 201 })
-    })
+    http.post<PathParams, { name: string; configId: string }>(
+      STACKS_URL,
+      async ({ request }) => {
+        const { name, configId } = await request.json()
+        posted.push(STACKS_URL)
+        if (refusing.has(name))
+          return new HttpResponse(null, { status: SERVICE_UNAVAILABLE })
+
+        named.push(name)
+        return HttpResponse.json(savedStack(name, configId), { status: 201 })
+      }
+    )
   )
 
-  return posted
+  return { posted, named }
 }
 
 beforeEach(() => {
   useAccountStore.setState({
     session: null,
     stacks: [],
-    unadopted: null,
+    unadopted: {},
     ready: false,
   })
-  useSavedStackStore.setState({ saved: null })
+  useSavedStackStore.setState({ saves: [], owed: [] })
 })
 
-describe("a snapshot the account will not take", () => {
-  // THE REFUSED HALF at first sign-in — EDITOR-67's claim, restated here as the
-  // premise everything below stands on rather than re-proved.
-  it("holds the reason when the mint is refused against an empty account", async () => {
+describe("adopting local saves at first sign-in", () => {
+  it("carries every save into an empty account, oldest first, under its own name", async () => {
     accountHolding([])
-    withSavedSlot(OUT_OF_SCOPE_PAYLOAD)
+    const { named } = recordWrites()
+    withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
 
     await useAccountStore.getState().refresh()
 
-    expect(answer()).toStrictEqual({ stacks: [], unadopted: "unwritable" })
+    expect(named).toStrictEqual(["A", "B"])
+    expect(answer().unadopted).toStrictEqual({})
   })
 
-  // THE SAME QUESTION ONE LOAD LATER, which is what a reload after any save
-  // looks like: the account is no longer empty, so adoption is not attempted —
-  // and "not attempted" used to be answered as `null`, which is what made the
-  // loss permanent for the session.
-  it("recomputes the reason on a load where the account already has stacks", async () => {
-    accountHolding(SAVED_STACKS)
-    withSavedSlot(OUT_OF_SCOPE_PAYLOAD)
+  it("lists every adopted save as the account's", async () => {
+    accountHolding([])
+    recordWrites()
+    withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
 
     await useAccountStore.getState().refresh()
 
-    expect(answer()).toStrictEqual({
-      stacks: SAVED_STACKS,
-      unadopted: "unwritable",
-    })
+    expect(
+      answer()
+        .stacks.map((stack) => stack.name)
+        .sort()
+    ).toStrictEqual(["A", "B"])
   })
 
-  // And recomputing it costs nothing and writes nothing. The rule it must not
-  // break is the one that put the early return there: somebody with stacks has
-  // been here before, and re-uploading their slot on every load would breed
-  // duplicates. The reason is read off the payload, not off a request.
-  it("uploads nothing while recomputing it", async () => {
-    accountHolding(SAVED_STACKS)
-    const posted = recordWrites()
-    withSavedSlot(OUT_OF_SCOPE_PAYLOAD)
+  it("keeps a save the account will not take, and adopts the rest", async () => {
+    accountHolding([])
+    const { named } = recordWrites()
+    const refused = local("A", OUT_OF_SCOPE_PAYLOAD)
+    withLocalSaves(local("B", STORED_PAYLOAD), refused)
+
+    await useAccountStore.getState().refresh()
+
+    expect(named).toStrictEqual(["B"])
+    expect(answer().unadopted).toStrictEqual({ [refused.id]: "unwritable" })
+  })
+
+  it("names every refused save", async () => {
+    accountHolding([])
+    const { posted } = recordWrites()
+    const first = local("A", OUT_OF_SCOPE_PAYLOAD)
+    const second = local("B", OUT_OF_SCOPE_PAYLOAD)
+    withLocalSaves(second, first)
 
     await useAccountStore.getState().refresh()
 
     expect(posted).toStrictEqual([])
+    expect(answer()).toStrictEqual({
+      stacks: [],
+      unadopted: { [first.id]: "unwritable", [second.id]: "unwritable" },
+    })
   })
 
-  // Which says nothing without this one. A recorder that observes no request at
-  // all satisfies the assertion above for free, so the same channel is driven
-  // in the direction that fills it: an empty account with a snapshot the
-  // contract accepts mints the config and writes the row, in that order.
-  it("uploads the snapshot when the account is empty and takes it", async () => {
+  it("has nothing to say with no local saves", async () => {
     accountHolding([])
-    const posted = recordWrites()
-    withSavedSlot(STORED_PAYLOAD)
+    const { posted } = recordWrites()
 
     await useAccountStore.getState().refresh()
 
-    expect(posted).toStrictEqual([CONFIGS_URL, STACKS_URL])
-  })
-
-  // THE PERMITTED HALF, and the refused ones above say nothing without it: a
-  // store that had simply stopped clearing `unadopted` would satisfy every
-  // assertion so far and keep a local slot the account is already holding.
-  it("answers nothing for a snapshot the contract would accept", async () => {
-    accountHolding(SAVED_STACKS)
-    withSavedSlot(STORED_PAYLOAD)
-
-    await useAccountStore.getState().refresh()
-
-    expect(answer()).toStrictEqual({ stacks: SAVED_STACKS, unadopted: null })
+    expect(posted).toStrictEqual([])
+    expect(answer()).toStrictEqual({ stacks: [], unadopted: {} })
   })
 })
 
-describe("a save landing beside a refusal", () => {
-  // THE ROW THIS EXISTS FOR. `save` used to clear `unadopted` here, on the
-  // premise that a save is this browser's work reaching the account — which it
-  // is not, when what was saved is a different selection. The snapshot is
-  // untouched by a signed-in save (`roster-panel.tsx` writes the local slot
-  // only while signed out), so the reason it is not in the account is untouched
-  // too.
-  it("leaves the reason standing when the save is a different selection", async () => {
+describe("an account that already has stacks", () => {
+  // Not attempted is not adopted: the refusal is read off the payload, free.
+  it("recomputes each save's refusal without uploading", async () => {
+    accountHolding(SAVED_STACKS)
+    const { posted } = recordWrites()
+    const refused = local("A", OUT_OF_SCOPE_PAYLOAD)
+    withLocalSaves(local("B", STORED_PAYLOAD), refused)
+
+    await useAccountStore.getState().refresh()
+
+    expect(posted).toStrictEqual([])
+    expect(answer()).toStrictEqual({
+      stacks: SAVED_STACKS,
+      unadopted: { [refused.id]: "unwritable" },
+    })
+  })
+
+  it("answers nothing for saves the contract would accept", async () => {
+    accountHolding(SAVED_STACKS)
+    withLocalSaves(local("A", STORED_PAYLOAD))
+
+    await useAccountStore.getState().refresh()
+
+    expect(answer()).toStrictEqual({ stacks: SAVED_STACKS, unadopted: {} })
+  })
+})
+
+// The notice promises "it will be carried over next time", and next time the
+// account is no longer empty.
+describe("a save a first sign-in could not carry", () => {
+  const firstSignInRefusing = async (refusing: Set<string>) => {
     accountHolding([])
-    withSavedSlot(OUT_OF_SCOPE_PAYLOAD)
+    const writes = recordWrites(refusing)
+    withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
+    await useAccountStore.getState().refresh()
+    return writes
+  }
+
+  it("is still kept after a reload while the account refuses it", async () => {
+    await firstSignInRefusing(new Set(["A"]))
+
+    accountNowLists([savedStack("B")])
+    await useAccountStore.getState().refresh()
+
+    expect(answer().unadopted).toStrictEqual({ "local-A": "refused" })
+  })
+
+  it("is carried over on the next load once the account takes it", async () => {
+    const refusing = new Set(["A"])
+    const { named } = await firstSignInRefusing(refusing)
+
+    refusing.delete("A")
+    accountNowLists([savedStack("B")])
+    await useAccountStore.getState().refresh()
+
+    expect(named).toStrictEqual(["B", "A"])
+    expect(answer()).toStrictEqual({
+      stacks: [savedStack("A"), savedStack("B")],
+      unadopted: {},
+    })
+  })
+
+  // Q10: neither written under a name the account holds, nor forgotten.
+  it("stays owed, unwritten, once the account lists its name", async () => {
+    const { posted } = await firstSignInRefusing(new Set(["A"]))
+    posted.length = 0
+
+    accountNowLists([savedStack("B"), savedStack(" a ")])
+    await useAccountStore.getState().refresh()
+
+    expect(posted).toStrictEqual([])
+    expect(useSavedStackStore.getState().owed).toStrictEqual(["local-A"])
+  })
+
+  it("carries the owed saves whose names are free, and keeps the one that clashes", async () => {
+    const refusing = new Set(["A", "B"])
+    const { named } = await firstSignInRefusing(refusing)
+    refusing.clear()
+
+    accountNowLists([savedStack("a")])
+    await useAccountStore.getState().refresh()
+
+    expect(named).toStrictEqual(["B"])
+    expect(useSavedStackStore.getState().owed).toStrictEqual(["local-A"])
+  })
+
+  it("leaves a save made since then alone", async () => {
+    const { named } = await firstSignInRefusing(new Set())
+    withLocalSaves(
+      local("C", STORED_PAYLOAD),
+      ...useSavedStackStore.getState().saves
+    )
+
+    accountNowLists([savedStack("A"), savedStack("B")])
+    await useAccountStore.getState().refresh()
+
+    expect(named).toStrictEqual(["A", "B"])
+    expect(answer().unadopted).toStrictEqual({})
+  })
+})
+
+describe("signing out", () => {
+  it("drops the refusals, since every local save is drawn anyway", async () => {
+    accountHolding([])
+    withLocalSaves(local("A", OUT_OF_SCOPE_PAYLOAD))
+    await useAccountStore.getState().refresh()
+
+    configMockServer.resetHandlers()
+    await useAccountStore.getState().refresh()
+
+    expect(answer()).toStrictEqual({ stacks: [], unadopted: {} })
+  })
+})
+
+// EDITOR-73: a save of a different selection does not reach a local save, so
+// it must not clear that save's refusal.
+describe("a save landing beside a refusal", () => {
+  it("leaves the refusal standing and adds the row", async () => {
+    accountHolding([])
+    const refused = local("A", OUT_OF_SCOPE_PAYLOAD)
+    withLocalSaves(refused)
     await useAccountStore.getState().refresh()
 
     const saved = await useAccountStore.getState().save(NEXT_JS, STORED_ID)
 
     expect(saved.ok).toBe(true)
-    expect(answer().unadopted).toBe("unwritable")
-    // The row still arrives — the refusal is about the snapshot, and holding it
-    // must not cost the save that was actually made.
-    expect(answer().stacks).toStrictEqual([savedStack(NEXT_JS, STORED_ID)])
+    expect(answer()).toStrictEqual({
+      stacks: [savedStack(NEXT_JS, STORED_ID)],
+      unadopted: { [refused.id]: "unwritable" },
+    })
   })
 
-  // THE PERMITTED HALF: a save with nothing refused stays exactly as it was.
   it("adds the row and reports nothing when there was no refusal", async () => {
     accountHolding([])
     await useAccountStore.getState().refresh()
@@ -181,7 +292,9 @@ describe("a save landing beside a refusal", () => {
     const saved = await useAccountStore.getState().save(NEXT_JS, STORED_ID)
 
     expect(saved.ok).toBe(true)
-    expect(answer().unadopted).toBeNull()
-    expect(answer().stacks).toStrictEqual([savedStack(NEXT_JS, STORED_ID)])
+    expect(answer()).toStrictEqual({
+      stacks: [savedStack(NEXT_JS, STORED_ID)],
+      unadopted: {},
+    })
   })
 })

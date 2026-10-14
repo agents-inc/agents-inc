@@ -123,7 +123,7 @@ const choiceAmong = (current: string, saved: Record<string, string>) =>
 
 /**
  * The untrusted read, kept pure so it can be exercised without a browser — the
- * arrangement `readSavedStack` established.
+ * arrangement `readSavedStacks` established.
  *
  * An unreadable slot and an empty one are the same answer ON SCREEN: there is
  * nothing to restore either way, and the app opens on the public catalogue,

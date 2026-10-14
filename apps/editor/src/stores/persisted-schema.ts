@@ -1,102 +1,117 @@
 import {
+  CODEX_MODEL_NAMES,
   DEFAULT_SELECTION_OPTIONS,
   SUB_AGENTS_BY_ID,
   isSeedScopePairWritable,
   subAgentById,
+  type CodexModelName,
 } from "@workspace/matrix"
 import { z } from "zod"
 
 import { reportIssue } from "@/lib/observability/report"
 import { activeCatalog, activeStacks } from "./catalog-store"
 
-// The roster is imported directly and the catalogue is not, and the asymmetry
-// is a ruling rather than an oversight: marketplaces do not ship sub-agents
-// (owner, 2026-08-09), so `SUB_AGENTS_BY_ID` is the vendored roster whichever
-// catalogue is loaded. Skills and stacks are the catalogue's, so they come off
-// the seat.
+import type { Provider } from "@workspace/compile"
+
+// The roster is the vendored one whichever catalogue is seated: marketplaces
+// do not ship sub-agents (owner, 2026-08-09).
 
 // Bump when the persisted shape changes; older blobs are discarded on load.
 export const PERSIST_VERSION = 8
 
 export const loadStateSchema = z.enum(["lazy", "preloaded"])
 
-// One (agent, skill) edge. `enabled: false` keeps the row: switching a skill
-// off for one agent in the roster must not erase which load mode it had, and
-// the row stays listed — recessed — so it can be switched back on.
+// `enabled: false` keeps the row, so switching it back on restores its load.
 export const assignmentSchema = z.object({
   load: loadStateSchema,
   enabled: z.boolean(),
 })
 
-// The two pairs a skill cell draws, in the order the cells are drawn in. Arrays
-// rather than bare enums because the cell RENDERS them now: every value is on
-// screen at once since the 2026-09-06 refresh, so the option list is read
-// rather than only validated, exactly as the agent's three are below.
+// In the order the cells draw them.
 export const SKILL_INSTALL_MODES = ["plugin", "eject"] as const
 export const SKILL_SCOPES = ["project", "global"] as const
 
-// A skill says where it installs and which agents carry it. Model and effort
-// were here until v7 and are the sub-agent's now: a skill is a plugin from
-// someone else's repo, so a per-skill model never described anything real.
 export const skillEntrySchema = z.object({
   install: z.enum(SKILL_INSTALL_MODES),
   scope: z.enum(SKILL_SCOPES),
-  // Sub-agent id → how that agent carries the skill. The single source of
-  // truth for assignment; every count and list on screen is derived from it.
+  // Sub-agent id → how it carries the skill: the one source of assignment.
   assignments: z.record(z.string(), assignmentSchema),
 })
 
-// The cycle orders as well as the value sets: the roster's model word and
-// effort word step through these in exactly this sequence.
 export const AGENT_MODELS = ["opus", "fable", "sonnet", "haiku"] as const
 export const AGENT_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const
-// Two values, so the cycle is a toggle — but it steps through the same helper
-// the other two do rather than negating, which keeps one rule on the row.
 export const AGENT_SCOPES = ["project", "global"] as const
 
 export const agentModelSchema = z.enum(AGENT_MODELS)
 export const agentEffortSchema = z.enum(AGENT_EFFORTS)
 export const agentScopeSchema = z.enum(AGENT_SCOPES)
 
-// The two ways the roster can be banded. `domain` is the shipped arrangement
-// and stays the default. Declared here, beside AGENT_SCOPES, because the menu
-// reads the members and the schema reads the same array.
+// The session's own model, which a Codex role runs on unless pinned.
+const INHERIT = "inherit"
+const codexModelChoiceSchema = z.enum([INHERIT, ...CODEX_MODEL_NAMES])
+type CodexModelChoice = z.infer<typeof codexModelChoiceSchema>
+
+const CODEX_MODEL_LABELS = {
+  "gpt-6-astra": "astra",
+  "gpt-5.6-sol": "sol",
+  "gpt-5.6-terra": "terra",
+  "gpt-5.6-luna": "luna",
+} as const satisfies Record<CodexModelName, string>
+
 export const ROSTER_GROUP_BYS = ["domain", "scope"] as const
 export const rosterGroupBySchema = z.enum(ROSTER_GROUP_BYS)
 export type RosterGroupBy = z.infer<typeof rosterGroupBySchema>
 
-// The three states a theme preference can be in, and the third is the one a
-// two-value flag gets wrong: `system` is not "light" — it is "keep following
-// the machine", which is what the palette does when nothing on the root says
-// otherwise. Storing the RESOLVED theme instead would freeze whatever the
-// machine happened to be set to the first time somebody loaded the page.
+// `system` keeps following the machine, which a stored light/dark cannot.
 export const THEME_PREFERENCES = ["system", "light", "dark"] as const
 export const themePreferenceSchema = z.enum(THEME_PREFERENCES)
 export type ThemePreference = z.infer<typeof themePreferenceSchema>
 
-// Every decision about one sub-agent, all of it optional. `on` is tri-state on
-// purpose: `true` pins it on, `false` pins it off, and *absent* means "ask the
-// assignments" — so an entry holding only a model must not pin anything.
-export const agentEntrySchema = z.object({
-  on: z.boolean().optional(),
-  model: agentModelSchema.optional(),
-  effort: agentEffortSchema.optional(),
-  // Where this agent's front-matter is written. Absent means `global` — the
-  // shared selection default — rather than anything the catalogue says.
-  scope: agentScopeSchema.optional(),
-})
+const isCodexModelName = (value: unknown): value is CodexModelName =>
+  CODEX_MODEL_NAMES.some((offered) => offered === value)
+
+const holdsUnofferedCodexModel = (
+  entry: unknown
+): entry is { codexModel: unknown } =>
+  typeof entry === "object" &&
+  entry !== null &&
+  "codexModel" in entry &&
+  !isCodexModelName(entry.codexModel)
+
+// Codex retires ids, so an unoffered one drops alone rather than failing the
+// whole blob the way an unoffered `model` does. `inherit` rests, so it is
+// never stored either.
+const withOfferedCodexModel = (entry: unknown) => {
+  if (!holdsUnofferedCodexModel(entry)) return entry
+
+  const { codexModel: _unoffered, ...rest } = entry
+  return rest
+}
+
+// Every decision about one sub-agent. `on` is tri-state: absent means "ask the
+// assignments", so an entry holding only a model pins nothing.
+export const agentEntrySchema = z.preprocess(
+  withOfferedCodexModel,
+  z.object({
+    on: z.boolean().optional(),
+    model: agentModelSchema.optional(),
+    // Typed as the choice so an `AgentOptions` patch composes onto an entry;
+    // `inherit` never survives the preprocess.
+    codexModel: codexModelChoiceSchema.optional(),
+    effort: agentEffortSchema.optional(),
+    // Absent means `global`, the shared selection default.
+    scope: agentScopeSchema.optional(),
+  })
+)
 
 export const persistedConfigSchema = z.object({
   stackId: z.string().nullable(),
-  // Sparse — presence is selection. Ids stay plain strings so one id dropped
-  // from a regenerated catalog is pruned rather than failing the whole parse.
+  // Sparse: presence is selection. Plain-string ids, so one a regenerated
+  // catalogue dropped is pruned rather than failing the parse.
   skills: z.record(z.string(), skillEntrySchema),
-  // Configuration for skills that are not selected, so deselecting a dozen
-  // clicks of setup is not destructive. Only entries worth keeping land here.
+  // Setup for deselected skills, so deselecting is not destructive.
   remembered: z.record(z.string(), skillEntrySchema),
-  // Sparse too: only agents someone has actually decided something about. An
-  // absent agent is on exactly when its assignments say so and runs on its own
-  // catalogue model — neither is written into state.
+  // Sparse: only agents someone decided something about.
   agents: z.record(z.string(), agentEntrySchema),
 })
 
@@ -111,46 +126,37 @@ export type PersistedConfig = z.infer<typeof persistedConfigSchema>
 export type SkillOptions = Omit<SkillEntry, "assignments">
 export type AgentOptions = {
   model: AgentModel
+  codexModel: CodexModelChoice
   effort: AgentEffort
   scope: AgentScope
 }
 
-// Shared so `isStackCustom` compares against what `applyStack` writes. The
-// values are the matrix's one spelling of "what does an untouched pick do?",
-// which the CLI's seed decode reads too — a fresh pick means the same thing
-// on either surface, and `satisfies` keeps the shared words sayable here.
+// The matrix's spelling of an untouched pick, which the CLI's decode reads too.
 export const DEFAULT_SKILL_OPTIONS =
   DEFAULT_SELECTION_OPTIONS satisfies SkillOptions
 
-// The web offers four models; an agent's metadata may name one outside them
-// (or none), in which case it rests here.
+// For an agent whose metadata names no offered model.
 const FALLBACK_MODEL: AgentModel = "sonnet"
-// Agent metadata carries no effort level yet, so every agent rests on the same
-// middle of the scale until the CLI adds one.
+// Agent metadata carries no effort yet.
 const RESTING_EFFORT: AgentEffort = "medium"
-// The shared selection default — a fresh pick installs into the user's own
-// ~/.claude — so this one rests on the matrix's spelling rather than on
-// anything the agent's own metadata names.
 const RESTING_SCOPE: AgentScope = DEFAULT_SELECTION_OPTIONS.scope
 
 const isOfferedModel = (model: string | undefined): model is AgentModel =>
   AGENT_MODELS.some((offered) => offered === model)
 
-// What an agent runs on before anyone touches it. There is no single default:
-// each agent rests on the model its own `metadata.yaml` names.
+// Each agent rests on the model its own `metadata.yaml` names.
 export const restingAgentOptions = (agentId: string): AgentOptions => {
   const catalogModel = subAgentById(agentId)?.model
 
   return {
     model: isOfferedModel(catalogModel) ? catalogModel : FALLBACK_MODEL,
+    codexModel: INHERIT,
     effort: RESTING_EFFORT,
     scope: RESTING_SCOPE,
   }
 }
 
-// What an agent runs on now. The store keeps only explicit non-resting
-// choices, so the value on screen is a derivation and falls back field by
-// field — choosing an effort must not drag the model off its own default.
+// The store keeps only non-resting choices, so each field falls back alone.
 export const resolveAgentOptions = (
   agents: PersistedConfig["agents"],
   agentId: string
@@ -160,39 +166,48 @@ export const resolveAgentOptions = (
 
   return {
     model: chosen?.model ?? resting.model,
+    codexModel: chosen?.codexModel ?? resting.codexModel,
     effort: chosen?.effort ?? resting.effort,
     scope: chosen?.scope ?? resting.scope,
   }
 }
 
-/**
- * Project skills never reach global sub-agents; global skills reach any.
- *
- * A global sub-agent's front-matter is written to `~/.claude`, where every
- * project on the machine sees it, and a project-scoped skill is installed under
- * one project's `.claude` — so a global agent carrying a project skill names
- * something that does not exist from anywhere else.
- *
- * The rule is not this app's to state, and it is no longer stated here: it
- * lives on the wire contract as `isSeedScopePairWritable`, where the CLI's
- * `isScopePairCompatible` reads it too. It used to be a verbatim third copy —
- * so this is not a preference the editor is expressing, and it is no longer a
- * sentence that can drift from the two surfaces that enforce it. A
- * configuration carrying a live pair is one nobody can install, and the editor
- * minted them because it is the one surface that consumes no generated config
- * types (EDITOR-08).
- */
+type ModelChoice = { value: AgentModel | CodexModelName; label: string }
+
+// No `inherit` on Codex (Q5): nothing pressed is the session's own model.
+const MODEL_CHOICES = {
+  claude: AGENT_MODELS.map((model) => ({ value: model, label: model })),
+  codex: CODEX_MODEL_NAMES.map((model) => ({
+    value: model,
+    label: CODEX_MODEL_LABELS[model],
+  })),
+} satisfies Record<Provider, readonly ModelChoice[]>
+
+// Both pins live on one entry and each provider reads its own (ruling 3).
+export const modelChoicesFor = (provider: Provider): readonly ModelChoice[] =>
+  MODEL_CHOICES[provider]
+
+export const chosenModelFor = (provider: Provider, options: AgentOptions) =>
+  provider === "codex" ? options.codexModel : options.model
+
+// Parsed, so a value from the other provider's row throws rather than storing.
+export const modelPatchFor = (
+  provider: Provider,
+  value: string
+): Partial<AgentOptions> =>
+  provider === "codex"
+    ? { codexModel: codexModelChoiceSchema.parse(value) }
+    : { model: agentModelSchema.parse(value) }
+
+// Project skills never reach global sub-agents. The rule is the wire
+// contract's, which the CLI reads too (EDITOR-08).
 export const isScopePairCompatible = (
   skillScope: SkillOptions["scope"],
   agentScope: AgentScope
 ) => isSeedScopePairWritable(skillScope, agentScope)
 
-/**
- * The same rule asked of the agents map, which is where an agent's scope comes
- * from. Sparse, so an agent nobody has moved rests at global and the map says
- * nothing about it at all — which is why the question cannot be answered from
- * the assignment alone.
- */
+// The same rule asked of the sparse agents map, where an unmoved agent rests
+// at global.
 export const reachesAgent = (
   agents: PersistedConfig["agents"],
   skillScope: SkillOptions["scope"],
@@ -200,16 +215,9 @@ export const reachesAgent = (
 ) =>
   isScopePairCompatible(skillScope, resolveAgentOptions(agents, agentId).scope)
 
-// The roster's one on/off rule: an explicit pin wins; otherwise an agent is on
-// exactly when it holds at least one enabled skill. Selecting a skill enables
-// its agents *through* this rule — nothing stores "on".
-//
-// `reachesAgent` is deliberately NOT asked here, and that is the whole shape of
-// the answer to EDITOR-08. An agent holding a project skill while it rests at
-// global is not an agent with no skills; it is an agent with a skill and a
-// problem, and the problem is only fixable because the row is on screen and the
-// agent's own scope word is a live control. Nothing counts differently — what
-// the pair costs is Install and Share, which `summarize` gates.
+// An explicit pin wins; otherwise an agent is on when it holds an enabled
+// skill. `reachesAgent` is not asked (EDITOR-08): the agent stays on so its
+// card can fix the pair, and `summarize` gates Install and Share instead.
 export const isAgentOn = (
   config: Pick<PersistedConfig, "skills" | "agents">,
   agentId: string
@@ -219,44 +227,31 @@ export const isAgentOn = (
     (entry) => entry.assignments[agentId]?.enabled
   )
 
-// Does this entry carry any information at all? Not "did the user customise
-// it" — a stack-applied skill arrives with assignments and must be kept. Only
-// the empty entry is dropped, since restoring one equals creating it fresh.
+// Only the empty entry is dropped: restoring it equals creating it fresh, and
+// a stack-applied one carries assignments.
 export const isWorthRemembering = (entry: SkillEntry) =>
   Object.keys(entry.assignments).length > 0 ||
   entry.install !== DEFAULT_SKILL_OPTIONS.install ||
   entry.scope !== DEFAULT_SKILL_OPTIONS.scope
 
 export const persistedUiSchema = z.object({
-  // Group key → collapsed, sparse. Keyed by id rather than position so a
-  // reordered catalog cannot collapse the wrong accordion. One record serves
-  // both bandings: domain mode writes the bare domain id, scope mode writes
-  // `scope:<scope>`, and a domain id can never contain a colon — so neither
-  // mode has to reset the other's state.
+  // Group key → collapsed, sparse. Domain mode writes the bare id, scope mode
+  // `scope:<scope>`, so the two never collide.
   rosterCollapsed: z.record(z.string(), z.boolean()),
-  // Both of these are `.catch()`-ed rather than required. This schema gates
-  // every read of localStorage and `ui-store`'s `merge` returns `current` on a
-  // failed parse WITHOUT reporting — so a required key here would silently
-  // reset every existing visitor's collapsed bands. `.catch()` fires on a
-  // MISSING key as well as an invalid one, so the parsed object always carries
-  // both with a valid value and the `{ ...current, ...parsed.data }` spread
-  // never depends on whether Zod omits an absent optional.
-  //
-  // For the same reason that store's `version` is NOT bumped: it has no
-  // `migrate`, so a bump is an unreported discard of everyone's arrangement.
+  // `.catch()`-ed, not required: `ui-store`'s `merge` silently drops a blob that
+  // fails, and `.catch()` also fills a missing key. Its version is not bumped
+  // for the same reason.
   rosterGroupBy: rosterGroupBySchema.catch("domain"),
+  providerCollapsed: z.boolean().catch(false),
   stackCollapsed: z.boolean().catch(false),
+  agentsCollapsed: z.boolean().catch(false),
   theme: themePreferenceSchema.catch("system"),
 })
 
 export type PersistedUi = z.infer<typeof persistedUiSchema>
 
-// Drops references the LOADED catalog does not know. An added skill IS in the
-// loaded catalog — that is the whole of EDITOR-03's ruling — so one arriving in
-// a payload survives this, provided its content was seated first; that ordering
-// is `adoptSeedPayload`'s job and the reason it exists. What still prunes here
-// is a configuration saved against one marketplace and reopened under another,
-// for exactly the same reason a regenerated catalogue's drops do.
+// Drops references the seated catalogue does not know. An added skill is in
+// it once its content is seated, which `adoptSeedPayload` orders (EDITOR-03).
 const isKnownSkill = (skillId: string) => skillId in activeCatalog().skillsById
 const isKnownAgent = (agentId: string) => agentId in SUB_AGENTS_BY_ID
 const isKnownStack = (stackId: string | null) =>
@@ -288,16 +283,9 @@ export const pruneUnknownIds = (config: PersistedConfig): PersistedConfig => ({
   ),
 })
 
-// Pre-release policy: no migrations. Anything but the current version is
-// discarded (`undefined`), which `merge` replaces with defaults. When the app
-// has real users, migrations start here — the version seam already exists.
-//
-// The discard is reported for the same reason the unreadable blob next door
-// is: someone's afternoon of configuration becomes empty state and nothing on
-// screen says so. This one is the wider case — a version bump empties every
-// saved configuration at once — and it is the only path `merge` cannot see,
-// since a refused blob reaches it as the `undefined` an empty storage does.
-// Version numbers only; a persisted configuration is the user's own.
+// No migrations: any other version is discarded, and reported, since `merge`
+// sees it only as the `undefined` an empty storage gives. Version numbers
+// only; the configuration is the user's own.
 export const migrateConfig = (state: unknown, fromVersion: number): unknown => {
   if (fromVersion === PERSIST_VERSION) return state
 

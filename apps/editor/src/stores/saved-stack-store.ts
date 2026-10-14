@@ -3,47 +3,88 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { z } from "zod"
 
-// One snapshot of a selection, kept so the work behind it outlives the
-// configuration currently on screen. What is stored is the payload sharing
-// already sends — the same serialization, so a saved stack and a shared link
-// can never restore different things.
-//
-// Deliberately its own slice rather than a field of the config store: that one
-// is versioned by `PERSIST_VERSION` and discarded wholesale on a bump, and a
-// snapshot someone made on purpose must not go with the browser state it
-// happened to be saved from. The payload's own `v` is this slot's version
-// seam, and it is stricter — a payload minted under an older contract fails to
-// decode rather than being guessed at.
-export const SAVED_STACK_NAME = "Saved stack"
+import {
+  validateSaveName,
+  type SaveNameProblem,
+} from "@/features/configure/lib/save-name"
 
-const savedSlotSchema = z.object({ saved: seedPayloadSchema })
+// Its own slice rather than a field of the config store, whose version bump
+// discards everything: a save someone named on purpose must survive that.
+const savedStackSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  payload: seedPayloadSchema,
+})
 
-// The untrusted read, kept pure so it can be exercised without a browser. An
-// empty slot and an unreadable one are the same answer on purpose: there is
-// nothing to restore either way, and nothing on screen to explain it with.
-export const readSavedStack = (persisted: unknown): SeedPayload | null => {
-  const parsed = savedSlotSchema.safeParse(persisted)
-  return parsed.success ? parsed.data.saved : null
+export type SavedStack = z.infer<typeof savedStackSchema>
+
+export type LocalSaveResult =
+  { ok: true; save: SavedStack } | { ok: false; problem: SaveNameProblem }
+
+const slotSchema = z.object({ saves: z.array(z.unknown()) })
+
+const owedSchema = z.object({ owed: z.array(z.string()) })
+
+const decodedSave = (entry: unknown): SavedStack[] => {
+  const parsed = savedStackSchema.safeParse(entry)
+  return parsed.success ? [parsed.data] : []
+}
+
+/** What the slot holds, newest first, minus each entry that no longer decodes. */
+export const readSavedStacks = (persisted: unknown): SavedStack[] => {
+  const parsed = slotSchema.safeParse(persisted)
+  return parsed.success ? parsed.data.saves.flatMap(decodedSave) : []
+}
+
+const readOwed = (persisted: unknown): string[] => {
+  const parsed = owedSchema.safeParse(persisted)
+  return parsed.success ? parsed.data.owed : []
 }
 
 type SavedStackState = {
-  saved: SeedPayload | null
-  // A single slot: saving again overwrites, so the grid gains exactly one cell
-  // however often it is used.
-  save: (payload: SeedPayload) => void
+  saves: SavedStack[]
+  // Ids of saves a first sign-in could not carry into the account, or whose
+  // name it already lists. Persisted: every later sign-in retries them.
+  owed: string[]
+  save: (name: string, payload: SeedPayload) => LocalSaveResult
+  rename: (id: string, name: string) => void
+  setOwed: (owed: string[]) => void
 }
 
 export const useSavedStackStore = create<SavedStackState>()(
   persist(
-    (set) => ({
-      saved: null,
-      save: (payload) => set({ saved: payload }),
+    (set, get) => ({
+      saves: [],
+      owed: [],
+      save: (name, payload) => {
+        const { saves } = get()
+        const checked = validateSaveName(
+          name,
+          saves.map((save) => save.name)
+        )
+        if (!checked.ok) return checked
+
+        // Random, never the name (EDITOR-74).
+        const save = { id: crypto.randomUUID(), name: checked.name, payload }
+        set({ saves: [save, ...saves] })
+        return { ok: true, save }
+      },
+      rename: (id, name) =>
+        set({
+          saves: get().saves.map((save) =>
+            save.id === id ? { ...save, name } : save
+          ),
+        }),
+      setOwed: (owed) => set({ owed }),
     }),
     {
-      name: "agents-inc:saved-stack:v1",
+      // No `migrate`: the retired `agents-inc:saved-stack:v1` slot is not read.
+      name: "agents-inc:saved-stacks:v1",
+      partialize: ({ saves, owed }) => ({ saves, owed }),
       merge: (persisted, current) => ({
         ...current,
-        saved: readSavedStack(persisted),
+        saves: readSavedStacks(persisted),
+        owed: readOwed(persisted),
       }),
     }
   )

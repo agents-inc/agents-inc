@@ -31,21 +31,16 @@ import {
   unknownPayloadIds,
 } from "./seed"
 
-// The payload is what leaves the browser, so what matters here is the boundary:
-// the envelope is stamped, the selection passes through, and nothing that
-// should stay local can ride along.
-//
-// v2 moved model and effort off the skill and onto the agent, which gave the
-// payload a second map. That map is not a copy of the store's: it carries only
-// what an agent has to say, and a pinned-off agent says nothing at all.
+// The payload is what leaves the browser: the envelope is stamped, the
+// selection passes through, and nothing that should stay local rides along.
 
 const SKILL = Object.keys(CATALOG.skillsById)[0]!
 const [AGENT, OTHER_AGENT] = Object.keys(SUB_AGENTS_BY_ID) as [string, string]
 const STACK = STACKS[0]!.id
 const GONE_AGENT = "retired-agent"
+const PINNED_CODEX_MODEL = "gpt-5.6-terra" as const
 
-// The skill someone added from outside the catalogue, filed under a category
-// the catalogue really ships — which is what a real catalogue entry means.
+// An added skill, filed under a category the catalogue really ships.
 const HOUSE_ID = externalSkillId(
   CATALOG.skillsById[SKILL]!.categoryId,
   "House React"
@@ -60,8 +55,7 @@ const HOUSE_SKILL: ExternalSkill = {
   files: { "SKILL.md": "# House React\n", "metadata.yaml": "slug: house\n" },
 }
 
-// The seat is global, so a test that seats a marketplace or an external skill
-// has to put it back — otherwise the next file's catalogue is this one's.
+// The seat is global, so a test that seats something puts it back.
 afterEach(() => {
   useCatalogStore.getState().reset()
 })
@@ -93,9 +87,6 @@ describe("toSeedPayload", () => {
     expect(payload.matrixVersion).toBe(MATRIX_VERSION)
   })
 
-  // The wire keeps assignments as agent → load, presence meaning "live", so the
-  // store's `{ load, enabled }` flattens to only its enabled rows — and a skill
-  // now carries where it installs and nothing about how anyone thinks.
   it("carries the selection through, minus disabled rows", () => {
     const payload = toSeedPayload(config())
 
@@ -114,29 +105,17 @@ describe("toSeedPayload", () => {
     expect(skill).not.toHaveProperty("effort")
   })
 
-  // A full store state is a valid ConfigSelection, so nothing stops a caller
-  // passing one; the contract, not the caller, is what keeps `remembered` home.
   it("never lets remembered ride along", () => {
     expect(toSeedPayload(config())).not.toHaveProperty("remembered")
   })
 
-  // v4's field, and what it means is decided by the seated catalogue. Absent is
-  // the public one — every payload the editor has ever minted — so a payload
-  // built on it looks exactly as it did before the field existed. Only a loaded
-  // marketplace names one, and it has to: the ids in `skills` are that
-  // marketplace's, and without the ref `--from` would install the receiver's
-  // own same-named skills instead.
+  // Absent for the public catalogue; a loaded marketplace has to be named, or
+  // `--from` would install the receiver's own same-named skills.
   it("names no marketplace while the seat rests on the public catalogue", () => {
     expect(toSeedPayload(config())).not.toHaveProperty("marketplace")
   })
 
-  // Seated with the CANONICAL ref, because that is the only form production ever
-  // seats: the dialog canonicalises before it calls `load`, so a bare
-  // `owner/repo` reaches this store nowhere. The mint is verbatim pass-through,
-  // which is exactly why the seat has to be honest — seeding the form the FIELD
-  // takes made this read as a statement that the editor mints a bare ref, and it
-  // does not. The receiver routes on the prefix, so the two are a repository and
-  // a local directory rather than two spellings of one thing.
+  // Seated with the canonical ref, the only form production seats.
   it("names the marketplace the loaded catalogue came from", () => {
     useCatalogStore
       .getState()
@@ -145,8 +124,6 @@ describe("toSeedPayload", () => {
     const payload = toSeedPayload(config())
 
     expect(payload.marketplace).toBe(MARKETPLACE_CANONICAL_REF)
-    // Stamped from the loaded catalogue too, so a receiver explaining skipped
-    // ids is told which catalogue they were minted against.
     expect(payload.matrixVersion).toBe(MARKETPLACE_CATALOG.version)
 
     useCatalogStore.getState().reset()
@@ -158,8 +135,6 @@ describe("toSeedPayload", () => {
     )
   })
 
-  // The capability v2 adds: `on: true` is sayable, so an agent with no skills
-  // at all can travel. v1 inferred agents from assignments and could not.
   it("travels a pinned agent as on, bare or not", () => {
     const bare = { ...config(), skills: {} }
 
@@ -169,8 +144,8 @@ describe("toSeedPayload", () => {
     })
   })
 
-  // A pinned-off agent renders recessed and is excluded from every count, so
-  // neither it nor its rows may travel — presence on the wire means "installs".
+  // Presence on the wire means "installs", so a pinned-off agent and its rows
+  // stay home.
   it("omits a pinned-off agent entirely, rows included", () => {
     const pinnedOff = {
       ...config(),
@@ -186,12 +161,8 @@ describe("toSeedPayload", () => {
     )
   })
 
-  // The payload is what is on screen, and nothing quietly less. A row the two
-  // scopes rule out is an ERROR the user has to resolve — not a row to strip on
-  // the way out, which would mint a link describing a different configuration
-  // from the one that was shared. Share and Install are blocked while one
-  // stands (see `summarize().unscopedAgentCount`), so the only door this
-  // payload leaves by is Save — a local snapshot that must round-trip exactly.
+  // An unwritable scope pair is an error to resolve on screen, not a row to
+  // strip: the payload must describe what is on screen (EDITOR-08).
   it("carries a row the two scopes rule out rather than stripping it", () => {
     const projectSkill = {
       ...config(),
@@ -207,13 +178,8 @@ describe("toSeedPayload", () => {
     })
   })
 
-  // Which makes the mint deliberately LENIENT, and this says so out loud rather
-  // than leaving it as a property nobody asserts. The obvious repair for
-  // CLI-851 — mint with `installableSeedPayloadSchema` — throws exactly here,
-  // and would take local Save and the preview dialog's memo with it: the two
-  // doors EDITOR-08 needs this payload to leave by unharmed. The write contract
-  // is therefore enforced where a payload becomes a WRITE, in
-  // `createSharedConfig`, and this is the test that reddens if it moves back.
+  // The mint is lenient on purpose; the write contract is enforced in
+  // `createSharedConfig`, where a payload becomes a write (CLI-851).
   it("mints a payload the write contract would refuse", () => {
     const projectSkill = {
       ...config(),
@@ -244,8 +210,8 @@ describe("toSeedPayload", () => {
     )
   })
 
-  // An agent switched on by its assignments is already implied by them, so
-  // repeating `on` would be the one place the payload could contradict itself.
+  // Only an explicit pin says `on`; repeating a derived one is where the
+  // payload could contradict itself.
   it("travels a derived-on agent's overrides without a pin", () => {
     const chosen = {
       ...config(),
@@ -258,9 +224,6 @@ describe("toSeedPayload", () => {
     expect(agent).not.toHaveProperty("on")
   })
 
-  // v3's field. Scope is a decision about the agent exactly as its model is,
-  // so it travels on the agent's entry — and the skill's own `scope`, which is
-  // a different field with the same name, is left exactly as it was.
   it("travels an agent's scope without touching the skill's", () => {
     const pinned = {
       ...config(),
@@ -273,9 +236,6 @@ describe("toSeedPayload", () => {
     expect(payload.skills[SKILL]!.scope).toBe("global")
   })
 
-  // The store drops a scope set back to the resting global, so the resting
-  // value cannot reach the payload — and if it ever did, it would say what
-  // absence already says. Nothing about that entry may travel.
   it("gives an agent left at the resting scope no scope key", () => {
     const resting = {
       ...config(),
@@ -285,8 +245,6 @@ describe("toSeedPayload", () => {
     expect(toSeedPayload(resting).agents[AGENT]).not.toHaveProperty("scope")
   })
 
-  // The map is sparse for the same reason the skill map is: an agent resting on
-  // its catalogue model with medium effort and no pin has nothing to say.
   it("gives an agent with nothing to say no entry at all", () => {
     const quiet = { ...config(), agents: {} }
 
@@ -333,10 +291,6 @@ describe("fromSeedPayload", () => {
     })
   })
 
-  // Absent means the resting global on both sides of the wire, so a restored
-  // entry says nothing about scope rather than saying "global" out loud —
-  // which is what keeps a round trip from growing keys the store would then
-  // have to drop.
   it("restores an absent scope as absent, not spelled out", () => {
     const restored = fromSeedPayload(toSeedPayload(config()))
 
@@ -349,8 +303,6 @@ describe("fromSeedPayload", () => {
     )
   })
 
-  // A payload can be minted against a matrix this catalog has moved past, so
-  // unknown ids are skipped rather than failing the whole import.
   it("prunes ids the catalog does not know", () => {
     const payload = toSeedPayload(config())
     const drifted = {
@@ -371,12 +323,8 @@ describe("fromSeedPayload", () => {
     expect(Object.keys(restored.skills)).toStrictEqual([SKILL])
   })
 
-  // The second of the two doors a configuration holding the bad pair arrives
-  // through, and the one the ruling is emphatic about: silently dropping
-  // assignments somebody SHARED is the outcome that must not happen. Every
-  // payload minted before this rule existed can carry one, so the import keeps
-  // it verbatim — what changes is that it no longer counts, and the screen says
-  // so above the grid.
+  // Silently dropping assignments somebody shared is the outcome the EDITOR-08
+  // ruling forbids, so the import keeps the pair and the screen flags it.
   it("keeps an assignment the two scopes rule out rather than dropping it", () => {
     const payload = toSeedPayload(config())
     const shared = {
@@ -396,8 +344,6 @@ describe("fromSeedPayload", () => {
     })
   })
 
-  // The agents map is as exposed to catalogue drift as the skills map, and it
-  // is now the only place a retired agent can arrive without an assignment.
   it("prunes an agent the catalog no longer has", () => {
     const payload = toSeedPayload(config())
     const drifted = {
@@ -409,11 +355,95 @@ describe("fromSeedPayload", () => {
   })
 })
 
-// Pruning is right — a configuration must not name skills nothing can install
-// — but pruning in silence is what turns catalogue drift into a link that comes
-// back quietly smaller than it was sent. This is the count that makes the
-// difference sayable, and it is measured against what the import actually
-// produced rather than against the catalogue, so it names exactly what was lost.
+// Both pins travel and each provider reads its own (ruling 3). The wire field
+// is a string, so an id this editor does not offer arrives and is dropped.
+describe("the Codex model on the wire", () => {
+  it("travels beside the Claude model rather than replacing it", () => {
+    const pinned = {
+      ...config(),
+      agents: {
+        [AGENT]: {
+          on: true,
+          model: "haiku" as const,
+          codexModel: PINNED_CODEX_MODEL,
+        },
+      },
+    }
+
+    expect(toSeedPayload(pinned).agents[AGENT]).toStrictEqual({
+      on: true,
+      model: "haiku",
+      codexModel: PINNED_CODEX_MODEL,
+    })
+  })
+
+  it("travels on an agent with nothing else to say", () => {
+    const pinned = {
+      ...config(),
+      agents: { [AGENT]: { codexModel: PINNED_CODEX_MODEL } },
+    }
+
+    expect(toSeedPayload(pinned).agents).toStrictEqual({
+      [AGENT]: { codexModel: PINNED_CODEX_MODEL },
+    })
+  })
+
+  it("round-trips", () => {
+    const pinned = {
+      ...config(),
+      agents: {
+        [AGENT]: { on: true, codexModel: PINNED_CODEX_MODEL },
+        [OTHER_AGENT]: {
+          model: "haiku" as const,
+          codexModel: "gpt-5.6-luna" as const,
+        },
+      },
+    }
+
+    expect(fromSeedPayload(toSeedPayload(pinned)).agents).toStrictEqual(
+      pinned.agents
+    )
+  })
+
+  it("keeps an offered id and drops one this editor does not offer", () => {
+    const arriving = {
+      ...toSeedPayload(config()),
+      agents: {
+        [AGENT]: { on: true, codexModel: PINNED_CODEX_MODEL },
+        [OTHER_AGENT]: { model: "haiku" as const, codexModel: "gpt-4o" },
+      },
+    }
+
+    expect(fromSeedPayload(arriving).agents).toStrictEqual({
+      [AGENT]: { on: true, codexModel: PINNED_CODEX_MODEL },
+      [OTHER_AGENT]: { model: "haiku" },
+    })
+  })
+
+  // Absence is `inherit`, and the payload says it by saying nothing. The
+  // store dropping a pick of `inherit` is config-store.test's.
+  it("never sends inherit for an agent resting on it", () => {
+    const resting = {
+      ...config(),
+      agents: {
+        [AGENT]: {
+          on: true,
+          effort: "max" as const,
+          codexModel: "inherit" as const,
+        },
+      },
+    }
+
+    expect(toSeedPayload(resting).agents[AGENT]).toStrictEqual({
+      on: true,
+      effort: "max",
+    })
+  })
+})
+
+// Pruning is right, but pruning in silence turns catalogue drift into a link
+// that comes back smaller than it was sent. Measured against what the import
+// produced, so it names exactly what was lost.
 describe("unknownPayloadIds", () => {
   it("names nothing when the catalogue placed every id", () => {
     const payload = toSeedPayload(config())
@@ -450,8 +480,6 @@ describe("unknownPayloadIds", () => {
     ])
   })
 
-  // The stack is one id like any other, and losing it silently is how a link
-  // arrives claiming to have been built from scratch.
   it("names the stack when it did not survive", () => {
     const payload = { ...toSeedPayload(config()), stackId: "retired-stack" }
 
@@ -460,9 +488,6 @@ describe("unknownPayloadIds", () => {
     ])
   })
 
-  // An external skill's own content is what puts its id in the catalogue, so it
-  // is known by the time the comparison runs — the ordering `adoptSeedPayload`
-  // exists for, seen from the other end.
   it("says nothing about a skill the payload's own content registered", () => {
     useCatalogStore.getState().addExternal([HOUSE_SKILL])
     const payload = toSeedPayload({
@@ -480,15 +505,8 @@ describe("unknownPayloadIds", () => {
   })
 })
 
-// ── External skills ──────────────────────────────────────────────────────
-//
-// The half of the payload that carries CONTENT. Every other id in it is
-// resolved by the receiver against a catalogue it already has; an external
-// skill answers to no catalogue, so the ruling (owner, 2026-08-16) is that the
-// editor resolves it and the bytes travel inline. What that buys is a
-// self-contained id: `--from` reaches no third-party repository at install
-// time, and two people installing one id get identical content.
-
+// An external skill answers to no catalogue, so its bytes travel inline
+// (owner, 2026-08-16) and `--from` reaches no third-party repository.
 describe("external skills in the payload", () => {
   const externalConfig = (): PersistedConfig => ({
     stackId: null,
@@ -528,9 +546,6 @@ describe("external skills in the payload", () => {
     expect(carried?.path).toBe(HOUSE_SKILL.path)
   })
 
-  // Content is the expensive part of the payload, so an external skill nobody
-  // picked has no business in it — the same sparseness that keeps a deselected
-  // skill's setup out.
   it("leaves out an added skill the selection does not name", () => {
     expect(toSeedPayload(config())).not.toHaveProperty("external")
   })
@@ -541,9 +556,7 @@ describe("external skills in the payload", () => {
     ).toBe(true)
   })
 
-  // EDITOR-15 and EDITOR-16, from the receiving side. The ids used to prune,
-  // because `pruneUnknownIds` asks the catalogue and the catalogue had never
-  // heard of them; the payload's own content is what registers them first.
+  // EDITOR-15/16: the payload's own content registers the ids before pruning.
   it("survives the round trip rather than pruning on arrival", () => {
     const payload = toSeedPayload(externalConfig())
     useCatalogStore.getState().reset()
@@ -565,9 +578,6 @@ describe("external skills in the payload", () => {
     )
   })
 
-  // A payload carrying nothing external must not disturb what the browser
-  // already holds — importing a colleague's catalogue-only link is not a reason
-  // to lose the skills you added yourself.
   it("keeps the skills already added when a payload names none", () => {
     adoptSeedPayload(toSeedPayload(config()))
 
@@ -575,10 +585,8 @@ describe("external skills in the payload", () => {
   })
 })
 
-// The saved stack has no id to be recognised by, so "it is applied" is a
-// comparison rather than a lookup: the selection on screen minting the payload
-// the slot holds. Everything the grid draws from it rests on that answer
-// surviving the trip through the slot and back.
+// The saved stack has no id, so "it is applied" is the selection minting the
+// payload the slot holds.
 describe("matchesSavedStack", () => {
   const saved = () => toSeedPayload(config())
 
@@ -586,14 +594,10 @@ describe("matchesSavedStack", () => {
     expect(matchesSavedStack(config(), saved())).toBe(true)
   })
 
-  // The one that matters on screen: applying the snapshot has to leave the
-  // selection matching it, or the cell would go out the moment it came on.
   it("says yes to what the snapshot restores", () => {
     expect(matchesSavedStack(fromSeedPayload(saved()), saved())).toBe(true)
   })
 
-  // Whatever the payload carries is a way for the two to differ, so a field the
-  // wire holds is enough on its own — this is the confirm's whole trigger.
   it("says no once the selection moves off it", () => {
     const edited = {
       ...config(),
@@ -603,8 +607,15 @@ describe("matchesSavedStack", () => {
     expect(matchesSavedStack(edited, saved())).toBe(false)
   })
 
-  // Nothing local ever equals nothing saved: with an empty slot there is no
-  // stack to be on, and the grid draws no cell to light up.
+  it("says no once only the Codex model moves off it", () => {
+    const repinned = {
+      ...config(),
+      agents: { [AGENT]: { on: true, codexModel: PINNED_CODEX_MODEL } },
+    }
+
+    expect(matchesSavedStack(repinned, saved())).toBe(false)
+  })
+
   it("says no when the slot is empty", () => {
     expect(matchesSavedStack(config(), null)).toBe(false)
   })

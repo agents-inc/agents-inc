@@ -13,30 +13,20 @@ import { unknownSavedIds, useConfigStore, withoutWrites } from "./config-store"
 import type { ReportingSink } from "@/lib/observability/report"
 import type { PersistStorage, StorageValue } from "zustand/middleware"
 
-import { PERSIST_VERSION, isAgentOn } from "./persisted-schema"
-
-// The slot a shared configuration runs on.
-//
-// A shared link is its own URL with its own state (EDITOR-37), and the one
-// thing opening one must never cost is the visitor's own saved configuration —
-// not on arrival, and not through the first thing they change afterwards.
-// Guarding every write would be a rule every action in the store has to keep;
-// taking the pen away is one statement, made once.
-//
-// Kept pure so it can be exercised without a browser, which is the arrangement
-// `readSavedMarketplaces` established: the browser half is proved end to end,
-// where a real localStorage is.
+import {
+  AGENT_MODELS,
+  PERSIST_VERSION,
+  isAgentOn,
+  restingAgentOptions,
+} from "./persisted-schema"
+import { useUiStore } from "./ui-store"
 
 type Held = { stackId: string | null }
 
 const SLOT = "agents-inc:config:v1"
 
-// The version every blob in this file is stamped with, bound rather than
-// written out. A blob at any other version is DISCARDED by `migrateConfig`
-// before `merge` sees it, so a literal here does not age into a wrong number —
-// it ages into four specs that pass while reading an empty store, which is the
-// worse of the two failures. The number itself lives in exactly one place, and
-// `persisted-schema.test.ts` is where it is pinned.
+// Bound rather than written out: a blob at any other version is discarded
+// before `merge`, so a stale literal would pass against an empty store.
 const HELD: StorageValue<Held> = {
   state: { stackId: "nextjs" },
   version: PERSIST_VERSION,
@@ -46,8 +36,6 @@ const OTHER: StorageValue<Held> = {
   version: PERSIST_VERSION,
 }
 
-// A slot that records what it was asked to do, so "the write never happened" is
-// observable rather than inferred from what a later read came back with.
 const watchedSlot = () => {
   let held: StorageValue<Held> | null = HELD
   const writes: StorageValue<Held>[] = []
@@ -68,6 +56,7 @@ const watchedSlot = () => {
   return { storage, writes, removals, held: () => held }
 }
 
+// The slot a shared configuration runs on (EDITOR-37): read, never written.
 describe("withoutWrites", () => {
   it("answers with what the slot holds", () => {
     const slot = watchedSlot()
@@ -84,9 +73,7 @@ describe("withoutWrites", () => {
     expect(slot.held()).toStrictEqual(HELD)
   })
 
-  // A slot emptied is a slot written. `clearStorage` reaches this door rather
-  // than the one above, so leaving it open would be the same loss by a
-  // different verb.
+  // `clearStorage` reaches this door rather than `setItem`.
   it("swallows a removal too", () => {
     const slot = watchedSlot()
 
@@ -96,9 +83,6 @@ describe("withoutWrites", () => {
     expect(slot.held()).toStrictEqual(HELD)
   })
 
-  // The wrapper is a second handle on one slot, not a replacement for it: the
-  // real one has to keep writing, or coming back to the visitor's own
-  // configuration would leave them unable to save anything again.
   it("leaves the slot it wraps able to write", () => {
     const slot = watchedSlot()
 
@@ -109,46 +93,22 @@ describe("withoutWrites", () => {
   })
 })
 
-// The ids the vendored public catalogue does and does not hold. `toggleSkill`
-// and the option actions all ask it before they change anything, and what they
-// do when the answer is no is what the block below is about.
 const KNOWN_SKILL = "web-framework-react"
 const KNOWN_AGENT = "web-developer"
 const UNKNOWN_SKILL = "acme-web-widgets"
 
-// The same id read the other way round: unknown to the VENDORED catalogue
-// because it belongs to a marketplace's. A browser that loaded that
-// marketplace has it seated, selects against it, and persists it verbatim.
+// Unknown to the vendored catalogue because a marketplace owns it.
 const PRIVATE_CATALOG_SKILL = UNKNOWN_SKILL
-
-// A marketplace's STACK id, and the same fact about it: `matrixStackSchema.id`
-// is the catalogue's own vocabulary, so a stack saved on a marketplace and
-// reopened against the vendored catalogue is pruned by a name the org chose.
-// The spelling `MARKETPLACE_CATALOG` publishes, and the one the prune tests at
-// the foot of this file already use as their dropped stack.
 const PRIVATE_CATALOG_STACK = "acme-house-stack"
 
-/**
- * The store built against a `localStorage` this suite can watch.
- *
- * `set` is what WRITES: persist wraps it as "call it, then `setItem()`", and
- * the `setItem()` half runs OUTSIDE zustand's own `Object.is` short-circuit. So
- * an updater arm returning an empty patch changes nothing and saves anyway —
- * which is a fact about the SLOT and not about the state, and the reason these
- * read the slot rather than asking the identity question `pruneToCatalog` above
- * asks. That question passes against the empty patch too, and is exactly how
- * this survived.
- *
- * The store's slot is `createJSONStorage(() => window.localStorage)`, read once
- * at module scope — so the browser has to be standing BEFORE the import, which
- * is what the reset and the dynamic import are for. This suite runs in node,
- * where persist otherwise finds no storage at all and takes its silent no-op
- * branch: nothing to watch, and every assertion below vacuously green.
- */
+// The store on a `localStorage` this suite can watch. `set` is what writes —
+// persist calls `setItem` outside zustand's own `Object.is` short-circuit — so
+// these read the slot. The browser stands before the import because the slot
+// is read once at module scope; in node persist would otherwise find no
+// storage and every assertion would pass vacuously.
 const storeOnAWatchedSlot = async () => {
   const held = new Map<string, string>()
-  // This store's slot alone. `toggleSkill` also flashes the roster, and the UI
-  // store persists to a slot of its own on the same `localStorage`.
+  // This store's slot alone: the UI store persists beside it.
   const writes: string[] = []
 
   vi.stubGlobal("window", {
@@ -170,22 +130,13 @@ const storeOnAWatchedSlot = async () => {
   return { store, writes }
 }
 
-// An action the catalogue refuses must not reach `set`.
-//
-// The refusals were written as arms INSIDE the updater — `return {}` reads as
-// "change nothing" and is not: persist saves whatever the updater returned, so
-// a click the catalogue turned down put the whole configuration back in the
-// slot. Harmless while the slot holds what memory holds, and not harmless in
-// the one window where it does not — a restore parked on a marketplace that
-// would not load is finished by a press that arrives after the store has been
-// written to at least once.
+// An action the catalogue refuses must not reach `set`, which writes.
 describe("an action the catalogue refuses", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  // The control, and it is not ceremony: without it every assertion below is
-  // green against a slot nothing was ever going to write to.
+  // The control: without it the rest pass against a slot nothing writes to.
   it("writes the slot when the catalogue can place the skill", async () => {
     const { store, writes } = await storeOnAWatchedSlot()
 
@@ -202,8 +153,6 @@ describe("an action the catalogue refuses", () => {
     expect(writes).toStrictEqual([])
   })
 
-  // The same arm one helper deeper: `configure` asks the catalogue the same
-  // question for a skill that is not selected, and answered it the same way.
   it("writes nothing for an option set on a skill it cannot place", async () => {
     const { store, writes } = await storeOnAWatchedSlot()
 
@@ -212,7 +161,6 @@ describe("an action the catalogue refuses", () => {
     expect(writes).toStrictEqual([])
   })
 
-  // And `patchAssignment`'s, which turns down a row no selected skill holds.
   it("writes nothing for a row no selected skill holds", async () => {
     const { store, writes } = await storeOnAWatchedSlot()
 
@@ -222,22 +170,10 @@ describe("an action the catalogue refuses", () => {
   })
 })
 
-// A project-scoped skill on a sub-agent whose front-matter is written to
-// ~/.claude is the one pair the config model cannot express: the agent file is
-// visible from every project, and the skill exists in one. The CLI's `init
-// --from` THROWS on a payload holding one, so this is not a preference — a
-// configuration carrying one is a configuration nobody can install.
-//
-// The store does not stop any of it. Every verb here is unguarded on purpose:
-// the pair is an ERROR to resolve rather than an action to prevent, and the
-// three ways to make one — assign, move the skill, move the sub-agent — are all
-// things a user may legitimately do on the way to a configuration that works.
-// What the pair costs is Install and Share, and it is `summarize` that says so.
+// A project skill on a global sub-agent cannot be installed (the CLI throws
+// on it), but the store refuses none of the three ways in: it is an error to
+// resolve, and `summarize` gates Install and Share on it (EDITOR-08).
 describe("the scope rule in the store", () => {
-  // Every sub-agent rests at global, so a skill moved to project conflicts with
-  // all of them until one is pinned the other way — which is why REFUSING the
-  // move would put project scope out of reach, and why DROPPING the rows would
-  // cost the whole assignment set to one badge click.
   const asProject = () => {
     const store = useConfigStore.getState()
     store.reset()
@@ -255,8 +191,6 @@ describe("the scope rule in the store", () => {
     useConfigStore.getState().reset()
   })
 
-  // The control: without it every assertion below is green against a skill that
-  // never reached any sub-agent in the first place.
   it("gives a freshly picked skill sub-agents to lose", () => {
     useConfigStore.getState().toggleSkill(KNOWN_SKILL)
 
@@ -274,8 +208,6 @@ describe("the scope rule in the store", () => {
     expect(unresolved()).toBeGreaterThan(0)
   })
 
-  // The other side of the same pair. Moving the sub-agent back to global is the
-  // agent-side way in, and it must cost no more than the skill-side one.
   it("keeps them when the sub-agent moves to global instead", () => {
     asProject()
     useConfigStore.getState().setAgentOption(KNOWN_AGENT, { scope: "project" })
@@ -286,10 +218,6 @@ describe("the scope rule in the store", () => {
     expect(assignments()).toStrictEqual(before)
   })
 
-  // The sub-agent is on throughout — it holds a skill, which is exactly why the
-  // pair is a problem. What moves is the error count, and one scope word moves
-  // it by exactly one: the skill reaches five sub-agents and each is its own
-  // click, which is what makes the number the count of clicks remaining.
   it("clears one sub-agent per scope word, from the sub-agent's side", () => {
     asProject()
     expect(isAgentOn(useConfigStore.getState(), KNOWN_AGENT)).toBe(true)
@@ -302,8 +230,6 @@ describe("the scope rule in the store", () => {
     expect(unresolved()).toBe(before - 1)
   })
 
-  // The skill's side is the other way out, and it clears every row at once —
-  // one click against however many sub-agents the skill reaches.
   it("clears every sub-agent at once from the skill's side", () => {
     asProject()
     expect(unresolved()).toBeGreaterThan(1)
@@ -313,13 +239,9 @@ describe("the scope rule in the store", () => {
     expect(unresolved()).toBe(0)
   })
 
-  // Assigning is not refused either. A user pointing the ••• panel at a
-  // sub-agent is asking for a configuration, and the answer is the row plus the
-  // error beside it — not a click that silently does nothing.
   it("assigns a project skill to a sub-agent resting at global", () => {
     asProject()
-    // A sub-agent the auto-assignment rule did not reach, so this is a pair the
-    // store creates from nothing rather than one it leaves alone.
+    // One the auto-assignment rule did not reach.
     const unassigned = "api-tester"
     expect(assignments()[unassigned]).toBeUndefined()
 
@@ -347,19 +269,214 @@ describe("the scope rule in the store", () => {
   })
 })
 
-// A prune that drops nothing must not be a change.
-//
-// `set` is what writes: persist wraps it, so a store action that replaces the
-// state with an equal copy still puts that copy in the slot. Harmless in every
-// case but one — this is reachable BEFORE the saved configuration has been
-// read at all. A restore parked on a marketplace that would not load is
-// finished by the same press that seats one, and seating one prunes; an empty
-// store written over the slot first is the very configuration that press was
-// about to restore.
-//
-// Asked as identity rather than by watching a slot, because identity is the
-// fact underneath: no new state object means no `set`, and no `set` means no
-// write, whatever storage happens to be attached.
+// v6 §2 rule 2: on Codex no unselected plugin skill rests at project. Only
+// remembered plugin+project entries move; selected skills and ejected ones
+// never do, and nothing moves back.
+describe("remembered project plugins on Codex", () => {
+  const EXCLUSIVE_SIBLING = "web-framework-vue-composition-api"
+  const PLUGIN_PROJECT = "web-styling-tailwind"
+  const EJECT_PROJECT = "web-styling-cva"
+  const PLUGIN_GLOBAL = "web-state-zustand"
+
+  const assigned = { assignments: { [KNOWN_AGENT]: liveAssignment() } }
+  const pluginProject = skillEntry({ scope: "project", ...assigned })
+
+  const rememberedScope = (skillId: string) =>
+    useConfigStore.getState().remembered[skillId]?.scope
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+    useUiStore.getState().setProvider("claude")
+  })
+
+  it("moves only remembered plugin+project entries to global", () => {
+    const before = persistedConfig({
+      skills: { [KNOWN_SKILL]: pluginProject },
+      remembered: {
+        [PLUGIN_PROJECT]: pluginProject,
+        [EJECT_PROJECT]: skillEntry({
+          install: "eject",
+          scope: "project",
+          ...assigned,
+        }),
+        [PLUGIN_GLOBAL]: skillEntry(assigned),
+      },
+    })
+    useConfigStore.getState().applySavedStack(before)
+
+    useConfigStore.getState().moveRememberedPluginsToGlobal()
+
+    const { skills, remembered } = useConfigStore.getState()
+    expect(skills).toStrictEqual(before.skills)
+    expect(remembered).toStrictEqual({
+      ...before.remembered,
+      [PLUGIN_PROJECT]: { ...pluginProject, scope: "global" },
+    })
+  })
+
+  // `set` is what writes the slot, so a switch that moves nothing skips it.
+  it("leaves the state untouched when no remembered plugin is at project", () => {
+    useConfigStore.getState().applySavedStack(
+      persistedConfig({
+        skills: { [KNOWN_SKILL]: pluginProject },
+        remembered: {
+          [EJECT_PROJECT]: skillEntry({
+            install: "eject",
+            scope: "project",
+            ...assigned,
+          }),
+          [PLUGIN_GLOBAL]: skillEntry(assigned),
+        },
+      })
+    )
+    const before = useConfigStore.getState()
+
+    before.moveRememberedPluginsToGlobal()
+
+    expect(useConfigStore.getState()).toBe(before)
+  })
+
+  it("sets a skill deselected on Codex aside at global", () => {
+    useConfigStore
+      .getState()
+      .applySavedStack(
+        persistedConfig({ skills: { [KNOWN_SKILL]: pluginProject } })
+      )
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+    expect(rememberedScope(KNOWN_SKILL)).toBe("project")
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    useUiStore.getState().setProvider("codex")
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(rememberedScope(KNOWN_SKILL)).toBe("global")
+  })
+
+  // An eviction is a deselection the visitor did not click.
+  it("sets an exclusive sibling evicted on Codex aside at global", () => {
+    useConfigStore
+      .getState()
+      .applySavedStack(
+        persistedConfig({ skills: { [KNOWN_SKILL]: pluginProject } })
+      )
+    useConfigStore.getState().toggleSkill(EXCLUSIVE_SIBLING)
+    expect(rememberedScope(KNOWN_SKILL)).toBe("project")
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    useUiStore.getState().setProvider("codex")
+    useConfigStore.getState().toggleSkill(EXCLUSIVE_SIBLING)
+
+    expect(rememberedScope(KNOWN_SKILL)).toBe("global")
+  })
+})
+
+// Like `model`, only a non-resting choice is stored, and `inherit` is where it
+// rests.
+describe("a sub-agent's Codex model", () => {
+  const PIN = "gpt-5.6-sol"
+
+  const agentEntry = () => useConfigStore.getState().agents[KNOWN_AGENT]
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("is stored beside the Claude pin", () => {
+    const resting = restingAgentOptions(KNOWN_AGENT).model
+    const claudePin = AGENT_MODELS.find((model) => model !== resting)!
+
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { model: claudePin })
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { codexModel: PIN })
+
+    expect(agentEntry()).toStrictEqual({ model: claudePin, codexModel: PIN })
+  })
+
+  it("loses its key when set back to inherit", () => {
+    useConfigStore
+      .getState()
+      .setAgentOption(KNOWN_AGENT, { codexModel: PIN, effort: "high" })
+    expect(agentEntry()?.codexModel).toBe(PIN)
+
+    useConfigStore
+      .getState()
+      .setAgentOption(KNOWN_AGENT, { codexModel: "inherit" })
+
+    expect(agentEntry()).toStrictEqual({ effort: "high" })
+  })
+
+  it("drops an entry left saying nothing", () => {
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { codexModel: PIN })
+    expect(agentEntry()).toBeDefined()
+
+    useConfigStore
+      .getState()
+      .setAgentOption(KNOWN_AGENT, { codexModel: "inherit" })
+
+    expect(agentEntry()).toBeUndefined()
+  })
+})
+
+// Pressing the control already in effect must not reach `set`, which writes.
+describe("setAgentOption", () => {
+  const resting = restingAgentOptions(KNOWN_AGENT)
+  const otherModel = AGENT_MODELS.find((model) => model !== resting.model)!
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The control: without it the rest pass against a slot nothing writes to.
+  it("writes the slot when the pick changes", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store.getState().setAgentOption(KNOWN_AGENT, { model: otherModel })
+
+    expect(writes).toHaveLength(1)
+  })
+
+  it.each([
+    ["model", { model: resting.model }],
+    ["scope", { scope: resting.scope }],
+    ["effort", { effort: resting.effort }],
+    ["Codex model", { codexModel: resting.codexModel }],
+  ] as const)("writes nothing for the resting %s", async (_label, patch) => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store.getState().setAgentOption(KNOWN_AGENT, patch)
+
+    expect(writes).toStrictEqual([])
+  })
+
+  it.each([
+    ["model", { model: otherModel }],
+    ["scope", { scope: "project" }],
+    ["Codex model", { codexModel: "gpt-5.6-terra" }],
+  ] as const)(
+    "writes nothing for a %s already stored",
+    async (_label, patch) => {
+      const { store, writes } = await storeOnAWatchedSlot()
+      store.getState().setAgentOption(KNOWN_AGENT, patch)
+      expect(writes).toHaveLength(1)
+
+      store.getState().setAgentOption(KNOWN_AGENT, patch)
+
+      expect(writes).toHaveLength(1)
+    }
+  )
+
+  it("writes when one field of the patch changes", async () => {
+    const { store, writes } = await storeOnAWatchedSlot()
+
+    store
+      .getState()
+      .setAgentOption(KNOWN_AGENT, { model: resting.model, effort: "high" })
+
+    expect(writes).toHaveLength(1)
+  })
+})
+
+// A prune that drops nothing must not reach `set`: it is reachable before the
+// saved configuration has been read, and would write an empty store over it.
 describe("pruneToCatalog", () => {
   it("leaves the state untouched when the catalogue can place everything", () => {
     const before = useConfigStore.getState()
@@ -379,17 +496,8 @@ describe("pruneToCatalog", () => {
   })
 })
 
-// What a prune actually cost, named rather than counted.
-//
-// `reportPruning` beside it counts the drops for observability; these are for
-// the person whose configuration just came back smaller, and the screen says
-// them in the words the shared-link door already uses for a payload's. The same
-// three places `unknownPayloadIds` names — the skills asked for, the agents
-// asked for, and the stack — which is what keeps the two doors saying one thing.
-//
-// `unknownSavedIds` reads the KEYS of both maps and the stack, never an entry's
-// contents — so every skill below is the factory's resting one, and the ids
-// are the whole of what each spec states.
+// What a prune cost, named for the person whose configuration came back
+// smaller: the same three places `unknownPayloadIds` names.
 describe("unknownSavedIds", () => {
   it("names the skill the catalogue could not place", () => {
     const before = persistedConfig({
@@ -404,8 +512,6 @@ describe("unknownSavedIds", () => {
     ).toStrictEqual(["acme-web-widgets"])
   })
 
-  // One id like any other, both of them: an agent that no longer exists and a
-  // stack that no longer exists are lost work exactly as a skill is.
   it("names a dropped agent and a dropped stack too", () => {
     const before = persistedConfig({
       stackId: "acme-house-stack",
@@ -427,9 +533,7 @@ describe("unknownSavedIds", () => {
     expect(unknownSavedIds(kept, kept)).toStrictEqual([])
   })
 
-  // A deselected skill's remembered setup was never going to be applied, so
-  // naming it under "not applied" would describe a loss nothing on screen can
-  // show — and would name an id the visitor has no way to connect to anything.
+  // A remembered setup was never going to be applied, so its loss shows nowhere.
   it("leaves a dropped remembered setup unnamed", () => {
     const before = persistedConfig({
       remembered: { "acme-web-widgets": skillEntry() },
@@ -439,15 +543,6 @@ describe("unknownSavedIds", () => {
   })
 })
 
-// The two doors onto the same slot that REPORT, and what each may name.
-//
-// Both are reached through the real persist middleware — a stubbed
-// `localStorage` holding a blob, then `readSavedConfig()` — because what is
-// under test is the reported payload and nothing pure produces one.
-
-// Typed to the sink's own contract rather than left as bare `vi.fn()`, so a
-// reporting call whose shape changes is a compile error in the expectations
-// below rather than a matcher that quietly stops matching.
 const sink = {
   issue: vi.fn<ReportingSink["issue"]>(),
   error: vi.fn<ReportingSink["error"]>(),
@@ -464,13 +559,8 @@ const readingASlotHolding = async (blob: string) => {
     },
   })
 
-  // Imported after the reset, not before. `resetModules` gives the store a
-  // FRESH `report.ts` with a sink variable of its own, so a sink installed on
-  // the statically imported copy would be set on a module nothing calls — and
-  // every assertion here would read zero calls and pass by accident.
-  //
-  // The reset also reseats the catalogue: a fresh `catalog-store` is the
-  // VENDORED one, which is what makes a marketplace's ids unknown below.
+  // After the reset: the store gets a fresh `report.ts`, so the sink has to
+  // be installed on that copy. The reset also reseats the vendored catalogue.
   vi.resetModules()
   const { setReportingSink } = await import("@/lib/observability/report")
   setReportingSink(sink)
@@ -478,8 +568,6 @@ const readingASlotHolding = async (blob: string) => {
   const { readSavedConfig, useConfigStore: store } =
     await import("./config-store")
   await readSavedConfig()
-  // The store the read landed in, so a caller can ask what survived it rather
-  // than only what was reported about it.
   return store
 }
 
@@ -487,25 +575,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-// The discard door. A blob the current contract can no longer read becomes a
-// warning, and the warning is the only trace — the discard itself is silent on
-// screen.
-//
-// What it may name is decided by `persistedConfigSchema` rather than by the
-// handler: `skills`, `remembered` and `agents` are `z.record`s, and once a
-// visitor loads a marketplace, `onlyPersistableSkills` persists that
-// CATALOGUE's ids verbatim — it filters out ADDED external skills, not a
-// marketplace's own. So on a private marketplace the keys are the org's, and
-// `reportIssue` ends at Sentry through our own `/monitoring` tunnel.
+// A marketplace's keys are the org's, and the report ends at Sentry, so it
+// names the field and the code and nothing deeper.
 describe("the unreadable-configuration door", () => {
-  // A blob at the CURRENT version, which is the case `migrateConfig` never
-  // sees: persist calls `migrate` only on a mismatch and hands everything else
-  // straight to `merge`.
-  //
-  // Raw at the one field that is wrong, the shape `persisted-schema.test.ts`
-  // gives a blob the parser has to refuse: an install mode of `7` is not a
-  // sayable `SkillEntry`, so the factories' values are spread and that one
-  // field is written over them.
+  // Current version, so `migrateConfig` never sees it; one field unparseable.
   const UNREADABLE_AT_THIS_VERSION = savedConfigBlob({
     ...persistedConfig(),
     skills: {
@@ -516,9 +589,6 @@ describe("the unreadable-configuration door", () => {
     },
   })
 
-  // Asserted over the whole call log rather than over `issues`, because a check
-  // on the reported field alone passes while the path leaks — the shape
-  // `marketplace-store.test.ts` settled on for the same reason.
   it("names no skill of the marketplace's own in what it reports", async () => {
     await readingASlotHolding(UNREADABLE_AT_THIS_VERSION)
 
@@ -528,9 +598,6 @@ describe("the unreadable-configuration door", () => {
     )
   })
 
-  // Still worth reporting, and still worth locating: the top-level field and
-  // the code say a saved configuration was lost and roughly where, which is the
-  // whole reason this door is not silent.
   it("still says which field and which code", async () => {
     await readingASlotHolding(UNREADABLE_AT_THIS_VERSION)
 
@@ -541,14 +608,7 @@ describe("the unreadable-configuration door", () => {
   })
 })
 
-// The PRUNE door, and it is the one no `issue.path` grep can see: it reports a
-// bare VALUE rather than a path, so the census that found the two joins above
-// looks straight past it.
-//
-// A stack id is `matrixStackSchema.id` — as marketplace-owned as a skill id —
-// and it reaches the same `/monitoring` tunnel. The blob below is a
-// configuration saved on a marketplace and reopened with the vendored catalogue
-// seated, which is what a visitor switching back does.
+// The prune reports a value rather than a path, and a stack id is the org's too.
 describe("the pruned-ids door", () => {
   const SAVED_ON_A_MARKETPLACE = savedConfigBlob(
     persistedConfig({ stackId: PRIVATE_CATALOG_STACK })
@@ -563,8 +623,6 @@ describe("the pruned-ids door", () => {
     )
   })
 
-  // The whole signal survives the redaction: that a prune happened, how much it
-  // took, and that a stack was among it. Only the org's word for the stack goes.
   it("still says a stack was dropped, and how many ids went with it", async () => {
     await readingASlotHolding(SAVED_ON_A_MARKETPLACE)
 
@@ -575,13 +633,8 @@ describe("the pruned-ids door", () => {
   })
 })
 
-// The first of the two doors a configuration already holding the bad pair
-// arrives through: this browser's own slot, read once the catalogue is seated.
-//
-// Silently dropping assignments somebody saved — or shared — is the one outcome
-// this must not have, so the pair survives the read intact and stops being LIVE
-// instead. `pruneUnknownIds` is untouched: it drops ids nothing can place, and
-// both halves of this pair are ids the catalogue knows perfectly well.
+// A saved configuration holding the bad pair arrives intact and stops being
+// installable, rather than losing the assignment on the way in.
 describe("a saved configuration holding the bad pair", () => {
   const HOLDS_A_PROJECT_SKILL_ON_A_GLOBAL_AGENT = savedConfigBlob(
     persistedConfig({
@@ -609,7 +662,6 @@ describe("a saved configuration holding the bad pair", () => {
       HOLDS_A_PROJECT_SKILL_ON_A_GLOBAL_AGENT
     )
 
-    // On, because it holds the skill — and blocked, because it cannot carry it.
     expect(isAgentOn(store.getState(), KNOWN_AGENT)).toBe(true)
     expect(summarize(store.getState()).unscopedAgentCount).toBe(1)
   })

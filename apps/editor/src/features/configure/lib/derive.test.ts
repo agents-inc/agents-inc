@@ -1,8 +1,8 @@
 import { MARKETPLACE_CATALOG, MARKETPLACE_REF } from "@workspace/api-mocks"
+import type { Provider } from "@workspace/compile"
 import {
   CATALOG,
   STACKS,
-  SUB_AGENTS_BY_ID,
   SUB_AGENT_GROUPS,
   expandStack,
 } from "@workspace/matrix"
@@ -19,7 +19,7 @@ import {
   useCatalogStore,
   type ExternalSkill,
 } from "@/stores/catalog-store"
-import type { SkillEntry } from "@/stores/persisted-schema"
+import type { RosterGroupBy, SkillEntry } from "@/stores/persisted-schema"
 import {
   SCOPE_ERROR,
   catalogueSkillCount,
@@ -32,18 +32,13 @@ import {
   selectInstalledAgents,
   selectReachability,
   selectRosterGroups,
-  selectedOnlyOptions,
   summarize,
   toSkillContents,
   type ConfigSelection,
   type DomainView,
 } from "./derive"
 
-// `derive.ts` is where the screen's arithmetic lives, and most of it is
-// combinatorial: `isStackCustom` alone has seven independent ways to flip, and
-// `selectDomainViews` crosses four filters with two provenances of skill.
-// Each of those is one browser round-trip end-to-end and microseconds here, so
-// the browser covers that the wiring works and these cover that the sums do.
+// The browser covers that the wiring works; these cover that the sums do.
 
 const SEARCH: ConfigureSearch = {
   domain: null,
@@ -291,11 +286,8 @@ describe("summarize", () => {
     })
   })
 
-  // A project skill on a sub-agent resting at global is an ERROR to resolve,
-  // not an assignment that quietly does nothing — so it counts. It is exactly
-  // as configured as any other row, and it is blocking the install BECAUSE it
-  // is real. Under-reporting it would have the button say "0 sub-agents" while
-  // the roster showed three rows.
+  // A project skill on a global sub-agent is an error to resolve, not an
+  // assignment that does nothing, so it counts.
   it("counts an assignment the two scopes rule out like any other", () => {
     const config = scratch({
       a: skillEntry({
@@ -371,12 +363,8 @@ describe("summarize", () => {
     })
   })
 
-  // A row the roster switched off installs nothing, so it has nothing to
-  // resolve — the same rule every other count here already keeps.
-  //
-  // A live global skill sits beside it deliberately: without one the sub-agent
-  // is off anyway and the count is zero for a second reason, which would leave
-  // this assertion green over a channel that never carried a value.
+  // The live global skill keeps the sub-agent on, so zero is not zero for a
+  // second reason.
   it("does not count a switched-off row as needing anything", () => {
     const config = scratch({
       a: skillEntry({
@@ -424,9 +412,15 @@ describe("summarize", () => {
   })
 })
 
+const rosterGroups = (
+  config: ConfigSelection,
+  groupBy: RosterGroupBy = "domain",
+  provider: Provider = "claude"
+) => selectRosterGroups(config, groupBy, provider)
+
 describe("selectRosterGroups", () => {
   const allRows = (config: ConfigSelection) =>
-    selectRosterGroups(config).flatMap((group) => group.agents)
+    rosterGroups(config).flatMap((group) => group.agents)
 
   it("lists every sub-agent that exists, on or off", () => {
     const rows = allRows(scratch())
@@ -471,27 +465,18 @@ describe("selectRosterGroups", () => {
     expect(rows.find((row) => row.agent.id === "web-tester")?.on).toBe(true)
   })
 
-  it("counts only on agents in the domain badge", () => {
-    const groups = selectRosterGroups(
-      scratch({
-        a: skillEntry({
-          assignments: {
-            "web-developer": liveAssignment(),
-            "web-tester": liveAssignment(),
-          },
-        }),
-      })
-    )
-    const web = groups.find((group) => group.key === "web")!
+  it("bands by domain, in the catalogue's order and under its labels", () => {
+    const groups = rosterGroups(scratch())
 
-    expect(web.onCount).toBe(2)
-    expect(web.agents.length).toBeGreaterThan(2)
+    expect(groups.map(({ key, label }) => ({ key, label }))).toStrictEqual(
+      SUB_AGENT_GROUPS.map(({ domainId, label }) => ({ key: domainId, label }))
+    )
   })
 
-  // The consolidated reviewer has no domain prefix, so it counts in the meta
-  // group's badge — not in the domain whose skill it happens to carry.
-  it("counts the reviewer in the meta badge", () => {
-    const groups = selectRosterGroups(
+  // The consolidated reviewer bands under meta, not under the domain whose
+  // skill it happens to carry.
+  it("bands the reviewer under meta", () => {
+    const groups = rosterGroups(
       scratch({
         a: skillEntry({
           assignments: {
@@ -501,9 +486,19 @@ describe("selectRosterGroups", () => {
         }),
       })
     )
+    const idsIn = (key: string) =>
+      groups
+        .find((group) => group.key === key)!
+        .agents.map((row) => row.agent.id)
 
-    expect(groups.find((group) => group.key === "web")!.onCount).toBe(1)
-    expect(groups.find((group) => group.key === "meta")!.onCount).toBe(1)
+    expect(idsIn("meta")).toContain("reviewer")
+    expect(idsIn("web")).not.toContain("reviewer")
+  })
+
+  it("does not switch an agent on for carrying an option", () => {
+    const rows = allRows(scratch({}, { "web-developer": { model: "haiku" } }))
+
+    expect(rows.find((row) => row.agent.id === "web-developer")!.on).toBe(false)
   })
 
   it("lists where-used only across on agents carrying the skill live", () => {
@@ -532,10 +527,7 @@ describe("selectRosterGroups", () => {
     expect(usedBy).toStrictEqual(["web-developer", "reviewer"])
   })
 
-  // The row carries the error and the sub-agent stays ON. Both halves matter:
-  // the marker is where the user learns WHICH row is wrong, and the agent
-  // reading as on is what makes its scope word — the one-click fix — a live
-  // control rather than a recessed one.
+  // The marker says which row is wrong; the agent stays on.
   it("marks a row the two scopes rule out, leaving the sub-agent on", () => {
     const rows = allRows(
       scratch({
@@ -568,9 +560,7 @@ describe("selectRosterGroups", () => {
     ).toBeUndefined()
   })
 
-  // A row switched off by the roster is not a row with a scope error, and the
-  // two must stay tellable apart: only one of them is a problem to fix, and
-  // only one of them is the user's own decision.
+  // A switched-off row is the user's decision, not a problem to fix.
   it("does not mark a switched-off row", () => {
     const rows = allRows(
       scratch({
@@ -587,9 +577,7 @@ describe("selectRosterGroups", () => {
     expect(row.scopeError).toBeUndefined()
   })
 
-  // The where-used list answers "which on-agents carry this skill", and an
-  // erroring row is carried — that is why it is an error. Leaving it out would
-  // under-report the configuration the user built.
+  // An erroring row is still carried, so it is still a use.
   it("lists an erroring row among the skill's uses", () => {
     const rows = allRows(
       scratch(
@@ -614,25 +602,17 @@ describe("selectRosterGroups", () => {
   })
 })
 
-// The second banding. One renderer serves both modes, so the shape a group
-// hands back must not vary with the mode — only the key, the label and which
-// agents fall into which band.
+// The second banding: only the key, the label and which agents fall into
+// which band differ from the first.
 describe("selectRosterGroups grouped by scope", () => {
-  // Prefixed keys, and the prefix is what keeps the two key spaces disjoint:
-  // `rosterCollapsed` is ONE record serving both modes, a bare `global` is a
-  // plausible future domain id, and a domain id can never contain a colon.
+  // The prefix keeps the key space disjoint from domain ids in the one
+  // `rosterCollapsed` record both modes share.
   const SCOPE_GROUP_KEYS = ["scope:global", "scope:project"] as const
-  // The destination each band names, verbatim. Space, U+00B7 MIDDLE DOT,
-  // space — and global first, which is the reverse of `AGENT_SCOPES`, whose
-  // order is a cycle the scope word depends on and must not be re-sorted.
-  const SCOPE_GROUP_LABELS = [
-    "~/.claude · global",
-    "./.claude · project",
-  ] as const
+  // Space, U+00B7 MIDDLE DOT, space. Global first.
+  const CLAUDE_LABELS = ["~/.claude · global", "./.claude · project"] as const
+  const CODEX_LABELS = ["~/.codex · global", "./.codex · project"] as const
 
-  // Every agent rests at global, so a configuration with two bands is one
-  // where somebody moved an agent — which makes it the interesting case as
-  // well as the only two-band one.
+  // Every agent rests at global, so two bands need one moved.
   const withOneAtProject = () =>
     scratch(
       {
@@ -642,149 +622,53 @@ describe("selectRosterGroups grouped by scope", () => {
     )
 
   it("bands by destination, global first", () => {
-    const groups = selectRosterGroups(withOneAtProject(), "scope")
+    const groups = rosterGroups(withOneAtProject(), "scope")
 
     expect(groups.map((group) => group.key)).toStrictEqual([
       ...SCOPE_GROUP_KEYS,
     ])
   })
 
-  it("labels each band with the path it writes into", () => {
-    const groups = selectRosterGroups(withOneAtProject(), "scope")
+  it("labels each band with the path Claude writes into", () => {
+    const groups = rosterGroups(withOneAtProject(), "scope", "claude")
 
-    expect(groups.map((group) => group.label)).toStrictEqual([
-      ...SCOPE_GROUP_LABELS,
-    ])
+    expect(groups.map((group) => group.label)).toStrictEqual([...CLAUDE_LABELS])
+  })
+
+  it("labels each band with the path Codex writes into", () => {
+    const groups = rosterGroups(withOneAtProject(), "scope", "codex")
+
+    expect(groups.map((group) => group.label)).toStrictEqual([...CODEX_LABELS])
   })
 
   it("moves an agent out of one band and into the other", () => {
-    const groups = selectRosterGroups(withOneAtProject(), "scope")
+    const groups = rosterGroups(withOneAtProject(), "scope")
     const idsIn = (key: string) =>
       groups
         .find((group) => group.key === key)!
         .agents.map((row) => row.agent.id)
+    const everyAgent = SUB_AGENT_GROUPS.flatMap((group) => group.agents).length
 
     expect(idsIn("scope:project")).toStrictEqual(["web-developer"])
     expect(idsIn("scope:global")).not.toContain("web-developer")
+    expect(idsIn("scope:global")).toHaveLength(everyAgent - 1)
   })
 
-  // The band that would have no rows is not drawn empty — it is not drawn.
-  // With nobody moved, every agent rests at global and `project` has nothing
-  // to say, which is the state every visitor opens on.
+  // Not drawn empty — not drawn. The state every visitor opens on.
   it("omits a destination nobody writes to", () => {
-    const groups = selectRosterGroups(scratch(), "scope")
+    const groups = rosterGroups(scratch(), "scope")
 
     expect(groups.map((group) => group.key)).toStrictEqual(["scope:global"])
   })
 
-  // One expression, both modes — only the denominator's MEANING changes. The
-  // count has to be recomputed against the band's own members rather than
-  // inherited from whichever domain the agent came out of.
-  it("recounts per band rather than carrying the domain's count over", () => {
-    const groups = selectRosterGroups(withOneAtProject(), "scope")
-    const countsByKey = Object.fromEntries(
-      groups.map((group) => [
-        group.key,
-        `${group.onCount} of ${group.agents.length}`,
-      ])
-    )
-    const everyAgent = SUB_AGENT_GROUPS.flatMap((group) => group.agents).length
-
-    expect(countsByKey["scope:project"]).toBe("1 of 1")
-    expect(countsByKey["scope:global"]).toBe(`0 of ${everyAgent - 1}`)
-  })
-
-  // The "one renderer" claim, asserted rather than assumed: for the same
-  // input the same agent's whole row — its skills, its three words, its
-  // where-used — is identical whichever way the panel is banded.
   it("hands back a byte-identical agent row in either mode", () => {
     const config = withOneAtProject()
-    const rowIn = (groupBy: "domain" | "scope") =>
-      selectRosterGroups(config, groupBy)
+    const rowIn = (groupBy: RosterGroupBy) =>
+      rosterGroups(config, groupBy)
         .flatMap((group) => group.agents)
         .find((row) => row.agent.id === "web-developer")!
 
     expect(rowIn("scope")).toStrictEqual(rowIn("domain"))
-  })
-})
-
-// The roster row is where a model, an effort and a scope become visible, and
-// the store holds only explicit choices — so resolving the resting value is a
-// derivation, not a default written into state.
-describe("roster model, effort and scope", () => {
-  const rowFor = (config: ConfigSelection, agentId: string) =>
-    selectRosterGroups(config)
-      .flatMap((group) => group.agents)
-      .find((row) => row.agent.id === agentId)!
-
-  const WEB_DEVELOPER_MODEL = SUB_AGENTS_BY_ID["web-developer"]!.model
-
-  // There is no single default for the model: an agent rests on the one its own
-  // metadata names, and only falls back to sonnet when it names none. Scope is
-  // the opposite — the catalogue says nothing about it, so every agent rests on
-  // the shared selection default of writing front-matter into ~/.claude.
-  it("rests every agent on its catalogue model, medium effort and global", () => {
-    const rows = selectRosterGroups(scratch()).flatMap((group) => group.agents)
-
-    for (const row of rows) {
-      expect(row.model).toBe(SUB_AGENTS_BY_ID[row.agent.id]?.model ?? "sonnet")
-      expect(row.effort).toBe("medium")
-      expect(row.scope).toBe("global")
-    }
-  })
-
-  it("prefers an explicit choice over the resting value", () => {
-    const row = rowFor(
-      scratch(
-        {},
-        { "web-developer": { model: "haiku", effort: "max", scope: "project" } }
-      ),
-      "web-developer"
-    )
-
-    expect(row.model).toBe("haiku")
-    expect(row.effort).toBe("max")
-    expect(row.scope).toBe("project")
-  })
-
-  // The record is sparse per field, not per agent: choosing an effort must not
-  // drag the model or the scope off their resting values.
-  it("falls back field by field", () => {
-    const row = rowFor(
-      scratch({}, { "web-developer": { effort: "low" } }),
-      "web-developer"
-    )
-
-    expect(row.model).toBe(WEB_DEVELOPER_MODEL)
-    expect(row.effort).toBe("low")
-    expect(row.scope).toBe("global")
-  })
-
-  // Choosing a model is not the same as asking for the agent.
-  it("does not switch an agent on for carrying a choice", () => {
-    expect(
-      rowFor(
-        scratch({}, { "web-developer": { model: "haiku" } }),
-        "web-developer"
-      ).on
-    ).toBe(false)
-  })
-
-  // A pinned-off agent keeps both controls, recessed — so it keeps both values.
-  it("resolves them for a pinned-off agent too", () => {
-    const row = rowFor(
-      scratch(
-        {
-          a: skillEntry({ assignments: { "web-developer": liveAssignment() } }),
-        },
-        { "web-developer": { on: false, effort: "xhigh" } }
-      ),
-      "web-developer"
-    )
-
-    expect(row.on).toBe(false)
-    expect(row.model).toBe(WEB_DEVELOPER_MODEL)
-    expect(row.effort).toBe("xhigh")
   })
 })
 
@@ -905,29 +789,9 @@ describe("selectInstallInventory", () => {
   })
 })
 
-/**
- * WHAT WOULD INSTALL IS A FACT ABOUT THE CONFIGURATION **AND** THE PROVIDER.
- *
- * Every number in {@link summarize} is a fact about the configuration alone and stays that way —
- * that is the rule `selectUnofferedPlacements` is already outside it for. The sub-agent count on
- * the Install button and in the install dialog's footer is NOT one of those: a Codex install drops
- * `agent-summoner` and `skill-summoner` whatever the configuration says, so a provider-blind count
- * states a number no install produces.
- *
- * IT IS NOT HYPOTHETICAL. Every one of the seventeen shipped stacks staffs both summoners, so there
- * is no Codex configuration that avoids it — `Next.js Full-Stack` turns eleven sub-agents on and
- * nine of them land. Re-derive with:
- *
- *   bun -e 'import {MATRIX} from "./packages/matrix/src/read-model/source.ts";
- *     import {expandStack} from "./packages/matrix/src/read-model/stacks.ts";
- *     for (const s of MATRIX.suggestedStacks) { const e = expandStack(s.id);
- *       const on = new Set(Object.values(e.assignmentsBySkill).flat().map(t => t.agentId));
- *       console.log(s.id, on.size, [...on].filter(a => a.endsWith("-summoner")).length) }'
- *
- * BOTH SIDES OF EVERY ASSERTION, because "Codex installs fewer" is equally satisfied by a selector
- * that dropped the whole roster. The Claude arm is the control, and it is the one that says the two
- * are ordinary sub-agents everywhere else.
- */
+// A Codex install drops both summoners, and every shipped stack staffs them.
+// The Claude arm is the control: "Codex installs fewer" is also met by a
+// selector that dropped the whole roster.
 describe("the sub-agents a provider would actually install", () => {
   const SUMMONERS = ["agent-summoner", "skill-summoner"] as const
 
@@ -940,10 +804,7 @@ describe("the sub-agents a provider would actually install", () => {
     }
   )
 
-  // Sorted on both sides, which is what lets the members be named without also
-  // pinning the catalogue's domain order — that order is its own spec two
-  // blocks up ("orders agents by the catalog"), and restating it here would
-  // make a domain reshuffle redden a claim about providers.
+  // Sorted on both sides: catalogue order is pinned elsewhere.
   const idsOf = (agents: readonly { id: string }[]) =>
     agents.map((agent) => agent.id).sort()
 
@@ -979,10 +840,7 @@ describe("the sub-agents a provider would actually install", () => {
     ).toStrictEqual([])
   })
 
-  /**
-   * The install dialog's own list, which is the surface that was listing both
-   * summoners under "Agents" while the preview beside it drew neither.
-   */
+  // The install dialog's own list must agree with the preview beside it.
   it("keeps them out of the install inventory on Codex, and in it on Claude", () => {
     const on = (provider: "claude" | "codex") =>
       idsOf(
@@ -1026,10 +884,7 @@ describe("selectDomainViews", () => {
     expect(selectDomainViews(empty, SEARCH).length).toBe(CATALOG.domains.length)
   })
 
-  // EDITOR-79: a pick is a scroll target rather than a filter, so it takes
-  // nothing off the page. This is the whole of what `domain` does to the grid,
-  // and the assertion is the same one as the line above it on purpose — the two
-  // searches differ only in the field that is meant not to matter.
+  // A pick is a scroll target, not a filter (EDITOR-79).
   it("renders every domain when one of them is picked", () => {
     const views = selectDomainViews(empty, search({ domain: "web" }))
 
@@ -1038,17 +893,8 @@ describe("selectDomainViews", () => {
     )
   })
 
-  // EDITOR-64, and the reason the pick has to stay out of `cellsIn` as well as
-  // out of the domain list. The pick and the query used to INTERSECT: domains
-  // were filtered to the picked one and only then were skills matched inside
-  // it, so a query could never reach past the tab you were on. A search that
-  // finds nothing reads as "no such skill" rather than "not on this tab", which
-  // is how the catalogue came to look like it was missing something it has.
-  //
-  // The instance that was reported carries the query, so the case stays named:
-  // `meta-config-stack-detect`'s id says `meta-` while its category is
-  // `shared-tooling`, so it sits in `shared` — the one domain a reader hunting
-  // a "meta" skill would not think to open.
+  // A query reaches past the picked domain (EDITOR-64). The reported case:
+  // `meta-config-stack-detect` sits in `shared`, not `meta`.
   it("finds a skill through a query with another domain in the address", () => {
     const id = "meta-config-stack-detect"
     const home = CATALOG.skillsById[id]!.domainId
@@ -1086,14 +932,6 @@ describe("selectDomainViews", () => {
   it("shows nothing selected as nothing at all", () => {
     expect(allCells(empty, { sel: true })).toStrictEqual([])
   })
-
-  // A CELL CARRIES NO COUNT ANY MORE. Two tests here derived one from live
-  // assignments and pinned it across a scope flip; the label they were about
-  // was removed on 2026-09-07 and the field with it. What the second of them
-  // was really guarding — that moving a skill to project scope un-assigns
-  // nothing, it only makes each assignment an error to resolve — is asserted
-  // where it is now visible, on the roster's own rows, in
-  // `e2e/specs/scope-reach.spec.ts`.
 })
 
 // Incompatibility is the one derivation that reads the whole catalogue at
@@ -1232,9 +1070,7 @@ describe("incompatible cells", () => {
   })
 
   // A verdict is about possibility, never presence: Expo needs React Native,
-  // which React rules out of nothing, so the cell stays live even though the
-  // host it needs is unselected. The `compatibleWith` whitelist said otherwise
-  // until the owner's 2026-08-07 ruling deleted it (CLI-389 phase C).
+  // which nothing selected rules out.
   it("leaves a skill selectable while the host it needs is merely unselected", () => {
     const expo = cellFor(withReact, "mobile-framework-expo")!
 
@@ -1279,11 +1115,7 @@ describe("incompatible cells", () => {
   })
 })
 
-// An added skill is a real catalogue entry now, so nothing in this file has a
-// second code path for one: it is placed by the category it was given, filtered
-// by the same filters, listed by the same lists and named by the same lookup.
-// These say so — the tests EDITOR-15 to EDITOR-20 each described a way the
-// second path went wrong, and there is no second path left to go wrong.
+// An added skill is a real catalogue entry, with no second code path.
 describe("derivations over an external skill", () => {
   const HOST = CATALOG.skillsById["web-framework-react"]!
   const CATEGORY = HOST.categoryId
@@ -1320,14 +1152,7 @@ describe("derivations over an external skill", () => {
   const cellsIn = (view: DomainView, categoryId: string) =>
     view.categories.find((category) => category.id === categoryId)?.cells ?? []
 
-  // EDITOR-17: it lands beside the skills it belongs with. There is no Added
-  // section and no Uncategorized category, because the dropdown made the
-  // placement a decision rather than a guess `categoriseRepo` had to make.
-  //
-  // EDITOR-19 rides here too, now that the domain chip filters nothing: what
-  // that task was about is that this skill sits INSIDE a real domain rather
-  // than outside every one of them, which is what the lookup below asserts and
-  // is what the strip needs to be able to scroll to it.
+  // It sits inside a real domain, beside the skills it belongs with.
   it("renders in the category it was filed under", () => {
     const views = selectDomainViews(scratch(), SEARCH)
     const domain = views.find((view) => view.id === DOMAIN)!
@@ -1362,7 +1187,7 @@ describe("derivations over an external skill", () => {
   // EDITOR-15, in the roster and the install pane: the name comes off the
   // catalogue now, so no consumer needs a second list passed alongside.
   it("is named by the roster without being handed a second list", () => {
-    const rows = selectRosterGroups(picked())
+    const rows = rosterGroups(picked())
       .flatMap((group) => group.agents)
       .flatMap((agent) => agent.skills)
 
@@ -1377,10 +1202,7 @@ describe("derivations over an external skill", () => {
     ])
   })
 
-  // EDITOR-32: the install pane is the second way into the contents preview, so
-  // the row has to know which of its skills has one to offer. The same
-  // provenance flag `GridSkill.added` carries for the cell's tag — a marker, not
-  // a branch in any derivation.
+  // The install pane is a second way into the contents preview (EDITOR-32).
   it("is marked in the install inventory as one whose contents can be read", () => {
     const inventory = selectInstallInventory(picked(), "claude")
 
@@ -1388,14 +1210,8 @@ describe("derivations over an external skill", () => {
   })
 })
 
-// ── Contents ─────────────────────────────────────────────────────────────
-//
-// EDITOR-32, and a REQUIREMENT of the EDITOR-03 inline-content ruling rather
-// than a nicety: a shared link carries a stranger's files, which the CLI writes
-// to somebody's disk, so being able to READ them before installing is what
-// makes carrying them acceptable. The bytes are already seated by then —
-// `adoptSeedPayload` seats a payload's `external` map before anything renders —
-// so this is a rendering surface over the seat, never a fetch.
+// A shared link carries a stranger's files, so they can be read before
+// installing (EDITOR-32). A rendering over the seat, never a fetch.
 describe("an external skill's contents", () => {
   const CATEGORY = CATALOG.skillsById["web-framework-react"]!.categoryId
 
@@ -1419,17 +1235,11 @@ describe("an external skill's contents", () => {
 
   const paths = () => toSkillContents(SPRAWLING).files.map((file) => file.path)
 
-  // SKILL.md is what the skill IS — the file Claude Code reads to learn one
-  // exists — so it is what a reader is deciding whether to trust, and it opens
-  // without being asked for. First in the list rather than named in a second
-  // field, so the order and the opening file cannot disagree.
+  // SKILL.md is what a reader is deciding whether to trust.
   it("opens on SKILL.md however the directory listed it", () => {
     expect(paths()[0]).toBe("SKILL.md")
   })
 
-  // The whole directory, per the same ruling that made the payload carry it:
-  // `scripts/` and `reference/` are where a third-party skill keeps everything
-  // a reader would actually want to look at before installing it.
   it("lists every file in the directory, not the manifest alone", () => {
     expect(paths()).toHaveLength(Object.keys(SPRAWLING.files).length)
   })
@@ -1465,18 +1275,8 @@ describe("an external skill's contents", () => {
   })
 })
 
-// ── Source links ─────────────────────────────────────────────────────────
-//
-// EDITOR-44. A cell's `Source code` link is the only address on the screen that
-// leaves it, and it used to be built from a hardcoded `agents-inc/skills` — so
-// on any loaded marketplace every one of its skills linked to a repository that
-// does not hold them. Checked against live GitHub on a custom marketplace: 404.
-//
-// The SEATED marketplace is what answers, because the grid draws the seated
-// catalogue: these are ITS skills, and a shared address that seated one without
-// this browser ever choosing it (EDITOR-37) still has to link to where the
-// skills on screen actually live.
-
+// A cell's source link follows the SEATED marketplace, whose skills the grid
+// draws (EDITOR-44).
 describe("a catalogue skill's source link", () => {
   const ACME_SKILL = "acme-web-widgets"
 
@@ -1557,11 +1357,7 @@ describe("a catalogue skill's source link", () => {
   })
 })
 
-// THE STRIP'S TOTALS AND THE HINGE'S TOTAL COUNT THE SAME THING, which is the
-// only reason the two can sit one above the other and be read against each
-// other. Both are the CATALOGUE's, deliberately blind to every filter — a count
-// against a filtered list says nothing, and the way back to everything else
-// would be a number that had already moved.
+// The catalogue's count, blind to every filter.
 describe("catalogueSkillCount", () => {
   it("is every skill the catalogue holds", () => {
     expect(catalogueSkillCount()).toBe(
@@ -1575,29 +1371,5 @@ describe("catalogueSkillCount", () => {
     expect(catalogueSkillCount()).toBe(
       selectDomainTabs().reduce((total, tab) => total + tab.skillCount, 0)
     )
-  })
-})
-
-// The filter states its VALUES, not its name — both of them at once since the
-// 2026-09-06 refresh, which is why this returns the pair rather than the one
-// that happens to be on. The two halves count different things: `all` is the
-// catalogue's size and `selected` is the selection's.
-describe("selectedOnlyOptions", () => {
-  it("offers both cells, off first", () => {
-    expect(selectedOnlyOptions(23, 238)).toStrictEqual([
-      { selectedOnly: false, label: "all 238" },
-      { selectedOnly: true, label: "selected 23" },
-    ])
-  })
-
-  // The two counts are never the same number by accident: a cell that read
-  // `all 23` would be the selection's count wearing the catalogue's word, which
-  // is exactly the swap this pins — and it is a swap the old single-label form
-  // could hide, because only one of the two was ever on screen to compare.
-  it("never lets one count wear the other's word", () => {
-    expect(selectedOnlyOptions(1, 2)).toStrictEqual([
-      { selectedOnly: false, label: "all 2" },
-      { selectedOnly: true, label: "selected 1" },
-    ])
   })
 })

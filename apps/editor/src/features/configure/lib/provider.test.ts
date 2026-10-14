@@ -5,20 +5,12 @@ import {
   AGENTS_LEFT_OUT_OF_CODEX,
   compilesAgent,
   offersPlacement,
+  patchForPress,
 } from "./provider"
 
-/**
- * THE MIRROR'S PIN.
- *
- * `provider.ts` cannot import the renderer's roster: a value import of `@workspace/compile` from a
- * module on the first-paint graph puts that package's 124.7 KB chunk there, which
- * `scripts/first-paint-budget.ts` refuses. So the two ids are written out there and held against
- * the renderer's own list here, where the import costs nothing.
- *
- * `toStrictEqual` over the members rather than a count, and in one assertion rather than a
- * membership check per side: a count cannot tell a summoner swapped for a nineteenth sub-agent from
- * a roster that never moved, and a nineteenth is exactly what this pin exists to survive.
- */
+// `provider.ts` cannot import the renderer's roster (a value import of
+// `@workspace/compile` breaks the first-paint budget), so the mirror is pinned
+// here, where the import is free.
 describe("the roster Codex leaves out", () => {
   it("is the renderer's own list, mirrored", () => {
     expect([...AGENTS_LEFT_OUT_OF_CODEX]).toStrictEqual([
@@ -29,8 +21,6 @@ describe("the roster Codex leaves out", () => {
   it("is what the grid and the roster ask about", () => {
     for (const agent of AGENTS_NOT_ON_CODEX) {
       expect(compilesAgent("codex", agent)).toBe(false)
-      // The control: on Claude they are ordinary sub-agents, so a guard that
-      // went unconditional would fail here rather than in a browser.
       expect(compilesAgent("claude", agent)).toBe(true)
     }
   })
@@ -58,5 +48,39 @@ describe("the placements a provider offers", () => {
 
     expect(offersPlacement("codex", refused)).toBe(false)
     expect(offersPlacement("claude", refused)).toBe(true)
+  })
+})
+
+// What a press writes, before any refusal is asked. Both doors onto the pair —
+// the skill cell and the options panel — write through it.
+describe("the patch a press produces", () => {
+  const EJECT_PROJECT = { install: "eject", scope: "project" } as const
+  const PLUGIN_GLOBAL = { install: "plugin", scope: "global" } as const
+
+  it("takes a plugin press to global on Codex", () => {
+    expect({
+      ...EJECT_PROJECT,
+      ...patchForPress("codex", { install: "plugin" }),
+    }).toStrictEqual(PLUGIN_GLOBAL)
+  })
+
+  it("leaves a plugin press at project on Claude", () => {
+    expect({
+      ...EJECT_PROJECT,
+      ...patchForPress("claude", { install: "plugin" }),
+    }).toStrictEqual({ install: "plugin", scope: "project" })
+  })
+
+  it("leaves the scope of an eject press alone on Codex", () => {
+    expect({
+      ...PLUGIN_GLOBAL,
+      ...patchForPress("codex", { install: "eject" }),
+    }).toStrictEqual({ install: "eject", scope: "global" })
+  })
+
+  it("passes a scope press through unchanged on Codex", () => {
+    expect(patchForPress("codex", { scope: "project" })).toStrictEqual({
+      scope: "project",
+    })
   })
 })

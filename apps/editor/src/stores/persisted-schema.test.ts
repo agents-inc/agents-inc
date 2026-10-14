@@ -1,5 +1,6 @@
 import {
   CATALOG,
+  CODEX_MODEL_NAMES,
   DEFAULT_SELECTION_OPTIONS,
   STACKS,
   SUB_AGENTS_BY_ID,
@@ -21,52 +22,42 @@ import {
   DEFAULT_SKILL_OPTIONS,
   PERSIST_VERSION,
   agentEffortSchema,
+  chosenModelFor,
   isAgentOn,
   isScopePairCompatible,
   isWorthRemembering,
   migrateConfig,
+  modelChoicesFor,
+  modelPatchFor,
   persistedConfigSchema,
+  persistedUiSchema,
   pruneUnknownIds,
   reachesAgent,
+  resolveAgentOptions,
   restingAgentOptions,
+  type AgentEntry,
 } from "./persisted-schema"
 
-// localStorage is the one genuinely untrusted input the app has, and this
-// module is the boundary that reads it. A bug here is *silent*: nothing
-// throws, the app quietly hands back a configuration missing the work someone
-// spent an afternoon on.
-//
-// Reaching these paths through the browser means hand-seeding storage and
-// reloading, which is slow and awkward for one case and impractical for a
-// dozen — so they are covered here instead.
+// localStorage is the app's one untrusted input, and a bug here is silent: the
+// app hands back a configuration missing someone's work and nothing throws.
 
 const KNOWN_SKILL = Object.keys(CATALOG.skillsById)[0]!
 const KNOWN_AGENT = Object.keys(SUB_AGENTS_BY_ID)[0]!
 const KNOWN_STACK = STACKS[0]!.id
 const GONE_SKILL = "removed-in-a-later-release"
 const GONE_AGENT = "retired-agent"
+const PINNED_CODEX_MODEL = "gpt-5.6-terra" as const
 
-// v7 moved model and effort off the skill and onto the agent, and replaced the
-// boolean `pins` map with one record per agent. v8 gave that record a fourth
-// decision: the scope the agent's front-matter is written into.
+// A Codex pin is a new optional field, so it rides v8 rather than bumping it:
+// a bump discards every visitor's saved configuration.
 describe("PERSIST_VERSION", () => {
   it("is 8", () => {
     expect(PERSIST_VERSION).toBe(8)
   })
 })
 
-// The scale is a wire contract, not a display choice, and narrowing it fails
-// in the worst possible direction: `agentEffortSchema` is `z.enum` over this
-// array and sits inside `persistedConfigSchema`, so one stored `xhigh` that
-// stops being a member fails the WHOLE `safeParse` in `config-store`'s
-// `merge` — which returns `current` and discards the visitor's entire saved
-// configuration. Renaming `medium` breaks the share link in both directions
-// at once: links minted here would not decode on the CLI, and links arriving
-// from the CLI would not decode here.
-//
-// Members against a literal, never a count: a count cannot see a member
-// swapped for another, which is exactly the shape a design file drawing four
-// levels would produce.
+// The scale is a wire contract: narrowing it fails a stored blob's whole parse,
+// and renaming a level breaks share links in both directions.
 describe("AGENT_EFFORTS", () => {
   it("holds five levels, spelled as the contract spells them", () => {
     expect(AGENT_EFFORTS).toStrictEqual([
@@ -87,9 +78,8 @@ describe("AGENT_EFFORTS", () => {
 })
 
 describe("persistedConfigSchema", () => {
-  // Assembled raw rather than through `persistedConfig()`: a v7 skill cannot be *typed*
-  // with a model any more, and a stale blob out of localStorage is `unknown`
-  // anyway — which is exactly the input the stripping has to survive.
+  // Raw rather than typed: a stale blob is `unknown`, and a skill can no longer
+  // be typed with a model.
   it("no longer keeps a model or an effort on a skill", () => {
     const parsed = persistedConfigSchema.parse({
       ...persistedConfig(),
@@ -102,8 +92,6 @@ describe("persistedConfigSchema", () => {
     expect(parsed.skills[KNOWN_SKILL]).not.toHaveProperty("effort")
   })
 
-  // Every field is optional and the record is sparse, so "on with no model" and
-  // "a model on an agent nobody has pinned" are both sayable.
   it.each([
     ["nothing at all", {}],
     ["only a pin", { on: true }],
@@ -122,9 +110,6 @@ describe("persistedConfigSchema", () => {
     expect(parsed.success).toBe(true)
   })
 
-  // Located on the agent, not merely rejected: the whole config is otherwise
-  // valid, so the complaint has to name the field that is wrong. Raw again —
-  // neither value is a sayable `AgentEntry`, which is the point.
   it.each([
     ["a model the CLI does not offer", { model: "gpt" }],
     ["an effort level that does not exist", { effort: "ultra" }],
@@ -141,8 +126,6 @@ describe("persistedConfigSchema", () => {
     ).toContainEqual(expect.stringContaining(`agents.${KNOWN_AGENT}`))
   })
 
-  // Pre-release policy is discard-don't-migrate, and the version seam does that
-  // first — but a v6 blob that reached the parser must not half-load either.
   it("refuses a v6 blob that has pins instead of agents", () => {
     const v6 = {
       stackId: null,
@@ -155,10 +138,131 @@ describe("persistedConfigSchema", () => {
   })
 })
 
-// A fresh pick is global on both surfaces. The editor said "project" while the
-// CLI wizard said "global" until the two were pointed at the matrix's one
-// spelling — so these pin the words themselves and the shared object they
-// come from, and a drift back apart fails here rather than in an install.
+// Unlike `model`, an id Codex retires must not cost the visitor their whole
+// saved configuration: only that field goes.
+describe("a stored Codex model", () => {
+  it("rests an untouched agent on inherit", () => {
+    expect(restingAgentOptions(KNOWN_AGENT).codexModel).toBe("inherit")
+  })
+
+  it("parses an agent stored without one, which runs on inherit", () => {
+    const parsed = persistedConfigSchema.parse(
+      persistedConfig({ agents: { [KNOWN_AGENT]: { model: "haiku" } } })
+    )
+
+    expect(resolveAgentOptions(parsed.agents, KNOWN_AGENT)).toMatchObject({
+      model: "haiku",
+      codexModel: "inherit",
+    })
+  })
+
+  it.each(CODEX_MODEL_NAMES)("keeps a stored %s pin", (codexModel) => {
+    const parsed = persistedConfigSchema.parse({
+      ...persistedConfig(),
+      agents: { [KNOWN_AGENT]: { codexModel } },
+    })
+
+    expect(resolveAgentOptions(parsed.agents, KNOWN_AGENT).codexModel).toBe(
+      codexModel
+    )
+  })
+
+  it.each([
+    ["a retired id", "gpt-4o"],
+    ["the resting word", "inherit"],
+    ["an empty id", ""],
+    ["a number", 7],
+  ])("drops %s and keeps the rest of the blob", (_label, codexModel) => {
+    const blob = {
+      ...persistedConfig({
+        stackId: KNOWN_STACK,
+        skills: { [KNOWN_SKILL]: skillEntry() },
+      }),
+      agents: { [KNOWN_AGENT]: { on: true, model: "haiku", codexModel } },
+    }
+
+    const parsed = persistedConfigSchema.safeParse(blob)
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.stackId).toBe(KNOWN_STACK)
+    expect(parsed.data?.skills).toStrictEqual(blob.skills)
+    expect(parsed.data?.agents[KNOWN_AGENT]?.on).toBe(true)
+    expect(parsed.data?.agents[KNOWN_AGENT]).not.toHaveProperty("codexModel")
+    expect(resolveAgentOptions(parsed.data!.agents, KNOWN_AGENT)).toMatchObject(
+      { model: "haiku", codexModel: "inherit" }
+    )
+  })
+})
+
+describe("modelChoicesFor", () => {
+  it("offers Claude's four models, each labelled by its own name", () => {
+    expect(modelChoicesFor("claude")).toStrictEqual([
+      { value: "opus", label: "opus" },
+      { value: "fable", label: "fable" },
+      { value: "sonnet", label: "sonnet" },
+      { value: "haiku", label: "haiku" },
+    ])
+  })
+
+  // Q5: no `inherit` choice; nothing pressed is the session's model.
+  it("offers the four Codex models by their short names, and nothing else", () => {
+    expect(modelChoicesFor("codex")).toStrictEqual([
+      { value: "gpt-6-astra", label: "astra" },
+      { value: "gpt-5.6-sol", label: "sol" },
+      { value: "gpt-5.6-terra", label: "terra" },
+      { value: "gpt-5.6-luna", label: "luna" },
+    ])
+  })
+})
+
+// Both pins live on one entry and each provider reads its own (ruling 3), so
+// a pick on one provider must never move the other's.
+describe("chosenModelFor", () => {
+  const pinnedOn = (entry: AgentEntry) =>
+    resolveAgentOptions({ [KNOWN_AGENT]: entry }, KNOWN_AGENT)
+
+  it("reads each provider's own pin off one entry", () => {
+    const options = pinnedOn({ model: "haiku", codexModel: PINNED_CODEX_MODEL })
+
+    expect(chosenModelFor("claude", options)).toBe("haiku")
+    expect(chosenModelFor("codex", options)).toBe(PINNED_CODEX_MODEL)
+  })
+
+  it("reads the resting Claude model past a Codex pin", () => {
+    const options = pinnedOn({ codexModel: PINNED_CODEX_MODEL })
+
+    expect(chosenModelFor("claude", options)).toBe(
+      restingAgentOptions(KNOWN_AGENT).model
+    )
+  })
+
+  it("reads inherit on Codex past a Claude pin", () => {
+    expect(chosenModelFor("codex", pinnedOn({ model: "haiku" }))).toBe(
+      "inherit"
+    )
+  })
+})
+
+describe("modelPatchFor", () => {
+  it("writes a Claude pick to the Claude model alone", () => {
+    expect(modelPatchFor("claude", "haiku")).toStrictEqual({ model: "haiku" })
+  })
+
+  it("writes a Codex pick to the Codex model alone", () => {
+    expect(modelPatchFor("codex", PINNED_CODEX_MODEL)).toStrictEqual({
+      codexModel: PINNED_CODEX_MODEL,
+    })
+  })
+
+  // The resting value, which `setAgentOption` drops rather than stores.
+  it("writes inherit as the Codex model", () => {
+    expect(modelPatchFor("codex", "inherit")).toStrictEqual({
+      codexModel: "inherit",
+    })
+  })
+})
+
+// A fresh pick is global on both surfaces, spelled once by the matrix.
 describe("fresh-pick defaults", () => {
   it("installs a freshly picked skill as a plugin, into the global scope", () => {
     expect(DEFAULT_SKILL_OPTIONS).toStrictEqual({
@@ -184,8 +288,6 @@ describe("isWorthRemembering", () => {
     expect(isWorthRemembering(skillEntry())).toBe(false)
   })
 
-  // Model and effort were two of the four signals here and are gone: an entry
-  // now says something only through its assignments or its install options.
   it.each([
     ["a non-default install mode", { install: "eject" as const }],
     ["a non-default scope", { scope: "project" as const }],
@@ -193,9 +295,8 @@ describe("isWorthRemembering", () => {
     expect(isWorthRemembering(skillEntry(over))).toBe(true)
   })
 
-  // The case the guard exists for. A stack — or the auto-assignment rule —
-  // hands a skill its assignments without the user clicking anything, and
-  // losing those to a stray toggle is exactly as costly as hand-built ones.
+  // A stack hands a skill its assignments without a click, and losing them to
+  // a stray toggle costs as much as losing hand-built ones.
   it("keeps a stack-provided entry whose only content is assignments", () => {
     const stackProvided = skillEntry({
       assignments: { [KNOWN_AGENT]: liveAssignment("preloaded") },
@@ -205,8 +306,6 @@ describe("isWorthRemembering", () => {
     expect(isWorthRemembering(stackProvided)).toBe(true)
   })
 
-  // A switched-off row is still a decision — restoring it recessed is the
-  // whole point of keeping it, so it counts as content.
   it("keeps an entry whose only content is disabled rows", () => {
     expect(
       isWorthRemembering(
@@ -218,15 +317,8 @@ describe("isWorthRemembering", () => {
   })
 })
 
-// A global sub-agent's front-matter is written to ~/.claude, where every
-// project on the machine sees it; a project skill is installed under one
-// project's .claude. So a global agent carrying a project skill names something
-// that does not exist from anywhere else.
-//
-// The rule is the CLI's, down to the name: `isScopePairCompatible` in
-// `packages/cli/src/cli/lib/configuration/config-generator.ts`. Its `init
-// --from` decode THROWS on a payload holding such a pair, so the pair is not a
-// preference either surface holds — it is a configuration that cannot install.
+// A global sub-agent carrying a project skill names something that does not
+// exist outside that project; the CLI's `init --from` refuses the pair.
 describe("isScopePairCompatible", () => {
   it.each([
     ["global", "global", true],
@@ -241,9 +333,6 @@ describe("isScopePairCompatible", () => {
   )
 })
 
-// The same rule asked of the agents map, which is where an agent's scope
-// actually comes from: sparse, so an agent nobody has moved rests at global and
-// the map says nothing about it at all.
 describe("reachesAgent", () => {
   it("refuses a project skill for an agent resting at global", () => {
     expect(reachesAgent({}, "project", KNOWN_AGENT)).toBe(false)
@@ -315,9 +404,8 @@ describe("isAgentOn", () => {
     expect(isAgentOn(bare, KNOWN_AGENT)).toBe(true)
   })
 
-  // The record is where model and effort live too, so an agent can have an
-  // entry without anyone having pinned it. Tri-state, not boolean: only an
-  // explicit `on` decides; absent still means "ask the assignments".
+  // Tri-state: only an explicit `on` decides; an entry holding only a model
+  // still asks the assignments.
   it("ignores an entry that names no pin", () => {
     const chosen = { model: "haiku" as const, effort: "max" as const }
 
@@ -342,13 +430,8 @@ describe("isAgentOn", () => {
     ).toBe(true)
   })
 
-  // `on: false` is a decision, and `undefined` is the absence of one — a
-  // boolean read would collapse the two and switch every pinned-off agent on.
-  // The scope rule is deliberately NOT asked here. A sub-agent holding a project
-  // skill while it rests at global is not an agent with no skills — it is an
-  // agent with a skill and a problem, and the problem is only fixable because
-  // the row is on screen and switched on. Reading it as off would hide the very
-  // row the user has to click to resolve it.
+  // The scope rule is not asked: the agent stays on so the pair can be fixed
+  // from its card.
   it("stays on for an assignment the two scopes rule out", () => {
     const unresolved = persistedConfig({
       skills: {
@@ -373,6 +456,34 @@ describe("isAgentOn", () => {
     })
 
     expect(isAgentOn(pinnedOff, KNOWN_AGENT)).toBe(false)
+  })
+})
+
+// A slot written before the provider and sub-agent folds existed must parse
+// with both open rather than fail into the defaults.
+describe("persistedUiSchema's step folds", () => {
+  it("opens both folds for a slot written before they existed", () => {
+    const parsed = persistedUiSchema.parse({
+      rosterCollapsed: { web: true },
+      stackCollapsed: true,
+    })
+
+    expect(parsed.rosterCollapsed).toStrictEqual({ web: true })
+    expect(parsed.stackCollapsed).toBe(true)
+    expect(parsed.providerCollapsed).toBe(false)
+    expect(parsed.agentsCollapsed).toBe(false)
+  })
+
+  it("catches a garbage fold to open rather than failing the parse", () => {
+    const parsed = persistedUiSchema.safeParse({
+      rosterCollapsed: {},
+      providerCollapsed: "yes",
+      agentsCollapsed: 7,
+    })
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.providerCollapsed).toBe(false)
+    expect(parsed.data?.agentsCollapsed).toBe(false)
   })
 })
 
@@ -439,7 +550,6 @@ describe("pruneUnknownIds", () => {
     ).toBe(null)
   })
 
-  // The map added in v3 is just as exposed to catalogue drift as `skills`.
   it("prunes remembered entries by the same rules", () => {
     const pruned = pruneUnknownIds(
       persistedConfig({
@@ -464,11 +574,6 @@ describe("pruneUnknownIds", () => {
 
 // Pre-release policy: no migrations — an old version is discarded, not upgraded.
 describe("migrateConfig", () => {
-  // The seam the discard is reported through. Recording it is what keeps the
-  // suite quiet and what lets the deliberate silence — a blob already on the
-  // current version — be asserted rather than assumed. Typed to the sink's own
-  // contract, so a reporting call whose shape changes is a compile error here
-  // rather than an expectation that quietly stops matching.
   const sink = {
     issue: vi.fn<ReportingSink["issue"]>(),
     error: vi.fn<ReportingSink["error"]>(),
@@ -491,9 +596,8 @@ describe("migrateConfig", () => {
     expect(migrateConfig(state, version)).toBeUndefined()
   })
 
-  // Discarding is the policy; discarding without saying so is what made every
-  // other path here worth a warning. Version numbers only — a persisted blob
-  // is the user's own configuration and none of it may reach a report.
+  // Version numbers only: a persisted blob is the user's own and none of it
+  // may reach a report.
   it("reports the version it discarded", () => {
     migrateConfig({ stackId: null, skills: {} }, PERSIST_VERSION - 1)
 

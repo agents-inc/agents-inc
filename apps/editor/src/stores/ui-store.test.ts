@@ -6,43 +6,29 @@ import {
   type PersistedUi,
 } from "./persisted-schema"
 
-// localStorage is untrusted input and `merge` is the boundary that reads it —
-// but unlike `config-store` and `marketplace-store`, this store reports
-// NOTHING when the parse fails. So every failure here is silent in both
-// directions: a required key added to the schema resets everyone's collapsed
-// bands, and a version bump discards them, with nothing on screen and nothing
-// in the console to say either happened.
-//
-// Nothing covered this module at all before, and nothing pinned the version.
+// Unlike `config-store`, this store reports nothing when the parse fails, so a
+// required key or a version bump would silently reset every visitor's
+// arrangement.
 
 const SLOT = "agents-inc:ui:v1"
 
-// Exactly what `partialize` may write. Named and compared WHOLE rather than
-// counted: a count cannot see a swap, and one arrangement field traded for
-// another is precisely the change a length assertion sleeps through.
+// Exactly what `partialize` may write.
 const PERSISTED_UI_KEYS = [
+  "agentsCollapsed",
+  "providerCollapsed",
   "rosterCollapsed",
   "rosterGroupBy",
   "stackCollapsed",
   "theme",
 ] as const
 
-// What a visitor who last used the app before the two new keys existed has in
-// their slot. Their arrangement has to survive the upgrade untouched.
+// A slot written before the newer keys existed.
 const BLOB_FROM_THE_PREVIOUS_SCHEMA = { rosterCollapsed: { web: true } }
 
 /**
- * The store, created with a browser already standing.
- *
- * This slot takes zustand's DEFAULT storage — `createJSONStorage(() =>
- * window.localStorage)` — and resolves it once, at store creation. In node
- * there is no `window`, and persist then takes a branch that returns before
- * ever attaching `api.persist`: no version, no `partialize`, no `merge`, and
- * nothing below reachable. So the browser has to exist BEFORE the import,
- * which is what the stub and the dynamic import are for.
- *
- * The same arrangement `storeOnAWatchedSlot` uses in `config-store.test.ts`,
- * one slot over — and for the same stated reason.
+ * zustand resolves its default storage once, at store creation, and with no
+ * `window` it never attaches `api.persist`. So the stub has to exist before
+ * the dynamic import.
  */
 const uiStoreOnAStandingBrowser = async () => {
   const held = new Map<string, string>()
@@ -80,16 +66,14 @@ describe("the ui slot's persist options", () => {
     expect(options.merge).toBeTypeOf("function")
   })
 
-  // Pinned, and the pin is the whole enforcement of the "do not bump" ruling.
-  // There is no `migrate` on this store, so a bump is not a migration — it is
-  // an unreported discard of every visitor's arrangement at once.
+  // The only thing enforcing the store's "never bumped" rule.
   it("is version 3, and adding a field does not bump it", async () => {
     const store = await uiStoreOnAStandingBrowser()
 
     expect(store.persist.getOptions().version).toBe(3)
   })
 
-  it("writes exactly the four arrangement fields", async () => {
+  it("writes exactly the arrangement fields", async () => {
     const store = await uiStoreOnAStandingBrowser()
     const written = store.persist.getOptions().partialize!(
       store.getInitialState()
@@ -110,11 +94,11 @@ describe("the ui slot's merge", () => {
       store.getInitialState()
     )
 
-    // The regression this whole section exists for: the collapsed bands are
-    // the visitor's own arrangement and a new key must not cost them.
     expect(merged.rosterCollapsed).toStrictEqual({ web: true })
     expect(merged.rosterGroupBy).toBe("domain")
     expect(merged.stackCollapsed).toBe(false)
+    expect(merged.providerCollapsed).toBe(false)
+    expect(merged.agentsCollapsed).toBe(false)
   })
 
   it("falls back one field at a time rather than discarding the blob", async () => {
@@ -129,9 +113,8 @@ describe("the ui slot's merge", () => {
     expect(merged.rosterGroupBy).toBe("domain")
   })
 
-  // The channel: an unreadable slot really does reach `merge` and really does
-  // come back as the defaults, so the two assertions above are about the
-  // schema rather than about `merge` refusing everything it is handed.
+  // The control: shows `merge` does fall back, so the tests above are about
+  // the schema rather than `merge` refusing everything.
   it("falls back to the defaults on a wholly unreadable blob", async () => {
     const store = await uiStoreOnAStandingBrowser()
 
@@ -155,24 +138,49 @@ describe("the ui slot's arrangement actions", () => {
     expect(store.getState().rosterGroupBy).toBe("domain")
   })
 
-  it("toggles the stack header shut and back open", async () => {
+  const FOLDS = [
+    ["providerCollapsed", "toggleProviderCollapsed"],
+    ["stackCollapsed", "toggleStackCollapsed"],
+    ["agentsCollapsed", "toggleAgentsCollapsed"],
+    ["skillsCollapsed", "toggleSkillsCollapsed"],
+  ] as const
+
+  for (const [fold, toggle] of FOLDS) {
+    it(`toggles ${fold} shut and back open`, async () => {
+      const store = await uiStoreOnAStandingBrowser()
+      const others = () =>
+        FOLDS.filter(([other]) => other !== fold).map(
+          ([other]) => store.getState()[other]
+        )
+
+      expect(store.getState()[fold]).toBe(false)
+
+      store.getState()[toggle]()
+      expect(store.getState()[fold]).toBe(true)
+      expect(others()).toStrictEqual([false, false, false])
+
+      store.getState()[toggle]()
+      expect(store.getState()[fold]).toBe(false)
+    })
+  }
+
+  it("keeps the skills fold out of storage", async () => {
     const store = await uiStoreOnAStandingBrowser()
+    store.getState().toggleSkillsCollapsed()
 
-    expect(store.getState().stackCollapsed).toBe(false)
+    const written = store.persist.getOptions().partialize!(store.getState())
 
-    store.getState().toggleStackCollapsed()
-    expect(store.getState().stackCollapsed).toBe(true)
-
-    store.getState().toggleStackCollapsed()
-    expect(store.getState().stackCollapsed).toBe(false)
+    expect(written).not.toHaveProperty("skillsCollapsed")
   })
 
-  // THE OUTPUT PREVIEW'S TWO FIELDS ARE ARRANGEMENT AND ARE NOT PERSISTED, and
-  // that pair is the whole claim: the design says both survive a CLOSE, which
-  // is what a store field buys — the dialog renders its body only while open,
-  // so anything held inside it would start over on every open. Surviving a
-  // RELOAD is a different promise and nobody made it, which is why
-  // `PERSISTED_UI_KEYS` above still names four.
+  it("opens the save dialog like any other", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().setDialog("save")
+
+    expect(store.getState().dialog).toBe("save")
+  })
+
   it("toggles the output preview between fullscreen and back", async () => {
     const store = await uiStoreOnAStandingBrowser()
 
@@ -185,11 +193,6 @@ describe("the ui slot's arrangement actions", () => {
     expect(store.getState().outputFullscreen).toBe(false)
   })
 
-  // Its own verb rather than the toggle reused, and the difference is what
-  // `esc` needs: the ladder it steps down is ORDERED, so the first press has to
-  // be able to say "leave fullscreen" without asking what state it is in. A
-  // toggle at the bottom of that ladder would put the reader back INTO
-  // fullscreen on the press that was meant to close the dialog.
   it("leaves fullscreen without asking what state it was in", async () => {
     const store = await uiStoreOnAStandingBrowser()
 
@@ -201,10 +204,6 @@ describe("the ui slot's arrangement actions", () => {
     expect(store.getState().outputFullscreen).toBe(false)
   })
 
-  // The tree rests at the design's own 250 and is CLAMPED HERE rather than at
-  // the pointer handler, so the bound is stated once and every caller — a drag,
-  // a future keyboard nudge, a restored value — is held to it. Neither pane may
-  // be dragged out of existence.
   it("clamps the tree width to the bounds neither pane may leave", async () => {
     const store = await uiStoreOnAStandingBrowser()
 
@@ -220,9 +219,7 @@ describe("the ui slot's arrangement actions", () => {
     expect(store.getState().outputTreeWidth).toBe(560)
   })
 
-  // Two key spaces in one record, disjoint by construction: a domain id can
-  // never contain a colon, so switching modes cannot collapse a band the
-  // other mode's visitor never shut. Neither mode resets the other's keys.
+  // Disjoint because a domain id never contains a colon.
   it("keeps each mode's collapsed keys in its own space", async () => {
     const store = await uiStoreOnAStandingBrowser()
 
@@ -237,9 +234,8 @@ describe("the ui slot's arrangement actions", () => {
   })
 })
 
-// `.catch()` rather than `.optional()`, so a MISSING key is filled in as well
-// as an invalid one and the `{ ...current, ...parsed.data }` spread never
-// depends on whether Zod omitted an absent optional.
+// `.catch()` rather than `.optional()`, so a missing key is filled in as well
+// as an invalid one.
 describe("persistedUiSchema", () => {
   it("fills every new key in from a blob that carries none of them", () => {
     const parsed = persistedUiSchema.parse(BLOB_FROM_THE_PREVIOUS_SCHEMA)
@@ -248,8 +244,8 @@ describe("persistedUiSchema", () => {
       rosterCollapsed: { web: true },
       rosterGroupBy: "domain",
       stackCollapsed: false,
-      // `system` and NOT `light`: a browser that has never been told which
-      // palette to paint in follows the machine, in both directions.
+      providerCollapsed: false,
+      agentsCollapsed: false,
       theme: "system",
     } satisfies PersistedUi)
   })
@@ -259,6 +255,8 @@ describe("persistedUiSchema", () => {
       rosterCollapsed: {},
       rosterGroupBy: "nonsense",
       stackCollapsed: "yes",
+      providerCollapsed: 1,
+      agentsCollapsed: null,
       theme: "sepia",
     })
 
@@ -267,13 +265,12 @@ describe("persistedUiSchema", () => {
       rosterCollapsed: {},
       rosterGroupBy: "domain",
       stackCollapsed: false,
+      providerCollapsed: false,
+      agentsCollapsed: false,
       theme: "system",
     } satisfies PersistedUi)
   })
 
-  // The menu reads these members and the schema reads the same array, so the
-  // two cannot disagree about what a mode is. Members, not a count — a count
-  // cannot tell a rename from a swap.
   it("offers exactly the two grouping modes, in declaration order", () => {
     expect(ROSTER_GROUP_BYS).toStrictEqual(["domain", "scope"])
   })

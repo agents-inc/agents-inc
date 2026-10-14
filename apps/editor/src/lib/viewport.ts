@@ -5,10 +5,10 @@ import { useSyncExternalStore } from "react"
  *
  * Three things cross it together, and they are one decision rather than three:
  * the skill lattice goes from three columns to four, the stack grid follows it,
- * and each domain tab picks up the `01` index and the skill count it hides
- * below. All three are the same fact about the middle column — under 1500px it
- * is not wide enough for a fourth cell at a readable width, and nine tabs
- * carrying three pieces of text each push their own labels through an ellipsis.
+ * and each domain tab picks up the skill count it hides below. All three are
+ * the same fact about the middle column — under 1500px it is not wide enough
+ * for a fourth cell at a readable width, and tabs carrying a count push their
+ * own labels through an ellipsis.
  *
  * A MEDIA QUERY IN JS RATHER THAN IN CSS, AND THE LATTICE IS WHAT FORCES IT.
  * `skill-cell.tsx` flips its options popover to the left in the last column,

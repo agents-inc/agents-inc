@@ -27,6 +27,7 @@ import {
   migrateConfig,
   persistedConfigSchema,
   pruneUnknownIds,
+  resolveAgentOptions,
   restingAgentOptions,
   type AgentEntry,
   type AgentOptions,
@@ -49,28 +50,19 @@ type ConfigActions = {
   toggleAssignmentEnabled: (skillId: string, agentId: string) => void
   // The roster's load word: pre ↔ lazy for that one agent.
   flipAssignmentLoad: (skillId: string, agentId: string) => void
-  // The roster's agent click: pin the agent to the opposite of what it
-  // currently derives to. Explicit in both directions, exactly like the design
-  // — a pinned-off agent stays off as skills arrive, a pinned-on one installs
-  // bare.
+  // Pins the agent to the opposite of what it derives to, in both directions.
   toggleAgentPin: (agentId: string) => void
-  // The roster's model word and effort word. Only non-resting choices are
-  // kept, so cycling a field back to the agent's own default removes it again.
+  // Only non-resting choices are kept.
   setAgentOption: (agentId: string, patch: Partial<AgentOptions>) => void
-  // The inbound half of sharing: a fetched config replaces the selection
-  // wholesale, exactly as applying a stack does.
+  // v6 §2 rule 2, for the switch to Codex: no unselected plugin skill rests
+  // at project. Selected and ejected entries never move, and nothing moves back.
+  moveRememberedPluginsToGlobal: () => void
+  // A shared config replaces the selection wholesale.
   importConfig: (config: PersistedConfig) => void
-  // The saved snapshot, restored. The same wholesale replacement, but sourced
-  // from this browser rather than from a link — so it is deliberately not
-  // `importConfig`, whose event counts share-link arrivals as their own cohort.
+  // As `importConfig`, without counting a share-link arrival.
   applySavedStack: (config: PersistedConfig) => void
-  // Whatever the SEATED catalogue cannot place, dropped. Every door that seats
-  // a catalogue owes this call, and WHY is in
-  // `features/configure/lib/marketplace-switch.ts`, which owns the act and
-  // counts the doors. Deliberately a pointer and not the reasoning: someone
-  // writing a third door never opens this file, because they are not calling
-  // this yet — and a warning readable only from inside the guard cannot reach
-  // the door that lacks one.
+  // Every door that seats a catalogue owes this call; why is in
+  // `features/configure/lib/marketplace-switch.ts`.
   pruneToCatalog: () => void
   reset: () => void
 }
@@ -87,8 +79,6 @@ const EMPTY: PersistedConfig = {
   remembered: {},
   agents: {},
 }
-
-// ── Plain helpers ────────────────────────────────────────────────────────
 
 const withoutKey = <T>(record: Record<string, T>, key: string) => {
   const { [key]: _removed, ...rest } = record
@@ -107,10 +97,7 @@ const partition = <T>(items: readonly T[], matches: (item: T) => boolean) => {
   return [matched, rest] as const
 }
 
-// `pruneUnknownIds` dropping an id is correct and completely invisible: the
-// user gets a smaller configuration back and no explanation. Counting the
-// difference is what turns catalog drift into something observable, without
-// changing the pure function or the tests that cover it.
+// Counted so a prune's silent drops are observable.
 const countIds = (config: PersistedConfig) => {
   const entries = [
     ...Object.values(config.skills),
@@ -127,9 +114,6 @@ const countIds = (config: PersistedConfig) => {
   )
 }
 
-// Whether a prune found anything at all. Both the report below and the action
-// that prunes turn on it, and a question asked twice in two shapes is two
-// answers waiting to disagree.
 const droppedAnything = (before: PersistedConfig, after: PersistedConfig) =>
   countIds(before) !== countIds(after) || before.stackId !== after.stackId
 
@@ -139,46 +123,22 @@ const reportPruning = (before: PersistedConfig, after: PersistedConfig) => {
   const droppedIds = countIds(before) - countIds(after)
   const droppedStack = before.stackId !== null && after.stackId === null
 
-  // Counts and a yes/no, and no id of any kind. "Catalog slugs describe nobody"
-  // was true while there was one catalogue and ours; a stack id is
-  // `matrixStackSchema.id`, so once a marketplace can be seated it is the ORG's
-  // word — and this is the report a visitor who switched back off their
-  // marketplace files, which is exactly when a stack gets pruned.
-  //
-  // `droppedStack` rather than `droppedStackId` costs nothing: the boolean is
-  // the whole of what an observer can act on, since the id named a catalogue
-  // this browser no longer has seated and could not be looked up anyway. The
-  // same rule the two path reports keep, reached from the other direction —
-  // there is no path here to truncate, only a value not to send.
+  // No id of any kind: on a marketplace, a stack id is a word the org chose.
   reportIssue("Pruned saved ids the catalog no longer knows", {
     droppedIds,
     droppedStack,
   })
 }
 
-// The keys the map on the left had and the one on the right no longer holds.
 const lostKeys = (before: object, after: object) =>
   Object.keys(before).filter((id) => !(id in after))
 
-// One id like any other, and losing it in silence is how a configuration comes
-// back claiming to have been built from scratch.
 const lostStack = (before: string | null, after: string | null) =>
   before !== null && after === null ? [before] : []
 
-/**
- * The saved ids a prune could not place, named rather than counted.
- *
- * `reportPruning` above counts them for observability; these are for the person
- * whose configuration just came back smaller. A name they can go and look up is
- * the difference between a warning and a fact, which is the reason the
- * shared-link door has named a payload's since EDITOR-16 — and the screen says
- * both in the same words.
- *
- * The same three places `unknownPayloadIds` names, deliberately: the skills
- * asked for, the agents asked for, and the stack. `remembered` is not among
- * them — a deselected skill's setup was never going to be applied, so naming it
- * under "not applied" would describe a loss nothing on screen can show.
- */
+// The saved ids a prune could not place, named for the visitor: the same three
+// places `unknownPayloadIds` names. `remembered` is left out, as nothing on
+// screen could show its loss.
 export const unknownSavedIds = (
   before: PersistedConfig,
   after: PersistedConfig
@@ -188,12 +148,7 @@ export const unknownSavedIds = (
   ...lostStack(before.stackId, after.stackId),
 ]
 
-// ── Catalog questions ────────────────────────────────────────────────────
-
-// The loaded catalog, and nothing beside it. The guard stops a stale id from a
-// previous release — or from another marketplace — surviving in storage. An
-// added skill needs no second clause here: it is a real catalogue entry, so it
-// answers this question the same way React does.
+// The loaded catalogue only, so a stale id cannot survive in storage.
 const isKnownSkill = (skillId: string) => skillId in activeCatalog().skillsById
 
 const isInCategory = (skillId: string, categoryId: string) =>
@@ -209,10 +164,7 @@ const exclusiveCategoryOf = (skillId: string) => {
     : undefined
 }
 
-// ── Selection transforms ─────────────────────────────────────────────────
-
-// Deselecting costs one click; the configuration behind it can be a dozen, so
-// it is set aside rather than dropped. Empty entries are not worth keeping.
+// A deselected skill's setup is set aside rather than dropped.
 const setAside = (
   remembered: SkillMap,
   skillId: string,
@@ -224,8 +176,7 @@ const setAside = (
   return { ...remembered, [skillId]: entry }
 }
 
-// `one of`: picking replaces rather than adds. An eviction is a deselection
-// the user did not click, so it keeps the same promise — swap back and it returns.
+// `one of`: picking replaces. An eviction is set aside like a deselection.
 const clearExclusiveSiblings = (
   { skills, remembered }: PersistedConfig,
   skillId: string
@@ -246,6 +197,24 @@ const clearExclusiveSiblings = (
   }
 }
 
+const isProjectPlugin = (entry: SkillEntry) =>
+  entry.install === "plugin" && entry.scope === "project"
+
+const atGlobalIfProjectPlugin = (entry: SkillEntry): SkillEntry =>
+  isProjectPlugin(entry) ? { ...entry, scope: "global" } : entry
+
+// The same map back when nothing moves, so the caller can skip `set`.
+const withProjectPluginsAtGlobal = (remembered: SkillMap): SkillMap => {
+  if (!Object.values(remembered).some(isProjectPlugin)) return remembered
+
+  return Object.fromEntries(
+    Object.entries(remembered).map(([skillId, entry]) => [
+      skillId,
+      atGlobalIfProjectPlugin(entry),
+    ])
+  )
+}
+
 const deselect = (
   state: PersistedConfig,
   skillId: string,
@@ -255,34 +224,23 @@ const deselect = (
   remembered: setAside(state.remembered, skillId, entry),
 })
 
-/**
- * Whether this skill has an install mode to choose at all.
- *
- * A third-party skill is ALWAYS eject — permanent rather than a v1 stopgap
- * (owner ruling 2026-08-09). A plugin install serves the third party's content
- * as-is, and we cannot write our generated metadata into their repository, so a
- * third-party skill can never be grid-native in plugin form; ejecting is the
- * only mode that lets the intake attach the confirmed category. There is no
- * convert-to-plugin path, so this is a property of the skill and not a default.
- */
+// A third-party skill is always eject (owner ruling 2026-08-09): a plugin
+// would serve their repository as-is, without our metadata.
 export const isEjectOnly = (skillId: string) =>
   activeExternalSkill(skillId) !== undefined
 
 const installModeFor = (skillId: string): SkillOptions["install"] =>
   isEjectOnly(skillId) ? "eject" : DEFAULT_SKILL_OPTIONS.install
 
-// What a never-configured skill starts as: the rule's assignments, reaching
-// its domain's core agents, which is what enables them. Exported because the
-// cell shows this before the skill is selected — what you see in the ••• panel
-// has to be what picking the skill would actually give you.
+// What a never-configured skill starts as. Exported because the cell shows it
+// before the skill is selected.
 export const freshEntry = (skillId: string): SkillEntry => ({
   ...DEFAULT_SKILL_OPTIONS,
   install: installModeFor(skillId),
   assignments: defaultAssignmentsFor(skillId),
 })
 
-// A remembered skill restores exactly what it had instead; the rule must not
-// overwrite a setup the user already shaped.
+// A remembered skill restores exactly what it had.
 const select = (state: PersistedConfig, skillId: string) => {
   const { skills, remembered } = clearExclusiveSiblings(state, skillId)
 
@@ -295,9 +253,7 @@ const select = (state: PersistedConfig, skillId: string) => {
   }
 }
 
-// The agents an entry actually reaches — a switched-off row does not pulse. A
-// row the two scopes rule out does: the selection really did reach that
-// sub-agent, and the roster marks it as the problem it is.
+// The agents an entry reaches; a switched-off row does not pulse.
 const liveAgentIds = (entry: SkillEntry | undefined) =>
   Object.entries(entry?.assignments ?? {})
     .filter(([, assignment]) => assignment.enabled)
@@ -314,15 +270,9 @@ const cycled = (assignments: Assignments, agentId: string): Assignments => {
   return withoutKey(assignments, agentId)
 }
 
-// Configuring a skill must not select it — the ••• and the badges are their
-// own controls, not a way in. So an unselected skill's options go where a
-// deselected one's already go, and `select` restores them verbatim when the
-// skill is eventually picked. Entries that end up saying nothing are dropped
-// rather than left behind.
-//
-// `undefined` is "the catalogue turned this down", and it is not the same
-// answer as an empty patch: the caller has to be able to skip `set` entirely,
-// because `set` is what WRITES.
+// Configuring never selects: an unselected skill's options go to
+// `remembered`. `undefined` is "the catalogue turned this down", so the caller
+// can skip `set`, which writes.
 const configure = (
   state: PersistedConfig,
   skillId: string,
@@ -335,8 +285,6 @@ const configure = (
 
   if (!isKnownSkill(skillId)) return undefined
 
-  // Starting from a fresh entry rather than a blank one, so a skill
-  // configured before it is picked still arrives with its agents.
   const next = change(state.remembered[skillId] ?? freshEntry(skillId))
   return {
     remembered: isWorthRemembering(next)
@@ -345,8 +293,7 @@ const configure = (
   }
 }
 
-// `undefined` for a row nothing selected holds, for the reason `configure`
-// answers with it: an empty patch would still reach `set`, and `set` writes.
+// `undefined` for a row nothing selected holds, as `configure` answers.
 const patchAssignment = (
   state: PersistedConfig,
   skillId: string,
@@ -368,13 +315,8 @@ const patchAssignment = (
   }
 }
 
-// ── Agent decisions ──────────────────────────────────────────────────────
-
-// The map holds choices, not state: a field set back to the agent's own
-// resting value stops being a choice, so its key goes rather than being stored
-// as "the default, explicitly". `on` is exempt — pinning to the state the
-// assignments already imply is still a decision, and the pin is what holds it
-// there as skills come and go.
+// A field back at its resting value loses its key. `on` is exempt: a pin is a
+// decision even where it matches what the assignments imply.
 const withoutRestingValues = (
   entry: AgentEntry,
   resting: AgentOptions
@@ -382,14 +324,27 @@ const withoutRestingValues = (
   ...(entry.on !== undefined && { on: entry.on }),
   ...(entry.model !== undefined &&
     entry.model !== resting.model && { model: entry.model }),
+  ...(entry.codexModel !== undefined &&
+    entry.codexModel !== resting.codexModel && {
+      codexModel: entry.codexModel,
+    }),
   ...(entry.effort !== undefined &&
     entry.effort !== resting.effort && { effort: entry.effort }),
   ...(entry.scope !== undefined &&
     entry.scope !== resting.scope && { scope: entry.scope }),
 })
 
-// An agent record left saying nothing is dropped, exactly as an empty skill
-// entry is — the map stays as sparse as what the user actually decided.
+const alreadyInEffect = (
+  options: AgentOptions,
+  patch: Partial<AgentOptions>
+) => {
+  const current: Record<string, unknown> = options
+  return Object.entries(patch).every(
+    ([field, value]) => current[field] === value
+  )
+}
+
+// An agent record left saying nothing is dropped.
 const configureAgent = (
   agents: AgentMap,
   agentId: string,
@@ -405,11 +360,7 @@ const configureAgent = (
     : { ...agents, [agentId]: next }
 }
 
-// ── Stack expansion ──────────────────────────────────────────────────────
-
-// The expansion answers per (skill, sub-agent) — the stack says who carries the
-// skill, the shared resolver says how each of them loads it — so a framework can
-// arrive resident on its domain's developer and on demand on a summoner.
+// Per (skill, sub-agent): the stack says who carries it, the resolver how.
 const toAssignments = (targets: readonly AssignmentTarget[]): Assignments =>
   Object.fromEntries(
     targets.map(({ agentId, load }) => [agentId, { load, enabled: true }])
@@ -426,24 +377,11 @@ const toStackSkills = (expansion: StackExpansion): SkillMap => {
   )
 }
 
-// ── Persistence ──────────────────────────────────────────────────────────
-
-// What the last read could not place, left where the call that asked for the
-// read can pick it up.
-//
-// A variable rather than store state, and that is the whole constraint this
-// sits under: every route out of the store is a `set`, persist wraps `set`, and
-// a `set` therefore WRITES. Recording what a prune dropped through the store
-// would put the pruned configuration in the slot as the price of mentioning it
-// — which is the loss `pruneToCatalog`'s own early return exists to refuse. So
-// the report travels beside the store rather than through it, exactly as
-// `heldOpen` below does for the same reason.
+// What the last read could not place. Beside the store rather than in it,
+// because a `set` writes the slot.
 let unknownOnLastRead: string[] = []
 
-// What survives a reload. An external skill's content is not in localStorage —
-// it is resolved at add time and lives for the session or travels in a payload
-// — so a selection naming one would come back on the next visit pointing at a
-// skill this browser can no longer describe or install.
+// An added skill's content is not persisted, so its id is not either.
 const onlyPersistableSkills = (skills: SkillMap) =>
   Object.fromEntries(
     Object.entries(skills).filter(
@@ -453,32 +391,18 @@ const onlyPersistableSkills = (skills: SkillMap) =>
     )
   )
 
-// The slot this browser saves into. Named rather than left to persist's own
-// default because a shared configuration runs on a version of it that does not
-// write, and there has to be something to make that version OF. Exactly the
-// default it replaces, `undefined` included — which is what `createJSONStorage`
-// answers where there is no localStorage at all, and what persist already reads
-// as "no persistence here".
+// Persist's own default, named so `withoutWrites` has something to wrap.
+// `undefined` where there is no localStorage.
 const OWN_SLOT = createJSONStorage(() => window.localStorage)
 
-/**
- * The same slot, read and never written.
- *
- * What a configuration that is not this browser's runs on. Guarding every write
- * would be a rule that every action in the store — and every action added to it
- * later — has to keep; taking the pen away is one statement, made once. Reads
- * stay live because handing the slot back has to find what was in it.
- *
- * Kept pure so it can be exercised without a browser, which is the arrangement
- * `readSavedMarketplaces` established.
- */
+// The same slot, read and never written: what a shared configuration runs on
+// (EDITOR-37).
 export const withoutWrites = <T>(
   storage: PersistStorage<T>
 ): PersistStorage<T> => ({
   ...storage,
   setItem: () => undefined,
-  // A slot emptied is a slot written, and `clearStorage` reaches this door
-  // rather than the one above.
+  // `clearStorage` reaches this door rather than `setItem`.
   removeItem: () => undefined,
 })
 
@@ -491,11 +415,6 @@ export const useConfigStore = create<ConfigState>()(
         // Whatever was pulsing belonged to the selection being replaced.
         useUiStore.getState().clearFlash()
 
-        // Emitted from the actions rather than the components because these
-        // are the app's verbs: one `toggleSkill` covers the cell, the stack
-        // swap and the restore, where the components are three call sites that
-        // would each have to remember. `track` imports no vendor, so this
-        // costs the store nothing it did not already have.
         track({ name: "stack_applied", stackId })
 
         if (stackId === null) {
@@ -509,7 +428,6 @@ export const useConfigStore = create<ConfigState>()(
         set({
           stackId,
           skills: toStackSkills(expansion),
-          // The explicit start-over action, which already confirms first.
           remembered: {},
           agents: {},
         })
@@ -518,64 +436,50 @@ export const useConfigStore = create<ConfigState>()(
       toggleSkill: (skillId) => {
         const selecting = !(skillId in get().skills)
 
-        // The catalog guard, ahead of `set` rather than inside its updater.
-        // An arm answering `{}` reads as "change nothing" and is not one:
-        // persist wraps `set` as "call it, then write", and the write half runs
-        // whatever the updater returned — so a click the catalogue turned down
-        // put the whole configuration back in the slot. `applyStack` above
-        // makes the same return for the same reason.
+        // Ahead of `set`, which writes whatever its updater returns.
         if (selecting && !isKnownSkill(skillId)) return
 
+        // A deselection or an eviction on Codex sets the entry aside at global.
+        const onCodex = useUiStore.getState().provider === "codex"
         set((state) => {
           const current = state.skills[skillId]
-
-          return current
+          const next = current
             ? deselect(state, skillId, current)
             : select(state, skillId)
+
+          return onCodex
+            ? {
+                ...next,
+                remembered: withProjectPluginsAtGlobal(next.remembered),
+              }
+            : next
         })
 
-        // The roster's pulse narrates the selection behind it, so a deselect
-        // flashes nobody — which clears whatever was still running. Read back
-        // rather than recomputed, so a restored entry flashes what it restored.
+        // A deselect flashes nobody; a restored entry flashes what it restored.
         const reached = selecting ? get().skills[skillId] : undefined
         useUiStore.getState().flashAgents(liveAgentIds(reached))
 
-        // `selecting` rather than a read-back, now that the refusal happens
-        // before any of this: every toggle that reaches here lands, so what the
-        // click asked for IS what happened. The read-back existed because the
-        // guard used to sit inside the updater, where the event had to be told
-        // apart from a selection that never happened.
         track({
           name: "skill_toggled",
           skillId,
-          // Every skill on the grid has a domain now, added ones included. A
-          // miss is an id the catalogue dropped between the click and this
-          // read, which is not a domain anything can name.
           domainId: activeSkillById(skillId)?.domainId ?? "unknown",
           selected: selecting,
         })
       },
 
       setSkillOption: (skillId, patch) => {
-        // Enforced twice and neither half a fallback: the panel cannot express
-        // plugin for an eject-only skill, and this refuses it if anything else
-        // ever tries. The same shape the CLI's own eject-only rule takes.
+        // The panel cannot express plugin for an eject-only skill either.
         const allowed =
           isEjectOnly(skillId) && patch.install === "plugin"
             ? { ...patch, install: "eject" as const }
             : patch
 
-        // Computed, guarded, then set — the shape `pruneToCatalog` below takes,
-        // and for the same reason: `set` is what writes, so an action with
-        // nothing to change must not reach it at all.
         const configured = configure(get(), skillId, (entry) => ({
           ...entry,
           ...allowed,
         }))
         if (configured) set(configured)
 
-        // One event per field, so "does anyone ever leave the defaults" is a
-        // question the data can answer per segment rather than in aggregate.
         for (const [field, value] of Object.entries(allowed)) {
           track({
             name: "skill_configured",
@@ -587,13 +491,8 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       cycleAssignment: (skillId, agentId) => {
-        // No scope guard here, and none on the two scope toggles either
-        // (EDITOR-08). A project skill on a global sub-agent is an ERROR to
-        // resolve rather than an action to prevent: refusing the skill's scope
-        // would put project scope out of reach entirely — every sub-agent rests
-        // at global — and refusing the assignment would be a click that
-        // silently does nothing. What the pair costs is Install and Share,
-        // which `summarize().unscopedAgentCount` gates.
+        // No scope guard (EDITOR-08): a project skill on a global sub-agent
+        // is an error `summarize` gates Install and Share on.
         const configured = configure(get(), skillId, (entry) => ({
           ...entry,
           assignments: cycled(entry.assignments, agentId),
@@ -622,9 +521,7 @@ export const useConfigStore = create<ConfigState>()(
       toggleAgentPin: (agentId) => {
         const on = !isAgentOn(get(), agentId)
 
-        // Spread rather than replaced: the same record holds this agent's
-        // model and effort, and switching it off must not forget what it
-        // would install with — the roster keeps showing both, recessed.
+        // Spread, so switching off keeps the agent's other choices.
         set((state) => ({
           agents: {
             ...state.agents,
@@ -636,13 +533,14 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       setAgentOption: (agentId, patch) => {
+        // Pressing the control already in effect must not write (`set` is the write).
+        if (alreadyInEffect(resolveAgentOptions(get().agents, agentId), patch))
+          return
+
         set((state) => ({
           agents: configureAgent(state.agents, agentId, patch),
         }))
 
-        // One event per field, for the same reason `skill_configured` emits
-        // one: "does anyone ever leave the resting value" is a question per
-        // control, not in aggregate.
         for (const [field, value] of Object.entries(patch)) {
           track({
             name: "agent_configured",
@@ -653,12 +551,16 @@ export const useConfigStore = create<ConfigState>()(
         }
       },
 
+      moveRememberedPluginsToGlobal: () => {
+        const { remembered } = get()
+        const moved = withProjectPluginsAtGlobal(remembered)
+        if (moved !== remembered) set({ remembered: moved })
+      },
+
       importConfig: (config) => {
         useUiStore.getState().clearFlash()
         set({ ...config })
 
-        // Arrivals via a share link are a distinct cohort — they did not build
-        // this configuration, so their funnel starts partway through.
         track({
           name: "config_imported",
           skillCount: Object.keys(config.skills).length,
@@ -672,19 +574,11 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       pruneToCatalog: () => {
-        // Whatever was pulsing may have belonged to a skill that just went.
         useUiStore.getState().clearFlash()
 
         const pruned = pruneUnknownIds(get())
-        // A prune that drops nothing is not a change, and `set` is what WRITES
-        // — persist wraps it, so replacing the state with an equal copy still
-        // puts that copy in the slot. Harmless everywhere but the one place
-        // this is reached before the saved configuration has been read at all:
-        // a restore parked on a marketplace that would not load is finished by
-        // the same press that seats one, and seating one prunes. An empty store
-        // written over the slot first is the configuration that press was about
-        // to restore. The same early return `addExternal` makes for the same
-        // reason — an action that changes nothing does nothing.
+        // `set` writes, and this is reachable before the saved configuration
+        // has been read: an equal copy would overwrite it with an empty store.
         if (!droppedAnything(get(), pruned)) return
 
         set(pruned)
@@ -700,50 +594,25 @@ export const useConfigStore = create<ConfigState>()(
       version: PERSIST_VERSION,
       migrate: migrateConfig,
       storage: OWN_SLOT,
-      // Deferred rather than read at module import, and that ordering is the
-      // whole of EDITOR-31 on this side. `merge` below prunes against the
-      // LOADED catalogue, and at import time the loaded catalogue is always the
-      // vendored public one — no fetch can have resolved yet — so a selection
-      // made on a marketplace met a catalogue that has never heard of its ids
-      // and came back empty. Nothing reads storage until `readSavedConfig` is
-      // called, which is the one place that knows the catalogue has settled.
+      // EDITOR-31: `merge` prunes against the loaded catalogue, so nothing
+      // reads storage until `readSavedConfig` knows it has settled.
       skipHydration: true,
-      // An added skill's directory is not persisted, so a selection naming one
-      // would resurrect a skill the next session cannot install. Saving the
-      // stack is what carries it across a reload — the slot holds a payload,
-      // and a payload carries the content.
       partialize: ({ stackId, skills, remembered, agents }) => ({
         stackId,
         skills: onlyPersistableSkills(skills),
         remembered: onlyPersistableSkills(remembered),
         agents,
       }),
-      // The one untrusted boundary: anything unparseable is discarded in
-      // favour of empty state rather than crashing the app.
+      // The untrusted boundary: anything unparseable becomes empty state.
       merge: (persisted, current) => {
-        // Zustand runs `merge` after every load, including the ones that found
-        // an empty storage — those arrive as `undefined`, exactly as a blob
-        // `migrateConfig` refused does. Neither is a configuration this failed
-        // to read, and calling them one filed the warning below against every
-        // visitor who had never saved anything.
+        // An empty slot and a blob `migrateConfig` refused both arrive here as
+        // `undefined`; neither failed to parse.
         if (persisted === undefined) return current
 
         const parsed = persistedConfigSchema.safeParse(persisted)
         if (!parsed.success) {
-          // The app's only *silent* failure: an afternoon of configuration
-          // becomes empty state, and nothing on screen says so. Paths and
-          // codes only — the issues must never carry the values themselves.
-          //
-          // The FIELD and the code, and nothing past them, because `skills`,
-          // `remembered` and `agents` are `z.record`s and it is the SCHEMA that
-          // decides how deep a path may be reported. Their keys are the seated
-          // catalogue's ids, and `onlyPersistableSkills` persists a
-          // MARKETPLACE's ids verbatim — it filters out added external skills,
-          // not a marketplace's own — so on a private catalogue every key is a
-          // name the org chose. This report is the discard's only trace and it
-          // has no reader on screen, so its one destination is Sentry through
-          // our own `/monitoring` tunnel. The same truncation
-          // `readSavedMarketplaces` makes, for the same reason.
+          // The field and the code only: past the field, a path is a
+          // catalogue id, and on a marketplace that is a name the org chose.
           reportIssue("Discarded unreadable saved configuration", {
             persistVersion: PERSIST_VERSION,
             issues: parsed.error.issues.map(
@@ -755,10 +624,7 @@ export const useConfigStore = create<ConfigState>()(
 
         const pruned = pruneUnknownIds(parsed.data)
         reportPruning(parsed.data, pruned)
-        // The one place both halves exist at once: the blob as it was saved,
-        // and the configuration it pruned to. Nothing downstream can ask this
-        // question again — by the time the store holds the answer, what was
-        // dropped is gone — so it is answered here and left for the read.
+        // The only place both the saved blob and its pruned form exist.
         unknownOnLastRead = unknownSavedIds(parsed.data, pruned)
 
         return { ...current, ...pruned }
@@ -767,50 +633,25 @@ export const useConfigStore = create<ConfigState>()(
   )
 )
 
-// Whether the slot is being held open for a configuration that is not this
-// browser's. No second source of truth to disagree with: it IS whether
-// `setItem` is the real one.
+// Whether the slot is held open for a configuration that is not this browser's.
 let heldOpen = false
 
-/**
- * Holds this browser's saved configuration open, for a configuration that is
- * not its own.
- *
- * A shared link is its own address with its own state (EDITOR-37), and the one
- * thing opening one must never cost is what the visitor had. Not on arrival,
- * and not through the first thing they change afterwards either — a guarantee
- * that lasts until they touch something is not a guarantee — so the slot is
- * held for as long as the shared address is, rather than only across the
- * import.
- *
- * Handed back by `readSavedConfig`, which is the only thing that ever wants it.
- */
+// Holds this browser's saved configuration for as long as a shared address is
+// open (EDITOR-37). Handed back by `readSavedConfig`.
 export const detachSavedConfig = () => {
   if (heldOpen) return
-  // Nowhere to write is already nothing to protect.
   if (!OWN_SLOT) return
 
   heldOpen = true
   useConfigStore.persist.setOptions({ storage: withoutWrites(OWN_SLOT) })
 }
 
-// The slot back, answering whether it had been held — which is the same
-// question as "is what is in memory this browser's?".
+// The slot back, answering whether it had been held.
 const reattachSavedConfig = () => {
   if (!heldOpen) return false
 
-  // And the answer being "no" is why what is in memory goes first.
-  //
-  // Emptying it cannot be left to the read that follows: `merge` meets an empty
-  // slot as `undefined` and an unreadable one as a refusal, and both answer by
-  // KEEPING what is already there. Correct where that is empty state, which is
-  // every startup — and on the way back from a shared address it is somebody
-  // else's configuration, which a visitor who had saved nothing would then
-  // adopt as their own the moment they touched anything (EDITOR-42).
-  //
-  // Cleared while the pen is still away, so emptying it is not itself a write:
-  // a visitor who HAS saved something must get their own back, not the blank
-  // this leaves behind.
+  // What is in memory is somebody else's, and `merge` keeps it on an empty
+  // slot (EDITOR-42). Cleared while writes are still off.
   useConfigStore.getState().reset()
 
   heldOpen = false
@@ -819,35 +660,16 @@ const reattachSavedConfig = () => {
 }
 
 /**
- * Reads the configuration this browser saved, once the catalogue it was saved
- * against is seated.
- *
- * The counterpart to `skipHydration` above, and it is deliberately a call
- * rather than an effect: what has to be true before it runs — the right
- * catalogue is loaded — is not something this store can observe, so the
- * decision belongs to whoever sequences the opening.
- *
- * Once per session and not once per mount. Leaving the screen and coming back
- * must not re-read storage, because by then what is in memory includes the
- * things `partialize` deliberately never wrote — an added skill's selection
- * among them, which a second read would silently drop.
- *
- * Coming back from a shared address is the exception, and taking the slot back
- * is what says so: what is in memory then is somebody else's configuration, so
- * this browser's really does have to be read again.
- *
- * Answers with the saved ids the seated catalogue could not place, so the
- * opening can say what the read cost. A read that did not happen cost nothing,
- * which is what the early return below answers with.
+ * Reads the saved configuration once the catalogue it was saved against is
+ * seated. Once per session — a re-read would drop what `partialize` never
+ * wrote — except on the way back from a shared address. Answers with the saved
+ * ids the catalogue could not place.
  */
 export const readSavedConfig = async (): Promise<string[]> => {
   const wasHeldOpen = reattachSavedConfig()
   if (!wasHeldOpen && useConfigStore.persist.hasHydrated()) return []
 
-  // Emptied before rather than after, so the answer describes THIS read: a
-  // `merge` that meets an empty slot or refuses an unreadable one drops
-  // nothing and files nothing, and would otherwise leave the last read's
-  // casualties standing as its own.
+  // Emptied first, so the answer describes this read.
   unknownOnLastRead = []
   await useConfigStore.persist.rehydrate()
   return unknownOnLastRead

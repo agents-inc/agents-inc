@@ -1,16 +1,18 @@
-import { MATRIX_VERSION, SEED_VERSION } from "@workspace/matrix"
-import { describe, expect, it } from "vitest"
+import {
+  MATRIX_VERSION,
+  SEED_VERSION,
+  seedPayloadSchema,
+  type SeedPayload,
+} from "@workspace/matrix"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { readSavedStack } from "./saved-stack-store"
+import { readSavedStacks, useSavedStackStore } from "./saved-stack-store"
 
-// The saved slot is a second untrusted read, and a quieter one than the config
-// store's: nothing on screen explains an empty grid cell, so what matters is
-// that only a payload this app can actually apply ever gets past here.
-//
-// Its version seam is the payload's own `v` rather than `PERSIST_VERSION`,
-// which is the whole point of the slot being separate — a snapshot someone
-// made on purpose must survive a bump of the browser state it was saved from,
-// and must not survive a change to the contract it is written in.
+const SLOT = "agents-inc:saved-stacks:v1"
+const RETIRED_SLOT = "agents-inc:saved-stack:v1"
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 const payload = (over: Record<string, unknown> = {}) => ({
   v: SEED_VERSION,
@@ -27,17 +29,43 @@ const payload = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-const slot = (saved: unknown) => ({ saved })
+// The default payload, typed as the store takes it.
+const valid = (): SeedPayload => seedPayloadSchema.parse(payload())
 
-describe("readSavedStack", () => {
-  it("returns a payload the contract still recognises", () => {
-    expect(readSavedStack(slot(payload()))).toStrictEqual(payload())
+const entry = (name: string, over: Record<string, unknown> = {}) => ({
+  id: `id-${name}`,
+  name,
+  payload: payload(over),
+})
+
+const names = () => useSavedStackStore.getState().saves.map((s) => s.name)
+
+// Persist resolves `window.localStorage` once, at store creation, so the
+// browser has to stand before the import.
+const storeOnABrowserHolding = async (held: Map<string, string>) => {
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) => held.get(key) ?? null,
+      setItem: (key: string, value: string) => held.set(key, value),
+      removeItem: (key: string) => held.delete(key),
+    },
   })
 
-  // Ids are the CLI's slugs and are never checked here: pruning what this
-  // catalog has moved past is `fromSeedPayload`'s job, on the way in.
+  vi.resetModules()
+  const { useSavedStackStore: store } = await import("./saved-stack-store")
+  return store
+}
+
+describe("readSavedStacks", () => {
+  it("keeps every entry the contract recognises, in order", () => {
+    const saves = [entry("B"), entry("A")]
+
+    expect(readSavedStacks({ saves })).toStrictEqual(saves)
+  })
+
+  // Ids are the CLI's slugs; pruning them is `fromSeedPayload`'s job.
   it("keeps ids this catalog may no longer know", () => {
-    const drifted = payload({
+    const drifted = entry("A", {
       skills: {
         "skill-from-the-future": {
           install: "plugin",
@@ -47,34 +75,139 @@ describe("readSavedStack", () => {
       },
     })
 
-    expect(readSavedStack(slot(drifted))).toStrictEqual(drifted)
+    expect(readSavedStacks({ saves: [drifted] })).toStrictEqual([drifted])
   })
 
-  // The version seam. A payload minted under an older contract is discarded
-  // rather than guessed at — the same discard-don't-migrate policy the config
-  // store follows, decided here by the payload rather than by the browser.
-  it("discards a payload minted under an older contract", () => {
-    expect(readSavedStack(slot(payload({ v: SEED_VERSION - 1 })))).toBe(null)
-  })
+  it("drops only the entry minted under an older contract", () => {
+    const stale = entry("B", { v: SEED_VERSION - 1 })
 
-  // The same seam pinned against a literal, because the test above follows
-  // `SEED_VERSION` wherever it goes and so can never say WHICH contract moved.
-  // Every stack saved before v4 sits in a browser in this shape; this is the
-  // read that throws all of them away, and it has to answer `null` rather than
-  // throw — nothing on screen explains an empty cell, but a broken page is not
-  // an explanation either.
-  it("discards a stack saved under the v3 contract", () => {
-    expect(readSavedStack(slot(payload({ v: 3 })))).toBe(null)
+    expect(
+      readSavedStacks({ saves: [entry("C"), stale, entry("A")] })
+    ).toStrictEqual([entry("C"), entry("A")])
   })
 
   it.each([
-    ["an empty slot", undefined],
-    ["nothing at all", null],
-    ["a slot that never held a payload", {}],
-    ["a slot holding something else entirely", slot("a string")],
-    ["a payload with no envelope", slot({ skills: {} })],
-    ["a payload whose skills are not a map", slot(payload({ skills: 7 }))],
-  ])("discards %s", (_label, stored) => {
-    expect(readSavedStack(stored)).toBe(null)
+    ["an entry with no name", { id: "id-x", payload: payload() }],
+    ["an entry with no id", { name: "X", payload: payload() }],
+    ["an entry whose payload is not one", { ...entry("X"), payload: 7 }],
+    ["a bare string", "a string"],
+  ])("drops %s and keeps its neighbours", (_label, broken) => {
+    expect(
+      readSavedStacks({ saves: [entry("B"), broken, entry("A")] })
+    ).toStrictEqual([entry("B"), entry("A")])
+  })
+
+  it.each([
+    ["nothing at all", undefined],
+    ["null", null],
+    ["a slot that never held a list", {}],
+    ["a list that is not one", { saves: "a string" }],
+    ["the retired single slot's shape", { saved: payload() }],
+  ])("reads %s as no saves", (_label, stored) => {
+    expect(readSavedStacks(stored)).toStrictEqual([])
+  })
+})
+
+describe("the saved stacks' slot", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("persists under a key of its own", async () => {
+    const store = await storeOnABrowserHolding(new Map())
+
+    expect(store.persist.getOptions().name).toBe(SLOT)
+  })
+
+  // No back-compat: the v1 slot's payloads are refused anyway.
+  it("ignores a stack under the retired single-slot key", async () => {
+    const held = new Map([
+      [
+        RETIRED_SLOT,
+        JSON.stringify({ state: { saved: payload() }, version: 0 }),
+      ],
+    ])
+
+    const store = await storeOnABrowserHolding(held)
+
+    expect(store.getState().saves).toStrictEqual([])
+  })
+
+  it("restores what it wrote", async () => {
+    const held = new Map<string, string>()
+    const writer = await storeOnABrowserHolding(held)
+    writer.getState().save("Weekday", valid())
+    const written = writer.getState().saves
+
+    const reader = await storeOnABrowserHolding(held)
+
+    expect(written.map((s) => s.name)).toStrictEqual(["Weekday"])
+    expect(reader.getState().saves).toStrictEqual(written)
+  })
+
+  it("restores which saves it still owes the account", async () => {
+    const held = new Map<string, string>()
+    const writer = await storeOnABrowserHolding(held)
+    writer.getState().save("Weekday", valid())
+    const owed = writer.getState().saves.map((s) => s.id)
+    writer.getState().setOwed(owed)
+
+    const reader = await storeOnABrowserHolding(held)
+
+    expect(reader.getState().owed).toStrictEqual(owed)
+  })
+
+  it("owes nothing when the slot never recorded it", async () => {
+    const held = new Map([[SLOT, JSON.stringify({ state: { saves: [] } })]])
+
+    const store = await storeOnABrowserHolding(held)
+
+    expect(store.getState().owed).toStrictEqual([])
+  })
+})
+
+describe("save", () => {
+  beforeEach(() => {
+    useSavedStackStore.setState({ saves: [] })
+  })
+
+  it("keeps every name, newest first", () => {
+    useSavedStackStore.getState().save("A", valid())
+    useSavedStackStore.getState().save("B", valid())
+
+    expect(names()).toStrictEqual(["B", "A"])
+  })
+
+  it("answers ok with the entry it stored", () => {
+    const saved = useSavedStackStore.getState().save("A", valid())
+
+    expect(saved.ok).toBe(true)
+    expect(useSavedStackStore.getState().saves[0]?.payload).toStrictEqual(
+      payload()
+    )
+  })
+
+  // EDITOR-74: an id derived from the name collides the moment names repeat.
+  it("mints a fresh random id per save", () => {
+    useSavedStackStore.getState().save("A", valid())
+    useSavedStackStore.getState().save("B", valid())
+
+    const [b, a] = useSavedStackStore.getState().saves
+    expect(a?.id).toMatch(UUID)
+    expect(b?.id).toMatch(UUID)
+    expect(a?.id).not.toBe(b?.id)
+  })
+
+  it.each([
+    ["in another case", "a"],
+    ["padded", " B "],
+  ])("refuses a name already saved %s, and writes nothing", (_label, name) => {
+    useSavedStackStore.getState().save("A", valid())
+    useSavedStackStore.getState().save("B", valid())
+
+    const refused = useSavedStackStore.getState().save(name, valid())
+
+    expect(refused.ok).toBe(false)
+    expect(names()).toStrictEqual(["B", "A"])
   })
 })

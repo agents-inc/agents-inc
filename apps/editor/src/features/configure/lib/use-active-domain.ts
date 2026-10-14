@@ -1,86 +1,101 @@
-import { useEffect, useState, type RefObject } from "react"
+import { useLayoutEffect, useState, type RefObject } from "react"
 
+import {
+  currentIndex,
+  domainStops,
+  indicatorBox,
+  progressAt,
+  type TabBox,
+} from "./domain-stops"
 import { observe } from "./use-pinned"
 
-/**
- * WHICH DOMAIN THE COLUMN IS SHOWING — the strip's whole answer.
- *
- * The domain tabs are a scroll indicator first and a control second, and since
- * EDITOR-79 they are only ever the first: picking a tab jumps the page to that
- * section rather than filtering to it, so the strip follows the page at every
- * position with no exception for a pick. That is what makes it a map rather
- * than a row of filters, and it is what has no CSS equivalent — `position:
- * sticky` can pin an element but cannot tell anything else that it did.
- *
- * MEASURED, NOT OBSERVED. An `IntersectionObserver` answers "is this section on
- * screen", and several always are — the question here is which of them is
- * nearest the bar's underside, which is an ordering over positions rather than
- * a set of booleans. So this reads the anchors' own rects on scroll, exactly as
- * `usePinned` reads the bar's.
- */
-
 // Every domain section drops one of these at its top edge, carrying the domain
-// id. Zero-height, so it marks a position without occupying one — the section
-// keeps whatever spacing the rule above it gives it.
+// id, and every tab carries the same id.
 export const DOMAIN_ANCHOR = "data-domain-anchor"
+export const DOMAIN_TAB = "data-domain-tab"
 
-// How far past the bar's underside a section's top edge has to travel before it
-// owns the strip. The design's own figure, and it is not decoration: without it
-// a section takes the strip the pixel its first row slides under the bar, and
-// the two-pixel scroll that follows hands it straight back.
-const CLEARANCE = 20
-
-const domainAnchors = () => [
+export const domainAnchors = () => [
   ...document.querySelectorAll<HTMLElement>(`[${DOMAIN_ANCHOR}]`),
 ]
 
-const hasPassed = (anchor: HTMLElement, edge: number) =>
-  anchor.getBoundingClientRect().top <= edge
+const maxScroll = () =>
+  document.documentElement.scrollHeight - document.documentElement.clientHeight
 
-const domainOf = (anchor: HTMLElement | undefined) =>
-  anchor?.getAttribute(DOMAIN_ANCHOR) ?? null
+const documentTopOf = (element: Element) =>
+  element.getBoundingClientRect().top + window.scrollY
 
 /**
- * The last domain whose top edge has passed under the bar — or the first one on
- * the page before any has.
- *
- * The fallback is what makes the strip answer at scroll 0, where nothing has
- * passed anything: the column is showing its first domain, so the first tab is
- * the honest answer rather than none.
+ * Where each section's top meets the bottom of the PINNED bar. Measured against
+ * the bar's height rather than its live bottom edge, which at rest sits a whole
+ * column below where the pinned bar will be.
  */
-const domainUnderBar = (bar: HTMLElement) => {
-  const edge = bar.getBoundingClientRect().bottom + CLEARANCE
-  const anchors = domainAnchors()
-  const passed = anchors.filter((anchor) => hasPassed(anchor, edge))
+export const stopsUnder = (
+  bar: HTMLElement,
+  anchors: readonly HTMLElement[]
+) => {
+  const barHeight = bar.getBoundingClientRect().height
+  return domainStops(
+    anchors.map((anchor) => documentTopOf(anchor) - barHeight),
+    maxScroll()
+  )
+}
 
-  return domainOf(passed.at(-1) ?? anchors.at(0))
+// With nothing matching the filter, the strip rests on its first tab.
+const domainsDrawn = (anchors: readonly HTMLElement[], strip: Element) =>
+  anchors.length > 0
+    ? anchors.map((anchor) => anchor.getAttribute(DOMAIN_ANCHOR) ?? "")
+    : [strip.querySelector(`[${DOMAIN_TAB}]`)?.getAttribute(DOMAIN_TAB) ?? ""]
+
+const tabBox = (strip: Element, domainId: string): TabBox => {
+  const tab = strip.querySelector(`[${DOMAIN_TAB}="${domainId}"]`)
+  if (!tab) return { left: 0, width: 0 }
+  const { left, width } = tab.getBoundingClientRect()
+  return { left: left - strip.getBoundingClientRect().left, width }
+}
+
+const placeIndicator = (indicator: HTMLElement, box: TabBox | undefined) => {
+  if (!box) return
+  indicator.style.transform = `translateX(${box.left}px)`
+  indicator.style.width = `${box.width}px`
 }
 
 /**
- * @param bar the sticky wrapper the sections pass under
- * @param rendered the domain ids currently drawn in the column, in order
+ * Slides the indicator to where the page is, and answers which domain that
+ * makes current. Both read the same progress, so the label never disagrees
+ * with the bar under it.
+ */
+const followPage = (bar: HTMLElement, indicator: HTMLElement) => {
+  const strip = indicator.parentElement
+  if (!strip) return null
+
+  const anchors = domainAnchors()
+  const domains = domainsDrawn(anchors, strip)
+  const progress = progressAt(stopsUnder(bar, anchors), window.scrollY)
+  const tabs = domains.map((domainId) => tabBox(strip, domainId))
+
+  placeIndicator(indicator, indicatorBox(tabs, progress))
+  return domains[currentIndex(progress)] ?? null
+}
+
+/**
+ * The domain the column is showing, with the strip's indicator drawn to match.
+ *
+ * Re-subscribed after every render, which is also the redraw a render needs: a
+ * query moves every section without a scroll. Declared after the pin's own
+ * layout effect, so a scroll that pins the bar is measured pinned.
  */
 export function useActiveDomain(
   bar: RefObject<HTMLElement | null>,
-  rendered: readonly string[]
+  indicator: RefObject<HTMLElement | null>
 ) {
   const [active, setActive] = useState<string | null>(null)
 
-  // Joined rather than depended on as an array: the caller derives it fresh on
-  // every render, so its identity changes when nothing about it has. What the
-  // effect actually cares about is the SET of anchors on the page, and a change
-  // to that set has to re-derive immediately rather than on the next scroll —
-  // clearing a query re-renders every section without moving the page at all,
-  // and the domain the reader is left in front of is not the one they were in
-  // front of a moment ago.
-  const key = rendered.join(" ")
-
-  useEffect(() => {
-    const element = bar.current
-    if (!element) return
-
-    return observe(() => setActive(domainUnderBar(element)))
-  }, [bar, key])
+  useLayoutEffect(() => {
+    const barElement = bar.current
+    const indicatorElement = indicator.current
+    if (!barElement || !indicatorElement) return
+    return observe(() => setActive(followPage(barElement, indicatorElement)))
+  })
 
   return active
 }
