@@ -145,7 +145,12 @@ afterEach(async () => {
  * either at its default would have a fixture assertion depend on this repository's own tree.
  */
 function checkFixture(root: string, sourceRoot = root): CheckResult {
-  return check({ findingsDir: root, referenceRoots: [root], sourceRoots: [sourceRoot] });
+  return check({
+    findingsDir: root,
+    referenceRoots: [root],
+    sourceRoots: [sourceRoot],
+    repositoryRoot: root,
+  });
 }
 
 /**
@@ -162,10 +167,8 @@ function indexNaming(files: string[]): string {
   ].join("\n");
 }
 
-async function writeFixtureDir(files: Record<string, string>): Promise<string> {
-  const root = await createTempDir("findings-frontmatter-");
-  roots.push(root);
-  mkdirSync(root, { recursive: true });
+function writeFindingsInto(dir: string, files: Record<string, string>): void {
+  mkdirSync(dir, { recursive: true });
 
   const withApparatus = {
     [TEMPLATE_FILE]: TEMPLATE,
@@ -174,8 +177,14 @@ async function writeFixtureDir(files: Record<string, string>): Promise<string> {
   };
 
   for (const [file, content] of Object.entries(withApparatus)) {
-    writeFileSync(path.join(root, file), `${content}${content.endsWith("\n") ? "" : BODY}`);
+    writeFileSync(path.join(dir, file), `${content}${content.endsWith("\n") ? "" : BODY}`);
   }
+}
+
+async function writeFixtureDir(files: Record<string, string>): Promise<string> {
+  const root = await createTempDir("findings-frontmatter-");
+  roots.push(root);
+  writeFindingsInto(root, files);
 
   return root;
 }
@@ -581,6 +590,126 @@ describe("a frontmatter value that names a file", () => {
 });
 
 /**
+ * The reference scan judges only what this repository would carry, so its answer cannot depend on
+ * the machine running it. Laid out like the real tree, because a climbing reference written from the
+ * repository root lands back inside the repository when resolved from the package or the findings
+ * directory, and escapes it only from the root it was written from.
+ */
+const SIBLING_REPOSITORY_FILE = "../skills/src/skills/web-state-zustand/examples/core.md";
+const GENERATED_FILE = "e2e/helpers/handrun.gen.mjs";
+
+type Workspace = { repository: string; packageRoot: string; findingsDir: string };
+
+async function writeWorkspaceFixture(files: Record<string, string>): Promise<Workspace> {
+  const machine = await createTempDir("findings-workspace-");
+  roots.push(machine);
+  const repository = path.join(machine, "cli");
+  const packageRoot = path.join(repository, "packages", "cli");
+  const findingsDir = path.join(packageRoot, ".ai-docs", "agent-findings");
+  writeFindingsInto(findingsDir, files);
+
+  return { repository, packageRoot, findingsDir };
+}
+
+function checkWorkspace(
+  { repository, packageRoot, findingsDir }: Workspace,
+  isIgnored: (file: string) => boolean,
+): CheckResult {
+  return check({
+    findingsDir,
+    referenceRoots: [packageRoot, repository],
+    sourceRoots: [findingsDir],
+    repositoryRoot: repository,
+    isIgnored,
+  });
+}
+
+function gitIgnoresOnly(file: string): (candidate: string) => boolean {
+  return (candidate) => candidate === file;
+}
+
+function writeEmptyFile(file: string): void {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, "");
+}
+
+describe("a frontmatter value naming a path this repository does not carry", () => {
+  it("is not reported when it climbs out of the repository to a file that is absent", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [SIBLING_REPOSITORY_FILE]),
+    });
+
+    expect(
+      checkWorkspace(workspace, () => false).unresolved,
+      "a sibling checkout CI never clones is not this repository's to judge",
+    ).toStrictEqual([]);
+  });
+
+  it("is not reported when the file outside the repository is present either", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [SIBLING_REPOSITORY_FILE]),
+    });
+    writeEmptyFile(path.join(workspace.repository, SIBLING_REPOSITORY_FILE));
+
+    expect(
+      checkWorkspace(workspace, () => false).unresolved,
+      "the machine carrying the sibling checkout must get the answer CI gets",
+    ).toStrictEqual([]);
+  });
+
+  it("is not reported when git ignores the path it names and nothing has generated it", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [GENERATED_FILE]),
+    });
+
+    expect(
+      checkWorkspace(workspace, gitIgnoresOnly(path.join(workspace.packageRoot, GENERATED_FILE)))
+        .unresolved,
+      "an ignored file exists only where someone generated it, so its absence is not a defect",
+    ).toStrictEqual([]);
+  });
+
+  it("is still reported when it names an absent path inside the repository that git would carry", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [A_DELETED_FILE]),
+    });
+
+    expect(
+      checkWorkspace(workspace, gitIgnoresOnly(path.join(workspace.packageRoot, GENERATED_FILE)))
+        .unresolved,
+    ).toStrictEqual([{ file: FINDING_FILE, key: AFFECTED_FILES, value: A_DELETED_FILE }]);
+  });
+
+  it("is still reported when it is an absolute path, which names a machine rather than a repository", async () => {
+    const workspace = await writeWorkspaceFixture({});
+    const outsideTheRepository = path.join(path.dirname(workspace.repository), "notes.md");
+    writeFindingsInto(workspace.findingsDir, {
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [outsideTheRepository]),
+    });
+
+    expect(
+      checkWorkspace(workspace, () => false).unresolved,
+      "a leading slash is read from each root rather than as a climb out of the repository",
+    ).toStrictEqual([{ file: FINDING_FILE, key: AFFECTED_FILES, value: outsideTheRepository }]);
+  });
+
+  it("skips one reference at a time, so the same finding still reports its absent in-repository path", async () => {
+    const workspace = await writeWorkspaceFixture({
+      [FINDING_FILE]: findingWithFileList(AFFECTED_FILES, [
+        SIBLING_REPOSITORY_FILE,
+        GENERATED_FILE,
+        A_DELETED_FILE,
+      ]),
+    });
+
+    expect(
+      checkWorkspace(workspace, gitIgnoresOnly(path.join(workspace.packageRoot, GENERATED_FILE)))
+        .unresolved,
+    ).toStrictEqual([{ file: FINDING_FILE, key: AFFECTED_FILES, value: A_DELETED_FILE }]);
+  });
+});
+
+/**
  * The symbol scan `2026-08-19-a-partial-note-claims-a-pending-fix-and-nothing-re-derives-it-against-source`
  * asked for, and the reason its own subject went unread for four months: a `partial_note` is prose
  * about code, and no scanner can evaluate the claim — but it CAN ask whether the names it pins the
@@ -798,6 +927,9 @@ function unresolved(file: string, key: string, value: string): UnresolvedReferen
  * and the worklist for whoever repairs them. The repair is one line per row and belongs to the
  * `.ai-docs/` owners; this pin is what makes the set a fact rather than a claim, and it reddens on
  * the next one added as well as the next one fixed.
+ *
+ * A reference outside the repository, or onto a path git ignores, is never judged, so it never
+ * belongs here: a red listing one is the scan depending on the machine, not a pin to re-derive.
  *
  * Two groups, and they are not the same defect:
  *

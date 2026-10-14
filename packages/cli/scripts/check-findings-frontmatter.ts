@@ -154,7 +154,7 @@ export type FindingVerdict =
 /** One piece of work filed more than once — the files, and the tuple they agree on. */
 export type DuplicateFiling = { files: string[]; rootCause: string; date: string };
 
-/** A frontmatter value that names a file, and no root the value could be written from holds it. */
+/** A value naming a file this repository carries, which no root it could be written from holds. */
 export type UnresolvedReference = { file: string; key: string; value: string };
 
 /** A name a lifecycle note pins its claim to, which nothing in the tree declares. */
@@ -179,15 +179,15 @@ export function check({
   findingsDir = FINDINGS_DIR,
   referenceRoots = [PACKAGE_ROOT, REPOSITORY_ROOT],
   sourceRoots = [REPOSITORY_ROOT],
+  repositoryRoot = REPOSITORY_ROOT,
   isIgnored = gitIgnoresUnder(),
 }: {
   findingsDir?: string | undefined;
   referenceRoots?: string[] | undefined;
   sourceRoots?: string[] | undefined;
-  /**
-   * Whether the repository would carry this file. Injected so a test can state the answer without
-   * creating a git repository, and so the scan's subject is stated rather than assumed.
-   */
+  /** A reference that climbs out of this is one the repository does not carry. */
+  repositoryRoot?: string | undefined;
+  /** Whether git ignores this path, present or not. Injected so a test needs no git repository. */
   isIgnored?: ((file: string) => boolean) | undefined;
 } = {}): CheckResult {
   const files = findingFiles(findingsDir);
@@ -201,7 +201,11 @@ export function check({
     clean: verdicts.every((verdict) => verdict.outcome === "readable"),
     verdicts,
     duplicates: duplicateFilingsIn(readings),
-    unresolved: unresolvedReferencesIn(parsed, [findingsDir, ...referenceRoots]),
+    unresolved: unresolvedReferencesIn(parsed, {
+      roots: [findingsDir, ...referenceRoots],
+      repositoryRoot,
+      isIgnored,
+    }),
     undeclared: undeclaredSymbolsIn(parsed, declaredNamesUnder(sourceRoots, isIgnored)),
     unlisted: unlistedFindingsIn(findingsDir, files),
     inFlight: changedSince(findingsDir, witnessed),
@@ -454,23 +458,52 @@ function fieldsOf(parsed: unknown): FrontmatterField[] {
   return Object.keys(parsed).map((key) => ({ key, value: fieldOf(parsed, key) }));
 }
 
+/** Where a reference may be written from, and how to tell which files the repository carries. */
+type ReferenceScope = {
+  roots: string[];
+  repositoryRoot: string;
+  isIgnored: (file: string) => boolean;
+};
+
 /**
- * Every frontmatter value that names a file and does not resolve, under any key.
+ * Every frontmatter value, under any key, that names a file this repository carries and does not
+ * resolve. Stated as a property of the value rather than a list of keys, because `TEMPLATE.md` rule
+ * 3a's three keys left `affected_files:` and `standards_docs:` dangling unseen.
  *
- * `TEMPLATE.md` rule 3a asks this of three keys, and the scan that ran it covered exactly those
- * three. `affected_files:` and `standards_docs:` name files too, and a widening pass found four
- * dangling targets the mandated scan was structurally unable to see. So the rule is stated as a
- * PROPERTY of the value rather than as a list of keys — an enumeration of keys reads as exhaustive
- * while being short, and goes stale the day a key is added, which is the same defect one level up.
+ * Resolution is asked first only because it is a stat, where asking about an absent file spawns git.
  */
-function unresolvedReferencesIn(findings: ParsedFinding[], roots: string[]): UnresolvedReference[] {
+function unresolvedReferencesIn(
+  findings: ParsedFinding[],
+  scope: ReferenceScope,
+): UnresolvedReference[] {
   return findings.flatMap(({ file, fields }) =>
     fields.flatMap(({ key, value }) =>
       referencesIn(value)
-        .filter((reference) => !resolvesUnder(reference, roots))
+        .filter((reference) => !resolvesUnder(reference, scope.roots))
+        .filter((reference) => isCarriedByRepository(reference, scope))
         .map((reference) => ({ file, key, value: reference })),
     ),
   );
+}
+
+/**
+ * Whether every checkout of this repository holds what the reference names, so its absence means
+ * the same on every machine. A sibling checkout, or a file git ignores, is on some machines only.
+ */
+function isCarriedByRepository(
+  reference: string,
+  { roots, repositoryRoot, isIgnored }: ReferenceScope,
+): boolean {
+  // The repository root decides: read from an inner root, a climb out of it lands back inside.
+  if (isOutside(repositoryRoot, path.join(repositoryRoot, reference))) return false;
+
+  return !roots.some((root) => isIgnored(path.join(root, reference)));
+}
+
+function isOutside(directory: string, file: string): boolean {
+  const relative = path.relative(directory, file);
+
+  return relative === ".." || relative.startsWith(`..${path.sep}`);
 }
 
 /**
@@ -600,34 +633,51 @@ function namesUnder(root: string, isIgnored: (file: string) => boolean): string[
 }
 
 /**
- * Whether the repository would carry this path — asked of git rather than guessed from a denylist.
+ * Whether git ignores a path. Asked of git because `UNAUTHORED_DIRECTORIES` cannot track
+ * `.gitignore`, and while it decided alone the scan answered differently per machine.
  *
- * `UNAUTHORED_DIRECTORIES` above is a hardcoded list and cannot track `.gitignore`, which is how
- * this scan came to answer differently per machine: three ignored locations in this repository
- * still declared two deleted constants, so it said 10 locally and 12 on a clean checkout, and CI
- * was red on that assertion across two releases while every local run passed. The denylist stays
- * because it is cheaper than any subprocess for the four directories that dominate the walk; git
- * decides everything else.
+ * A present path is answered from one `ls-files --ignored` listing per root: `check-ignore` per
+ * path is correct and cost 5 seconds across the walk. The listing names only what is on disk, so an
+ * absent path asks `check-ignore`, which reads the patterns alone — otherwise a reference to an
+ * ignored file is reported on every machine that never generated it, CI included.
  *
- * ONE call per root, not one per path. The obvious form — `git check-ignore` per file — is correct
- * and cost 5 seconds on this repository, which would have made this scan one of the slowest tests
- * in the suite to fix a correctness bug. `ls-files --others --ignored --exclude-standard
- * --directory` lists what git ignores under a root, collapsing whole ignored directories to one
- * entry, so a prefix test answers every path beneath them.
- *
- * Outside a working tree the command fails and the answer is that nothing is ignored — exactly
- * right for the temp trees this scan is unit-tested against, and the reason no test needs a
- * repository of its own.
+ * Outside a working tree git fails and nothing is ignored, which is right for the temp trees this
+ * is tested against.
  */
 function gitIgnoresUnder(): (file: string) => boolean {
   const perRoot = new Map<string, string[]>();
 
-  return (file: string): boolean => {
-    const root = path.parse(file).root === file ? file : path.dirname(file);
-    const anchor = nearestKnownRoot(perRoot, root) ?? loadIgnoredUnder(perRoot, root);
+  return (file) =>
+    existsSync(file) ? isListedAsIgnored(perRoot, file) : matchesIgnorePattern(file);
+}
 
-    return anchor.some((ignored) => file === ignored || file.startsWith(`${ignored}${path.sep}`));
-  };
+function isListedAsIgnored(perRoot: Map<string, string[]>, file: string): boolean {
+  const directory = path.parse(file).root === file ? file : path.dirname(file);
+  const listing = nearestKnownRoot(perRoot, directory) ?? loadIgnoredUnder(perRoot, directory);
+
+  return listing.some((ignored) => file === ignored || file.startsWith(`${ignored}${path.sep}`));
+}
+
+/** `git check-ignore` exits 0 when a pattern ignores the path, 1 when none does. */
+const IGNORED_BY_A_PATTERN = 0;
+
+function matchesIgnorePattern(file: string): boolean {
+  const result = spawnSync("git", [
+    "-C",
+    nearestExistingDirectory(file),
+    "check-ignore",
+    "--quiet",
+    "--",
+    file,
+  ]);
+
+  return result.status === IGNORED_BY_A_PATTERN;
+}
+
+function nearestExistingDirectory(file: string): string {
+  const parent = path.dirname(file);
+
+  return existsSync(parent) ? parent : nearestExistingDirectory(parent);
 }
 
 function nearestKnownRoot(perRoot: Map<string, string[]>, dir: string): string[] | undefined {
