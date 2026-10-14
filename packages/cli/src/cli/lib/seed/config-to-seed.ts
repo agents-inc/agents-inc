@@ -26,51 +26,32 @@ import type {
   SeedSkill,
 } from "@workspace/matrix/seed";
 
-/** Sub-agent name -> load state for one skill: the shape the wire keys by skill. */
 type SeedAssignments = Record<string, SeedLoadState>;
 
-/** What one walk of `config.stack` yields: the wire's assignments, and the rows that cannot be one. */
 type StackReading = {
   assignments: Map<SkillId, SeedAssignments>;
-  /** Pairs the config model has nowhere to write, worded for the refusal. */
   unwritable: string[];
 };
 
 /**
- * An installed entry. An excluded one is a tombstone — a statement about something that is NOT
- * installed here — and presence is selection on the wire, so it has nothing to say. Nothing is
- * lost by leaving it home either: `init --from` installs into a clean setup, where there is no
- * global install for a tombstone to mask.
- *
- * Exported because the reader that gathers what an installation CARRIES has to agree with the
- * mapper about what it installs: content read for an entry this payload will not name is content
- * paid for by nobody, and a refusal raised over it would refuse a share for a skill it is not
- * sharing.
+ * A tombstone describes something NOT installed, so it has nothing to say on the wire. Exported so
+ * the reader of carried content agrees with the mapper about what is installed.
  */
 export function isInstalled(entry: { excluded?: boolean }): boolean {
   return !entry.excluded;
 }
 
-/**
- * Whether a skill from this origin obliges the payload to name a marketplace.
- *
- * Two do not. An ejected copy travels with the project, and the default public catalogue is what
- * an absent ref already means — so neither puts a ref on the wire, and two identical selections
- * cannot mint two different ids over one.
- */
+/** An ejected copy travels with the project, and the default catalogue is what no ref means. */
 function needsMarketplaceNamed(origin: string): boolean {
   return origin !== EJECT_SOURCE && origin !== DEFAULT_PUBLIC_SOURCE_NAME;
 }
 
-/**
- * Asked of the contract's own enum rather than spelled out here, so widening `MODEL_NAMES`
- * without widening the wire cannot slip past as a silently dropped pin.
- */
+/** The contract's own enum, so widening `MODEL_NAMES` alone cannot silently drop a pin. */
 function isSeedModel(model: ModelName): model is SeedModel {
   return seedModelSchema.safeParse(model).success;
 }
 
-/** The wire spells as an enum what a stack entry spells as a boolean, and an absent flag is lazy. */
+/** An absent flag is lazy. */
 function seedLoadState(preloaded: boolean | undefined): SeedLoadState {
   return preloaded === true ? "preloaded" : "lazy";
 }
@@ -88,12 +69,8 @@ function unwritablePairMessage(skillId: SkillId, agent: string): string {
 }
 
 /**
- * Names everything the contract cannot carry at once, not one thing at a time: a sharer who fixes
- * one only to be refused for the next learns nothing the first message could not have told them.
- *
- * The refusal exists because the alternative is worse than a failed command. A payload quietly
- * missing what it could not say still mints an id, and that id installs a configuration nobody
- * chose — with nothing on either side saying so.
+ * Names everything at once. A payload quietly missing what it could not say would mint an id that
+ * installs a configuration nobody chose.
  */
 function unshareableConfigError(unshareable: string[]): string {
   return [
@@ -103,36 +80,26 @@ function unshareableConfigError(unshareable: string[]): string {
   ].join("\n");
 }
 
-/** The ref a payload has to carry, and the skills no ref this config holds can account for. */
 type MarketplaceReading = {
   ref: string | undefined;
   unnameable: string[];
 };
 
-/** Where a configuration fetches its marketplace from, and the name that joins it to skills. */
 type MarketplaceRecord = Pick<ProjectConfig, "marketplace" | "marketplaceName">;
 
 /**
- * Whether `record` is the marketplace `skill` came from, and says where it is fetched from. No
- * record, as for a configuration that inherits from none, records nothing.
- *
- * A skill's `origin` is a marketplace's NAME, `marketplace` is the ref it was fetched from, and
- * `marketplaceName` is what joins them — the name the install read out of that repository's own
- * manifest. Without both halves agreeing, the ref would send the receiver to a repository that
- * never served this skill, which is the same silent swap under a different spelling.
+ * `origin` is a marketplace NAME, `marketplace` its ref and `marketplaceName` joins them; without
+ * both agreeing the ref would point the receiver at a repository that never served the skill.
  */
 function isRecordedMarketplace(record: MarketplaceRecord | undefined, skill: SkillConfig): boolean {
   return record?.marketplace !== undefined && skill.origin === record.marketplaceName;
 }
 
 /**
- * Which marketplace the payload names, decided by the skills that oblige it to name one.
- *
- * A payload names ONE marketplace, and it is this configuration's own whenever a skill shared here
- * comes from it. A project under a global installation from another marketplace carries that
- * one's skills too: they travel, the receiver loading this ref alone leaves them behind, and
- * {@link skillsItsMarketplaceLeavesBehind} names them for the sharer. Only a skill whose
- * marketplace neither configuration records is refused — no payload could ever name where it is.
+ * A payload names ONE marketplace: this configuration's own whenever a shared skill comes from it.
+ * A global installation's other-marketplace skills travel and are named by
+ * {@link skillsItsMarketplaceLeavesBehind}. Only a skill whose marketplace neither config records
+ * is refused.
  */
 function readMarketplace(
   config: ProjectConfig,
@@ -153,12 +120,8 @@ function readMarketplace(
 }
 
 /**
- * The plugin skills `payload` carries that the marketplace it names does not serve.
- *
- * An install reads the one marketplace a payload names — the public catalogue when it names none —
- * so a plugin from any other is skipped wherever the id is installed. That is a stopgap rather
- * than a refusal: the id still installs everything else, and the sharer is told which skills it
- * leaves behind. An ejected copy is not a plugin and is not asked about here.
+ * An install reads the one marketplace a payload names, so a plugin from another is skipped. A
+ * stopgap rather than a refusal: the sharer is told which skills it leaves behind.
  */
 export function skillsItsMarketplaceLeavesBehind(
   config: ProjectConfig,
@@ -184,16 +147,9 @@ function unnameableModels(agents: AgentScopeConfig[]): string[] {
 }
 
 /**
- * Turns `config.stack` inside out: it is keyed by sub-agent and this contract is keyed by skill.
- *
- * Rows naming a sub-agent or a skill this configuration does not install are dropped rather than
- * refused, because they are already no part of what is installed — `compile` warns about exactly
- * those and leaves them out of the agents it writes, so carrying them would share more than this
- * project has.
- *
- * A row the config model cannot write is the opposite case and is collected for the refusal: the
- * decoder turns the same pair away on the way back in, so minting it would produce an id that
- * cannot be installed.
+ * `config.stack` is keyed by sub-agent; the contract by skill. Rows for uninstalled sub-agents or
+ * skills are dropped (`compile` ignores them too); rows the config model cannot write are
+ * collected for the refusal, since the decoder would turn them away.
  */
 function readStack(
   stack: ProjectConfig["stack"],
@@ -227,64 +183,27 @@ function readStack(
 
 function toSeedSkill(skill: SkillConfig, assignments: SeedAssignments | undefined): SeedSkill {
   return {
-    // "eject" is the project's own copy; anything else is a plugin the marketplace serves, and
-    // which marketplace that is has already had to be one the envelope's ref accounts for.
+    // A plugin's marketplace has already been checked against the envelope's ref.
     install: skill.origin === EJECT_SOURCE ? "eject" : "plugin",
     scope: skill.scope,
     assignments: assignments ?? {},
   };
 }
 
-/**
- * A sub-agent's own row, and it always says `on`.
- *
- * The web app pins `on` only where a person did, because there an agent switched on by its rows is
- * already implied by them. An installed config is not an inference — every sub-agent it names was
- * chosen and has a compiled file on disk — so saying so outright is what carries the one that owns
- * no skill, which is the only thing the agents map can do that assignments cannot.
- */
+/** Always `on`: it carries a sub-agent that owns no skill, which assignments cannot. */
 function toSeedAgent(agent: AgentScopeConfig): SeedAgent {
   return {
     on: true,
     scope: agent.scope,
     ...(agent.model !== undefined && isSeedModel(agent.model) && { model: agent.model }),
+    ...(agent.codexModel !== undefined && { codexModel: agent.codexModel }),
     ...(agent.effort !== undefined && { effort: agent.effort }),
   };
 }
 
 /**
- * Turns the installation this directory records into the payload the config store holds, so the
- * CLI can mint an id rather than only consume one.
- *
- * The inverse of `seedToWizardResult` in `seed-to-wizard.ts`, and held to it: a
- * payload minted here and decoded there has to describe the same install. That is why the scope
- * of every skill and sub-agent travels per entry rather than being implied, why the whole stack
- * is carried as per-`(skill, sub-agent)` assignments, and why nothing here leans on a wire default
- * the decoder would have to guess back.
- *
- * What it will not do is share a thinner configuration than the one installed. Anything the
- * contract cannot state is refused by name — see {@link unshareableConfigError} — because the
- * failure mode of the alternative is an id that silently installs something else.
- *
- * `stackId` is always null. A saved config records a stack's expansion and never the id it came
- * from, and the assignments above carry that expansion in full; naming an id this module invented
- * would make the receiver overlay a stack's own preload flags over the curation being shared.
- *
- * `description` is what a resolvable id would have supplied that the assignments do not, so it is
- * carried directly instead. That is the whole of the trade: the sentence travels, the roster the id
- * would have dragged behind it does not.
- *
- * `marketplace` is the one field carried for the payload rather than for an entry, because the
- * receiver loads one catalogue before it reads a single skill row — see {@link readMarketplace}.
- *
- * `carried` arrives as an argument because it is read off disk and this mapping touches none:
- * every id above is resolved by the receiver against a catalogue it already has, and the entries
- * in `carried` are the ones that answer to no catalogue in either direction. Stated rather than
- * defaulted, because a producer that forgot the content is exactly the defect this closed.
- *
- * `inheritedFrom` is the global configuration a project's own inherits from, absent when `config`
- * is the global one. It is read for one thing: the marketplace the inherited skills came from,
- * which this configuration does not record but the global one does.
+ * The inverse of `seedToWizardResult`; anything the contract cannot state is refused by name.
+ * `stackId` is always null: assignments carry the expansion, `description` the rest.
  */
 export function configToSeedPayload(
   config: ProjectConfig,
@@ -307,28 +226,17 @@ export function configToSeedPayload(
   ];
   if (unshareable.length > 0) throw new Error(unshareableConfigError(unshareable));
 
-  // Parsed rather than merely assembled, exactly as the web app's encoder is: it makes "the JSON
-  // the store will hold" literal, and it is the one gate that catches a field whose values have
-  // drifted out of the wire's enums since this module last named them.
-  //
-  // The INSTALLABLE half of the contract, which is the schema the store's POST route declares —
-  // the lenient one exists for READING links already out in the world, and this module only ever
-  // mints. It refuses nothing the refusal above permits, and that is the point: it is the belt
-  // over those braces, so the day this module's own rule and the wire's disagree, the mint fails
-  // loudly here instead of minting an id that cannot be installed.
+  // Parsed against the store's installable schema, so drift fails the mint here.
   return installableSeedPayloadSchema.parse({
     v: SEED_VERSION,
     matrixVersion: MATRIX_VERSION,
     stackId: null,
-    // Absent rather than empty, for the reason the marketplace ref is: an id is the hash of its
-    // body, so a key meaning what its absence already means would remint every ordinary payload.
+    // Absent rather than empty: an id is the hash of its body.
     ...(config.description !== undefined && { description: config.description }),
     ...(marketplace.ref !== undefined && { marketplace: marketplace.ref }),
     skills: Object.fromEntries(
       skills.map((skill) => [skill.id, toSeedSkill(skill, assignments.get(skill.id))]),
     ),
-    // Absent rather than empty, for the reason the marketplace ref is: an id is the hash of its
-    // body, so a key meaning what its absence already means would remint every ordinary payload.
     ...(Object.keys(carried.external).length > 0 && { external: carried.external }),
     agents: Object.fromEntries(agents.map((agent) => [agent.name, toSeedAgent(agent)])),
   });

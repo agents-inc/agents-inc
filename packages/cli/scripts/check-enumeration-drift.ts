@@ -621,18 +621,28 @@ export const REGISTRY: RegistryEntry[] = [
   // document names their members. `type-system.md` owns the four SIZES and states them as a counts
   // table, which is a claim about quantity rather than the membership list a row judges, and a
   // table with a row per skill is not a thing to author so that one can be written.
-  // The two tuning arrays. Stated member per row rather than as one comma list, because
-  // `code-spans` only matches CONSTANT-shaped backticked names and every member of both is
-  // lower-case — a one-cell list is unreadable to both readers, which is how `fable` sat missing
-  // from five documents at once. `seedModelSchema` / `seedEffortSchema` are the wire-side twins and
-  // are NOT registerable: they are `z.enum([...])` call expressions, and `membersOfSymbol` reads
-  // object, array and union literals only, so a row naming either would throw rather than judge.
+  // The tuning arrays. Stated member per row rather than as one comma list, because `code-spans`
+  // only matches CONSTANT-shaped backticked names and every member of each is lower-case — a
+  // one-cell list is unreadable to both readers, which is how `fable` sat missing from five
+  // documents at once. `seedModelSchema` / `seedEffortSchema` are the wire-side twins and are NOT
+  // registerable: they are `z.enum([...])` call expressions, and `membersOfSymbol` reads object,
+  // array and union literals only, so a row naming either would throw rather than judge.
   {
     claim: "MODEL_NAMES in reference/features/model-and-effort.md",
     source: { file: MATRIX_TYPES, symbol: "MODEL_NAMES" },
     document: {
       document: MODEL_AND_EFFORT,
       from: "The members of `MODEL_NAMES` (`ModelName`), exhaustive and in source order:",
+      to: "The members of `CODEX_MODEL_NAMES`",
+      states: "table-rows",
+    },
+  },
+  {
+    claim: "CODEX_MODEL_NAMES in reference/features/model-and-effort.md",
+    source: { file: MATRIX_TYPES, symbol: "CODEX_MODEL_NAMES" },
+    document: {
+      document: MODEL_AND_EFFORT,
+      from: "The members of `CODEX_MODEL_NAMES` (`CodexModelName`), exhaustive and in source order:",
       to: "The members of `EFFORT_NAMES`",
       states: "table-rows",
     },

@@ -39,54 +39,18 @@ export function resolveSkillReferences(
     .filter((skill): skill is Skill => skill !== null);
 }
 
-/**
- * Builds skill references from a ProjectConfig stack mapping (agent -> category -> SkillAssignment[]).
- *
- * Values are normalized to SkillAssignment[] at load time (by normalizeStackRecord in project-config.ts).
- * Preserves preloaded flags from skill assignments.
- *
- * @param agentStack - Category-to-SkillAssignment[] mapping from ProjectConfig.stack for one agent
- * @returns Skill references with usage hints derived from category names
- */
+/** Values are already SkillAssignment[] (normalizeStackRecord in project-config.ts). */
 export function buildSkillRefsFromConfig(agentStack: StackAgentConfig): SkillReference[] {
   return resolveAgentConfigToSkills(agentStack);
 }
 
-/**
- * Resolves the skill references an agent compiles with.
- *
- * The compile config is the only source: `buildCompileAgents` has already expanded
- * the project config's stack into `skills` by the time this runs.
- *
- * @param agentConfig - Compile-time agent config
- * @returns The agent's explicit skill references, or an empty array when it names none
- */
+/** `buildCompileAgents` has already expanded the stack into `skills`. */
 export function resolveAgentSkillRefs(agentConfig: CompileAgentConfig): SkillReference[] {
   return agentConfig.skills ?? [];
 }
 
-/**
- * Resolves all agents referenced in a compile config into fully populated AgentConfigs
- * with their skill lists materialized from definitions.
- *
- * For each agent in `compileConfig.agents`, this function:
- * 1. Validates the agent exists in the scanned agent definitions
- * 2. Resolves skill references from the agent's compile config
- * 3. Materializes skill references into full Skill objects using the skill definitions map
- * 4. Merges the agent definition with its resolved skills into an AgentConfig
- *
- * @param agents - Available agent definitions keyed by name (from scanning agent directories)
- * @param skills - Available skill definitions keyed by ID (from scanning skill directories)
- * @param compileConfig - Compilation config specifying which agents to compile and their overrides
- * @param _projectRoot - Project root directory (currently unused, reserved for future use)
- * @returns Map of agent names to fully resolved AgentConfig objects ready for compilation
- * @throws When an agent referenced in compileConfig is not found in scanned agents
- */
-// Nothing below is asynchronous any more: `resolveAgentSkillRefs` never was, and
-// dropping its `async` emptied this one too. The `Promise` stays because it is the
-// published shape — two production callers await it and local-installer.test.ts
-// doubles it with `mockResolvedValue`, so unwinding it is a change to the compile
-// pipeline rather than to this line.
+/** Throws when the compile config names an agent no scanned directory defines. */
+// The `Promise` is the published shape: two callers await it and local-installer.test.ts mocks it.
 // eslint-disable-next-line @typescript-eslint/require-await -- published shape, see above
 export async function resolveAgents(
   agents: Partial<Record<AgentName, AgentDefinition>>,
@@ -112,10 +76,8 @@ export async function resolveAgents(
   return typedFromEntries(entries);
 }
 
-/** How many scanned agents a not-found refusal names before summarising the rest. */
 const MAX_LISTED_AVAILABLE_AGENTS = 5;
 
-/** The refusal for an agent the compile config names and no scanned directory defines. */
 function agentNotFoundError(
   agentName: AgentName,
   agents: Partial<Record<AgentName, AgentDefinition>>,
@@ -124,7 +86,6 @@ function agentNotFoundError(
   return `Agent '${agentName}' referenced in compile config but not found in scanned agents. ${availableAgents}. Check that src/agents/${agentName}/metadata.yaml exists.`;
 }
 
-/** The agents that WERE scanned, capped at {@link MAX_LISTED_AVAILABLE_AGENTS} names. */
 function describeAvailableAgents(availableAgents: AgentName[]): string {
   if (availableAgents.length === 0) return "No agents found in scanned directories";
 
@@ -135,19 +96,13 @@ function describeAvailableAgents(availableAgents: AgentName[]): string {
     : `Available agents: ${listed}`;
 }
 
-/**
- * One agent as the compiler takes it: the definition's frontmatter, the compile config's
- * overrides on top of it, and the skills already resolved.
- */
 function assembleAgentConfig(
   agentName: AgentName,
   definition: AgentDefinition,
   agentConfig: CompileAgentConfig,
   resolvedSkills: Skill[],
 ): AgentConfig {
-  // The project config carries the user's deliberate choice; the agent's own metadata
-  // carries the default. Config wins, silently — warning on every compile for a setting
-  // someone made on purpose is noise. Neither present leaves the key off entirely.
+  // Config wins over metadata, silently. Metadata never names a Codex model.
   const model = agentConfig.model ?? definition.model;
   const effort = agentConfig.effort ?? definition.effort;
 
@@ -156,11 +111,10 @@ function assembleAgentConfig(
     title: definition.title,
     description: definition.description,
     ...(model !== undefined && { model }),
+    ...(agentConfig.codexModel !== undefined && { codexModel: agentConfig.codexModel }),
     ...(effort !== undefined && { effort }),
     tools: definition.tools,
-    // Every optional frontmatter field `agent.liquid` reads. Spread conditionally rather
-    // than unconditionally, because the template branches on presence — an explicit
-    // `undefined` renders as an empty key.
+    // Spread conditionally: the template branches on presence, and `undefined` renders a key.
     ...(definition.disallowedTools !== undefined && {
       disallowedTools: definition.disallowedTools,
     }),
