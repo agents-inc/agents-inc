@@ -79,7 +79,7 @@ describe("POST /configs", () => {
   })
 
   it("rejects a body that is not a seed payload", async () => {
-    const response = await post({ v: 5, skills: "not-a-record" })
+    const response = await post({ v: SEED_VERSION, skills: "not-a-record" })
     expect(response.status).toBe(400)
   })
 
@@ -222,7 +222,10 @@ describe("GET /configs/:id", () => {
   // the route serves arbitrary stored bytes on a response its OpenAPI contract
   // declares to be a seed payload.
   it("500s rather than serving a stored payload that no longer validates", async () => {
-    await env.CONFIGS.put("corrupt1", JSON.stringify({ v: 5, skills: "no" }))
+    await env.CONFIGS.put(
+      "corrupt1",
+      JSON.stringify({ v: SEED_VERSION, skills: "no" })
+    )
 
     const response = await SELF.fetch(`${BASE}/configs/corrupt1`)
 

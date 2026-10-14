@@ -1,4 +1,5 @@
 import { SELF, env } from "cloudflare:test"
+import { SEED_VERSION } from "@workspace/matrix/seed"
 import { describe, expect, it } from "vitest"
 
 import { seedSession } from "./db/seed-session"
@@ -137,7 +138,7 @@ describe("the write rate limit on POST /configs", () => {
       // is parsed, so a refusal costs nothing to produce and a flood of
       // rubbish is turned away as cheaply as a flood of valid shares. What
       // matters below is only that the status changes from "not 429" to 429.
-      body: JSON.stringify({ v: 5 }),
+      body: JSON.stringify({ v: SEED_VERSION }),
     })
 
   it(`lets ${LIMIT} writes through from one address and refuses the next`, async () => {
