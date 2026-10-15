@@ -693,9 +693,9 @@ function declaredPackageName(raw: string): string | null {
  * ships no stacks of its own.
  *
  * Two spellings of one marketplace, and BOTH stack lookups must read this rather
- * than either half. `resolveOfferedStacks` decides the list the wizard offers and
- * `loadStackById` resolves the id the user then picked; a rule they answer
- * differently offers a stack and refuses to install it.
+ * than either half. `resolveOfferedStacks` decides the list offered and
+ * `loadStackById` resolves an id from it; a rule they answer differently offers
+ * a stack and refuses to install it.
  *
  * The built-in stacks ARE the public catalogue's stacks — that repository ships
  * no `config/stacks.ts` at all — so a checkout of it read off a path has to reach

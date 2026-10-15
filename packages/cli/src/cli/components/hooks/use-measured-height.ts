@@ -25,8 +25,7 @@ export function useMeasuredHeight(): {
     }
   };
 
-  // Re-measure after every render so late-mounted refs (e.g., Sources
-  // step switching from "choice" to "customize" view) get picked up.
+  // Re-measure after every render so late-mounted refs get picked up.
   // The state setter avoids unnecessary updates when height is unchanged.
   useEffect(() => {
     measure();

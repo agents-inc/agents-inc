@@ -100,7 +100,7 @@ export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
   /** Agents source path or URL (when agents come from a different source than skills) */
   agentsSource?: string
 
-  /** Selected domains from the wizard */
+  /** Selected domains */
   selectedDomains?: Domain[]
 
   /** Branding overrides for white-labeling the CLI */

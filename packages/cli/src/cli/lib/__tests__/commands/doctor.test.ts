@@ -10,7 +10,7 @@ import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { saUnflagged } from "../factories/skill-factories.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { CUSTOM_HOUSE_TOOLING_SKILL } from "../mock-data/mock-skills.js";
 import {
   CLAUDE_DIR,

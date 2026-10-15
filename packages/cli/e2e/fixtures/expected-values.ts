@@ -2,23 +2,6 @@ import { E2E_AGENT_TITLES, E2E_SKILL_TITLES, e2eSkillId } from "../helpers/creat
 import type { AgentName, ModelName, SkillSlug } from "../../src/cli/types/index.js";
 
 /**
- * Agent display titles as the wizard renders them in the agents step — the
- * strings `toggleAgent` / `navigateCursorToAgent` match against. Re-exported
- * under the name specs use; create-e2e-source.ts owns the values because it
- * writes them into each agent's metadata yaml.
- */
-export { E2E_AGENT_TITLES as E2E_AGENT_DISPLAY } from "../helpers/create-e2e-source.js";
-
-/**
- * Stack display name as the wizard renders it — in the stack list, in the
- * confirm step's "Ready to install <stack>" dropdown, and in the summary
- * panel's Stack row. Re-exported under the name specs use;
- * create-e2e-source.ts owns the value because it writes it into the source's
- * `config/stacks.ts`.
- */
-export { E2E_STACK_NAME as E2E_STACK_DISPLAY } from "../helpers/create-e2e-source.js";
-
-/**
  * Stack id and description as the source declares them. `E2E_STACK_ID` is what a shared
  * configuration's `stackId` must name; `E2E_STACK_DESCRIPTION` is what the installed config.ts
  * records for that stack, since the config has no `stackId` field of its own.
@@ -41,36 +24,11 @@ export { E2E_STACK_AGENTS } from "../helpers/create-e2e-source.js";
 export { E2E_STACK_SKILL_IDS } from "../helpers/create-e2e-source.js";
 
 /**
- * The sub-agent name the `withUndeclaredStackAgent` source writes into its stack, and which the
- * CLI does not declare. The expected value for "a stack may only name sub-agents that exist" —
- * derived from the fixture that puts it on disk, so the spec and the source cannot disagree
- * about which name is the unknown one.
- */
-export { UNDECLARED_STACK_AGENT } from "../helpers/create-e2e-source.js";
-
-/**
- * The sub-agents the wizard preselects for a Web-only build — the whole roster a
- * scratch init installs when Web is the one domain selected, sorted the way the
- * installed roster is.
- *
- * Spelled out rather than read off the store's own `DOMAIN_AGENTS` map: an
- * expectation derived from the mapping under test agrees with it however it
- * changes.
- */
-export const WEB_DOMAIN_AGENTS = [
-  "pm",
-  "reviewer",
-  "web-developer",
-  "web-researcher",
-  "web-tester",
-] as const satisfies readonly AgentName[];
-
-/**
- * A built-in stack's name as the wizard paints it — `nextjs-fullstack`, the
- * first entry of the CLI's own `defaultStacks`.
+ * A built-in stack's display name — `nextjs-fullstack`, the first entry of the
+ * CLI's own `defaultStacks`.
  *
  * The built-in catalogue stands in for the DEFAULT public marketplace and no
- * other, so this string on the stack step is that catalogue's signature: its
+ * other, so this string is that catalogue's signature: its
  * presence proves the default source still offers the built-ins, and its
  * absence against a custom source proves nothing was substituted. Spelled out
  * rather than imported from `src/cli/`, so a rename fails the assertion instead
@@ -100,7 +58,7 @@ export { e2eSkillId } from "../helpers/create-e2e-source.js";
  *
  * Specs address the same skill three ways depending on the step under test: by
  * id (config assertions), by slug (source paths, skill lookups) and by display
- * title (what the wizard renders, so what `selectSkill` matches). This map is
+ * title (what the CLI renders). This map is
  * the slug↔id join; `display` is read from create-e2e-source.ts rather than
  * re-typed, so a title change there cannot silently desync from assertions.
  *
@@ -108,7 +66,7 @@ export { e2eSkillId } from "../helpers/create-e2e-source.js";
  * publishes under its own marketplace, so its ids live in that marketplace's
  * namespace rather than in the public catalogue's union. Slugs and titles are NOT
  * namespaced — a slug names the skill inside its own source, and a title is what
- * the wizard paints.
+ * the CLI paints.
  */
 export const E2E_SKILL = {
   react: {

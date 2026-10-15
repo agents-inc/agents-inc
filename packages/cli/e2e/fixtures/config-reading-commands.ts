@@ -13,7 +13,6 @@ import {
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
 import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
 import {
   renderSchemaViolatingConfigTs,
   renderUnparseableConfigTs,
@@ -25,11 +24,11 @@ import {
  * configs a project reads.
  *
  * Two families, and the ruling treats them alike: the commands that WRITE (`compile`, `update`,
- * `eject`, `share`, and the two that take a terminal, `init` and `edit`) and the two that only
- * read (`search`, `list`). Over a config in play that exists and cannot be loaded, every one of
- * them refuses with the same message; with both configs readable, every one of them runs. `doctor`
- * and `uninstall` are the two that go on working over it, and each spec drives those itself,
- * because what they owe differs by which config is broken.
+ * `eject`, `share`, `init` and `edit`) and the two that only read (`search`, `list`). Over a
+ * config in play that exists and cannot be loaded, every one of them refuses with the same
+ * message; with both configs readable, every one of them runs. `doctor` and `uninstall` are the
+ * two that go on working over it, and each spec drives those itself, because what they owe
+ * differs by which config is broken.
  */
 
 /** A `config.ts` that is there and holds nothing — what `: > config.ts` leaves behind. */
@@ -71,7 +70,7 @@ export const CONFIG_READER_NAMES = [
   "share",
 ] as const;
 
-/** The two that take a terminal, which a refusal ends on its own and a readable config does not. */
+/** The two run in a terminal, where a refusal ends on its own. */
 export const TERMINAL_CONFIG_READERS = ["init", "edit"] as const;
 
 export type ConfigReaderName = (typeof CONFIG_READER_NAMES)[number];
@@ -96,7 +95,8 @@ export type RunsOverReadableConfigs = {
   runs: NamedRun[];
   templateEjected: boolean;
   dashboardScreen: string;
-  editBuild: string;
+  /** The bare `edit`, run without a terminal, and the ids it minted for the installation. */
+  edit: ConfigReaderRun & { minted: string[] };
 };
 
 /** The installation a spec built, as these runners need it. */
@@ -105,7 +105,7 @@ type Installation = { fakeHome: string; projectDir: string };
 /**
  * Copies the installation aside once, and hands back what puts it back exactly as it was.
  *
- * Each broken shape is driven over the installation as the wizard left it, rather than as the
+ * Each broken shape is driven over the installation as it was installed, rather than as the
  * shape before it left it: a command that wrongly went ahead over one shape — `eject templates`
  * writing its templates — would otherwise leave the next shape's run nothing to write, and its
  * byte-identity check nothing to catch. The copy sits beside the home directory, inside the temp
@@ -149,17 +149,21 @@ async function runConfigReaders(
 }
 
 /**
- * Runs a command that takes a terminal in a real one, and waits for it to end.
+ * Runs a command in a real terminal, and waits for it to end.
  *
  * Only for a run expected to END on its own, which is what a refusal does: one that opened its
- * dashboard or wizard instead stops here at {@link TIMEOUTS.EXIT_WAIT}. The output is the raw
- * stream, so an error box oclif wrapped at the terminal's width reads back whole once flattened.
+ * dashboard instead stops here at {@link TIMEOUTS.EXIT_WAIT}. The output is the raw stream, so an
+ * error box oclif wrapped at the terminal's width reads back whole once flattened. `store` answers
+ * a run that went ahead and published.
  */
 async function runToExitInTerminal(
   args: string[],
   { fakeHome, projectDir }: Installation,
+  store: SeedConfigStore,
 ): Promise<ConfigReaderRun> {
-  const prompt = new InteractivePrompt(args, projectDir, { env: { HOME: fakeHome } });
+  const prompt = new InteractivePrompt(args, projectDir, {
+    env: { HOME: fakeHome, AGENTS_INC_API_URL: store.url },
+  });
   try {
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
     return { exitCode, output: prompt.getRawOutput() };
@@ -184,8 +188,8 @@ export async function runEveryReaderOverABrokenConfig(
   const treeBefore = await readTreeSnapshot(fakeHome);
 
   const { runs, shareRequests } = await runConfigReaders(installation, store);
-  const init = await runToExitInTerminal(["init"], installation);
-  const edit = await runToExitInTerminal(["edit"], installation);
+  const init = await runToExitInTerminal(["init"], installation, store);
+  const edit = await runToExitInTerminal(["edit"], installation, store);
   const doctor = await CLI.run(["doctor"], { dir: projectDir }, { env: { HOME: fakeHome } });
 
   const treeAfter = await readTreeSnapshot(fakeHome);
@@ -194,8 +198,9 @@ export async function runEveryReaderOverABrokenConfig(
 
 /**
  * The same commands over an installation whose configs both load: the non-interactive ones run to
- * the end, `init` opens its dashboard and `edit` its wizard — each left by cancelling, so neither
- * writes — and whether `eject templates` put its templates down is read off the disk.
+ * the end, `init` opens its dashboard — left by cancelling, so it writes nothing — and `edit` mints
+ * an id for the installation without a terminal, so no browser opens. Whether `eject templates`
+ * put its templates down is read off the disk.
  */
 export async function runEveryReaderOverReadableConfigs(
   installation: Installation,
@@ -215,11 +220,21 @@ export async function runEveryReaderOverReadableConfigs(
     await dashboard.destroy();
   }
 
-  const edit = await EditWizard.launchInProject({ projectDir, globalHome: fakeHome });
-  const editBuild = edit.build.getOutput();
-  await edit.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
+  store.reset();
+  const edit = await CLI.run(
+    ["edit"],
+    { dir: projectDir, globalHome: fakeHome },
+    { env: { AGENTS_INC_API_URL: store.url } },
+  );
+  const minted = [...store.minted];
+  store.reset();
 
-  return { runs, templateEjected, dashboardScreen, editBuild };
+  return {
+    runs,
+    templateEjected,
+    dashboardScreen,
+    edit: { exitCode: edit.exitCode, output: edit.output, minted },
+  };
 }
 
 /** The run recorded for `name` — a missing one is the spec's own bug, so it throws. */

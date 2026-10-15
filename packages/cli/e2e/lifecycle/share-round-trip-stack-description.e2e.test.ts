@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
+import { installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
 import {
   runEditUi,
   runInitFrom,
@@ -32,8 +32,8 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
  * that reaches no compiled sub-agent, so both ends agreed on everything that spec reads while the
  * origin said "Minimal stack for E2E testing" and the rebuild said nothing at all.
  *
- * The id is minted by `edit --ui` rather than `share`, for the reason that spec gives: the wizard
- * end ejects its skills, `share` refuses ejected skills, and `edit --ui` mints the same payload
+ * The id is minted by `edit --ui` rather than `share`, for the reason that spec gives: the origin
+ * ejects its skills, `share` refuses ejected skills, and `edit --ui` mints the same payload
  * through the same function.
  */
 describe("a share round trip that starts from an applied stack", () => {
@@ -50,8 +50,7 @@ describe("a share round trip that starts from an applied stack", () => {
   });
 
   // Both ends are allocated per attempt rather than per file: the suite runs at `retry: 1` and
-  // both are directories the run INSTALLS into, so a second wizard launch carried across a retry
-  // would find the first attempt's installation and open the dashboard instead.
+  // both are directories the run INSTALLS into, so a retry would install over the first attempt.
   beforeEach(async () => {
     store.reset();
     origin = await createTempDir();
@@ -66,12 +65,9 @@ describe("a share round trip that starts from an applied stack", () => {
     "reinstalls a configuration that still describes itself as the stack did",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const install = await initGlobalWithEject(E2E_SOURCE, origin);
-      expect(install.exitCode, `the wizard install failed: ${install.output}`).toBe(
-        EXIT_CODES.SUCCESS,
-      );
+      await installE2EStackGlobally(store, origin);
 
-      // The control for everything below. If the wizard end ever stops writing the stack's
+      // The control for everything below. If the origin ever stops writing the stack's
       // description, the comparison at the bottom is satisfied by two configs that both say
       // nothing, and this spec passes without a subject.
       const before = await loadConfigOrFail(origin);

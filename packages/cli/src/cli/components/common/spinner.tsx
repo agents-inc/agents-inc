@@ -11,8 +11,7 @@ export const Spinner: React.FC<SpinnerProps> = ({ label }) => <InkSpinner label=
 
 /**
  * Awaits `load` behind a spinner and takes the spinner down whichever way the await ends, leaving
- * the terminal as it found it — what `init` and `edit` render next is a wizard sized to the
- * terminal's full height, so one line left above it pushes the wizard's top line off the screen.
+ * the terminal as it found it.
  *
  * The cleanup is a `finally` because a load that refuses the run throws from inside this await,
  * and oclif would otherwise paint its error under an Ink tree still repainting over it. Never a

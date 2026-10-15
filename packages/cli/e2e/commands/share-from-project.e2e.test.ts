@@ -30,9 +30,8 @@ import {
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * `share` and `edit --ui` run inside a project whose sub-agents are global — the shape the wizard
- * installs by default, and the one every `init --from` run from a project leaves (journeys 23, 29
- * and 30). Both send everything — the global sub-agents with their skills — and ask nothing.
+ * `share` and `edit --ui` run inside a project whose sub-agents are global — the shape every
+ * `init --from` run from a project leaves (journeys 23, 29 and 30). Both send everything — the global sub-agents with their skills — and ask nothing.
  *
  * The writer splits curation by scope: a global sub-agent's stack row is written to HOME's
  * `config.ts` and nowhere else, while the project's file inlines the global skill and sub-agent
@@ -148,9 +147,9 @@ describe.skipIf(!claudeAvailable)("sharing a project that inherits sub-agents fr
     "share carries the inherited sub-agents' curation, so its id rebuilds both scopes",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // One sub-agent pinned into the project and the other left global, as the wizard leaves
-      // them. React's row belongs to the project's web-developer and is written to the project's
-      // file; Hono's belongs to the global api-developer and is written to HOME's file alone.
+      // One sub-agent pinned into the project and the other left global. React's row belongs to
+      // the project's web-developer and is written to the project's file; Hono's belongs to the
+      // global api-developer and is written to HOME's file alone.
       const skills = {
         [E2E_SKILL.react.id]: buildSeedSkill({
           install: "plugin",

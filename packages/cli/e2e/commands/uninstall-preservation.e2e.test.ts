@@ -25,7 +25,7 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
  * Uninstall preservation E2E tests.

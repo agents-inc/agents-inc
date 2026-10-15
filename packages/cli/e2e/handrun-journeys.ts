@@ -2,9 +2,8 @@
  * The hand-run. Drives the real binary through journeys and prints a
  * transcript for a person to judge.
  *
- * Everything here is driven through the page objects and fixtures the E2E
- * suite already uses — `InitWizard` for the wizard, `seed-config-store` for
- * the `--from` seam. Nothing about waiting for screens or standing up a store
+ * Everything here is driven through the fixtures the E2E suite already uses —
+ * `seed-config-store` for the `--from` seam. Nothing about standing up a store
  * is reimplemented.
  *
  * Run from `packages/cli`:  node scripts/handrun.mjs
@@ -33,14 +32,13 @@ import {
   type SeedConfigStore,
 } from "./fixtures/seed-config-store.js";
 import { createE2ESource, buildSharedE2ESourceInto } from "./helpers/create-e2e-source.js";
-import { CLI } from "./fixtures/cli.js";
+import { CLI, type CLIResult } from "./fixtures/cli.js";
 import {
   readAgentEntries,
   readAllSkillEntries,
   readConfigSkillIds,
-  setupDualScopeWithEject,
-  runEditWithFirstSkillAction,
 } from "./fixtures/dual-scope-helpers.js";
+import { DUAL_SCOPE, e2eStackPayload } from "./fixtures/e2e-stack-seed.js";
 import {
   createE2EPluginSource,
   buildPluginSourceInto,
@@ -50,9 +48,6 @@ import {
   removeSharedSource,
 } from "../src/cli/lib/__tests__/helpers/shared-source.js";
 import { claudePluginMarketplaceAdd } from "../src/cli/lib/hosts/claude-host.js";
-import { InitWizard } from "./pages/wizards/init-wizard.js";
-import { EditWizard } from "./pages/wizards/edit-wizard.js";
-import { initGlobalWithEject } from "./fixtures/dual-scope-helpers.js";
 import {
   CLAUDE_SOURCE_REL,
   CODEX_SOURCE_REL,
@@ -71,12 +66,10 @@ import {
   acceptClaudeTrustPrompt,
   agentsPath,
   codexHome,
-  completeWithLocalSources,
   configTsPath,
   configTypesTsPath,
   createLocalSkill,
   listFiles,
-  MONOREPO_ROOT,
   readCompiledAgents,
   readMarketplaceJson,
   readTreeSnapshot,
@@ -91,12 +84,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../src/cli/lib/__tests__/factories/seed-factories.js";
-import {
-  BUILT_IN_STACK_DISPLAY,
-  E2E_SKILL,
-  E2E_SKILL_IDS,
-  E2E_STACK_DISPLAY,
-} from "./fixtures/expected-values.js";
+import { E2E_SKILL, E2E_SKILL_IDS } from "./fixtures/expected-values.js";
 import {
   DIRS,
   E2E_MARKETPLACE_NAME,
@@ -105,11 +93,9 @@ import {
   FILES,
   SOURCE_PATHS,
   STEP_TEXT,
-  TERMINAL_SIZE,
-  WIZARD_TAB_LABELS_WITHOUT_STACK,
-  WIZARD_TAB_STACK,
 } from "./pages/constants.js";
-import type { ProjectHandle } from "./pages/wizard-result.js";
+import type { ProjectHandle } from "./fixtures/project-handle.js";
+import type { SeedPayload } from "@workspace/matrix/seed";
 
 function listDir(dir: string): string {
   if (!existsSync(dir)) return "(absent)";
@@ -131,10 +117,8 @@ function mintedId(output: string): string | undefined {
  * A collection of config entries as one comparable string: every field of every
  * entry, serialised, then sorted so array order is not part of the claim.
  *
- * Order is deliberately excluded because the two sides of a round trip are
- * written by different producers — a wizard at one end, `init --from` at the
- * other — and the configuration is a set of entries rather than a sequence.
- * Everything else about an entry stays in.
+ * Order is deliberately excluded because the configuration is a set of entries
+ * rather than a sequence. Everything else about an entry stays in.
  */
 function canonicalEntries(values: readonly unknown[]): string {
   return values
@@ -164,15 +148,41 @@ const CATALOGUE_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}catalogue`;
 const CATALOGUE_SKILL_ID = `${CATALOGUE_MARKETPLACE_NAME}-example-skill`;
 const CATALOGUE_STACK_ID = `${CATALOGUE_MARKETPLACE_NAME}-starter`;
 
-/** Journey 1 — a global install from nothing, through the wizard. */
-async function journeyGlobalInstall(): Promise<{ project: ProjectHandle; sourceDir: string }> {
-  section("Journey 1 — global install from nothing, through the wizard");
+/** Publishes `payload` under `id` and installs it with `init --from` at `at`. */
+function installSeed(
+  store: SeedConfigStore,
+  id: string,
+  payload: SeedPayload,
+  at: ProjectHandle,
+  sourceDir: string,
+): Promise<CLIResult> {
+  store.publish(id, payload);
+  return runInitFrom(store, id, at, sourceDir);
+}
+
+/** The E2E stack installed at `home` from nothing, every skill ejected. */
+function installStackGlobally(
+  store: SeedConfigStore,
+  home: string,
+  sourceDir: string,
+): Promise<CLIResult> {
+  return installSeed(
+    store,
+    "HandStack",
+    e2eStackPayload(),
+    { dir: home, globalHome: home },
+    sourceDir,
+  );
+}
+
+/** Journey 1 — a global install from nothing. */
+async function journeyGlobalInstall(
+  store: SeedConfigStore,
+): Promise<{ project: ProjectHandle; sourceDir: string }> {
+  section("Journey 1 — global install from nothing");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j1-home-"));
-  // Eject mode, because plugin mode needs a registered marketplace and the
-  // fixture source is not one — the CLI refuses, correctly, and that refusal is
-  // its own journey rather than this one.
-  const run = await initGlobalWithEject(source, home);
+  const run = await installStackGlobally(store, home, source.sourceDir);
   note(`exit ${run.exitCode}`);
 
   note("global config", skillIdsIn(configTsPath(home)));
@@ -183,17 +193,22 @@ async function journeyGlobalInstall(): Promise<{ project: ProjectHandle; sourceD
   return { project: { dir: home, globalHome: home }, sourceDir: source.sourceDir };
 }
 
-/** Journeys 23 / 30 — share, install that id elsewhere, then re-mint from there. */
+/**
+ * Journeys 23 / 30 — mint an id, install it elsewhere, then re-mint from there.
+ *
+ * Minted by `edit --ui` rather than `share`: the install is ejected, and `share` refuses an
+ * ejected skill by design (`commands/share-refuses-ejected`).
+ */
 async function journeyRoundTrip(
   project: ProjectHandle,
   store: SeedConfigStore,
   sourceDir: string,
 ): Promise<string | undefined> {
-  section("Journeys 23 / 30 — share, install the minted id, re-mint from the install");
+  section("Journeys 23 / 30 — mint an id, install it, re-mint from the install");
 
-  const shared = await runShare(store, project);
+  const shared = await runEditUi(store, project);
   const id = mintedId(shared.output);
-  note(`share exit ${shared.exitCode}`, id ?? "(no id minted)");
+  note(`edit --ui exit ${shared.exitCode}`, id ?? "(no id minted)");
   if (id === undefined) return undefined;
 
   const fresh = mkdtempSync(path.join(tmpdir(), "handrun-j30-"));
@@ -223,10 +238,17 @@ async function journeyRoundTrip(
 }
 
 /** Journey 31 — the destructive apply refuses when nothing can answer the confirm. */
-async function journeyNonTtyRefusal(store: SeedConfigStore, id: string): Promise<void> {
+async function journeyNonTtyRefusal(
+  store: SeedConfigStore,
+  id: string,
+  sourceDir: string,
+): Promise<void> {
   section("Journey 31 — edit --from refuses with no terminal to confirm at");
   const dir = mkdtempSync(path.join(tmpdir(), "handrun-j31-"));
   try {
+    // Over an installation: where nothing is installed, that refusal comes first.
+    const installed = await runInitFrom(store, id, { dir }, sourceDir);
+    note(`init --from exit ${installed.exitCode}`);
     const result = await runEditFrom(store, id, { dir });
     note(`exit ${result.exitCode}`);
     const line = result.output.split("\n").find((l) => l.includes("terminal"));
@@ -243,7 +265,7 @@ async function journeyNonTtyRefusal(store: SeedConfigStore, id: string): Promise
 }
 
 /** Journeys 5 / 17 — plugin mode, against a marketplace the real `claude` knows. */
-async function journeyPluginModeReal(): Promise<void> {
+async function journeyPluginModeReal(store: SeedConfigStore): Promise<void> {
   section("Journeys 5 / 17 — plugin mode against a registered marketplace");
   const source = await createE2EPluginSource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-plugin-"));
@@ -252,14 +274,15 @@ async function journeyPluginModeReal(): Promise<void> {
   await claudePluginMarketplaceAdd(source.sourceDir, { configDir });
   note("registered with the real claude binary", source.marketplaceName);
 
-  const wizard = await InitWizard.launch({
-    source,
-    projectDir: home,
-    env: { HOME: home, CLAUDE_CONFIG_DIR: configDir },
-  });
-  const result = await wizard.completeWithDefaults();
+  const result = await installSeed(
+    store,
+    "HandPlugin",
+    e2eStackPayload({ install: "plugin" }),
+    { dir: home, globalHome: home },
+    source.sourceDir,
+  );
   const said = result.output.split("\n").filter((line) => /Plugin|plugin|Installed/.test(line));
-  note(`exit ${await result.exitCode}`);
+  note(`exit ${result.exitCode}`);
   note("what it said", said.slice(0, 3).join(" | ") || "(nothing about plugins)");
   note("plugin registry", listDir(path.join(configDir, "plugins")));
   const pluginSurfaces = await checkFourSurfaces("plugin-install", home);
@@ -353,6 +376,92 @@ async function journeyCommandsOverInstall(home: string): Promise<void> {
   note(`search exit ${search.exitCode}`, firstLine(search.output, /react/i));
 }
 
+/** The line a dashboard prints in place of its menu where there is no terminal. */
+const DASHBOARD_TEXT_LINE = "  [Edit in the web editor]  [Compile]  [Doctor]  [List]";
+
+/**
+ * Journeys 44 / 44a / 23 — a bare `init` and a bare `edit`, run with no terminal.
+ *
+ * On a store of its own, because later sections read the first configuration the shared store
+ * was posted, and the bare `edit` here posts one.
+ */
+async function journeyFrontDoors(sourceDir: string): Promise<void> {
+  section("Journeys 44 / 44a / 23 — a bare init and a bare edit, with no terminal");
+  const store = await startSeedConfigStore();
+  const root = mkdtempSync(path.join(tmpdir(), "handrun-j44-"));
+  const home = path.join(root, "home");
+  const project = path.join(root, "project");
+  mkdirSync(home);
+  mkdirSync(project);
+  const at: ProjectHandle = { dir: project, globalHome: home };
+  const unchanged = async (before: Record<string, TreeSnapshotEntry>): Promise<boolean> =>
+    JSON.stringify(await readTreeSnapshot(root)) === JSON.stringify(before);
+  try {
+    const empty = await readTreeSnapshot(root);
+    const bare = await CLI.run(["init"], at);
+    note(`init exit ${bare.exitCode}`, firstLine(bare.stdout, /Build it at/));
+    verdict(
+      "journey 44 — a bare init where nothing is installed opens the editor and writes nothing",
+      bare.exitCode === EXIT_CODES.SUCCESS &&
+        bare.stdout.includes(`Build it at ${STEP_TEXT.EDITOR_URL}`) &&
+        (await unchanged(empty)),
+    );
+
+    const local = await CLI.run(["init", "--marketplace", sourceDir], at);
+    const remote = await CLI.run(["init", "--marketplace", "github:acme/skills"], at);
+    note(
+      `init --marketplace <folder> exit ${local.exitCode}`,
+      firstLine(local.stdout, /Marketplace/),
+    );
+    note(
+      `init --marketplace github:… exit ${remote.exitCode}`,
+      firstLine(remote.stdout, /Marketplace/),
+    );
+    verdict(
+      "journey 44 — --marketplace without --from opens the editor, saying a folder is pushed first and a remote ref is added as it is",
+      local.exitCode === EXIT_CODES.SUCCESS &&
+        remote.exitCode === EXIT_CODES.SUCCESS &&
+        local.stdout.includes("push it to GitHub") &&
+        remote.stdout.includes("Add github:acme/skills from the editor's Marketplace button.") &&
+        (await unchanged(empty)),
+    );
+
+    const installed = await installSeed(
+      store,
+      "HandDoors",
+      e2eStackPayload({ scope: "project" }),
+      at,
+      sourceDir,
+    );
+    note(`init --from exit ${installed.exitCode}`);
+    const over = await readTreeSnapshot(root);
+
+    const dashboard = await CLI.run(["init"], at);
+    note(`init over the installation exit ${dashboard.exitCode}`);
+    verdict(
+      "journey 44a — over an installation a bare init prints its dashboard's four commands and changes nothing",
+      dashboard.exitCode === EXIT_CODES.SUCCESS &&
+        dashboard.stdout.includes(DASHBOARD_TEXT_LINE) &&
+        (await unchanged(over)),
+    );
+
+    const edit = await CLI.run(["edit"], at, { env: { AGENTS_INC_API_URL: store.url } });
+    const id = mintedId(edit.output);
+    note(`edit exit ${edit.exitCode}`, id ?? "(no id minted)");
+    verdict(
+      "journey 23 — a bare edit mints an id for this installation, names the editor, and changes nothing",
+      edit.exitCode === EXIT_CODES.SUCCESS &&
+        id !== undefined &&
+        store.minted.includes(id) &&
+        edit.output.includes(STEP_TEXT.EDITOR_URL) &&
+        (await unchanged(over)),
+    );
+  } finally {
+    await store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 /** Journeys 13 / 13b — a shared configuration carrying global-scoped content. */
 async function journeyGlobalScopedPayload(
   store: SeedConfigStore,
@@ -382,11 +491,11 @@ async function journeyGlobalScopedPayload(
 }
 
 /** Journey 19 — uninstall from a real install, and what it declines to remove. */
-async function journeyUninstall(): Promise<void> {
+async function journeyUninstall(store: SeedConfigStore): Promise<void> {
   section("Journey 19 — uninstall from scratch");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j19-"));
-  await initGlobalWithEject(source, home);
+  await installStackGlobally(store, home, source.sourceDir);
   const before = listDir(path.join(home, ".claude", "skills"));
 
   const result = await CLI.run(["uninstall", "--yes"], { dir: home, globalHome: home });
@@ -406,11 +515,11 @@ async function journeyUninstall(): Promise<void> {
 }
 
 /** Journey 14 — the config is deleted under a live install. */
-async function journeyDeletedConfig(): Promise<void> {
+async function journeyDeletedConfig(store: SeedConfigStore): Promise<void> {
   section("Journey 14 — the config deleted under a live install");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j14-"));
-  await initGlobalWithEject(source, home);
+  await installStackGlobally(store, home, source.sourceDir);
   rmSync(configTsPath(home), { force: true });
 
   const at: ProjectHandle = { dir: home, globalHome: home };
@@ -472,11 +581,11 @@ async function journeyNamespaceGuards(): Promise<void> {
 }
 
 /** Journeys 2 / 12 — a stack installs exactly its own roster, and the pair type-checks. */
-async function journeyStackRoster(): Promise<void> {
+async function journeyStackRoster(store: SeedConfigStore): Promise<void> {
   section("Journeys 2 / 12 — a stack installs exactly its roster");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j2-"));
-  await initGlobalWithEject(source, home);
+  await installStackGlobally(store, home, source.sourceDir);
   const ids = await readConfigSkillIds(home);
   note("skills the stack installed", ids.join(", "));
   note("agents compiled", listDir(path.join(home, ".claude", "agents")));
@@ -491,14 +600,14 @@ async function journeyStackRoster(): Promise<void> {
 }
 
 /** Journeys 3 / 6 — a project over an existing global install, and a second project. */
-async function journeyProjectOverGlobal(): Promise<void> {
+async function journeyProjectOverGlobal(store: SeedConfigStore): Promise<void> {
   section("Journeys 3 / 6 — a project over a global install, then a second project");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j3-home-"));
   const projA = mkdtempSync(path.join(tmpdir(), "handrun-j3-a-"));
   const projB = mkdtempSync(path.join(tmpdir(), "handrun-j3-b-"));
 
-  await initGlobalWithEject(source, home);
+  await installStackGlobally(store, home, source.sourceDir);
   const globalIds = await readConfigSkillIds(home);
   note("global install", `${globalIds.length} skills`);
 
@@ -531,7 +640,7 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   section("Journey 34 — a hand-authored skill is not the round trip's to carry or remove");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j34-"));
-  await initGlobalWithEject(source, home);
+  await installStackGlobally(store, home, source.sourceDir);
 
   const mine = path.join(home, ".claude", "skills", "my-own-skill");
   mkdirSync(mine, { recursive: true });
@@ -542,18 +651,16 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   );
 
   const postsBefore = store.requests.filter((request) => request.method === "POST").length;
-  const shared = await CLI.run(
-    ["share"],
-    { dir: home, globalHome: home },
-    { env: { AGENTS_INC_API_URL: store.url } },
-  );
-  // The PAYLOAD the store received, not the transcript: `share` prints a count and an
+  // `edit --ui`, not `share`: the install is ejected, which `share` refuses by design, and both
+  // build the payload through `seedPayloadForInstallation`.
+  const shared = await runEditUi(store, { dir: home, globalHome: home });
+  // The PAYLOAD the store received, not the transcript: the mint prints a count and an
   // id and never names a skill, so a grep of its output for one is false whatever the
   // payload carried. `posted` is also the proof that a payload exists at all — with no
   // POST, "it does not mention the skill" is true of nothing.
   const posted = store.requests.filter((request) => request.method === "POST").slice(postsBefore);
   const carried = posted.some((request) => request.body.includes(path.basename(mine)));
-  note(`share exit ${shared.exitCode}`, `${posted.length} configuration(s) posted`);
+  note(`edit --ui exit ${shared.exitCode}`, `${posted.length} configuration(s) posted`);
   note("does the payload mention it?", carried ? "YES — it should not" : "no, correctly");
   note("still on disk", existsSync(mine) ? "yes" : "GONE");
   verdict(
@@ -563,80 +670,20 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   rmSync(home, { recursive: true, force: true });
 }
 
-/**
- * The public-catalogue checkout journey 28a reads.
- *
- * `SKILLS_SOURCE` first, then the sibling of the monorepo root — the same pair
- * `interactive/real-marketplace` and `interactive/edit-wizard-pending-removal-row` resolve, and
- * for the same reason: the skills repository is a separate checkout beside this one rather than
- * a workspace in it. This was one author's absolute path once, which meant the journey
- * skipped on every machine but that one while reporting the skip as an absent catalogue.
- */
-const CATALOGUE_CHECKOUT = process.env.SKILLS_SOURCE ?? path.resolve(MONOREPO_ROOT, "../skills");
-
-/** Journey 28a — a checkout of the public catalogue, read off a path, offers the built-in stacks. */
-async function journeyCatalogueCheckout(): Promise<void> {
-  section("Journey 28a — a public-catalogue checkout reaches the built-in stacks");
-  // The skills DIRECTORY, not the checkout root: a stale or half-cloned checkout is a directory
-  // that exists and carries no catalogue, and this journey would then fail as a wizard defect.
-  if (!existsSync(path.join(CATALOGUE_CHECKOUT, SOURCE_PATHS.SKILLS_DIR))) {
-    note("SKIPPED — no catalogue checkout on this machine", CATALOGUE_CHECKOUT);
-    return;
-  }
-  const home = mkdtempSync(path.join(tmpdir(), "handrun-j28a-"));
-  const wizard = await InitWizard.launch({
-    source: { sourceDir: CATALOGUE_CHECKOUT, tempDir: CATALOGUE_CHECKOUT },
-    projectDir: home,
-    env: { HOME: home, CLAUDE_CONFIG_DIR: path.join(home, ".claude") },
-  });
-  try {
-    await wizard.stack.waitForReady();
-    const screen = wizard.getScreen();
-    const offered = screen.split("\n").filter((l) => /^\s*[❯ ]\s*\S/.test(l)).length;
-    note("stack screen offers", `${offered} lines of options`);
-    note("a built-in name visible?", /stack|Stack|scratch/.test(screen) ? "yes" : "no");
-    verdict("a catalogue checkout reaches the stack step", /Choose a stack/.test(screen));
-  } finally {
-    await wizard.destroy();
-    rmSync(home, { recursive: true, force: true });
-  }
-}
-
-/** Journeys 4 / 15 / 16 — scope toggles for a skill and a sub-agent, both directions. */
-async function journeyScopeToggles(): Promise<void> {
-  section("Journeys 4 / 15 / 16 — scope toggles, both directions");
-  const source = await createE2ESource();
-  const home = mkdtempSync(path.join(tmpdir(), "handrun-j4-home-"));
-  const proj = mkdtempSync(path.join(tmpdir(), "handrun-j4-proj-"));
-  await setupDualScopeWithEject(source, home, proj);
-
-  const before = await readConfigSkillIds(proj);
-  note("project skills before", before.slice(0, 3).join(", "));
-  note("global skills", (await readConfigSkillIds(home)).slice(0, 3).join(", "));
-
-  await runEditWithFirstSkillAction(proj, home, source, "scope");
-  const after = await readConfigSkillIds(proj);
-  note("project skills after a scope toggle", after.slice(0, 3).join(", "));
-  const gs = await checkFourSurfaces("global", home);
-  const ps = await checkFourSurfaces("project", proj, { globalHome: home });
-  const moved = before.join(",") !== after.join(",");
-  note("did the project's roster change?", moved ? "yes" : "no");
-  // `moved` is the subject guard: four-surface health at both scopes is satisfied by a
-  // toggle that did nothing at all, which is the one outcome this journey denies.
-  verdict(
-    "journeys 4 / 15 / 16 — the scope toggle moved the project's roster and both scopes hold on all four surfaces",
-    moved && gs.held && ps.held,
-  );
-  for (const d of [home, proj]) rmSync(d, { recursive: true, force: true });
-}
-
 /** Journeys 7 / 8 — a global edit propagates; a project edit stays contained. */
-async function journeyPropagation(): Promise<void> {
+async function journeyPropagation(store: SeedConfigStore): Promise<void> {
   section("Journeys 7 / 8 — propagation, and containment");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j7-home-"));
   const proj = mkdtempSync(path.join(tmpdir(), "handrun-j7-proj-"));
-  await setupDualScopeWithEject(source, home, proj);
+  await installStackGlobally(store, home, source.sourceDir);
+  await installSeed(
+    store,
+    "HandDual",
+    e2eStackPayload(DUAL_SCOPE),
+    { dir: proj, globalHome: home },
+    source.sourceDir,
+  );
 
   const globalTypes = readFileSync(configTypesTsPath(home), "utf8");
   const compile = await CLI.run(["compile"], { dir: proj, globalHome: home });
@@ -702,35 +749,12 @@ async function journeyExternalSkills(store: SeedConfigStore, sourceDir: string):
   }
 }
 
-/** Journey 9 — a stack's picks are editable: deselect one of them. */
-async function journeyStackPicksEditable(): Promise<void> {
-  section("Journey 9 — a stack's picks are editable");
-  const source = await createE2ESource();
-  const home = mkdtempSync(path.join(tmpdir(), "handrun-j9-home-"));
-  // Edited at the home root, where the session owns every scope. From a PROJECT
-  // a globally-installed skill cannot be deselected at all — that invariant is
-  // journey 4's subject, and it would make this journey read as broken.
-  await initGlobalWithEject(source, home);
-
-  const before = await readConfigSkillIds(home);
-  await runEditWithFirstSkillAction(home, home, source, "space");
-  const after = await readConfigSkillIds(home);
-  note("skills before", `${before.length}`);
-  note("skills after deselecting one", `${after.length}`);
-  const edited = await checkFourSurfaces("after-deselect", home);
-  verdict(
-    "journey 9 — a pick comes out and all four surfaces still hold",
-    after.length === before.length - 1 && edited.held,
-  );
-  rmSync(home, { recursive: true, force: true });
-}
-
 /** Journey 18 — the custom-marketplace arc: the source is stored and later commands resolve it. */
-async function journeyCustomMarketplaceArc(): Promise<void> {
+async function journeyCustomMarketplaceArc(store: SeedConfigStore): Promise<void> {
   section("Journey 18 — a custom marketplace is stored and later commands resolve it");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j18-"));
-  await initGlobalWithEject(source, home);
+  await installStackGlobally(store, home, source.sourceDir);
 
   const config = readFileSync(configTsPath(home), "utf8");
   const storesIt = config.includes(source.sourceDir);
@@ -757,7 +781,7 @@ async function journeyCustomMarketplaceArc(): Promise<void> {
  * must CHANGE between the two cwds, so the verdict names both directions rather
  * than only the one it happens to be standing in.
  */
-async function journeyMarketplaceAuthorArc(): Promise<void> {
+async function journeyMarketplaceAuthorArc(store: SeedConfigStore): Promise<void> {
   section("Journey 21 — the marketplace-author arc: doctor, build, publish, install");
   const source = await createE2ESource();
   const repo: ProjectHandle = { dir: source.sourceDir };
@@ -797,7 +821,7 @@ async function journeyMarketplaceAuthorArc(): Promise<void> {
 
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j21-"));
   try {
-    const install = await initGlobalWithEject(source, home);
+    const install = await installStackGlobally(store, home, source.sourceDir);
     note(`init from the built repository exit ${install.exitCode}`);
     note("skills it installed", listDir(skillsPath(home)));
     const installed = await checkFourSurfaces("author-arc-install", home);
@@ -829,109 +853,6 @@ async function journeyMarketplaceAuthorArc(): Promise<void> {
 }
 
 /**
- * Journey 28 — a marketplace's stacks are its own. One that ships stacks makes
- * the wizard offer exactly those; one that ships none leaves the wizard no stack
- * step and no Stack tab. Both arms install, so both have four surfaces to read.
- *
- * Journey 28a — a checkout of the public catalogue read off a path — is the
- * separate leg above and is not repeated here.
- */
-async function journeyMarketplaceStacks(): Promise<void> {
-  section("Journey 28 — the wizard offers the marketplace's own stacks, or no stack step at all");
-
-  const stacked = await createE2ESource();
-  const stackedHome = mkdtempSync(path.join(tmpdir(), "handrun-j28-stacked-"));
-  const stackedWizard = await InitWizard.launch({
-    source: stacked,
-    projectDir: stackedHome,
-    env: { HOME: stackedHome },
-  });
-  try {
-    const offered = stackedWizard.stack.getOutput();
-    note(
-      "the stack screen offers",
-      offered.includes(E2E_STACK_DISPLAY) ? E2E_STACK_DISPLAY : "(not the source's own stack)",
-    );
-    note(
-      "does it also offer a built-in?",
-      offered.includes(BUILT_IN_STACK_DISPLAY) ? "YES — it should not" : "no, correctly",
-    );
-    verdict(
-      "journey 28 — a marketplace shipping stacks offers its own, plus the scratch row, and none of the built-ins",
-      offered.includes(E2E_STACK_DISPLAY) &&
-        offered.includes(STEP_TEXT.START_FROM_SCRATCH) &&
-        !offered.includes(BUILT_IN_STACK_DISPLAY),
-    );
-
-    const result = await completeWithLocalSources(stackedWizard);
-    note(`init exit ${await result.exitCode}`);
-    note("skills it installed", listDir(skillsPath(stackedHome)));
-    const surfaces = await checkFourSurfaces("stacked-source", stackedHome);
-    verdict(
-      "journey 28 — the stacked source's install lands a roster and holds on all four surfaces",
-      surfaces.held && surfaces.skillIds.length > 0,
-    );
-    await result.destroy();
-  } finally {
-    await stackedWizard.destroy();
-    rmSync(stackedHome, { recursive: true, force: true });
-  }
-
-  const stackless = await createE2ESource({ withoutStacks: true });
-  const stacklessHome = mkdtempSync(path.join(tmpdir(), "handrun-j28-stackless-"));
-  const launched = await InitWizard.launchOnDomainsInProject({
-    source: stackless,
-    projectDir: stacklessHome,
-    globalHome: stacklessHome,
-  });
-  try {
-    // Read before the walk starts. Raw PTY output is append-only, so a stack step
-    // that painted for one frame is still in it — but the confirm step's summary
-    // panel prints a Stack row of its own, so an absence claimed after the walk
-    // would be an absence of nothing.
-    const raw = launched.wizard.getRawOutput();
-    const otherTabs = WIZARD_TAB_LABELS_WITHOUT_STACK.filter((label) => raw.includes(label));
-    note(
-      "tabs painted",
-      `${otherTabs.length} of ${WIZARD_TAB_LABELS_WITHOUT_STACK.length} non-stack tabs`,
-    );
-    note("a Stack tab?", raw.includes(WIZARD_TAB_STACK) ? "YES — it should not be there" : "no");
-    verdict(
-      `journey 28 — a marketplace shipping no stacks paints all ${WIZARD_TAB_LABELS_WITHOUT_STACK.length} other tabs, no Stack tab and no stack step`,
-      raw.includes(STEP_TEXT.DOMAINS) &&
-        otherTabs.length === WIZARD_TAB_LABELS_WITHOUT_STACK.length &&
-        !raw.includes(WIZARD_TAB_STACK) &&
-        !raw.includes(STEP_TEXT.STACK) &&
-        !raw.includes(STEP_TEXT.START_FROM_SCRATCH) &&
-        !raw.includes(BUILT_IN_STACK_DISPLAY),
-    );
-
-    // A stackless source preselects nothing — there is no stack to preselect FROM
-    // — so the grid opens empty and the pick has to be made, or the install below
-    // installs zero skills and every surface is satisfied by nothing happening.
-    const build = await launched.domain.acceptDefaults();
-    await build.selectSkill(E2E_SKILL.react.display);
-    const sources = await build.passThroughAllDomains();
-    await sources.waitForReady();
-    await sources.setAllLocal();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("init");
-    const result = await confirm.confirm();
-    note(`stackless init exit ${await result.exitCode}`);
-    note("skills it installed", listDir(skillsPath(stacklessHome)));
-    const surfaces = await checkFourSurfaces("stackless-source", stacklessHome);
-    verdict(
-      "journey 28 — the stackless source installs the skill that was picked and holds on all four surfaces",
-      surfaces.held && surfaces.skillIds.includes(E2E_SKILL.react.id),
-    );
-    await result.destroy();
-  } finally {
-    await launched.wizard.destroy();
-    rmSync(stacklessHome, { recursive: true, force: true });
-  }
-}
-
-/**
  * Journey 29 — the share round trip. A real installation becomes an id, and that
  * id installs into a second directory that has never seen any of it.
  *
@@ -947,14 +868,23 @@ async function journeyShareRoundTrip(store: SeedConfigStore): Promise<void> {
   const origin = mkdtempSync(path.join(tmpdir(), "handrun-j29-origin-"));
   const rebuilt = mkdtempSync(path.join(tmpdir(), "handrun-j29-rebuilt-"));
   try {
-    const install = await initGlobalWithEject(source, origin);
+    const install = await installStackGlobally(store, origin, source.sourceDir);
     note(`the origin install exit ${install.exitCode}`);
 
-    const shared = await runShare(store, { dir: origin, globalHome: origin });
+    // The origin is ejected, which `share` refuses by design, so the id comes from `edit --ui`,
+    // which builds the same payload through `seedPayloadForInstallation`.
+    const refused = await runShare(store, { dir: origin, globalHome: origin });
+    note(`share exit ${refused.exitCode}`, firstLine(refused.output, /cannot be shared/));
+    verdict(
+      "journey 29 — share refuses an ejected origin, saying only plugins can be shared",
+      refused.exitCode !== EXIT_CODES.SUCCESS &&
+        refused.output.includes("Only plugins can be shared."),
+    );
+    const shared = await runEditUi(store, { dir: origin, globalHome: origin });
     const id = mintedId(shared.output);
-    note(`share exit ${shared.exitCode}`, id ?? "(no id minted)");
+    note(`edit --ui exit ${shared.exitCode}`, id ?? "(no id minted)");
     if (id === undefined) {
-      verdict("journey 29 — share mints an id for a real installation", false);
+      verdict("journey 29 — edit --ui mints an id for a real installation", false);
       return;
     }
 
@@ -1098,12 +1028,12 @@ async function journeyCatalogueEmission(): Promise<void> {
  * provenance marker, beside a real install of both kinds. Showing one half alone
  * proves nothing about the agreement, which is the whole claim.
  */
-async function journeySharedDirectoryOwnership(): Promise<void> {
+async function journeySharedDirectoryOwnership(store: SeedConfigStore): Promise<void> {
   section("Journey 36 — doctor steps over what it cannot claim, and uninstall refuses the same");
   const source = await createE2ESource();
   const home = mkdtempSync(path.join(tmpdir(), "handrun-j36-"));
   try {
-    const install = await initGlobalWithEject(source, home);
+    const install = await installStackGlobally(store, home, source.sourceDir);
     note(`init exit ${install.exitCode}`);
 
     await createLocalSkill(home, FOREIGN_SKILL_DIR);
@@ -1460,72 +1390,6 @@ async function journeyCodexProjectInstallTrustsItself(
 }
 
 /**
- * Journey 75 — the edit wizard over a Codex installation, driven through the page objects: an
- * ejected skill deselected leaves `$CODEX_HOME/skills`, the one place Codex reads it from (CLI-895).
- * The skill kept beside it is the control — a delete that took the whole directory satisfies the
- * first claim too.
- */
-async function journeyCodexEditWizard(store: SeedConfigStore, sourceDir: string): Promise<void> {
-  section("Journey 75 — the edit wizard over a Codex installation");
-
-  const { root, home } = codexScratch("codex-edit");
-  try {
-    store.publish(
-      "HandCdxEdit",
-      buildSeedPayload({
-        skills: {
-          [E2E_SKILL.react.id]: buildSeedSkill({
-            install: "eject",
-            scope: "global",
-            assignments: { [WEB_DEVELOPER]: "lazy" },
-          }),
-          [E2E_SKILL.zustand.id]: buildSeedSkill({
-            install: "eject",
-            scope: "global",
-            assignments: { [WEB_DEVELOPER]: "lazy" },
-          }),
-        },
-        agents: { [WEB_DEVELOPER]: { on: true, scope: "global" } },
-      }),
-    );
-    const at: ProjectHandle = { dir: home, globalHome: home };
-    const installed = await runInitFromOnCodex(store, "HandCdxEdit", at, sourceDir);
-    note(
-      `init --from HandCdxEdit --provider codex — exit ${installed.exitCode}`,
-      firstLine(installed.output, /Error/i),
-    );
-
-    const codexSkills = path.join(codexHome(home), DIRS.SKILLS);
-    note("skills Codex reads, before the edit", listDir(codexSkills));
-
-    const wizard = await EditWizard.launchInGlobal({
-      projectDir: home,
-      source: { sourceDir, tempDir: sourceDir },
-      ...TERMINAL_SIZE.TALL,
-    });
-    try {
-      await wizard.build.selectSkill(E2E_SKILL.zustand.display);
-      const result = await wizard.completeFromBuild();
-      note(`edit — exit ${await result.exitCode}`, "");
-    } finally {
-      await wizard.destroy();
-    }
-
-    note("skills Codex reads, after the edit", listDir(codexSkills));
-    verdict(
-      "journey 75 — the deselected ejected skill left the directory Codex reads skills from",
-      !existsSync(path.join(codexSkills, E2E_SKILL.zustand.id)),
-    );
-    verdict(
-      "journey 75 — and the skill kept beside it is still there",
-      existsSync(path.join(codexSkills, E2E_SKILL.react.id)),
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-}
-
-/**
  * A writing sub-agent at PROJECT scope on Claude — the one whose completion gate needs a trusted
  * folder.
  */
@@ -1619,42 +1483,38 @@ async function journeyClaudeHomeNeedsNoTrust(
 async function main(): Promise<void> {
   const store = await startSeedConfigStore();
   try {
-    const { project, sourceDir } = await journeyGlobalInstall();
+    const { project, sourceDir } = await journeyGlobalInstall(store);
     const id = await journeyRoundTrip(project, store, sourceDir);
     if (id !== undefined) {
-      await journeyNonTtyRefusal(store, id);
+      await journeyNonTtyRefusal(store, id, sourceDir);
       await journeyRefusesExistingInstall(store, id, project.globalHome ?? project.dir, sourceDir);
       await journeyHomeScopeRefusal(store, sourceDir);
     }
-    await attempt("journeyPluginModeReal", () => journeyPluginModeReal());
+    await attempt("journeyFrontDoors", () => journeyFrontDoors(sourceDir));
+    await attempt("journeyPluginModeReal", () => journeyPluginModeReal(store));
     await attempt("journeyCommandsOverInstall", () =>
       journeyCommandsOverInstall(project.globalHome ?? project.dir),
     );
     await attempt("journeyGlobalScopedPayload", () => journeyGlobalScopedPayload(store, sourceDir));
-    await attempt("journeyUninstall", () => journeyUninstall());
-    await attempt("journeyDeletedConfig", () => journeyDeletedConfig());
+    await attempt("journeyUninstall", () => journeyUninstall(store));
+    await attempt("journeyDeletedConfig", () => journeyDeletedConfig(store));
     await attempt("journeyNamespaceGuards", () => journeyNamespaceGuards());
-    await attempt("journeyStackRoster", () => journeyStackRoster());
-    await attempt("journeyProjectOverGlobal", () => journeyProjectOverGlobal());
+    await attempt("journeyStackRoster", () => journeyStackRoster(store));
+    await attempt("journeyProjectOverGlobal", () => journeyProjectOverGlobal(store));
     await attempt("journeyOwnershipBoundary", () => journeyOwnershipBoundary(store));
-    await attempt("journeyCatalogueCheckout", () => journeyCatalogueCheckout());
-    await attempt("journeyScopeToggles", () => journeyScopeToggles());
-    await attempt("journeyPropagation", () => journeyPropagation());
+    await attempt("journeyPropagation", () => journeyPropagation(store));
     await attempt("journeyExternalSkills", () => journeyExternalSkills(store, sourceDir));
-    await attempt("journeyStackPicksEditable", () => journeyStackPicksEditable());
-    await attempt("journeyCustomMarketplaceArc", () => journeyCustomMarketplaceArc());
-    await attempt("journeyMarketplaceAuthorArc", () => journeyMarketplaceAuthorArc());
-    await attempt("journeyMarketplaceStacks", () => journeyMarketplaceStacks());
+    await attempt("journeyCustomMarketplaceArc", () => journeyCustomMarketplaceArc(store));
+    await attempt("journeyMarketplaceAuthorArc", () => journeyMarketplaceAuthorArc(store));
     await attempt("journeyShareRoundTrip", () => journeyShareRoundTrip(store));
     await attempt("journeyCatalogueEmission", () => journeyCatalogueEmission());
-    await attempt("journeySharedDirectoryOwnership", () => journeySharedDirectoryOwnership());
+    await attempt("journeySharedDirectoryOwnership", () => journeySharedDirectoryOwnership(store));
     await attempt("journeyCodexUninstallLeavesClaude", () =>
       journeyCodexUninstallLeavesClaude(store, sourceDir),
     );
     await attempt("journeyCodexProjectInstallTrustsItself", () =>
       journeyCodexProjectInstallTrustsItself(store, sourceDir),
     );
-    await attempt("journeyCodexEditWizard", () => journeyCodexEditWizard(store, sourceDir));
     await attempt("journeyClaudeFolderTrust", () => journeyClaudeFolderTrust(store, sourceDir));
   } finally {
     await store.close();

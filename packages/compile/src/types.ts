@@ -12,7 +12,6 @@ export type {
   CodexModelName,
   CompiledAgentData,
   Domain,
-  DomainSelections,
   EffortLevel,
   ModelName,
   PluginSkillRef,

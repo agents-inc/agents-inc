@@ -5,9 +5,8 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { mkdir } from "fs/promises";
+import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -16,7 +15,9 @@ import {
   isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { E2E_SKILL, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
 
 /**
  * D-217 — Compiled agents must reference each skill in the format dictated
@@ -50,25 +51,22 @@ describe.skipIf(!claudeAvailable)(
   "mixed-mode agents emit per-skill ref formats in compiled output",
   () => {
     let pluginSource: E2EPluginSource | undefined;
+    let store: SeedConfigStore;
 
     beforeAll(async () => {
       pluginSource = await createE2EPluginSource();
+      store = await startSeedConfigStore();
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
+      await store.close();
       if (pluginSource) await cleanupTempDir(pluginSource.tempDir);
     });
 
-    describe("init plugin then edit toggle ONE skill to local: mixed compiled output", () => {
-      let initWizard: InitWizard | undefined;
-      let editWizard: EditWizard | undefined;
+    describe("init plugin then edit ONE skill to local: mixed compiled output", () => {
       let tempDir: string | undefined;
 
       afterEach(async () => {
-        await initWizard?.destroy();
-        initWizard = undefined;
-        await editWizard?.destroy();
-        editWizard = undefined;
         if (tempDir) {
           await cleanupTempDir(tempDir);
           tempDir = undefined;
@@ -79,68 +77,40 @@ describe.skipIf(!claudeAvailable)(
         "web-developer.md frontmatter and body each carry the format dictated by the skill's own source",
         { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
         async () => {
-          // Phase 1: init with the plugin source using defaults — every
-          // skill ends at `origin: "<marketplaceName>"` (plugin). This is
-          // the same path covered by `init-wizard-stack.e2e.test.ts:71-93`,
-          // which confirms react renders as `web-framework-react:web-framework-react`
-          // in pure plugin mode.
+          // Phase 1: init with the plugin source — every skill ends at
+          // `origin: "<marketplaceName>"` (plugin).
           tempDir = await createTempDir();
           const projectDir = path.join(tempDir, "project");
+          await mkdir(projectDir, { recursive: true });
 
-          // This test toggles react's SOURCE (plugin -> eject) during edit.
-          // Default-scope skills are GLOBAL, and a project edit renders global
-          // skills as locked (readOnly), so their source cannot be toggled from
-          // a project context. Both phases therefore model editing the GLOBAL
-          // install via launchInGlobal: HOME == cwd == projectDir, the skills
-          // are editable, and all content + config collapse onto projectDir
-          // (every assertion below reads projectDir / initResult.project).
-          initWizard = await InitWizard.launchInGlobal({
-            source: pluginSource!,
-            projectDir,
-          });
-          const initResult = await initWizard.completeWithDefaults();
-          expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
+          // This test switches react's SOURCE (plugin -> eject) during edit, of a
+          // default-scope (global) skill, so both phases run as the GLOBAL install:
+          // HOME == cwd == projectDir, and all content + config collapse onto projectDir
+          // (every assertion below reads it).
+          const site = { dir: projectDir, home: projectDir };
+          await installFromSeed(
+            store,
+            "Plugins1",
+            e2eStackPayload({ install: "plugin" }),
+            site,
+            pluginSource!.sourceDir,
+          );
 
-          // Sanity check: post-init, react frontmatter uses pluginRef form
-          // (matches the existing init-wizard-stack.e2e.test.ts assertion).
-          await expect(initResult.project).toHaveAgentFrontmatter("web-developer", {
+          // Sanity check: post-init, react frontmatter uses pluginRef form.
+          await expect({ dir: projectDir }).toHaveAgentFrontmatter("web-developer", {
             skills: [`${E2E_SKILL.react.id}:${E2E_SKILL.react.id}`],
           });
-          await initResult.destroy();
 
-          // Phase 2: edit + flip the FIRST source-row's source from the
-          // plugin marketplace back to eject by pressing Space on the grid's
-          // default focus, which is (row 0, col 0) = "Local". No arrow key is
-          // needed. The first row in the customize grid for this stack is
-          // web-framework-react. After the toggle: react = eject, rest stay
-          // plugin.
-          editWizard = await EditWizard.launchInGlobal({
-            projectDir,
-            source: pluginSource!,
-            ...TERMINAL_SIZE.TALL,
-          });
-
-          const sources = await editWizard.build.passThroughAllDomains();
-          await sources.waitForReady();
-
-          // After plugin-mode init, react's selected column is the marketplace
-          // plugin (col 1). Default grid focus is (row 0, col 0). Space at
-          // col 0 selects "Local" (eject) for react. The other skills' rows
-          // are not touched, so they retain plugin source.
-          await sources.selectFocusedSourceCell();
-
-          const agents = await sources.advance();
-          const confirm = await agents.acceptDefaults("edit");
-
-          // confirmAwaiting, not confirm(): this test needs EDIT_SUCCESS alone
-          // in raw PTY output on the TIMEOUTS.PLUGIN_INSTALL budget a real
-          // `claude plugin install` round-trip takes. confirm() would accept
-          // EDIT_UNCHANGED too, off the xterm buffer, on half the budget.
-          const editResult = await confirm.confirmAwaiting(
-            STEP_TEXT.EDIT_SUCCESS,
-            TIMEOUTS.PLUGIN_INSTALL,
+          // Phase 2: edit -- react back to eject, every other skill still a plugin.
+          const editResult = await applyFromSeed(
+            store,
+            "ReactEject1",
+            e2eStackPayload({
+              pluginSkills: E2E_STACK_SKILL_IDS.filter((id) => id !== E2E_SKILL.react.id),
+            }),
+            site,
           );
-          expect(await editResult.exitCode).toBe(EXIT_CODES.SUCCESS);
+          expect(editResult.output).toContain(STEP_TEXT.EDIT_SUCCESS);
 
           // Phase 3: assert config.ts records the per-skill split.
           // web-framework-react → "eject" after the toggle.
@@ -157,8 +127,7 @@ describe.skipIf(!claudeAvailable)(
 
           // react flipped to eject; the regex tolerates either scope so the
           // test does not depend on whether the install routes to project
-          // or global agent dirs (matches the existing init-wizard-stack
-          // test which asserts on result.project regardless of scope).
+          // or global agent dirs.
           expect(configContent).toMatch(
             new RegExp(`id: '${E2E_SKILL.react.id}', scope: '(?:project|global)', origin: 'eject'`),
           );
@@ -179,7 +148,7 @@ describe.skipIf(!claudeAvailable)(
           // skill is preloaded on `web-developer`. Before per-skill format the install
           // path applied installMode at the whole-agent level; the single
           // preloaded skill would render as `id:id` even after its source
-          // was toggled to eject, because a single plugin skill elsewhere
+          // was switched to eject, because a single plugin skill elsewhere
           // in the agent (or the whole-agent installMode decision) would
           // force plugin form. Post-fix, each preloaded skill's frontmatter
           // emission is governed strictly by its own source.
@@ -221,7 +190,7 @@ describe.skipIf(!claudeAvailable)(
           // edit-mode source migration is governed by mode-migrator.ts and
           // depends on which skills the migrator considers "newly plugin"
           // vs "already plugin". The settings.json shape is verified by
-          // dedicated tests (e.g. init-dashboard-edit-plugin-install.e2e).
+          // dedicated tests (e.g. edit-from-plugin-install.e2e).
           // The contract is strictly about the COMPILED-AGENT format-per-skill
           // contract; the install-side routing is covered separately.
           await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);

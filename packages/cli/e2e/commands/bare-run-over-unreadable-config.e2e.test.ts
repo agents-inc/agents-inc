@@ -15,7 +15,6 @@ import {
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
 import { DashboardSession } from "../pages/dashboard-session.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
@@ -132,7 +131,7 @@ describe("agents-inc with no command over a config.ts that cannot be loaded", ()
     });
 
     it("refuses in a terminal too, where the dashboard would have been", async () => {
-      dashboard = await InitWizard.launchForDashboard({
+      dashboard = await DashboardSession.launch({
         projectDir,
         bare: true,
         env: { HOME: home },

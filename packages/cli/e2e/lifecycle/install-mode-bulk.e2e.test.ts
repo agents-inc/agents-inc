@@ -1,4 +1,5 @@
 import path from "path";
+import { mkdir } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import {
@@ -8,16 +9,14 @@ import {
 import "../matchers/setup.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupFixture,
   cleanupTempDir,
-  completeWithLocalSources,
   createTempDir,
   directoryExists,
   skillsPath,
-  injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
 } from "../helpers/test-utils.js";
 
@@ -30,34 +29,36 @@ import {
  *
  * These tests require the Claude CLI for plugin install/uninstall operations.
  *
- * Note: isClaudeCLIAvailable is re-exported from test-utils for skip detection.
- *
- * Both tests switch the SOURCE of default-scope (global) skills mid-edit. A
- * project edit renders global skills as locked (readOnly) and refuses the
- * toggle, so both phases model editing the GLOBAL install via launchInGlobal:
- * HOME == cwd == projectDir, the skills are editable, and all content + config
- * collapse onto projectDir (which every assertion below reads).
- *
- * "Bulk" here means EVERY SKILL, not a bulk keystroke. The Sources step's two
- * set-all keys are withdrawn; `setAllPlugin` / `setAllLocal` now commit the mode
- * on each row in turn (see `SourcesStep`). At global scope every row is editable,
- * so the walk reaches all of them and this file's subject is unchanged.
+ * Both tests switch the SOURCE of default-scope (global) skills mid-edit, so both
+ * phases run as the GLOBAL install: HOME == cwd == projectDir, and all content +
+ * config collapse onto projectDir (which every assertion below reads).
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching", () => {
   let fixture: E2EPluginSource;
+  let store: SeedConfigStore;
 
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(fixture);
   });
+
+  /** A fresh directory that is both HOME and cwd for every run below. */
+  async function globalRoot(): Promise<string> {
+    tempDir = await createTempDir();
+    const projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    return projectDir;
+  }
 
   afterEach(async () => {
     if (tempDir) {
@@ -68,50 +69,48 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
 
   describe("init local, edit switch all to plugin", () => {
     it(
-      "should switch all skills from eject to plugin mode via edit wizard",
+      "should switch all skills from eject to plugin mode via edit --from",
       { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
       async () => {
-        tempDir = await createTempDir();
-        const projectDir = path.join(tempDir, "project");
+        const projectDir = await globalRoot();
+        const site = { dir: projectDir, home: projectDir };
 
-        // Phase 1: Init in eject mode using page objects
-        const initWizard = await InitWizard.launchInGlobal({
-          source: fixture,
-          projectDir,
-        });
+        // Phase 1: Init in eject mode
+        const initResult = await installFromSeed(
+          store,
+          "Ejected1",
+          e2eStackPayload({ install: "eject" }),
+          site,
+          fixture.sourceDir,
+        );
 
-        // Navigate through init with eject source selection
-        const initResult = await completeWithLocalSources(initWizard);
+        await expectPhaseSuccess(
+          { project: { dir: projectDir }, exitCode: initResult.exitCode },
+          {
+            skillIds: [E2E_SKILL.react.id],
+            origin: "eject",
+            copiedSkills: [E2E_SKILL.react.id],
+          },
+        );
 
-        await expectPhaseSuccess(initResult, {
-          skillIds: [E2E_SKILL.react.id],
-          origin: "eject",
-          copiedSkills: [E2E_SKILL.react.id],
-        });
-        await initResult.destroy();
+        // Phase 2: Edit -- every skill as a plugin
+        const editResult = await applyFromSeed(
+          store,
+          "Plugins1",
+          e2eStackPayload({ install: "plugin" }),
+          site,
+        );
 
-        // Inject marketplace into config (fixture setup for Phase 2)
-        await injectMarketplaceIntoConfig(projectDir, fixture.marketplaceName);
+        await expectPhaseSuccess(
+          { project: { dir: projectDir }, exitCode: editResult.exitCode },
+          {
+            skillIds: [E2E_SKILL.react.id],
+            origin: fixture.marketplaceName,
+            compiledAgents: E2E_AGENTS.WEB_AND_API,
+          },
+        );
 
-        // Phase 2: Edit -- switch every skill to plugin, one row at a time
-        const editWizard = await EditWizard.launchInGlobal({
-          projectDir,
-          source: fixture,
-        });
-
-        const editSources = await editWizard.build.passThroughAllDomains();
-        await editSources.setAllPlugin();
-        const editAgents = await editSources.advance();
-        const editConfirm = await editAgents.acceptDefaults("edit");
-        const editResult = await editConfirm.confirm();
-
-        await expectPhaseSuccess(editResult, {
-          skillIds: [E2E_SKILL.react.id],
-          origin: fixture.marketplaceName,
-          compiledAgents: E2E_AGENTS.WEB_AND_API,
-        });
-
-        const rawOutput = editResult.rawOutput;
+        const rawOutput = editResult.output;
         expect(rawOutput).toContain(
           `${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
         );
@@ -126,53 +125,54 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
           await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.react.id)),
           "switching to plugin mode must remove the ejected copy",
         ).toBe(false);
-
-        await editResult.destroy();
       },
     );
   });
 
   describe("init plugin, edit switch all to eject", () => {
     it(
-      "should switch all skills from plugin to eject mode via edit wizard",
+      "should switch all skills from plugin to eject mode via edit --from",
       { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
       async () => {
-        tempDir = await createTempDir();
-        const projectDir = path.join(tempDir, "project");
+        const projectDir = await globalRoot();
+        const site = { dir: projectDir, home: projectDir };
 
         // Phase 1: Init in plugin mode
-        const initWizard = await InitWizard.launchInGlobal({
-          source: fixture,
-          projectDir,
-        });
-        const initResult = await initWizard.completeWithDefaults();
+        const initResult = await installFromSeed(
+          store,
+          "Plugins2",
+          e2eStackPayload({ install: "plugin" }),
+          site,
+          fixture.sourceDir,
+        );
 
-        await expectPhaseSuccess(initResult, {
-          skillIds: [E2E_SKILL.react.id],
-          origin: fixture.marketplaceName,
-          compiledAgents: E2E_AGENTS.WEB_AND_API,
-        });
-        await initResult.destroy();
+        await expectPhaseSuccess(
+          { project: { dir: projectDir }, exitCode: initResult.exitCode },
+          {
+            skillIds: [E2E_SKILL.react.id],
+            origin: fixture.marketplaceName,
+            compiledAgents: E2E_AGENTS.WEB_AND_API,
+          },
+        );
 
-        // Phase 2: Edit -- switch every skill to eject, one row at a time
-        const editWizard = await EditWizard.launchInGlobal({
-          projectDir,
-          source: fixture,
-        });
+        // Phase 2: Edit -- every skill ejected
+        const editResult = await applyFromSeed(
+          store,
+          "Ejected2",
+          e2eStackPayload({ install: "eject" }),
+          site,
+        );
 
-        const editSources = await editWizard.build.passThroughAllDomains();
-        await editSources.setAllLocal();
-        const editAgents = await editSources.advance();
-        const editConfirm = await editAgents.acceptDefaults("edit");
-        const editResult = await editConfirm.confirm();
+        await expectPhaseSuccess(
+          { project: { dir: projectDir }, exitCode: editResult.exitCode },
+          {
+            skillIds: [E2E_SKILL.react.id],
+            origin: "eject",
+            copiedSkills: [E2E_SKILL.react.id],
+          },
+        );
 
-        await expectPhaseSuccess(editResult, {
-          skillIds: [E2E_SKILL.react.id],
-          origin: "eject",
-          copiedSkills: [E2E_SKILL.react.id],
-        });
-
-        const rawOutput = editResult.rawOutput;
+        const rawOutput = editResult.output;
         expect(rawOutput).toContain(
           `${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
         );
@@ -182,13 +182,9 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
         await expect({ dir: projectDir }).toHaveNoPlugins();
 
-        // `launchInGlobal` collapses HOME, cwd and the install onto projectDir (see the
-        // file header), so that is where the recompile has to land. The `os.homedir()`
-        // fallback this replaces read the DEVELOPER'S OWN installation on any machine
-        // with one, and passed there whatever the run under test compiled.
+        // HOME, cwd and the install collapse onto projectDir (see the file header), so
+        // that is where the recompile has to land.
         await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
-
-        await editResult.destroy();
       },
     );
   });

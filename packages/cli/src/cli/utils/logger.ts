@@ -20,13 +20,12 @@ export function log(msg: string): void {
 }
 
 // --- Startup message buffering ---
-// When buffer mode is enabled (before Ink takes over the terminal), warn() pushes
-// messages into a buffer instead of writing to stderr. The buffer is drained and
-// handed to the wizard, which paints it as a band above the step — stderr is what
-// the wizard's clearTerminal wipes, so a line written there is a line lost.
+// When buffer mode is enabled, warn() pushes messages into a buffer instead of
+// writing to stderr, for the caller to drain.
 
+/** What `warn()` buffers — the only call that buffers, so the only level there is. */
 export type StartupMessage = {
-  level: "info" | "warn" | "error";
+  level: "warn";
   text: string;
 };
 

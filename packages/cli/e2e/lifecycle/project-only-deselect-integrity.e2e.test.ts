@@ -1,6 +1,5 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
@@ -10,35 +9,57 @@ import {
   normalizeGlobalConfig,
   readTestFile,
 } from "../helpers/test-utils.js";
+import { createTestEnvironment, readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
 import {
-  createTestEnvironment,
-  readConfigSkillIds,
-  setupProjectOnlyMixedScope,
-} from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT, E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
-import { UI_SYMBOLS } from "../../src/cli/consts.js";
+  applyFromSeed,
+  e2eStackPayload,
+  installFromSeed,
+  type E2EStackOptions,
+} from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
 
 /**
  * Project-only deselection integrity (config-merger AuthoritativeScope "owned").
  *
  * Deselecting a PROJECT-ONLY agent/skill (never dual-scope — no global install
- * underneath it and no global tombstone) via `cc edit` run from within a project
+ * underneath it and no global tombstone) via `edit --from` run from within a project
  * must genuinely remove it from config.ts, the generated config-types.ts union,
  * and — for agents — the compiled `.md` on disk. An INHERITED global-active entry
  * (globally installed, untouched at project scope, no tombstone) must never be
  * affected by a project-scope edit — it is read-only from the project's view.
  */
 
+const API_DEV = E2E_AGENT["api-developer"].name;
+
+/**
+ * A fresh project install, nothing global first: web-testing-vitest (a dynamic skill, so it can
+ * be dropped on its own) and api-developer are PROJECT-only entries, while web-framework-react
+ * and web-developer land in the freshly created global config as inherited global-active
+ * entries. A project skill never reaches the global web-developer, so vitest is assigned to no
+ * sub-agent.
+ */
+const MIXED_SCOPE = {
+  projectSkills: [E2E_SKILL.vitest.id],
+  unassigned: [E2E_SKILL.vitest.id],
+  projectAgents: [API_DEV],
+} as const satisfies E2EStackOptions;
+
 describe("project-only deselection integrity", () => {
+  let store: SeedConfigStore;
   let testTempDir: string | undefined;
-  let wizard: EditWizard | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (testTempDir) {
       await cleanupTempDir(testTempDir);
       testTempDir = undefined;
@@ -51,7 +72,8 @@ describe("project-only deselection integrity", () => {
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
-      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
+      const project = { dir: projectDir, home: fakeHome };
+      await installFromSeed(store, "MixedScope1", e2eStackPayload(MIXED_SCOPE), project);
 
       const projectConfigPath = configTsPath(projectDir);
       const projectTypesPath = configTypesTsPath(projectDir);
@@ -72,20 +94,13 @@ describe("project-only deselection integrity", () => {
       // Snapshot the inherited global config before the project-scope edit.
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
-      // Edit from within the project: deselect ONLY the project-only agent.
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      const sources = await wizard.build.passThroughAllDomains();
-      const agents = await sources.acceptDefaults();
-      await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
-      const confirm = await agents.advance("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      // Edit from within the project: leave out ONLY the project-only agent.
+      await applyFromSeed(
+        store,
+        "WithoutApiDev1",
+        e2eStackPayload({ ...MIXED_SCOPE, withoutAgents: [API_DEV] }),
+        project,
+      );
 
       // The project-only agent is removed everywhere.
       const projectConfigAfter = await readTestFile(projectConfigPath);
@@ -126,7 +141,8 @@ describe("project-only deselection integrity", () => {
     async () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
-      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
+      const project = { dir: projectDir, home: fakeHome };
+      await installFromSeed(store, "MixedScope1", e2eStackPayload(MIXED_SCOPE), project);
 
       const projectConfigPath = configTsPath(projectDir);
       const projectTypesPath = configTypesTsPath(projectDir);
@@ -141,22 +157,13 @@ describe("project-only deselection integrity", () => {
       // Snapshot the inherited global config before the project-scope edit.
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
-      // Edit from within the project: deselect ONLY the project-only skill.
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      // Web domain: deselect web-testing-vitest.
-      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
-      await wizard.build.advanceDomain();
-      // API domain: pass through.
-      await wizard.build.advanceDomain();
-      // Methodology domain -> Sources -> Agents -> Confirm.
-      const result = await wizard.build.saveFromBuild("edit");
-      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      // Edit from within the project: leave out ONLY the project-only skill.
+      await applyFromSeed(
+        store,
+        "WithoutVitest1",
+        e2eStackPayload({ projectAgents: [API_DEV], without: [E2E_SKILL.vitest.id] }),
+        project,
+      );
 
       // The project-only skill is removed from the config's skills array.
       const projectConfigAfter = await readTestFile(projectConfigPath);
@@ -183,60 +190,6 @@ describe("project-only deselection integrity", () => {
         normalizeGlobalConfig(globalConfigAfter),
         "global config must be unchanged by a project-scope skill deselect",
       ).toStrictEqual(normalizeGlobalConfig(globalConfigBefore));
-    },
-  );
-
-  it(
-    "keeps a deselected project-only skill visible on the Sources tab so the user can see what will be removed",
-    { timeout: TIMEOUTS.LIFECYCLE },
-    async () => {
-      const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
-      testTempDir = tempDir;
-      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
-
-      // Setup proof: vitest is genuinely a saved project skill before the edit, so an
-      // absent Sources row later is the vanished-row bug, not a setup miss.
-      const projectConfigBefore = await readTestFile(configTsPath(projectDir));
-      expect(projectConfigBefore).toContain(E2E_SKILL.vitest.id);
-
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      // Web domain: deselect the pre-selected vitest (do NOT re-select it).
-      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
-      // Pass through the remaining domains (Web -> API -> Methodology), then Methodology -> Sources.
-      await wizard.build.advanceDomain();
-      await wizard.build.advanceDomain();
-      const sources = await wizard.build.advanceToSources();
-      await sources.waitForReady();
-
-      const sourcesFrame = sources.getOutput();
-      // Positive shape: the inherited global react row proves the Sources grid rendered
-      // (non-empty, correct screen), so a missing vitest row is the vanished-row bug.
-      expect(
-        sourcesFrame,
-        `Sources grid must render the inherited global skill. Screen:\n${sources.getScreen()}`,
-      ).toContain(E2E_SKILL.react.display);
-      // The bug under test: a deselected saved project skill must remain visible (rendered
-      // disabled) on the Sources tab so the user can see what they are about to remove.
-      expect(
-        sourcesFrame,
-        `a deselected saved project skill must remain visible on the Sources tab. Screen:\n${sources.getScreen()}`,
-      ).toContain(E2E_SKILL.vitest.display);
-
-      // ...and is rendered as pending-removal rather than as an ordinary editable row, using the
-      // same removal marker the info panel prints for removed skills so both surfaces read
-      // consistently. The wizard runs with NO_COLOR in E2E, so the red colour carries no signal
-      // here — the marker is what a user (and this assertion) can actually see. A lock glyph would
-      // be wrong: that means "installed globally, not editable from this project".
-      expect(
-        sourcesFrame,
-        `the deselected skill must be marked pending-removal. Screen:\n${sources.getScreen()}`,
-      ).toContain(`${UI_SYMBOLS.REMOVED} ${E2E_SKILL.vitest.display}`);
     },
   );
 });

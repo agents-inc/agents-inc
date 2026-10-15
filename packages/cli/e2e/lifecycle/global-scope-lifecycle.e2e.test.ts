@@ -1,17 +1,16 @@
 import path from "path";
 import { CLI } from "../fixtures/cli.js";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { cleanupTempDir, configTypesTsPath } from "../helpers/test-utils.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
-  createDualScopeEnv,
-  createTestEnvironment,
-  type DualScopeEnv,
-} from "../fixtures/dual-scope-helpers.js";
+  e2eStackPayload,
+  installE2EStackDualScope,
+  installFromSeed,
+} from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   TS_NOT_ASSIGNABLE,
@@ -26,54 +25,32 @@ const SPLIT_INSTALL_ALIASES = ["SkillId", "AgentName", "Category"] as const;
  * Global scope lifecycle E2E tests -- regression coverage for scope-blind bugs.
  */
 
-// Shared E2E source across all suites in this file
+let store: SeedConfigStore;
 
-describe("global scope lifecycle -- source loader merge", () => {
-  let env: DualScopeEnv | undefined;
-
-  afterEach(async () => {
-    await env?.destroy();
-    env = undefined;
-  });
-
-  it(
-    "edit wizard should detect both global and project local skills after dual-scope init",
-    { timeout: TIMEOUTS.LIFECYCLE },
-    async () => {
-      env = await createDualScopeEnv(E2E_SOURCE);
-
-      const wizard = await EditWizard.launch({
-        projectDir: env.projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: env.fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-
-      // The Sources grid labels each row with the skill's TITLE, so that is what a
-      // "both scopes were merged" assertion reads — the namespaced id it is
-      // published under is never painted.
-      const sourcesOutput = wizard.getOutput();
-      expect(sourcesOutput).toContain(E2E_SKILL.react.display);
-      expect(sourcesOutput).toContain(E2E_SKILL.vitest.display);
-      expect(sourcesOutput).toContain(E2E_SKILL.hono.display);
-
-      await wizard.destroy();
-    },
-  );
+beforeAll(async () => {
+  store = await startSeedConfigStore();
 });
 
+afterAll(async () => {
+  await store.close();
+});
+
+/** The dual-scope installation, in a fresh environment. */
+async function dualScopeEnv(): Promise<TestEnvironment> {
+  const env = await createTestEnvironment();
+  await installE2EStackDualScope(store, env);
+  return env;
+}
+
 describe("global scope lifecycle -- doctor command", () => {
-  let sharedEnv: DualScopeEnv;
+  let sharedEnv: TestEnvironment;
 
   beforeAll(async () => {
-    sharedEnv = await createDualScopeEnv(E2E_SOURCE);
+    sharedEnv = await dualScopeEnv();
   }, TIMEOUTS.LIFECYCLE);
 
   afterAll(async () => {
-    await sharedEnv.destroy();
+    await cleanupTempDir(sharedEnv.tempDir);
   });
 
   it("should not report false 'missing' for global-scoped agents", async () => {
@@ -115,10 +92,10 @@ describe("global scope lifecycle -- doctor command", () => {
 });
 
 describe("global scope lifecycle -- uninstall with dual scope", () => {
-  let env: DualScopeEnv | undefined;
+  let env: TestEnvironment | undefined;
 
   afterEach(async () => {
-    await env?.destroy();
+    if (env) await cleanupTempDir(env.tempDir);
     env = undefined;
   });
 
@@ -126,7 +103,7 @@ describe("global scope lifecycle -- uninstall with dual scope", () => {
     "should remove project-scoped skills from project dir via uninstall --yes",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(E2E_SOURCE);
+      env = await dualScopeEnv();
       const { fakeHome, projectDir } = env;
 
       const { exitCode, output } = await CLI.run(
@@ -146,13 +123,10 @@ describe("global scope lifecycle -- uninstall with dual scope", () => {
   );
 });
 
-describe("global scope lifecycle -- init wizard with scope toggling", () => {
+describe("global scope lifecycle -- init with one skill in the project", () => {
   let tempDir: string;
-  let wizard: InitWizard | undefined;
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (tempDir) {
       await cleanupTempDir(tempDir);
     }
@@ -166,40 +140,17 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      // Run init wizard from project dir with HOME pointing to fakeHome
-      wizard = await InitWizard.launch({
-        projectDir,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      // Stack -> Domain -> Build
-      const domain = await wizard.stack.selectFirstStack();
-      const build = await domain.acceptDefaults();
-
-      // Web domain -- toggle web-framework-react to project scope, focused
-      // explicitly rather than relying on where the grid opens.
-      await build.focusSkill(E2E_SKILL.react.display);
-      await build.toggleScopeOnFocusedSkill();
-      await build.advanceDomain();
-
-      // API domain (all skills stay global)
-      await build.advanceDomain();
-
-      // Shared domain (pass through)
-      const sources = await build.advanceToSources();
-
-      // Sources -- set ALL to local
-      await sources.waitForReady();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-
-      // Agents -- accept defaults
-      const confirm = await agents.acceptDefaults("init");
-
-      // Confirm
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      // The stack at global scope, but React in the project. A project skill never reaches a
+      // global sub-agent, so React is assigned to none.
+      await installFromSeed(
+        store,
+        "ReactInProject1",
+        e2eStackPayload({
+          projectSkills: [E2E_SKILL.react.id],
+          unassigned: [E2E_SKILL.react.id],
+        }),
+        { dir: projectDir, home: fakeHome },
+      );
 
       // --- Config content assertions ---
       await expect({ dir: projectDir }).toHaveConfig({
@@ -208,8 +159,8 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
       });
 
       // --- Agent compilation assertions ---
-      // Agents default to global scope (no scope toggle in agents step),
-      // so compiled agent lives at fakeHome, not projectDir.
+      // The sub-agents rest at global scope, so the compiled agent lives at fakeHome,
+      // not projectDir.
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
         contains: ["name: web-developer"],
@@ -248,8 +199,6 @@ describe("global scope lifecycle -- init wizard with scope toggling", () => {
           `every alias asked for must reject its bogus literal.\ntsc output:\n${probe.output}`,
         ).toStrictEqual([...SPLIT_INSTALL_ALIASES]);
       }
-
-      await result.destroy();
     },
   );
 });

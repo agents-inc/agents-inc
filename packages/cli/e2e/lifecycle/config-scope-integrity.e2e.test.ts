@@ -1,18 +1,16 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { CLI } from "../fixtures/cli.js";
+import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
 import {
   cleanupTempDir,
-  completeWithLocalSources,
   configTsPath,
   configTypesTsPath,
   createPermissionsFile,
@@ -21,25 +19,21 @@ import {
   loadConfigOrFail,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { isClaudeCLIAvailable } from "../helpers/test-utils.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
-  createTestEnvironment,
-  finishWizard,
-  initGlobal,
-  initGlobalWithEject,
-  initProject,
-  readAllSkillEntries,
-} from "../fixtures/dual-scope-helpers.js";
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 
 /**
  * Config/scope integrity E2E tests.
  *
  * These tests verify fixes to config/scope-related bugs:
  *
- * Item 1: Source priority preservation
- * Item 5: Config merger preserving agent scope changes
- * Item 6: Old agent file deletion on scope change
  * Item 7: Stack scope leak filtering
  * Item 9: Global config includes all domains
  * D-92: Global config includes source field after splitConfigByScope
@@ -57,94 +51,34 @@ const API_DOMAIN = "api";
  */
 const UNDECLARED_DOMAIN = "mobile";
 
-/**
- * Runs init wizard from HOME, accepting defaults with all sources set to local.
- * Caller must launch the wizard and handle cleanup (e.g. via afterEach).
- */
-async function initGlobalWithLocalSource(
-  wizard: InitWizard,
-): Promise<{ exitCode: number; output: string }> {
-  // Stack -> Domain -> Build (all domains) -> Sources -> Agents -> Confirm
-  return finishWizard(await completeWithLocalSources(wizard));
-}
+/** The stack ejected into the global installation. */
+const EJECT_STACK_ID = "ScopeIn1";
 
-describe("config-scope integrity -- source priority preservation", () => {
-  let tempDir: string;
-  let initWizard: InitWizard | undefined;
-  let wizard: Awaited<ReturnType<typeof EditWizard.launch>> | undefined;
+/** The stack at home as plugins. */
+const PLUGIN_STACK_ID = "ScopeIn2";
 
-  afterEach(async () => {
-    await initWizard?.destroy();
-    initWizard = undefined;
-    await wizard?.destroy();
-    wizard = undefined;
-    if (tempDir) {
-      await cleanupTempDir(tempDir);
-    }
-  });
+/** The project's own API skill as a plugin, on its own API sub-agent. */
+const PROJECT_PLUGIN_HONO_ID = "ScopeIn3";
 
-  it(
-    "should preserve source: local after edit re-open (not overridden by primarySource)",
-    { timeout: TIMEOUTS.LIFECYCLE },
-    async () => {
-      const env = await createTestEnvironment();
-      tempDir = env.tempDir;
-      const { fakeHome } = env;
+let store: SeedConfigStore;
 
-      // Phase A: Init from HOME with all sources set to local
-      initWizard = await InitWizard.launch({
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
-      const initResult = await initGlobalWithLocalSource(initWizard);
-      expect(initResult.exitCode, `Init failed: ${initResult.output}`).toBe(EXIT_CODES.SUCCESS);
-
-      // Verify Phase A: config has source: "eject"
-      const globalConfigPath = configTsPath(fakeHome);
-      const configAfterInit = await readTestFile(globalConfigPath);
-      expect(configAfterInit).toContain("'eject'");
-
-      // The entries the install wrote. Captured rather than counted: Phase C used
-      // to open on `skillEntries.length >= 3`, and three wrong entries pass a floor
-      // exactly as three right ones do.
-      const entriesAfterInit = await readAllSkillEntries(fakeHome);
-      expect(
-        entriesAfterInit.map((entry) => entry.id),
-        "the default install must include react, or the comparison below is vacuous",
-      ).toContain(E2E_SKILL.react.id);
-
-      // Phase B: Edit from HOME -- pass through without changes.
-      wizard = await EditWizard.launch({
-        projectDir: fakeHome,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      const result = await wizard.passThrough();
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-      wizard = undefined;
-
-      // Phase C: the pass-through edit returned every entry exactly as the install
-      // left it — same members, same order, same source.
-      const skillEntries = await readAllSkillEntries(fakeHome);
-      expect(skillEntries, "a no-change edit must not rewrite any skill entry").toStrictEqual(
-        entriesAfterInit,
-      );
-      for (const entry of skillEntries) {
-        expect(entry.origin, `skill ${entry.id} must keep origin "eject"`).toBe("eject");
-      }
-    },
+beforeAll(async () => {
+  store = await startSeedConfigStore();
+  store.publish(EJECT_STACK_ID, e2eStackPayload({ scope: "global" }));
+  store.publish(PLUGIN_STACK_ID, e2eStackPayload({ scope: "global", install: "plugin" }));
+  store.publish(
+    PROJECT_PLUGIN_HONO_ID,
+    e2eStackPayload({
+      scope: "global",
+      install: "plugin",
+      projectSkills: [E2E_SKILL.hono.id],
+      projectAgents: [E2E_AGENT["api-developer"].name],
+    }),
   );
 });
 
-//                + Old agent file deleted on scope change (Item 6)
-
-describe("config-scope integrity -- agent scope change merge and file cleanup", () => {
-  // Blocked: a scope toggle from a global context should be disabled (no-op) and is not.
-  it.todo("should ignore scope toggle on global agents when editing from global context");
+afterAll(async () => {
+  await store.close();
 });
 
 describe("config-scope integrity -- global stack scope filtering", () => {
@@ -160,11 +94,8 @@ describe("config-scope integrity -- domains in global config only", () => {
 
 describe("config-scope integrity -- config-types Domain type includes config.domains", () => {
   let tempDir: string;
-  let wizard: Awaited<ReturnType<typeof EditWizard.launch>> | undefined;
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (tempDir) {
       await cleanupTempDir(tempDir);
     }
@@ -181,8 +112,15 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       await createPermissionsFile(fakeHome);
 
       // Phase A: Init from HOME with eject mode (non-plugin source, no marketplace).
-      const initResult = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(initResult.exitCode, `Phase A init failed`).toBe(EXIT_CODES.SUCCESS);
+      const initResult = await runInitFrom(
+        store,
+        EJECT_STACK_ID,
+        { dir: fakeHome },
+        E2E_SOURCE.sourceDir,
+      );
+      expect(initResult.exitCode, `Phase A init failed: ${initResult.output}`).toBe(
+        EXIT_CODES.SUCCESS,
+      );
 
       // Phase B: Manually edit the config to remove api skills while keeping
       // domains: ["web", "api", "shared"].
@@ -212,7 +150,7 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       await writeFile(configPath, modifiedConfig);
 
       // The config must remain loadable — a corrupt config is (correctly) rejected
-      // by edit, so a broken fixture would fail Phase C for the wrong reason. Read
+      // by compile, so a broken fixture would fail Phase C for the wrong reason. Read
       // it structurally: a regex scan over the text answers "no match" and "no such
       // skill" with the same empty string, so a format change would satisfy the
       // negative for free and the edited fixture would go unverified.
@@ -220,27 +158,18 @@ describe("config-scope integrity -- config-types Domain type includes config.dom
       expect(editedConfig.selectedDomains).toContain(API_DOMAIN);
       expect(editedConfig.skills.map((skill) => skill.id)).not.toContain(E2E_SKILL.hono.id);
 
-      // Phase C: Run edit from HOME -- pass through without changes.
-      wizard = await EditWizard.launch({
-        projectDir: fakeHome,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      // Skills were removed from config, so domain count may differ — use generic
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      const agents = await sources.acceptDefaults();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      const exitCodeB = await result.exitCode;
-      expect(exitCodeB, `Phase C edit failed`).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-      wizard = undefined;
+      // Phase C: Run compile from HOME, which refreshes config-types.ts from the
+      // edited config.
+      const compiled = await CLI.run(["compile"], { dir: fakeHome });
+      expect(compiled.exitCode, `Phase C compile failed: ${compiled.output}`).toBe(
+        EXIT_CODES.SUCCESS,
+      );
 
       // Phase D: Verify config-types.ts Domain type includes ALL config.domains
       const configTypesPath = configTypesTsPath(fakeHome);
-      expect(await fileExists(configTypesPath), "config-types.ts must exist after edit").toBe(true);
+      expect(await fileExists(configTypesPath), "config-types.ts must exist after compile").toBe(
+        true,
+      );
 
       const configTypesContent = await readTestFile(configTypesPath);
 
@@ -268,9 +197,9 @@ describe.skipIf(!claudeAvailable)(
   "config-scope integrity -- global config includes source field",
   () => {
     let tempDir: string;
-    // The plugin-capable fixture, not the shared plain one: `setLocal: false` below keeps the
-    // project half in plugin mode, and a source with no `.claude-plugin/marketplace.json` makes
-    // that install refuse outright rather than quietly eject. See the `it`'s own note.
+    // The plugin-capable fixture, not the shared plain one: the project half installs in plugin
+    // mode, and a source with no `.claude-plugin/marketplace.json` makes that install refuse
+    // outright rather than quietly eject. See the `it`'s own note.
     let pluginSource: E2EPluginSource;
 
     beforeAll(async () => {
@@ -284,11 +213,9 @@ describe.skipIf(!claudeAvailable)(
     });
 
     /**
-     * `setLocal: false` keeps the project half in plugin mode, so the source has to be one a
-     * marketplace can be resolved from — `createE2ESource()` ships no
-     * `.claude-plugin/marketplace.json`, and the install refuses outright rather than
-     * quietly ejecting instead. That refusal, not a skill-copier path resolution failure,
-     * is what kept this spec skipped; the copier reaches every skill it is given here.
+     * The project half installs in plugin mode, so the source has to be one a marketplace can
+     * be resolved from — `createE2ESource()` ships no `.claude-plugin/marketplace.json`, and
+     * the install refuses outright rather than quietly ejecting instead.
      *
      * What the two assertions below pin is the WRITER's emission of the `marketplace` field,
      * not `splitConfigByScope`'s spread: removing `...config` from both partitions of that
@@ -314,12 +241,20 @@ describe.skipIf(!claudeAvailable)(
         tempDir = env.tempDir;
         const { fakeHome, projectDir } = env;
 
-        const phaseA = await initGlobal(pluginSource, fakeHome);
+        const phaseA = await runInitFrom(
+          store,
+          PLUGIN_STACK_ID,
+          { dir: fakeHome },
+          pluginSource.sourceDir,
+        );
         expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
 
-        const phaseB = await initProject(pluginSource, fakeHome, projectDir, {
-          setLocal: false,
-        });
+        const phaseB = await runInitFrom(
+          store,
+          PROJECT_PLUGIN_HONO_ID,
+          { dir: projectDir, globalHome: fakeHome },
+          pluginSource.sourceDir,
+        );
         expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
 
         // Phase C: Verify global config includes the source field.

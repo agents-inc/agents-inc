@@ -41,7 +41,7 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { renderConfigTsWithAgentField } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 import { SEED_VERSION, type SeedAgent } from "@workspace/matrix/seed";
 

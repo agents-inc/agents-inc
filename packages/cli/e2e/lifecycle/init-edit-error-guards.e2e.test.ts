@@ -1,6 +1,6 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -10,6 +10,9 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
@@ -20,12 +23,10 @@ const LOCAL_MARKETPLACE_NOT_FOUND = "Local marketplace not found:";
 const MISSING_INIT_SOURCE_PATH = "/tmp/not-a-real-source-path-xyz";
 const MISSING_EDIT_SOURCE_PATH = "/nonexistent/path/xyz";
 
-/**
- * The three spellings the init hook's raw-argv scan answers to. oclif has not parsed
- * anything when that scan runs, so the flag's name is written a second time there and
- * nothing checks the two definitions against each other — which is why all three forms
- * are driven through the binary rather than one standing in for the others.
- */
+/** The id every `--from` run here fetches; what it names never matters, as no run reaches it. */
+const CONFIG_ID = "Guards01";
+
+/** The three spellings of the flag, each driven through the binary. */
 const MARKETPLACE_FLAG_SPELLINGS = [
   ["separate argument", ["--marketplace", MISSING_INIT_SOURCE_PATH]],
   ["equals form", [`--marketplace=${MISSING_INIT_SOURCE_PATH}`]],
@@ -41,57 +42,43 @@ const MARKETPLACE_FLAG_SPELLINGS = [
 
 describe("init/edit error guards", () => {
   let tempDir: string;
+  let store: SeedConfigStore;
+  let prompt: InteractivePrompt | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(CONFIG_ID, e2eStackPayload());
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
+    await prompt?.destroy();
+    prompt = undefined;
     if (tempDir) {
       await cleanupTempDir(tempDir);
       tempDir = undefined!;
     }
   });
 
-  /**
-   * The guard fires BEFORE the wizard mounts, which is the only reason this spec
-   * can assert it at all: `runCLI` has no PTY, so anything after the render dies
-   * on Ink's `Raw mode is not supported on the current process.stdin` and every
-   * message the run would have printed is lost behind that stack trace.
-   */
-  it(
-    "init with invalid source flag should error gracefully",
-    { timeout: TIMEOUTS.INSTALL },
-    async () => {
-      tempDir = await createTempDir();
-      const projectDir = path.join(tempDir, "project");
-      await mkdir(projectDir, { recursive: true });
-
-      const { exitCode, combined } = await runCLI(
-        ["init", "--marketplace", MISSING_INIT_SOURCE_PATH],
-        projectDir,
-        { env: { HOME: tempDir } },
-      );
-
-      expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      // The loader names the path it could not find. `combined.length > 0` stood
-      // here and was satisfied by any output at all, including a different error.
-      expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
-      expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
-    },
-  );
-
   it.each(MARKETPLACE_FLAG_SPELLINGS)(
-    "init reaches the named marketplace through the %s",
+    "init --from reaches the named marketplace through the %s",
     { timeout: TIMEOUTS.INSTALL },
     async (_name, argv) => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
       await mkdir(projectDir, { recursive: true });
 
-      const { exitCode, combined } = await runCLI(["init", ...argv], projectDir, {
-        env: { HOME: tempDir },
-      });
+      const { exitCode, combined } = await runCLI(
+        ["init", "--from", CONFIG_ID, ...argv],
+        projectDir,
+        { env: { HOME: tempDir, AGENTS_INC_API_URL: store.url } },
+      );
 
-      // Naming the path back is the proof the scan read it: a spelling the scan does
-      // not answer to falls through to the default marketplace and this run would
-      // reach a wizard instead of a refusal about this path.
+      // Naming the path back is the proof the flag reached the loader: a spelling that
+      // did not would fall through to the configuration's own marketplace.
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
       expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
       expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
@@ -173,8 +160,8 @@ describe("init/edit error guards", () => {
 
   /**
    * Same guard, same load path, reached through the command that CANNOT be pointed at a
-   * source: `edit` takes no `--marketplace`, so the path it fails on is the one its own config
-   * records — the install whose marketplace has since been moved or deleted.
+   * source: `edit --from` takes no `--marketplace`, so the path it fails on is the one its own
+   * config records — the install whose marketplace has since been moved or deleted.
    */
   it(
     "edit whose stored source no longer exists should error",
@@ -199,14 +186,17 @@ describe("init/edit error guards", () => {
         }),
       });
 
-      const { exitCode, combined } = await runCLI(["edit"], projectDir, {
-        env: { HOME: tempDir },
+      // `edit --from` applies destructively, so it runs only at a terminal.
+      prompt = new InteractivePrompt(["edit", "--from", CONFIG_ID], projectDir, {
+        env: { HOME: tempDir, AGENTS_INC_API_URL: store.url },
       });
+      const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const combined = prompt.getOutput();
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
       // Same reasoning as the init guard above: name the failure, not its length.
       expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
-      expect(combined).toContain(MISSING_EDIT_SOURCE_PATH);
+      expect(flattenCliOutput(combined).replace(/ /g, "")).toContain(MISSING_EDIT_SOURCE_PATH);
     },
   );
 });

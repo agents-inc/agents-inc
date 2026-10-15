@@ -1,7 +1,5 @@
 import path from "path";
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { TIMEOUTS, EXIT_CODES, SOURCE_PATHS, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import "../matchers/setup.js";
@@ -13,8 +11,17 @@ import {
   directoryExists,
 } from "../helpers/test-utils.js";
 import { readActiveAgentNames } from "../fixtures/dual-scope-helpers.js";
-import { BUILT_IN_STACK_DISPLAY, WEB_DOMAIN_AGENTS } from "../fixtures/expected-values.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { listCompiledAgentNames } from "../../src/cli/lib/agents/list-compiled-agents.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
  * E2E tests using the REAL local skills repository.
@@ -27,8 +34,8 @@ import { listCompiledAgentNames } from "../../src/cli/lib/agents/list-compiled-a
  * automatically skipped when the directory is absent (e.g. on CI or other
  * machines).
  *
- * A single beforeAll runs the full init flow once; subsequent tests verify
- * different aspects of the installed project.
+ * A single beforeAll runs `init --from` once; subsequent tests verify different
+ * aspects of the installed project.
  */
 
 // Resolve the skills repo: env override, or sibling to the monorepo root (a separate
@@ -36,16 +43,6 @@ import { listCompiledAgentNames } from "../../src/cli/lib/agents/list-compiled-a
 const SKILLS_SOURCE = process.env.SKILLS_SOURCE ?? path.resolve(MONOREPO_ROOT, "../skills");
 
 const REAL_INSTALL_TIMEOUT = TIMEOUTS.PLUGIN_INSTALL;
-
-/**
- * The two skills this suite picks out of the real catalogue, by the display
- * title the clone's own `metadata.yaml` gives each — which is what the build
- * grid paints and therefore what `selectSkill` matches on.
- */
-const REAL_SKILL_DISPLAY = {
-  react: "React",
-  nextjs: "Next.js",
-} as const;
 
 const hasSkillsSource = await directoryExists(path.join(SKILLS_SOURCE, SOURCE_PATHS.SKILLS_DIR));
 
@@ -61,61 +58,52 @@ const INSTALLED_SKILL_REFS = [
   "web-meta-framework-nextjs@agents-inc",
 ] as const;
 
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+const INSTALLED_ID = "RealMkt1";
+
+/** One of the real catalogue's skills, installed as a plugin onto the one sub-agent. */
+const pluginOnWebDev = buildSeedSkill({
+  install: "plugin",
+  scope: "global",
+  assignments: { [WEB_DEV]: "lazy" },
+});
+
 describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   let projectDir: string;
-  let wizard: InitWizard | undefined;
+  let store: SeedConfigStore;
   let initOutput: string;
-  /** Append-only PTY output of the init session — the only surface that can prove a step never painted. */
-  let initRawOutput: string;
   // Default-scope install content (compiled agents) lands in HOME. Thread ONE
   // shared HOME through the init and every follow-up CLI.run so they resolve the
-  // same global root; config.ts stays under projectDir. The afterAll owns
-  // cleanup (the reuse-param launch does not).
+  // same global root; config.ts stays under projectDir.
   let sharedHome: string;
 
   beforeAll(async () => {
     projectDir = await createTempDir();
     sharedHome = await createTempDir();
+    store = await startSeedConfigStore();
+    store.publish(
+      INSTALLED_ID,
+      buildSeedPayload({
+        skills: {
+          "web-framework-react": pluginOnWebDev,
+          "web-meta-framework-nextjs": pluginOnWebDev,
+        },
+        agents: { [WEB_DEV]: { on: true, scope: "global" } },
+      }),
+    );
 
-    // The clone ships no config/stacks.ts, and the built-in stacks ARE this
-    // repository's stacks — it is the public catalogue, read off a path — so the
-    // wizard opens on the stack step offering them. "Start from scratch" is the
-    // row that leaves the same empty selection the domains step used to open on
-    // when this source offered no stacks at all.
-    wizard = await InitWizard.launchInProject({
-      source: { sourceDir: SKILLS_SOURCE, tempDir: "" },
-      projectDir,
-      globalHome: sharedHome,
-      loadTimeout: TIMEOUTS.INSTALL,
-    });
-
-    const domain = await wizard.stack.selectScratch();
-
-    // Web alone: both skills this suite installs are web skills, and one domain
-    // keeps the roster the scratch preselection brings small enough to name.
-    await domain.toggleDomain(STEP_TEXT.DOMAIN_API);
-    await domain.toggleDomain(STEP_TEXT.DOMAIN_MOBILE);
-    const build = await domain.advance();
-
-    await build.selectSkill(REAL_SKILL_DISPLAY.react);
-    await build.selectSkill(REAL_SKILL_DISPLAY.nextjs);
-
-    // Real source has variable domains (Web, API, CLI, Shared), use generic path
-    const sources = await build.passThroughAllDomainsGeneric();
-    const agents = await sources.acceptDefaults();
-    const confirm = await agents.acceptDefaults("init");
-    const result = await confirm.confirm();
-    const exitCode = await result.exitCode;
+    const result = await runInitFrom(
+      store,
+      INSTALLED_ID,
+      { dir: projectDir, globalHome: sharedHome },
+      SKILLS_SOURCE,
+    );
     initOutput = result.output;
-    initRawOutput = wizard.getRawOutput();
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    await result.destroy();
+    expect(result.exitCode, initOutput).toBe(EXIT_CODES.SUCCESS);
   }, REAL_INSTALL_TIMEOUT);
 
   afterAll(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
-
+    await store.close();
     if (projectDir) {
       await cleanupTempDir(projectDir);
     }
@@ -124,58 +112,33 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
     }
   });
 
-  describe("init with real marketplace", () => {
-    it("should have offered the built-in stacks for a checkout of the catalogue's own repository", () => {
-      // Raw PTY output is append-only, so the step is provable from it whichever
-      // way the answer goes. `initOutput` cannot answer this — the wizard clears
-      // the screen on exit, and Ink overwrites frames in place.
-      //
-      // The inverse of what this pinned previously: the built-in stacks are the
-      // public catalogue's stacks, that repository ships no config/stacks.ts, and
-      // package identity is what says a path holds it. Keying on the source
-      // STRING alone made a checkout of the catalogue offer none of its own
-      // stacks.
-      expect(initRawOutput).toContain(STEP_TEXT.STACK);
-      expect(initRawOutput).toContain(BUILT_IN_STACK_DISPLAY);
-      expect(initRawOutput).toContain(STEP_TEXT.DOMAINS);
-    });
-
-    it("should have installed the real skills picked from the catalogue", () => {
-      // The stack selection screen is cleared after the wizard, so the skill
-      // refs the install printed are what the picks are visible as.
+  describe("init --from with real marketplace", () => {
+    it("should have installed the real skills the configuration names", () => {
       INSTALLED_SKILL_REFS.forEach((ref) => expect(initOutput).toContain(ref));
     });
-
-    // A separate `it` asserting `toContain("agents-inc")` on its own sat here until 2026-08-23,
-    // named "should have used the real marketplace for plugin installation". `agents-inc` is this
-    // CLI's OWN binary name — it is in the completion text and the version banner of every run —
-    // so it passed whichever marketplace was used. The two `<skill>@agents-inc` refs above are the
-    // discriminating form of the same claim: a ref names the marketplace that resolved it.
 
     it("should have created config.ts with agents-inc source", async () => {
       await expect({ dir: projectDir }).toHaveConfig({
         origin: "agents-inc",
-        agents: ["web-developer"],
+        agents: [WEB_DEV],
       });
     });
 
-    it("should have installed exactly the sub-agents the selected domain brings", async () => {
-      const expected = [...WEB_DOMAIN_AGENTS];
-
+    it("should have installed exactly the sub-agents the configuration names", async () => {
       expect(
         await readActiveAgentNames(projectDir),
-        "config.ts must name exactly the sub-agents the selected domain preselects",
-      ).toStrictEqual(expected);
+        "config.ts must name exactly the sub-agents the configuration switches on",
+      ).toStrictEqual([WEB_DEV]);
 
       const compiled = await listCompiledAgentNames(agentsPath(sharedHome));
       expect(
         compiled.sort(),
-        "the compiled agents on disk must be exactly that preselected roster",
-      ).toStrictEqual(expected);
+        "the compiled agents on disk must be exactly that roster",
+      ).toStrictEqual([WEB_DEV]);
     });
 
     it("should have compiled agents with real content", async () => {
-      await expect({ dir: sharedHome }).toHaveCompiledAgent("web-developer");
+      await expect({ dir: sharedHome }).toHaveCompiledAgent(WEB_DEV);
     });
 
     it("should have displayed completion details", () => {
@@ -195,36 +158,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
       );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      await expect({ dir: sharedHome }).toHaveCompiledAgent("web-developer");
-    });
-  });
-
-  describe("edit with real marketplace", () => {
-    let editWizard: EditWizard | undefined;
-
-    afterEach(async () => {
-      if (editWizard) {
-        await editWizard.abortAndDestroy(TIMEOUTS.EXIT);
-        editWizard = undefined;
-      }
-    });
-
-    it("should show the build step with pre-selected skills", async () => {
-      editWizard = await EditWizard.launchInProject({
-        projectDir,
-        globalHome: sharedHome,
-        cols: 120,
-        rows: 40,
-      });
-
-      // The exclusive Framework category's own counter, read by name: this run installed
-      // web-framework-react, so the category's single slot is filled. Asserted positively
-      // and through the page object rather than as `toContain("Framework (1 of 1)")` —
-      // this install also paints "Meta-Framework (1 of 1)", which contains that string.
-      expect(
-        await editWizard.build.getExclusiveCategorySelectedCount(STEP_TEXT.CATEGORY_FRAMEWORK),
-        "the installed framework skill must open pre-selected in its category",
-      ).toBe(1);
+      await expect({ dir: sharedHome }).toHaveCompiledAgent(WEB_DEV);
     });
   });
 
@@ -236,15 +170,12 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
       });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // `toMatch(/skills/i)` and `/agents/i` sat here and were dropped on 2026-08-23: both words
-      // are unconditional section labels, printed whether or not either list has a member, so only
-      // the negative above discriminated. What the run actually installed is named instead.
       expect(stdout).not.toContain(STEP_TEXT.NO_INSTALLATION);
       // `list` prints a summary rather than a roster, so the COUNTS are what it can be held to —
-      // and they discriminate where the labels did not. The roster itself is asserted by name in
-      // "should have installed exactly the sub-agents the selected domain brings" above.
+      // and they discriminate where the section labels did not. The roster itself is asserted by
+      // name in "should have installed exactly the sub-agents the configuration names" above.
       expect(stdout).toMatch(new RegExp(`Skills:\\s+${INSTALLED_SKILL_REFS.length}`));
-      expect(stdout).toMatch(new RegExp(`Agents:\\s+${WEB_DOMAIN_AGENTS.length}`));
+      expect(stdout).toMatch(/Agents:\s+1\b/);
     });
   });
 });

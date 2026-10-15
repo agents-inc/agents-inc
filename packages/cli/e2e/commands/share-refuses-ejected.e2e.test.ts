@@ -35,11 +35,11 @@ import {
   buildSeedExternalSkill,
   buildSeedPayload,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
 
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 import type { SeedSkill } from "@workspace/matrix/seed";
 
 /**

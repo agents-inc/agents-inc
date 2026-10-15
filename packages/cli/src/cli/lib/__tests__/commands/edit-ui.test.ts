@@ -25,7 +25,7 @@ import { standAtTerminal } from "../helpers/terminal-input.js";
 
 /**
  * `edit --ui` is the outbound half of the editor round trip: it mints an id for the
- * installation in this directory and opens it in the editor, instead of opening the wizard.
+ * installation in this directory and opens it in the editor.
  *
  * The seam is the network, answered by `@workspace/api-mocks` exactly as the `share` specs
  * answer it: reading the config, mapping it onto the wire contract and refusing what the contract
@@ -132,7 +132,7 @@ describe("edit --ui", () => {
       expect(error).toBeUndefined();
       expect(
         stdoutChunks.join(""),
-        "a flag that replaces the wizard must not pay for the wizard's inputs",
+        "opening the editor on an installation must not pay for a catalogue load",
       ).not.toContain(STATUS_MESSAGES.LOADING_SKILLS);
     });
   });

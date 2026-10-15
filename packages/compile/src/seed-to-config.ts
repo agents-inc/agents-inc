@@ -46,7 +46,6 @@ import type {
   CodexModelName,
   CategoryPath,
   Domain,
-  DomainSelections,
   ProjectConfig,
   SelectionValidation,
   SkillAssignment,
@@ -694,35 +693,22 @@ export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   return { global: globalConfig, project: projectConfig }
 }
 
-/**
- * Declared here because `seedToWizardResult` produces one and this package cannot import React.
- * `components/wizard/wizard.tsx` declares the CLI's twin.
- */
-export type WizardResultV2 = {
+/** What the CLI installs: a shared configuration decoded against the catalog. */
+export type InstallSelection = {
   skills: SkillConfig[]
   selectedAgents: AgentName[]
   agentConfigs: AgentScopeConfig[]
-  /**
-   * Per-`(skill, sub-agent)` holdings and loads, when the producer knows them (`init --from`). The
-   * wizard leaves it undefined and the ownership rules build the stack.
-   */
-  assignedStack?: Partial<Record<AgentName, StackAgentConfig>>
+  /** Per-`(skill, sub-agent)` holdings and loads. */
+  assignedStack: Partial<Record<AgentName, StackAgentConfig>>
   selectedStackId: string | null
   /** The sharer's description (`init --from`); undefined takes the applied stack's. */
   description?: string
-  domainSelections: DomainSelections
   selectedDomains: Domain[]
-  /**
-   * Saved skill ids the loaded source could not resolve; the merge removes them, and this lets the
-   * command name each removal.
-   */
-  unresolvableSkillIds: SkillId[]
-  cancelled: boolean
   validation: SelectionValidation
 }
 
 export type SeedMapping = {
-  result: WizardResultV2
+  result: InstallSelection
   /** Reported, never fatal. */
   skippedSkillIds: string[]
   skippedAgentNames: string[]
@@ -730,23 +716,11 @@ export type SeedMapping = {
 
 const KNOWN_AGENTS = new Set<string>(AGENT_NAMES)
 
-/** Mirrors the wizard's own resolution. */
 function sourceForSkill(skill: CatalogSkill): string {
   return (
     skill.availableSources?.find((s) => s.primary)?.name ??
     DEFAULT_PUBLIC_SOURCE_NAME
   )
-}
-
-function addToDomainSelections(
-  selections: DomainSelections,
-  domain: Domain,
-  category: Category,
-  skillId: SkillId
-): void {
-  const categorySelections = (selections[domain] ??= {})
-  const skillList = (categorySelections[category] ??= [])
-  if (!skillList.includes(skillId)) skillList.push(skillId)
 }
 
 /** `skills` is keyed by id, so a `(skill, sub-agent)` pair occurs once: nothing to de-duplicate. */
@@ -850,16 +824,16 @@ function unwritableAssignmentsError(
 }
 
 /**
- * A shared configuration in the shape `init --from` feeds the wizard's install path. Unknown ids
- * are skipped, never fatal, so a rename cannot break older links. Assignments become
- * `assignedStack`, which replaces the derived stack. An unwritable pair is the one fatal case:
- * nothing downstream filters `assignedStack`.
+ * A shared configuration in the shape `init --from` installs. Unknown ids are skipped, never
+ * fatal, so a rename cannot break older links. Assignments become `assignedStack`, which replaces
+ * the derived stack. An unwritable pair is the one fatal case: nothing downstream filters
+ * `assignedStack`.
  */
-export function seedToWizardResult(
+export function seedToInstallSelection(
   payload: SeedPayload,
   catalog: CompileCatalog
 ): SeedMapping {
-  const domainSelections: DomainSelections = {}
+  const domains = new Set<Domain>()
   const assignedStack: Partial<Record<AgentName, StackAgentConfig>> = {}
   const skills: SkillConfig[] = []
   const skippedSkillIds: string[] = []
@@ -884,7 +858,7 @@ export function seedToWizardResult(
     const id = skillId as SkillId
     const category = skill.category as Category
 
-    addToDomainSelections(domainSelections, domain as Domain, category, id)
+    domains.add(domain as Domain)
 
     skills.push({
       id,
@@ -945,11 +919,7 @@ export function seedToWizardResult(
       ...(payload.description !== undefined && {
         description: payload.description,
       }),
-      domainSelections,
-      selectedDomains: orderDomains(typedKeys<Domain>(domainSelections)),
-      // The skipped ids came off the wire and are reported directly; no saved entry was removed.
-      unresolvableSkillIds: [],
-      cancelled: false,
+      selectedDomains: orderDomains([...domains]),
       // Revalidated: the payload was consistent against the authoring app's catalog, not this one.
       validation: validateSelection(
         skills.map((skill) => skill.id),

@@ -1,10 +1,11 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
   configTypesTsPath,
@@ -13,17 +14,17 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import {
-  createTestEnvironment,
-  finishWizard,
-  readAllSkillEntries,
-} from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, readAllSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import { TS_NOT_ASSIGNABLE, probeConfigTypesNarrowing } from "../helpers/type-check-probe.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
  * A project-scope install must not disable type checking of config.ts.
  *
- * `writeScopedFromWizard` splits the merged config by scope. When every selected
+ * The config gate splits the merged config by scope. When every selected
  * skill is project-scoped the GLOBAL partition comes out with `skills: []`, and
  * that empty partition is still handed to `writeGlobalPair` ->
  * `generateConfigTypesSource`. Its union formatters return the literal `"string"`
@@ -68,62 +69,58 @@ const _aLiteralIsNotAnAliasName: Parameters<typeof probeConfigTypesNarrowing>[1]
 /** Everything an eject-mode install writes into its source folder. */
 const INSTALLED_SOURCE_FOLDER_ENTRIES = ["config-types.ts", "config.ts"];
 
-/** `source` recorded for skills installed from a local source via `setAllLocal`. */
+/** `origin` recorded for an ejected skill. */
 const EJECT_SOURCE = "eject";
 
 /** Emitted alias text that means "this union accepts anything". */
 const COLLAPSED_SKILL_ID = "export type SkillId = string;";
 const COLLAPSED_CATEGORY = "export type Category = string;";
 
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
 /**
- * Fresh init in a PROJECT directory with no prior global install, selecting a
- * single skill from the scratch flow so the scope of that one skill decides
- * whether the global partition ends up empty.
+ * Fresh init in a PROJECT directory with no prior global install, of a single skill and the
+ * global web-developer, so the scope of that one skill decides whether the global partition
+ * ends up empty.
  *
- * `skillScope: "project"` toggles react to project scope, leaving the global
- * partition with zero skills — the state that triggers the collapse.
- * `skillScope: "global"` leaves it at its default global scope, so the global
- * partition has one skill and the unions are built normally.
+ * `skillScope: "project"` leaves the global partition with zero skills — the state that
+ * triggers the collapse; a project skill never reaches the global sub-agent, so it is assigned
+ * to none. `skillScope: "global"` puts the skill on web-developer, so the global partition has
+ * one skill and the unions are built normally.
  */
-async function initSingleSkillProject(options: {
-  fakeHome: string;
-  projectDir: string;
-  skillScope: "project" | "global";
-}): Promise<{ exitCode: number; output: string }> {
-  const wizard = await InitWizard.launch({
-    projectDir: options.projectDir,
-    env: { HOME: options.fakeHome },
-    ...TERMINAL_SIZE.TALL,
-  });
-
-  try {
-    const domain = await wizard.stack.selectScratch();
-    // Keep only Web so the install has exactly one category to narrow.
-    await domain.toggleDomain(STEP_TEXT.DOMAIN_API);
-    await domain.toggleDomain(STEP_TEXT.DOMAIN_MOBILE);
-    const build = await domain.advance();
-
-    await build.selectSkill(E2E_SKILL.react.display);
-    if (options.skillScope === "project") {
-      // selectSkill already left focus on react, so toggle the focused cell rather
-      // than re-focusing it.
-      await build.toggleScopeOnFocusedSkill();
-    }
-
-    const sources = await build.advanceToSources();
-    await sources.waitForReady();
-    await sources.setAllLocal();
-    const agents = await sources.acceptDefaults();
-    const confirm = await agents.acceptDefaults("init");
-    return await finishWizard(await confirm.confirm());
-  } catch (e) {
-    await wizard.destroy();
-    throw e;
-  }
+async function initSingleSkillProject(
+  store: SeedConfigStore,
+  options: { fakeHome: string; projectDir: string; skillScope: "project" | "global" },
+): Promise<{ exitCode: number; output: string }> {
+  const inProject = options.skillScope === "project";
+  return installFromSeed(
+    store,
+    `OneSkill${options.skillScope}`,
+    buildSeedPayload({
+      skills: {
+        [E2E_SKILL.react.id]: buildSeedSkill({
+          install: "eject",
+          scope: options.skillScope,
+          assignments: inProject ? {} : { [WEB_DEV]: "preloaded" },
+        }),
+      },
+      agents: { [WEB_DEV]: { on: true, scope: "global" } },
+    }),
+    { dir: options.projectDir, home: options.fakeHome },
+  );
 }
 
 describe("generated config types keep narrowing after a project-scope install", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -138,7 +135,7 @@ describe("generated config types keep narrowing after a project-scope install", 
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      const install = await initSingleSkillProject({
+      const install = await initSingleSkillProject(store, {
         fakeHome,
         projectDir,
         skillScope: "project",
@@ -236,7 +233,7 @@ describe("generated config types keep narrowing after a project-scope install", 
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      const install = await initSingleSkillProject({
+      const install = await initSingleSkillProject(store, {
         fakeHome,
         projectDir,
         skillScope: "global",

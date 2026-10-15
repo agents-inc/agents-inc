@@ -16,7 +16,7 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { saUnflagged } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 
 /** A skill the catalogue declares under `web-e2e`, which is the category the control files it in. */

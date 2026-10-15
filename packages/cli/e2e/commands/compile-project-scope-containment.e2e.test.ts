@@ -1,17 +1,18 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
+  cleanupTempDir,
   createPermissionsFile,
   readTreeSnapshot,
   runCLI,
   sourceFolderIn,
 } from "../helpers/test-utils.js";
-import { createGlobalOnlyEnv, initProjectAllGlobal } from "../fixtures/dual-scope-helpers.js";
-import type { DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 const SECOND_PROJECT_DIR_NAME = "project-b";
 
@@ -20,19 +21,32 @@ const SECOND_PROJECT_DIR_NAME = "project-b";
  * ruled containment. Propagation belongs to global operations; a
  * project-scope compile is not one.
  *
- * Both registered projects are created through the real wizard, so the global
- * config genuinely carries two registrations and the fan-out this pins has
- * somewhere to go. The snapshots carry each file's mtime alongside its bytes:
+ * Both registered projects are set up with `init --from` over the global
+ * installation, so the global config genuinely carries two registrations and the
+ * fan-out this pins has somewhere to go. The snapshots carry each file's mtime alongside its bytes:
  * the out-of-scope writes this guards against rewrite unchanged configs and
  * unchanged agents, so a bytes-only comparison cannot see them at all — they
  * are visible in the command's log and in nothing else.
  */
 
+/** The E2E stack with every skill and sub-agent global — what each run below installs. */
+const ALL_GLOBAL_ID = "AllGlobal1";
+
 describe("compile inside a project is contained to that project", () => {
-  let env: DualScopeEnv | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await env?.destroy();
+    store.reset();
+    if (env) await cleanupTempDir(env.tempDir);
     env = undefined;
   });
 
@@ -40,16 +54,19 @@ describe("compile inside a project is contained to that project", () => {
     "leaves the global scope and every other registered project byte- and mtime-identical",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(E2E_SOURCE);
+      env = await createTestEnvironment();
       const { fakeHome, projectDir } = env;
+      const allGlobal = e2eStackPayload();
+      await installFromSeed(store, ALL_GLOBAL_ID, allGlobal, { dir: fakeHome, home: fakeHome });
+      await installFromSeed(store, ALL_GLOBAL_ID, allGlobal, { dir: projectDir, home: fakeHome });
 
       const secondProjectDir = path.join(fakeHome, SECOND_PROJECT_DIR_NAME);
       await mkdir(secondProjectDir, { recursive: true });
       await createPermissionsFile(secondProjectDir);
-      const secondProject = await initProjectAllGlobal(E2E_SOURCE, fakeHome, secondProjectDir);
-      expect(secondProject.exitCode, `second project init failed: ${secondProject.output}`).toBe(
-        EXIT_CODES.SUCCESS,
-      );
+      await installFromSeed(store, ALL_GLOBAL_ID, allGlobal, {
+        dir: secondProjectDir,
+        home: fakeHome,
+      });
 
       const globalClaudeBefore = await readTreeSnapshot(path.join(fakeHome, DIRS.CLAUDE));
       const globalSrcBefore = await readTreeSnapshot(sourceFolderIn(fakeHome));

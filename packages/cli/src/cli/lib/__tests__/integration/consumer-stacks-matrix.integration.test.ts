@@ -10,10 +10,10 @@ import { resolveInstallPaths } from "../../installation/install-base-dir";
 import { writeProjectConfig } from "../../operations/project/write-project-config.js";
 import { installThroughOperations } from "../helpers/install-through-operations.js";
 import type { ProjectConfig, ResolvedSkill, SkillId } from "../../../types";
-import { buildWizardResult, initMatrixAndSource } from "../factories/config-factories.js";
+import { buildInstallSelection, initMatrixAndSource } from "../factories/config-factories.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
 import { readTestTsConfig } from "../helpers/config-io.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { fileExists, directoryExists, createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { expectConfigSkills } from "../assertions/index.js";
 import { loadStacks, loadStackById } from "../../stacks/stacks-loader";
@@ -94,7 +94,7 @@ describe("Integration: Consumer-Defined Stacks", () => {
     const sourceResult = initMatrixAndSource(consumerMatrix, dirs.sourceDir);
 
     const result = await writeProjectConfig({
-      wizardResult: buildWizardResult(
+      selection: buildInstallSelection(
         buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
       ),
       sourceResult,
@@ -265,7 +265,7 @@ describe("Integration: Consumer-Defined Skills Matrix", () => {
     const sourceResult = initMatrixAndSource(consumerMatrix, dirs.sourceDir);
 
     const { copied, config, compilation } = await installThroughOperations({
-      wizardResult: buildWizardResult(
+      selection: buildInstallSelection(
         buildSkillConfigs(["web-framework-react", "api-framework-hono", "web-testing-vitest"]),
         { selectedAgents: ["web-developer", "api-developer"] },
       ),
@@ -493,7 +493,7 @@ describe("Integration: Custom Matrix + Stacks Full Pipeline", () => {
       config: configResult,
       compilation,
     } = await installThroughOperations({
-      wizardResult: buildWizardResult(
+      selection: buildInstallSelection(
         buildSkillConfigs(["web-framework-react", "web-testing-vitest", "api-framework-hono"]),
         { selectedAgents: ["web-developer", "api-developer"] },
       ),

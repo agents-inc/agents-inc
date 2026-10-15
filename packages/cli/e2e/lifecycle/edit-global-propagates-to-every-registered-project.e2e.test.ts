@@ -3,18 +3,18 @@ import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
-import {
-  createTestEnvironment,
-  finishWizard,
-  initProjectWithProjectScopedAgent,
-  readActiveAgentNames,
-} from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, readActiveAgentNames } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
-  completeWithLocalSources,
   configTypesTsPath,
   createPermissionsFile,
   listFiles,
@@ -22,9 +22,7 @@ import {
   readTestFile,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 
@@ -38,12 +36,13 @@ import type { AgentName } from "../../src/cli/types/index.js";
  * Every phase here is a real run of the binary against a directory holding
  * nothing:
  *
- *   A. `init` at HOME through the wizard — the global install, eject mode.
- *   B. `init` in an empty project, which finds the global install and opens the
- *      dashboard; the edit behind it moves ONE sub-agent to project scope, so
- *      the project owns something of its own to compile.
+ *   A. `init --from` at HOME — the global install, eject mode.
+ *   B. `init --from` in an empty project, of the same configuration with ONE
+ *      sub-agent at project scope, so the project owns something of its own to
+ *      compile.
  *   C. the same again in a second empty project.
- *   D. `edit` at HOME, deselecting the global `web-developer` sub-agent.
+ *   D. `edit --from` at HOME, of the configuration without the global
+ *      `web-developer` sub-agent.
  *
  * "Every registered project" is the claim, so it takes TWO of them: a run with
  * one project cannot tell a fan-out that visits every entry of `projects[]`
@@ -75,6 +74,15 @@ const SELECTED_AGENT_ALIAS = "SelectedAgentName";
 
 const FIRST_PROJECT = "project-one";
 const SECOND_PROJECT = "project-two";
+
+/** Phase A's configuration: the stack at global scope. */
+const GLOBAL_STACK_ID = "Fanout01";
+
+/** Phases B and C: the same, with the project-scoped sub-agent in the project. */
+const PROJECT_AGENT_ID = "Fanout02";
+
+/** Phase D: the global configuration with the removed sub-agent left out. */
+const WITHOUT_REMOVED_AGENT_ID = "Fanout03";
 
 /** One project's three local surfaces, read the same way before the edit and after it. */
 type ProjectSurfaces = {
@@ -129,6 +137,7 @@ function compiledRosters(
 }
 
 describe("a global edit propagates to every registered project, from nothing", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
 
   let globalHome: string;
@@ -142,6 +151,20 @@ describe("a global edit propagates to every registered project, from nothing", (
   let editOutput: string;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(GLOBAL_STACK_ID, e2eStackPayload({ scope: "global" }));
+    store.publish(
+      PROJECT_AGENT_ID,
+      e2eStackPayload({
+        scope: "global",
+        projectAgents: [PROJECT_SCOPED_AGENT.name],
+      }),
+    );
+    store.publish(
+      WITHOUT_REMOVED_AGENT_ID,
+      e2eStackPayload({ scope: "global", withoutAgents: [REMOVED_GLOBAL_AGENT.name] }),
+    );
+
     const environment = await createTestEnvironment();
     tempDir = environment.tempDir;
     globalHome = environment.fakeHome;
@@ -153,23 +176,24 @@ describe("a global edit propagates to every registered project, from nothing", (
       await createPermissionsFile(dir);
     }
 
-    // Phase A — the global install, through the wizard, into an empty HOME.
-    const globalWizard = await InitWizard.launchInGlobal({
-      projectDir: globalHome,
-      ...TERMINAL_SIZE.TALL,
-    });
-    const globalInstall = await finishWizard(await completeWithLocalSources(globalWizard));
+    // Phase A — the global install, into an empty HOME.
+    const globalInstall = await runInitFrom(
+      store,
+      GLOBAL_STACK_ID,
+      { dir: globalHome },
+      E2E_SOURCE.sourceDir,
+    );
     expect(globalInstall.exitCode, `global install failed: ${globalInstall.output}`).toBe(
       EXIT_CODES.SUCCESS,
     );
 
     // Phases B and C — two empty projects registered against that install.
     for (const dir of projectDirs) {
-      const registration = await initProjectWithProjectScopedAgent(
-        E2E_SOURCE,
-        globalHome,
-        dir,
-        PROJECT_SCOPED_AGENT.display,
+      const registration = await runInitFrom(
+        store,
+        PROJECT_AGENT_ID,
+        { dir, globalHome },
+        E2E_SOURCE.sourceDir,
       );
       expect(registration.exitCode, `registering ${dir} failed: ${registration.output}`).toBe(
         EXIT_CODES.SUCCESS,
@@ -179,30 +203,18 @@ describe("a global edit propagates to every registered project, from nothing", (
     registeredProjects = (await loadConfigOrFail(globalHome)).projects ?? [];
     beforeEdit = await Promise.all(projectDirs.map(readProjectSurfaces));
 
-    // Phase D — the global edit, at HOME, deselecting one global sub-agent.
-    const editWizard = await EditWizard.launchInGlobal({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      ...TERMINAL_SIZE.TALL,
-    });
-    try {
-      const sources = await editWizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      await agents.toggleAgent(REMOVED_GLOBAL_AGENT.display);
-      const confirm = await agents.advance("edit");
-      const edit = await finishWizard(await confirm.confirm());
-      editExitCode = edit.exitCode;
-      editOutput = edit.output;
-    } catch (error) {
-      await editWizard.destroy();
-      throw error;
-    }
+    // Phase D — the global edit, at HOME, leaving one global sub-agent out.
+    ({ exitCode: editExitCode, output: editOutput } = await applyEditFrom(
+      store,
+      WITHOUT_REMOVED_AGENT_ID,
+      { dir: globalHome },
+    ));
 
     afterEdit = await Promise.all(projectDirs.map(readProjectSurfaces));
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 

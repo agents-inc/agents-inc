@@ -15,7 +15,7 @@ import {
   generateProjectConfigFromSkills,
   isScopePairCompatible,
   scopeEligibilityKey,
-  seedToWizardResult,
+  seedToInstallSelection,
   splitConfigByScope,
 } from "@workspace/compile/seed-to-config"
 import {
@@ -77,7 +77,7 @@ import { COMPUTED_AT_INSTALL, type PreviewLang } from "./render-tokens"
  *
  * The pipeline mirrors `init --from` from a project directory on a clean machine:
  *
- *   seedToWizardResult            the payload's own decode
+ *   seedToInstallSelection        the payload's own decode
  *   generateProjectConfigFromSkills + the assigned stack   (`buildInstallConfig`)
  *   splitConfigByScope            one config, two roots
  *   addSessionToGlobal            the global half, over the blank pair `ensureBlankPair` writes
@@ -198,7 +198,7 @@ const recordedMarketplaceName = (
  * (`resolveStackProperty`), or a bare sub-agent gets someone else's skills.
  */
 function buildConfig(payload: SeedPayload): ProjectConfig {
-  const { result } = seedToWizardResult(payload, activeMatrix())
+  const { result } = seedToInstallSelection(payload, activeMatrix())
   const skillIds = [...new Set(result.skills.map((skill) => skill.id))]
 
   const generated = generateProjectConfigFromSkills(
@@ -219,10 +219,7 @@ function buildConfig(payload: SeedPayload): ProjectConfig {
     }
   )
 
-  const stack =
-    generated.stack && result.assignedStack
-      ? result.assignedStack
-      : generated.stack
+  const stack = generated.stack === undefined ? undefined : result.assignedStack
 
   const description = resolveDescription(
     result.selectedStackId,
@@ -340,7 +337,7 @@ const resolveSkill = (
     id: reference.id,
     // A disk path the template never renders.
     path: "",
-    // The SKILL.md sentence, never the wizard's label (CLI-898). The vendored
+    // The SKILL.md sentence, never the short label (CLI-898). The vendored
     // table answers for the public catalogue; an older catalogue keeps the label.
     description:
       described.activationDescription ??

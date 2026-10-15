@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defineConfig } from "../define-config";
 import type { ProjectConfig } from "../../../types";
-import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders.js";
 import {
   buildProjectConfig,
   buildAgentConfigs,

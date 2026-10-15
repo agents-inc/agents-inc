@@ -298,9 +298,9 @@ describe("the provider arrives on the command", () => {
    * folder is the only record of a provider, so a scope holding two has two answers and resolving
    * them by roster order acts on a user's other installation with nothing on screen to say so.
    *
-   * `edit` and `eject` are given arguments that stop them for their OWN reasons afterwards — there
-   * is no terminal for a wizard and `agent-partials` is a real eject type — because what is pinned
-   * is the refusal that comes first, not what the command would have done next.
+   * `eject` is given an argument that stops it for its OWN reason afterwards — `agent-partials` is
+   * a real eject type — because what is pinned is the refusal that comes first, not what the
+   * command would have done next.
    */
   const ACTS_ON_ONE_INSTALLATION = [
     { label: "edit", argv: ["edit"] },
@@ -348,9 +348,8 @@ describe("the provider arrives on the command", () => {
       });
       const said = flattenCliOutput(chosen.output);
 
-      // What each command does next is its own business and is not the claim — `edit` has no
-      // terminal to render a wizard in, and `share` needs the network. The claim is that the flag
-      // SELECTED: no refusal about which installation, and no refusal about the flag itself.
+      // What each command does next is its own business and is not the claim. The claim is that
+      // the flag SELECTED: no refusal about which installation, and no refusal about the flag itself.
       expect(
         said,
         "the flag it was told to use is one this command does not declare",

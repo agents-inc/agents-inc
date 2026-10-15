@@ -55,7 +55,7 @@ export type Installation = {
  *
  * Exported rather than kept private to its one caller below because two surfaces have to agree on
  * exactly which configs are content-less: this detection, which maps them to `null` so `init`
- * routes to the wizard instead of the dashboard, and `doctor`, which has to name that state rather
+ * routes to the editor instead of the dashboard, and `doctor`, which has to name that state rather
  * than repeat the `null` as `not found`. Two answers to that question is how one screen ended up
  * validating a file and calling it missing four lines apart.
  */
@@ -100,7 +100,7 @@ async function detectInstallationInDir(
 
   // A successfully-loaded config that declares neither skills nor agents is
   // content-less and does not count as an installation — init must route to the
-  // setup wizard, not the dashboard. This is the shared detection function, so
+  // editor, not the dashboard. This is the shared detection function, so
   // returning null here covers both the project-config and global-config
   // manifestations. A reporting surface must not read this `null` as "no config
   // here": see declaresNoContent, which doctor asks the same question of.

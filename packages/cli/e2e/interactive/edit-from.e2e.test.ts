@@ -44,7 +44,7 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 

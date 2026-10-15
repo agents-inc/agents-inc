@@ -1,10 +1,11 @@
 import { execa } from "execa";
 import { globalHomeFor } from "../../src/cli/lib/__tests__/helpers/global-home.js";
 import { stripVTControlCharacters } from "node:util";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "./project-handle.js";
 import {
   BIN_RUN,
   NO_BACKGROUND_VERSION_CHECK,
+  NO_LIVE_SEED_API,
   claudeConfigDir,
   codexHome,
 } from "../helpers/test-utils.js";
@@ -22,25 +23,23 @@ export class CLI {
   /**
    * Run a non-interactive CLI command against a project.
    *
-   * HOME defaults to `project.globalHome` when the wizard that produced this
-   * handle installed content into an explicit global HOME (launchInProject /
-   * launchInGlobal), so the command reads the same "global" root the wizard
-   * wrote. It falls back to `project.dir` otherwise — byte-identical to the
-   * previous hardcoded default for handles that carry no globalHome. An
-   * explicit `options.env.HOME` still wins.
+   * HOME defaults to `project.globalHome` when the handle names one, so the
+   * command reads the same "global" root the setup wrote. It falls back to
+   * `project.dir` otherwise. An explicit `options.env.HOME` still wins.
    *
    * `CC_MARKETPLACE` is cleared because it is the CLI's own marketplace override:
    * left inherited, a developer's exported value would point `init` at a marketplace
    * no spec declares. The name is the variable the product reads — this line spent
    * its life spelling a variable nothing has ever set.
    *
-   * `AGENTS_INC_API_URL`, `XDG_CACHE_HOME` and `GIGET_AUTH` are the rest of that same class:
-   * every remaining variable `src/cli/` reads by name, each one a knob a developer's shell may
-   * legitimately carry for their own use. Cleared TOGETHER rather than one at a time as each is
-   * found to matter, because "nobody exports that" is a fact about this machine — a shared
-   * giget cache, a staging seed API or a private-repo token reaching a spec is a run whose
-   * result belongs to the environment rather than to the code. Every one sits ahead of
-   * `options.env`, so a spec that needs a value still names its own.
+   * `XDG_CACHE_HOME` and `GIGET_AUTH` are the rest of that same class: every remaining
+   * variable `src/cli/` reads by name, each one a knob a developer's shell may legitimately
+   * carry for their own use. Cleared TOGETHER rather than one at a time as each is found to
+   * matter, because "nobody exports that" is a fact about this machine — a shared giget cache
+   * or a private-repo token reaching a spec is a run whose result belongs to the environment
+   * rather than to the code. `AGENTS_INC_API_URL` is the one not cleared but DEFAULTED, by
+   * {@link NO_LIVE_SEED_API}, because the product falls back to the live store when it is unset.
+   * Every one sits ahead of `options.env`, so a spec that needs a value still names its own.
    * `src/cli/lib/__tests__/e2e-runner-environment.test.ts` is what keeps this list and the PTY
    * harness's copy of it complete.
    *
@@ -84,8 +83,8 @@ export class CLI {
       ...(options?.input !== undefined && { input: options.input }),
       env: {
         ...NO_BACKGROUND_VERSION_CHECK,
+        ...NO_LIVE_SEED_API,
         CC_MARKETPLACE: undefined,
-        AGENTS_INC_API_URL: undefined,
         XDG_CACHE_HOME: undefined,
         GIGET_AUTH: undefined,
         VITEST: undefined,

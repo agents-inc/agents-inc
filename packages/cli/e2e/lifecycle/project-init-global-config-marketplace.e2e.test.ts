@@ -1,7 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -13,8 +15,7 @@ import {
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
 
 /**
@@ -23,7 +24,7 @@ import { EJECT_SOURCE } from "../../src/cli/consts.js";
  * plugins back to the marketplace they came from.
  *
  * `uninstall` resolves which plugins it owns via `getCliInstalledPluginKeys`.
- * Its primary key is `<id>@<skill.source>`, and `skill.source` is the wizard's
+ * Its primary key is `<id>@<skill.source>`, and `skill.source` is the
  * selected source label (the default public source name), NOT the marketplace
  * the plugin was actually registered under. Only the `config.marketplace`
  * variant key produces `<id>@<marketplace>`, which is the key the Claude plugin
@@ -41,16 +42,15 @@ const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global config", () => {
   let fixture: E2EPluginSource;
-  let wizard: InitWizard | undefined;
+  let store: SeedConfigStore;
   let currentTempDir: string | undefined;
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (currentTempDir) {
       await cleanupTempDir(currentTempDir);
       currentTempDir = undefined;
@@ -58,8 +58,20 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
   });
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(fixture);
   });
+
+  /** The E2E stack as plugins, every skill and sub-agent at the default global scope. */
+  function installPlugins(dir: string, home: string) {
+    return installFromSeed(
+      store,
+      "Plugins1",
+      e2eStackPayload({ install: "plugin" }),
+      { dir, home },
+      fixture.sourceDir,
+    );
+  }
 
   it(
     "carries marketplace so a later global uninstall deregisters the plugins it installed",
@@ -68,15 +80,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       currentTempDir = tempDir;
 
-      wizard = await InitWizard.launch({
-        projectDir,
-        source: fixture,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      const initResult = await wizard.completeWithDefaults();
-      expect(await initResult.exitCode, initResult.output).toBe(EXIT_CODES.SUCCESS);
-      await initResult.destroy();
+      await installPlugins(projectDir, fakeHome);
 
       const globalConfig = await loadConfigOrFail(fakeHome);
       const reactPluginKey = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
@@ -132,15 +136,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
       const { tempDir, fakeHome } = await createTestEnvironment();
       currentTempDir = tempDir;
 
-      wizard = await InitWizard.launch({
-        projectDir: fakeHome,
-        source: fixture,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      const initResult = await wizard.completeWithDefaults();
-      expect(await initResult.exitCode, initResult.output).toBe(EXIT_CODES.SUCCESS);
-      await initResult.destroy();
+      await installPlugins(fakeHome, fakeHome);
 
       const globalConfig = await loadConfigOrFail(fakeHome);
       expect(globalConfig.marketplaceName).toBe(fixture.marketplaceName);

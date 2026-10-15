@@ -6,8 +6,7 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { expectDualScopeInstallation } from "../assertions/scope-assertions.js";
-import { TIMEOUTS, EXIT_CODES, FILES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import {
   agentsPath,
   isClaudeCLIAvailable,
@@ -16,13 +15,23 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   createTestEnvironment,
-  initGlobal,
-  initProject,
   readSkillEntries,
+  type TestEnvironment,
 } from "../fixtures/dual-scope-helpers.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import type { SeedSkill } from "@workspace/matrix/seed";
 
 /**
  * Dual-scope edit lifecycle E2E test -- mixed source coexistence.
@@ -33,68 +42,95 @@ import {
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
+const API_DEV = E2E_AGENT["api-developer"].name;
+
+/** The stack at home, every skill installed as a plugin. */
+const PLUGIN_STACK_ID = "PlugStk2";
+
+/** The project's own API skill on its own API sub-agent, in the install mode named. */
+function projectHonoPayload(install: SeedSkill["install"]) {
+  return buildSeedPayload({
+    skills: {
+      [E2E_SKILL.hono.id]: buildSeedSkill({
+        install,
+        scope: "project",
+        assignments: { [API_DEV]: "preloaded" },
+      }),
+    },
+    agents: { [API_DEV]: { scope: "project" } },
+  });
+}
+const PROJECT_HONO_EJECT_ID = "ProjHon2";
+const PROJECT_HONO_PLUGIN_ID = "ProjHon3";
+
 describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coexistence", () => {
   let pluginFixture: E2EPluginSource;
   let pluginSourceTempDir: string;
+  let store: SeedConfigStore;
   let tempDir: string;
-  let wizard: EditWizard | undefined;
 
   beforeAll(async () => {
     pluginFixture = await createE2EPluginSource();
     pluginSourceTempDir = pluginFixture.tempDir;
+    store = await startSeedConfigStore();
+    store.publish(PLUGIN_STACK_ID, e2eStackPayload({ scope: "global", install: "plugin" }));
+    store.publish(PROJECT_HONO_EJECT_ID, projectHonoPayload("eject"));
+    store.publish(PROJECT_HONO_PLUGIN_ID, projectHonoPayload("plugin"));
   }, TIMEOUTS.SETUP_DUAL);
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (tempDir) {
       await cleanupTempDir(tempDir);
     }
   });
 
   afterAll(async () => {
+    await store.close();
     if (pluginSourceTempDir) await cleanupTempDir(pluginSourceTempDir);
   });
+
+  /** The stack globally as plugins, then the project's own API skill ejected into it. */
+  async function installMixedSources(): Promise<TestEnvironment> {
+    const env = await createTestEnvironment();
+    tempDir = env.tempDir;
+
+    const phaseA = await runInitFrom(
+      store,
+      PLUGIN_STACK_ID,
+      { dir: env.fakeHome },
+      pluginFixture.sourceDir,
+    );
+    expect(phaseA.exitCode, phaseA.output).toBe(EXIT_CODES.SUCCESS);
+
+    const phaseB = await runInitFrom(
+      store,
+      PROJECT_HONO_EJECT_ID,
+      { dir: env.projectDir, globalHome: env.fakeHome },
+      pluginFixture.sourceDir,
+    );
+    expect(phaseB.exitCode, phaseB.output).toBe(EXIT_CODES.SUCCESS);
+    return env;
+  }
 
   it(
     "Edit detects source migration for locally-initialized skills with marketplace source",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const env = await createTestEnvironment();
-      tempDir = env.tempDir;
-      const { fakeHome, projectDir } = env;
+      const { fakeHome, projectDir } = await installMixedSources();
 
-      const phaseA = await initGlobal(pluginFixture, fakeHome);
-      expect(phaseA.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      const phaseB = await initProject(pluginFixture, fakeHome, projectDir);
-      expect(phaseB.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Phase C: Edit -- switch all to plugin
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: pluginFixture,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
+      // Phase C: Edit -- the project's own API skill switched to plugin
+      const result = await applyEditFrom(store, PROJECT_HONO_PLUGIN_ID, {
+        dir: projectDir,
+        globalHome: fakeHome,
       });
 
-      const sources = await wizard.build.passThroughAllDomains();
-
-      await sources.waitForReady();
-      await sources.setAllPlugin();
-      const agents = await sources.advance();
-
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-
       // Phase D: Assertions
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // Which direction the switch went, not merely that the word appeared. The
       // alternation that stood here (`/[Ss]witch/`) was satisfied by a switch BACK
       // to eject, which is the other half of the matrix this file exists to tell apart.
-      const output = result.rawOutput;
+      const { output } = result;
       expect(output).toContain(STEP_TEXT.SWITCHING_SKILLS_SUFFIX);
       expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
       expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
@@ -125,8 +161,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
         "project-scoped api-framework-hono must exist in config",
       ).toBeDefined();
       expect(projectHonoEntry?.origin).not.toBe("eject");
-
-      await result.destroy();
     },
   );
 
@@ -134,37 +168,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
     "Compiled agents reference both plugin and local skills correctly",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE, retry: 1 },
     async () => {
-      const env = await createTestEnvironment();
-      tempDir = env.tempDir;
-      const { fakeHome, projectDir } = env;
-
-      const phaseA = await initGlobal(pluginFixture, fakeHome);
-      expect(phaseA.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      const phaseB = await initProject(pluginFixture, fakeHome, projectDir);
-      expect(phaseB.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Phase C: Edit -- switch api-framework-hono to local
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: pluginFixture,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      const sources = await wizard.build.passThroughAllDomains();
-
-      // Sources step -- navigate to switch individual skill
-      await sources.waitForReady();
-      // Use "l" to set all to local for this test variant
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      const { fakeHome, projectDir } = await installMixedSources();
 
       // Phase D: Verify agent content
 
@@ -182,8 +186,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
       const apiDevContent = await readTestFile(projectApiDevPath);
       expect(apiDevContent).toContain(E2E_SKILL.hono.id);
       expect(apiDevContent).not.toContain(E2E_SKILL.react.id);
-
-      await result.destroy();
     },
   );
 });

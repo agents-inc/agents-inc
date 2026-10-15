@@ -6,7 +6,7 @@ import { CLAUDE_DIR, DEFAULT_PLUGIN_NAME } from "../../../consts";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 import { buildProjectConfig } from "../factories/config-factories.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { detectInstallation } from "../../installation";
 import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";

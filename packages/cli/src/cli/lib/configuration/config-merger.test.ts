@@ -10,7 +10,7 @@ import { DEFAULT_PLUGIN_NAME } from "../../consts";
 import { getProjectConfigPath } from "../installation/install-base-dir.js";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import {
   buildProjectConfig,
   buildAgentConfigs,
@@ -19,7 +19,7 @@ import {
 import { expectAgentConfigs } from "../__tests__/assertions/index.js";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 
-/** A `branding` a config declares by hand — no wizard step and no shared configuration sets one. */
+/** A `branding` a config declares by hand — no shared configuration sets one. */
 const WHITE_LABEL = { name: "Northwind" };
 
 /** The five fields a source repository declares its own layout with, each set off its default. */
@@ -115,7 +115,7 @@ describe("config-merger", () => {
         }),
       );
 
-      // Wizard result after a full deselect: zero entries for api-developer.
+      // Result after a full deselect: zero entries for api-developer.
       const newConfig = buildProjectConfig({ name: "project", agents: [], skills: [] });
 
       const result = await mergeWithExistingConfig(newConfig, { projectDir: tempDir });
@@ -1108,7 +1108,7 @@ describe("config-merger", () => {
         // newConfig carries only the active project entry — it does NOT carry
         // the existing tombstone forward. The merge treats newConfig as
         // authoritative for every id it references: the stale tombstone is
-        // dropped on the next merge because the wizard did not emit it.
+        // dropped on the next merge because newConfig does not carry it.
         // Skills at unrelated ids remain untouched.
         const newConfig = buildProjectConfig({
           name: "project",
@@ -1147,10 +1147,10 @@ describe("config-merger", () => {
       });
 
       it("should preserve dual-scope tombstone when new config explicitly carries it", () => {
-        // Production wizard flows (generateProjectConfigFromSkills) emit BOTH
-        // the active entry and the tombstone when a dual-scope install is
-        // legitimate. In that case the merger preserves both because new is
-        // authoritative for the id and new explicitly lists both shapes.
+        // A config can carry BOTH the active entry and the tombstone when a
+        // dual-scope install is legitimate. In that case the merger preserves
+        // both because new is authoritative for the id and new explicitly lists
+        // both shapes.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: [
@@ -1279,8 +1279,8 @@ describe("config-merger", () => {
       });
 
       it("drops an existing skill whose id could not be resolved this session, at both scopes", () => {
-        // A real installed skill absent from the currently-loaded source matrix is skipped by the
-        // wizard (populateFromSkillIds) and never reaches newConfig. It is removed like any other
+        // A real installed skill absent from the currently-loaded source matrix never reaches
+        // newConfig. It is removed like any other
         // absent owned entry — `edit` names it and says why rather than the config keeping an
         // entry the same run's summary announced as gone.
         const newConfig = buildProjectConfig({
@@ -1413,8 +1413,8 @@ describe("config-merger", () => {
         // newConfig carries only the active project entry — it does NOT carry
         // the existing global:excluded tombstone forward. The merge treats
         // newConfig as authoritative for every name it references: the stale
-        // tombstone is dropped on the next merge because the wizard did not
-        // emit it (this is exactly how P→G scope migration cleans up).
+        // tombstone is dropped on the next merge because newConfig does not
+        // carry it (this is exactly how P→G scope migration cleans up).
         // Agents at unrelated names remain untouched.
         const newConfig = buildProjectConfig({
           name: "project",
@@ -1449,10 +1449,10 @@ describe("config-merger", () => {
       });
 
       it("should preserve dual-scope tombstone when new config explicitly carries it", () => {
-        // Production wizard flows (toggleAgentScope G→P) emit BOTH the active
-        // project entry and the global:excluded tombstone. In that case the
-        // merger preserves both because new is authoritative for the name
-        // and explicitly lists both shapes — exactly the G→P E2E contract.
+        // A config can carry BOTH the active project entry and the
+        // global:excluded tombstone. In that case the merger preserves both
+        // because new is authoritative for the name and explicitly lists both
+        // shapes — exactly the G→P E2E contract.
         const newConfig = buildProjectConfig({
           name: "project",
           agents: [
@@ -1490,7 +1490,7 @@ describe("config-merger", () => {
       });
 
       it("drops BOTH the lingering active project entry and the stale tombstone when a dual-scope agent is fully deselected", () => {
-        // Scenario B full-deselect: the wizard emits ZERO entries for the name
+        // Scenario B full-deselect: newConfig carries ZERO entries for the name
         // (a fully-deselected dual-scope agent is neither an active selection nor
         // a tombstone), while the on-disk config still has both the active project
         // entry and the global tombstone. Both must be dropped, not preserved.

@@ -37,7 +37,7 @@ import type { SkillId } from "../../../types";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
- * The spine `init --from` shares with the wizard: plugin skills are handed to the
+ * The `init --from` install spine: plugin skills are handed to the
  * Claude CLI, once each, at the scope their own config entry names — and that
  * install GATES the config write.
  *
@@ -145,7 +145,7 @@ function buildTwoScopePluginPayload() {
  * Serves one shared configuration to `fetchSeedConfig`, under the id these runs ask for.
  *
  * Answering the network rather than mocking the module keeps the schema decode and the
- * seed -> wizard-result mapping real: a payload shape the CLI would reject on the wire must
+ * seed -> selection mapping real: a payload shape the CLI would reject on the wire must
  * reject here too. The URL is not asserted on — the store's own specs cover that, and this one is
  * about what happens after the payload lands.
  */

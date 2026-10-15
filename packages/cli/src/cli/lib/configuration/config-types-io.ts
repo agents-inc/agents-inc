@@ -136,11 +136,11 @@ export async function regenerateConfigTypes(
   const globalConfigTypes = await getGlobalConfigTypesPath(provider);
   const loadedConfig = await loadProjectConfigFromDir(projectDir, provider);
 
-  // Otherwise the standalone form, narrowed to the config on disk, exactly as the wizard write
-  // path narrows it. The full matrix is the fallback only when there is no config
-  // to narrow to — a union covering every skill the source offers would declare
-  // literals the sibling config.ts never installs, and `satisfies` would stop
-  // catching a config that names one of them.
+  // Otherwise the standalone form, narrowed to the config on disk. The full matrix
+  // is the fallback only when there is no config to narrow to — a union covering
+  // every skill the source offers would declare literals the sibling config.ts
+  // never installs, and `satisfies` would stop catching a config that names one
+  // of them.
   const source = globalConfigTypes
     ? renderTypesExtendingGlobal(projectDir, provider, loadedConfig?.config.agents, extras)
     : generateConfigTypesSource(

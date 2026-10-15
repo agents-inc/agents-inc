@@ -2,7 +2,6 @@ import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DashboardSession } from "../pages/dashboard-session.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { BRANDING, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
@@ -13,7 +12,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
  * The dashboard a person actually sees, driven through a real PTY — its title, and the counts
@@ -83,9 +82,7 @@ describe("the name the interactive dashboard titles itself with", () => {
     await createLocalSkill(projectDir, E2E_SKILL.react.id);
     await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, { frontmatter: true });
 
-    // A bare `init`: the config records no marketplace, so naming one would be naming a
-    // different marketplace than the one this installation was made from.
-    const session = await InitWizard.launchForDashboard({ projectDir, noSource: true });
+    const session = await DashboardSession.launch({ projectDir });
     await session.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
     return session;
   }

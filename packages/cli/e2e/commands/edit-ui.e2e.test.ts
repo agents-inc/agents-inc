@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 
 import "../matchers/setup.js";
+import { CLI } from "../fixtures/cli.js";
 import { createTempDir, cleanupTempDir, readTreeSnapshot } from "../helpers/test-utils.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import {
-  runEditUi,
   runInitFrom,
   startSeedConfigStore,
   type SeedConfigStore,
@@ -17,13 +17,12 @@ import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-fac
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * `edit --ui` end to end: the CLI hands the installation in this directory to the editor
- * instead of to the wizard.
+ * `edit --ui`, and the bare `edit` that does the same, end to end: the CLI hands the installation
+ * in this directory to the editor.
  *
- * What it must prove is that the flag replaces the wizard rather than preceding it — an id is
- * minted, the editor link is printed, and the directory is left exactly as it was found. A
- * spec that only checked the posted body would pass on a run that also opened the wizard, or
- * on one that rewrote the config on its way out.
+ * What it must prove is that an id is minted, the editor link is printed, and the directory is
+ * left exactly as it was found. A spec that only checked the posted body would pass on a run that
+ * rewrote the config on its way out.
  */
 
 describe("edit --ui", () => {
@@ -54,47 +53,53 @@ describe("edit --ui", () => {
     return dir;
   }
 
-  it("mints an id for what is installed here and names the editor it opens in", async () => {
-    const project = await takeTempDir();
-    store.publish(
-      "UiOrigin1",
-      buildSeedPayload({
-        v: PINNED_WIRE_VERSION,
-        skills: {
-          [E2E_SKILL.react.id]: ejectedGlobalSkill(),
-          [E2E_SKILL.vitest.id]: ejectedGlobalSkill({
-            assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
-          }),
-        },
-      }),
-    );
-    const installed = await runInitFrom(store, "UiOrigin1", { dir: project }, sourceDir);
-    expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
-    store.reset();
-    const before = await readTreeSnapshot(project);
+  describe.each([[["edit"]], [["edit", "--ui"]]])("%j", (argv) => {
+    /** Runs `argv` against `store`; the spawned process has no TTY, so the link is only printed. */
+    const runAgainst = (dir: string) =>
+      CLI.run(argv, { dir }, { env: { AGENTS_INC_API_URL: store.url } });
 
-    const { exitCode, output } = await runEditUi(store, { dir: project });
+    it("mints an id for what is installed here and names the editor it opens in", async () => {
+      const project = await takeTempDir();
+      store.publish(
+        "UiOrigin1",
+        buildSeedPayload({
+          v: PINNED_WIRE_VERSION,
+          skills: {
+            [E2E_SKILL.react.id]: ejectedGlobalSkill(),
+            [E2E_SKILL.vitest.id]: ejectedGlobalSkill({
+              assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
+            }),
+          },
+        }),
+      );
+      const installed = await runInitFrom(store, "UiOrigin1", { dir: project }, sourceDir);
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+      store.reset();
+      const before = await readTreeSnapshot(project);
 
-    expect(exitCode, `edit --ui failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
-    expect(store.minted).toHaveLength(1);
-    const mintedId = firstElement(store.minted);
-    expect(output).toContain(mintedId);
-    expect(output).toContain(STEP_TEXT.EDITOR_URL);
-    // The flag replaces the wizard; a run that opened it would have loaded the catalogue first.
-    expect(output).not.toContain(STEP_TEXT.LOADING_SKILLS);
-    // Nothing was edited: the id is a reading of this installation, not a rewrite of it.
-    expect(await readTreeSnapshot(project)).toStrictEqual(before);
-  });
+      const { exitCode, output } = await runAgainst(project);
 
-  it("refuses a directory with nothing installed, without spending a write", async () => {
-    const empty = await takeTempDir();
+      expect(exitCode, `${argv.join(" ")} failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+      expect(store.minted).toHaveLength(1);
+      const mintedId = firstElement(store.minted);
+      expect(output).toContain(`Shared as ${mintedId}`);
+      expect(output).toContain(STEP_TEXT.EDITOR_URL);
+      // Opening the editor needs no catalogue, so none is loaded.
+      expect(output).not.toContain(STEP_TEXT.LOADING_SKILLS);
+      // Nothing was edited: the id is a reading of this installation, not a rewrite of it.
+      expect(await readTreeSnapshot(project)).toStrictEqual(before);
+    });
 
-    const { exitCode, output } = await runEditUi(store, { dir: empty });
+    it("refuses a directory with nothing installed, without spending a write", async () => {
+      const empty = await takeTempDir();
 
-    expect(exitCode).toBe(EXIT_CODES.ERROR);
-    expect(flattenCliOutput(output)).toContain(STEP_TEXT.NO_INSTALLATION);
-    // An id for an empty configuration is a dead link, and minting one spends a write from the
-    // scarce half of the store's free tier.
-    expect(store.requests).toStrictEqual([]);
+      const { exitCode, output } = await runAgainst(empty);
+
+      expect(exitCode).toBe(EXIT_CODES.ERROR);
+      expect(flattenCliOutput(output)).toContain(STEP_TEXT.NO_INSTALLATION);
+      // An id for an empty configuration is a dead link, and minting one spends a write from the
+      // scarce half of the store's free tier.
+      expect(store.requests).toStrictEqual([]);
+    });
   });
 });

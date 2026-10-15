@@ -19,7 +19,7 @@ import {
   buildProjectConfig,
   buildAgentConfigs,
 } from "../../__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders.js";
 import {
   readGeneratedUnion,
   readGeneratedUnionMembers,

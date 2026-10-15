@@ -6,11 +6,11 @@ import { loadProjectConfigFromDir } from "../configuration/project-config.js";
 import { isActiveAt } from "../configuration/scope-predicates.js";
 import { providerInUse } from "../installation/install-layout.js";
 import { getCategoryDomain, getSkillDisplayName, matrix } from "../matrix/matrix-provider.js";
-import { orderDomains } from "../wizard/domain-order.js";
+import { orderDomains } from "@workspace/compile";
 import { SHARED_CONFIG_APPLY, SHARED_CONFIG_ARRIVALS } from "../../utils/messages.js";
 import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object.js";
 
-import type { WizardResultV2 } from "../../components/wizard/wizard.js";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { AgentName } from "../../types/agents.js";
 import type {
   AgentScopeConfig,
@@ -40,13 +40,13 @@ export type KeptFromRoundTrip = {
 export type UnassignedRow = { skillId: SkillId; agentName: AgentName; category: Category };
 
 export type ReconciledSharedConfig = {
-  result: WizardResultV2;
+  result: InstallSelection;
   kept: KeptFromRoundTrip;
   unassigned: UnassignedRow[];
 };
 
 export type ReconcileOptions = {
-  decoded: WizardResultV2;
+  decoded: InstallSelection;
   /** Its own config, or the global one it inherits. */
   installed: ProjectConfig | null;
   /** From `skillsAuthoredHere`, the one definition both halves share. */
@@ -80,7 +80,7 @@ export function reconcileSharedConfig(options: ReconcileOptions): ReconciledShar
   return { result, kept: describeKept(options, keptSkills), unassigned };
 }
 
-function nothingToReconcile(decoded: WizardResultV2): ReconciledSharedConfig {
+function nothingToReconcile(decoded: InstallSelection): ReconciledSharedConfig {
   return { result: decoded, kept: NOTHING_KEPT, unassigned: [] };
 }
 
@@ -118,17 +118,15 @@ function reasonKept(skill: SkillConfig, options: ReconcileOptions): KeptReason {
 }
 
 function withKeptEntries(
-  decoded: WizardResultV2,
+  decoded: InstallSelection,
   installed: ProjectConfig,
   keptSkills: SkillConfig[],
 ): Pick<ReconciledSharedConfig, "result" | "unassigned"> {
-  const withSkills: WizardResultV2 = {
+  const withSkills: InstallSelection = {
     ...decoded,
     skills: [...decoded.skills, ...keptSkills],
     selectedDomains: withKeptDomains(decoded.selectedDomains, keptSkills),
   };
-  if (decoded.assignedStack === undefined) return { result: withSkills, unassigned: [] };
-
   const { assignedStack, unassigned } = withKeptStackRows(decoded.assignedStack, installed.stack, {
     keptSkillIds: new Set(keptSkills.map((skill) => skill.id)),
     survivingAgents: new Set(decoded.selectedAgents),
@@ -207,11 +205,11 @@ function withAgentKeptRows(
  * limit, not an instruction.
  */
 export function withUnplaceableAssignees(
-  decoded: WizardResultV2,
+  decoded: InstallSelection,
   installed: ProjectConfig | null,
   payload: SeedPayload,
   unplaceable: ReadonlySet<string>,
-): WizardResultV2 {
+): InstallSelection {
   if (!installed) return decoded;
 
   const assigned = assigneesOfHeld(payload, installed, unplaceable);
@@ -264,7 +262,7 @@ export async function readInstalledGlobal(projectDir: string): Promise<Installed
 type GlobalEntries = { skillIds: SkillId[]; agentNames: AgentName[] };
 
 export type HeldGlobal = {
-  result: WizardResultV2;
+  result: InstallSelection;
   /**
    * Global entries the configuration names that the global install holds; their skills are skipped.
    */
@@ -285,7 +283,7 @@ const NO_GLOBAL_ENTRIES: GlobalEntries = { skillIds: [], agentNames: [] };
  * home directory and on a machine with no global install.
  */
 export function holdInstalledGlobal(
-  decoded: WizardResultV2,
+  decoded: InstallSelection,
   installed: InstalledGlobal | null,
 ): HeldGlobal {
   if (!installed) {
@@ -298,12 +296,10 @@ export function holdInstalledGlobal(
   const agents = pairWithHeld(decoded.agentConfigs, heldAgents, (agent) => agent.name);
   const namedSkillIds = skills.map(({ named }) => named.id);
   const namedAgentNames = agents.map(({ named }) => named.name);
-  const assignedStack =
-    decoded.assignedStack &&
-    withHeldRows(decoded.assignedStack, installed.stack, {
-      agentNames: namedAgentNames,
-      skippedSkillIds: new Set(namedSkillIds),
-    });
+  const assignedStack = withHeldRows(decoded.assignedStack, installed.stack, {
+    agentNames: namedAgentNames,
+    skippedSkillIds: new Set(namedSkillIds),
+  });
 
   const restatesSkill = ({ named, held }: Held<SkillConfig>): boolean =>
     named.origin === held.origin;
@@ -311,14 +307,14 @@ export function holdInstalledGlobal(
     named.model === held.model &&
     named.codexModel === held.codexModel &&
     named.effort === held.effort &&
-    sameAssignments(decoded.assignedStack?.[named.name], assignedStack?.[named.name]);
+    sameAssignments(decoded.assignedStack[named.name], assignedStack[named.name]);
 
   return {
     result: {
       ...decoded,
       skills: decoded.skills.map(asHeld(skills)),
       agentConfigs: decoded.agentConfigs.map(asHeld(agents)),
-      ...(assignedStack !== undefined && { assignedStack }),
+      assignedStack,
     },
     installed: { skillIds: namedSkillIds, agentNames: namedAgentNames },
     keptAsInstalled: {
@@ -333,7 +329,7 @@ export function holdInstalledGlobal(
  * the global install's entries are not a project's to remove.
  */
 export function restoreInstalledGlobal(
-  decoded: WizardResultV2,
+  decoded: InstallSelection,
   installed: InstalledGlobal | null,
 ): HeldGlobal {
   const held = holdInstalledGlobal(decoded, installed);
@@ -491,7 +487,7 @@ function appendRows(
 
 type OmittedGlobal = { skills: SkillConfig[]; agents: AgentScopeConfig[] };
 
-function omittedGlobal(result: WizardResultV2, installed: InstalledGlobal): OmittedGlobal {
+function omittedGlobal(result: InstallSelection, installed: InstalledGlobal): OmittedGlobal {
   const namedSkillIds = new Set(result.skills.map((skill) => skill.id));
   const namedAgentNames = new Set(result.agentConfigs.map((agent) => agent.name));
 
@@ -506,10 +502,10 @@ function omittedGlobal(result: WizardResultV2, installed: InstalledGlobal): Omit
 }
 
 function withOmittedGlobal(
-  result: WizardResultV2,
+  result: InstallSelection,
   installed: InstalledGlobal,
   omitted: OmittedGlobal,
-): WizardResultV2 {
+): InstallSelection {
   const omittedAgentNames = omitted.agents.map((agent) => agent.name);
 
   return {
@@ -518,9 +514,7 @@ function withOmittedGlobal(
     agentConfigs: [...result.agentConfigs, ...omitted.agents],
     selectedAgents: [...new Set([...result.selectedAgents, ...omittedAgentNames])],
     selectedDomains: withKeptDomains(result.selectedDomains, omitted.skills),
-    ...(result.assignedStack !== undefined && {
-      assignedStack: withInstalledRows(result.assignedStack, installed.stack, omittedAgentNames),
-    }),
+    assignedStack: withInstalledRows(result.assignedStack, installed.stack, omittedAgentNames),
   };
 }
 

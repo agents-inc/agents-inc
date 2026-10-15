@@ -1,13 +1,6 @@
 // Shared skill entries and TestSkill arrays for test files.
 
-import type {
-  Category,
-  CategoryPath,
-  ResolvedSkill,
-  SkillId,
-  SkillSlug,
-  SkillSource,
-} from "../../../types";
+import type { Category, ResolvedSkill, SkillId, SkillSlug, SkillSource } from "../../../types";
 import type { TestSkill } from "../fixtures/create-test-source";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, LOCAL_PSEUDO_CATEGORY } from "../../../consts";
 import { createMockSkill, createTestSkill } from "../factories/skill-factories.js";
@@ -270,153 +263,6 @@ export const HEALTH_AUDIT_APPLIED_DISPOSITION_SKILL = createMockSkill("web-realt
 });
 
 // ---------------------------------------------------------------------------
-// Category grid test skills (category-grid.test.tsx)
-// ---------------------------------------------------------------------------
-
-export const CATEGORY_GRID_SKILLS: {
-  id: SkillId;
-  slug: SkillSlug;
-  displayName: string;
-  category: CategoryPath;
-}[] = [
-  { id: "web-framework-react", slug: "react", displayName: "React", category: "web-framework" },
-  {
-    id: "web-framework-vue-composition-api",
-    slug: "vue-composition-api",
-    displayName: "Vue",
-    category: "web-framework",
-  },
-  {
-    id: "web-framework-angular-standalone",
-    slug: "angular-standalone",
-    displayName: "Angular",
-    category: "web-framework",
-  },
-  {
-    id: "web-framework-solidjs",
-    slug: "solidjs",
-    displayName: "SolidJS",
-    category: "web-framework",
-  },
-  {
-    id: "web-meta-framework-nuxt",
-    slug: "nuxt",
-    displayName: "Nuxt",
-    category: "web-meta-framework",
-  },
-  {
-    id: "web-meta-framework-remix",
-    slug: "remix",
-    displayName: "Remix",
-    category: "web-meta-framework",
-  },
-  {
-    id: "web-meta-framework-nextjs",
-    slug: "nextjs",
-    displayName: "Next.js",
-    category: "web-meta-framework",
-  },
-  {
-    id: "web-styling-scss-modules",
-    slug: "scss-modules",
-    displayName: "SCSS Modules",
-    category: "web-styling",
-  },
-  {
-    id: "web-styling-tailwind",
-    slug: "tailwind",
-    displayName: "Tailwind",
-    category: "web-styling",
-  },
-  { id: "web-styling-cva", slug: "cva", displayName: "CVA", category: "web-styling" },
-  {
-    id: "web-state-zustand",
-    slug: "zustand",
-    displayName: "Zustand",
-    category: "web-client-state",
-  },
-  { id: "web-state-jotai", slug: "jotai", displayName: "Jotai", category: "web-client-state" },
-  {
-    id: "web-state-redux-toolkit",
-    slug: "redux-toolkit",
-    displayName: "Redux",
-    category: "web-client-state",
-  },
-  { id: "web-state-mobx", slug: "mobx", displayName: "MobX", category: "web-client-state" },
-  {
-    id: "web-server-state-react-query",
-    slug: "react-query",
-    displayName: "React Query",
-    category: "web-server-state",
-  },
-  { id: "web-data-fetching-swr", slug: "swr", displayName: "SWR", category: "web-server-state" },
-  {
-    id: "web-data-fetching-graphql-apollo",
-    slug: "graphql-apollo",
-    displayName: "Apollo",
-    category: "web-graphql-client",
-  },
-  {
-    id: "api-analytics-posthog-analytics",
-    slug: "posthog-analytics",
-    displayName: "PostHog",
-    category: "api-analytics",
-  },
-  {
-    id: "web-forms-react-hook-form",
-    slug: "react-hook-form",
-    displayName: "React Hook Form",
-    category: "web-form-library",
-  },
-  {
-    id: "web-forms-vee-validate",
-    slug: "vee-validate",
-    displayName: "Vee Validate",
-    category: "web-form-library",
-  },
-  {
-    id: "web-forms-zod-validation",
-    slug: "zod-validation",
-    displayName: "Zod Validation",
-    category: "web-forms",
-  },
-  { id: "web-testing-vitest", slug: "vitest", displayName: "Vitest", category: "web-testing" },
-  {
-    id: "web-testing-playwright-e2e",
-    slug: "playwright-e2e",
-    displayName: "Playwright",
-    category: "web-e2e",
-  },
-  {
-    id: "web-testing-cypress-e2e",
-    slug: "cypress-e2e",
-    displayName: "Cypress",
-    category: "web-e2e",
-  },
-  { id: "web-mocks-msw", slug: "msw", displayName: "MSW", category: "web-mocking" },
-  {
-    id: "web-testing-react-testing-library",
-    slug: "react-testing-library",
-    displayName: "React Testing Library",
-    category: "web-testing",
-  },
-  {
-    id: "web-testing-vue-test-utils",
-    slug: "vue-test-utils",
-    displayName: "Vue Test Utils",
-    category: "web-testing",
-  },
-  { id: "web-i18n-next-intl", slug: "next-intl", displayName: "Next Intl", category: "web-i18n" },
-  {
-    id: "web-i18n-react-intl",
-    slug: "react-intl",
-    displayName: "React Intl",
-    category: "web-i18n",
-  },
-  { id: "web-i18n-vue-i18n", slug: "vue-i18n", displayName: "Vue I18n", category: "web-i18n" },
-];
-
-// ---------------------------------------------------------------------------
 // Multi-source integration test skill entries (skill-resolution.integration.test.ts)
 // ---------------------------------------------------------------------------
 
@@ -560,41 +406,13 @@ name: test
 );
 
 // ---------------------------------------------------------------------------
-// Build-step-logic test skill variants (build-step-logic.test.ts)
+// Skill variants
 // ---------------------------------------------------------------------------
-
-/** React with conflictsWith pointing at Vue (for exclusive category suppression tests) */
-export const REACT_CONFLICTS_VUE = createMockSkill("web-framework-react", {
-  conflictsWith: [{ skillId: "web-framework-vue-composition-api", reason: "Choose one framework" }],
-});
-
-/** Vue with conflictsWith pointing at React (for exclusive category suppression tests) */
-export const VUE_CONFLICTS_REACT = createMockSkill("web-framework-vue-composition-api", {
-  conflictsWith: [{ skillId: "web-framework-react", reason: "Choose one framework" }],
-});
-
-/** Zustand with conflictsWith pointing at Pinia (for non-exclusive category tests) */
-export const ZUSTAND_CONFLICTS_PINIA = createMockSkill("web-state-zustand", {
-  conflictsWith: [{ skillId: "web-state-pinia", reason: "Choose one state manager" }],
-});
-
-/** Pinia with conflictsWith pointing at Zustand (for non-exclusive category tests) */
-export const PINIA_CONFLICTS_ZUSTAND = createMockSkill("web-state-pinia", {
-  conflictsWith: [{ skillId: "web-state-zustand", reason: "Choose one state manager" }],
-});
 
 /** React that requires Zustand (for requiredBy badge tests) */
 export const REACT_REQUIRES_ZUSTAND = createMockSkill("web-framework-react", {
   requires: [{ skillIds: ["web-state-zustand"], needsAny: false, reason: "Needs Zustand" }],
 });
-
-/** Vue that discourages SCSS Modules (for state preservation in exclusive categories) */
-export const VUE_DISCOURAGES_SCSS = createMockSkill("web-framework-vue-composition-api", {
-  discourages: [{ skillId: "web-styling-scss-modules", reason: "Prefer other styling" }],
-});
-
-/** React with local: true — for local skill propagation tests */
-export const REACT_LOCAL = createMockSkill("web-framework-react", { local: true });
 
 // Boundary cast: a local skill's id is outside the generated union by definition —
 // it names a directory the user wrote, which no built-in relationship rule can reach.

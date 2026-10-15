@@ -5,7 +5,7 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders.js";
 import { EJECT_SOURCE } from "../../../consts.js";
 import type { ProjectConfig } from "../../../types/index.js";
 

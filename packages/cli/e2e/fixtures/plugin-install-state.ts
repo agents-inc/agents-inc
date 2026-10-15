@@ -11,7 +11,7 @@ import { DIRS, FILES } from "../pages/constants.js";
 import { buildClaudeSettings } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import type { AgentName, Domain } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "./project-handle.js";
 
 /**
  * A plugin-mode project plus the fake HOME that owns the Claude plugin

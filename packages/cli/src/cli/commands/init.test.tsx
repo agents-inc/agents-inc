@@ -1,8 +1,20 @@
+import path from "path";
+import { mkdir } from "fs/promises";
+import { Config } from "@oclif/core";
 import { render } from "ink-testing-library";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Dashboard, dashboardCountLines, formatDashboardText, type DashboardData } from "./init";
+import Init, {
+  Dashboard,
+  dashboardCountLines,
+  formatDashboardText,
+  type DashboardData,
+} from "./init";
 import { DEFAULT_BRANDING } from "../consts";
+import { buildProjectConfig } from "../lib/__tests__/factories/config-factories";
+import { CLI_ROOT } from "../lib/__tests__/helpers/cli-runner";
+import { writeTestTsConfig } from "../lib/__tests__/helpers/config-io";
+import { standAtTerminal } from "../lib/__tests__/helpers/terminal-input";
 import {
   ARROW_DOWN,
   delay,
@@ -10,6 +22,7 @@ import {
   INPUT_DELAY_MS,
   RENDER_DELAY_MS,
 } from "../lib/__tests__/test-constants";
+import { cleanupTempDir, createTempDir } from "../lib/__tests__/test-fs-utils";
 
 /**
  * The interactive dashboard against the piped one, on the counts block they are meant to share.
@@ -96,10 +109,61 @@ describe("the dashboard a person sits in front of", () => {
   it("still offers the four commands", async () => {
     const frame = await frameFor(WITH_MARKETPLACE);
 
-    expect(frame).toContain("Edit");
+    expect(frame).toContain("Edit in the web editor");
     expect(frame).toContain("Compile");
     expect(frame).toContain("Doctor");
     expect(frame).toContain("List");
+    expect(formatDashboardText(WITH_MARKETPLACE)).toContain(
+      "  [Edit in the web editor]  [Compile]  [Doctor]  [List]",
+    );
+  });
+});
+
+/**
+ * The dashboard's first option hands this installation to the editor: chosen from `init` over an
+ * installation, it runs `edit --ui`. The run is real up to the command it chooses, which is
+ * recorded rather than run.
+ */
+describe("choosing Edit in the web editor", () => {
+  const terminal = standAtTerminal();
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tempDir = await createTempDir("cc-init-dashboard-edit-");
+    const projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    // An unstubbed HOME would let the developer's own installation answer for the global scope.
+    vi.stubEnv("HOME", tempDir);
+    process.chdir(projectDir);
+    await writeTestTsConfig(projectDir, buildProjectConfig());
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    await cleanupTempDir(tempDir);
+  });
+
+  it("runs edit --ui", async () => {
+    const painted = vi.spyOn(process.stdout, "write").mockImplementation((_chunk, ...rest) => {
+      const onWritten = rest.find((argument) => typeof argument === "function");
+      if (onWritten !== undefined) queueMicrotask(() => onWritten());
+      return true;
+    });
+    const runCommand = vi.spyOn(Config.prototype, "runCommand").mockResolvedValue(undefined);
+
+    try {
+      const run = Init.run([], { root: CLI_ROOT });
+      terminal.input.push(ENTER);
+      await run;
+
+      expect(runCommand).toHaveBeenCalledWith("edit", ["--ui"]);
+    } finally {
+      painted.mockRestore();
+      runCommand.mockRestore();
+    }
   });
 });
 

@@ -11,7 +11,7 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 60_000,
     pool: "forks",
-    // PTY-driven wizard tests are load-sensitive: at full parallelism (one
+    // PTY-driven tests are load-sensitive: at full parallelism (one
     // worker per core, 21+ on dev machines) dropped keystrokes and slow
     // installs produce flaky failures that never reproduce solo. Cap the
     // worker count to keep the suite deterministic.
@@ -31,9 +31,7 @@ export default defineConfig({
     // genuine failure's cost at 2x instead of 3x, and a retry that fires shows
     // up in vitest's flaky report rather than passing silently.
     retry: 1,
-    // Two gates over one tree, split by filename rather than by directory —
-    // `smoke/pom-framework.e2e.test.ts` validates OUR page objects and belongs
-    // in the suite that runs on every commit, while its neighbours probe the
+    // Two gates over one tree, split by filename: the smoke specs probe the
     // real `claude` binary and are worth running only where that binary is.
     //
     // Named projects rather than a second config file: the include is the only

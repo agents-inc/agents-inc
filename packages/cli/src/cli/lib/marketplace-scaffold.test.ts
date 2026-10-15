@@ -88,10 +88,7 @@ describe("writeMarketplaceScaffold", () => {
     const definitions = Object.values(categories);
     expect(definitions.length).toBeGreaterThan(0);
     for (const definition of definitions) {
-      expect(
-        definition.domain,
-        "a category with no domain appears in no wizard domain view",
-      ).toBeTruthy();
+      expect(definition.domain, "a category with no domain appears in no domain view").toBeTruthy();
     }
   });
 
@@ -183,7 +180,7 @@ describe("writeMarketplaceScaffold", () => {
     expect(category).toBeDefined();
     expect(
       Object.keys(categories),
-      "a skill in a category the marketplace never declares reaches no wizard view",
+      "a skill in a category the marketplace never declares reaches no view",
     ).toContain(category);
   });
 });

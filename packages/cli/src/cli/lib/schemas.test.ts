@@ -13,7 +13,7 @@ import {
   createMockMarketplacePlugin,
 } from "./__tests__/factories/plugin-factories.js";
 import { readTestJson } from "./__tests__/helpers/config-io.js";
-import { buildSkillConfigs } from "./__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "./__tests__/helpers/skill-config-builders.js";
 import { EJECT_SOURCE } from "../consts";
 import { AGENT_DEFS } from "./__tests__/mock-data/mock-agents.js";
 import { AGENT_ISOLATIONS, CACHE_TTLS } from "../types/matrix";

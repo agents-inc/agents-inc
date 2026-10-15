@@ -16,7 +16,6 @@ import { defaultStacks } from "../configuration/default-stacks";
 import { isHomeDirectory } from "../installation/is-home-directory";
 import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
 import type {
-  AgentDefinition,
   AgentName,
   CategoryDefinition,
   CategoryMap,
@@ -61,7 +60,6 @@ import {
   mergeMatrixWithSkills,
   relationshipsForSource,
 } from "../matrix";
-import { loadAllAgents } from "./loader";
 import { validateLoadedMarketplaceName } from "../marketplace-generator";
 import {
   fetchFromSource,
@@ -99,7 +97,7 @@ export type SourceLoadOptions = {
   sourceFlag?: string;
   projectDir?: string;
   devMode?: boolean;
-  /** Skip loading skills from extra sources (multi-source). Only needed for wizard UI tagging. */
+  /** Skip loading skills from extra sources (multi-source). */
   skipExtraSources?: boolean;
   /**
    * The caller only needs the matrix, not skill files on disk. For the default
@@ -189,13 +187,12 @@ export async function loadSkillsMatrixFromSource(
  * that installation was made from describes them.
  *
  * A global installation from one marketplace under a project from another is a supported layout,
- * and every session in that project inherits the global entries — shown locked in the wizard,
- * compiled into the global sub-agents. An ejected global skill already reaches this matrix through
+ * and every session in that project inherits the global entries, compiled into the global
+ * sub-agents. An ejected global skill already reaches this matrix through
  * the global local-skill merge, from its copy under `~/.claude/skills`. A plugin leaves no such
  * copy: Claude's plugin cache holds the skill's SKILL.md and none of the catalogue's metadata. So a
  * load of the project's marketplace held no entry for it, and a project setup dropped it — the
- * wizard called it missing and listed it as removed, and the global sub-agent recompiled in the
- * same run lost the usage sentence its own catalogue states.
+ * global sub-agent recompiled in the same run lost the usage sentence its own catalogue states.
  *
  * The other marketplace is read only when the global installation names a skill this one lacks,
  * so a project on the global's own marketplace loads nothing more. A seated entry keeps none of
@@ -293,8 +290,8 @@ function asSeatedGlobalSkill(skill: ResolvedSkill, catalogue: CatalogueRead): Re
 }
 
 /**
- * A category the matrix does not define arrives with the skill placed in it, or the wizard has no
- * screen to place that skill on. `local` is never defined, as {@link ensureCategoryDefined} says.
+ * A category the matrix does not define arrives with the skill placed in it. `local` is never
+ * defined, as {@link ensureCategoryDefined} says.
  */
 function carryCategory(
   matrix: MergedSkillsMatrix,
@@ -543,8 +540,7 @@ async function loadFromLocal(
 ): Promise<CatalogueRead> {
   // Resolved through `fetchFromSource` — the same call `loadFromRemote` makes — rather
   // than joined here, so a path the user named and the CLI cannot read is REFUSED with
-  // the loader's own message. Reading it directly returned an empty matrix instead, and
-  // `init`/`edit` went on to mount a wizard over nothing the user asked for.
+  // the loader's own message. Reading it directly returned an empty matrix instead.
   const skillsPath = isLocalSource(source) ? (await fetchFromSource(source)).path : PROJECT_ROOT;
 
   verbose(`Loading skills from local path: ${skillsPath}`);
@@ -662,17 +658,9 @@ async function loadAndMergeFromBasePath(
   const mergedMatrix = mergeMatrixWithSkills(categories, relationships, skills);
   initializeMatrix(mergedMatrix);
 
-  // Assigned unconditionally: a source offering no stacks is a matrix carrying
-  // none, which is the whole of what the wizard needs to skip the stack step.
+  // Assigned unconditionally: a source offering no stacks is a matrix carrying none.
   const stacks = await resolveOfferedStacks(basePath, stacksRelFile, source);
   mergedMatrix.suggestedStacks = stacks.map((stack) => convertStackToResolvedStack(stack));
-
-  const agentDefinedDomains = domainsDeclaredBy(await loadAllAgents(basePath));
-  const domainCount = typedKeys(agentDefinedDomains).length;
-  if (domainCount > 0) {
-    mergedMatrix.agentDefinedDomains = agentDefinedDomains;
-    verbose(`Loaded ${domainCount} agent domain definition(s)`);
-  }
 
   return mergedMatrix;
 }
@@ -720,17 +708,6 @@ async function loadSourceTaxonomy(basePath: string): Promise<SourceTaxonomy> {
   }
 
   return { categories, sourceRules };
-}
-
-/** The domain each agent's own metadata.yaml declares, for the agents that declare one. */
-function domainsDeclaredBy(
-  agents: Partial<Record<AgentName, AgentDefinition>>,
-): Partial<Record<AgentName, Domain>> {
-  return typedFromEntries(
-    typedEntries<AgentName, AgentDefinition>(agents).flatMap(([agentId, agentDef]) =>
-      agentDef.domain ? [[agentId, agentDef.domain] as const] : [],
-    ),
-  );
 }
 
 /** Every skill id the shipped catalogue owns — the ids no other marketplace may take. */
@@ -783,15 +760,14 @@ function catalogueCollisionError(collidingIds: SkillId[], source: string): strin
 }
 
 /**
- * The stacks a source offers the wizard: the ones it ships, or — for the public
+ * The stacks a source offers: the ones it ships, or — for the public
  * catalogue alone — the CLI's built-in catalogue standing in when it ships none.
  *
  * A custom marketplace gets no such stand-in. Handing it one meant offering a
  * catalogue of stacks written against a different catalogue of skills, under a
  * name the user never asked for, with most of each stack silently dropped for
  * naming ids the chosen source does not carry. A marketplace ships its own
- * stacks or offers none, and none means a wizard with no stack step rather than
- * one showing somebody else's list.
+ * stacks or offers none.
  */
 async function resolveOfferedStacks(
   basePath: string,
@@ -840,7 +816,7 @@ function declaredAgentsIn(stack: Stack): { declared: AgentName[]; undeclared: st
  * What a stack naming a sub-agent the CLI does not ship is told to the user.
  *
  * The stack is DROPPED FROM rather than refused, and that posture is deliberate. A stack is a
- * suggestion the wizard offers, not an install contract, so refusing it would take every
+ * suggestion, not an install contract, so refusing it would take every
  * sub-agent in it — the valid ones included — over one typo in a marketplace the user may not
  * own. It is also the posture the rest of this conversion already takes: `resolveStackAgentSkills`
  * drops a skill id the matrix does not carry, and one function answering the same question two
@@ -848,11 +824,8 @@ function declaredAgentsIn(stack: Stack): { declared: AgentName[]; undeclared: st
  * the whole source because a colliding id is UNSAFE — two marketplaces silently shadowing each
  * other on disk — where an undeclared sub-agent is merely uncompilable.
  *
- * What the drop must not be is SILENT, which is what it was: the wizard narrowed these names
- * out of its own grid and told nobody. `warn()` is buffered during a source load and painted as
- * the wizard's startup band, so this reaches the user rather than a stderr the first repaint
- * scrolls away. The stack is named because a marketplace ships many, and the sub-agents are
- * named rather than counted because only the name says what to fix.
+ * What the drop must not be is SILENT. The stack is named because a marketplace ships many, and
+ * the sub-agents are named rather than counted because only the name says what to fix.
  */
 function undeclaredAgentsWarning(stack: Stack, undeclared: readonly string[]): string {
   const named = undeclared.map((name) => `'${name}'`).join(", ");
@@ -896,10 +869,8 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
   // First-seen order across agents, matching the historical seen-Set accumulation — and filtered
   // against the matrix by the SAME question `resolveStackAgentSkills` asks above. The two used to
   // disagree: the per-category map kept only ids the catalogue carried while this list kept every
-  // id the file named, and this is the one that reaches a user. `wizard.tsx` returns it verbatim
-  // as the selection when a stack is picked, and the editor's read-model counts and lists it — so
-  // a stack outliving one of its own skills selected an id nothing could resolve, and the mismatch
-  // surfaced only once somebody picked that stack.
+  // id the file named, and this is the one that reaches a user: the editor's read-model counts
+  // and lists it.
   const named = unique(
     agentConfigs.flatMap(({ agentConfig }) =>
       resolveAgentConfigToSkills(agentConfig).map((ref) => ref.id),

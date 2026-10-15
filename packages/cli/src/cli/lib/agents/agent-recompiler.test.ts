@@ -17,7 +17,7 @@ import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories";
 import { buildRecompileAgentsResult } from "../__tests__/factories/recompile-factories";
 import { createMockSkillDefinition, sa } from "../__tests__/factories/skill-factories";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { renderAgentMd } from "../__tests__/content-generators";
 import { CLAUDE_DIR } from "../../consts";
 import { SKILLS } from "../__tests__/test-fixtures";

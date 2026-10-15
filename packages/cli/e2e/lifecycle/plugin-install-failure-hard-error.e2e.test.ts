@@ -1,23 +1,36 @@
 import path from "path";
-import { writeFile } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { applyFromSeed, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import {
   cleanupFixture,
+  cleanupTempDir,
   configTsPath,
+  createTempDir,
   fileExists,
+  flattenCliOutput,
   isClaudeCLIAvailable,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, SOURCE_PATHS, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { EXIT_CODES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import "../matchers/setup.js";
+
+const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /**
  * D-229: `cc init` must hard-error when `installPluginSkills` returns `failed`
@@ -46,7 +59,8 @@ describe.skipIf(!claudeAvailable)(
   "init with plugin install failure: hard-error before orphan config write",
   () => {
     let fixture: E2EPluginSource;
-    let wizard: InitWizard | undefined;
+    let store: SeedConfigStore;
+    let tempDir: string | undefined;
 
     beforeAll(async () => {
       // Build a real marketplace that registers cleanly with claude CLI, then
@@ -56,38 +70,38 @@ describe.skipIf(!claudeAvailable)(
       // fixture is frozen precisely so a spec cannot do that to one every other spec is reading.
       fixture = await createE2EPluginSource({ owned: true });
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
+      store = await startSeedConfigStore();
+      store.publish("Plugins1", e2eStackPayload({ install: "plugin" }));
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
+      await store.close();
       await cleanupFixture(fixture);
     });
 
     afterEach(async () => {
-      await wizard?.destroy();
-      wizard = undefined;
+      if (tempDir) await cleanupTempDir(tempDir);
+      tempDir = undefined;
     });
 
     it(
       "should exit with ERROR and leave no config.ts on disk",
       { timeout: TIMEOUTS.PLUGIN_TEST },
       async () => {
-        wizard = await InitWizard.launch({
-          source: fixture,
-        });
+        tempDir = await createTempDir();
+        const projectDir = path.join(tempDir, "project");
+        await mkdir(projectDir, { recursive: true });
 
-        // Do not use completeWithDefaults() — it awaits the INIT_SUCCESS banner,
-        // which never appears when install hard-errors. Step through manually so
-        // the final step uses confirmExpectingExit().
-        const domain = await wizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-        const sources = await build.passThroughAllDomains();
-        const agents = await sources.acceptDefaults();
-        const confirm = await agents.acceptDefaults("init");
-        const result = await confirm.confirmExpectingExit();
+        const result = await runInitFrom(
+          store,
+          "Plugins1",
+          { dir: projectDir, globalHome: tempDir },
+          fixture.sourceDir,
+        );
 
-        expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
+        expect(result.exitCode).toBe(EXIT_CODES.ERROR);
 
-        const output = result.output;
+        const output = flattenCliOutput(result.output);
         // Remediation hint must name a concrete follow-up for the user.
         expect(output).toContain("Plugin install intent could not be honored");
         // The failing skill id surfaces in the per-skill warn line that runs
@@ -97,8 +111,8 @@ describe.skipIf(!claudeAvailable)(
         // The core regression check: pre-fix, config.ts was written with an
         // orphan entry (`source: "<marketplace>"`) claiming web-framework-react
         // was installed. Post-fix, `writeConfigAndCompile` never runs.
-        const configPath = configTsPath(result.project.dir);
-        expect(await fileExists(configPath)).toBe(false);
+        expect(await fileExists(configTsPath(projectDir))).toBe(false);
+        expect(await fileExists(configTsPath(tempDir))).toBe(false);
       },
     );
   },
@@ -119,7 +133,7 @@ describe.skipIf(!claudeAvailable)(
  *      `beforeAll` so only the placeholder plugin remains — ANY attempt to
  *      install a real skill from the shipped source is rejected per-skill by
  *      `claude plugin install`.
- *   3. Run `cc edit`, toggle a new plugin skill into the selection, and
+ *   3. Run `edit --from` with a configuration adding a plugin skill, and
  *      confirm. The install step hits `pluginResult.failed.length > 0` and
  *      hard-errors BEFORE `writeConfigAndCompile` runs, so config.ts is
  *      byte-for-byte identical to its pre-edit state.
@@ -128,20 +142,23 @@ describe.skipIf(!claudeAvailable)(
   "edit with plugin install failure: hard-error before orphan config write",
   () => {
     let fixture: E2EPluginSource;
-    let wizard: EditWizard | undefined;
+    let store: SeedConfigStore;
+    let tempDir: string | undefined;
 
     beforeAll(async () => {
       fixture = await createE2EPluginSource({ owned: true });
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
+      store = await startSeedConfigStore();
     }, TIMEOUTS.SETUP_DUAL);
 
     afterAll(async () => {
+      await store.close();
       await cleanupFixture(fixture);
     });
 
     afterEach(async () => {
-      await wizard?.destroy();
-      wizard = undefined;
+      if (tempDir) await cleanupTempDir(tempDir);
+      tempDir = undefined;
     });
 
     it(
@@ -155,6 +172,7 @@ describe.skipIf(!claudeAvailable)(
           agents: ["web-developer"],
           domains: ["web"],
         });
+        tempDir = path.dirname(project.dir);
 
         // Snapshot config.ts BEFORE edit. The hard-error contract is that
         // writeConfigAndCompile never runs, so the file must be identical
@@ -162,26 +180,31 @@ describe.skipIf(!claudeAvailable)(
         const configPath = configTsPath(project.dir);
         const configBefore = await readTestFile(configPath);
 
-        wizard = await EditWizard.launch({
-          projectDir: project.dir,
-          source: fixture,
-          ...TERMINAL_SIZE.TALL,
-        });
-
-        // Add a plugin-sourced skill adjacent to web-framework-react.
+        // Add a plugin-sourced skill beside web-framework-react.
         // `claude plugin install <id>@<marketplace>` rejects it because the
         // placeholder marketplace does not list the shipped plugins.
-        await wizard.build.navigateDown();
-        await wizard.build.toggleFocusedSkill();
+        const { output } = await applyFromSeed(
+          store,
+          "AddPinia1",
+          buildSeedPayload({
+            skills: {
+              [E2E_SKILL.react.id]: buildSeedSkill({
+                install: "plugin",
+                scope: "project",
+                assignments: { [WEB_DEV]: "preloaded" },
+              }),
+              [E2E_SKILL.pinia.id]: buildSeedSkill({
+                install: "plugin",
+                scope: "project",
+                assignments: { [WEB_DEV]: "lazy" },
+              }),
+            },
+            agents: { [WEB_DEV]: { scope: "project" } },
+          }),
+          { dir: project.dir, home: tempDir },
+          EXIT_CODES.ERROR,
+        );
 
-        const sources = await wizard.build.passThroughAllDomainsGeneric();
-        const agents = await sources.acceptDefaults();
-        const confirm = await agents.acceptDefaults("edit");
-        const result = await confirm.confirmExpectingExit();
-
-        expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
-
-        const output = result.output;
         // Remediation hint is `pluginInstallFailureError`, emitted by the one
         // reporter both commands reach, so the two spellings cannot drift apart.
         expect(output).toContain("Failed to install");

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
 import type { ReactElement } from "react";
+import { storedConfigHandlerFor } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
 import os from "os";
 import path from "path";
 import { mkdir } from "fs/promises";
@@ -8,20 +10,17 @@ import { parseRefusal, runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js"
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { useFakeHome } from "../helpers/isolated-home.js";
 import { writeRawTestConfig } from "../helpers/config-io.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
-import { createMockSkill, createMockSkillDefinition } from "../factories/skill-factories.js";
-import { createMockMatrix } from "../factories/matrix-factories.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import {
   buildProjectConfig,
   buildSourceResult,
-  buildWizardResult,
+  buildInstallSelection,
   buildAgentConfigs,
 } from "../factories/config-factories.js";
 import { buildInstallation } from "../factories/installation-factories.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
-import { SKILLS, TEST_CATEGORIES } from "../test-fixtures";
+import { buildSeedPayload } from "../factories/seed-factories.js";
 import { FULLSTACK_PAIR_MATRIX } from "../mock-data/mock-matrices";
-import { EXPECTED_SKILLS } from "../expected-values";
 import { EXIT_CODES } from "../../exit-codes";
 import {
   CLAUDE_DIR,
@@ -31,21 +30,22 @@ import {
   STANDARD_DIRS,
 } from "../../../consts";
 import { ERROR_MESSAGES } from "../../../utils/messages";
-import * as wizardStore from "../../../stores/wizard-store";
-import { useWizardStore } from "../../../stores/wizard-store";
 import { initializeMatrix } from "../../matrix/matrix-provider";
 import { hostAt } from "../../hosts/host-for.js";
-import type { CategoryPath, ProjectConfig, SkillId, SkillScope } from "../../../types";
+import type { ProjectConfig, SkillId, SkillScope } from "../../../types";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { getAgentDefinitions } from "../../agents/index.js";
 import type { loadProjectConfig } from "../../configuration/index.js";
 import type { detectInstallation, Installation } from "../../installation/index.js";
 import type { loadSkillsMatrixFromSource } from "../../loading/index.js";
 import type { discoverAllPluginSkills } from "../../plugins/index.js";
 import type { copySkillsToLocalFlattened, deleteLocalSkill } from "../../skills/index.js";
+import type { seedToInstallSelection } from "../../seed/seed-to-selection.js";
 import type { ensureDir } from "../../../utils/fs.js";
 import { firstElement } from "../helpers/element-at.js";
 import { stubInkInstance } from "../helpers/stub-ink-instance.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import Edit, {
   applyMigratedGlobalSources,
   migratePluginSkillScopes,
@@ -63,6 +63,7 @@ const {
   mockDeleteLocalSkill,
   mockEnsureDir,
   mockGetAgentDefinitions,
+  mockSeedToInstallSelection,
 } = await vi.hoisted(async () => ({
   // Imported here rather than at the top: hoisting runs this block before the file's imports.
   mockRender: vi
@@ -80,6 +81,7 @@ const {
     agentsDir: "/mock/agents",
     sourcePath: "/mock/source",
   }),
+  mockSeedToInstallSelection: vi.fn<typeof seedToInstallSelection>(),
 }));
 
 vi.mock("ink", async (importOriginal) => {
@@ -142,6 +144,12 @@ vi.mock("../../skills/index.js", async (importOriginal) => {
   };
 });
 
+// The apply path is under test, not the decode: `edit --from` is handed the selection each spec
+// builds, whatever the served payload says.
+vi.mock("../../seed/seed-to-selection.js", () => ({
+  seedToInstallSelection: mockSeedToInstallSelection,
+}));
+
 vi.mock("../../../utils/fs.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../utils/fs.js")>();
   return {
@@ -185,22 +193,38 @@ function buildEjectInstallation(projectDir: string): Installation {
   });
 }
 
-function mockWizardCompletion(wizardResult: unknown): void {
+const SEED_ID = "EditApply1";
+
+/** `edit --from` decodes `selection`, and its confirm is answered yes. */
+function applyingSelection(selection: InstallSelection): void {
+  mockSeedToInstallSelection.mockReturnValue({
+    result: selection,
+    skippedSkillIds: [],
+    skippedAgentNames: [],
+  });
   mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
-    const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-    if (onComplete) {
-      onComplete(wizardResult);
-    }
+    const onConfirm = element.props.onConfirm as (() => void) | undefined;
+    onConfirm?.();
     return stubInkInstance();
   });
+}
+
+function runEditFrom(): Promise<unknown> {
+  return Edit.run(["--from", SEED_ID], { root: CLI_ROOT });
 }
 
 const CONFIG_LOAD_FAILED_PHRASE = "could not be loaded";
 
 const RECREATE_PHRASE = "recreate the configuration";
 
-/** `edit` refuses to mount its wizard without a terminal, so the file stands at one. */
+/** `edit --from` refuses to apply without a terminal, so the file stands at one. */
 standAtTerminal();
+
+useMockWorker();
+
+beforeEach(() => {
+  configMockServer.use(storedConfigHandlerFor(SEED_ID, buildSeedPayload()));
+});
 
 describe("edit command", () => {
   let tempDir: string;
@@ -285,7 +309,7 @@ describe("edit command", () => {
       expect(error?.message).toContain(parseRefusal("--refresh"));
     });
 
-    it("rejects --source — the wizard opens on the catalogue config.ts names", async () => {
+    it("rejects --source — edit loads the catalogue config.ts names", async () => {
       const { error } = await runCliCommand(["edit", "--source", "/some/path"]);
 
       expect(error?.message).toContain(parseRefusal("--source"));
@@ -298,345 +322,6 @@ describe("edit command", () => {
       expect(error?.message).toContain(parseRefusal("-s"));
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
-  });
-});
-
-const EDIT_CATEGORIES = {
-  "web-framework": { ...TEST_CATEGORIES.framework, displayName: "Web Framework" },
-  "web-client-state": TEST_CATEGORIES.clientState,
-  "api-api": { ...TEST_CATEGORIES.api, displayName: "API Framework", domain: "api" as const },
-  "web-testing": { ...TEST_CATEGORIES.testing, domain: "shared" as const },
-};
-
-const EDIT_SKILLS = {
-  "web-framework-react": SKILLS.react,
-  "web-state-zustand": SKILLS.zustand,
-  "api-framework-hono": SKILLS.hono,
-  "web-testing-vitest": SKILLS.vitest,
-};
-
-// The wizard cannot be driven from runCliCommand, so pre-selection is tested at the store, on
-// the path use-wizard-initialization.ts takes in edit mode.
-
-describe("edit wizard pre-selection via populateFromSkillIds", () => {
-  beforeEach(() => {
-    initializeMatrix(
-      createMockMatrix(EDIT_SKILLS, {
-        categories: EDIT_CATEGORIES,
-      }),
-    );
-  });
-
-  it("should pre-populate domainSelections from installed skill IDs", () => {
-    const installedSkills: SkillId[] = [
-      "web-framework-react",
-      "web-state-zustand",
-      "api-framework-hono",
-    ];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
-    expect(domainSelections.web?.["web-client-state"]).toStrictEqual(["web-state-zustand"]);
-
-    expect(domainSelections.api?.["api-api"]).toStrictEqual(["api-framework-hono"]);
-  });
-
-  it("should not pre-select skills that are not in the installed list", () => {
-    const installedSkills: SkillId[] = ["web-framework-react"];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
-
-    expect(domainSelections.web?.["web-client-state"]).toBeUndefined();
-    expect(domainSelections.api).toBeUndefined();
-  });
-
-  it("should set selectedDomains to only the domains found in the provided skill IDs", () => {
-    const installedSkills: SkillId[] = ["web-framework-react"];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { selectedDomains } = useWizardStore.getState();
-
-    expect(selectedDomains).toContain("web");
-    expect(selectedDomains).not.toContain("api");
-    expect(selectedDomains).not.toContain("shared");
-  });
-
-  it("should place shared-domain skills under the shared domain key", () => {
-    const installedSkills: SkillId[] = ["web-testing-vitest"];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(domainSelections.shared?.["web-testing"]).toStrictEqual(["web-testing-vitest"]);
-
-    expect(domainSelections.web).toBeUndefined();
-    expect(domainSelections.api).toBeUndefined();
-  });
-
-  it("should produce empty domainSelections when installed list is empty", () => {
-    const installedSkills: SkillId[] = [];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(Object.keys(domainSelections)).toHaveLength(0);
-  });
-
-  it("should skip skills missing a category", () => {
-    const sparseSkills = {
-      "web-framework-react": SKILLS.react,
-      // Boundary cast: a fictional skill id with no category
-      "web-framework-unknown": createMockSkill("web-framework-unknown" as SkillId, {
-        category: undefined as unknown as CategoryPath,
-      }),
-    };
-
-    initializeMatrix(
-      createMockMatrix(sparseSkills, {
-        categories: EDIT_CATEGORIES,
-      }),
-    );
-
-    // Boundary cast: a fake id to test unknown-skill handling
-    const installedSkills: SkillId[] = ["web-framework-react", "web-framework-unknown" as SkillId];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
-    expect(domainSelections.web?.["web-framework"]).toHaveLength(1);
-  });
-
-  it("should skip skills whose category has no domain mapping", () => {
-    const extraSkills = {
-      "web-framework-react": SKILLS.react,
-      // Boundary cast: a fictional skill id in an unmapped category
-      "infra-tooling-linter": createMockSkill("infra-tooling-linter" as SkillId),
-    };
-
-    initializeMatrix(
-      createMockMatrix(extraSkills, {
-        categories: EDIT_CATEGORIES,
-      }),
-    );
-
-    // Boundary cast: a fake id to test unmapped-category handling
-    const installedSkills: SkillId[] = ["web-framework-react", "infra-tooling-linter" as SkillId];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
-    const allTechs = useWizardStore.getState().getAllSelectedTechnologies();
-    expect(allTechs).not.toContain("infra-tooling-linter");
-  });
-
-  it("should not duplicate skills when the same skill ID appears twice in installed list", () => {
-    const installedSkills: SkillId[] = ["web-framework-react", "web-framework-react"];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(domainSelections.web?.["web-framework"]).toStrictEqual(["web-framework-react"]);
-    expect(domainSelections.web?.["web-framework"]).toHaveLength(1);
-  });
-
-  it("should populate multiple skills within the same category (non-exclusive)", () => {
-    // Testing is non-exclusive, so multiple selections are valid.
-    const multiSkills = {
-      ...EDIT_SKILLS,
-      // Boundary cast: a fictional skill id for multi-skill population
-      "web-testing-playwright": createMockSkill("web-testing-playwright" as SkillId),
-    };
-
-    initializeMatrix(
-      createMockMatrix(multiSkills, {
-        categories: EDIT_CATEGORIES,
-      }),
-    );
-
-    // Boundary cast: a fake id to test multi-selection in one category
-    const installedSkills: SkillId[] = ["web-testing-vitest", "web-testing-playwright" as SkillId];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const { domainSelections } = useWizardStore.getState();
-
-    expect(domainSelections.shared?.["web-testing"]).toContain("web-testing-vitest");
-    expect(domainSelections.shared?.["web-testing"]).toContain("web-testing-playwright");
-    expect(domainSelections.shared?.["web-testing"]).toHaveLength(2);
-  });
-});
-
-// Domains with zero selections are omitted, so the build step can filter them out.
-
-describe("edit wizard domain filtering", () => {
-  beforeEach(() => {
-    initializeMatrix(
-      createMockMatrix(EDIT_SKILLS, {
-        categories: EDIT_CATEGORIES,
-      }),
-    );
-  });
-
-  it("should report only web domain when only web skills are installed", () => {
-    const installedSkills: SkillId[] = [...EXPECTED_SKILLS.WEB_DEFAULT];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
-
-    expect(perDomain.web).toStrictEqual(EXPECTED_SKILLS.WEB_DEFAULT);
-
-    expect(perDomain.api).toBeUndefined();
-    expect(perDomain.cli).toBeUndefined();
-    expect(perDomain.mobile).toBeUndefined();
-  });
-
-  it("should report both web and api domains when both have selections", () => {
-    const installedSkills: SkillId[] = ["web-framework-react", "api-framework-hono"];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
-
-    expect(perDomain.web).toStrictEqual(["web-framework-react"]);
-    expect(perDomain.api).toStrictEqual(["api-framework-hono"]);
-    expect(perDomain.cli).toBeUndefined();
-  });
-
-  it("should report only shared domain when only shared skills are installed", () => {
-    const installedSkills: SkillId[] = ["web-testing-vitest"];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
-
-    expect(perDomain.shared).toStrictEqual(["web-testing-vitest"]);
-
-    expect(perDomain.web).toBeUndefined();
-    expect(perDomain.api).toBeUndefined();
-    expect(perDomain.cli).toBeUndefined();
-    expect(perDomain.mobile).toBeUndefined();
-  });
-
-  it("should return empty result when no skills are installed", () => {
-    const installedSkills: SkillId[] = [];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
-
-    expect(Object.keys(perDomain)).toHaveLength(0);
-  });
-
-  it("should include correct skill count per domain", () => {
-    const installedSkills: SkillId[] = [
-      "web-framework-react",
-      "web-state-zustand",
-      "api-framework-hono",
-      "web-testing-vitest",
-    ];
-
-    useWizardStore.getState().populateFromSkillIds(installedSkills);
-
-    const perDomain = useWizardStore.getState().getSelectedTechnologiesPerDomain();
-
-    expect(perDomain.web).toHaveLength(2);
-
-    expect(perDomain.api).toHaveLength(1);
-
-    expect(perDomain.shared).toHaveLength(1);
-
-    expect(perDomain.cli).toBeUndefined();
-    expect(perDomain.mobile).toBeUndefined();
-  });
-});
-
-// With no plugin-based skills found, edit falls back to the project config's skills.
-
-describe("edit command eject-mode skill fallback", () => {
-  let tempDir: string;
-  let projectDir: string;
-  let originalCwd: string;
-
-  const CONFIG_SKILL_IDS: SkillId[] = ["web-framework-react", "api-framework-hono"];
-  const CONFIG_SKILLS = buildSkillConfigs(CONFIG_SKILL_IDS, { scope: "project", origin: "eject" });
-
-  const testMatrix = FULLSTACK_PAIR_MATRIX;
-
-  const testSourceResult = buildSourceResult(testMatrix, "/test/source");
-
-  let hydrateSpy: ReturnType<typeof vi.spyOn>;
-
-  function getRenderedInstalledSkillIds(): SkillId[] | undefined {
-    // The hydrate call and the Wizard prop receive the same list; the hydrate call is easier to
-    // spy.
-    const hydrateCall = hydrateSpy.mock.calls[0];
-    if (!hydrateCall) return undefined;
-    const options = hydrateCall[0] as { installedSkillIds?: SkillId[] };
-    return options.installedSkillIds;
-  }
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    tempDir = await createTempDir("cc-edit-fallback-");
-    projectDir = path.join(tempDir, "project");
-    await mkdir(projectDir, { recursive: true });
-    process.chdir(projectDir);
-
-    hydrateSpy = vi.spyOn(wizardStore, "hydrateWizardStore");
-
-    mockRender.mockClear();
-    mockRender.mockReturnValue(stubInkInstance());
-
-    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
-
-    mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
-    initializeMatrix(testSourceResult.matrix);
-  });
-
-  afterEach(async () => {
-    hydrateSpy.mockRestore();
-    process.chdir(originalCwd);
-    await cleanupTempDir(tempDir);
-  });
-
-  it("should use project config skills as installedSkillIds when plugin discovery returns empty", async () => {
-    mockDiscoverAllPluginSkills.mockResolvedValue({});
-    mockProjectConfig(projectDir, buildProjectConfig({ agents: [], skills: CONFIG_SKILLS }));
-
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
-
-    expect(mockRender).toHaveBeenCalledTimes(2);
-    const installedSkillIds = getRenderedInstalledSkillIds();
-    expect(installedSkillIds).toStrictEqual(CONFIG_SKILL_IDS);
-  });
-
-  it("should merge discovered plugin skills with config skills as installedSkillIds", async () => {
-    mockDiscoverAllPluginSkills.mockResolvedValue({
-      "web-framework-react": createMockSkillDefinition("web-framework-react"),
-    });
-    mockProjectConfig(projectDir, buildProjectConfig({ agents: [], skills: CONFIG_SKILLS }));
-
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
-
-    expect(mockRender).toHaveBeenCalledTimes(2);
-    const installedSkillIds = getRenderedInstalledSkillIds();
-    expect(installedSkillIds).toStrictEqual(CONFIG_SKILL_IDS);
   });
 });
 
@@ -671,6 +356,9 @@ describe("edit command detects added agents", () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 
+  // `edit --from` from a project reads the global install, which must not be the real one.
+  useFakeHome(() => tempDir);
+
   afterEach(async () => {
     process.chdir(originalCwd);
     await cleanupTempDir(tempDir);
@@ -682,13 +370,13 @@ describe("edit command detects added agents", () => {
       buildProjectConfig({ agents: buildAgentConfigs(["web-developer"]), skills: EXISTING_SKILLS }),
     );
 
-    mockWizardCompletion(
-      buildWizardResult(EXISTING_SKILLS, {
+    applyingSelection(
+      buildInstallSelection(EXISTING_SKILLS, {
         agentConfigs: buildAgentConfigs(["web-developer", "web-tester"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     // Reaching agent loading proves the command did not return early.
     expect(mockGetAgentDefinitions).toHaveBeenCalledTimes(1);
@@ -722,6 +410,8 @@ describe("edit command copies newly added local skills", () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 
+  useFakeHome(() => tempDir);
+
   afterEach(async () => {
     process.chdir(originalCwd);
     await cleanupTempDir(tempDir);
@@ -738,13 +428,13 @@ describe("edit command copies newly added local skills", () => {
       origin: "eject",
     });
 
-    mockWizardCompletion(
-      buildWizardResult(newLocalSkills, {
+    applyingSelection(
+      buildInstallSelection(newLocalSkills, {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledOnce();
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledWith(
@@ -778,14 +468,16 @@ describe("edit command removes deselected local skills", () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 
+  const fakeHome = useFakeHome(() => tempDir);
+
   afterEach(async () => {
     process.chdir(originalCwd);
     await cleanupTempDir(tempDir);
   });
 
-  function mockRemovalWizard(): void {
-    mockWizardCompletion(
-      buildWizardResult([], { agentConfigs: buildAgentConfigs(["web-developer"]) }),
+  function applyingRemoval(): void {
+    applyingSelection(
+      buildInstallSelection([], { agentConfigs: buildAgentConfigs(["web-developer"]) }),
     );
   }
 
@@ -797,9 +489,9 @@ describe("edit command removes deselected local skills", () => {
         skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
       }),
     );
-    mockRemovalWizard();
+    applyingRemoval();
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     // Removed from the project directory (cwd), not home.
     expect(mockDeleteLocalSkill).toHaveBeenCalledWith(
@@ -809,21 +501,24 @@ describe("edit command removes deselected local skills", () => {
     );
   });
 
+  // At the home root: from a project, `--from` holds every global entry it omits.
   it("deletes a deselected GLOBAL-scope eject skill's directory from the home dir", async () => {
+    const globalAgents = buildAgentConfigs(["web-developer"], { scope: "global" });
+    process.chdir(fakeHome.dir);
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(fakeHome.dir));
     mockProjectConfig(
-      projectDir,
+      fakeHome.dir,
       buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer"]),
+        agents: globalAgents,
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "eject" }),
       }),
     );
-    mockRemovalWizard();
+    applyingSelection(buildInstallSelection([], { agentConfigs: globalAgents }));
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
-    // Removed at global scope: `deleteLocalSkill` resolves the home skills folder for the host.
     expect(mockDeleteLocalSkill).toHaveBeenCalledWith(
-      process.cwd(),
+      fakeHome.dir,
       "web-framework-react",
       "global",
     );
@@ -840,9 +535,9 @@ describe("edit command removes deselected local skills", () => {
         }),
       }),
     );
-    mockRemovalWizard();
+    applyingRemoval();
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
   });
@@ -858,10 +553,6 @@ const GLOBAL_PLUGIN_REACT = buildSkillConfigs(["web-framework-react"], {
 const GLOBAL_EJECT_REACT = buildSkillConfigs(["web-framework-react"], {
   scope: "global",
   origin: "eject",
-});
-const PROJECT_PLUGIN_HONO = buildSkillConfigs(["api-framework-hono"], {
-  scope: "project",
-  origin: "agents-inc",
 });
 const REACT_MIGRATED_TO_EJECT = new Map<SkillId, string>([["web-framework-react", "eject"]]);
 
@@ -933,56 +624,6 @@ describe("applyMigratedGlobalSources", () => {
   });
 });
 
-describe("edit command source switches on inherited global-active skills", () => {
-  let tempDir: string;
-  let projectDir: string;
-  let originalCwd: string;
-
-  const AGENTS = buildAgentConfigs(["web-developer"]);
-
-  const testMatrix = FULLSTACK_PAIR_MATRIX;
-  const testSourceResult = buildSourceResult(testMatrix, "/test/source");
-
-  beforeEach(async () => {
-    originalCwd = process.cwd();
-    tempDir = await createTempDir("cc-edit-global-authority-");
-    projectDir = path.join(tempDir, "project");
-    await mkdir(projectDir, { recursive: true });
-    process.chdir(projectDir);
-
-    mockRender.mockClear();
-    mockCopySkillsToLocalFlattened.mockClear();
-    mockGetAgentDefinitions.mockClear();
-    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
-    mockLoadSkillsMatrixFromSource.mockResolvedValue(testSourceResult);
-    initializeMatrix(testSourceResult.matrix);
-    mockDiscoverAllPluginSkills.mockResolvedValue({});
-  });
-
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    await cleanupTempDir(tempDir);
-  });
-
-  it("applies a source switch on an inherited global-active skill rather than discarding it", async () => {
-    mockProjectConfig(
-      projectDir,
-      buildProjectConfig({
-        agents: AGENTS,
-        skills: [...GLOBAL_PLUGIN_REACT, ...PROJECT_PLUGIN_HONO],
-      }),
-    );
-    mockWizardCompletion(
-      buildWizardResult([...GLOBAL_EJECT_REACT, ...PROJECT_PLUGIN_HONO], { agentConfigs: AGENTS }),
-    );
-
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
-
-    // A real change: the run reaches the migration and config write.
-    expect(mockGetAgentDefinitions).toHaveBeenCalled();
-  });
-});
-
 // A failed eject→plugin install hard-errors before any config records a marketplace origin.
 
 describe("edit command mode migration with a failing plugin install", () => {
@@ -1029,6 +670,8 @@ describe("edit command mode migration with a failing plugin install", () => {
     marketplaceUpdateSpy.mockReset().mockResolvedValue(undefined);
   });
 
+  useFakeHome(() => tempDir);
+
   afterEach(async () => {
     process.stderr.write = origStderrWrite;
     process.chdir(originalCwd);
@@ -1043,8 +686,8 @@ describe("edit command mode migration with a failing plugin install", () => {
         skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
       }),
     );
-    mockWizardCompletion(
-      buildWizardResult(
+    applyingSelection(
+      buildInstallSelection(
         buildSkillConfigs(["web-framework-react"], { scope: "project", origin: MARKETPLACE }),
         { agentConfigs: AGENTS },
       ),
@@ -1053,7 +696,7 @@ describe("edit command mode migration with a failing plugin install", () => {
     // `Errors.CLIError`, partial: only `oclif.exit` and `message` are asserted.
     let thrown: (Error & Partial<Errors.CLIError>) | undefined;
     try {
-      await Edit.run([], { root: CLI_ROOT });
+      await runEditFrom();
     } catch (error) {
       if (error instanceof Error) thrown = error;
     }
@@ -1139,9 +782,9 @@ describe("edit command reports a selected skill the scope filter left unassigned
 
   it("names the skill that landed in no agent's stack", async () => {
     mockProjectConfig(projectDir, buildProjectConfig({ agents: GLOBAL_AGENTS, skills: [] }));
-    mockWizardCompletion(buildWizardResult(PROJECT_EJECT_REACT, { agentConfigs: GLOBAL_AGENTS }));
+    applyingSelection(buildInstallSelection(PROJECT_EJECT_REACT, { agentConfigs: GLOBAL_AGENTS }));
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     // Proof the run selected and copied the skill, so the warning assertion is not vacuous.
     expect(mockCopySkillsToLocalFlattened).toHaveBeenCalledOnce();
@@ -1329,11 +972,11 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react"]),
       agents: [],
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
     );
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.addedSkills).toStrictEqual(["api-framework-hono"]);
     expect(changes.removedSkills).toStrictEqual([]);
@@ -1344,9 +987,9 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
       agents: [],
     });
-    const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]));
+    const selection = buildInstallSelection(buildSkillConfigs(["web-framework-react"]));
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.removedSkills).toStrictEqual(["api-framework-hono"]);
     expect(changes.addedSkills).toStrictEqual([]);
@@ -1357,11 +1000,11 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       agents: [],
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react"], { scope: "project" }),
     );
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.scopeChanges.size).toBe(1);
     expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
@@ -1377,11 +1020,11 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react"], { origin: "eject" }),
       agents: [],
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
     );
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.sourceChanges.size).toBe(1);
     expect(changes.sourceChanges.get("web-framework-react")).toStrictEqual({
@@ -1395,11 +1038,11 @@ describe("detectConfigChanges", () => {
       skills: [],
       agents: buildAgentConfigs(["web-developer"]),
     });
-    const wizardResult = buildWizardResult([], {
+    const selection = buildInstallSelection([], {
       agentConfigs: buildAgentConfigs(["api-developer"]),
     });
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.addedAgents).toStrictEqual(["api-developer"]);
     expect(changes.removedAgents).toStrictEqual(["web-developer"]);
@@ -1410,11 +1053,11 @@ describe("detectConfigChanges", () => {
       skills: [],
       agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
     });
-    const wizardResult = buildWizardResult([], {
+    const selection = buildInstallSelection([], {
       agentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
     });
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.agentScopeChanges.get("web-developer")).toStrictEqual({
       from: "project",
@@ -1428,7 +1071,7 @@ describe("detectConfigChanges", () => {
       skills: [],
       agents: buildAgentConfigs(["web-developer"], { model: "haiku", effort: "high" }),
     });
-    const wizardResult = buildWizardResult([], {
+    const selection = buildInstallSelection([], {
       agentConfigs: buildAgentConfigs(["web-developer"], {
         model: "haiku",
         codexModel: "gpt-5.6-terra",
@@ -1436,7 +1079,7 @@ describe("detectConfigChanges", () => {
       }),
     });
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.tuningChanges.get("web-developer")).toStrictEqual({
       from: "model haiku, effort high",
@@ -1449,11 +1092,11 @@ describe("detectConfigChanges", () => {
       skills: [],
       agents: buildAgentConfigs(["web-developer"]),
     });
-    const wizardResult = buildWizardResult([], {
+    const selection = buildInstallSelection([], {
       agentConfigs: buildAgentConfigs(["web-developer"], { codexModel: "gpt-5.6-luna" }),
     });
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.tuningChanges.get("web-developer")).toStrictEqual({
       from: "defaults",
@@ -1465,9 +1108,9 @@ describe("detectConfigChanges", () => {
     const skills = buildSkillConfigs(["web-framework-react"]);
     const agents = buildAgentConfigs(["web-developer"]);
     const oldConfig = buildProjectConfig({ skills, agents });
-    const wizardResult = buildWizardResult(skills, { agentConfigs: agents });
+    const selection = buildInstallSelection(skills, { agentConfigs: agents });
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.addedSkills).toStrictEqual([]);
     expect(changes.removedSkills).toStrictEqual([]);
@@ -1479,14 +1122,14 @@ describe("detectConfigChanges", () => {
   });
 
   it("should treat null old config as empty (all skills/agents are additions)", () => {
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
       {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       },
     );
 
-    const changes = detectConfigChanges(null, wizardResult);
+    const changes = detectConfigChanges(null, selection);
 
     expect(changes.addedSkills).toStrictEqual(["web-framework-react", "api-framework-hono"]);
     expect(changes.removedSkills).toStrictEqual([]);
@@ -1504,7 +1147,7 @@ describe("detectConfigChanges", () => {
       ],
       agents: buildAgentConfigs(["web-developer"]),
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       [
         ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "agents-inc" }),
         ...buildSkillConfigs(["api-framework-hono"]),
@@ -1514,7 +1157,7 @@ describe("detectConfigChanges", () => {
       },
     );
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.addedSkills).toStrictEqual(["api-framework-hono"]);
     expect(changes.removedSkills).toStrictEqual(["web-testing-vitest"]);
@@ -1537,7 +1180,7 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       agents: [],
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react"], { scope: "project" }),
     );
     const fullEntries = {
@@ -1550,7 +1193,7 @@ describe("detectConfigChanges", () => {
       oldAgents: [],
     };
 
-    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+    const changes = detectConfigChanges(oldConfig, selection, fullEntries);
 
     // Still a scope change: it drives the project-scope install and keeps hasAnyChanges true.
     expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
@@ -1566,7 +1209,7 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react"], { scope: "project" }),
       agents: [],
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react"], { scope: "global" }),
     );
     const fullEntries = {
@@ -1579,7 +1222,7 @@ describe("detectConfigChanges", () => {
       oldAgents: [],
     };
 
-    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+    const changes = detectConfigChanges(oldConfig, selection, fullEntries);
 
     expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
       from: "project",
@@ -1614,57 +1257,18 @@ describe("detectConfigChanges", () => {
       oldAgents: [],
     };
 
-    const changes = detectConfigChanges(oldConfig, buildWizardResult(resurfaced), fullEntries);
+    const changes = detectConfigChanges(oldConfig, buildInstallSelection(resurfaced), fullEntries);
 
     expect(changes.collapsedPairs).toStrictEqual([
       {
         projectHalf: firstElement(projectHalf),
         maskedGlobal: firstElement(maskedGlobal),
-        folded: false,
       },
     ]);
     expect(
       changes.sourceChanges,
       "the global install keeps its mode, so nothing switched",
     ).toStrictEqual(new Map());
-  });
-
-  /** The config entry cannot tell `s` from the selection key; the wizard result can. */
-  it("marks a collapsed pair folded when the wizard result says `s` folded it", () => {
-    const projectHalf = buildSkillConfigs(["web-framework-react"], {
-      scope: "project",
-      origin: EJECT_SOURCE,
-    });
-    const maskedGlobal = buildSkillConfigs(["web-framework-react"], {
-      scope: "global",
-      origin: EJECT_SOURCE,
-      excluded: true,
-    });
-    const folded = buildSkillConfigs(["web-framework-react"], {
-      scope: "global",
-      origin: EJECT_SOURCE,
-    });
-    const oldConfig = buildProjectConfig({ skills: projectHalf, agents: [] });
-    const fullEntries = {
-      newSkills: folded,
-      oldSkills: [...projectHalf, ...maskedGlobal],
-      newAgents: [],
-      oldAgents: [],
-    };
-
-    const changes = detectConfigChanges(
-      oldConfig,
-      buildWizardResult(folded, { foldedSkillIds: ["web-framework-react"] }),
-      fullEntries,
-    );
-
-    expect(changes.collapsedPairs).toStrictEqual([
-      {
-        projectHalf: firstElement(projectHalf),
-        maskedGlobal: firstElement(maskedGlobal),
-        folded: true,
-      },
-    ]);
   });
 
   it("reports a collapse that carries a new install mode as the global install's source change", () => {
@@ -1689,7 +1293,7 @@ describe("detectConfigChanges", () => {
       oldAgents: [],
     };
 
-    const changes = detectConfigChanges(oldConfig, buildWizardResult(folded), fullEntries);
+    const changes = detectConfigChanges(oldConfig, buildInstallSelection(folded), fullEntries);
 
     expect(changes.sourceChanges).toStrictEqual(
       new Map([["web-framework-react", { from: EJECT_SOURCE, to: DEFAULT_PUBLIC_SOURCE_NAME }]]),
@@ -1701,7 +1305,7 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       agents: [],
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react"], { scope: "project" }),
     );
     const fullEntries = {
@@ -1711,7 +1315,7 @@ describe("detectConfigChanges", () => {
       oldAgents: [],
     };
 
-    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+    const changes = detectConfigChanges(oldConfig, selection, fullEntries);
 
     expect(changes.scopeChanges.get("web-framework-react")).toStrictEqual({
       from: "global",
@@ -1725,7 +1329,7 @@ describe("detectConfigChanges", () => {
       skills: [],
       agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
     });
-    const wizardResult = buildWizardResult([], {
+    const selection = buildInstallSelection([], {
       agentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
     });
     const fullEntries = {
@@ -1738,7 +1342,7 @@ describe("detectConfigChanges", () => {
       oldAgents: buildAgentConfigs(["web-developer"], { scope: "global" }),
     };
 
-    const changes = detectConfigChanges(oldConfig, wizardResult, fullEntries);
+    const changes = detectConfigChanges(oldConfig, selection, fullEntries);
 
     expect(changes.agentScopeChanges.get("web-developer")).toStrictEqual({
       from: "global",
@@ -1752,11 +1356,11 @@ describe("detectConfigChanges", () => {
       skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       agents: [],
     });
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       buildSkillConfigs(["web-framework-react"], { scope: "project" }),
     );
 
-    const changes = detectConfigChanges(oldConfig, wizardResult);
+    const changes = detectConfigChanges(oldConfig, selection);
 
     expect(changes.scopeChanges.size).toBe(1);
     expect(changes.dualScopeSkillTransitions.size).toBe(0);
@@ -1798,6 +1402,8 @@ describe("edit change summary display", () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 
+  useFakeHome(() => tempDir);
+
   afterEach(async () => {
     process.stdout.write = origWrite;
     process.chdir(originalCwd);
@@ -1810,18 +1416,18 @@ describe("edit change summary display", () => {
       buildProjectConfig({ skills: [], agents: buildAgentConfigs(["web-developer"]) }),
     );
 
-    mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
+    applyingSelection(
+      buildInstallSelection(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 
-    expect(output).toContain("React");
-    expect(output).not.toContain("web-framework-react");
+    expect(output).toContain("+ React [P]");
+    expect(output).not.toContain("+ web-framework-react");
   });
 
   it("should show scope labels [G]/[P] on added skill lines", async () => {
@@ -1830,13 +1436,13 @@ describe("edit change summary display", () => {
       buildProjectConfig({ skills: [], agents: buildAgentConfigs(["web-developer"]) }),
     );
 
-    mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
+    applyingSelection(
+      buildInstallSelection(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 
@@ -1852,13 +1458,13 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
+    applyingSelection(
+      buildInstallSelection(buildSkillConfigs(["web-framework-react"], { scope: "project" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 
@@ -1878,27 +1484,18 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        // Dual-scope shape: active project entry + excluded global tombstone.
-        onComplete(
-          buildWizardResult(
-            [
-              ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
-              ...buildSkillConfigs(["web-framework-react"], {
-                scope: "global",
-                excluded: true,
-              }),
-            ],
-            { agentConfigs: buildAgentConfigs(["web-developer"]) },
-          ),
-        );
-      }
-      return stubInkInstance();
-    });
+    // Dual-scope shape: active project entry + excluded global tombstone.
+    applyingSelection(
+      buildInstallSelection(
+        [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
+        ],
+        { agentConfigs: buildAgentConfigs(["web-developer"]) },
+      ),
+    );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 
@@ -1917,13 +1514,13 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
+    applyingSelection(
+      buildInstallSelection(buildSkillConfigs(["web-framework-react"], { scope: "global" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 
@@ -1943,19 +1540,13 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
-      const onComplete = element.props.onComplete as ((result: unknown) => void) | undefined;
-      if (onComplete) {
-        onComplete(
-          buildWizardResult([], {
-            agentConfigs: buildAgentConfigs(["web-developer"]),
-          }),
-        );
-      }
-      return stubInkInstance();
-    });
+    applyingSelection(
+      buildInstallSelection([], {
+        agentConfigs: buildAgentConfigs(["web-developer"]),
+      }),
+    );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 
@@ -1973,20 +1564,18 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }), {
+    applyingSelection(
+      buildInstallSelection(buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 
-    expect(output).toContain("React");
-    expect(output).not.toContain("web-framework-react");
-    expect(output).toContain("Eject");
-    expect(output).toContain("Agents Inc");
+    expect(output).toContain("~ React (Eject → Agents Inc)");
+    expect(output).not.toContain("~ web-framework-react");
   });
 
   it("should show one ~ line for an install-mode switch, not a remove/add pair", async () => {
@@ -1998,13 +1587,13 @@ describe("edit change summary display", () => {
       }),
     );
 
-    mockWizardCompletion(
-      buildWizardResult(buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }), {
+    applyingSelection(
+      buildInstallSelection(buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }), {
         agentConfigs: buildAgentConfigs(["web-developer"]),
       }),
     );
 
-    await Edit.run([], { root: CLI_ROOT }).catch(() => {});
+    await runEditFrom().catch(() => {});
 
     const output = stdoutChunks.join("");
 

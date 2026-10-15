@@ -28,7 +28,7 @@ import {
   renderSchemaViolatingConfigTs,
   renderUnparseableConfigTs,
 } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import "../matchers/setup.js";
 

@@ -4,9 +4,9 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
+import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupFixture,
   cleanupTempDir,
@@ -20,8 +20,8 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 /**
  * Preloaded flag preservation across init and edit lifecycle.
  *
- * Gaps 10, 11, 12: Verifies that `preloaded: true` flags from the stack YAML
- * survive init, edit passthrough, and edit with skill additions.
+ * Gaps 10, 11, 12: Verifies that `preloaded: true` flags from the stack
+ * survive init and an edit that changes nothing.
  *
  * The E2E source stack assigns preloaded: true to web-framework-react (via
  * createMockSkillAssignment("web-framework-react", true)) and to
@@ -78,12 +78,15 @@ const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit", () => {
   let fixture: E2EPluginSource;
+  let store: SeedConfigStore;
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(fixture);
   });
 
@@ -109,25 +112,19 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         tempDir = await createTempDir();
         const projectDir = tempDir;
 
-        // Default init/edit content is GLOBAL-scoped (compiled agents land in
-        // HOME). Thread ONE shared HOME through both phases so the edit sees the
-        // init's global content; config.ts stays under projectDir. The afterEach
-        // owns cleanup (reuse-param launches do not).
+        // Default-scope content is GLOBAL (compiled agents land in HOME). Thread ONE
+        // shared HOME through both phases so the edit sees the init's global content;
+        // config.ts stays under projectDir.
         sharedHome = await createTempDir();
+        const site = { dir: projectDir, home: sharedHome };
+        const stack = e2eStackPayload({ install: "plugin" });
 
         // ================================================================
         // Phase A: Stack-picked init
         // ================================================================
 
-        const initWizard = await InitWizard.launchInProject({
-          source: fixture,
-          projectDir,
-          globalHome: sharedHome,
-        });
-        const initResult = await initWizard.completeWithDefaults();
-        await initResult.destroy();
+        await installFromSeed(store, "Stacked1", stack, site, fixture.sourceDir);
 
-        expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
@@ -148,15 +145,7 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         // Phase B: Edit passthrough (no changes)
         // ================================================================
 
-        const editWizard = await EditWizard.launchInProject({
-          projectDir,
-          source: fixture,
-          globalHome: sharedHome,
-        });
-        const editResult = await editWizard.passThrough();
-        await editResult.destroy();
-
-        expect(await editResult.exitCode).toBe(EXIT_CODES.SUCCESS);
+        await applyFromSeed(store, "Stacked2", stack, site);
 
         // Verify preloaded flags survive edit passthrough
         await assertPreloadedInStack(

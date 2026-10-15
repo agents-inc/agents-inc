@@ -4,7 +4,7 @@ import { CLI, type CLIResult } from "./cli.js";
 import { codexHome } from "../helpers/test-utils.js";
 import { DIRS } from "../pages/constants.js";
 
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "./project-handle.js";
 import type { SeedConfigStore } from "./seed-config-store.js";
 
 /**

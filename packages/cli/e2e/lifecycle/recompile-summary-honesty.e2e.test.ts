@@ -1,13 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { agentsPath, cleanupTempDir, readTreeSnapshot, runCLI } from "../helpers/test-utils.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
-  createTestEnvironment,
-  initGlobalWithEject,
-  initProjectAllGlobal,
-} from "../fixtures/dual-scope-helpers.js";
+  applyFromSeed,
+  e2eStackPayload,
+  installE2EStackGlobally,
+} from "../fixtures/e2e-stack-seed.js";
+import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
  * The recompile summary reports what was REWRITTEN, not what was visited.
@@ -15,8 +17,9 @@ import {
  * A mutating run whose compiled agents all come back byte-identical is the state
  * the old line could not describe: it counted the roster it considered, so a
  * no-op recompile and a real one printed the same sentence. Both surfaces that
- * print the count are driven here — `edit` (through the project-setup pass that
- * writes a config and recompiles without changing a roster) and `compile` — and
+ * print the count are driven here — `edit` (adding a skill assigned to no
+ * sub-agent, which writes a config and recompiles without changing an agent) and
+ * `compile` — and
  * each is checked against the agents' own mtimes, which is what makes "unchanged"
  * mean "not written" rather than "written with the same bytes".
  *
@@ -26,7 +29,16 @@ import {
  */
 
 describe("recompile summary distinguishes rewritten agents from unchanged ones", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -39,10 +51,9 @@ describe("recompile summary distinguishes rewritten agents from unchanged ones",
     async () => {
       const env = await createTestEnvironment();
       tempDir = env.tempDir;
-      const { fakeHome, projectDir } = env;
+      const { fakeHome } = env;
 
-      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(phaseA.exitCode, `global init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
+      await installE2EStackGlobally(store, fakeHome);
 
       const globalAgentsBefore = await readTreeSnapshot(agentsPath(fakeHome));
       // Read from disk rather than pinned: the roster is the stack's, and what this
@@ -54,13 +65,18 @@ describe("recompile summary distinguishes rewritten agents from unchanged ones",
         "the global scope must hold the compiled agents this run will recompile",
       ).toBeGreaterThan(0);
 
-      // Setting a project up over that install writes a config and recompiles,
-      // but changes no roster — so every agent it recompiles is already correct.
-      const phaseB = await initProjectAllGlobal(E2E_SOURCE, fakeHome, projectDir);
-      expect(phaseB.exitCode, `project setup failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
-      expect(phaseB.output, "the run must reach the recompile it is being judged on").toContain(
-        STEP_TEXT.EDIT_UNCHANGED,
+      // Adding a skill no sub-agent carries writes a config and recompiles, but
+      // changes no agent — so every agent it recompiles is already correct.
+      const phaseB = await applyFromSeed(
+        store,
+        "PlusUnassigned1",
+        e2eStackPayload({ plus: { [E2E_SKILL["visual-regression"].id]: [] } }),
+        { dir: fakeHome, home: fakeHome },
       );
+      expect(
+        phaseB.output,
+        "the run must change something, or it never reaches the recompile it is judged on",
+      ).not.toContain(STEP_TEXT.EDIT_UNCHANGED);
 
       expect(
         phaseB.output,

@@ -65,7 +65,7 @@ export type MigrationResult = {
  * this run could not honor must stop the run BEFORE any config records it.
  */
 export function ejectCopyFailureError(failedCount: number): string {
-  return `Failed to copy ${failedCount} skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then run '${CLI_INVOKE_COMMAND} edit' again — or switch the affected skills back to plugin mode.`;
+  return `Failed to copy ${failedCount} skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with '${CLI_INVOKE_COMMAND} edit --from <id>' — or switch the affected skills back to plugin mode.`;
 }
 
 /**

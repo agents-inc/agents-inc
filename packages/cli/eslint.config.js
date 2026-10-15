@@ -573,10 +573,10 @@ export default defineConfig(
 
   {
     // An Ink codebase is a React codebase, so the two hooks rules apply in
-    // full: conditional hooks crash a wizard render exactly as they crash a
+    // full: conditional hooks crash an Ink render exactly as they crash a
     // browser one, and a wrong dependency array is a stale screen. Scoped to
     // where React actually runs — components (including their hooks directory)
-    // and the commands/stores that render or drive them (CLI-356).
+    // and the commands that render them (CLI-356).
     //
     // Deliberately these two rules and not the plugin's full v7 recommended
     // set: the additions beyond them exist for the React Compiler, and they
@@ -585,7 +585,7 @@ export default defineConfig(
     // render, converging through a conditional setState). Adopting them would
     // mean rewriting the measurement hooks to satisfy a compiler this code
     // will never run under.
-    files: ["src/cli/**/*.tsx", "src/cli/components/**/*.ts", "src/cli/stores/**/*.ts"],
+    files: ["src/cli/**/*.tsx", "src/cli/components/**/*.ts"],
     plugins: { "react-hooks": reactHooks },
     rules: {
       "react-hooks/rules-of-hooks": "error",

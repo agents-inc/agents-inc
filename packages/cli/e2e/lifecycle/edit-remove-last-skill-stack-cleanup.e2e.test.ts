@@ -1,18 +1,19 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   directoryExists,
+  FORKED_FROM_METADATA,
   loadConfigOrFail,
-  renderMetadataYaml,
   skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -20,7 +21,8 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
@@ -47,7 +49,25 @@ const singleSkillStack = {
   },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
+/** The global configuration with react left out: its sub-agent on, holding nothing. */
+const WITHOUT_REACT_ID = "NoReact2";
+
 describe("edit removes the only skill an agent references", () => {
+  let store: SeedConfigStore;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      WITHOUT_REACT_ID,
+      buildSeedPayload({
+        agents: { [E2E_AGENT["web-developer"].name]: { on: true, scope: "global" } },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
   let globalHome: string | undefined;
 
   afterEach(async () => {
@@ -72,6 +92,7 @@ describe("edit removes the only skill an agent references", () => {
 
       const config = buildProjectConfig({
         name: "global-edit-test",
+        marketplace: E2E_SOURCE.sourceDir,
         skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
@@ -79,45 +100,22 @@ describe("edit removes the only skill an agent references", () => {
       });
       await writeProjectConfig(globalHome, config);
 
+      // Fork provenance, so the round trip owns the copy and the apply may remove it.
       await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "React framework for global-scope edit testing",
-        metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.react.display,
-          category: "web-framework",
-          slug: E2E_SKILL.react.slug,
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "b2c3d4e",
-        }),
+        metadata: FORKED_FROM_METADATA,
       });
 
       await createPermissionsFile(globalHome);
 
       // ================================================================
-      // Phase 2: Run `cc edit` at global scope and deselect react entirely.
-      // Setting projectDir === HOME makes cwd the global install root, so
-      // the wizard edits ~/.agents-inc/claude/config.ts with authoritativeScope "all".
+      // Phase 2: Run `cc edit --from` at global scope with react left out.
+      // Setting cwd === HOME makes it the global install root, so the apply
+      // edits ~/.agents-inc/claude/config.ts with authoritativeScope "all".
       // ================================================================
 
-      const wizard = await EditWizard.launch({
-        projectDir: globalHome,
-        source: E2E_SOURCE,
-        env: { HOME: globalHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      // react is currently selected — pressing Space deselects it. At global
-      // scope the "global skills cannot be changed from project scope" guard
-      // does not apply, so the deselect goes through.
-      await wizard.build.selectSkill(E2E_SKILL.react.display);
-
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      const result = await applyEditFrom(store, WITHOUT_REACT_ID, { dir: globalHome });
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // ================================================================
       // Phase 3: Assert on the post-edit config (structural load) AND the

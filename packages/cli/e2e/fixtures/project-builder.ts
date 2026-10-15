@@ -19,14 +19,14 @@ import {
 import {
   buildSkillConfig,
   buildSkillConfigs,
-} from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+} from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { buildClaudeSettings } from "../../src/cli/lib/__tests__/factories/claude-settings-factories.js";
 import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { E2E_SKILL } from "./expected-values.js";
 import { pluginKeyFor } from "./plugin-install-state.js";
 import { DIRS, FILES } from "../pages/constants.js";
 import type { AgentName, Domain } from "../../src/cli/types/index.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "./project-handle.js";
 
 export type DualScopeHandle = {
   project: ProjectHandle;
@@ -40,9 +40,8 @@ export type EditableOptions = {
    * Every command after `init` resolves the source out of the config — `--marketplace` is
    * `init`'s flag alone and `CC_MARKETPLACE` is read at install time only — so a fixture that
    * hand-writes an install has to write the source too, or the commands under test read
-   * the default public marketplace. Pass it HERE rather than to a wizard launcher whenever
-   * the spec snapshots config.ts: recorded at build time it is part of the fixture, and
-   * recorded later it is a change the snapshot sees.
+   * the default public marketplace. Pass it HERE whenever the spec snapshots config.ts: recorded
+   * at build time it is part of the fixture, and recorded later it is a change the snapshot sees.
    */
   marketplace?: string;
   skills?: string[];
@@ -56,36 +55,21 @@ export type EditableOptions = {
    */
   forkedFrom?: boolean;
   /**
-   * Extra `scope: "global"` skill entries recorded in the project config. In a
-   * project-scope edit these render as inherited, locked (readOnly) Sources rows
-   * — the `installedSkillConfigs` snapshot IS `projectConfig.skills`, and a
-   * global entry viewed from a project edit is read-only (see
-   * `classifySkillSourceRows`). No disk copy is written: they model skills
-   * inherited from the global install, not project-local files.
+   * Extra `scope: "global"` skill entries recorded in the project config. No disk copy is
+   * written: they model skills inherited from the global install, not project-local files.
    */
   globalSkills?: string[];
   /**
    * The `origin` recorded for the `globalSkills` entries above. Defaults to `"eject"`, which
    * matches the project half and is the shape most specs want.
-   *
-   * It exists because one scenario is UNREACHABLE at that default: the `s` collapse of a
-   * `[P][G]` pair back to `[G]`. `wouldOverwriteGlobalEject` refuses a project→global press
-   * exactly when the live entry is a project eject, the snapshot holds an ACTIVE global eject
-   * and no tombstone exists — so the press returns a toast and changes nothing, and a spec built
-   * on the default fails on a swallowed keystroke while reading as the render bug it meant to
-   * test. Naming a marketplace for the global half is what makes the collapse reachable, and
-   * every such spec still owes a scope-badge proof (`["P"]` → `["G"]`) that the press landed.
    */
   globalSkillsSource?: string;
   /**
-   * Skills recorded in the project config with NO files written for them. A skill
-   * the session's source does not carry AND the install has no copy of is one the
-   * wizard cannot resolve: it drops the skill from its roster, and the run reports
-   * a change.
+   * Skills recorded in the project config with NO files written for them: skills the
+   * session's source does not carry AND the install has no copy of, so nothing resolves them.
    *
    * Writing the files instead does not produce that state — an installed local
-   * skill whose metadata.yaml describes it is merged into the matrix and offered
-   * like any other, so the wizard resolves it and nothing changes.
+   * skill whose metadata.yaml describes it is merged into the matrix like any other.
    */
   unresolvableSkills?: string[];
 };

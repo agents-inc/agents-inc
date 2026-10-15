@@ -1,10 +1,15 @@
 import path from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, FILES, TERMINAL_SIZE } from "../pages/constants.js";
-import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS, FILES } from "../pages/constants.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  DUAL_SCOPE,
+  applyFromSeed,
+  e2eStackPayload,
+  installE2EStackDualScope,
+} from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -14,76 +19,74 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import {
-  createTestEnvironment,
-  readSkillEntries,
-  setupDualScopeWithEject,
-} from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, readSkillEntries } from "../fixtures/dual-scope-helpers.js";
 
 /**
  * Scope toggle config snapshot E2E test.
  *
- * Verifies exact config state before and after scope toggle operations,
- * ensuring that toggling a skill's or agent's scope correctly updates
- * the config files at both global and project scopes.
+ * Verifies exact config state before and after scope changes, ensuring that
+ * changing a skill's or agent's scope correctly updates the config files at
+ * both global and project scopes.
  */
 
+const API_DEV = E2E_AGENT["api-developer"].name;
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
 describe("scope toggle config snapshot", () => {
+  let store: SeedConfigStore;
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
-  let testWizard: EditWizard | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   beforeEach(async () => {
     const { tempDir, fakeHome: fh, projectDir: pd } = await createTestEnvironment();
     testTempDir = tempDir;
     fakeHome = fh;
     projectDir = pd;
-    await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
-  });
+    await installE2EStackDualScope(store, { fakeHome, projectDir });
+  }, TIMEOUTS.LIFECYCLE);
 
   afterEach(async () => {
-    await testWizard?.destroy();
-    testWizard = undefined;
     await cleanupTempDir(testTempDir);
   });
 
+  /** Applies `payload` from the project. */
+  function editFromProject(id: string, payload: ReturnType<typeof e2eStackPayload>) {
+    return applyFromSeed(store, id, payload, { dir: projectDir, home: fakeHome });
+  }
+
   it(
-    "G->P skill scope toggle should add skill to project config and preserve global config",
+    "G->P skill scope change should add skill to project config and preserve global config",
     { timeout: TIMEOUTS.LIFECYCLE, retry: 1 },
     async () => {
       // BEFORE: Snapshot both configs
       const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
       const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
-      // ACTION: Launch EditWizard, toggle web-framework-react scope (S on first domain)
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      testWizard = wizard;
-
-      // Build step -- Web domain: toggle web-framework-react scope, focused
-      // explicitly rather than relying on where the grid opens.
-      await wizard.build.focusSkill(E2E_SKILL.react.display);
-      await wizard.build.toggleScopeOnFocusedSkill();
-      await wizard.build.advanceDomain();
-
-      // Build step -- API domain (pass through)
-      await wizard.build.advanceDomain();
-
-      // Shared domain, sources, agents and confirm all accept defaults
-      const result = await wizard.build.saveFromBuild("edit");
-      const exitCode = await result.exitCode;
+      // ACTION: web-framework-react G->P. A project skill never reaches the global
+      // web-developer, so the project's React is assigned to no sub-agent.
+      await editFromProject(
+        "ReactProject1",
+        e2eStackPayload({
+          ...DUAL_SCOPE,
+          projectSkills: [E2E_SKILL.hono.id, E2E_SKILL.react.id],
+          unassigned: [E2E_SKILL.react.id],
+        }),
+      );
 
       // AFTER assertions
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Proof of execution: the G->P toggle must have rewritten the project config.
+      // Proof of execution: the G->P change must have rewritten the project config.
       const projectConfigAfter = await readTestFile(configTsPath(projectDir));
-      expect(projectConfigAfter, "project config.ts must record the G->P toggle").not.toBe(
+      expect(projectConfigAfter, "project config.ts must record the G->P change").not.toBe(
         projectConfigBefore,
       );
 
@@ -109,7 +112,7 @@ describe("scope toggle config snapshot", () => {
       // the writer happened to break its lines.
       expect(
         await readTestFile(configTsPath(fakeHome)),
-        "a G->P toggle is a project-scope edit and may not rewrite the global config",
+        "a G->P change is a project-scope edit and may not rewrite the global config",
       ).toBe(globalConfigBefore);
 
       // Project .claude/skills/web-framework-react/SKILL.md exists
@@ -129,46 +132,25 @@ describe("scope toggle config snapshot", () => {
         await fileExists(globalSkillMdPath),
         "SKILL.md must still exist in global skills/web-framework-react/ (G->P is additive)",
       ).toBe(true);
-
-      await result.destroy();
     },
   );
 
   it(
-    "scope toggle (s) collapses a persisted dual-scope skill locked to a selected agent — only the project config changes",
+    "collapsing a persisted dual-scope skill to its global half changes only the project config",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
-      // selected api-developer agent: space (agent lock) cannot drop the project
-      // half but `s` collapses the pair to its global half. Only the PROJECT config
-      // may change — the global config is not the wizard's to rewrite from a
-      // project-scope edit.
+      // api-framework-hono is a persisted dual-scope [P][G] pair carried by the project
+      // api-developer: naming it at global scope only collapses the pair to its global half.
+      // Only the PROJECT config may change — the global config is not a project-scope
+      // edit's to rewrite.
 
       // BEFORE: Snapshot both configs
       const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
       const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      testWizard = wizard;
-
-      // Build step -- Web domain (pass through)
-      await wizard.build.advanceDomain();
-
-      // Build step -- API domain: press `s` on api-framework-hono (collapses the pair)
-      await wizard.build.toggleScopeOnFocusedSkill();
-      await wizard.build.advanceDomain();
-
-      // Shared domain, sources, agents and confirm all accept defaults
-      const result = await wizard.build.saveFromBuild("edit");
-      const exitCode = await result.exitCode;
+      await editFromProject("HonoGlobal1", e2eStackPayload({ projectAgents: [API_DEV] }));
 
       // AFTER assertions — the project config lost the pair, the global one is untouched
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       const projectConfigAfter = await readTestFile(configTsPath(projectDir));
       expect(projectConfigAfter, "project config.ts must record the collapsed pair").not.toBe(
@@ -188,7 +170,7 @@ describe("scope toggle config snapshot", () => {
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono must be removed from project scope after the `s` collapse",
+        "api-framework-hono must be removed from project scope after the collapse",
       ).toBe(false);
 
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.hono.id);
@@ -196,52 +178,30 @@ describe("scope toggle config snapshot", () => {
         await directoryExists(globalSkillDir),
         "api-framework-hono must remain at global scope (P→G leaves the global install intact)",
       ).toBe(true);
-
-      await result.destroy();
     },
   );
 
   it(
-    "G->P agent scope toggle should compile agent at project scope and preserve global",
+    "G->P agent scope change should compile agent at project scope and preserve global",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Snapshot both configs
       const globalConfigBefore = await readTestFile(configTsPath(fakeHome));
       const projectConfigBefore = await readTestFile(configTsPath(projectDir));
 
-      // ACTION: Launch EditWizard, pass through build domains + sources, navigate to web-developer, toggle scope
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      testWizard = wizard;
-
-      // Build step -- pass through all three domains
-      const sources = await wizard.build.passThroughAllDomains();
-
-      // Sources step (pass through)
-      await sources.waitForReady();
-      const agents = await sources.advance();
-
-      // Agents step -- navigate to Web Developer and toggle scope to project
-      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
-      await agents.toggleScopeOnFocusedAgent();
-      const confirm = await agents.advance("edit");
-
-      // Confirm step
-      const result = await confirm.confirm();
-      const exitCode = await result.exitCode;
+      // ACTION: web-developer G->P
+      await editFromProject(
+        "WebDevProject1",
+        e2eStackPayload({ ...DUAL_SCOPE, projectAgents: [API_DEV, WEB_DEV] }),
+      );
 
       // AFTER assertions
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // web-developer.md exists at project .claude/agents/
       const projectAgentPath = path.join(agentsPath(projectDir), "web-developer.md");
       expect(
         await fileExists(projectAgentPath),
-        "web-developer.md must exist in project agents dir after G->P toggle",
+        "web-developer.md must exist in project agents dir after G->P",
       ).toBe(true);
 
       // web-developer.md STILL exists at global .claude/agents/ (G->P additive)
@@ -251,11 +211,11 @@ describe("scope toggle config snapshot", () => {
         "web-developer.md must still exist in global agents dir (G->P is additive)",
       ).toBe(true);
 
-      // Proof of execution: the G->P toggle must have rewritten the project config.
-      // Without this the `toContain` below passes on the pre-toggle config, which
+      // Proof of execution: the G->P change must have rewritten the project config.
+      // Without this the `toContain` below passes on the pre-change config, which
       // already named web-developer as a global-scoped agent.
       const projectConfigAfter = await readTestFile(configTsPath(projectDir));
-      expect(projectConfigAfter, "project config.ts must record the G->P toggle").not.toBe(
+      expect(projectConfigAfter, "project config.ts must record the G->P change").not.toBe(
         projectConfigBefore,
       );
 
@@ -263,14 +223,12 @@ describe("scope toggle config snapshot", () => {
       expect(projectConfigAfter).toContain("web-developer");
 
       // Global config STILL contains web-developer agent (immutable) — a
-      // project-scope edit is not the wizard's licence to rewrite global config.
+      // project-scope edit is no licence to rewrite global config.
       const globalConfigAfter = await readTestFile(configTsPath(fakeHome));
       expect(globalConfigAfter, "global config.ts must be unchanged by a project-scope edit").toBe(
         globalConfigBefore,
       );
       expect(globalConfigAfter).toContain("web-developer");
-
-      await result.destroy();
     },
   );
 });

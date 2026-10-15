@@ -1,8 +1,9 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -12,12 +13,16 @@ import {
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * Both wizard commands render a loading `<Spinner>` and then await a load that can
- * refuse the run. The documented contract is that such a refusal "lands before the
- * spinner renders … never sits under a mounted Ink tree" — what the user is left
- * looking at must be the error, and nothing else.
+ * `edit --from` renders a loading `<Spinner>` and then awaits a load that can refuse
+ * the run. The documented contract is that such a refusal "lands before the spinner
+ * renders … never sits under a mounted Ink tree" — what the user is left looking at
+ * must be the error, and nothing else.
  *
  * These are PTY specs and cannot be anything else. Without a terminal Ink buffers
  * its frames and writes the last one when the tree is torn down, so the spinner
@@ -32,8 +37,8 @@ import { metadataFieldsFor } from "../fixtures/project-builder.js";
  * the last thing on screen is the spinner rather than the refusal.
  *
  * `init-edit-error-guards.e2e.test.ts` owns the exit codes and message text for
- * two of these same paths; it runs without a PTY and says nothing about the
- * frame. Neither spec subsumes the other.
+ * these paths; it runs without a PTY and says nothing about the frame. Neither spec
+ * subsumes the other.
  */
 
 /** The `source-fetcher` message for a marketplace path that is not a directory. */
@@ -43,9 +48,32 @@ const MISSING_SOURCE_PATH = "/tmp/not-a-real-source-path-refusal-frame";
 /** The spinner row exactly as it is painted, less its rotating glyph. */
 const SPINNER_ROW = `${STEP_TEXT.LOADING_SKILLS}...`;
 
+const APPLIED_ID = "Refusal1";
+
 describe("a refusal does not sit under a live spinner", () => {
+  let store: SeedConfigStore;
   let prompt: InteractivePrompt | undefined;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      APPLIED_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [E2E_AGENT["web-developer"].name]: "lazy" },
+          }),
+        },
+        agents: { [E2E_AGENT["web-developer"].name]: { on: true, scope: "project" } },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     await prompt?.destroy();
@@ -56,12 +84,15 @@ describe("a refusal does not sit under a live spinner", () => {
     }
   });
 
-  it("edit, where no installation exists, leaves the error as the last thing on screen", async () => {
+  it("edit --from, where no installation exists, leaves the error as the last thing on screen", async () => {
     tempDir = await createTempDir();
     const emptyDir = path.join(tempDir, "empty");
     await mkdir(emptyDir, { recursive: true });
 
-    prompt = new InteractivePrompt(["edit"], emptyDir, { env: { CC_MARKETPLACE: undefined } });
+    // The id resolves, so the run gets past the fetch and refuses inside the spinner's load.
+    prompt = new InteractivePrompt(["edit", "--from", APPLIED_ID], emptyDir, {
+      env: { CC_MARKETPLACE: undefined, AGENTS_INC_API_URL: store.url },
+    });
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
@@ -75,7 +106,7 @@ describe("a refusal does not sit under a live spinner", () => {
     ).toBe(false);
   });
 
-  it("edit, whose stored marketplace is gone, leaves the error as the last thing on screen", async () => {
+  it("edit --from, whose stored marketplace is gone, leaves the error as the last thing on screen", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
@@ -95,29 +126,8 @@ describe("a refusal does not sit under a live spinner", () => {
       }),
     });
 
-    prompt = new InteractivePrompt(["edit"], projectDir, { env: { CC_MARKETPLACE: undefined } });
-    const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
-
-    expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-
-    const screen = prompt.getScreen();
-    expect(screen).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
-    expect(screen).toContain(MISSING_SOURCE_PATH);
-    expect(
-      screen.trimEnd().endsWith(SPINNER_ROW),
-      "the loading spinner must not still be painting under the refusal",
-    ).toBe(false);
-  });
-
-  it("init, pointed at a marketplace that does not exist, leaves the error as the last thing on screen", async () => {
-    tempDir = await createTempDir();
-    const projectDir = path.join(tempDir, "project");
-    await mkdir(projectDir, { recursive: true });
-
-    // `Init.selectionFromWizard` has the identical structure: render, await the
-    // load, then take the spinner down (`awaitUnderSpinner`) only AFTER the await.
-    prompt = new InteractivePrompt(["init", "--marketplace", MISSING_SOURCE_PATH], projectDir, {
-      env: { CC_MARKETPLACE: undefined },
+    prompt = new InteractivePrompt(["edit", "--from", APPLIED_ID], projectDir, {
+      env: { CC_MARKETPLACE: undefined, AGENTS_INC_API_URL: store.url },
     });
     const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 

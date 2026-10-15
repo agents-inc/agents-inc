@@ -12,7 +12,13 @@ import {
   readCompiledAgents,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment, initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import { DIRS, STANDARD_FILES } from "../../src/cli/consts.js";
@@ -36,12 +42,18 @@ import "../matchers/setup.js";
  * the marketplace declares `web-developer` as the USER'S OWN, which a marketplace-aware roster
  * carries into `customAgentNames` and a CLI-only roster never sees.
  */
+/** The E2E stack, every skill ejected into the global installation. */
+const STACK_AT_HOME_ID = "StackHm1";
+
 describe("the sub-agent unions an install generates", () => {
   let source: { sourceDir: string; tempDir: string };
   let testTempDir: string;
+  let store: SeedConfigStore;
 
   beforeAll(async () => {
     source = await createE2ESource();
+    store = await startSeedConfigStore();
+    store.publish(STACK_AT_HOME_ID, e2eStackPayload({ scope: "global" }));
 
     // Append rather than re-render: nothing about the sub-agent is restated here, so this cannot
     // drift from what `createE2ESource` writes.
@@ -56,6 +68,7 @@ describe("the sub-agent unions an install generates", () => {
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     if (source.tempDir) await cleanupTempDir(source.tempDir);
   });
 
@@ -71,7 +84,7 @@ describe("the sub-agent unions an install generates", () => {
       testTempDir = env.tempDir;
       const home = env.fakeHome;
 
-      const installed = await initGlobalWithEject(source, home);
+      const installed = await runInitFrom(store, STACK_AT_HOME_ID, { dir: home }, source.sourceDir);
       expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const typesAfterInit = await readTestFile(configTypesTsPath(home));

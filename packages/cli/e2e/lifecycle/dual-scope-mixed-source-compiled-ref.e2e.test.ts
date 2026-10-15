@@ -18,7 +18,7 @@ import {
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 

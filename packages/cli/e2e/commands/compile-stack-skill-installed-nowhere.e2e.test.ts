@@ -21,8 +21,7 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * One line is true and stays: the skill "is configured but was not found". A second line said the
  * same id was "not found in matrix. It may be a custom or local skill" — and there is no custom or
  * local copy, which is exactly what the first line had just said. The owner ruled that second
- * line deleted wherever it is printed; the startup band's half of it is
- * `interactive/init-stack-skill-not-carried`, and this is `compile`'s.
+ * line deleted wherever it is printed, and this is `compile`'s.
  *
  * The true line is the positive subject guard for the absence: it names the same id in the same
  * output, so a run that printed nothing about the skill cannot pass. The id is a real catalogue

@@ -42,9 +42,8 @@ import { getProjectConfigPath } from "../../installation/install-base-dir.js";
  * marketplace") is impossible to act on for a skill the user wrote themselves.
  *
  * Driven through `init --from`, which states an install mode explicitly and so is the
- * one route that can still ask for a plugin install of an unbacked skill: the wizard's
- * own Sources grid no longer offers the cell. The seam below `installPluginSkills` is
- * mocked (`claudePluginInstall`), so "never shelled out" is observable.
+ * one route that can still ask for a plugin install of an unbacked skill. The seam below
+ * `installPluginSkills` is mocked (`claudePluginInstall`), so "never shelled out" is observable.
  */
 
 const MARKETPLACE = "unbacked-refusal-marketplace";

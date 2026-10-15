@@ -451,7 +451,7 @@ describe("extractAgents", () => {
     const result = extractAgents(tempDir);
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toStrictEqual({ id: "web-developer", domain: "web" });
+    expect(result[0]).toStrictEqual({ id: "web-developer" });
   });
 
   it("skips _templates directory", () => {
@@ -494,18 +494,6 @@ describe("extractAgents", () => {
 
     expect(result).toHaveLength(0);
   });
-
-  it("handles agent without domain field", () => {
-    createAgentDir("developer", "domainless-agent", {
-      id: "domainless-agent",
-    });
-
-    const result = extractAgents(tempDir);
-
-    expect(result).toHaveLength(1);
-    // An agent with no `domain:` yields an entry with no `domain` key at all.
-    expect(result[0]).toStrictEqual({ id: "domainless-agent" });
-  });
 });
 
 // -- renderSourceTypes -------------------------------------------------------
@@ -516,7 +504,7 @@ describe("renderSourceTypes", () => {
       createMockExtractedSkill("web-framework-react", { slug: "react" }),
       createMockExtractedSkill("api-framework-hono", { slug: "hono" }),
     ];
-    const agents: AgentEntry[] = [{ id: "web-developer", domain: "web" }];
+    const agents: AgentEntry[] = [{ id: "web-developer" }];
 
     const content = renderSourceTypes(skills, agents);
 
@@ -580,10 +568,7 @@ describe("renderSourceTypes", () => {
         domain: "api",
       }),
     ];
-    const agents: AgentEntry[] = [
-      { id: "web-developer", domain: "web" },
-      { id: "api-developer", domain: "api" },
-    ];
+    const agents: AgentEntry[] = [{ id: "web-developer" }, { id: "api-developer" }];
 
     const content = renderSourceTypes(skills, agents);
 
@@ -602,10 +587,7 @@ describe("renderSourceTypes", () => {
 
   it("deduplicates agent names", () => {
     const skills = [createMockExtractedSkill("web-framework-react", { slug: "react" })];
-    const agents: AgentEntry[] = [
-      { id: "web-developer", domain: "web" },
-      { id: "web-developer", domain: "web" },
-    ];
+    const agents: AgentEntry[] = [{ id: "web-developer" }, { id: "web-developer" }];
 
     const content = renderSourceTypes(skills, agents);
 
@@ -629,10 +611,9 @@ describe("renderMatrix", () => {
         displayName: "React",
       }),
     ];
-    const agents: AgentEntry[] = [];
     const skillIdSet = new Set(["web-framework-react"]);
 
-    const content = renderMatrix(skills, agents, skillIdSet);
+    const content = renderMatrix(skills, skillIdSet);
 
     expect(content).toContain("export const BUILT_IN_MATRIX: MergedSkillsMatrix =");
   });
@@ -646,10 +627,9 @@ describe("renderMatrix", () => {
         displayName: "React",
       }),
     ];
-    const agents: AgentEntry[] = [];
     const skillIdSet = new Set(["web-framework-react"]);
 
-    const content = renderMatrix(skills, agents, skillIdSet);
+    const content = renderMatrix(skills, skillIdSet);
 
     expect(content).toContain("export const SKILL_IDS_BY_CATEGORY:");
   });
@@ -663,10 +643,9 @@ describe("renderMatrix", () => {
         displayName: "React",
       }),
     ];
-    const agents: AgentEntry[] = [];
     const skillIdSet = new Set(["web-framework-react"]);
 
-    const content = renderMatrix(skills, agents, skillIdSet);
+    const content = renderMatrix(skills, skillIdSet);
 
     expect(content).toContain("export const CATEGORIES_BY_DOMAIN:");
   });
@@ -680,34 +659,11 @@ describe("renderMatrix", () => {
         displayName: "React",
       }),
     ];
-    const agents: AgentEntry[] = [];
     const skillIdSet = new Set(["web-framework-react"]);
 
-    const content = renderMatrix(skills, agents, skillIdSet);
+    const content = renderMatrix(skills, skillIdSet);
 
     expect(content).toContain('"generatedAt": "build"');
-  });
-
-  it("includes agentDefinedDomains when agents have domains", () => {
-    const skills = [
-      createMockExtractedSkill("web-framework-react", {
-        slug: "react",
-        category: "web-framework",
-        domain: "web",
-        displayName: "React",
-      }),
-    ];
-    const agents: AgentEntry[] = [
-      { id: "web-developer", domain: "web" },
-      { id: "api-developer", domain: "api" },
-    ];
-    const skillIdSet = new Set(["web-framework-react"]);
-
-    const content = renderMatrix(skills, agents, skillIdSet);
-
-    expect(content).toContain('"agentDefinedDomains"');
-    expect(content).toContain('"web-developer": "web"');
-    expect(content).toContain('"api-developer": "api"');
   });
 });
 
@@ -717,7 +673,7 @@ describe("renderMatrix relationship narrowing", () => {
   it("records no unresolved slug for a catalogue smaller than the built-in rules describe", () => {
     const skills = [createMockExtractedSkill("web-framework-react")];
 
-    const content = renderMatrix(skills, [], new Set(skills.map((skill) => skill.id)));
+    const content = renderMatrix(skills, new Set(skills.map((skill) => skill.id)));
 
     expect(
       content,
@@ -731,7 +687,7 @@ describe("renderMatrix relationship narrowing", () => {
       createMockExtractedSkill("web-framework-vue-composition-api"),
     ];
 
-    const content = renderMatrix(skills, [], new Set(skills.map((skill) => skill.id)));
+    const content = renderMatrix(skills, new Set(skills.map((skill) => skill.id)));
 
     expect(
       content,
@@ -749,14 +705,10 @@ describe("renderMatrix determinism", () => {
       createMockExtractedSkill("api-queue-bullmq", { slug: "bullmq" }),
       createMockExtractedSkill("ai-provider-cohere-sdk", { slug: "cohere-sdk" }),
     ];
-    const agents: AgentEntry[] = [
-      { id: "web-developer", domain: "web" },
-      { id: "api-developer", domain: "api" },
-    ];
     const skillIdSet = new Set(skills.map((s) => s.id));
 
-    const emitted = renderMatrix(skills, agents, skillIdSet);
-    const reversed = renderMatrix([...skills].reverse(), [...agents].reverse(), skillIdSet);
+    const emitted = renderMatrix(skills, skillIdSet);
+    const reversed = renderMatrix([...skills].reverse(), skillIdSet);
 
     expect(emitted).toStrictEqual(reversed);
   });

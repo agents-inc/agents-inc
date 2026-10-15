@@ -165,7 +165,6 @@ export type {
   CategoryDefinition,
   CategoryMap,
   CodexModelName,
-  DomainSelections,
   EffortLevel,
   MergedSkillsMatrix,
   ModelName,

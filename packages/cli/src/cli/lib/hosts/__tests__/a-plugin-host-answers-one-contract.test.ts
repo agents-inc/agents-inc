@@ -62,7 +62,7 @@ const PLUGIN_HOST_MEMBERS = [
 /**
  * The mode and scope words a placement cell is written in — the product's own, not a host's.
  *
- * `plugin` and `eject` are `INSTALL_MODES`; `global` and `project` are `SkillScope`. Claude's own
+ * `plugin` and `eject` are `InstallMode`s; `global` and `project` are `SkillScope`. Claude's own
  * plugin scope vocabulary is `project | user`, and it is what `toClaudePluginScope` exists to
  * translate into at six production call sites today. A cell spelled in Claude's words would make
  * the seam's roster of offered placements untranslatable for any other host, which is the leak this

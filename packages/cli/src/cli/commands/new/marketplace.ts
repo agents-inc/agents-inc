@@ -2,7 +2,7 @@ import { Args } from "@oclif/core";
 import path from "path";
 
 import { BaseCommand } from "../../base-command.js";
-import { CLI_INVOKE_COMMAND, SKILLS_DIR_PATH } from "../../consts.js";
+import { CLI_INVOKE_COMMAND, EDITOR_URL, SKILLS_DIR_PATH } from "../../consts.js";
 import { EXIT_CODES } from "../../lib/exit-codes.js";
 import { validateMarketplaceName } from "../../lib/marketplace-generator.js";
 import { exampleSkillId, writeMarketplaceScaffold } from "../../lib/marketplace-scaffold.js";
@@ -124,7 +124,8 @@ export default class NewMarketplace extends BaseCommand {
       `Replace ${skillDir}/ with a skill of your own. Every skill id must begin with '${marketplaceName}-'`,
       `${CLI_INVOKE_COMMAND} build plugins`,
       `${CLI_INVOKE_COMMAND} build marketplace`,
-      `${CLI_INVOKE_COMMAND} init --marketplace ${marketplaceDir}   (from a project)`,
+      `Push it to GitHub, then add it from the Marketplace button at ${EDITOR_URL}`,
+      `${CLI_INVOKE_COMMAND} init --from <id> --marketplace ${marketplaceDir}   (from a project — tests your local changes against a configuration built there)`,
     ];
 
     this.log("");

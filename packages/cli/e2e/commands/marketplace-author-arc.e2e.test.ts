@@ -3,9 +3,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupTempDir,
-  completeWithLocalSources,
   configTypesTsPath,
   flattenCliOutput,
   listFiles,
@@ -23,7 +25,6 @@ import {
   STEP_TEXT,
   TIMEOUTS,
 } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   TS_NOT_ASSIGNABLE,
   probeConfigTypesNarrowing,
@@ -70,21 +71,24 @@ const GENERATED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 describe("marketplace author arc — check, build, publish, install", () => {
   let sourceDir: string;
   let sourceTempDir: string;
-  let wizard: InitWizard | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
     const source = await createE2ESource({ unbuilt: true });
     sourceDir = source.sourceDir;
     sourceTempDir = source.tempDir;
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
+    await store.close();
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
+    if (env) await cleanupTempDir(env.tempDir);
+    env = undefined;
   });
 
   it(
@@ -156,16 +160,17 @@ describe("marketplace author arc — check, build, publish, install", () => {
       // Runs after the build spec above and against the same repository, which
       // now carries dist/plugins and a marketplace.json — the state a consumer
       // meets, rather than the pre-build one every other install spec uses.
-      wizard = await InitWizard.launchInProject({
-        source: { sourceDir, tempDir: sourceTempDir },
-      });
-      const globalHome = wizard.globalHome;
+      env = await createTestEnvironment();
+      const globalHome = env.fakeHome;
+      const project = { dir: env.projectDir, globalHome };
 
-      const result = await completeWithLocalSources(wizard);
-      expect(await result.exitCode, `init from the built repo failed:\n${result.output}`).toBe(
-        EXIT_CODES.SUCCESS,
+      const { output: installOutput } = await installFromSeed(
+        store,
+        "AuthorArc",
+        e2eStackPayload(),
+        { dir: project.dir, home: globalHome },
+        sourceDir,
       );
-      const installOutput = result.rawOutput;
 
       // Surface 2.
       expect(installOutput).toContain(STEP_TEXT.INIT_SUCCESS);
@@ -205,7 +210,7 @@ describe("marketplace author arc — check, build, publish, install", () => {
 
       // The same command that skipped the operational layer in the repository
       // runs both layers here — the difference IS the installation.
-      const doctor = await CLI.run(["doctor"], result.project);
+      const doctor = await CLI.run(["doctor"], project);
       expect(doctor.exitCode, doctor.output).toBe(EXIT_CODES.SUCCESS);
       expect(doctor.stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
       expect(doctor.stdout).toContain(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION);
@@ -214,8 +219,6 @@ describe("marketplace author arc — check, build, publish, install", () => {
         "an installation must reach the operational layer, not just report clean content",
       ).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
       expect(doctor.stdout).not.toContain(STEP_TEXT.DOCTOR_SKIP_NO_INSTALLATION);
-
-      await result.destroy();
     },
   );
 });

@@ -24,13 +24,6 @@ export {
 
 export { type LocalSkillDiscoveryResult, discoverLocalSkills } from "./local-skill-loader";
 
-export {
-  findUnusableSavedSkillMetadata,
-  unresolvedSkillRemovalReasons,
-} from "./unresolved-skill-entries";
+export { findUnusableSavedSkillMetadata } from "./unresolved-skill-entries";
 
-export {
-  deleteLocalSkill,
-  foldLocalSkillIntoGlobal,
-  migrateLocalSkillScope,
-} from "./local-skill-mover";
+export { deleteLocalSkill, migrateLocalSkillScope } from "./local-skill-mover";

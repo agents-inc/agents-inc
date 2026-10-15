@@ -30,8 +30,8 @@ import {
 } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 
 describe("list command", () => {
   let tempDir: string;
@@ -200,9 +200,7 @@ describe("list command", () => {
       const { exitCode, stdout } = await CLI.run(["init"], project, { env: { HOME: home } });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      expect(stdout, "an installed project gets the dashboard, not the wizard").toContain(
-        STEP_TEXT.DASHBOARD,
-      );
+      expect(stdout, "an installed project gets the dashboard").toContain(STEP_TEXT.DASHBOARD);
       expect(
         stdout,
         "the dashboard and list read one installation, so they cannot report two numbers",

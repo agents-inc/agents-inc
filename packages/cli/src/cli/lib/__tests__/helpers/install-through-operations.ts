@@ -10,11 +10,11 @@ import {
   type SkillCopyResult,
 } from "../../operations/index.js";
 
-import type { WizardResultV2 } from "../../../components/wizard/wizard.js";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { SourceLoadResult } from "../../loading/index.js";
 
 export type InstallThroughOperationsOptions = {
-  wizardResult: WizardResultV2;
+  selection: InstallSelection;
   sourceResult: SourceLoadResult;
   projectDir: string;
   /** `--marketplace` override, exactly as `init` forwards its flag. */
@@ -29,7 +29,7 @@ export type InstallThroughOperationsResult = {
 };
 
 /**
- * The install `agents-inc init` performs once the wizard has answered, driven directly.
+ * The install `agents-inc init --from` performs once the selection is decoded, driven directly.
  *
  * Three operations, in the order and with the arguments `commands/init.tsx` uses: copy the
  * selected skills, write the scoped config pair, then compile every scope's sub-agents. A spec
@@ -44,11 +44,11 @@ export type InstallThroughOperationsResult = {
 export async function installThroughOperations(
   options: InstallThroughOperationsOptions,
 ): Promise<InstallThroughOperationsResult> {
-  const { wizardResult, sourceResult, projectDir, sourceFlag } = options;
+  const { selection, sourceResult, projectDir, sourceFlag } = options;
 
-  const copied = await copyLocalSkills(wizardResult.skills, projectDir, sourceResult);
+  const copied = await copyLocalSkills(selection.skills, projectDir, sourceResult);
   const config = await writeProjectConfig({
-    wizardResult,
+    selection,
     sourceResult,
     projectDir,
     ...(sourceFlag !== undefined && { sourceFlag }),

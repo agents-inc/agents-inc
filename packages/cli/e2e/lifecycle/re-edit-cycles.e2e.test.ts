@@ -1,26 +1,29 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
-  completeWithLocalSources,
   createPermissionsFile,
   createTempDir,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
  * Re-edit / multiple edit cycle E2E tests.
  *
- * Verifies that running `cc edit` multiple times on the same installation
+ * Verifies that running `edit --from` multiple times on the same installation
  * does not corrupt the config: no duplicate skills, agents, or domains
  * accumulate across edits.
  */
@@ -42,7 +45,31 @@ async function readConfigArrays(projectDir: string): Promise<{
   };
 }
 
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
+/** React on a project web-developer, plus Vitest — what the second describe's first edit adds. */
+const REACT_AND_VITEST = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      scope: "project",
+      assignments: { [WEB_DEV]: "preloaded" },
+    }),
+    [E2E_SKILL.vitest.id]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+  },
+  agents: { [WEB_DEV]: { scope: "project" } },
+});
+
 describe("re-edit cycles: config stability across multiple edits", () => {
+  let store: SeedConfigStore;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
+
   describe("idempotent no-change edits", () => {
     let tempDir: string | undefined;
     let sharedHome: string | undefined;
@@ -65,30 +92,21 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         tempDir = await createTempDir();
         const projectDir = tempDir;
 
-        // Default init/edit content is GLOBAL-scoped, so compiled agents land in
-        // HOME rather than projectDir. Thread ONE shared HOME through all three
-        // launches so each edit sees the init's global content; config.ts stays
-        // under projectDir. Reuse-param launches do NOT own its cleanup — the
-        // afterEach does.
+        // Default-scope content is GLOBAL, so compiled agents land in HOME rather
+        // than projectDir. Thread ONE shared HOME through all three runs so each
+        // edit sees the init's global content; config.ts stays under projectDir.
         sharedHome = await createTempDir();
         const globalProject = { dir: sharedHome };
+        const site = { dir: projectDir, home: sharedHome };
+        const stack = e2eStackPayload();
 
         // ================================================================
-        // Phase 1: Init via wizard
+        // Phase 1: Init
         // ================================================================
 
-        // Explicit eject: press "l" on the sources step so new skills are
-        // eject-sourced. Without this, the wizard defaults to plugin mode and
-        // hard-errors when the source has no marketplace (no silent fallback).
-        const initWizard = await InitWizard.launchInProject({
-          projectDir,
-          globalHome: sharedHome,
-        });
-        const initResult = await completeWithLocalSources(initWizard);
-        await initResult.destroy();
+        await installFromSeed(store, "Stacked1", stack, site);
 
         // --- Phase 1 verification ---
-        expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
@@ -111,16 +129,9 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 2: First edit -- navigate through without changes
         // ================================================================
 
-        const edit1Wizard = await EditWizard.launchInProject({
-          projectDir,
-          source: E2E_SOURCE,
-          globalHome: sharedHome,
-        });
-        const edit1Result = await edit1Wizard.passThrough();
-        await edit1Result.destroy();
+        await applyFromSeed(store, "Stacked1", stack, site);
 
         // --- Phase 2 verification ---
-        expect(await edit1Result.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
@@ -146,16 +157,9 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 3: Second edit -- navigate through without changes again
         // ================================================================
 
-        const edit2Wizard = await EditWizard.launchInProject({
-          projectDir,
-          source: E2E_SOURCE,
-          globalHome: sharedHome,
-        });
-        const edit2Result = await edit2Wizard.passThrough();
-        await edit2Result.destroy();
+        await applyFromSeed(store, "Stacked1", stack, site);
 
         // --- Phase 3 verification ---
-        expect(await edit2Result.exitCode).toBe(EXIT_CODES.SUCCESS);
         await expect({ dir: projectDir }).toHaveConfig({
           skillIds: [E2E_SKILL.react.id],
           agents: ["web-developer"],
@@ -212,6 +216,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // ================================================================
 
         const project = await ProjectBuilder.editable({
+          marketplace: E2E_SOURCE.sourceDir,
           skills: [E2E_SKILL.react.id],
           agents: ["web-developer"],
           domains: ["web"],
@@ -229,9 +234,10 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // This project is PROJECT-scoped (ProjectBuilder.editable), so its
         // compiled agents and config both stay under projectDir — every
         // assertion below reads projectDir. A shared HOME is still threaded
-        // through both edits so the wizards resolve HOME identically across
-        // phases; it holds no content here. The afterEach owns its cleanup.
+        // through both edits so they resolve HOME identically; it holds no
+        // content here.
         sharedHome = await createTempDir();
+        const site = { dir: projectDir, home: sharedHome };
 
         // Verify initial state via matcher and detailed parsing
         await expect({ dir: projectDir }).toHaveConfig({
@@ -245,29 +251,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 2: First edit -- add a skill
         // ================================================================
 
-        const edit1Wizard = await EditWizard.launchInProject({
-          projectDir,
-          source: E2E_SOURCE,
-          globalHome: sharedHome,
-          ...TERMINAL_SIZE.TALL,
-        });
-
-        // Arrow down to next category, space to select
-        await edit1Wizard.build.navigateDown();
-        await edit1Wizard.build.toggleFocusedSkill();
-
-        // Navigate through: Build -> Sources -> Agents -> Confirm -> Complete
-        // Explicit eject: press "l" so the newly added skill is eject-sourced.
-        // Without this, the wizard defaults to plugin mode and hard-errors
-        // because the local source has no marketplace (no silent fallback).
-        const sources1 = await edit1Wizard.build.advanceToSources();
-        await sources1.waitForReady();
-        await sources1.setAllLocal();
-        const agents1 = await sources1.advance();
-        const confirm1 = await agents1.acceptDefaults("edit");
-        const edit1Result = await confirm1.confirm();
-
-        await edit1Result.destroy();
+        const edit1Result = await applyFromSeed(store, "AddVitest1", REACT_AND_VITEST, site);
 
         // --- Phase 2 verification ---
         await expectPhaseSuccess(
@@ -307,16 +291,7 @@ describe("re-edit cycles: config stability across multiple edits", () => {
         // Phase 3: Second edit -- navigate through without changes
         // ================================================================
 
-        const edit2Wizard = await EditWizard.launchInProject({
-          projectDir,
-          source: E2E_SOURCE,
-          globalHome: sharedHome,
-          ...TERMINAL_SIZE.TALL,
-        });
-
-        const edit2Result = await edit2Wizard.build.saveFromBuild("edit");
-
-        await edit2Result.destroy();
+        const edit2Result = await applyFromSeed(store, "AddVitest1", REACT_AND_VITEST, site);
 
         // --- Phase 3 verification ---
         await expectPhaseSuccess(

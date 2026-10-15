@@ -2,26 +2,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentName } from "../../src/cli/types/index.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
-import {
-  agentsPath,
-  cleanupTempDir,
-  completeWithLocalSources,
-  configTsPath,
-  skillsPath,
-} from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { agentsPath, cleanupTempDir, configTsPath, skillsPath } from "../helpers/test-utils.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
- * Reporting fidelity for a default (all-global-scope) install driven from a
- * PROJECT directory whose HOME is a separate fake home.
+ * Reporting fidelity for an all-global-scope install driven from a PROJECT
+ * directory whose HOME is a separate fake home.
  *
- * Every other init E2E runs with HOME === projectDir (the TerminalSession
- * default), which collapses the global and project install roots onto the same
- * path and makes scope-blind reporting indistinguishable from correct
+ * HOME === projectDir collapses the global and project install roots onto the
+ * same path and makes scope-blind reporting indistinguishable from correct
  * reporting. Here the two roots are distinct, so the report and the `list`
  * counts can be checked against where the files actually landed.
  */
@@ -40,8 +34,7 @@ const GLOBAL_STACK_SKILLS = [
 const GLOBAL_STACK_SKILL_IDS: string[] = GLOBAL_STACK_SKILLS.map((skill) => skill.id);
 
 /**
- * The title the wizard paints for each of those skills — and, for every one of them, a
- * directory name that does not exist: every fixture title is prose where its directory is
+ * The title each of those skills carries — and, for every one of them, a directory name that does not exist: every fixture title is prose where its directory is
  * a namespaced id.
  *
  * Written out rather than only derived, because this list is the subject guard for the
@@ -73,6 +66,7 @@ const TITLES_THAT_NAME_NO_DIRECTORY = [
 const COMPILED_AGENT_NAMES: AgentName[] = E2E_STACK_AGENTS;
 
 describe("default init from a project dir — global scope reporting", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
   let fakeHome: string;
   let projectDir: string;
@@ -80,28 +74,22 @@ describe("default init from a project dir — global scope reporting", () => {
   let initExitCode: number;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
     fakeHome = env.fakeHome;
     projectDir = env.projectDir;
 
-    const wizard = await InitWizard.launch({
-      projectDir,
-      env: { HOME: fakeHome },
-      ...TERMINAL_SIZE.TALL,
-    });
-
-    try {
-      const result = await completeWithLocalSources(wizard);
-      initExitCode = await result.exitCode;
-      initOutput = result.output;
-      await result.destroy();
-    } finally {
-      await wizard.destroy();
-    }
+    ({ exitCode: initExitCode, output: initOutput } = await installFromSeed(
+      store,
+      "AllGlobal1",
+      e2eStackPayload(),
+      { dir: projectDir, home: fakeHome },
+    ));
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
@@ -141,7 +129,7 @@ describe("default init from a project dir — global scope reporting", () => {
    * Both halves are asserted because either alone is satisfiable: the ids could be printed
    * alongside the titles, and the titles could be absent because the block was never painted.
    */
-  it("lists the directory each skill was copied into, not the title the wizard paints", () => {
+  it("lists the directory each skill was copied into, not its title", () => {
     expect(initOutput).toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
     expect(

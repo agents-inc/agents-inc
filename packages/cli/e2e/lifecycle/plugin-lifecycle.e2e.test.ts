@@ -7,8 +7,9 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { CLI } from "../fixtures/cli.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupFixture,
   cleanupTempDir,
@@ -20,29 +21,30 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 /**
  * Full lifecycle E2E test for plugin mode: Init -> Uninstall.
  *
- * Phase 1: Init wizard installs skills as Claude CLI plugins
+ * Phase 1: init --from installs skills as Claude CLI plugins
  * Phase 2: Uninstall --yes removes agents and cleans up
  *
  * The entire suite is skipped when the Claude CLI is not available.
- *
- * Note: isClaudeCLIAvailable is re-exported from test-utils for skip detection.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", () => {
   let fixture: E2EPluginSource;
+  let store: SeedConfigStore;
   let tempDir: string;
   let projectDir: string;
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
+    store = await startSeedConfigStore();
 
     tempDir = await createTempDir();
     projectDir = tempDir;
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
     await cleanupFixture(fixture);
   });
@@ -60,24 +62,29 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       // settings.json and compiled agents collapse onto projectDir and the
       // follow-up uninstall command (which resolves its target from cwd) finds
       // the same content.
-      const wizard = await InitWizard.launchInGlobal({
-        source: fixture,
-        projectDir,
-      });
-      const initResult = await wizard.completeWithDefaults();
+      const initResult = await installFromSeed(
+        store,
+        "Plugins1",
+        e2eStackPayload({ install: "plugin" }),
+        { dir: projectDir, home: projectDir },
+        fixture.sourceDir,
+      );
 
       // --- Phase 1 Verification ---
 
-      await expectPhaseSuccess(initResult, {
-        skillIds: [
-          E2E_SKILL.react.id,
-          E2E_SKILL.vitest.id,
-          E2E_SKILL.zustand.id,
-          E2E_SKILL.hono.id,
-        ],
-        agents: ["web-developer", "api-developer"],
-        origin: fixture.marketplaceName,
-      });
+      await expectPhaseSuccess(
+        { project: { dir: projectDir }, exitCode: initResult.exitCode },
+        {
+          skillIds: [
+            E2E_SKILL.react.id,
+            E2E_SKILL.vitest.id,
+            E2E_SKILL.zustand.id,
+            E2E_SKILL.hono.id,
+          ],
+          agents: ["web-developer", "api-developer"],
+          origin: fixture.marketplaceName,
+        },
+      );
 
       const initOutput = initResult.output;
       expect(initOutput).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
@@ -85,14 +92,9 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       expect(initOutput).toContain(`Installed ${E2E_SKILL.react.id}@${fixture.marketplaceName}`);
       expect(initOutput).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
-      // Settings file exists with permissions
-      await expect({ dir: projectDir }).toHaveSettings({ hasKey: "permissions" });
-
       // The positive sentinel rather than a generic absence: the plugin install
       // announced completion, which "Failed to" is absent from either way.
       expect(initOutput).toContain(STEP_TEXT.INIT_SUCCESS);
-
-      await initResult.destroy();
 
       // ================================================================
       // Phase 2: Uninstall --yes -- remove agents and clean up

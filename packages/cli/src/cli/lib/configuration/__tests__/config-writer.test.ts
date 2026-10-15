@@ -17,7 +17,7 @@ import {
   getGlobalConfigImportPath,
 } from "../config-writer";
 import { generateBlankGlobalConfigTypesSource } from "../config-types-writer";
-import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders.js";
 import {
   buildProjectConfig,
   buildAgentConfigs,
@@ -1466,7 +1466,7 @@ describe("generateConfigSource", () => {
   /**
    * The emitted file is what `writeIfChanged` compares, so two configs carrying
    * the same values owe the same bytes however the in-memory object was
-   * assembled. Three producers assemble one — the wizard's literal, a config
+   * assembled. Three producers assemble one — an install's literal, a config
    * read back through the loader schema, and a merge that appends at the tail —
    * and a config.ts that changes because its keys were inserted in a different
    * order is a diff the user is asked to read for no reason.
@@ -1544,10 +1544,9 @@ describe("generateConfigSource", () => {
    * The stack's own keys are the same claim one level down, and they reach further
    * than a diff: a compiled sub-agent lists its dynamic skills in the order its
    * stack entry carries them, so a stack assembled in a different order compiles to
-   * a different file. Two producers assemble one — the wizard, from the current
-   * selection in the roster's order, and the seed decode, from a shared payload in
-   * whatever order that payload listed its skills — and the same curation must reach
-   * disk as the same bytes whichever built it.
+   * a different file. The seed decode assembles one from a shared payload in whatever
+   * order that payload listed its skills, and the same curation must reach disk as the
+   * same bytes whatever that order was.
    */
   describe("stack key order follows the roster, not the producer's insertion order", () => {
     /** Both sub-agents' curation, with every key in the order the roster declares it. */

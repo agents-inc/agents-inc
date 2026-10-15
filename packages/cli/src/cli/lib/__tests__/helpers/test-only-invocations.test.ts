@@ -138,10 +138,10 @@ const SHIPPED_MODULES = [
 /** Paths that exist for the suite: specs, the machinery directories, the harness, the runner. */
 const TEST_SUPPORT_MODULES = [
   "src/cli/lib/installation/local-installer.test.ts",
-  "src/cli/components/wizard/source-grid.test.tsx",
+  "src/cli/components/common/summary-panel.test.tsx",
   "src/cli/lib/__tests__/helpers/test-only-invocations.ts",
   "src/cli/lib/__mocks__/logger.ts",
-  "e2e/pages/steps/build-step.ts",
+  "e2e/pages/dashboard-session.ts",
   "scripts/check-enumeration-drift.test.ts",
   "vitest.global-setup.ts",
 ];

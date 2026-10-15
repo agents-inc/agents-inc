@@ -26,7 +26,7 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import type { AgentName, AgentScopeConfig } from "../../src/cli/types/index.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 
 /**
  * `compile` over an installation whose sub-agents were pinned on with NO skill — the editor's

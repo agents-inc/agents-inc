@@ -57,8 +57,6 @@ export const SPEC_DIRECTORIES: readonly string[] = [
   "interactive",
   "lifecycle",
   "matchers",
-  "pages",
-  "smoke",
 ];
 
 /**

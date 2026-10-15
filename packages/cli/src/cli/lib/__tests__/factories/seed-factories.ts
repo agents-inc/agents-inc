@@ -22,7 +22,7 @@ const TEST_MATRIX_VERSION = "1.0.0";
  * makes the pair coherent whatever the default becomes: a skill and a sub-agent both resting
  * there are writable by definition. Written out as `project` it was not — a project skill never
  * reaches a global sub-agent — so "assign a skill and say nothing else" composed a payload
- * `configToSeedPayload` refuses to mint, `seedToWizardResult` throws on and the installer filters
+ * `configToSeedPayload` refuses to mint, `seedToInstallSelection` throws on and the installer filters
  * away. Building that pair now takes an explicit `scope: "project"`, which is what the specs
  * pinning the refusal already say.
  */

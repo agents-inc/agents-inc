@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import fg from "fast-glob";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { check, clearances } from "../../../../scripts/check-spawn-doors.js";
 import { typedEntries } from "../../utils/typed-object.js";
@@ -214,6 +214,21 @@ const ENV_READS_BY_CONSTANT = { CLAUDE_CONFIG_DIR_VAR, CODEX_HOME_VAR, SOURCE_EN
 const WHOLE_ENV_FORWARDERS = ["src/cli/utils/exec.ts"];
 
 /**
+ * The seed API's address, and what every door hands the child for it unless a spec names a store.
+ *
+ * Clearing it is not enough, because the product does not refuse an unset value — it falls back to
+ * `https://api.agentsinc.sh`. A cleared variable therefore sent every run that reaches the network
+ * to the live store, and once a bare `edit` began publishing, an e2e spec minted a real id there.
+ * Port 1 on the loopback refuses at once, so a run no spec pointed at a store fails fast and
+ * locally rather than writing to production.
+ */
+const SEED_API_VAR = "AGENTS_INC_API_URL";
+const UNROUTABLE_SEED_API = "http://127.0.0.1:1";
+
+/** A store a spec starts and names — the value that must reach the child untouched. */
+const A_SPECS_OWN_STORE = "http://127.0.0.1:43210";
+
+/**
  * Every variable a spawned binary must be CLEARED of, whichever shape the product reads it in.
  *
  * A {@link HOST_STATE_DIRS} variable is left out, and is the one case where that is not a hole: a
@@ -222,10 +237,11 @@ const WHOLE_ENV_FORWARDERS = ["src/cli/utils/exec.ts"];
  * stronger check of the two, because clearing `CODEX_HOME` only leaves the child falling back to
  * `.codex` under whichever HOME it was given, while the pin says which directory that is. Holding
  * such a variable to the clearance check would ask every door to undo the pin the same file
- * requires of it.
+ * requires of it. {@link SEED_API_VAR} is left out for the same reason: it is answered by a
+ * DEFAULT, which the third describe block drives and compares.
  */
 const EVERY_PRODUCT_ENV_VAR = [...NAMED_ENV_READS, ...Object.values(ENV_READS_BY_CONSTANT)]
-  .filter((name) => !(name in HOST_STATE_DIRS))
+  .filter((name) => !(name in HOST_STATE_DIRS) && name !== SEED_API_VAR)
   .sort();
 
 /** Each product source paired with what it does to `process.env`. */
@@ -383,4 +399,54 @@ describe("a spawned binary keeps each host's state inside the HOME it is handed"
       ).toStrictEqual([hostStatePinnedTo(HOME_UNDER_TEST)]);
     },
   );
+});
+
+/**
+ * Judged by what a door HANDS the child, for the same reason as the pinning check above: the
+ * question is a value. Each door is driven three ways — by a caller naming nothing, by a caller
+ * whose shell exports a seed API of its own, and by a spec naming the store it started — and the
+ * child must reach the store only in the third.
+ */
+describe("a spawned binary reaches no seed API a spec did not name", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(RUNNERS)(
+    "$spawns hands it an unroutable address when the caller names none",
+    async ({ runner, open }) => {
+      await open(await loadRunner(runner), DRIVEN_FROM, { HOME: HOME_UNDER_TEST });
+
+      expect(
+        spawned.mock.calls.map(([, env]) => env[SEED_API_VAR]),
+        `${runner} leaves the child to fall back to the live store`,
+      ).toStrictEqual([UNROUTABLE_SEED_API]);
+    },
+  );
+
+  it.each(RUNNERS)(
+    "$spawns hands it an unroutable address over one the developer's shell exports",
+    async ({ runner, open }) => {
+      vi.stubEnv(SEED_API_VAR, "https://a-developers-staging-store.invalid");
+
+      await open(await loadRunner(runner), DRIVEN_FROM, { HOME: HOME_UNDER_TEST });
+
+      expect(
+        spawned.mock.calls.map(([, env]) => env[SEED_API_VAR]),
+        `${runner} hands the child a store whoever ran the suite exported`,
+      ).toStrictEqual([UNROUTABLE_SEED_API]);
+    },
+  );
+
+  it.each(RUNNERS)("$spawns hands it the store a spec names", async ({ runner, open }) => {
+    await open(await loadRunner(runner), DRIVEN_FROM, {
+      HOME: HOME_UNDER_TEST,
+      [SEED_API_VAR]: A_SPECS_OWN_STORE,
+    });
+
+    expect(
+      spawned.mock.calls.map(([, env]) => env[SEED_API_VAR]),
+      `${runner} overrides the store a spec started`,
+    ).toStrictEqual([A_SPECS_OWN_STORE]);
+  });
 });

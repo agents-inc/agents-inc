@@ -284,9 +284,8 @@ export default class Uninstall extends BaseCommand {
   };
 
   /**
-   * Starts at any terminal size. The size gate exists for the wizard's layout, and this command
-   * draws none — a plan and a one-line confirm fit any terminal — while it is the way out of every
-   * state, so a window too small to hold a wizard must not hold up an uninstall.
+   * Starts at any terminal size: a plan and a one-line confirm fit any terminal, and this command
+   * is the way out of every state, so a small window must not hold up an uninstall.
    */
   protected async ensureTerminalSize(): Promise<void> {
     // Nothing to wait for — see above.
@@ -438,9 +437,9 @@ export default class Uninstall extends BaseCommand {
    * Returns null when nothing is registered or loading fails; a load failure
    * warns and never aborts the uninstall.
    *
-   * `skipExtraSources: true` is NOT a divergence from the wizard's full
-   * multi-source load: extra-source loading only annotates each skill's
-   * `availableSources`/`activeSource` for wizard UI tagging — it never adds
+   * `skipExtraSources: true` is NOT a divergence from a full multi-source
+   * load: extra-source loading only annotates each skill's
+   * `availableSources`/`activeSource` — it never adds
    * skills or categories to the matrix, and the config-types writer never reads
    * those annotations, so the regenerated project types are byte-identical
    * either way (pinned by the skipExtraSources parity test in

@@ -22,8 +22,6 @@ export {
   createMockMatrix,
   createMatrixFromTestSkills,
   buildCategoryMap,
-  createComprehensiveMatrix,
-  createBasicMatrix,
   createMockMatrixConfig,
 } from "./matrix-factories.js";
 export type { MockMatrixConfig } from "./matrix-factories.js";
@@ -31,7 +29,6 @@ export type { MockMatrixConfig } from "./matrix-factories.js";
 export {
   buildSourceConfig,
   buildProjectConfig,
-  buildWizardResult,
   buildAgentConfigs,
   buildSourceResult,
   initMatrixAndSource,

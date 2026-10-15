@@ -29,7 +29,7 @@ import {
   renderConfigTsWithoutDefaultExport,
   renderUnparseableConfigTs,
 } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
  * D-273 — a corrupt `config.ts` (a file that exists but cannot be

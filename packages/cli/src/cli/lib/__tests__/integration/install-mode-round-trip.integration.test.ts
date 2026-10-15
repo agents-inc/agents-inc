@@ -15,8 +15,8 @@ import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/
 import type { ProjectConfig, SkillId } from "../../../types";
 import { LOCAL_SKILLS_PATH, STANDARD_FILES } from "../../../consts";
 import { createMatrixFromTestSkills } from "../factories/matrix-factories.js";
-import { buildWizardResult, initMatrixAndSource } from "../factories/config-factories.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildInstallSelection, initMatrixAndSource } from "../factories/config-factories.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { readTestTsConfig } from "../helpers/config-io.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
 import { expectSkillConfigs } from "../assertions/index.js";
@@ -34,12 +34,12 @@ const ALL_SKILL_NAMES = INSTALL_MODE_SKILLS.map((s) => s.id) as SkillId[];
 async function reinstallAllSkills(dirs: TestDirs) {
   const matrix = createMatrixFromTestSkills(INSTALL_MODE_SKILLS);
   const skills = buildSkillConfigs(ALL_SKILL_NAMES, { origin: "eject" });
-  const wizardResult = buildWizardResult(skills, { selectedAgents: ["web-developer"] });
+  const selection = buildInstallSelection(skills, { selectedAgents: ["web-developer"] });
   const sourceResult = initMatrixAndSource(matrix, dirs.sourceDir);
 
   const copied = await copyLocalSkills(skills, dirs.projectDir, sourceResult);
   const config = await writeProjectConfig({
-    wizardResult,
+    selection,
     sourceResult,
     projectDir: dirs.projectDir,
   });

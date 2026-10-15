@@ -175,11 +175,11 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
 }
 
 /**
- * One stack by id, scoped the way the wizard's stack step is.
+ * One stack by id.
  *
  * The source's own stacks answer first. The CLI's built-in catalogue stands in
  * only for the public catalogue — the same rule `resolveOfferedStacks` applies to
- * the list the wizard offers, read from the same {@link offersBuiltInStacks} so
+ * the list offered, read from the same {@link offersBuiltInStacks} so
  * the two cannot answer differently. They are a pair: that one decides what is
  * OFFERED and this one resolves what was PICKED, so a rule they disagree on
  * offers a stack and then refuses to install it.

@@ -1,15 +1,11 @@
 import path from "path";
 import { realpathSync } from "fs";
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
-import {
-  createDualScopeEnv,
-  createTestEnvironment,
-  initGlobalWithEject,
-  type DualScopeEnv,
-} from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { createDualScopeEnvFromSeed, installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -52,8 +48,17 @@ const SYNTAX_ERROR = `export default {{{ not valid typescript`;
 const HAND_WRITTEN_AGENT = "my-custom-agent";
 
 describe("uninstall removes a from-scratch install, scope by scope", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
   let env: DualScopeEnv | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     await env?.destroy();
@@ -70,8 +75,7 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       tempDir = testEnv.tempDir;
       const { fakeHome } = testEnv;
 
-      const install = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(install.exitCode, `global init failed:\n${install.output}`).toBe(EXIT_CODES.SUCCESS);
+      await installE2EStackGlobally(store, fakeHome);
 
       // Everything the run must remove is there beforehand — otherwise the
       // post-conditions are satisfied by a run that removed nothing.
@@ -109,7 +113,7 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
     "removes only the project half of a dual-scope install and leaves the global half intact but deregistered",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(E2E_SOURCE);
+      env = await createDualScopeEnvFromSeed(store);
       const { fakeHome, projectDir } = env;
 
       // The global side, captured on all four surfaces before the project-scope
@@ -179,8 +183,7 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       tempDir = testEnv.tempDir;
       const { fakeHome } = testEnv;
 
-      const install = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(install.exitCode, `global init failed:\n${install.output}`).toBe(EXIT_CODES.SUCCESS);
+      await installE2EStackGlobally(store, fakeHome);
       expect((await listFiles(skillsPath(fakeHome))).length).toBeGreaterThan(0);
       const agentsBeforeUninstall = await readCompiledAgents(fakeHome);
       expect(Object.keys(agentsBeforeUninstall).length).toBeGreaterThan(0);

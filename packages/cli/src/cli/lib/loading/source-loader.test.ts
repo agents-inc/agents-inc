@@ -94,7 +94,7 @@ import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { typedKeys } from "../../utils/typed-object";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 
 /**
  * What the fixture marketplace ships, published in its own namespace: a custom
@@ -239,9 +239,7 @@ async function writeMarketplaceNamed(
 
 /**
  * What the load produced and what it said, read the way `init` and `edit` read
- * it: buffering is the production mechanism that carries `warn()` past Ink's
- * `clearTerminal` into the wizard's startup band, so draining it is asking the
- * question the band answers.
+ * it.
  */
 async function loadWithWarnings(
   sourceFlag: string,
@@ -646,8 +644,7 @@ describe("source-loader", () => {
     describe("error handling", () => {
       it("should reject a local source path that does not exist, naming the path", async () => {
         // A path the user named and the CLI cannot read is an argument error, not an
-        // empty catalog: silently loading nothing let `init`/`edit` mount a wizard over
-        // a source the user never asked for. This used to resolve to an empty matrix.
+        // empty catalog. This used to resolve to an empty matrix.
         await expect(
           loadSkillsMatrixFromSource({
             sourceFlag: MISSING_SOURCE_PATH,
@@ -716,8 +713,7 @@ describe("source-loader relationship rules", () => {
     // The built-in rules are written against the whole public catalogue. A source
     // shipping a handful of its skills leaves the rest of those names dangling, and
     // every dangling name used to warn once per skill in the source — thousands of
-    // lines, painted above the wizard's step since the startup band landed. None of
-    // them was ever actionable: the reference resolves to nothing and is dropped.
+    // lines. None of them was ever actionable: the reference resolves to nothing and is dropped.
     const { warnings } = await loadWithWarnings(fixtureDirs.sourceDir, tempDir);
 
     expect(warnings.filter((text) => text.includes(UNRESOLVED_SLUG_WARNING))).toStrictEqual([]);
@@ -1604,7 +1600,7 @@ describe("convertStackToResolvedStack", () => {
     ).toStrictEqual(["web-framework-react"]);
   });
 
-  it("names the stack and the sub-agent it dropped, in the band the wizard paints", () => {
+  it("names the stack and the sub-agent it dropped", () => {
     const stack = createMockStack("part-declared", {
       name: "Part Declared",
       agents: {
@@ -1631,8 +1627,7 @@ describe("convertStackToResolvedStack", () => {
    * `resolveStackAgentSkills` already keeps only ids the matrix carries, so the per-category
    * `skills` map has been honest for some time. `allSkillIds` was built from a separate pass that
    * only WARNED, so the two disagreed — and `allSkillIds` is the one that matters: it is what
-   * `wizard.tsx` returns as the selection when a user picks a stack, and what the editor's
-   * read-model counts and lists. So a marketplace whose `stacks.ts` named a skill its catalogue had
+   * the editor's read-model counts and lists. So a marketplace whose `stacks.ts` named a skill its catalogue had
    * dropped loaded without complaint and selected an id nothing could resolve, exactly as the
    * mismatch was reported.
    */

@@ -22,7 +22,7 @@ import {
   buildProjectConfig,
 } from "../__tests__/factories/config-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import { SINGLE_REACT_MATRIX, WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { STANDARD_FILES } from "../../consts";
 import { blankGlobalConfig } from "@workspace/compile/global-config";

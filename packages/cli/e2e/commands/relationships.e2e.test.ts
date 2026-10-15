@@ -1,13 +1,16 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { cleanupTempDir, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import { CLI } from "../fixtures/cli.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 
 // Plugin-source fixture is required because local sources without
 // marketplace.json now hard-error on default plugin-intent install.
@@ -15,15 +18,39 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
-  let wizard: InitWizard | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
   let fixture: E2EPluginSource | undefined;
 
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
+
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
+    store.reset();
+    if (env) await cleanupTempDir(env.tempDir);
+    env = undefined;
     if (fixture) await cleanupTempDir(fixture.tempDir);
     fixture = undefined;
   });
+
+  /** The E2E stack installed as plugins from `source`, at the default scope. */
+  async function installStackFrom(source: E2EPluginSource): Promise<ProjectHandle> {
+    env = await createTestEnvironment();
+    const site = { dir: env.projectDir, home: env.fakeHome };
+    await installFromSeed(
+      store,
+      "Relation1",
+      e2eStackPayload({ install: "plugin" }),
+      site,
+      source.sourceDir,
+    );
+    return { dir: site.dir, globalHome: site.home };
+  }
 
   describe("conflict rules", () => {
     it(
@@ -42,16 +69,12 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           },
         });
 
-        wizard = await InitWizard.launch({
-          source: fixture,
-        });
-        const result = await wizard.completeWithDefaults();
-        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        const project = await installStackFrom(fixture);
 
-        const { output } = await CLI.run(["doctor"], result.project);
+        const { output } = await CLI.run(["doctor"], project);
 
         // Slug resolution should detect that "angular-standalone" has no matching skill in the source
-        expect(output).toContain("Unresolved slug");
+        expect(output).toContain(STEP_TEXT.UNRESOLVED_SLUG);
         expect(output).toContain("angular-standalone");
       },
     );
@@ -77,15 +100,11 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           },
         });
 
-        wizard = await InitWizard.launch({
-          source: fixture,
-        });
-        const result = await wizard.completeWithDefaults();
-        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        const project = await installStackFrom(fixture);
 
-        const { output } = await CLI.run(["doctor"], result.project);
+        const { output } = await CLI.run(["doctor"], project);
 
-        expect(output).toContain("Unresolved slug");
+        expect(output).toContain(STEP_TEXT.UNRESOLVED_SLUG);
         expect(output).toContain("angular-standalone");
       },
     );
@@ -114,13 +133,9 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           },
         });
 
-        wizard = await InitWizard.launch({
-          source: fixture,
-        });
-        const result = await wizard.completeWithDefaults();
-        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        const project = await installStackFrom(fixture);
 
-        const { output } = await CLI.run(["doctor"], result.project);
+        const { output } = await CLI.run(["doctor"], project);
 
         // Default rules may produce unresolved references for slugs not in E2E source
         // (e.g., "angular", "vue"), but E2E source slugs should all resolve cleanly.
@@ -154,16 +169,12 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
           },
         });
 
-        wizard = await InitWizard.launch({
-          source: fixture,
-        });
-        const result = await wizard.completeWithDefaults();
-        expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+        const project = await installStackFrom(fixture);
 
-        const { output } = await CLI.run(["doctor"], result.project);
+        const { output } = await CLI.run(["doctor"], project);
 
         // "angular-standalone" slug does not exist in the E2E source
-        expect(output).toContain("Unresolved slug");
+        expect(output).toContain(STEP_TEXT.UNRESOLVED_SLUG);
         expect(output).toContain("angular-standalone");
       },
     );

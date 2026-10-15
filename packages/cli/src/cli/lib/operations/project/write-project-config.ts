@@ -15,10 +15,10 @@ import { providerInUse } from "../../installation/install-layout.js";
 import { loadAgentDefs, type AgentDefs } from "./load-agent-defs.js";
 import { ensureDir } from "../../../utils/fs.js";
 import type { ProjectConfig } from "../../../types/index.js";
-import type { WizardResultV2 } from "../../../components/wizard/wizard.js";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 
 export type ConfigWriteOptions = {
-  wizardResult: WizardResultV2;
+  selection: InstallSelection;
   sourceResult: SourceLoadResult;
   projectDir: string;
   sourceFlag?: string;
@@ -61,14 +61,14 @@ export type ConfigWriteResult = {
  * Builds, merges, and writes project configuration files.
  *
  * Handles the full config pipeline:
- * 1. buildAndMergeConfig() — generates config from wizard result, merges with existing
+ * 1. buildAndMergeConfig() — generates config from the selection, merges with existing
  * 2. loadAgentDefs() — the CLI's own sub-agent definitions, for config-types generation
  * 3. ensureBlankPair() — ensures the global config pair exists (when in project context)
  * 4. writeScopedFromWizard() — writes config.ts and config-types.ts split by scope,
  *    fans global changes out to registered projects and recompiles their agents
  */
 export async function writeProjectConfig(options: ConfigWriteOptions): Promise<ConfigWriteResult> {
-  const { wizardResult, sourceResult, projectDir, sourceFlag } = options;
+  const { selection, sourceResult, projectDir, sourceFlag } = options;
   const projectPaths = resolveInstallPaths(projectDir, "project");
 
   await ensureDir(path.dirname(projectPaths.configPath));
@@ -82,7 +82,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
   const { agents } = options.agentDefs ?? (await loadAgentDefs());
 
   const mergeResult = await buildAndMergeConfig(
-    wizardResult,
+    selection,
     sourceResult,
     projectDir,
     sourceFlag,

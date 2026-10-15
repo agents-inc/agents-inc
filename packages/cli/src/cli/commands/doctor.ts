@@ -964,7 +964,7 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
   },
   {
     // The remedy for a valid config with nothing in it. Not the tip above: there is nothing to
-    // create and nothing to fix. `init` on this config opens the wizard rather than the dashboard
+    // create and nothing to fix. `init` on this config opens the editor rather than the dashboard
     // — that is what the detection returning null is FOR — so it is the way to fill it in.
     kind: "config-empty",
     status: "warn",
@@ -978,7 +978,7 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
     // gone — which is why the row can name both and this tip can promise both.
     kind: "orphans-unowned",
     status: "fail",
-    tip: `  Tip: Nothing declares the files above — '${CLI_INVOKE_COMMAND} init' writes a configuration that can own them again, or '${CLI_INVOKE_COMMAND} uninstall' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left`,
+    tip: `  Tip: Nothing declares the files above — '${CLI_INVOKE_COMMAND} init --from <id>' writes a configuration that can own them again, or '${CLI_INVOKE_COMMAND} uninstall' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left`,
   },
   {
     kind: "skills",

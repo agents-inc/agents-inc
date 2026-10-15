@@ -169,11 +169,9 @@ function categoryOfSkill(id: SkillId, matrix: MergedSkillsMatrix): Category | un
  * Read from the matrix passed in rather than `defaultCategories` so a source repo's
  * category overrides are honoured.
  *
- * A category the matrix does not declare is deliberately NOT treated as exclusive.
- * The wizard's toggle handler defaults an undeclared one to exclusive
- * (`use-build-step-props.ts` uses `matrix.categories[categoryId]?.exclusive ?? true`),
- * but a rule that MASKS persisted entries must only fire on a flag the data
- * actually carries.
+ * A category the matrix does not declare is deliberately NOT treated as exclusive:
+ * a rule that MASKS persisted entries must only fire on a flag the data actually
+ * carries.
  */
 function isExclusiveCategory(category: Category, matrix: MergedSkillsMatrix): boolean {
   return matrix.categories[category]?.exclusive === true;
@@ -227,13 +225,8 @@ function buildProjectCollisionTest(
  * visible again once the collision that produced it is gone.
  *
  * A derived mask and a user-authored tombstone are BYTE-IDENTICAL in config.ts — both are
- * `{ id, scope: "global", excluded: true }` — but the wizard can no longer mint
- * the second kind on its own: a project-scope deselect of a globally-installed skill is
- * refused, and a domain deselect only drops what the project owns. The one user route to a
- * global tombstone is the `s` scope toggle (G→P), which always pairs the tombstone with an
- * active project entry for the same id — an IDENTITY collision. So every bare mask is
- * machine-derived, and a single retention test suffices: keep it iff the collision that
- * would re-derive it is still there.
+ * `{ id, scope: "global", excluded: true }`. A mask is kept iff the collision that would
+ * re-derive it is still there.
  */
 function dropOrphanedDerivedMasks(
   projectOwnedSkills: SkillConfig[],
@@ -271,11 +264,8 @@ function dropOrphanedDerivedAgentMasks(projectOwnedAgents: AgentScopeConfig[]): 
  *    alone cannot see this, so a project owning Vue plus a global install of React
  *    ends up with two active skills in a category that permits one.
  *
- * The project-owned skill wins locally. This is DELIBERATELY ASYMMETRIC with the `s`
- * round trip, where a user-initiated radio swap in `toggleTechnology` refuses to displace a
- * globally-locked skill: there the user is actively trying to drop a shared install,
- * whereas here the collision is PUSHED IN by a global install landing on pre-existing
- * project state. Letting global win would silently uninstall the user's own skill.
+ * The project-owned skill wins locally. Letting global win would silently uninstall the user's
+ * own skill.
  *
  * Tombstones are spread from the global entry so they carry the global install's
  * `origin`. A skill the project merely inherits (no active project-scope entry, no
@@ -461,8 +451,8 @@ export type PropagationOptions = {
 
 /**
  * The single writer for a project's config pair, used by BOTH sites that emit
- * one: the per-project propagation step below and the project branch of the
- * wizard write.
+ * one: the per-project propagation step below and the project branch of
+ * `writeScopedFromWizard`.
  *
  * `buildProjectTypesExtras` is fed the EFFECTIVE config — the project's own
  * reconciled rows plus the active global rows the writer is about to inline —
@@ -872,7 +862,7 @@ function stackCategories(stack: ProjectConfig["stack"]): Category[] {
  * stack's category key).
  *
  * Domains and stack categories are read off the config's own arrays as well as derived from its
- * skill rows: `selectedDomains` is a wizard preference no skill row has to back, and neither it
+ * skill rows: `selectedDomains` is a preference no skill row has to back, and neither it
  * nor a stack entry is pruned when the last skill that would derive it leaves.
  */
 export function buildProjectTypesExtras(

@@ -35,7 +35,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 

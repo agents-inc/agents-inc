@@ -1,23 +1,37 @@
-import type { TerminalSession } from "../helpers/terminal-session.js";
-import { cleanupTempDir, delay } from "../helpers/test-utils.js";
-import { INTERNAL_DELAYS, INTERNAL_RETRIES, KEYS, STEP_TEXT } from "./constants.js";
-import { retryEnterUntil } from "./retry-enter.js";
-import { BuildStep } from "./steps/build-step.js";
+import { TerminalSession } from "../helpers/terminal-session.js";
+import { delay } from "../helpers/test-utils.js";
+import { INTERNAL_DELAYS, INTERNAL_RETRIES, KEYS } from "./constants.js";
 import { TerminalScreen } from "./terminal-screen.js";
 
-/**
- * A wrapper for the dashboard mode of init (when project is already initialized).
- * The dashboard is NOT a wizard flow, so it has a simpler API.
- */
+type DashboardLaunchOptions = {
+  projectDir: string;
+  /** Launch with no command at all — the dashboard the `init` hook shows, rather than `init`'s. */
+  bare?: boolean;
+  env?: Record<string, string | undefined>;
+};
+
+/** The dashboard a bare `init` (or a bare run) shows over an existing installation. */
 export class DashboardSession {
   private screen: TerminalScreen;
 
-  constructor(
+  private constructor(
     private session: TerminalSession,
     readonly projectDir: string,
-    private cleanupDirs: string[],
   ) {
     this.screen = new TerminalScreen(session);
+  }
+
+  /** Launch over an existing installation. The caller checks output and presses keys. */
+  static async launch({
+    projectDir,
+    bare,
+    env,
+  }: DashboardLaunchOptions): Promise<DashboardSession> {
+    const session = new TerminalSession(bare ? [] : ["init"], projectDir, {
+      env: { CC_MARKETPLACE: undefined, ...env },
+    });
+
+    return new DashboardSession(session, projectDir);
   }
 
   /** Wait for specific text to appear. */
@@ -93,42 +107,13 @@ export class DashboardSession {
     await delay(INTERNAL_DELAYS.KEYSTROKE);
   }
 
-  /**
-   * Press Enter on the currently focused dashboard option (with closed-loop
-   * retry, see retryEnterUntil).
-   * "Edit" is the default focused option (first in DASHBOARD_OPTIONS), so this
-   * launches the edit wizard in the same PTY session via this.config.runCommand.
-   * Waits for the edit wizard's build step to be ready and returns a BuildStep.
-   * The post-condition matches EditWizard.launch's sequence: BUILD_FOOTER,
-   * stable render, then BUILD.
-   *
-   * `buildStepSentinel` is for a session against a marketplace with categories of its own, for
-   * the reason `DomainStep.advanceTo` gives: `STEP_TEXT.BUILD` is the fixture marketplace's first
-   * category label, not the wizard's.
-   */
-  async selectEdit(buildStepSentinel: string = STEP_TEXT.BUILD): Promise<BuildStep> {
-    await retryEnterUntil(this.session, this.screen, async (cursor) => {
-      await this.screen.waitForTextAfter(
-        STEP_TEXT.BUILD_FOOTER,
-        cursor,
-        INTERNAL_RETRIES.INTERVAL_MS,
-      );
-      await this.screen.waitForWizardFooter(INTERNAL_RETRIES.INTERVAL_MS);
-      await this.screen.waitForTextAfter(buildStepSentinel, cursor, INTERNAL_RETRIES.INTERVAL_MS);
-    });
-    return new BuildStep(this.session, this.projectDir);
-  }
-
   /** Wait for exit. */
   async waitForExit(timeoutMs?: number): Promise<number> {
     return this.session.waitForExit(timeoutMs);
   }
 
-  /** Destroy the session and clean up temp dirs. */
+  /** Destroy the session. */
   async destroy(): Promise<void> {
     await this.session.destroy();
-    for (const dir of this.cleanupDirs) {
-      await cleanupTempDir(dir);
-    }
   }
 }

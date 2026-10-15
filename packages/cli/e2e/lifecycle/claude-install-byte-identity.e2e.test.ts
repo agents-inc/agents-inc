@@ -1,24 +1,31 @@
 import { realpath } from "fs/promises";
 import path from "path";
 import { format, resolveConfig } from "prettier";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { cliVersion } from "../../src/cli/lib/agents/agent-provenance.js";
 import { typedEntries } from "../../src/cli/utils/typed-object.js";
 import { CLI } from "../fixtures/cli.js";
-import {
-  createDualScopeEnv,
-  createTestEnvironment,
-  initGlobalWithEject,
-  runEditWithFirstSkillAction,
-} from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import {
+  DUAL_SCOPE,
+  applyEditFrom,
+  e2eStackPayload,
+  installDualScopeStack,
+} from "../fixtures/e2e-stack-seed.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
-import { DIRS, EXIT_CODES, FILES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { buildSeedSkill } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import {
   CLI_ROOT,
   cleanupTempDir,
+  createPermissionsFile,
   createTempDir,
   fileExists,
   isClaudeCLIAvailable,
@@ -79,6 +86,27 @@ type GoldenTree = {
 };
 
 const claudeAvailable = await isClaudeCLIAvailable();
+
+/** The stack, every skill ejected into the global installation. */
+const GLOBAL_EJECT_ID = "Golden01";
+
+/** The stack as plugins, with the API skill and sub-agent in the project. */
+const PROJECT_PLUGIN_ID = "Golden02";
+
+/** The dual-scope configuration with the spare added to the project's own API sub-agent. */
+const DUAL_SCOPE_PLUS_SPARE_ID = "Golden03";
+const DUAL_SCOPE_PAYLOAD = e2eStackPayload(DUAL_SCOPE);
+const DUAL_SCOPE_PLUS_SPARE_PAYLOAD = {
+  ...DUAL_SCOPE_PAYLOAD,
+  skills: {
+    ...DUAL_SCOPE_PAYLOAD.skills,
+    [E2E_SKILL["visual-regression"].id]: buildSeedSkill({
+      install: "eject",
+      scope: "project",
+      assignments: { [E2E_AGENT["api-developer"].name]: "lazy" },
+    }),
+  },
+};
 
 /**
  * The whole tree under `root`, normalised against the run that wrote it.
@@ -144,7 +172,19 @@ async function expectGoldenTree(journey: string, golden: GoldenTree): Promise<vo
 }
 
 describe("a Claude install leaves every file byte-identical to its golden tree", () => {
+  let store: SeedConfigStore;
   let cleanup: (() => Promise<void>) | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(GLOBAL_EJECT_ID, e2eStackPayload({ scope: "global" }));
+    store.publish(PROJECT_PLUGIN_ID, e2eStackPayload({ ...DUAL_SCOPE, install: "plugin" }));
+    store.publish(DUAL_SCOPE_PLUS_SPARE_ID, DUAL_SCOPE_PLUS_SPARE_PAYLOAD);
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     await cleanup?.();
@@ -154,8 +194,9 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
   it("a global install in eject mode", { timeout: TIMEOUTS.LIFECYCLE }, async () => {
     const home = await createTempDir();
     cleanup = () => cleanupTempDir(home);
+    await createPermissionsFile(home);
 
-    const init = await initGlobalWithEject(E2E_SOURCE, home);
+    const init = await runInitFrom(store, GLOBAL_EJECT_ID, { dir: home }, E2E_SOURCE.sourceDir);
     expect(init.exitCode, `global eject init failed: ${init.output}`).toBe(EXIT_CODES.SUCCESS);
 
     const afterInit = await installTreeUnder(home, { home, source: E2E_SOURCE.sourceDir });
@@ -177,32 +218,13 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       cleanup = () => cleanupTempDir(tempDir);
 
-      const wizard = await InitWizard.launchInProject({
-        source,
-        projectDir,
-        globalHome: fakeHome,
-        ...TERMINAL_SIZE.TALL,
-      });
-      try {
-        const domain = await wizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-        await build.focusSkill(E2E_SKILL.vitest.display);
-        await build.toggleScopeOnFocusedSkill();
-        await build.advanceDomain();
-        await build.advanceDomain();
-        const sources = await build.advanceToSources();
-        const agents = await sources.acceptDefaults();
-        await agents.navigateCursorToAgent(E2E_AGENT["api-developer"].display);
-        await agents.toggleScopeOnFocusedAgent();
-        const confirm = await agents.advance("init");
-        const result = await confirm.confirm();
-        expect(await result.exitCode, `plugin init failed: ${result.rawOutput}`).toBe(
-          EXIT_CODES.SUCCESS,
-        );
-        await result.destroy();
-      } finally {
-        await wizard.destroy();
-      }
+      const init = await runInitFrom(
+        store,
+        PROJECT_PLUGIN_ID,
+        { dir: projectDir, globalHome: fakeHome },
+        source.sourceDir,
+      );
+      expect(init.exitCode, `plugin init failed: ${init.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const afterInit = await installTreeUnder(
         fakeHome,
@@ -210,7 +232,7 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
         CLAUDE_SESSION_STATE,
       );
 
-      // Subject guard: the agent the journey moved to project scope was compiled there.
+      // Subject guard: the agent the journey placed at project scope was compiled there.
       expect(compiledAgentFiles(afterInit, path.basename(projectDir))).toStrictEqual([
         compiledAgentFile(path.basename(projectDir), E2E_AGENT["api-developer"].name),
       ]);
@@ -223,17 +245,21 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
   );
 
   it(
-    "a dual-scope install, edited into a pair, compiled and uninstalled from the project",
+    "a dual-scope install, edited, compiled and uninstalled from the project",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const env = await createDualScopeEnv(E2E_SOURCE);
-      cleanup = env.destroy;
+      const env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
+      cleanup = () => cleanupTempDir(env.tempDir);
       const { fakeHome, projectDir } = env;
       const roots = { home: fakeHome, project: projectDir, source: E2E_SOURCE.sourceDir };
 
       const afterSetup = await installTreeUnder(fakeHome, roots);
 
-      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
+      const edited = await applyEditFrom(store, DUAL_SCOPE_PLUS_SPARE_ID, {
+        dir: projectDir,
+        globalHome: fakeHome,
+      });
+      expect(edited.exitCode, `edit failed: ${edited.output}`).toBe(EXIT_CODES.SUCCESS);
       const afterEdit = await installTreeUnder(fakeHome, roots);
 
       const compiled = await CLI.run(["compile"], { dir: projectDir }, { env: { HOME: fakeHome } });
@@ -252,9 +278,9 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
 
       // Subject guard: the setup really was dual-scope — agents compiled at both scopes — so the
       // phases below start from the state the journey is named for.
-      expect(compiledAgentFiles(afterSetup, "")).toStrictEqual(
-        E2E_AGENTS.WEB_AND_API.map((agent) => compiledAgentFile("", agent)),
-      );
+      expect(compiledAgentFiles(afterSetup, "")).toStrictEqual([
+        compiledAgentFile("", E2E_AGENT["web-developer"].name),
+      ]);
       expect(compiledAgentFiles(afterSetup, path.basename(projectDir))).toStrictEqual([
         compiledAgentFile(path.basename(projectDir), E2E_AGENT["api-developer"].name),
       ]);
@@ -263,7 +289,7 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
         notPinned: [],
         phases: {
           "after dual-scope setup": afterSetup,
-          "after the edit pairs a global skill at project scope": afterEdit,
+          "after the edit adds a skill at project scope": afterEdit,
           "after compile from the project": afterCompile,
           "after uninstall from the project": afterUninstall,
         },

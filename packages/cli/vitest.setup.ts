@@ -32,8 +32,7 @@ afterEach(assertDistUnchanged);
 
 // Colour off, PINNED rather than assumed. Ink paints through chalk, and chalk turns
 // itself off on vitest's non-TTY stdout — so every component assertion here was written
-// against a plain frame, and source-grid.test.tsx's inline layout snapshots were
-// recorded as plain frames. That was detection rather than a decision: `FORCE_COLOR` in
+// against a plain frame. That was detection rather than a decision: `FORCE_COLOR` in
 // the developer's own shell overrides it, chalk then inserts truecolour escapes BETWEEN
 // words, and `toContain("Marketplace Agents Inc")` reports a MISSING STRING — a harness
 // problem wearing a regression's clothes, which is the expensive part. It made a gate
@@ -45,12 +44,10 @@ afterEach(assertDistUnchanged);
 // parser (CLAUDE.md forbids that helper outright), and a snapshot of a LAYOUT has no
 // escape-tolerant form to be rewritten into at all.
 //
-// The opt-in half is already written down and keeps working unchanged: the three
-// `describe` blocks in source-grid.test.tsx that assert ON colour each save chalk.level,
-// force truecolor and restore it. Needing colour belongs to the test; the default
-// belongs here. Ink and this file resolve one chalk instance, so one assignment covers
-// both. The e2e harness states the same rule its own way — `FORCE_COLOR: "0"` in
-// e2e/helpers/terminal-session.ts, an env var because that door spawns a child.
+// Needing colour belongs to the test; the default belongs here. Ink and this file resolve
+// one chalk instance, so one assignment covers both. The e2e harness states the same rule
+// its own way — `FORCE_COLOR: "0"` in e2e/helpers/terminal-session.ts, an env var because
+// that door spawns a child.
 chalk.level = COLOR_DISABLED_CHALK_LEVEL;
 
 // Unit tests render Ink components against fake streams, where being "in CI"
@@ -123,7 +120,7 @@ beforeAll(async () => {
   testHomeDir = await mkdtemp(path.join(os.tmpdir(), "vitest-home-"));
 });
 
-beforeEach(async () => {
+beforeEach(() => {
   // Installed per TEST, not once per file. From a `beforeAll` a single `vi.restoreAllMocks()`
   // — which twenty-three specs in this package call from an `afterEach` — withdrew this spy for
   // every LATER test in that file, after which os.homedir() answered from the developer's own
@@ -139,8 +136,6 @@ beforeEach(async () => {
   });
 
   initializeMatrix(BUILT_IN_MATRIX);
-  const { useWizardStore } = await import("./src/cli/stores/wizard-store");
-  useWizardStore.getState().reset();
 });
 
 afterAll(async () => {

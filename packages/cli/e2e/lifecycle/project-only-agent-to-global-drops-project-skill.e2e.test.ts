@@ -1,10 +1,7 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -15,7 +12,9 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment, readSkillEntries } from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT, E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
+import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /** The sub-agent that changes scope, and the file it compiles to. */
 const API_DEVELOPER = E2E_AGENT["api-developer"].name;
@@ -61,41 +60,28 @@ const PROJECT_API_DEVELOPER_STACK = {
  * loaded by nobody.** This spec pins the design; it is not a defect report, and the
  * warning asserted at the end is the product telling the user so.
  *
- * The fixture is deliberately NOT a dual-scope one. Every other agent-scope spec starts
- * from a persisted `[P][G]` pair, where `s` is a collapse of a pair that already exists at
- * both scopes and the global half was compiled before the toggle ever ran — so nothing
- * about the scope filter is exercised. Here `api-framework-hono` and `api-developer` are
- * PROJECT-ONLY (a scratch project init, no prior global install, so neither has a global
- * half), and the `s` press is a genuine P->G departure.
+ * The fixture is deliberately NOT a dual-scope one: from a persisted `[P][G]` pair the
+ * global half was compiled before the move ever ran, so nothing about the scope filter is
+ * exercised. Here `api-framework-hono` and `api-developer` are PROJECT-ONLY (a scratch project
+ * init, no prior global install, so neither has a global half), and the move is a genuine
+ * P->G departure. The configuration that moves the sub-agent leaves the skill assigned to no
+ * sub-agent, since a shared configuration cannot pair a global sub-agent with a project skill.
  *
  * The negative assertion carries a positive subject guard in the SAME captured frame: the
  * newly-global `api-developer.md` must still carry the two global-scoped meta skills. An
  * absence assertion on its own passes over an empty file, a missing file or the wrong file.
- *
- * MUTATION-CHECKED, and the result is the reason each assertion below is worded the way it
- * is. The rule is enforced at three layers, each of which alone keeps the skill out of the
- * compiled agent — so defeating only the first leaves every filesystem assertion green, and
- * a spec written to redden on it would have been reporting the wrong thing. Each mutation
- * is CUMULATIVE: layer N only becomes observable once 1..N-1 are already defeated.
- *
- *   1. `isScopePairCompatible` (`configuration/config-generator.ts`), the filter in
- *      `buildAgentStack` — return `true` unconditionally. Only the two OUTPUT assertions
- *      redden: the run installs the same bytes and says nothing at all. Every filesystem
- *      and config assertion in this spec still passes, because layer 2 catches it.
- *   2. `splitAgentStack`'s partition predicate in the same file — treat every assignment as
- *      global. `GLOBAL_API_DEVELOPER_STACK` reddens, gaining
- *      `"api-api": [{ id: <hono>, preloaded: true }]`. The compiled agent is still clean.
- *   3. `buildCompileAgents`'s `agentConfig.scope !== "global" || globalSkillIds.has(ref.id)`
- *      (`installation/local-installer.ts`) — the compile-time safety net. NOW the
- *      `notContains` below reddens: `Expected compiled agent "api-developer" to NOT contain
- *      "<hono id>" but it does`, with its `contains` guard still passing.
- *
- * So the warning is what carries the red for the mechanism this spec is named after, and the
- * compiled-agent assertion is what carries the red for the user-visible contract. Neither
- * substitutes for the other, which is why both are here.
  */
-describe("a project-only sub-agent toggled to global scope", () => {
+describe("a project-only sub-agent moved to global scope", () => {
+  let store: SeedConfigStore;
   let testTempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (testTempDir) await cleanupTempDir(testTempDir);
@@ -109,61 +95,31 @@ describe("a project-only sub-agent toggled to global scope", () => {
       const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
       testTempDir = tempDir;
 
+      const project = { dir: projectDir, home: fakeHome };
+
       // PHASE A -- a scratch project install with a project-scoped skill assigned to a
-      // project-scoped sub-agent. No global install underneath either of them, so no
+      // project-scoped sub-agent, every skill ejected so the one that ends up assigned to
+      // nothing is observable on disk. No global install underneath either of them, so no
       // dual-scope pair exists anywhere in this fixture.
-      const initWizard = await InitWizard.launch({
-        projectDir,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      try {
-        const domain = await initWizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-
-        // Web domain: pass through — react and the rest stay GLOBAL.
-        await build.advanceDomain();
-
-        // API domain: send api-framework-hono to PROJECT scope.
-        await build.focusSkill(E2E_SKILL.hono.display);
-        await build.toggleScopeOnFocusedSkill();
-        await build.advanceDomain();
-
-        // Methodology domain -> Sources.
-        const sources = await build.advanceToSources();
-        await sources.waitForReady();
-        // Eject, so the skill that ends up assigned to nothing is observable on disk.
-        await sources.setAllLocal();
-        const agents = await sources.advance();
-
-        // Send api-developer to PROJECT scope, so the project-scoped skill has a
-        // sub-agent that can legally carry it.
-        await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
-        await agents.toggleScopeOnFocusedAgent();
-        const confirm = await agents.advance("init");
-
-        const installed = await confirm.confirm();
-        expect(await installed.exitCode, `Phase A init failed: ${installed.rawOutput}`).toBe(
-          EXIT_CODES.SUCCESS,
-        );
-        await installed.destroy();
-      } finally {
-        await initWizard.destroy();
-      }
+      await installFromSeed(
+        store,
+        "ProjectOnly1",
+        e2eStackPayload({ projectSkills: [E2E_SKILL.hono.id], projectAgents: [API_DEVELOPER] }),
+        project,
+      );
 
       // The fixture's defining property: both are project-ONLY. A single entry each,
       // at project scope, with no global row and no tombstone beside it.
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.hono.id),
-        "the fixture must hold a project-only skill — a dual-scope pair would make the toggle a collapse",
+        "the fixture must hold a project-only skill — a dual-scope pair would make the move a collapse",
       ).toStrictEqual([{ id: E2E_SKILL.hono.id, scope: "project", origin: "eject" }]);
       expect(
         await readAgentEntriesFor(projectDir, API_DEVELOPER),
         "the fixture must hold a project-only sub-agent",
       ).toStrictEqual([{ name: API_DEVELOPER, scope: "project" }]);
 
-      // The departure state, on every surface the toggle will move it off.
+      // The departure state, on every surface the move takes it off.
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(API_DEVELOPER, {
         contains: [E2E_SKILL.hono.id, E2E_SKILL["research-methodology"].id, E2E_SKILL.reviewing.id],
       });
@@ -176,33 +132,13 @@ describe("a project-only sub-agent toggled to global scope", () => {
         "the project partition must record the whole stack while the sub-agent is project-scoped",
       ).toStrictEqual(PROJECT_API_DEVELOPER_STACK);
 
-      // PHASE B -- toggle the sub-agent P->G and save.
-      const editWizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      let editOutput: string;
-      try {
-        const sources = await editWizard.build.passThroughAllDomains();
-        await sources.waitForReady();
-        const agents = await sources.advance();
-
-        await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
-        await agents.toggleScopeOnFocusedAgent();
-        const confirm = await agents.advance("edit");
-
-        const edited = await confirm.confirm();
-        expect(await edited.exitCode, `Phase B edit failed: ${edited.rawOutput}`).toBe(
-          EXIT_CODES.SUCCESS,
-        );
-        editOutput = edited.output;
-        await edited.destroy();
-      } finally {
-        await editWizard.destroy();
-      }
+      // PHASE B -- move the sub-agent P->G.
+      const { output: editOutput } = await applyFromSeed(
+        store,
+        "AgentToGlobal1",
+        e2eStackPayload({ projectSkills: [E2E_SKILL.hono.id], unassigned: [E2E_SKILL.hono.id] }),
+        project,
+      );
 
       // THE POINT. One frame, read once: the project-scoped skill is gone from the
       // newly-global sub-agent, and the two global-scoped ones it kept are the positive
@@ -215,13 +151,13 @@ describe("a project-only sub-agent toggled to global scope", () => {
       // P->G is a MOVE for a sub-agent: the project's compiled copy is gone.
       expect(
         await fileExists(path.join(agentsPath(projectDir), API_DEVELOPER_FILE)),
-        `${API_DEVELOPER_FILE} must not exist at project scope after the P->G toggle`,
+        `${API_DEVELOPER_FILE} must not exist at project scope after the P->G move`,
       ).toBe(false);
 
       // The config half of the same move, at both scopes.
       expect(
         await readAgentEntriesFor(fakeHome, API_DEVELOPER),
-        "the global config must own the sub-agent after the toggle",
+        "the global config must own the sub-agent after the move",
       ).toStrictEqual([{ name: API_DEVELOPER, scope: "global" }]);
 
       // The stack the config records, exhaustively — the `api-api` category the
@@ -236,10 +172,7 @@ describe("a project-only sub-agent toggled to global scope", () => {
       // NOT asserted here: the project config's own `stack`. It comes back absent, but the
       // project writer filters that stack to PROJECT-scoped sub-agents (`config-writer.ts`),
       // so a row for a now-global sub-agent is dropped at emission whatever the scope filter
-      // did. Measured under the layer-1 mutation described above, where `splitAgentStack`
-      // DID hand the project partition an `api-api` row for this sub-agent: the emitted
-      // project config still carried no stack. An assertion there would read as this spec's
-      // subject and could not fail for it.
+      // did. An assertion there would read as this spec's subject and could not fail for it.
 
       // The orphan is real: still installed, still recorded, loaded by nobody.
       expect(

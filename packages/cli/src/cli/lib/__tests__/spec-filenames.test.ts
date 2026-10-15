@@ -73,7 +73,7 @@ const NAMES_A_BEHAVIOUR = [
   "src/cli/lib/__tests__/helpers/cli-runner.test.ts",
   "e2e/lifecycle/scenario-c-init-registers-project.e2e.test.ts",
   "e2e/smoke/home-isolation.smoke.test.ts",
-  "src/cli/components/wizard/source-grid.test.tsx",
+  "src/cli/components/common/summary-panel.test.tsx",
 ];
 
 /**

@@ -22,13 +22,7 @@ export {
   writeSourceAgent,
   writeTestPluginManifest,
 } from "./disk-writers.js";
-export {
-  buildSkillConfig,
-  buildSkillConfigs,
-  simulateSkillSelections,
-  buildWizardResultFromStore,
-  extractSkillIdsFromAssignment,
-} from "./wizard-simulation.js";
+export { buildSkillConfig, buildSkillConfigs } from "./skill-config-builders.js";
 export { createTestDirs, cleanupTestDirs } from "./test-dir-setup.js";
 export type { PluginTestDirs } from "./test-dir-setup.js";
 export { setupIsolatedHome, useFakeHome } from "./isolated-home.js";

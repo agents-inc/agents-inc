@@ -332,9 +332,9 @@ export default class Compile extends BaseCommand {
    * Scoped to `pass.projectDir`, never the invoking `cwd`: a global pass must seat
    * the global installation's own local skills, not the invoking directory's.
    *
-   * `skipExtraSources: true` is NOT a divergence from the wizard's full
-   * multi-source load: extra-source loading only annotates each skill's
-   * `availableSources`/`activeSource` for wizard UI tagging — it never adds skills
+   * `skipExtraSources: true` is NOT a divergence from a full multi-source
+   * load: extra-source loading only annotates each skill's
+   * `availableSources`/`activeSource` — it never adds skills
    * or categories to the matrix, and neither the render path nor the config-types
    * writer ever reads those annotations, so the emitted output is byte-identical
    * either way (pinned by the skipExtraSources parity test in
@@ -370,8 +370,8 @@ export default class Compile extends BaseCommand {
    * The documented hand-edit workflow is "edit config.ts, then run compile", and
    * the type unions in config-types.ts are derived from config.ts — so a compile
    * pass that leaves them untouched strands stale unions after a hand-edit.
-   * Regenerates them from the scope's persisted config exactly as the wizard
-   * write path would: standalone narrowed unions at global scope, import-and-
+   * Regenerates them from the scope's persisted config exactly as
+   * `writeScopedFromWizard` would: standalone narrowed unions at global scope, import-and-
    * extend at project scope. A failed refresh downgrades to a warning — the
    * compiled agents are already written and remain valid; only the type unions
    * may still be stale.

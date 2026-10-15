@@ -29,7 +29,7 @@ export const ERROR_MESSAGES = {
    * What `compile` refuses with when every pass discovered zero skills. It is reached only
    * after an installation was detected, so the state it describes is a configuration with
    * nothing installed under it — the same state `doctor` reports as `config-empty` and
-   * names `init` for, because `init` on a config that declares nothing opens the wizard
+   * names `init` for, because `init` on a config that declares nothing opens the editor
    * rather than the dashboard. `edit` is the wrong half of the pair here: it modifies the
    * currently installed skills, and there are none to modify.
    */
@@ -296,7 +296,7 @@ export function scopeBlockedStackAssignment(agentNames: AgentName[], skillId: Sk
  */
 export function globalScopedAgentsHint(count: number): string {
   const [subject, object] = count === 1 ? ["agent is", "it"] : ["agents are", "them"];
-  return `${count} ${subject} global-scoped — run '${CLI_INVOKE_COMMAND} compile' from your home directory, or edit from this project, to recompile ${object}.`;
+  return `${count} ${subject} global-scoped — run '${CLI_INVOKE_COMMAND} compile' from your home directory to recompile ${object}.`;
 }
 
 /**
@@ -523,10 +523,8 @@ export function skillMetadataUnusableError(entries: UnusableSkillMetadata[]): st
 }
 
 /**
- * The same refusal raised by `init` and `edit`, where what the file costs is different: the
- * wizard resolves the installed roster against the catalogue, and a skill nothing can be
- * loaded for reaches no screen — so the entry naming it is dropped from `config.ts` and
- * reported as a removal the user never asked for.
+ * The same refusal raised by `edit`, where what the file costs is different: a
+ * skill nothing can be loaded for is dropped from `config.ts`.
  *
  * That is the right answer for a skill the marketplace no longer carries and the wrong one
  * here, where the files are sitting in the install and one repairable file stands between
@@ -721,28 +719,6 @@ export function nothingInstalledToApplyTo(id: string): string {
   return `No installation found. Run '${CLI_INVOKE_COMMAND} init --from ${id}' to install configuration '${id}' here.`;
 }
 
-/** The run each wizard-opening command can be swapped for where there is no terminal. */
-const RUNS_WITHOUT_A_TERMINAL = {
-  init: `'${CLI_INVOKE_COMMAND} init --from <id>' installs a configuration built in the editor without one`,
-  edit: `'${CLI_INVOKE_COMMAND} edit --ui' opens this installation in the editor without one`,
-} as const;
-
-/**
- * Refusal printed when `init` or `edit` would open the wizard where there is no terminal to open
- * it in — a CI job, a script, a pipe.
- *
- * Mounting it anyway died on Ink's raw-mode error over a React stack trace. A command that cannot
- * run without a terminal "should break because it's not a valid command" (owner ruling
- * 2026-10-02), so it breaks on purpose and in words, worded after {@link sharedConfigNeedsTerminal}
- * because it is the same refusal one command over.
- */
-export function wizardNeedsTerminal(command: keyof typeof RUNS_WITHOUT_A_TERMINAL): string {
-  return [
-    `'${CLI_INVOKE_COMMAND} ${command}' opens a wizard, and there is no terminal here to open it in.`,
-    `Run it from a terminal — ${RUNS_WITHOUT_A_TERMINAL[command]}.`,
-  ].join("\n");
-}
-
 /**
  * Refusal printed when `uninstall` has no terminal to confirm its removals at. A confirm nobody
  * can answer must never become a yes, so `--yes` — the person saying it in advance — is named.
@@ -755,23 +731,14 @@ export function uninstallNeedsTerminal(): string {
 }
 
 /**
- * Refusal printed for `init --ui --marketplace`. The editor's address carries a configuration id
- * and nothing else, so a marketplace named here would be dropped on the way — and a flag silently
- * dropped reads as honoured. The one command it names is the same run without the flag, because
- * that runs in every folder: `init --marketplace` refuses in one whose installation came from
- * another marketplace.
+ * What `init` prints under the editor's address when `--marketplace` names one without `--from`.
+ * The address carries an id and nothing else, so the marketplace is added in the editor — and a
+ * folder on this machine is out of the editor's reach until it is pushed.
  */
-export function editorLoadsItsOwnMarketplace(named: string): string {
-  return `--marketplace '${named}' cannot be handed to the editor: the editor loads marketplaces itself. Run '${CLI_INVOKE_COMMAND} init --ui' and load it there.`;
-}
-
-/**
- * Refusal printed when `init --marketplace` names a marketplace other than the one this folder's
- * own installation was made from. An installation's marketplace is chosen once, when it is made,
- * and every command after `init` reads the one it stored.
- */
-export function marketplaceFixedAtInstall(stored: string, named: string): string {
-  return `This folder's installation was made from the marketplace '${stored}', and an installation's marketplace is chosen once, when it is made — so --marketplace '${named}' was not used. Run '${CLI_INVOKE_COMMAND} init' without it to open this installation, or '${CLI_INVOKE_COMMAND} uninstall' first to set this folder up from another.`;
+export function addMarketplaceInTheEditor(ref: string, isFolder: boolean): string {
+  return isFolder
+    ? `${ref} is a folder on this machine, which the editor cannot read — push it to GitHub, then add it from the editor's Marketplace button.`
+    : `Add ${ref} from the editor's Marketplace button.`;
 }
 
 /**
@@ -831,7 +798,6 @@ export function authoredHereKept(skillIds: readonly SkillId[]): string {
   return [
     "Kept — written here rather than installed, so a shared configuration never carried them:",
     ...skillIds.map((id) => `  skill ${id}`),
-    `Remove them with '${CLI_INVOKE_COMMAND} edit'.`,
   ].join("\n");
 }
 

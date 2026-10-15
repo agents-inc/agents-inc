@@ -153,7 +153,7 @@
     },
     "packages/cli": {
       "name": "agents-inc",
-      "version": "0.167.0",
+      "version": "0.168.0",
       "bin": {
         "agents-inc": "dist/index.js",
         "agentsinc": "dist/index.js",
@@ -179,7 +179,6 @@
         "remeda": "^2.33.6",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
-        "zustand": "^5.0.14",
       },
       "devDependencies": {
         "@eslint/js": "^10",

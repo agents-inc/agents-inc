@@ -5,28 +5,29 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { finishWizard } from "../fixtures/dual-scope-helpers.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
+  FORKED_FROM_METADATA,
   loadConfigOrFail,
-  renderMetadataYaml,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * Propagation gap: when a global skill is removed via `cc edit` at global scope,
+ * Propagation gap: when a global skill is removed via `cc edit --from` at global scope,
  * `propagateGlobalChangesToProjects` rewrites each registered project's config.ts
  * via `retainReconciledSkills`/`retainReconciledAgents` (which filter skills[] and
  * agents[]) but never touches `.stack`. The inlined writer only filters the stack
@@ -40,8 +41,9 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
  */
 
 const REACT = E2E_SKILL.react.id;
-/** What the grid paints for that skill — its title, not its namespaced id. */
-const REACT_LABEL = E2E_SKILL.react.display;
+
+/** The global configuration with react left out: its sub-agent on, holding nothing. */
+const WITHOUT_REACT_ID = "NoReact1";
 
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
@@ -57,15 +59,6 @@ const projectStack = {
   },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-const reactMetadata = renderMetadataYaml({
-  displayName: REACT_LABEL,
-  category: "web-framework",
-  slug: "react",
-  cliDescription: "E2E test skill",
-  usageGuidance: "Use when testing E2E scenarios",
-  contentHash: "b2c3d4e",
-});
-
 function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   return buildProjectConfig({
     name,
@@ -76,12 +69,20 @@ function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
 }
 
 describe("global-scope skill removal propagates to registered projects", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
 
   let projectAConfig: FixtureProjectConfig;
   let projectBConfig: FixtureProjectConfig;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      WITHOUT_REACT_ID,
+      buildSeedPayload({
+        agents: { [E2E_AGENT["web-developer"].name]: { on: true, scope: "global" } },
+      }),
+    );
     tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "home");
     const projectA = path.join(tempDir, "project-a");
@@ -96,6 +97,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
     // stack references the global react.
     const globalConfig = buildProjectConfig({
       name: "propagation-global",
+      marketplace: E2E_SOURCE.sourceDir,
       skills: buildSkillConfigs([REACT], { scope: "global", origin: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
@@ -103,9 +105,10 @@ describe("global-scope skill removal propagates to registered projects", () => {
       projects: [realpathSync(projectA), realpathSync(projectB)],
     });
     await writeProjectConfig(globalHome, globalConfig);
+    // Fork provenance, so the round trip owns the copy and the apply may remove it.
     await createLocalSkill(globalHome, REACT, {
       description: "Global react copy",
-      metadata: reactMetadata,
+      metadata: FORKED_FROM_METADATA,
     });
 
     await writeProjectConfig(projectA, buildRegisteredProjectConfig("project-a"));
@@ -113,19 +116,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
 
     // Edit at global scope and remove react entirely. This triggers
     // propagateGlobalChangesToProjects for the two registered projects.
-    const wizard = await EditWizard.launch({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      env: { HOME: globalHome },
-      ...TERMINAL_SIZE.TALL,
-    });
-    await wizard.build.selectSkill(REACT_LABEL);
-    const sources = await wizard.build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("edit");
-    const result = await confirm.confirm();
-    const { exitCode, output } = await finishWizard(result);
+    const { exitCode, output } = await applyEditFrom(store, WITHOUT_REACT_ID, { dir: globalHome });
     expect(exitCode, `global edit must succeed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
     projectAConfig = await loadConfigOrFail(projectA);
@@ -133,6 +124,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 

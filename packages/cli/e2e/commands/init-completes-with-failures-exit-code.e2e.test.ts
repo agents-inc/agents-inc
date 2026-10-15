@@ -25,7 +25,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
@@ -42,9 +42,8 @@ import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
  * the skills are copied, `config.ts` and `config-types.ts` are written, and there is nothing
  * left to continue to. What was missing is the other half of the report.
  *
- * `--from` is the driver rather than the wizard because this run must complete over a pipe: the
- * sabotage is on disk before the process starts and the whole flow is non-interactive, so what
- * is asserted is the command's own output rather than a PTY frame's.
+ * `--from` is the driver: the sabotage is on disk before the process starts and the whole flow
+ * is non-interactive, so what is asserted is the command's own output rather than a PTY frame's.
  *
  * **The clean pass is the control and is not optional.** Every assertion below reads the same
  * against a command that had simply started exiting non-zero for its own reasons, and only the

@@ -40,7 +40,7 @@ import {
   buildProjectConfig,
 } from "../../__tests__/factories/config-factories.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
-import { buildSkillConfig } from "../../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../../__tests__/helpers/skill-config-builders.js";
 import { REACT_HONO_WEB_API_DOMAINS_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
 import { SKILLS } from "../../__tests__/test-fixtures.js";

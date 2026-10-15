@@ -12,11 +12,11 @@ import { loadAgentDefs } from "../../operations/project/load-agent-defs.js";
 import { writeProjectConfig } from "../../operations/project/write-project-config.js";
 import {
   buildAgentConfigs,
-  buildWizardResult,
+  buildInstallSelection,
   initMatrixAndSource,
 } from "../factories/config-factories.js";
 import { readGeneratedUnion } from "../helpers/generated-types.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { cleanupTestSource, createTestSource, type TestDirs } from "../fixtures/create-test-source";
 import { DEFAULT_TEST_AGENTS } from "../mock-data/mock-agents";
 import { FULLSTACK_TRIO_MATRIX } from "../mock-data/mock-matrices";
@@ -31,12 +31,7 @@ import { cleanupTempDir, createTempDir } from "../test-fs-utils";
  */
 const MARKETPLACE_ONLY_AGENT = "fixture-marketplace-only-agent";
 
-/**
- * The same boundary cast `buildAgentGroups` in `components/wizard/step-agents.tsx` makes, and for
- * the same reason: a marketplace's own sub-agent id is genuinely outside `AgentName`, and the
- * wizard genuinely offers one — it reads the ids off `matrix.suggestedStacks` — so a selection
- * carrying one is a state a user can actually reach.
- */
+/** A boundary cast: a marketplace's own sub-agent id is genuinely outside `AgentName`. */
 const MARKETPLACE_AGENT_NAME = MARKETPLACE_ONLY_AGENT as AgentName;
 
 /**
@@ -107,7 +102,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
    */
   async function installAtHome(): Promise<void> {
     await writeProjectConfig({
-      wizardResult: buildWizardResult(buildSkillConfigs(INIT_SKILL_IDS), {
+      selection: buildInstallSelection(buildSkillConfigs(INIT_SKILL_IDS), {
         selectedAgents: ["web-developer", MARKETPLACE_AGENT_NAME],
         agentConfigs: [
           ...buildAgentConfigs(["web-developer"], { scope: "global" }),

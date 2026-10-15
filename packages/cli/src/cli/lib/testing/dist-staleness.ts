@@ -212,17 +212,8 @@ export async function assertDistIsFresh(cliRoot: string): Promise<void> {
  * What the per-test guard still cannot do is speak EARLY. Its first word is the first
  * `beforeEach`, vitest runs that after every `beforeAll` in the file, and a `beforeAll` that
  * throws SKIPS every `beforeEach` under it. So for a spec that reaches the binary from a
- * `beforeAll` — every one that launches a wizard, and every one built on `createE2EPluginSource`,
- * which spawns `build plugins` and `build marketplace` — the per-test guard is not merely later,
- * it is unreachable.
- *
- * Measured against `e2e/lifecycle/global-scope-install-reporting.e2e.test.ts`, whose `beforeAll`
- * drives a whole init wizard through a PTY, with `dist/index.js` and `dist/commands` removed and
- * `dist/` itself left newer than `src/` so the run-scoped scan still passes: this refuses the file
- * in under a second naming the build, and without it the same file spends 45s and fails with
- * `timeout waiting for "Choose a stack"` — an ordinary assertion failure naming nothing about a
- * build, over a screen reading `init is not a agents-inc command`. That misattribution is what
- * this module exists to prevent, and no later check gets to make it.
+ * `beforeAll` — every one built on `createE2EPluginSource`, which spawns `build plugins` and
+ * `build marketplace` — the per-test guard is not merely later, it is unreachable.
  *
  * A single stat, because this is asked once per spec file rather than once per run. `dist/index.js`
  * is what stands in for the directory, for the reason given on {@link DIST_ENTRY}.

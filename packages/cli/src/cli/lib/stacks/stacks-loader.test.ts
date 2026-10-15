@@ -302,7 +302,7 @@ describe("stacks-loader", () => {
       expect(stack).toBeNull();
     });
 
-    // The pair with `resolveOfferedStacks`: the wizard offers the built-in stacks
+    // The pair with `resolveOfferedStacks`: the load offers the built-in stacks
     // from a checkout of the catalogue's own repository, so this lookup — which the
     // eject install makes for the id the user then picked — has to answer for the
     // same repository. Disagreeing means offering a stack and refusing to install it.

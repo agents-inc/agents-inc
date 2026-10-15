@@ -8,7 +8,7 @@
  *
  * **Everything here is written in THIS product's words, never in a host's.** Scope is
  * {@link SkillScope} — `global` and `project` — although Claude's own plugin scope vocabulary is
- * `user` and `project` and Codex has no scope flag at all; mode is `INSTALL_MODES`'
+ * `user` and `project` and Codex has no scope flag at all; mode is `InstallMode`'s
  * `plugin` and `eject`. A member named after the binary it was extracted from would be the same
  * coupling one indirection further away, so each host translates at its own edge and the
  * translation is a host's private business.

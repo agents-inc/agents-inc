@@ -1,16 +1,27 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { cleanupFixture } from "../helpers/test-utils.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  E2E_MARKETPLACE_NAME,
+  EXIT_CODES,
+  STEP_TEXT,
+  TERMINAL_SIZE,
+  TIMEOUTS,
+} from "../pages/constants.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import "../matchers/setup.js";
 
 /**
  * The eject direction of a mode switch, without the Claude CLI.
  *
- * `edit-wizard-plugin-migration.e2e.test.ts` drives the same switch against a real
+ * `edit-from-plugin-migration.e2e.test.ts` drives the same switch against a real
  * plugin marketplace and is skipped wherever the Claude binary is absent, so on
  * its own it leaves this behaviour unguarded on those machines. Nothing in the
  * eject direction needs that binary to reach the copies: `executeMigration` copies
@@ -22,21 +33,42 @@ import "../matchers/setup.js";
  * then goes quiet, though `MigrationResult.ejectedSkills` has the answer and is
  * read by nobody.
  */
+
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+const EJECTED_ID = "Ejected01";
+
 describe("switching a skill to eject mode reports the copies it made", () => {
   let source: E2ESource;
-  let wizard: EditWizard | undefined;
+  let store: SeedConfigStore;
+  let prompt: InteractivePrompt | undefined;
 
   beforeAll(async () => {
     source = await createE2ESource();
+    store = await startSeedConfigStore();
+    // The installed skill, asked for as an ejected copy.
+    store.publish(
+      EJECTED_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        agents: { [WEB_DEV]: { on: true, scope: "project" } },
+      }),
+    );
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(source);
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
+    await prompt?.destroy();
+    prompt = undefined;
   });
 
   it(
@@ -46,23 +78,24 @@ describe("switching a skill to eject mode reports the copies it made", () => {
       // An install whose skill is recorded against a marketplace, so switching it
       // to eject is a genuine plugin -> eject migration.
       const project = await ProjectBuilder.pluginProject({
+        marketplace: source.sourceDir,
         skills: [E2E_SKILL.react.id],
         marketplaceName: E2E_MARKETPLACE_NAME,
         agents: [...E2E_AGENTS.WEB],
         domains: ["web"],
       });
 
-      wizard = await EditWizard.launch({ projectDir: project.dir, source });
+      prompt = new InteractivePrompt(["edit", "--from", EJECTED_ID], project.dir, {
+        ...TERMINAL_SIZE.TALL,
+        env: { AGENTS_INC_API_URL: store.url },
+      });
+      await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
+      await prompt.confirm();
+      const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const rawOutput = prompt.getRawOutput();
 
-      const sources = await wizard.build.advanceToSources();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      expect(exitCode, rawOutput).toBe(EXIT_CODES.SUCCESS);
 
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      const rawOutput = result.rawOutput;
       // Proof of execution: the migration ran, in the eject direction, for one
       // skill. Without this the count line could be asserted on a run that never
       // switched anything.
@@ -78,8 +111,8 @@ describe("switching a skill to eject mode reports the copies it made", () => {
 
       // Both sides of the state change: the copy is on disk and the config records
       // the new source.
-      await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
-      await expect(result.project).toHaveConfig({
+      await expect(project).toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect(project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
         origin: "eject",
       });

@@ -1,6 +1,6 @@
 // E2E constants are declared here rather than imported from `src/cli/`, so an assertion can
 // fail when the product's value moves. Every mirrored value is held to its source by
-// `scripts/check-screen-sentinels.ts` (screen subtitles) or `scripts/check-mirrored-constants.ts`.
+// `scripts/check-mirrored-constants.ts`.
 // Values with no production counterpart are this file's own.
 
 export const DIRS = {
@@ -51,23 +51,6 @@ export const FILES = {
 } as const;
 
 export const STEP_TEXT = {
-  STACK: "Choose a stack",
-  DOMAINS: "Select domains",
-  DOMAIN_WEB: "Web",
-  DOMAIN_API: "API",
-  DOMAIN_META: "Methodology",
-  DOMAIN_MOBILE: "Mobile",
-  BUILD: "Framework", // First category visible in build step
-  BUILD_FOOTER: "Labels", // Build-step-only footer hint, always rendered on the first build frame.
-  SCOPE: "Scope", // Rendered only for genuine project-scope edits.
-  CATEGORY_FRAMEWORK: "Framework", // Category label passed as an argument, not a step sentinel like BUILD
-  // Mirrors `STEP_DROPDOWN_LABEL.sources` in `wizard-layout.tsx` (`check-screen-sentinels.ts`); a
-  // drifted sentinel hangs every wizard spec for `TIMEOUTS.WIZARD_LOAD`. It names the step's
-  // subject rather than the `origin` field it writes, deliberately.
-  SOURCES: "Customize skill sources",
-  AGENTS: "Select agents",
-  CONFIRM: "to install",
-
   INIT_SUCCESS: "initialized successfully",
   EDIT_SUCCESS: "Done",
   EDIT_UNCHANGED: "No changes made",
@@ -147,12 +130,6 @@ export const STEP_TEXT = {
   COMPILE_METADATA_MISSING_FIELD: "missing required field",
   // Shared by `compile` and `init`/`edit`. Asserted through `flattenCliOutput`.
   METADATA_UNUSABLE_WAY_OUT: "Fix the file, or delete the skill directory",
-  // Why an unresolvable config entry went, in `edit`'s Changes block. Always asserted with the
-  // row's own `[P] (` in front: the store warns the same fragment on the way in.
-  REMOVED_REASON_NOT_IN_SOURCE: "not present in",
-  REMOVED_REASON_FILES_GONE: "skill files no longer exist at",
-  // The startup band's line for an installed skill the loaded catalogue does not carry.
-  INSTALLED_SKILL_ABSENT_FROM_SOURCE: "is not present in the loaded source",
   // Counts projects rewritten, not reached, so a fan-out that changes nothing never prints it.
   PROPAGATED_RECOMPILE_ONE: "Recompiled agents in 1 registered project,",
   // Prefix of the same summary (`BaseCommand.reportPropagatedRecompile`), for absence assertions.
@@ -204,19 +181,6 @@ export const STEP_TEXT = {
   // folders.
   UNINSTALL_SOURCE_ROOT_REMOVED: "Removed .agents-inc/",
   UNINSTALL_SOURCE_ROOT_KEPT: "Kept .agents-inc/ (contains user content)",
-
-  // The install-mode cells' own captions; there is no header row.
-  INSTALL_MODE_LOCAL: "Local",
-  INSTALL_MODE_PLUGIN: "Plugin",
-
-  // Asserted absent: the wizard may not advertise keys it does not honour. Their case keeps
-  // them apart from the cell captions ("Set all local" vs "Local").
-  FOOTER_SET_ALL_LOCAL: "Set all local",
-  FOOTER_SET_ALL_PLUGIN: "Set all plugin",
-
-  // The per-scope block headings; `SCOPE` above must NOT caption the Sources grid's gutter.
-  SCOPE_GLOBAL: "Global",
-  SCOPE_PROJECT: "Project",
 
   DASHBOARD: "Doctor",
   // The select list's marker, a space, then the label; a paced choice waits on it.
@@ -303,12 +267,6 @@ export const STEP_TEXT = {
   // dies silently when the source line changes.
   CONFIG_LOAD_REASON: "Failed to load config from",
 
-  FOOTER_SELECT: "select", // Footer text used for stable render detection
-  // The whole footer with WizardFooter's exact spacing: a bleed leaves every word present but
-  // splices content between them.
-  FOOTER_HOTKEY_ROW: "SPACE  select   ENTER  continue   ESC  back",
-  START_FROM_SCRATCH: "Start from scratch",
-  TOGGLE_SELECTION: "Toggle selection",
   NO_INSTALLATION: "No installation found",
 
   INSTALLING_PLUGINS: "Installing skill plugins",
@@ -328,7 +286,6 @@ export const STEP_TEXT = {
   SKILLS_COPIED_TO: "Skills copied to:",
   AGENTS_COMPILED_TO: "Agents compiled to:",
   CONFIGURATION_LABEL: "Configuration:",
-  READY_TO_INSTALL: "Ready to install",
   NO_SKILLS_FOUND: "No skills found",
   UNINSTALL_CANCELLED: "Uninstall cancelled",
   // oclif's framing of the command's own "Cancelled".
@@ -367,14 +324,9 @@ export const STEP_TEXT = {
   SHARED_CONFIG_APPLY_CONFIRM: "Apply this configuration?",
   SHARED_CONFIG_APPLY_NOTHING_REMOVED: "Nothing is removed",
   SHARED_CONFIG_NEEDS_TERMINAL: "no terminal here to confirm it at",
-  // In place of Ink's raw-mode error; the remedy is the run that needs no terminal.
-  WIZARD_NEEDS_TERMINAL: "no terminal here",
-  WIZARD_NEEDS_TERMINAL_REMEDY: "init --from <id>",
   // `uninstall`'s version; the remedy is the flag that answers the confirm in advance.
   UNINSTALL_NEEDS_TERMINAL: "Uninstalling removes files, so it has to be confirmed",
   UNINSTALL_NEEDS_TERMINAL_REMEDY: "uninstall --yes",
-  // The editor's address carries no marketplace.
-  EDITOR_LOADS_MARKETPLACES: "the editor loads marketplaces itself",
   // Asserted absent: a refusal still printing it would be the crash with a sentence on top.
   INK_RAW_MODE_UNSUPPORTED: "Raw mode is not supported",
   // The plan's two "kept" disclosures: ownership (`forkedFrom`), and an id this catalogue
@@ -398,16 +350,7 @@ export const STEP_TEXT = {
   // A project run only adds to the global install; differences are named, not applied.
   SHARED_CONFIG_KEPT_AS_INSTALLED: "Kept as installed in the global install",
 
-  // The colon tells the post-wizard warning from the build grid's "(requires X)".
   VALIDATION_REQUIRES: "requires:",
-
-  GLOBAL_SKILLS_BLOCKED: "Global skills cannot be changed from project scope",
-  GLOBAL_AGENTS_BLOCKED: "Global agents cannot be changed from project scope",
-  // Emitted by `toggleFocusedScope` in wizard.tsx before the store is reached.
-  SCOPE_TOGGLE_BLOCKED: "Scope toggle unavailable in global context",
-  // `wouldOverwriteGlobalEject`'s refusal; why `ProjectBuilder.editable` carries
-  // `globalSkillsSource`.
-  ALREADY_EJECTED_AT_GLOBAL: "Already exists as ejected skill at global scope",
 
   // The scope filter's reporting: a project-scoped skill never reaches a global sub-agent, and
   // these say when that left a skill on no agent. The wording is the implementer's.
@@ -417,28 +360,19 @@ export const STEP_TEXT = {
   // `compile`: a hand-edited stack pairing a global agent with a project skill.
   STACK_PAIR_DROPPED_BY_SCOPE: "cannot carry project-scoped skill",
 
-  // `formatTerminalTooSmallMessage`, printed by both the startup gate and the WizardLayout guard.
+  // `formatTerminalTooSmallMessage`, printed by the startup gate.
   TOO_NARROW: "too narrow",
   TOO_SHORT: "too short",
   // The sentinel to wait on when either dimension may have tripped the gate.
   RESIZE_PROMPT: "Please resize",
 
-  // The wizard paints `█` only in ASCII_LOGO, which is hidden below LOGO_MIN_TERMINAL_ROWS.
+  // `█` is painted only in ASCII_LOGO.
   LOGO_BANNER: "█████╗",
 
-  // `ScrollAffordance`'s "N more below" / "N more above".
-  SCROLL_MORE_BELOW: "more below",
-  SCROLL_MORE_ABOVE: "more above",
-
-  // Label and value render as "<label> <value>":
-  // compose `${PANEL_MARKETPLACE} ${SOURCE_DISPLAY_DEFAULT}`.
-  PANEL_MARKETPLACE: "Marketplace",
-  PANEL_STACK: "Stack",
-  PANEL_STACK_NONE: "none",
   // formatSourceDisplayName("agents-inc"). A fixture run names E2E_MARKETPLACE_NAME instead, and
   // an all-ejected run says "All skills ejected".
   SOURCE_DISPLAY_DEFAULT: "Agents Inc",
-  // formatSourceDisplayName("eject"); asserted absent from the Sources grid, which captions modes.
+  // formatSourceDisplayName("eject").
   SOURCE_DISPLAY_EJECT: "Eject",
 
   // Prefixed with the folder's name by `retired-source-folder.e2e.test.ts`.
@@ -470,10 +404,8 @@ export const MANIFEST_REFUSAL_BUILDS_IN_ORDER = new RegExp(
   `${STEP_TEXT.MANIFEST_REFUSAL_FIRST_BUILD}[\\s\\S]*${STEP_TEXT.MANIFEST_REFUSAL_SECOND_BUILD}`,
 );
 
-/** Diff glyphs the info panel, confirm step and Sources grid paint before a row. */
-export const ADDED_MARKER = "+";
+/** The diff glyph painted before a removed row. */
 export const REMOVED_MARKER = "-";
-export const UNCHANGED_MARKER = "•";
 /** `~ <name> (<from> → <to>)` in `edit`'s Changes block. */
 export const CHANGED_MARKER = "~";
 
@@ -494,25 +426,8 @@ export const BRANDING = {
   UNINSTALL_SIGN_OFF: "has been uninstalled.",
 } as const;
 
-/** The one tab a flow can lack: a source with no stacks has no stack step. */
-export const WIZARD_TAB_STACK = "Stack";
-
-/** In paint order, and the whole set: two of six cannot tell a complete bar from a short one. */
-export const WIZARD_TAB_LABELS = [
-  WIZARD_TAB_STACK,
-  "Domains",
-  "Skills",
-  "Sources",
-  "Agents",
-  "Confirm",
-] as const;
-
-export const WIZARD_TAB_LABELS_WITHOUT_STACK = WIZARD_TAB_LABELS.filter(
-  (label) => label !== WIZARD_TAB_STACK,
-);
-
 export const TIMEOUTS = {
-  /** Spawn → first wizard frame. Full-suite parallel load can exceed 15s. */
+  /** Spawn → first frame. Full-suite parallel load can exceed 15s. */
   WIZARD_LOAD: 45_000,
   /** Enter → the next view's first frame, sized for full-suite load. Not for intra-step waits. */
   WIZARD_TRANSITION: 45_000,
@@ -532,11 +447,7 @@ export const TIMEOUTS = {
 } as const;
 
 // Internal to the framework — NOT exported to tests
-/** Shared because specs count what a helper wrote: both sides must agree on the byte. */
 export const KEYS = {
-  TAB: "\t",
-  /** Space toggles, so its press count is a contract. */
-  SPACE: " ",
   /** For page objects writing several keys as one burst, like a paste. */
   ARROW_DOWN: "\x1b[B",
   ENTER: "\r",
@@ -547,12 +458,8 @@ export const INTERNAL_DELAYS = {
   KEYSTROKE: 150,
 } as const;
 
-/**
- * Re-press budget for Ink components that may drop the first Enter under load. Framework-internal.
- */
+/** Framework-internal. */
 export const INTERNAL_RETRIES = {
-  /** Total budget = MAX_ATTEMPTS * INTERVAL_MS. */
-  MAX_ATTEMPTS: 5,
   INTERVAL_MS: 3_000,
 } as const;
 
@@ -605,13 +512,9 @@ export const MARKETPLACE_MANIFEST_PATH = `${SOURCE_PATHS.PLUGIN_MANIFEST_DIR}/${
 export const TERMINAL_SIZE = {
   TALL: { rows: 60, cols: 120 },
   /**
-   * The wizard's minimum-size gate exactly (`MIN_TERMINAL_SIZE.ROWS`, held by
+   * The minimum-size gate exactly (`MIN_TERMINAL_SIZE.ROWS`, held by
    * `check-mirrored-constants.ts`): one row lower and specs hang on the resize prompt. `cols` sits
    * above the gate's 80 and is not mirrored.
    */
   SHORT: { rows: 20, cols: 100 },
-  /** Below the gate: reach it only by resizing a running session (`resizeBelowMinimum`). */
-  BELOW_MINIMUM: { rows: 16, cols: 100 },
 } as const;
-
-export type WizardType = "init" | "edit";

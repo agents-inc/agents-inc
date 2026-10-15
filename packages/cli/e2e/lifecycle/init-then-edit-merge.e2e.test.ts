@@ -1,32 +1,30 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectNoDuplicates } from "../assertions/config-assertions.js";
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { cleanupTempDir, completeWithLocalSources, createTempDir } from "../helpers/test-utils.js";
+import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import { readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  applyFromSeed,
+  e2eStackPayload,
+  installE2EStackGlobally,
+} from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
  * Init -> Edit merge lifecycle E2E test.
  *
- * Verifies that running `cc init` to completion, then running `cc edit`
- * with changes, produces a merged config (not an overwrite). The original
- * skills from init should be preserved alongside new skills added in edit.
+ * Verifies that running `init --from` to completion, then `edit --from` with a
+ * configuration that adds a skill, produces a merged config (not an overwrite). The
+ * original skills from init should be preserved alongside the skill the edit adds.
  */
 
 /**
  * The skill the edit phase adds: the E2E source's SPARE — assigned to no agent by
- * the stack, in a category that is not exclusive.
- *
- * Named rather than reached by arrow keys, and this skill rather than any other,
- * because both halves are load-bearing. A blind keystroke lands on nothing, and
- * every OTHER skill a default install leaves behind is an exclusive alternate of
- * one it took — pressing Space on those swaps nothing in and the config comes back
- * byte-identical, which a count-based assertion accepts as a merge.
+ * the stack, in a category that is not exclusive. Every OTHER skill a default install
+ * leaves behind is an exclusive alternate of one it took, so adding it is a swap.
  */
 const ADDED_SKILL = E2E_SKILL["visual-regression"];
 
@@ -35,7 +33,16 @@ const PRESERVED_SKILL = E2E_SKILL.vitest;
 
 describe("init -> edit merge: config preserved across lifecycle", () => {
   describe("full init then edit with changes", () => {
+    let store: SeedConfigStore;
     let tempDir: string | undefined;
+
+    beforeAll(async () => {
+      store = await startSeedConfigStore();
+    });
+
+    afterAll(async () => {
+      await store.close();
+    });
 
     afterEach(async () => {
       if (tempDir) {
@@ -47,13 +54,6 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
     /**
      * The subject is the DELTA, so both halves are asserted as set differences and
      * on both surfaces the merge writes to: `config.ts` and the compiled agent.
-     *
-     * Three defects used to hide underneath each other here. Phase 1 drove the wizard
-     * in plugin mode against a marketplace-less source and hard-errored, so every
-     * assertion below it was dead; the install landed at global scope while the
-     * assertions read the project dir; and the fixture had no skill an edit could add
-     * that was not an exclusive swap. The spec ended on
-     * `editSkillIds.length >= initSkillIds.length`, which a no-op edit satisfies.
      */
     it(
       "should merge config after init -> edit with skill addition (no duplicates)",
@@ -62,23 +62,9 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
         tempDir = await createTempDir();
         const projectDir = tempDir;
 
-        // ================================================================
-        // Phase 1: Init via wizard
-        // ================================================================
-
-        // launchInGlobal, not launch: an eject install lands at the DEFAULT (global)
-        // scope, so with HOME elsewhere the config, agents and skills would be written
-        // somewhere this spec never looks. Collapsing HOME onto projectDir puts every
-        // artefact where the assertions below read it — the same reasoning
-        // local-lifecycle records for its own eject phase.
-        const initWizard = await InitWizard.launchInGlobal({
-          projectDir,
-        });
-        // Explicit eject via the Sources step's `l` hotkey. `completeWithDefaults()`
-        // leaves the wizard in plugin mode, and the merge this spec exists for is an
-        // eject install's.
-        const initResult = await completeWithLocalSources(initWizard);
-        await initResult.destroy();
+        // Phase 1: init. HOME is projectDir: an install at the default (global) scope
+        // with HOME elsewhere would be written somewhere this spec never looks.
+        const initResult = await installE2EStackGlobally(store, projectDir);
 
         // --- Phase 1 verification ---
         await expectPhaseSuccess(
@@ -113,42 +99,14 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
 
         const originalSkillSet = new Set(initSkillIds);
 
-        // ================================================================
-        // Phase 2: Edit -- add a skill by navigating to a new category
-        // ================================================================
-
-        // launchInGlobal for the same reason Phase 1 used it, and it must be the SAME
-        // collapse: `EditWizard.launch()` allocates its own HOME, so the edit would run
-        // as a PROJECT-context edit over a config whose every entry is global-scoped —
-        // writing the global halves and recompiling the global agents into a directory
-        // this spec never looks at, and leaving projectDir's compiled agent untouched.
-        // The config assertions still passed there (global rows are inlined into the
-        // project config); only the compiled-agent half caught it.
-        const editWizard = await EditWizard.launchInGlobal({
-          projectDir,
-          source: E2E_SOURCE,
-          ...TERMINAL_SIZE.TALL,
-        });
-
-        // Add a NAMED skill. A blind `navigateDown()` + `toggleFocusedSkill()` stood
-        // here and added nothing at all — the edit reported "No changes made" and
-        // config.ts came back byte-identical, so the merge this spec exists to check
-        // was never exercised. The floor assertion it used to end on
-        // (`editSkillIds.length >= initSkillIds.length`) was satisfied by that no-op.
-        await editWizard.build.selectSkill(ADDED_SKILL.display);
-
-        // Navigate through: Build -> Sources -> Agents -> Confirm -> Complete.
-        // `l` for the same reason Phase 1 uses it: a newly selected skill defaults to
-        // PLUGIN mode. The already-installed skills are ejected already, so `l`
-        // changes only the skill this edit adds.
-        const sources = await editWizard.build.passThroughAllDomains();
-        await sources.waitForReady();
-        await sources.setAllLocal();
-        const agents = await sources.advance();
-        const confirm = await agents.acceptDefaults("edit");
-        const editResult = await confirm.confirm();
-
-        await editResult.destroy();
+        // Phase 2: edit -- the same configuration plus the spare, on web-developer. Under
+        // the same HOME as Phase 1, so the edit is the global installation's own.
+        const editResult = await applyFromSeed(
+          store,
+          "PlusSpare1",
+          e2eStackPayload({ plus: { [ADDED_SKILL.id]: [E2E_AGENT["web-developer"].name] } }),
+          { dir: projectDir, home: projectDir },
+        );
 
         // --- Phase 2 verification ---
         await expectPhaseSuccess(
@@ -188,7 +146,7 @@ describe("init -> edit merge: config preserved across lifecycle", () => {
         // here ("Failed to", "ENOENT"); neither could tell a completed edit from one
         // that failed with different wording. Placed AFTER the merge assertions so
         // the set-difference above is what carries the red, not this line.
-        expect(editResult.rawOutput).toContain(STEP_TEXT.EDIT_SUCCESS);
+        expect(editResult.output).toContain(STEP_TEXT.EDIT_SUCCESS);
 
         // The same merge on the OTHER surface it writes. A config that merged while
         // the compiled agent was rewritten from the edit alone is the overwrite this

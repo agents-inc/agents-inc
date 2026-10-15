@@ -4,9 +4,13 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, TERMINAL_SIZE } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { TIMEOUTS, EXIT_CODES } from "../pages/constants.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupFixture,
   cleanupTempDir,
@@ -18,18 +22,17 @@ import {
   readCompiledAgents,
   readTestFile,
 } from "../helpers/test-utils.js";
-import { E2E_SKILL, E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
+import { E2E_SKILL, E2E_STACK_AGENTS, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
 
 /**
  * Edit: add new local-source skills lifecycle E2E test.
  *
- * Verifies that `cc edit` copies newly added skills with `source: "eject"`
+ * Verifies that `cc edit --from` copies a skill switched to `source: "eject"`
  * to the `.claude/skills/` directory.
  *
- * Phase 1: Init with plugin source. Select all defaults (all skills as plugin).
- * Phase 2: Edit — switch ONE existing skill (first in sources) to local.
+ * Phase 1: Init with plugin source (all skills as plugin).
+ * Phase 2: Edit — switch ONE existing skill to eject.
  *          This is a source migration (plugin → local), handled by executeMigration.
- *          Also add a verification that newly added local skills would be copied.
  * Phase 3: Assert the local-sourced skill was copied to `.claude/skills/`.
  *
  * Requires Claude CLI for plugin install/uninstall operations.
@@ -46,24 +49,36 @@ const claudeAvailable = await isClaudeCLIAvailable();
  */
 const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);
 
+/** The stack, every skill a plugin. */
+const PLUGIN_STACK_ID = "PlugStk3";
+
+/** The same stack with react ejected. */
+const REACT_EJECTED_ID = "PlugStk4";
+
 describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
   let fixture: E2EPluginSource;
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
-  let activeWizard: { destroy(): Promise<void> } | undefined;
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
+    store = await startSeedConfigStore();
+    store.publish(PLUGIN_STACK_ID, e2eStackPayload({ scope: "global", install: "plugin" }));
+    store.publish(
+      REACT_EJECTED_ID,
+      e2eStackPayload({
+        scope: "global",
+        pluginSkills: E2E_STACK_SKILL_IDS.filter((id) => id !== E2E_SKILL.react.id),
+      }),
+    );
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(fixture);
   });
 
   afterEach(async () => {
-    if (activeWizard) {
-      await activeWizard.destroy();
-      activeWizard = undefined;
-    }
     if (tempDir) {
       await cleanupTempDir(tempDir);
       tempDir = undefined;
@@ -79,36 +94,20 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       await createPermissionsFile(projectDir);
 
       // This test switches a skill's SOURCE (plugin -> eject) during edit.
-      // Default-scope skills are GLOBAL, and a project edit renders global
-      // skills as locked (readOnly) — their source cannot be toggled from a
-      // project context. So both phases model editing the GLOBAL install via
-      // launchInGlobal: HOME == cwd == projectDir, the skills are editable, and
-      // all content + config collapse onto projectDir (asserted below).
+      // Default-scope skills are GLOBAL, so both phases edit the GLOBAL install:
+      // HOME == cwd == projectDir, and all content + config collapse onto
+      // projectDir (asserted below).
       // ================================================================
-      // Phase 1: Init with all defaults — all skills as plugin
+      // Phase 1: Init — all skills as plugin
       // ================================================================
 
-      const initWizard = await InitWizard.launchInGlobal({
-        source: fixture,
-        projectDir,
-        ...TERMINAL_SIZE.TALL,
-      });
-      activeWizard = initWizard;
-
-      const domain = await initWizard.stack.selectFirstStack();
-      const build = await domain.acceptDefaults();
-      const sources = await build.passThroughAllDomains();
-
-      // Sources: accept defaults (all plugin)
-      const agents = await sources.acceptDefaults();
-
-      // Agents: accept defaults
-      const confirm = await agents.acceptDefaults("init");
-
-      const initResult = await confirm.confirm();
-      expect(await initResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await initResult.destroy();
-      activeWizard = undefined;
+      const initResult = await runInitFrom(
+        store,
+        PLUGIN_STACK_ID,
+        { dir: projectDir },
+        fixture.sourceDir,
+      );
+      expect(initResult.exitCode, initResult.output).toBe(EXIT_CODES.SUCCESS);
 
       // Phase 1 verification
       const configPath = configTsPath(projectDir);
@@ -118,35 +117,12 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       expect(configAfterInit).not.toContain("origin: 'eject'");
 
       // ================================================================
-      // Phase 2: Edit — switch first skill to eject source
-      //
-      // The focused item in sources is the first skill (web-framework-react).
-      // Toggle it to eject. This tests that edit correctly copies a skill
-      // that switches from plugin to eject source.
+      // Phase 2: Edit — switch react to eject source. This tests that edit
+      // correctly copies a skill that switches from plugin to eject source.
       // ================================================================
 
-      const editWizard = await EditWizard.launchInGlobal({
-        projectDir,
-        source: fixture,
-        ...TERMINAL_SIZE.TALL,
-      });
-      activeWizard = editWizard;
-
-      // Build step: pass through all domains without changes
-      const editSources = await editWizard.build.passThroughAllDomains();
-
-      // Sources step: toggle first skill to eject (cursor is already on it)
-      await editSources.waitForReady();
-      await editSources.selectFocusedSourceCell();
-      const editAgents = await editSources.advance();
-
-      // Agents: accept defaults
-      const editConfirm = await editAgents.acceptDefaults("edit");
-
-      const editResult = await editConfirm.confirm();
-      expect(await editResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await editResult.destroy();
-      activeWizard = undefined;
+      const editResult = await applyEditFrom(store, REACT_EJECTED_ID, { dir: projectDir });
+      expect(editResult.exitCode, editResult.output).toBe(EXIT_CODES.SUCCESS);
 
       // ================================================================
       // Phase 3: Assertions

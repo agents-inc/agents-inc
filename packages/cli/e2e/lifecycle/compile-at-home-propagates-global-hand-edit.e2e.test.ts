@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
@@ -14,11 +14,13 @@ import {
   readTestFile,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
+import { createTestEnvironment, readAllSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import {
-  createTestEnvironment,
-  readAllSkillEntries,
-  setupProjectOnlyMixedScope,
-} from "../fixtures/dual-scope-helpers.js";
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
 
 /**
@@ -52,8 +54,11 @@ const REMOVED_SKILL = E2E_SKILL.hono;
  */
 const PROJECT_AGENT = E2E_AGENT["api-developer"];
 
-/** `source` recorded for skills installed from a local source via `setAllLocal`. */
+/** `origin` recorded for an ejected skill. */
 const EJECT_SOURCE = "eject";
+
+/** The stack installed globally from a project, which owns only the agent above. */
+const PROJECT_AGENT_ONLY_ID = "ProjAgt1";
 
 /** The source folder holding a scope's generated config pair. */
 function sourceFolderOf(dir: string): string {
@@ -85,7 +90,20 @@ async function removeGlobalSkillByHand(globalHome: string, skillId: string): Pro
 }
 
 describe("compile at the home directory fans a hand-edited global config out to registered projects", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      PROJECT_AGENT_ONLY_ID,
+      e2eStackPayload({ scope: "global", projectAgents: [PROJECT_AGENT.name] }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -102,7 +120,13 @@ describe("compile at the home directory fans a hand-edited global config out to 
 
       // Phase 1 — a project install that registers itself, owns api-developer at
       // project scope, and inherits api-framework-hono from global scope.
-      await setupProjectOnlyMixedScope(E2E_SOURCE, fakeHome, projectDir);
+      const installed = await runInitFrom(
+        store,
+        PROJECT_AGENT_ONLY_ID,
+        { dir: projectDir, globalHome: fakeHome },
+        E2E_SOURCE.sourceDir,
+      );
+      expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const projectAgentMd = path.join(agentsPath(projectDir), `${PROJECT_AGENT.name}.md`);
 

@@ -1,17 +1,19 @@
 import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   directoryExists,
+  FORKED_FROM_METADATA,
   loadConfigOrFail,
   renderMetadataYaml,
   skillsPath,
@@ -22,7 +24,8 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
@@ -30,7 +33,7 @@ import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
  * Dual-scope partial removal: skill X is installed at BOTH scopes — a global copy
  * (in the global config, referenced by a global agent's stack) and the project's
  * own independent project-scoped copy (referenced by a project-scoped agent's
- * stack). Removing ONLY the global copy (edit at global scope) must strip X from
+ * stack). Removing ONLY the global copy (`edit --from` at global scope) must strip X from
  * the global config while leaving the project's own project-scope entry — in both
  * skills[] and stack — completely untouched. The project is registered so global
  * propagation actually runs against it, proving it does not clobber the project's
@@ -58,8 +61,26 @@ const vitestMetadata = renderMetadataYaml({
   contentHash: "c3d4e5f",
 });
 
+/** The global configuration with vitest left out: its sub-agent on, holding nothing. */
+const WITHOUT_VITEST_ID = "NoVitst3";
+
 describe("edit at global scope removes only the global copy of a dual-scope skill", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      WITHOUT_VITEST_ID,
+      buildSeedPayload({
+        agents: { [E2E_AGENT["web-developer"].name]: { on: true, scope: "global" } },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (tempDir) {
@@ -89,6 +110,7 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
 
       const globalConfig = buildProjectConfig({
         name: "dual-scope-global",
+        marketplace: E2E_SOURCE.sourceDir,
         skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
@@ -96,9 +118,10 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
         projects: [realpathSync(projectDir)],
       });
       await writeProjectConfig(globalHome, globalConfig);
+      // Fork provenance, so the round trip owns the copy and the apply may remove it.
       await createLocalSkill(globalHome, E2E_SKILL.vitest.id, {
         description: "Global vitest copy",
-        metadata: vitestMetadata,
+        metadata: FORKED_FROM_METADATA,
       });
 
       // Project config inlines the inherited global vitest AND carries its own
@@ -119,26 +142,12 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
       });
 
       // ================================================================
-      // Phase 2: Run `cc edit` at global scope and deselect vitest. This
+      // Phase 2: Run `cc edit --from` at global scope, leaving vitest out. This
       // removes the GLOBAL copy only and triggers propagation to the project.
       // ================================================================
 
-      const wizard = await EditWizard.launch({
-        projectDir: globalHome,
-        source: E2E_SOURCE,
-        env: { HOME: globalHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
-
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      const result = await applyEditFrom(store, WITHOUT_VITEST_ID, { dir: globalHome });
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // ================================================================
       // Phase 3a: Global config — vitest gone from skills[] and stack.

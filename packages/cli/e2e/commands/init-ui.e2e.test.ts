@@ -9,7 +9,7 @@ import {
   cleanupTempDir,
   createTempDir,
   directoryExists,
-  flattenCliOutput,
+  readTreeSnapshot,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
@@ -17,15 +17,12 @@ import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories
 import { CLI_INVOKE_COMMAND, DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
- * `init --ui`: the browser is reachable from a directory with nothing installed.
- *
- * `edit --ui` has always existed, so until now the editor — which this repository calls the full
- * experience — could not be the way IN: you had to finish the terminal wizard before you were
- * allowed to open the other front door. That inverts the intended relationship between the two.
+ * `init --ui`, and the bare `init` that takes the same route where nothing is installed: the
+ * editor is the way in, and the CLI's part is printing its address.
  *
  * The link is PRINTED rather than merely opened, and that is the assertion these specs can make:
  * a spawned process has no TTY, so no browser is launched, which is exactly the environment the
- * flag has to stay usable in — over a pipe, in CI, on a machine with no desktop session.
+ * route has to stay usable in — over a pipe, in CI, on a machine with no desktop session.
  */
 describe("init --ui", () => {
   let tempDir: string;
@@ -34,36 +31,62 @@ describe("init --ui", () => {
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
-  it("prints the editor's address and exits successfully", async () => {
+  /** A project folder and an empty HOME beside it, so neither scope holds an installation. */
+  async function nothingInstalled(): Promise<{ projectDir: string; home: string }> {
     tempDir = await createTempDir();
+    const projectDir = path.join(tempDir, "project");
+    const home = path.join(tempDir, "home");
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(home, { recursive: true });
+    return { projectDir, home };
+  }
 
-    const { exitCode, output } = await CLI.run(["init", "--ui"], { dir: tempDir });
+  describe.each([[["init"]], [["init", "--ui"]]])("%j where nothing is installed", (argv) => {
+    it("prints the editor's address and exits successfully", async () => {
+      const { projectDir, home } = await nothingInstalled();
 
-    expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
-    // STEP_TEXT.EDITOR_URL rather than a bare "agentsinc.sh". The host alone is a substring of
-    // both the right address and the wrong one, so this assertion passed while the CLI pointed
-    // at the landing page.
-    expect(output).toContain(STEP_TEXT.EDITOR_URL);
-    expect(output).toContain(
-      `Then install what it gives you with '${CLI_INVOKE_COMMAND} init --from <id>'.`,
-    );
-  });
+      const { exitCode, stdout, output } = await CLI.run(
+        argv,
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
 
-  /**
-   * The subject guard. Opening the editor is not a setup, so a run that leaves a source folder
-   * behind has done something this flag never promised — and the assertion above cannot tell the
-   * difference on its own, since a completed install prints a link too.
-   */
-  it("installs nothing, because opening the editor is not a setup", async () => {
-    tempDir = await createTempDir();
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      // The whole address rather than a bare "agentsinc.sh": the host alone is a substring of
+      // both the right address and the wrong one.
+      expect(stdout).toContain(`Build it at ${STEP_TEXT.EDITOR_URL}`);
+    });
 
-    await CLI.run(["init", "--ui"], { dir: tempDir });
+    /**
+     * The subject guard. Opening the editor is not a setup, so a run that leaves a source folder
+     * behind has done something this route never promised — and the address alone cannot tell the
+     * difference, since a completed install prints a link too.
+     */
+    it("installs nothing, because opening the editor is not a setup", async () => {
+      const { projectDir, home } = await nothingInstalled();
+      const before = await readTreeSnapshot(tempDir);
 
-    await expectNoSourceFolder(
-      tempDir,
-      "opening the editor is not a setup, so init --ui installs nothing",
-    );
-    expect(await directoryExists(`${tempDir}/${DIRS.CLAUDE}`)).toBe(false);
+      await CLI.run(argv, { dir: projectDir }, { env: { HOME: home } });
+
+      await expectNoSourceFolder(projectDir, "opening the editor is not a setup");
+      expect(await directoryExists(path.join(projectDir, DIRS.CLAUDE))).toBe(false);
+      expect(await readTreeSnapshot(tempDir)).toStrictEqual(before);
+    });
+
+    it("offers init --from as the install that follows", async () => {
+      const { projectDir, home } = await nothingInstalled();
+
+      const { exitCode, stdout, output } = await CLI.run(
+        argv,
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
+
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(
+        `Then install what it gives you with '${CLI_INVOKE_COMMAND} init --from <id>'.`,
+      );
+    });
   });
 
   /**
@@ -185,61 +208,79 @@ describe("init --ui", () => {
   });
 
   /**
-   * The editor's address carries a configuration id and nothing else, so a marketplace named beside
-   * `--ui` would be dropped on the way — and a flag dropped reads as honoured. It is refused before
-   * any link is printed. The first run in this file, `--ui` alone, is the control that makes the
-   * refusal about the marketplace rather than about the editor.
+   * The editor's address carries a configuration id and nothing else, so a marketplace named
+   * without `--from` is not handed over: the run opens the editor and says how to add it there. A
+   * folder on this machine is out of the editor's reach until it is pushed, and the line says so.
    */
-  it("refuses --marketplace beside it, because the editor loads marketplaces itself", async () => {
+  it("opens the editor beside --marketplace, saying a local folder has to be pushed first", async () => {
     tempDir = await createTempDir();
+    const before = await readTreeSnapshot(tempDir);
 
-    const { exitCode, output } = await CLI.run(["init", "--ui", "--marketplace", tempDir], {
+    const { exitCode, stdout, output } = await CLI.run(["init", "--ui", "--marketplace", tempDir], {
       dir: tempDir,
     });
 
-    expect(exitCode, output).toBe(EXIT_CODES.INVALID_ARGS);
-    expect(
-      flattenCliOutput(output),
-      "the refusal says where a marketplace is loaded instead",
-    ).toContain(STEP_TEXT.EDITOR_LOADS_MARKETPLACES);
-    expect(output, "no link stands in for the refusal").not.toContain(STEP_TEXT.EDITOR_URL);
-    await expectNoSourceFolder(tempDir, "a refused run installs nothing");
+    expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+    expect(stdout).toContain(`Build it at ${STEP_TEXT.EDITOR_URL}`);
+    expect(stdout).toContain(
+      `${tempDir} is a folder on this machine, which the editor cannot read — push it to GitHub, then add it from the editor's Marketplace button.`,
+    );
+    await expectNoSourceFolder(tempDir, "opening the editor is not a setup");
+    expect(await readTreeSnapshot(tempDir)).toStrictEqual(before);
+  });
+
+  it.each([
+    [["init", "--ui", "--marketplace", "github:acme/skills"]],
+    [["init", "--marketplace", "github:acme/skills"]],
+  ])("%j names the editor's Marketplace button for a remote marketplace", async (argv) => {
+    const { projectDir, home } = await nothingInstalled();
+    const before = await readTreeSnapshot(tempDir);
+
+    const { exitCode, stdout, output } = await CLI.run(
+      argv,
+      { dir: projectDir },
+      { env: { HOME: home } },
+    );
+
+    expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+    expect(stdout).toContain(`Build it at ${STEP_TEXT.EDITOR_URL}`);
+    expect(stdout).toContain("Add github:acme/skills from the editor's Marketplace button.");
+    expect(stdout, "a remote marketplace needs no push").not.toContain("push it to GitHub");
+    expect(await readTreeSnapshot(tempDir)).toStrictEqual(before);
   });
 
   /**
-   * The refusal's remedy has to run where the refusal is printed. A folder whose own installation
-   * came from another marketplace refuses `init --marketplace <named>` in turn — an installation's
-   * marketplace is chosen once — so naming that command hands the user a second refusal. The last
-   * run below is that refusal, which is what makes the absence above it mean something.
+   * Over an installation made from another marketplace, naming one without `--from` takes the
+   * editor route too — with `--ui` and without — rather than refusing or showing the dashboard,
+   * which has nowhere to put a marketplace. The installation is left byte for byte as it was.
    */
-  it("names only a command that runs in a folder installed from another marketplace", async () => {
-    tempDir = await createTempDir();
-    const projectDir = path.join(tempDir, "project");
-    const home = path.join(tempDir, "home");
-    await mkdir(home, { recursive: true });
-    await ProjectBuilder.installation(projectDir);
-    const here = { env: { HOME: home } };
+  it.each([[["init", "--ui", "--marketplace"]], [["init", "--marketplace"]]])(
+    "%j opens the editor over an installation made from another marketplace, leaving it as it was",
+    async (argv) => {
+      tempDir = await createTempDir();
+      const projectDir = path.join(tempDir, "project");
+      const home = path.join(tempDir, "home");
+      await mkdir(home, { recursive: true });
+      await ProjectBuilder.installation(projectDir);
+      const before = await readTreeSnapshot(tempDir);
 
-    const refused = await CLI.run(
-      ["init", "--ui", "--marketplace", tempDir],
-      { dir: projectDir },
-      here,
-    );
+      const { exitCode, stdout, output } = await CLI.run(
+        [...argv, tempDir],
+        { dir: projectDir },
+        { env: { HOME: home } },
+      );
 
-    expect(refused.exitCode, refused.output).toBe(EXIT_CODES.INVALID_ARGS);
-    const said = flattenCliOutput(refused.output);
-    expect(said).toContain(STEP_TEXT.EDITOR_LOADS_MARKETPLACES);
-    expect(said, "the refusal names a command this folder refuses").not.toContain(
-      `${CLI_INVOKE_COMMAND} init --marketplace`,
-    );
-    expect(said).toContain(`'${CLI_INVOKE_COMMAND} init --ui'`);
-
-    const named = await CLI.run(["init", "--ui"], { dir: projectDir }, here);
-    expect(named.exitCode, named.output).toBe(EXIT_CODES.SUCCESS);
-
-    const unnamed = await CLI.run(["init", "--marketplace", tempDir], { dir: projectDir }, here);
-    expect(unnamed.exitCode, unnamed.output).toBe(EXIT_CODES.INVALID_ARGS);
-  });
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      expect(stdout).toContain(`Build it at ${STEP_TEXT.EDITOR_URL}`);
+      expect(stdout).toContain(
+        `${tempDir} is a folder on this machine, which the editor cannot read — push it to GitHub, then add it from the editor's Marketplace button.`,
+      );
+      expect(stdout, "the dashboard has nowhere to put a marketplace").not.toContain(
+        STEP_TEXT.DASHBOARD,
+      );
+      expect(await readTreeSnapshot(tempDir)).toStrictEqual(before);
+    },
+  );
 
   it("is listed in the command's own help", async () => {
     tempDir = await createTempDir();

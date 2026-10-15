@@ -4,10 +4,10 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { finishWizard } from "../fixtures/dual-scope-helpers.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -24,7 +24,11 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
@@ -91,8 +95,11 @@ const reactMetadata = renderMetadataYaml({
   contentHash: "b2c3d4e",
 });
 
+/** The global installation's own configuration, with react ejected rather than marketplace-sourced. */
+const REACT_EJECTED_ID = "ReactEj1";
+
 /**
- * The registered project as a normal wizard flow leaves it: the global react
+ * The registered project as an install leaves it: the global react
  * skill is inlined verbatim from the global config (marketplace-sourced), and
  * the project owns a project-scoped agent whose stack references it.
  */
@@ -106,6 +113,7 @@ function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
 }
 
 describe("global-scope source change propagates to registered projects", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
 
   let fakeHome: string;
@@ -116,18 +124,23 @@ describe("global-scope source change propagates to registered projects", () => {
   let preEditProjectAgent: string;
   let editExitCode: number;
   let editOutput: string;
-  /**
-   * The TERMINAL BUFFER after the run, which is a different surface from the raw
-   * capture: `edit` clears the screen and the scrollback before printing its change
-   * summary, so this holds the summary alone — no wizard frames. The raw capture
-   * keeps every byte the process ever wrote, including the confirm step's own `~`
-   * source-change indicator, which a `toContain("~ <skill>")` on it matches whether
-   * or not the command printed anything.
-   */
-  let editSummaryScreen: string;
   let projectConfig: FixtureProjectConfig;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      REACT_EJECTED_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { [E2E_AGENT["api-developer"].name]: "preloaded" },
+          }),
+        },
+        agents: { [E2E_AGENT["api-developer"].name]: { scope: "global" } },
+      }),
+    );
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "project-a");
@@ -142,6 +155,7 @@ describe("global-scope source change propagates to registered projects", () => {
       fakeHome,
       buildProjectConfig({
         name: "propagation-source-toggle-global",
+        marketplace: E2E_SOURCE.sourceDir,
         skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: MARKET }),
         agents: buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
         selectedDomains: ["web"],
@@ -171,35 +185,19 @@ describe("global-scope source change propagates to registered projects", () => {
       path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`),
     );
 
-    // Phase 2: edit at GLOBAL scope (HOME and cwd both the fake home, otherwise
-    // this silently becomes a project edit) and switch every source to local
-    // ("l"), flipping react from the marketplace to eject. This rewrites the
-    // global config and fires propagateGlobalChangesToProjects for the
-    // registered project.
-    const wizard = await EditWizard.launch({
-      projectDir: fakeHome,
-      source: E2E_SOURCE,
-      env: { HOME: fakeHome },
-      ...TERMINAL_SIZE.TALL,
-    });
-    const sources = await wizard.build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    await sources.setAllLocal();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("edit");
-    const editRun = await confirm.confirm();
-    // Read the processed buffer once the process has exited but BEFORE finishWizard
-    // destroys the session — the order finishWizard's own docblock prescribes.
-    await editRun.exitCode;
-    editSummaryScreen = editRun.output;
-    const outcome = await finishWizard(editRun);
-    editExitCode = outcome.exitCode;
-    editOutput = outcome.output;
+    // Phase 2: `edit --from` at GLOBAL scope (HOME and cwd both the fake home,
+    // otherwise this becomes a project edit) of a configuration ejecting react.
+    // This rewrites the global config and fires propagateGlobalChangesToProjects
+    // for the registered project.
+    ({ exitCode: editExitCode, output: editOutput } = await applyEditFrom(store, REACT_EJECTED_ID, {
+      dir: fakeHome,
+    }));
 
     projectConfig = await loadConfigOrFail(projectDir);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
@@ -224,16 +222,15 @@ describe("global-scope source change propagates to registered projects", () => {
   // read as an uninstall plus an unrelated install of something else.
   it("reports the install-mode switch as one ~ line in the change summary", () => {
     expect(
-      editSummaryScreen,
+      editOutput,
       "a plugin -> eject switch is a modification, not a removal and an addition",
     ).toContain(`~ ${E2E_SKILL.react.display}`);
-    expect(editSummaryScreen, "the summary must not double the switch as a removal").not.toContain(
+    expect(editOutput, "the summary must not double the switch as a removal").not.toContain(
       `- ${E2E_SKILL.react.display}`,
     );
-    expect(
-      editSummaryScreen,
-      "the summary must not double the switch as an addition",
-    ).not.toContain(`+ ${E2E_SKILL.react.display}`);
+    expect(editOutput, "the summary must not double the switch as an addition").not.toContain(
+      `+ ${E2E_SKILL.react.display}`,
+    );
   });
 
   // Proof-of-execution: propagation actually rewrote the registered project's

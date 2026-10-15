@@ -4,7 +4,7 @@ import path from "path";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { getDashboardData, formatDashboardText } from "../../../commands/init";
 import { formatInstallationDisplay, getInstallationInfo } from "../../plugins";
 import {
@@ -93,7 +93,7 @@ describe("init command", () => {
     it("should show dashboard when project is already initialized", async () => {
       // A real installation: the config declares skills so it is detected as
       // installed. A config declaring neither skills nor agents is content-less
-      // and routes to the setup wizard, not the dashboard.
+      // and routes to the editor, not the dashboard.
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
@@ -108,7 +108,7 @@ describe("init command", () => {
       expect(combinedOutput).toContain("Agents Inc.");
       expect(combinedOutput).toContain("Skills:");
       expect(combinedOutput).toContain("Agents:");
-      expect(combinedOutput).toContain("[Edit]");
+      expect(combinedOutput).toContain("[Edit in the web editor]");
       expect(combinedOutput).toContain("[Compile]");
       expect(combinedOutput).toContain("[Doctor]");
       expect(combinedOutput).toContain("[List]");
@@ -188,7 +188,7 @@ describe("init command", () => {
 
     it("should not modify existing config when already initialized", async () => {
       // A real installation (declares skills) so init shows the dashboard and
-      // leaves the config untouched, rather than routing to the setup wizard.
+      // leaves the config untouched, rather than routing to the editor.
       const configPath = await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
@@ -203,7 +203,7 @@ describe("init command", () => {
 
     it("should exit with SUCCESS when already initialized", async () => {
       // A real installation (declares skills) so init shows the dashboard, which
-      // exits cleanly, rather than routing to the setup wizard.
+      // exits cleanly, rather than routing to the editor.
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
@@ -328,7 +328,7 @@ describe("init command", () => {
       expect(text).toContain("3 compiled");
       expect(text).toContain("Plugin");
       expect(text).toContain("github:agents-inc/skills");
-      expect(text).toContain("[Edit]");
+      expect(text).toContain("[Edit in the web editor]");
       expect(text).toContain("[Compile]");
       expect(text).toContain("[Doctor]");
       expect(text).toContain("[List]");

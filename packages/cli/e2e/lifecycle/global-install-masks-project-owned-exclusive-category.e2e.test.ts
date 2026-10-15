@@ -5,9 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
+import { applyFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -23,7 +24,11 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import type { AgentName, SkillConfig } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
@@ -40,9 +45,6 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
  * Expected shape: the project's own skill wins locally and the global install is
  * masked with a `{ scope: "global", excluded: true }` tombstone, exactly as a
  * same-id dual-scope `[P][G]` pair is written today.
- *
- * User-visible consequence: re-opening `cc edit` at project scope renders the
- * exclusive Framework category as `(2 of 1)` — both frameworks selected at once.
  */
 
 const globalStack = {
@@ -69,7 +71,22 @@ const vitestMetadata = renderMetadataYaml({
   contentHash: "d4e5f6a",
 });
 
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
+/** The global install with React added beside vitest, as `edit --from` at HOME applies it. */
+const GLOBAL_WITH_REACT = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.vitest.id]: buildSeedSkill({ scope: "global", assignments: { [WEB_DEV]: "lazy" } }),
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      scope: "global",
+      assignments: { [WEB_DEV]: "preloaded" },
+    }),
+  },
+  agents: { [WEB_DEV]: { scope: "global" } },
+});
+
 describe("global install masks a project-owned skill in an exclusive category", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
   let globalHome: string;
   let projectDir: string;
@@ -83,9 +100,9 @@ describe("global install masks a project-owned skill in an exclusive category", 
   let projectVue: SkillConfig[];
   let projectVueStillInstalled: boolean;
   let projectReactInstalled: boolean;
-  let frameworkSelectedCount: number;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "registered-project");
@@ -104,6 +121,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,
+      marketplace: E2E_SOURCE.sourceDir,
       projects: [realpathSync(projectDir)],
     });
     await writeProjectConfig(globalHome, globalConfig);
@@ -131,30 +149,14 @@ describe("global install masks a project-owned skill in an exclusive category", 
       metadata: vueMetadata,
     });
 
-    // Phase 2: `cc edit` at HOME, add React at global scope. The global save
+    // Phase 2: `edit --from` at HOME, add React at global scope. The global save
     // propagates to the registered project.
-    const wizard = await EditWizard.launchInGlobal({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      ...TERMINAL_SIZE.TALL,
-    });
-    try {
-      await wizard.build.selectSkill(E2E_SKILL.react.display);
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      // Adding a new skill otherwise defaults to plugin mode, which the local
-      // test source cannot resolve.
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      editExitCode = await result.exitCode;
-      editRawOutput = result.rawOutput;
-      await result.destroy();
-    } catch (e) {
-      await wizard.destroy();
-      throw e;
-    }
+    ({ exitCode: editExitCode, output: editRawOutput } = await applyFromSeed(
+      store,
+      "AddReact1",
+      GLOBAL_WITH_REACT,
+      { dir: globalHome, home: globalHome },
+    ));
 
     globalReact = await readSkillEntries(globalHome, E2E_SKILL.react.id);
     globalReactInstalled = await directoryExists(
@@ -168,25 +170,10 @@ describe("global install masks a project-owned skill in an exclusive category", 
     projectReactInstalled = await directoryExists(
       path.join(skillsPath(projectDir), E2E_SKILL.react.id),
     );
-
-    // Phase 3: re-open `cc edit` at PROJECT scope and read the exclusive
-    // Framework category's live selection counter, then abort without saving.
-    const projectWizard = await EditWizard.launchInProject({
-      projectDir,
-      globalHome,
-      source: E2E_SOURCE,
-      ...TERMINAL_SIZE.TALL,
-    });
-    try {
-      frameworkSelectedCount = await projectWizard.build.getExclusiveCategorySelectedCount(
-        STEP_TEXT.CATEGORY_FRAMEWORK,
-      );
-    } finally {
-      await projectWizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
-    }
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
@@ -234,14 +221,5 @@ describe("global install masks a project-owned skill in an exclusive category", 
     expect(projectReact).toStrictEqual([
       { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },
     ]);
-  });
-
-  // RED on current main: the exclusive category renders "(2 of 1)" — both
-  // frameworks selected at once in a category that permits one.
-  it("shows a single selected skill in the exclusive category on a project-scope edit", () => {
-    expect(
-      frameworkSelectedCount,
-      "an exclusive category must render exactly one selected skill",
-    ).toBe(1);
   });
 });

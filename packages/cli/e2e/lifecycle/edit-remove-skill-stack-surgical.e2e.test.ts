@@ -1,15 +1,17 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   directoryExists,
+  FORKED_FROM_METADATA,
   loadConfigOrFail,
   renderMetadataYaml,
   skillsPath,
@@ -20,7 +22,11 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
@@ -41,7 +47,37 @@ const multiCategoryStack = {
   },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
+/** The global configuration with zustand left out; react and vitest as installed. */
+const WITHOUT_ZUSTAND_ID = "NoZstnd1";
+
 describe("edit removes exactly one skill from a multi-category agent stack", () => {
+  let store: SeedConfigStore;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      WITHOUT_ZUSTAND_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { [E2E_AGENT["web-developer"].name]: "preloaded" },
+          }),
+          [E2E_SKILL.vitest.id]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { [E2E_AGENT["web-developer"].name]: "lazy" },
+          }),
+        },
+        agents: { [E2E_AGENT["web-developer"].name]: { scope: "global" } },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
   let globalHome: string | undefined;
 
   afterEach(async () => {
@@ -67,6 +103,7 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
 
       const config = buildProjectConfig({
         name: "surgical-edit-test",
+        marketplace: E2E_SOURCE.sourceDir,
         skills: buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id], {
           scope: "global",
           origin: "eject",
@@ -99,41 +136,21 @@ describe("edit removes exactly one skill from a multi-category agent stack", () 
           contentHash: "a1b2c3d",
         }),
       });
+      // Fork provenance, so the round trip owns the copy and the apply may remove it.
       await createLocalSkill(globalHome, E2E_SKILL.zustand.id, {
         description: "Zustand state management",
-        metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.zustand.display,
-          category: "web-client-state",
-          slug: E2E_SKILL.zustand.slug,
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "a1b2c3d",
-        }),
+        metadata: FORKED_FROM_METADATA,
       });
 
       await createPermissionsFile(globalHome);
 
       // ================================================================
-      // Phase 2: Run `cc edit` at global scope and deselect ONLY zustand.
-      // react and vitest remain selected and untouched.
+      // Phase 2: Run `cc edit --from` at global scope with ONLY zustand left
+      // out. react and vitest remain as installed.
       // ================================================================
 
-      const wizard = await EditWizard.launch({
-        projectDir: globalHome,
-        source: E2E_SOURCE,
-        env: { HOME: globalHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      await wizard.build.selectSkill(E2E_SKILL.zustand.display);
-
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      const result = await applyEditFrom(store, WITHOUT_ZUSTAND_ID, { dir: globalHome });
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // ================================================================
       // Phase 3: Assert the surviving stack is byte-identical to the prior

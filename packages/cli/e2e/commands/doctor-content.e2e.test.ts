@@ -1,14 +1,17 @@
 import path from "path";
 import { readdir, readFile, writeFile } from "fs/promises";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest";
 import { CLI } from "../fixtures/cli.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { cleanupTempDir, completeWithLocalSources } from "../helpers/test-utils.js";
-import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
+import { createE2ESource, E2E_SOURCE, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 import type { RelationshipDefinitions } from "../../src/cli/types/index.js";
 
 /** Longer than CLI_DESCRIPTION_MAX_LENGTH, which downgrades to an advisory warning. */
@@ -31,7 +34,7 @@ const RULES_WITH_DANGLING_SLUG: Partial<RelationshipDefinitions> = {
   ],
 };
 
-/** Absolute path to one installed skill's metadata.yaml under the wizard's global HOME. */
+/** Absolute path to one installed skill's metadata.yaml under the installation's global HOME. */
 async function firstInstalledSkillMetadata(globalHome: string): Promise<string> {
   const installedSkillsDir = path.join(globalHome, DIRS.CLAUDE, DIRS.SKILLS);
   const skillDirs = await readdir(installedSkillsDir);
@@ -39,23 +42,46 @@ async function firstInstalledSkillMetadata(globalHome: string): Promise<string> 
   return path.join(installedSkillsDir, firstElement(skillDirs), FILES.METADATA_YAML);
 }
 
-describe("doctor layered output", () => {
-  let wizard: InitWizard | undefined;
+/**
+ * One E2E stack installation per test, ejected at the default (global) scope from a project, so
+ * its skills land under the HOME.
+ */
+function useStackInstallations(): (sourceDir: string) => Promise<Required<ProjectHandle>> {
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
+    store.reset();
+    if (env) await cleanupTempDir(env.tempDir);
+    env = undefined;
   });
+
+  return async (sourceDir) => {
+    env = await createTestEnvironment();
+    const site = { dir: env.projectDir, home: env.fakeHome };
+    await installFromSeed(store, "DocStack", e2eStackPayload(), site, sourceDir);
+    return { dir: site.dir, globalHome: site.home };
+  };
+}
+
+describe("doctor layered output", () => {
+  const installStack = useStackInstallations();
 
   it(
     "should run both layers and exit 0 on a clean install",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      wizard = await InitWizard.launchInProject();
-      const result = await completeWithLocalSources(wizard);
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const project = await installStack(E2E_SOURCE.sourceDir);
 
-      const { exitCode, stdout } = await CLI.run(["doctor"], result.project);
+      const { exitCode, stdout } = await CLI.run(["doctor"], project);
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
@@ -80,11 +106,9 @@ describe("doctor layered output", () => {
     "should head both marketplace rows with the marketplace noun",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      wizard = await InitWizard.launchInProject();
-      const result = await completeWithLocalSources(wizard);
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const project = await installStack(E2E_SOURCE.sourceDir);
 
-      const { stdout } = await CLI.run(["doctor"], result.project);
+      const { stdout } = await CLI.run(["doctor"], project);
 
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_MARKETPLACES);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);
@@ -110,16 +134,14 @@ describe("doctor layered output", () => {
     "should stand down only the row a corrupt installed skill can mislead",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      wizard = await InitWizard.launchInProject();
-      const result = await completeWithLocalSources(wizard);
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const project = await installStack(E2E_SOURCE.sourceDir);
 
-      // Default-scope installs eject to the wizard's global HOME, so the
-      // installed skills live under globalHome/.claude.
-      const metadataPath = await firstInstalledSkillMetadata(wizard.globalHome);
+      // Default-scope installs eject to the global HOME, so the installed skills live under
+      // globalHome/.claude.
+      const metadataPath = await firstInstalledSkillMetadata(project.globalHome);
       await writeFile(metadataPath, ":\n  [unclosed: yaml\n    bad\n");
 
-      const { exitCode, stdout } = await CLI.run(["doctor"], result.project);
+      const { exitCode, stdout } = await CLI.run(["doctor"], project);
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
@@ -153,18 +175,16 @@ describe("doctor layered output", () => {
     "should keep content warnings non-fatal and still run the operational layer",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      wizard = await InitWizard.launchInProject();
-      const result = await completeWithLocalSources(wizard);
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const project = await installStack(E2E_SOURCE.sourceDir);
 
-      const metadataPath = await firstInstalledSkillMetadata(wizard.globalHome);
+      const metadataPath = await firstInstalledSkillMetadata(project.globalHome);
       const metadata: Record<string, unknown> = parseYaml(await readFile(metadataPath, "utf8"));
       await writeFile(
         metadataPath,
         stringifyYaml({ ...metadata, cliDescription: OVER_LENGTH_CLI_DESCRIPTION }),
       );
 
-      const { exitCode, stdout } = await CLI.run(["doctor"], result.project);
+      const { exitCode, stdout } = await CLI.run(["doctor"], project);
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
@@ -234,12 +254,10 @@ describe("doctor in a skills source repository", () => {
  * fail their run, and the line must name the marketplace that shipped it.
  */
 describe("doctor in a project whose marketplace dangles a slug", () => {
-  let wizard: InitWizard | undefined;
+  const installStack = useStackInstallations();
   let source: E2ESource | undefined;
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (source) await cleanupTempDir(source.tempDir);
     source = undefined;
   });
@@ -249,11 +267,9 @@ describe("doctor in a project whose marketplace dangles a slug", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       source = await createE2ESource({ relationships: RULES_WITH_DANGLING_SLUG });
-      wizard = await InitWizard.launchInProject({ source });
-      const result = await completeWithLocalSources(wizard);
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const project = await installStack(source.sourceDir);
 
-      const { exitCode, stdout } = await CLI.run(["doctor"], result.project);
+      const { exitCode, stdout } = await CLI.run(["doctor"], project);
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(DANGLING_RULE_SLUG);
@@ -274,11 +290,9 @@ describe("doctor in a project whose marketplace dangles a slug", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       source = await createE2ESource({ relationships: RULES_WITH_DANGLING_SLUG });
-      wizard = await InitWizard.launchInProject({ source });
-      const result = await completeWithLocalSources(wizard);
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      const project = await installStack(source.sourceDir);
 
-      const { stdout } = await CLI.run(["doctor"], result.project);
+      const { stdout } = await CLI.run(["doctor"], project);
 
       expect(stdout).toContain(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);

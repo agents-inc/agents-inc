@@ -5,29 +5,33 @@ import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import "../matchers/setup.js";
 import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
 import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { CLI } from "../fixtures/cli.js";
-import { createTempDir, cleanupTempDir, completeWithLocalSources } from "../helpers/test-utils.js";
+import { installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
 
 /**
  * Full lifecycle E2E test for eject mode: Init -> Compile -> Uninstall.
  *
- * Phase 1: Init wizard creates config, compiles agents, copies skills
+ * Phase 1: init --from creates config, compiles agents, copies skills
  * Phase 2: Compile recompiles agents from existing installation
  * Phase 3: Uninstall --yes removes skills and agents
  * Phase 4: Verify clean state (config preserved, artifacts removed)
  */
 
 describe("eject mode lifecycle: init -> compile -> uninstall", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
   let projectDir: string;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
     tempDir = await createTempDir();
     projectDir = tempDir;
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
@@ -36,7 +40,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // ================================================================
-      // Phase 1: Init -- run wizard, verify config + agents + skills
+      // Phase 1: Init -- verify config + agents + skills
       // ================================================================
 
       // Eject mode installs to the default (global) scope. Model it as the
@@ -44,13 +48,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
       // compiled agents, ejected skills — collapses onto projectDir and the
       // follow-up compile/uninstall commands (which resolve targets from cwd)
       // find the same content.
-      const wizard = await InitWizard.launchInGlobal({
-        projectDir,
-      });
-
-      // Eject mode: every skill source is switched to local, otherwise the
-      // wizard defaults to plugin mode (source: "agents-inc").
-      const initResult = await completeWithLocalSources(wizard);
+      const initResult = await installE2EStackGlobally(store, projectDir);
 
       // --- Phase 1 Verification ---
 
@@ -77,9 +75,6 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
       // one that failed with different wording, and the exit code beside them
       // already carries "did not crash".
       expect(initResult.output).toContain(STEP_TEXT.INIT_SUCCESS);
-
-      // Clean up session before non-interactive commands
-      await initResult.destroy();
 
       // ================================================================
       // Phase 2: Compile -- recompile agents from existing installation

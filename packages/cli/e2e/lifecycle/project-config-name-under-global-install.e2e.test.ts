@@ -1,14 +1,10 @@
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createGlobalOnlyEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { createGlobalOnlyEnvFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
-import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import {
-  cleanupFixture,
-  configTsPath,
-  loadConfigOrFail,
-  readTestFile,
-} from "../helpers/test-utils.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { configTsPath, loadConfigOrFail, readTestFile } from "../helpers/test-utils.js";
 import { TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
@@ -17,7 +13,7 @@ import "../matchers/setup.js";
  * identity `eject` passes as its `fallbackName` and the loader repairs a missing
  * `name` to.
  *
- * The greenfield half of this is pinned by init-wizard-scope-split.e2e.test.ts,
+ * The greenfield half of this is pinned by init-from-mixed-scope-config-split.e2e.test.ts,
  * where nothing else is installed. This is the other half, and the dominant
  * real-world shape: a machine that already carries a GLOBAL install, and a
  * project set up underneath it. `loadProjectConfig` falls back to `os.homedir()`
@@ -26,19 +22,19 @@ import "../matchers/setup.js";
  * installation and no directory here.
  */
 describe("project config identity under an existing global install", () => {
-  let source: E2ESource | undefined;
+  let store: SeedConfigStore;
   let env: DualScopeEnv | undefined;
 
   beforeAll(async () => {
-    source = await createE2ESource();
+    store = await startSeedConfigStore();
     // Phase A installs globally at the fake HOME; Phase B sets the project up
     // underneath it with every skill and sub-agent left at global scope.
-    env = await createGlobalOnlyEnv(source);
+    env = await createGlobalOnlyEnvFromSeed(store);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
     await env?.destroy();
-    await cleanupFixture(source);
+    await store.close();
   });
 
   it("names the project config for the project directory, not for the global config", async () => {

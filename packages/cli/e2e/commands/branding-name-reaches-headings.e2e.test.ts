@@ -19,7 +19,7 @@ import {
 } from "../helpers/test-utils.js";
 import type { FixtureProjectConfig } from "../helpers/test-utils.js";
 import { BRANDING, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -28,7 +28,7 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
  * `branding.name` is a declared field of the project config, admitted by the loader schema and
@@ -285,8 +285,7 @@ describe("the name a run prints itself under", () => {
 
   /**
    * `init`'s closing line, which is the most prominent claim the CLI makes about itself. Driven
-   * through `--from` because it is the one non-interactive route to it — the wizard route reaches
-   * the identical `reportSuccess`.
+   * through `--from` because it is the one non-interactive route to it.
    */
   it(
     "signs off init with the configured name, and with the shipped one when none is configured",

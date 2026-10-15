@@ -1,8 +1,14 @@
 import { rm } from "fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
-import { createTestEnvironment, initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -14,7 +20,6 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { UI_SYMBOLS } from "../../src/cli/consts.js";
 
 /**
@@ -38,13 +43,23 @@ import { UI_SYMBOLS } from "../../src/cli/consts.js";
 /** The config the deletion leaves behind — nothing removes or refreshes it. */
 const ORPHANED_TYPE_SURFACE = "export type SkillId";
 
+/** The E2E stack, every skill ejected into the global installation. */
+const STACK_AT_HOME_ID = "StackHm2";
+
 describe("a global install whose config.ts was deleted", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
-  let wizard: InitWizard | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(STACK_AT_HOME_ID, e2eStackPayload({ scope: "global" }));
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (tempDir) await cleanupTempDir(tempDir);
     tempDir = undefined;
   });
@@ -61,7 +76,12 @@ describe("a global install whose config.ts was deleted", () => {
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
 
-    const install = await initGlobalWithEject(E2E_SOURCE, env.fakeHome);
+    const install = await runInitFrom(
+      store,
+      STACK_AT_HOME_ID,
+      { dir: env.fakeHome },
+      E2E_SOURCE.sourceDir,
+    );
     expect(install.exitCode, `global init failed:\n${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
     const skillIds = (await listFiles(skillsPath(env.fakeHome))).sort();
@@ -123,9 +143,8 @@ describe("a global install whose config.ts was deleted", () => {
       expect(compile.exitCode, compile.output).toBe(EXIT_CODES.ERROR);
       expect(compile.output).toContain(STEP_TEXT.NO_INSTALLATION);
 
-      // `edit` refuses on the same grounds rather than opening a wizard over
-      // content it cannot describe — the refusal lands before the wizard mounts,
-      // which is what makes it a refusal rather than a lost session.
+      // `edit` refuses on the same grounds rather than minting an id for content
+      // it cannot describe.
       const edit = await CLI.run(["edit"], { dir: fakeHome }, { env: { HOME: fakeHome } });
       expect(edit.exitCode, edit.output).toBe(EXIT_CODES.ERROR);
       expect(edit.output).toContain(STEP_TEXT.NO_INSTALLATION);
@@ -157,36 +176,25 @@ describe("a global install whose config.ts was deleted", () => {
   );
 
   it(
-    "offers a fresh setup wizard rather than the dashboard when init is run again",
+    "opens the editor rather than the dashboard when init is run again",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const { fakeHome, skillIds } = await installThenDeleteConfig();
 
-      // `init` picks between a dashboard and a wizard by detecting an
-      // installation, and detection reads the config — so the way out of this
-      // state is the from-scratch wizard, on a directory that is anything but.
-      wizard = await InitWizard.launch({
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
+      // `init` picks the dashboard by detecting an installation, and detection
+      // reads the config — so with it deleted, a bare init takes the editor route.
+      const init = await CLI.run(["init"], { dir: fakeHome }, { env: { HOME: fakeHome } });
 
-      const frame = wizard.getScreen();
-      // The stack step is the positive subject guard for the negative below:
-      // the wizard's first screen painted, so the dashboard's absence from the
-      // append-only raw output is a screen that never rendered.
-      expect(frame).toContain(STEP_TEXT.STACK);
+      expect(init.exitCode, init.output).toBe(EXIT_CODES.SUCCESS);
+      expect(init.stdout).toContain(`Build it at ${STEP_TEXT.EDITOR_URL}`);
       expect(
-        wizard.getRawOutput(),
+        init.output,
         "a deleted config leaves no installation for the dashboard to open",
       ).not.toContain(STEP_TEXT.DASHBOARD);
 
-      const exitCode = await wizard.abortAndDestroy(TIMEOUTS.EXIT_WAIT);
-      wizard = undefined;
-      expect(exitCode).toBe(EXIT_CODES.CANCELLED);
-
       expect(
         (await listFiles(skillsPath(fakeHome))).sort(),
-        "opening and cancelling the wizard must leave the stranded skills alone",
+        "opening the editor must leave the stranded skills alone",
       ).toStrictEqual(skillIds);
     },
   );

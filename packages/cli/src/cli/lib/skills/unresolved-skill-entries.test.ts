@@ -1,35 +1,21 @@
-import os from "os";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  findUnusableSavedSkillMetadata,
-  unresolvedSkillRemovalReasons,
-} from "./unresolved-skill-entries";
+import { findUnusableSavedSkillMetadata } from "./unresolved-skill-entries";
 import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
-import { renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { renderMetadataYaml } from "../__tests__/content-generators";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils";
 import type { SkillId } from "../../types";
 
 /**
- * What happened to a saved entry the loaded catalogue does not carry — the marketplace dropped
- * the skill, its local files are gone, its directory holds no skill by that name, its category
- * is one no domain claims, or one repairable file stopped describing an intact install. Only
- * the last is not a removal: the run refuses over it, so it earns no sentence here.
+ * A saved entry the loaded catalogue does not carry, whose one repairable file stopped describing
+ * an intact install: the run refuses over it rather than dropping the entry.
  */
 
 const EJECTED_SKILL = "web-framework-react" satisfies SkillId;
 const MARKETPLACE = "agents-inc";
-
-/**
- * The pseudo-category a local skill declares when it belongs to no marketplace category. It
- * belongs to no domain, so local-skill discovery refuses the skill and the catalogue the
- * wizard resolves the saved roster against never carries it — which is the entry's fate this
- * module has to name, rather than calling the install missing.
- */
-const UNPLACEABLE_CATEGORY = "local";
 
 /** The category {@link EJECTED_SKILL} is stated to belong to — one a domain does claim. */
 const PLACEABLE_CATEGORY = "web-framework";
@@ -45,7 +31,6 @@ describe("unresolved-skill-entries", () => {
   });
 
   afterEach(async () => {
-    vi.restoreAllMocks();
     await cleanupTempDir(projectDir);
   });
 
@@ -67,145 +52,6 @@ describe("unresolved-skill-entries", () => {
 
   const healthyMetadata = (): string =>
     renderMetadataYaml({ category: PLACEABLE_CATEGORY, contentHash: "unresolved-test" });
-
-  describe("unresolvedSkillRemovalReasons", () => {
-    it("names the source a marketplace-sourced entry is no longer present in", async () => {
-      const saved = buildSkillConfigs([EJECTED_SKILL], { origin: MARKETPLACE });
-
-      const reasons = await unresolvedSkillRemovalReasons(
-        [EJECTED_SKILL],
-        saved,
-        projectDir,
-        MARKETPLACE,
-      );
-
-      expect(reasons.get(EJECTED_SKILL)).toBe(`not present in ${MARKETPLACE}`);
-    });
-
-    it("names the source for an id no config entry claims", async () => {
-      const reasons = await unresolvedSkillRemovalReasons(
-        [EJECTED_SKILL],
-        [],
-        projectDir,
-        MARKETPLACE,
-      );
-
-      expect(reasons.get(EJECTED_SKILL)).toBe(`not present in ${MARKETPLACE}`);
-    });
-
-    it("names the directory an ejected entry's skill files are missing from", async () => {
-      const saved = buildSkillConfigs([EJECTED_SKILL]);
-
-      const reasons = await unresolvedSkillRemovalReasons(
-        [EJECTED_SKILL],
-        saved,
-        projectDir,
-        MARKETPLACE,
-      );
-
-      expect(reasons.get(EJECTED_SKILL)).toBe(
-        `skill files no longer exist at ${installedSkillDir(projectDir, EJECTED_SKILL)}`,
-      );
-    });
-
-    it("resolves a global-scoped entry's files under the home directory, not the project", async () => {
-      const homeDir = await createTempDir("cc-unresolved-entry-home-");
-      vi.spyOn(os, "homedir").mockReturnValue(homeDir);
-      const saved = buildSkillConfigs([EJECTED_SKILL], { scope: "global" });
-
-      try {
-        const reasons = await unresolvedSkillRemovalReasons(
-          [EJECTED_SKILL],
-          saved,
-          projectDir,
-          MARKETPLACE,
-        );
-
-        expect(reasons.get(EJECTED_SKILL)).toBe(
-          `skill files no longer exist at ${installedSkillDir(homeDir, EJECTED_SKILL)}`,
-        );
-      } finally {
-        await cleanupTempDir(homeDir);
-      }
-    });
-
-    it("says the directory holds no such skill when it holds no metadata.yaml", async () => {
-      const skillDir = installedSkillDir(projectDir, EJECTED_SKILL);
-      await mkdir(skillDir, { recursive: true });
-      const saved = buildSkillConfigs([EJECTED_SKILL]);
-
-      const reasons = await unresolvedSkillRemovalReasons(
-        [EJECTED_SKILL],
-        saved,
-        projectDir,
-        MARKETPLACE,
-      );
-
-      expect(reasons.get(EJECTED_SKILL)).toBe(
-        `no skill named '${EJECTED_SKILL}' is installed at ${skillDir}`,
-      );
-    });
-
-    it("says the same when its metadata.yaml is readable but no SKILL.md names the skill", async () => {
-      const skillDir = await installLocalSkill(projectDir, EJECTED_SKILL, healthyMetadata());
-      const saved = buildSkillConfigs([EJECTED_SKILL]);
-
-      const reasons = await unresolvedSkillRemovalReasons(
-        [EJECTED_SKILL],
-        saved,
-        projectDir,
-        MARKETPLACE,
-      );
-
-      expect(reasons.get(EJECTED_SKILL)).toBe(
-        `no skill named '${EJECTED_SKILL}' is installed at ${skillDir}`,
-      );
-    });
-
-    it("blames the category when the install is intact and the source still cannot place it", async () => {
-      // Everything a local skill needs is here and readable, so what this source cannot place is
-      // the category the install declares — the placeholder, which local discovery refuses
-      // outright, so the catalogue never carried the skill either. Either way the reason has to
-      // name the category rather than call the install missing.
-      const skillDir = await installLocalSkill(
-        projectDir,
-        EJECTED_SKILL,
-        renderMetadataYaml({ category: UNPLACEABLE_CATEGORY, contentHash: "unresolved-test" }),
-      );
-      await writeFile(
-        path.join(skillDir, STANDARD_FILES.SKILL_MD),
-        renderSkillMd(EJECTED_SKILL, "Installed, intact, and unplaceable"),
-      );
-      const saved = buildSkillConfigs([EJECTED_SKILL]);
-
-      const reasons = await unresolvedSkillRemovalReasons(
-        [EJECTED_SKILL],
-        saved,
-        projectDir,
-        MARKETPLACE,
-      );
-
-      expect(reasons.get(EJECTED_SKILL)).toBe(
-        `installed at ${skillDir}, but its category '${UNPLACEABLE_CATEGORY}' is not one this source knows`,
-      );
-    });
-
-    it("gives no reason for an entry whose installed metadata.yaml describes no skill", async () => {
-      await installLocalSkill(projectDir, EJECTED_SKILL, UNPARSEABLE_YAML);
-      const saved = buildSkillConfigs([EJECTED_SKILL]);
-
-      const reasons = await unresolvedSkillRemovalReasons(
-        [EJECTED_SKILL],
-        saved,
-        projectDir,
-        MARKETPLACE,
-      );
-
-      // That entry is not removed at all — the run refuses over it, so a removal sentence for
-      // it could only ever be a wrong one.
-      expect(reasons.has(EJECTED_SKILL)).toBe(false);
-    });
-  });
 
   describe("findUnusableSavedSkillMetadata", () => {
     it("names the file and the parser's reason for an installed skill it cannot read", async () => {

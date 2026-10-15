@@ -14,8 +14,7 @@ import {
 import { getInstallationInfo, formatInstallationDisplay } from "../lib/plugins/index.js";
 import { detectInstallation, INSTALL_MODE_LABELS } from "../lib/installation/installation.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
-import { SkillAgentSummary } from "../components/wizard/skill-agent-summary.js";
-import { hydrateWizardStore } from "../stores/wizard-store.js";
+import { SkillAgentSummary } from "../components/common/skill-agent-summary.js";
 import type { AgentScopeConfig, SkillConfig } from "../types/config.js";
 
 type ListViewProps = {
@@ -52,7 +51,14 @@ const ListView: React.FC<ListViewProps> = ({ mode, source, skillConfigs, agentCo
         )}
       </Box>
 
-      <SkillAgentSummary skillConfigs={skillConfigs} agentConfigs={agentConfigs} />
+      {/* Installed and current are one configuration, so every row reads unchanged. */}
+      <SkillAgentSummary
+        skillConfigs={skillConfigs}
+        agentConfigs={agentConfigs}
+        installedSkillConfigs={skillConfigs}
+        installedAgentConfigs={agentConfigs}
+        isInitMode={false}
+      />
     </Box>
   );
 };
@@ -126,11 +132,6 @@ export default class List extends BaseCommand {
     const modeLabel = INSTALL_MODE_LABELS[installation.mode];
     const activeSkills = config.skills.filter((s) => !s.excluded);
     const activeAgents = config.agents.filter((a) => !a.excluded);
-
-    hydrateWizardStore({
-      installedSkillConfigs: activeSkills,
-      installedAgentConfigs: activeAgents,
-    });
 
     const { waitUntilExit, clear } = render(
       <ListView

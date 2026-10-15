@@ -1,14 +1,15 @@
 import { CLI } from "../fixtures/cli.js";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import {
   cleanupFixture,
   cleanupTempDir,
@@ -17,7 +18,7 @@ import {
 } from "../helpers/test-utils.js";
 
 /**
- * Plugin scope lifecycle E2E test: Init with mixed scopes -> Verify agent content -> Edit -> Verify preservation.
+ * Plugin scope lifecycle E2E test: Init with mixed scopes -> Verify agent content -> Compile -> Verify preservation.
  *
  * Requires Claude CLI (plugin mode). Skipped when not available.
  */
@@ -28,100 +29,49 @@ describe.skipIf(!claudeAvailable)(
   "plugin scope lifecycle: init with mixed scopes -> verify agent content -> edit -> verify preservation",
   () => {
     let fixture: E2EPluginSource;
+    let store: SeedConfigStore;
     let tempDir: string;
     let fakeHome: string;
     let projectDir: string;
-    let wizard: InitWizard | undefined;
 
     beforeAll(async () => {
       fixture = await createE2EPluginSource();
+      store = await startSeedConfigStore();
 
       ({ tempDir, fakeHome, projectDir } = await createTestEnvironment({ permissions: false }));
     }, TIMEOUTS.SETUP_DUAL);
 
-    afterEach(async () => {
-      await wizard?.destroy();
-      wizard = undefined;
-    });
-
     afterAll(async () => {
+      await store.close();
       if (tempDir) await cleanupTempDir(tempDir);
       await cleanupFixture(fixture);
     });
 
-    /**
-     * CURRENTLY RED, deliberately. The assertion that carries the red is the first
-     * config check in Phase 2:
-     *
-     *     await expect({ dir: fakeHome }).toHaveConfig({ agents: ["web-developer"] });
-     *
-     * which fails with `Expected config.ts to contain agent "web-developer" but it
-     * does not`. Toggling the sub-agent to global scope on the Agents step does not
-     * put it in the GLOBAL config: it stays in the project config alongside
-     * `api-developer`, so the scope split the wizard rendered is not the one it
-     * wrote. Everything before that point — including the init announcing
-     * `INIT_SUCCESS` — passes, so the red is about where the agent landed, not about
-     * the wizard failing to run.
-     *
-     * Verified 2026-08-08 by running this spec as `it` rather than `it.fails`.
-     */
-    it.fails(
-      "should init with mixed scopes, verify agent content, and verify preservation (expected fail -- scope routing bugs)",
+    it(
+      "should init with mixed scopes, verify agent content, and verify preservation",
       { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
       async () => {
         // ================================================================
-        // Phase 1: Init wizard with scope toggling
+        // Phase 1: Init with web-developer's half global, api-developer's in the project
         // ================================================================
 
         await createPermissionsFile(fakeHome);
         await createPermissionsFile(projectDir);
 
-        wizard = await InitWizard.launch({
-          source: fixture,
-          projectDir,
-          env: { HOME: fakeHome },
-          ...TERMINAL_SIZE.TALL,
-        });
+        const { output: initRaw } = await installFromSeed(
+          store,
+          "MixedScopes1",
+          e2eStackPayload({
+            install: "plugin",
+            projectSkills: [E2E_SKILL.hono.id],
+            projectAgents: [E2E_AGENT["api-developer"].name],
+          }),
+          { dir: projectDir, home: fakeHome },
+          fixture.sourceDir,
+        );
 
-        // Stack -> Domain -> Build
-        const domain = await wizard.stack.selectFirstStack();
-        const build = await domain.acceptDefaults();
-
-        // Web domain -- toggle web-framework-react to global scope, focused
-        // explicitly rather than relying on where the grid opens.
-        await build.focusSkill(E2E_SKILL.react.display);
-        await build.toggleScopeOnFocusedSkill();
-        await build.advanceDomain();
-
-        // API domain (pass through)
-        await build.advanceDomain();
-
-        // Shared domain (pass through)
-        const sources = await build.advanceToSources();
-
-        // Sources -- accept recommended
-        await sources.waitForReady();
-        const agents = await sources.advance();
-
-        // Agents step -- toggle web-developer to global scope
-        await agents.toggleScopeOnFocusedAgent();
-        const confirm = await agents.advance("init");
-
-        // Confirm
-        const initResultObj = await confirm.confirm();
-        const initExitCode = await initResultObj.exitCode;
-
-        const initRaw = initResultObj.rawOutput;
-
-        // P1-A: Init exited successfully
-        expect(initExitCode).toBe(EXIT_CODES.SUCCESS);
-
-        // P1-B: the wizard announced the install. Two generic absences stood here
-        // ("ENOENT", "Failed to"); neither could tell a completed install from one
-        // that failed with different wording, and P1-A already carries "exited 0".
+        // P1-B: the run announced the install.
         expect(initRaw).toContain(STEP_TEXT.INIT_SUCCESS);
-
-        await initResultObj.destroy();
 
         // ================================================================
         // Phase 2: Verify initial state

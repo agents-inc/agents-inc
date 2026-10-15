@@ -5,9 +5,7 @@ import type { SkillAssignment, Stack } from "../../types";
  * Source repos may override or extend these via their own stacks files.
  *
  * The `agents` keys are binding: choosing a stack installs exactly the sub-agents it
- * names, and nothing downstream re-derives that roster — the wizard's domain-derived
- * preselection is the from-scratch path only. The user is free to change the roster in
- * the agents step; the stack is what it starts as.
+ * names, and nothing downstream re-derives that roster.
  *
  * A stack declares WHICH skills each sub-agent gets, and nothing about how any of them
  * loads: no assignment here carries `preloaded`. Eagerness is one question with one

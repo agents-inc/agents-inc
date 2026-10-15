@@ -32,7 +32,6 @@ import {
   normalizeConfigPreservingOrder,
   normalizeGlobalConfig,
 } from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
-import { compactedStackIn } from "../../src/cli/lib/__tests__/helpers/compacted-stack.js";
 import { parseCompiledAgentSections } from "../../src/cli/lib/__tests__/helpers/compiled-agent-sections.js";
 import {
   normalizeInstallTree,
@@ -54,10 +53,8 @@ import type {
   PluginManifest,
   ProjectConfig,
 } from "../../src/cli/types/index.js";
-import type { FixtureProjectConfig } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import type { FixtureProjectConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { DIRS, FILES, e2eSkillId } from "../pages/constants.js";
-import type { InitWizard } from "../pages/wizards/init-wizard.js";
-import type { WizardResult } from "../pages/wizard-result.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -120,6 +117,19 @@ export function sourceFolderRelIn(dir: string): string {
  */
 export const NO_BACKGROUND_VERSION_CHECK = { AGENTS_INC_SKIP_NEW_VERSION_CHECK: "1" };
 
+/**
+ * The seed API every spawned CLI is pointed at unless a spec names a store of its own.
+ *
+ * Clearing `AGENTS_INC_API_URL` is not enough: the product falls back to
+ * `https://api.agentsinc.sh` when it is unset, so a run that reaches the network without a store
+ * reaches production. A bare `edit` publishes the installation it opens, and one spec minted a real
+ * id there before this existed. Port 1 on the loopback refuses at once, so such a run fails fast
+ * and locally instead. Spread ahead of the caller's own `env` at every door, like
+ * {@link NO_BACKGROUND_VERSION_CHECK}: a spec that starts `startSeedConfigStore` names its URL and
+ * wins.
+ */
+export const NO_LIVE_SEED_API = { AGENTS_INC_API_URL: "http://127.0.0.1:1" };
+
 const E2E_TEMP_PREFIX = "ai-e2e-";
 const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
@@ -151,14 +161,13 @@ export const FORKED_FROM_METADATA = renderMetadataYaml({
  * The config shapes a fixture builds, with their skill ids widened to `string` —
  * the seam where the fixture marketplace's namespace meets the production types.
  * Re-exported here because every E2E fixture reaches them through this module;
- * wizard-simulation.ts owns them, beside the factory that first has to name one.
+ * skill-config-builders.ts owns them, beside the factory that first has to name one.
  */
 export type {
   FixtureProjectConfig,
-  FixtureSkillAssignment,
   FixtureSkillConfig,
   FixtureStackAgentConfig,
-} from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+} from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 export type { InstallTree } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 
 export async function createTempDir(): Promise<string> {
@@ -266,7 +275,6 @@ export async function cleanupIsolatedClaudeHome(
 
 export {
   cleanupTempDir,
-  compactedStackIn,
   directoryExists,
   fileExists,
   normalizeConfigPreservingOrder,
@@ -298,9 +306,8 @@ export {
  * the config. A fixture that hand-writes an install therefore has to leave the source
  * where those commands look, and this is that step.
  *
- * A config that already names one is left untouched — a wizard-written install recorded
- * its own source, and re-rendering somebody else's config through the fixture renderer
- * is not this helper's business.
+ * A config that already names one is left untouched — re-rendering somebody else's config
+ * through the fixture renderer is not this helper's business.
  */
 export async function recordInstallSource(baseDirs: string[], source: string): Promise<void> {
   for (const baseDir of baseDirs) {
@@ -478,12 +485,12 @@ export function stripAnsi(text: string): string {
  * HOME override via options.env.HOME; an explicit value always wins and is
  * never auto-removed.
  *
- * `CC_MARKETPLACE`, `AGENTS_INC_API_URL`, `XDG_CACHE_HOME` and `GIGET_AUTH` are the
- * CLI's own overrides — every variable `src/cli/` reads by name that is not the
- * harness's — and each is cleared ahead of `options.env`, so a spec that needs a value
- * still names its own. `VITEST` is the harness's own, and cleared beside them so a spawned
- * binary sees a user's environment. This door carried none of the five for its whole
- * life, because the gate that answers for them —
+ * `CC_MARKETPLACE`, `XDG_CACHE_HOME` and `GIGET_AUTH` are the CLI's own overrides —
+ * every variable `src/cli/` reads by name that is not the harness's, bar the seed API,
+ * which {@link NO_LIVE_SEED_API} defaults — and each is cleared ahead of `options.env`, so
+ * a spec that needs a value still names its own. `VITEST` is the harness's own, and cleared
+ * beside them so a spawned binary sees a user's environment. This door carried none of the
+ * five for its whole life, because the gate that answers for them —
  * `src/cli/lib/__tests__/e2e-runner-environment.test.ts` — named the other two doors and
  * stated its roster by hand. It derives the roster from `scripts/check-spawn-doors.ts`
  * now, so a fourth door arrives at both gates at once.
@@ -513,8 +520,8 @@ export async function runCLI(
       reject: false,
       env: {
         ...NO_BACKGROUND_VERSION_CHECK,
+        ...NO_LIVE_SEED_API,
         CC_MARKETPLACE: undefined,
-        AGENTS_INC_API_URL: undefined,
         XDG_CACHE_HOME: undefined,
         GIGET_AUTH: undefined,
         VITEST: undefined,
@@ -734,8 +741,7 @@ export async function writeAgentStubs(projectDir: string, agents: string[]): Pro
  * the permission prompt waits for input.
  *
  * MERGES rather than overwrites: when the file already exists (e.g. a plugin
- * install wrote `enabledPlugins` / `extraKnownMarketplaces` before an
- * EditWizard launch re-runs this helper), every existing field is preserved
+ * install wrote `enabledPlugins` / `extraKnownMarketplaces`), every existing field is preserved
  * and only `permissions.allow` is ensured to contain "Read(*)". A file that
  * already grants it is left byte-identical. Invalid JSON is a hard error —
  * never silently clobber a corrupt settings file.
@@ -891,26 +897,6 @@ export async function readAgentEntriesFor(
 }
 
 /**
- * Drive the init wizard end to end with every editable skill source switched to
- * local (`SourcesStep.setAllLocal`, a per-row walk — the Sources step binds no
- * bulk set-all key).
- *
- * Flow: Stack -> Domain -> Build (all domains) -> Sources -> Agents -> Confirm.
- * Without `setAllLocal()` the wizard defaults to plugin mode, so tests that
- * assert on `.claude/skills/` contents must go through this helper.
- */
-export async function completeWithLocalSources(wizard: InitWizard): Promise<WizardResult> {
-  const domain = await wizard.stack.selectFirstStack();
-  const build = await domain.acceptDefaults();
-  const sources = await build.passThroughAllDomains();
-  await sources.waitForReady();
-  await sources.setAllLocal();
-  const agents = await sources.advance();
-  const confirm = await agents.acceptDefaults("init");
-  return confirm.confirm();
-}
-
-/**
  * Add forkedFrom metadata to one installed skill — typically the one
  * `ProjectBuilder.editable()` wrote.
  *
@@ -973,7 +959,7 @@ export {
   flattenCliOutput,
 } from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
 
-export { createE2ESource, E2E_AGENT_TITLES, E2E_SKILL_TITLES } from "./create-e2e-source.js";
+export { createE2ESource, E2E_AGENT_TITLES } from "./create-e2e-source.js";
 export type { E2ESource } from "./create-e2e-source.js";
 
 /**

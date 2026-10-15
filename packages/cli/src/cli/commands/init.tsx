@@ -5,8 +5,7 @@ import { Box, Text, useApp } from "ink";
 import { render } from "../components/render.js";
 
 import { BaseCommand } from "../base-command.js";
-import { type WizardResultV2 } from "../components/wizard/wizard.js";
-import { runWizardSession } from "../components/wizard/run-wizard-session.js";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import { useTerminalDimensions } from "../components/hooks/use-terminal-dimensions.js";
 import { type SourceLoadResult } from "../lib/loading/index.js";
 import {
@@ -28,7 +27,7 @@ import {
   writeExternalSkills,
   type ExternalSkillInstall,
 } from "../lib/seed/external-skills.js";
-import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
+import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-selection.js";
 import {
   holdInstalledGlobal,
   installPlanLines,
@@ -38,7 +37,7 @@ import {
 } from "../lib/seed/seed-apply.js";
 import { getInstallationInfo } from "../lib/plugins/plugin-info.js";
 import { loadProjectConfig } from "../lib/configuration/project-config.js";
-import { isSameMarketplace, resolveBranding, resolveSource } from "../lib/configuration/config.js";
+import { isLocalSource, resolveBranding } from "../lib/configuration/config.js";
 import {
   type InstallMode,
   detectInstallation,
@@ -71,8 +70,6 @@ import {
   CLI_INVOKE_COMMAND,
   DEFAULT_BRANDING,
   EDITOR_URL,
-  EDIT_PROJECT_SETUP_FLAG,
-  EDIT_PROJECT_SETUP_MARKETPLACE_FLAG,
   EJECT_SOURCE,
   editorConfigUrl,
 } from "../consts.js";
@@ -80,7 +77,6 @@ import { clearTerminalScreen } from "../utils/terminal.js";
 import { SelectList, type SelectListItem } from "../components/common/select-list.js";
 import { promptConfirm, promptValue } from "../components/common/prompt-confirm.js";
 import { Confirm } from "../components/common/confirm.js";
-import { awaitUnderSpinner } from "../components/common/spinner.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { EXIT_CODES } from "../lib/exit-codes.js";
 import { openUrl } from "../utils/open-url.js";
@@ -91,27 +87,28 @@ import {
   INCOMPLETE_WORK_RECOVERY,
   SHARED_CONFIG_ARRIVALS,
   STATUS_MESSAGES,
+  addMarketplaceInTheEditor,
   agentsNotCompiled,
   applySharedConfigHere,
   carriedSkillsWritten,
-  editorLoadsItsOwnMarketplace,
   globalScopedAgentsHint,
   initSucceeded,
   keptAsInstalledGlobally,
-  marketplaceFixedAtInstall,
   sharedConfigExistingInstall,
   skippedUnknownAgents,
   skippedUnknownSkills,
-  wizardNeedsTerminal,
 } from "../utils/messages.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
 const DASHBOARD_OPTIONS = [
-  { label: "Edit", value: "edit" },
+  { label: "Edit in the web editor", value: "edit" },
   { label: "Compile", value: "compile" },
   { label: "Doctor", value: "doctor" },
   { label: "List", value: "list" },
 ] as const satisfies readonly SelectListItem<string>[];
+
+/** The options as the piped dashboard prints them, one bracketed label each. */
+const DASHBOARD_OPTIONS_LINE = `  ${DASHBOARD_OPTIONS.map(({ label }) => `[${label}]`).join("  ")}`;
 
 /** The commands offered by the project dashboard (single source: DASHBOARD_OPTIONS). */
 export type DashboardCommand = (typeof DASHBOARD_OPTIONS)[number]["value"];
@@ -191,13 +188,7 @@ export function dashboardCountLines(data: DashboardData): string[] {
 
 /** Formats the dashboard summary as plain text lines (for non-interactive/test output). */
 export function formatDashboardText(data: DashboardData): string {
-  return [
-    data.name,
-    "",
-    ...dashboardCountLines(data),
-    "",
-    `  [Edit]  [Compile]  [Doctor]  [List]`,
-  ].join("\n");
+  return [data.name, "", ...dashboardCountLines(data), "", DASHBOARD_OPTIONS_LINE].join("\n");
 }
 
 /**
@@ -245,33 +236,9 @@ export async function showDashboard(
   return selectedCommand;
 }
 
-/**
- * Why the dashboard is on screen.
- *
- * `"init"` — the user ran `cc init` in an already-installed directory. That is a request
- * to set this project up, so choosing Edit continues the setup: it must materialise the
- * project even if the wizard changes nothing.
- *
- * `"standalone"` — the bare `cc` dashboard. Edit is just an editor there; a pass with no
- * changes is an inspection and must leave the filesystem untouched.
- */
-export type DashboardOrigin = "init" | "standalone";
-
-/**
- * The extra argv a dashboard selection needs to carry its origin into the command — and, for an
- * `init` that named a marketplace, the marketplace the project setup reads its catalogue from.
- */
-function dashboardCommandArgv(
-  command: DashboardCommand,
-  origin: DashboardOrigin,
-  setupMarketplace: string | undefined,
-): string[] {
-  if (command !== "edit" || origin !== "init") return [];
-  const marketplaceArgv =
-    setupMarketplace === undefined
-      ? []
-      : [`--${EDIT_PROJECT_SETUP_MARKETPLACE_FLAG}`, setupMarketplace];
-  return [`--${EDIT_PROJECT_SETUP_FLAG}`, ...marketplaceArgv];
+/** The argv a dashboard selection runs its command with: Edit opens the editor. */
+function dashboardCommandArgv(command: DashboardCommand): string[] {
+  return command === "edit" ? ["--ui"] : [];
 }
 
 /**
@@ -286,17 +253,13 @@ export type DashboardFlow = "not-installed" | "shown" | "cancelled";
  * from the {@link DashboardFlow} it answers (the init hook exits SUCCESS at its own
  * call site for a dashboard shown).
  *
- * `setupMarketplace` is what `init --marketplace` named. A project with no installation of its own
- * is shown the global installation's dashboard, and its Edit sets the project up — from the named
- * marketplace, as a bare `init` in an empty folder would, rather than from the one the global
- * installation stored.
+ * A project with no installation of its own is shown the global installation's dashboard, so its
+ * Edit opens the global installation in the editor.
  */
 export async function runDashboardFlow(
   projectDir: string,
   config: Interfaces.Config,
-  origin: DashboardOrigin,
   log?: (message: string) => void,
-  setupMarketplace?: string,
 ): Promise<DashboardFlow> {
   const installation = await detectInstallation(projectDir);
   if (!installation) return "not-installed";
@@ -304,10 +267,7 @@ export async function runDashboardFlow(
   const selectedCommand = await showDashboard(projectDir, log);
   if (selectedCommand === DASHBOARD_INTERRUPTED) return "cancelled";
   if (selectedCommand) {
-    await config.runCommand(
-      selectedCommand,
-      dashboardCommandArgv(selectedCommand, origin, setupMarketplace),
-    );
+    await config.runCommand(selectedCommand, dashboardCommandArgv(selectedCommand));
   }
   return "shown";
 }
@@ -323,13 +283,9 @@ export async function runDashboardFlow(
  */
 type SourceFlags = { marketplace: string | undefined };
 
-/**
- * What `init` decided to install, and the little each producer knows that the shared spine does
- * not. Keeping these on the value rather than branching on a flag downstream is what stops the
- * two paths growing separate copies of the install sequence.
- */
+/** What `init --from` decided to install, as the install sequence takes it. */
 type Selection = {
-  result: WizardResultV2;
+  result: InstallSelection;
   sourceResult: SourceLoadResult;
   /**
    * The marketplace this selection was actually loaded from, which the shared spine records in
@@ -337,8 +293,6 @@ type Selection = {
    * did not, and the install has to record where its skills really came from either way.
    */
   sourceFlags: SourceFlags;
-  /** Whether a person is at the terminal, so the permission notice may wait for them. */
-  interactive: boolean;
   /**
    * Skills in the selection that are already installed where it puts them — a global install's
    * own, which a run from a project records as they are and never installs over.
@@ -372,32 +326,37 @@ export default class Init extends BaseCommand {
 
   static summary = `Initialize ${DEFAULT_BRANDING.NAME} in this project`;
   static description =
-    "Interactive wizard to set up skills and agents. Supports Plugin Mode (native install) and Eject Mode (copy to .claude/).";
+    "Build a configuration in agentsinc.sh/editor, or install one by id with --from. Over an existing installation, shows its dashboard.";
 
   static examples = [
     {
-      description: "Start the setup wizard",
+      description: "Open the editor to build a configuration",
       command: "<%= config.bin %> <%= command.id %>",
     },
     {
-      description: "Initialize from a custom marketplace",
-      command: "<%= config.bin %> <%= command.id %> --marketplace github:org/marketplace",
+      description: "Install a configuration built in the editor",
+      command: "<%= config.bin %> <%= command.id %> --from <id>",
+    },
+    {
+      description: "Test local marketplace changes against a configuration built in the editor",
+      command: "<%= config.bin %> <%= command.id %> --from <id> --marketplace ./my-marketplace",
     },
   ];
 
   static flags = {
     marketplace: Flags.string({
       char: "m",
-      description: "Skills marketplace path or URL",
+      description:
+        "With --from, install from this marketplace instead of the one the configuration names. Without --from, open the editor and say how to add it there",
       required: false,
     }),
     from: Flags.string({
-      description: "Install a configuration shared from agentsinc.sh by its id, without the wizard",
+      description: "Install a configuration shared from agentsinc.sh by its id",
       helpValue: "<id>",
     }),
     ui: Flags.boolean({
       description:
-        "Open agentsinc.sh/editor instead of the terminal — the id --from names, or the catalogue",
+        "Open agentsinc.sh/editor on the id --from names, or on the catalogue — what a bare init does where nothing is installed",
       default: false,
     }),
     provider: providerFlag(),
@@ -434,11 +393,18 @@ export default class Init extends BaseCommand {
    * desktop session there is no browser to be anybody's — a link nobody can copy is the whole
    * loss, so opening one is the convenience on top and a failure to open is a warning beside a
    * link that still works.
+   *
+   * A marketplace named here cannot ride along: the address carries an id and nothing else, so
+   * the line under the link says how to add it in the editor.
    */
-  private async openEditor(id: string | undefined, projectDir: string): Promise<void> {
+  private async openEditor(projectDir: string, id?: string, marketplace?: string): Promise<void> {
     const url = id === undefined ? EDITOR_URL : editorConfigUrl(id);
+    // Above the first line, so a ref the install route would refuse is refused before any output.
+    const marketplaceLine =
+      marketplace === undefined ? undefined : this.addMarketplaceLineOrFail(marketplace);
 
     this.log(id === undefined ? `Build it at ${url}` : `Open it at ${url}`);
+    if (marketplaceLine !== undefined) this.log(marketplaceLine);
     this.log(applySharedConfigHere(id, await holdsItsOwnInstallation(projectDir)));
 
     if (!process.stdin.isTTY) return;
@@ -448,10 +414,9 @@ export default class Init extends BaseCommand {
   }
 
   /**
-   * One spine, two producers. The wizard and a shared id differ only in *where the selection
-   * comes from* — everything after it (the install pipeline) is identical, so it lives here once
-   * rather than being written twice and drifting. What each producer refuses, it refuses itself:
-   * `--from` asks a question the wizard does not, and every refusal it makes comes before it.
+   * Every route `init` has, in the order they are tried: the editor for `--ui` and for a
+   * marketplace named without `--from`; for a bare run, the installation's dashboard — or the
+   * editor where nothing is installed; and the install of the configuration `--from` names.
    */
   private async install(): Promise<void> {
     const { flags } = await this.parse(Init);
@@ -466,52 +431,45 @@ export default class Init extends BaseCommand {
     // Above `ensureConfigReadable`, and above every read below it, because this route needs no
     // installation at all. A config too broken to load must not stop someone reaching the other
     // front door, and an id somebody shared is not this directory's business either.
-    if (flags.ui) {
-      this.refuseMarketplaceForTheEditor(flags.marketplace);
-      return this.openEditor(flags.from, projectDir);
-    }
+    if (opensTheEditor(flags)) return this.openEditor(projectDir, flags.from, flags.marketplace);
 
     // Every route below reads the configs first — to show a dashboard, to refuse a shared id, or
     // to inline the global one. One that exists but cannot be read is recreated, not installed
     // over, and saying so here is what keeps the raw loader error off the screen.
     await this.ensureConfigReadable(projectDir);
 
+    // Only a bare `init` is diverted to the dashboard. An id is an explicit instruction to install
+    // *that* configuration, so it overrides an existing installation instead.
+    if (flags.from === undefined) return this.showDashboardOrOpenEditor(projectDir);
+
     // Read once on the spine, because the closing line is printed several calls below it. The
-    // degrade arm of `resolveBrandingName` cannot fire here: the line above has already refused
-    // every config this would read.
+    // degrade arm of `resolveBrandingName` cannot fire here: `ensureConfigReadable` has already
+    // refused every config this would read.
     this.brandingName = await this.resolveBrandingName(projectDir);
 
-    // Only a bare `init` is diverted to the dashboard. An id is an explicit instruction to install
-    // *that* configuration, so it overrides an existing installation instead. A named marketplace
-    // takes the same route: it is refused only where this folder's OWN installation was made from
-    // another, and otherwise carried into the setup the dashboard's Edit runs.
-    if (!flags.from) {
-      await this.refuseMarketplaceOtherThanTheInstalledOne(projectDir, flags.marketplace);
-      const dashboard = await this.showDashboardIfInitialized(projectDir, flags.marketplace);
-      if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
-      if (dashboard === "shown") return;
-    }
-
-    const selection = flags.from
-      ? await this.selectionFromSharedConfig(flags.from, flags, projectDir)
-      : await this.selectionFromWizard(flags, projectDir);
-
+    const selection = await this.selectionFromSharedConfig(flags.from, flags, projectDir);
     if (!selection) this.exit(EXIT_CODES.CANCELLED);
 
-    // On the spine rather than in either producer: a broken constraint is a fact about the
-    // selection, not about where it came from, and `edit` reports the same fact the same way
-    // the moment the wizard hands it one. Both producers run the same validator over the same
-    // matrix — the wizard over what was chosen, `--from` over what survived the decode — so
-    // what is said here is this catalog's verdict either way.
+    // A broken constraint is this catalog's verdict on what survived the decode.
     this.reportValidationErrors(selection.result.validation);
 
-    await this.handleInstallation(
-      selection.result,
-      selection.sourceResult,
-      selection.sourceFlags,
-      selection.interactive,
-      selection.installedAlready,
-    );
+    await this.handleInstallation(selection);
+  }
+
+  /** A bare `init`: the installation's dashboard, or the editor where nothing is installed. */
+  private async showDashboardOrOpenEditor(projectDir: string): Promise<void> {
+    const dashboard = await runDashboardFlow(projectDir, this.config, (msg) => this.log(msg));
+    if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+    if (dashboard === "not-installed") await this.openEditor(projectDir);
+  }
+
+  /** The editor's marketplace line, or the refusal the install route gives a ref it cannot read. */
+  private addMarketplaceLineOrFail(ref: string): string {
+    try {
+      return addMarketplaceInTheEditor(ref, isLocalSource(ref));
+    } catch (error) {
+      this.handleError(error);
+    }
   }
 
   /**
@@ -523,11 +481,9 @@ export default class Init extends BaseCommand {
    * "the flag selects an installation" would be indistinguishable from "the flag means Codex".
    *
    * **And it is meaningless without `--from` (D15).** The provider is chosen in the web app, so
-   * the only run that can be told one is the run that installs what the app produced. There is no
-   * wizard step to choose a provider in and none is planned — which is what makes "the interactive
-   * flow is Claude-only" provable rather than conventional. It also gives the placement refusal
-   * something to refuse BEFORE anything is written: with `--from` required, a provider always
-   * arrives beside a payload the pre-flight can read.
+   * the only run that can be told one is the run that installs what the app produced. It also
+   * gives the placement refusal something to refuse BEFORE anything is written: with `--from`
+   * required, a provider always arrives beside a payload the pre-flight can read.
    */
   private settleTheProviderForThisRun(flags: Interfaces.InferredFlags<typeof Init.flags>): void {
     const named = providerNamedBy(flags.provider);
@@ -540,52 +496,8 @@ export default class Init extends BaseCommand {
     chooseProviderForThisRun(named);
   }
 
-  /** The interactive producer: load the source, run the wizard, return what was chosen. */
-  private async selectionFromWizard(
-    flags: SourceFlags,
-    projectDir: string,
-  ): Promise<Selection | null> {
-    // The blank global config is created by writeProjectConfig() once the
-    // wizard succeeds, never before it renders: a cancelled init must leave no
-    // artifact that the next run could mistake for an existing installation.
-    const isGlobalRoot = isHomeDirectory(projectDir);
-
-    const { sourceResult, startupMessages } = await this.loadWizardInputsUnderSpinner(flags);
-
-    // After the load, so a marketplace that cannot be loaded is still refused in its own words
-    // over a pipe, and before the mount, which is the first thing here that needs a terminal.
-    if (!process.stdin.isTTY) {
-      this.error(wizardNeedsTerminal("init"), { exit: EXIT_CODES.ERROR });
-    }
-
-    const result = await this.runWizard(startupMessages, isGlobalRoot);
-    if (!result) return null;
-    if (selectsNothing(result)) this.error("No skills selected", { exit: EXIT_CODES.ERROR });
-
-    return {
-      result,
-      sourceResult,
-      sourceFlags: flags,
-      // A person is already at the terminal, so the permission notice can wait for them.
-      interactive: true,
-      // The wizard opens only where nothing is installed at all — see `runWizard`.
-      installedAlready: new Set(),
-    };
-  }
-
   /**
-   * Everything the wizard needs, loaded behind a spinner that comes down whichever way the
-   * await ends — a source that cannot be loaded refuses the run from inside it.
-   */
-  private async loadWizardInputsUnderSpinner(flags: SourceFlags): Promise<{
-    sourceResult: SourceLoadResult;
-    startupMessages: StartupMessage[];
-  }> {
-    return awaitUnderSpinner(STATUS_MESSAGES.LOADING_SKILLS, () => this.loadSourceOrFail(flags));
-  }
-
-  /**
-   * The `--from <id>` producer: fetch and map, no wizard — and, at a terminal, one question.
+   * The `--from <id>` producer: fetch and map — and, at a terminal, one question.
    *
    * It installs into a clean directory, which is what the first refusal is: a shared
    * configuration is installed whole, so a directory already holding one has it applied with
@@ -648,9 +560,8 @@ export default class Init extends BaseCommand {
       sourceResult,
     );
 
-    // What the load held back for a wizard this run never mounts, directly above the skips it may
-    // explain — a skill this catalogue "does not know" is often one it ships with a file that
-    // will not parse.
+    // What the load held back, directly above the skips it may explain — a skill this catalogue
+    // "does not know" is often one it ships with a file that will not parse.
     sayCapturedWarnings(startupMessages);
 
     // Named, not counted. "3 skills were skipped" cannot be acted on; the ids can, and this is the
@@ -689,7 +600,6 @@ export default class Init extends BaseCommand {
       result: held.result,
       sourceResult,
       sourceFlags,
-      interactive: false,
       installedAlready: new Set(held.installed.skillIds),
     };
   }
@@ -743,13 +653,13 @@ export default class Init extends BaseCommand {
   }
 
   /**
-   * The decode refuses a payload the config model has nowhere to write (see `seedToWizardResult`).
-   * That is a failure of this command, reported with this command's exit code rather than left to
-   * surface as an unhandled throw.
+   * The decode refuses a payload the config model has nowhere to write (see
+   * `seedToInstallSelection`). That is a failure of this command, reported with this command's exit
+   * code rather than left to surface as an unhandled throw.
    */
   private decodeSeedOrFail(payload: SeedPayload, matrix: MergedSkillsMatrix): SeedMapping {
     try {
-      return seedToWizardResult(payload, matrix);
+      return seedToInstallSelection(payload, matrix);
     } catch (error) {
       this.handleError(error);
     }
@@ -785,58 +695,6 @@ export default class Init extends BaseCommand {
     this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
   }
 
-  private async showDashboardIfInitialized(
-    projectDir: string,
-    setupMarketplace: string | undefined,
-  ): Promise<DashboardFlow> {
-    return runDashboardFlow(
-      projectDir,
-      this.config,
-      "init",
-      (msg) => this.log(msg),
-      setupMarketplace,
-    );
-  }
-
-  /**
-   * Refuses `--marketplace` beside `--ui`. The editor's address carries a configuration id and
-   * nothing else, so the marketplace would be dropped on the way — and the editor loads
-   * marketplaces itself.
-   */
-  private refuseMarketplaceForTheEditor(named: string | undefined): void {
-    if (named === undefined) return;
-    this.error(editorLoadsItsOwnMarketplace(named), { exit: EXIT_CODES.INVALID_ARGS });
-  }
-
-  /**
-   * Refuses a marketplace other than the one this folder's OWN installation was made from.
-   *
-   * An installation's marketplace is chosen once, when it is made, and the dashboard every route
-   * here ends on reads the one it stored — so naming another would be dropped, and a flag dropped
-   * reads as honoured. Project-scoped detection, because a project with no installation of its
-   * own is not refused for the global one above it: that is two installations, and the setup the
-   * dashboard's Edit runs there takes the named marketplace. At the home directory the folder's
-   * own installation IS the global one, and the same detection finds it.
-   *
-   * The stored marketplace is resolved the way every later command resolves it — this folder's
-   * config, then the global one, then the default — so an installation that recorded none is
-   * held to the one it has actually been reading. A folder named back by another spelling of its
-   * path is that same marketplace.
-   */
-  private async refuseMarketplaceOtherThanTheInstalledOne(
-    projectDir: string,
-    named: string | undefined,
-  ): Promise<void> {
-    if (named === undefined) return;
-
-    if (!(await detectProjectInstallation(projectDir))) return;
-
-    const { source: stored } = await resolveSource({ caller: "stored", projectDir });
-    if (isSameMarketplace(named, stored, projectDir)) return;
-
-    this.error(marketplaceFixedAtInstall(stored, named), { exit: EXIT_CODES.INVALID_ARGS });
-  }
-
   private async loadSourceOrFail(
     flags: SourceFlags,
   ): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
@@ -856,43 +714,12 @@ export default class Init extends BaseCommand {
     }
   }
 
-  /**
-   * `init`'s wizard opens on an empty selection, and can open on nothing else: it is reached
-   * only once {@link showDashboardIfInitialized} has found no installation, and that check
-   * falls back to the home directory — so a global roster to hydrate from would have diverted
-   * this run to the dashboard before the wizard was built. Hydrating a saved selection is
-   * `edit`'s job, and `Edit.runEditWizard` is where it happens.
-   */
-  private async runWizard(
-    startupMessages: StartupMessage[],
-    isGlobalRoot: boolean,
-  ): Promise<WizardResultV2 | null> {
-    return runWizardSession({
-      hydrate: { isEditingFromGlobalScope: isGlobalRoot },
-      props: {
-        version: this.config.version,
-        logo: ASCII_LOGO,
-        startupMessages,
-      },
-      onCancel: () => this.log("Setup cancelled"),
-      clearTerminal: () => this.clearTerminal(),
-    });
-  }
-
-  private async handleInstallation(
-    result: WizardResultV2,
-    sourceResult: SourceLoadResult,
-    flags: SourceFlags,
-    /**
-     * Whether the caller can hold the terminal. The permission notice is an Ink app with no exit
-     * of its own, so `waitUntilExit()` only ever resolves because a person is there to end it —
-     * which is fine after the wizard and a hang everywhere else. `--from` sets this false: it has
-     * to complete over a pipe and in CI.
-     */
-    interactive: boolean,
-    /** Skills recorded as they are installed already, and so neither copied nor registered. */
-    installedAlready: ReadonlySet<SkillId>,
-  ): Promise<void> {
+  private async handleInstallation({
+    result,
+    sourceResult,
+    sourceFlags,
+    installedAlready,
+  }: Selection): Promise<void> {
     const projectDir = process.cwd();
     const activeSkills = result.skills.filter((s) => !s.excluded);
     const toInstall = activeSkills.filter((s) => !installedAlready.has(s.id));
@@ -900,9 +727,6 @@ export default class Init extends BaseCommand {
     const ejectedSkills = toInstall.filter((s) => s.origin === EJECT_SOURCE);
     const pluginSkills = toInstall.filter((s) => s.origin !== EJECT_SOURCE);
 
-    // The wizard's selection meets its placement refusal here. A shared configuration's has met
-    // it already, above its lists and its question, and passes it again unchanged.
-    this.refuseUnofferablePlacementsBeforeWriting(activeSkills, projectDir);
     this.logInstallPlan(installMode, ejectedSkills, pluginSkills);
 
     // Resolve marketplace up front — BEFORE any filesystem mutation. If
@@ -940,7 +764,7 @@ export default class Init extends BaseCommand {
       const { configResult, compileResult, agentScopeMap } = await this.writeConfigAndCompile(
         result,
         sourceResult,
-        flags,
+        sourceFlags,
       );
       this.reportSuccess(
         configResult,
@@ -951,7 +775,7 @@ export default class Init extends BaseCommand {
         copyResult,
       );
 
-      await this.showPermissionNotice(projectDir, interactive);
+      await this.showPermissionNotice(projectDir);
     } catch (error) {
       this.handleError(error);
     }
@@ -959,29 +783,21 @@ export default class Init extends BaseCommand {
 
   /**
    * The permission notice, where there is one to show. It is an Ink app with no exit of its own,
-   * so `waitUntilExit()` only ever resolves because a person is there to end it — which is fine
-   * after the wizard and a hang everywhere else. Without a terminal to hold, one frame is
-   * rendered and let go: the notice is information, not a prompt, so there is nothing to answer
-   * and nothing to wait for.
+   * so one frame is rendered and let go: the notice is information, not a prompt, and `--from`
+   * has to complete over a pipe and in CI.
    */
-  private async showPermissionNotice(projectDir: string, interactive: boolean): Promise<void> {
+  private async showPermissionNotice(projectDir: string): Promise<void> {
     const permissionWarning = await checkPermissions(projectDir);
     if (!permissionWarning) return;
 
-    if (!interactive) {
-      const { unmount } = render(permissionWarning);
-      unmount();
-      return;
-    }
-
-    const { waitUntilExit } = render(permissionWarning);
-    await waitUntilExit();
+    const { unmount } = render(permissionWarning);
+    unmount();
   }
 
   private logInstallPlan(
     installMode: InstallMode,
-    ejectedSkills: WizardResultV2["skills"],
-    pluginSkills: WizardResultV2["skills"],
+    ejectedSkills: InstallSelection["skills"],
+    pluginSkills: InstallSelection["skills"],
   ): void {
     this.log("\n");
     this.log(`Selected ${plural(ejectedSkills.length + pluginSkills.length, "skill")}`);
@@ -999,7 +815,7 @@ export default class Init extends BaseCommand {
    * {@link skillsCopiedLine} chooses.
    */
   private async copyEjectSkillsStep(
-    localSkills: WizardResultV2["skills"],
+    localSkills: InstallSelection["skills"],
     projectDir: string,
     sourceResult: SourceLoadResult,
     installMode: InstallMode,
@@ -1011,7 +827,7 @@ export default class Init extends BaseCommand {
   }
 
   private async writeConfigAndCompile(
-    result: WizardResultV2,
+    result: InstallSelection,
     sourceResult: SourceLoadResult,
     flags: SourceFlags,
   ): Promise<{
@@ -1021,7 +837,7 @@ export default class Init extends BaseCommand {
   }> {
     this.log("Generating configuration...");
     const configResult = await writeProjectConfig({
-      wizardResult: result,
+      selection: result,
       sourceResult,
       projectDir: process.cwd(),
       ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
@@ -1237,15 +1053,22 @@ export default class Init extends BaseCommand {
 }
 
 /**
+ * Whether a run takes the editor route whatever is installed: `--ui`, or a marketplace named
+ * without `--from` — that flag acts only beside an install, and the editor is where one is added
+ * otherwise.
+ */
+function opensTheEditor(
+  flags: Pick<Interfaces.InferredFlags<typeof Init.flags>, "ui" | "from" | "marketplace">,
+): boolean {
+  return flags.ui || (flags.from === undefined && flags.marketplace !== undefined);
+}
+
+/**
  * Whether a selection holds nothing to install. A sub-agent is installable on its own — it has
  * front-matter, a prompt and a compiled file without owning a single skill — so only a selection
  * with neither is empty.
- *
- * Asked by each producer rather than on the spine, because each refuses it in its own words and
- * at its own moment: the wizard once the user has chosen nothing, and `--from` before it lists a
- * plan or asks about one.
  */
-function selectsNothing(result: WizardResultV2): boolean {
+function selectsNothing(result: InstallSelection): boolean {
   return result.skills.length === 0 && result.selectedAgents.length === 0;
 }
 
@@ -1257,9 +1080,7 @@ function selectsNothing(result: WizardResultV2): boolean {
  * when the write added something they are built from. Recompiled anyway, they would be built from
  * the catalogue THIS run loaded rather than the one the global install was made from — a skill
  * that catalogue does not ship is described by its fallback guidance instead of its own — and a
- * project run that added nothing to the global install would still have rewritten it. The wizard
- * reaches the same answer by the same test: it opens only where nothing is installed, so every
- * global entry it writes is an added one.
+ * project run that added nothing to the global install would still have rewritten it.
  */
 function compilesGlobalScope(cwd: string, written: GateReport): boolean {
   return isHomeDirectory(cwd) || movedGlobalAgentInputs(written);

@@ -3,16 +3,16 @@ import { mkdir, rm } from "fs/promises";
 import path from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { CLI } from "../fixtures/cli.js";
-import { createTestEnvironment, initProjectAllGlobal } from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE } from "../pages/constants.js";
-import { E2E_CUSTOM_SKILL, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
+import { E2E_AGENT, E2E_CUSTOM_SKILL, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -31,7 +31,7 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import type { AgentName, Category, SkillId } from "../../src/cli/types/index.js";
 
@@ -46,13 +46,31 @@ import type { AgentName, Category, SkillId } from "../../src/cli/types/index.js"
  */
 
 let source: E2EPluginSource;
+let store: SeedConfigStore;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 beforeAll(async () => {
   if (!claudeAvailable) return;
   source = await createE2EPluginSource();
+  store = await startSeedConfigStore();
 }, TIMEOUTS.SETUP_DUAL);
+
+afterAll(async () => {
+  if (!claudeAvailable) return;
+  await store.close();
+});
+
+/** The E2E stack as plugins, every skill and sub-agent at global scope, installed at `dir`. */
+function installPlugins(dir: string, home: string) {
+  return installFromSeed(
+    store,
+    "Plugins1",
+    e2eStackPayload({ install: "plugin" }),
+    { dir, home },
+    source.sourceDir,
+  );
+}
 
 describe.skipIf(!claudeAvailable)("project tracking -- registration", () => {
   let tempDir: string;
@@ -78,23 +96,13 @@ describe.skipIf(!claudeAvailable)("project tracking -- registration", () => {
       await createPermissionsFile(project2Dir);
 
       // Phase A: Init from HOME (global)
-      const globalWizard = await InitWizard.launch({
-        source,
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
-      const globalResult = await globalWizard.completeWithDefaults();
-      const globalExitCode = await globalResult.exitCode;
-      expect(globalExitCode, "Global init should succeed").toBe(EXIT_CODES.SUCCESS);
-      await globalResult.destroy();
+      await installPlugins(fakeHome, fakeHome);
 
-      // Phase B: Init project-1 via dashboard → Edit (global install already exists)
-      const p1 = await initProjectAllGlobal(source, fakeHome, project1Dir);
-      expect(p1.exitCode, "Project-1 init should succeed").toBe(EXIT_CODES.SUCCESS);
+      // Phase B: Init project-1 (global install already exists)
+      await installPlugins(project1Dir, fakeHome);
 
-      // Phase C: Init project-2 via dashboard → Edit
-      const p2 = await initProjectAllGlobal(source, fakeHome, project2Dir);
-      expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
+      // Phase C: Init project-2
+      await installPlugins(project2Dir, fakeHome);
 
       // Verification: Global config should contain projects field with both paths
       const globalConfigPath = configTsPath(fakeHome);
@@ -130,14 +138,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
 
       // Phase A: Init from HOME (global) — establishes the global config-types.ts
       // that the project's config-types.ts must import from.
-      const globalWizard = await InitWizard.launch({
-        source,
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
-      const globalResult = await globalWizard.completeWithDefaults();
-      expect(await globalResult.exitCode, "Global init should succeed").toBe(EXIT_CODES.SUCCESS);
-      await globalResult.destroy();
+      await installPlugins(fakeHome, fakeHome);
 
       // Verify global install emitted the standalone (inlined) config-types — the
       // global types file is the source of truth for GlobalSkillId / GlobalAgentName.
@@ -150,9 +151,8 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         "as GlobalSkillId",
       );
 
-      // Phase B: Init project via dashboard → Edit with all skills kept at global scope.
-      const proj = await initProjectAllGlobal(source, fakeHome, projectDir);
-      expect(proj.exitCode, "Project init should succeed").toBe(EXIT_CODES.SUCCESS);
+      // Phase B: Init project with all skills kept at global scope.
+      await installPlugins(projectDir, fakeHome);
 
       // Project's config-types.ts must be the IMPORT-AND-EXTEND form, not the
       // standalone/inlined form.
@@ -192,7 +192,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
         "Project SkillId must extend GlobalSkillId, not replace it",
       ).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
-      // With initProjectAllGlobal every skill stays global-scoped, and the project's
+      // Every skill stays global-scoped, and the project's
       // own config.ts inlines each of those rows — so its own union has to name them
       // too. Covered by the alias alone, this file goes red the moment a later
       // global-scope run drops one of them.
@@ -210,7 +210,7 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
   );
 
   it(
-    "cc edit at HOME adding a new global skill preserves project import-and-extend config-types",
+    "an edit at HOME adding a new global skill preserves project import-and-extend config-types",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       const env = await createTestEnvironment();
@@ -221,20 +221,12 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       // baseline stack skills; `web-framework-vue-composition-api` is
       // deliberately NOT in the default stack, so adding it in Phase C is a
       // genuine global-scope addition — not a scope toggle.
-      const globalWizard = await InitWizard.launch({
-        source,
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
-      const globalResult = await globalWizard.completeWithDefaults();
-      expect(await globalResult.exitCode, "Global init should succeed").toBe(EXIT_CODES.SUCCESS);
-      await globalResult.destroy();
+      await installPlugins(fakeHome, fakeHome);
 
-      // Phase B: Project init via dashboard → Edit, keeping all skills at
+      // Phase B: Project init, keeping all skills at
       // global scope. Produces the import-and-extend project config-types.ts
       // that must survive the Phase C global edit unchanged.
-      const proj = await initProjectAllGlobal(source, fakeHome, projectDir);
-      expect(proj.exitCode, "Project init should succeed").toBe(EXIT_CODES.SUCCESS);
+      await installPlugins(projectDir, fakeHome);
 
       const projectConfigTypesPath = configTypesTsPath(projectDir);
       const projectTypesBefore = await readTestFile(projectConfigTypesPath);
@@ -248,35 +240,21 @@ describe.skipIf(!claudeAvailable)("project tracking -- config-types propagation"
       ).toContain("SkillId as GlobalSkillId");
       expect(projectTypesBefore).toMatch(/export type SkillId =\s*\|?\s*GlobalSkillId/);
 
-      // Phase C: `cc edit` at HOME and add `Vue Composition Api` to the
-      // global install. This is a new global skill (not in the default
-      // stack), so the write path sees a globally-added item and must
+      // Phase C: `edit --from` at HOME, `Vue Composition Api` in React's place in
+      // the exclusive framework category. This is a new global skill (not in the
+      // default stack), so the write path sees a globally-added item and must
       // rewrite every registered project's config-types.ts via
-      // `propagateGlobalChangesToProjects`, using the import-and-extend
-      // form.
-      const editWizard = await EditWizard.launch({
-        projectDir: fakeHome,
-        source,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      try {
-        // Select Vue in the Web domain, then advance through remaining
-        // domains (API, Methodology) to reach Sources. The generic
-        // passthrough is required because edit-at-HOME carries all domains
-        // where the global install has skills — not just Web.
-        await editWizard.build.selectSkill(E2E_SKILL["vue-composition-api"].display);
-        const sources = await editWizard.build.passThroughAllDomainsGeneric();
-        const agents = await sources.acceptDefaults();
-        const confirm = await agents.acceptDefaults("edit");
-        const result = await confirm.confirm();
-        expect(await result.exitCode, "Global edit should succeed").toBe(EXIT_CODES.SUCCESS);
-        await result.destroy();
-      } catch (e) {
-        await editWizard.destroy();
-        throw e;
-      }
+      // `propagateGlobalChangesToProjects`, using the import-and-extend form.
+      await applyFromSeed(
+        store,
+        "WithVue1",
+        e2eStackPayload({
+          install: "plugin",
+          without: [E2E_SKILL.react.id],
+          plus: { [E2E_SKILL["vue-composition-api"].id]: [E2E_AGENT["web-developer"].name] },
+        }),
+        { dir: fakeHome, home: fakeHome },
+      );
 
       // Sanity: the global install must actually have grown — otherwise any
       // downstream assertion about propagation is testing the wrong state.
@@ -364,22 +342,13 @@ describe.skipIf(!claudeAvailable)("project tracking -- deregistration on uninsta
       await createPermissionsFile(project2Dir);
 
       // Phase A: Init from HOME (global)
-      const globalWizard = await InitWizard.launch({
-        source,
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
-      const globalResult = await globalWizard.completeWithDefaults();
-      expect(await globalResult.exitCode, "Global init should succeed").toBe(EXIT_CODES.SUCCESS);
-      await globalResult.destroy();
+      await installPlugins(fakeHome, fakeHome);
 
-      // Phase B: Init project-1 via dashboard → Edit
-      const p1 = await initProjectAllGlobal(source, fakeHome, project1Dir);
-      expect(p1.exitCode, "Project-1 init should succeed").toBe(EXIT_CODES.SUCCESS);
+      // Phase B: Init project-1
+      await installPlugins(project1Dir, fakeHome);
 
-      // Phase C: Init project-2 via dashboard → Edit
-      const p2 = await initProjectAllGlobal(source, fakeHome, project2Dir);
-      expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
+      // Phase C: Init project-2
+      await installPlugins(project2Dir, fakeHome);
 
       // Pre-check: Both projects should be registered
       const globalConfigPath = configTsPath(fakeHome);
@@ -438,26 +407,17 @@ describe.skipIf(!claudeAvailable)("project tracking -- stale path filtering", ()
       await createPermissionsFile(project2Dir);
 
       // Phase A: Init from HOME (global)
-      const globalWizard = await InitWizard.launch({
-        source,
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
-      const globalResult = await globalWizard.completeWithDefaults();
-      expect(await globalResult.exitCode, "Global init should succeed").toBe(EXIT_CODES.SUCCESS);
-      await globalResult.destroy();
+      await installPlugins(fakeHome, fakeHome);
 
-      // Phase B: Init project-1 via dashboard → Edit (registers it)
-      const p1 = await initProjectAllGlobal(source, fakeHome, project1Dir);
-      expect(p1.exitCode, "Project-1 init should succeed").toBe(EXIT_CODES.SUCCESS);
+      // Phase B: Init project-1 (registers it)
+      await installPlugins(project1Dir, fakeHome);
 
       // Phase C: Delete project-1's .agents-inc/claude/ directory to make it stale
       const project1ConfigDir = sourceFolderIn(project1Dir);
       await rm(project1ConfigDir, { recursive: true, force: true });
 
-      // Phase D: Init project-2 via dashboard → Edit (triggers registration + stale filtering)
-      const p2 = await initProjectAllGlobal(source, fakeHome, project2Dir);
-      expect(p2.exitCode, "Project-2 init should succeed").toBe(EXIT_CODES.SUCCESS);
+      // Phase D: Init project-2 (triggers registration + stale filtering)
+      await installPlugins(project2Dir, fakeHome);
 
       // Verification: Global config should only contain project-2, not stale project-1
       const globalConfigPath = configTsPath(fakeHome);

@@ -235,10 +235,10 @@ describe("the count lines an install and a recompile end on", () => {
 
   it("refers to one global-scoped agent as it, and to more than one as them", () => {
     expect(globalScopedAgentsHint(1)).toBe(
-      "1 agent is global-scoped — run 'npx agents-inc compile' from your home directory, or edit from this project, to recompile it.",
+      "1 agent is global-scoped — run 'npx agents-inc compile' from your home directory to recompile it.",
     );
     expect(globalScopedAgentsHint(2)).toBe(
-      "2 agents are global-scoped — run 'npx agents-inc compile' from your home directory, or edit from this project, to recompile them.",
+      "2 agents are global-scoped — run 'npx agents-inc compile' from your home directory to recompile them.",
     );
   });
 });

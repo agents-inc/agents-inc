@@ -32,7 +32,7 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import {
   buildSkillConfig,
   buildSkillConfigs,
-} from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+} from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 
 /**

@@ -1,10 +1,12 @@
 import { mkdir, rm, writeFile } from "fs/promises";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { runCLI } from "../helpers/test-utils.js";
-import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { cleanupTempDir, runCLI } from "../helpers/test-utils.js";
+import type { TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { installDualScopeStack } from "../fixtures/e2e-stack-seed.js";
 
 /**
  * Doctor dual-scope E2E tests.
@@ -15,10 +17,19 @@ import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-he
  */
 
 describe("doctor dual-scope diagnostics", () => {
-  let env: DualScopeEnv | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await env?.destroy();
+    if (env) await cleanupTempDir(env.tempDir);
     env = undefined;
   });
 
@@ -26,7 +37,7 @@ describe("doctor dual-scope diagnostics", () => {
     "doctor passes all checks on healthy dual-scope installation",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(E2E_SOURCE);
+      env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
 
       const { exitCode, stdout } = await runCLI(["doctor"], env.projectDir, {
         env: { HOME: env.fakeHome },
@@ -48,7 +59,7 @@ describe("doctor dual-scope diagnostics", () => {
     "doctor detects missing agent file in dual-scope",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(E2E_SOURCE);
+      env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
 
       // Delete the api-developer agent file from the project scope
       const agentFile = path.join(env.projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
@@ -76,7 +87,7 @@ describe("doctor dual-scope diagnostics", () => {
     "doctor names a skill directory nothing here installed in dual-scope",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(E2E_SOURCE);
+      env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
 
       // Create an orphan skill directory not referenced in config
       const orphanDir = path.join(env.projectDir, DIRS.CLAUDE, DIRS.SKILLS, "orphan-skill");

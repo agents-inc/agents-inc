@@ -5,7 +5,7 @@ import type { SourceLoadResult } from "../loading/source-loader";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { buildSourceResult } from "../__tests__/factories/config-factories";
 import { createMockCopiedSkill } from "../__tests__/factories/skill-factories";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { WEB_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
 import {

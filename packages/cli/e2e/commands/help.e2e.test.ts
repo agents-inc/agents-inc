@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
+import { createTempDir, cleanupTempDir, flattenCliOutput } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
@@ -69,6 +69,31 @@ describe("help and version", () => {
     expect(result.stdout).toContain("USAGE");
     expect(result.stdout).toContain("--marketplace");
     expect(result.stdout, WITHDRAWN_FLAG_REASON).not.toContain("--source");
+  });
+
+  it("describes init as the way into the editor, and --from as the install", async () => {
+    tempDir = await createTempDir();
+    const result = await CLI.run(["init", "--help"], { dir: tempDir });
+    const help = flattenCliOutput(result.stdout);
+
+    expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(help).toContain("Initialize Agents Inc. in this project");
+    expect(help).toContain(
+      "Build a configuration in agentsinc.sh/editor, or install one by id with --from. Over an existing installation, shows its dashboard.",
+    );
+    expect(help).toContain(
+      "--from=<id> Install a configuration shared from agentsinc.sh by its id",
+    );
+    expect(help).toContain(
+      "--ui Open agentsinc.sh/editor on the id --from names, or on the catalogue — what a bare init does where nothing is installed",
+    );
+    expect(help).toContain(
+      "--marketplace=<value> With --from, install from this marketplace instead of the one the configuration names. Without --from, open the editor and say how to add it there",
+    );
+    expect(help).toContain(
+      "EXAMPLES Open the editor to build a configuration $ agents-inc init Install a configuration built in the editor $ agents-inc init --from <id> Test local marketplace changes against a configuration built in the editor $ agents-inc init --from <id> --marketplace ./my-marketplace",
+    );
+    expect(help, "there is no wizard left to describe").not.toMatch(/wizard/i);
   });
 
   it("should display doctor-specific help", async () => {
@@ -166,6 +191,24 @@ describe("help and version", () => {
       "--refresh",
     );
     expect(result.stdout).not.toContain("--agent-source");
+  });
+
+  it("describes edit as opening this installation in the editor, and --from as the apply", async () => {
+    tempDir = await createTempDir();
+    const result = await CLI.run(["edit", "--help"], { dir: tempDir });
+    const help = flattenCliOutput(result.stdout);
+
+    expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(help).toContain(
+      "Open this installation in agentsinc.sh/editor, or apply a configuration built there with --from",
+    );
+    expect(help).toContain(
+      "--ui Open agentsinc.sh/editor on this installation, or on the id --from names without applying it — what a bare edit does",
+    );
+    expect(help).toContain(
+      "EXAMPLES Open this installation in the editor $ agents-inc edit Apply a configuration built in the editor, by its id $ agents-inc edit --from <id> Look at a shared configuration without applying it $ agents-inc edit --ui --from <id>",
+    );
+    expect(help, "there is no wizard left to describe").not.toMatch(/wizard/i);
   });
 
   it("should display search help via 'help search' syntax", async () => {

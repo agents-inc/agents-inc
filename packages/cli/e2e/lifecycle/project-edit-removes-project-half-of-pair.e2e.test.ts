@@ -1,7 +1,6 @@
 import path from "path";
 import { appendFile } from "fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 import {
@@ -15,12 +14,19 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import {
-  createGlobalOnlyEnv,
+  createTestEnvironment,
   readSkillEntries,
-  runEditWithFirstSkillAction,
-  type DualScopeEnv,
+  type TestEnvironment,
 } from "../fixtures/dual-scope-helpers.js";
+import {
+  applyFromSeed,
+  e2eStackPayload,
+  installE2EStackGlobally,
+  installFromSeed,
+} from "../fixtures/e2e-stack-seed.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { cleanupTempDir } from "../helpers/test-utils.js";
 import {
   TS_NOT_ASSIGNABLE,
   probeConfigTypesNarrowing,
@@ -39,12 +45,8 @@ const PROJECT_COPY_EDIT_MARKER = "## Section added to the project's copy after i
  * scope covers GLOBAL-owned halves; it must not swallow the half the project
  * itself created.
  *
- * Both states are reached through the real wizard: the pair by an `s` toggle in
- * a project-scope edit, saved; the removal by a second session pressing SPACE on
- * the same row, saved. The negative half of the same guard — a `[G]`-only
- * inherited row refusing the identical keystroke — is pinned in
- * `global-skill-toggle-guard.e2e.test.ts`, which is what tells a correctly
- * scoped guard from one that has given up its whole domain.
+ * The pair is set up by `init --from` with React in the project over a global
+ * install of it; the removal by `edit --from` naming React at global scope only.
  *
  * "Leaves the global install whole" is held on the global copy's files, not its
  * name. The pair is seeded by copying the global skill into the project, so the
@@ -53,32 +55,45 @@ const PROJECT_COPY_EDIT_MARKER = "## Section added to the project's copy after i
  * only names and stayed green while every drop did exactly that. So the project's
  * copy is edited first, and the global folder is compared as a tree snapshot,
  * whose mtimes also catch a rewrite that happens to produce the same bytes.
- *
- * `s` on the same row is the other collapse, and the one that DOES write global: it
- * folds the project's copy into the global install, edits included, so every project
- * inherits it. Both keys leave the config holding the same entry, so the edited copy is
- * what tells a fold from a drop — the drop must leave the global copy without the edit,
- * the fold must leave it with it.
  */
 
 describe("project edit drops the project half of a dual-scope pair", () => {
-  let env: DualScopeEnv | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await env?.destroy();
+    if (env) await cleanupTempDir(env.tempDir);
     env = undefined;
   });
 
   it(
-    "spacebar on a persisted [P][G] row removes the project half and leaves the global install whole",
+    "an edit leaving out a persisted [P][G] pair's project half removes it and leaves the global install whole",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      env = await createGlobalOnlyEnv(E2E_SOURCE);
+      env = await createTestEnvironment();
       const { fakeHome, projectDir } = env;
+      const project = { dir: projectDir, home: fakeHome };
 
-      // Seed the pair the same way a user does: `s` on an inherited global row,
-      // saved through to completion.
-      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
+      // The pair: React in the project over the global install of it. A project skill never
+      // reaches the global web-developer, so the project's React is assigned to no sub-agent.
+      await installE2EStackGlobally(store, fakeHome);
+      await installFromSeed(
+        store,
+        "Paired1",
+        e2eStackPayload({
+          projectSkills: [E2E_SKILL.react.id],
+          unassigned: [E2E_SKILL.react.id],
+        }),
+        project,
+      );
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
         "setup must persist an active project entry plus a global tombstone",
@@ -115,7 +130,7 @@ describe("project edit drops the project half of a dual-scope pair", () => {
         "the global install must hold the skill before the edit — it is what must survive",
       ).toContain(E2E_SKILL.react.id);
 
-      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "space");
+      await applyFromSeed(store, "Dropped1", e2eStackPayload(), project);
 
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.react.id),
@@ -169,47 +184,6 @@ describe("project edit drops the project half of a dual-scope pair", () => {
         await readTestFile(configTypesTsPath(fakeHome)),
         "a project-scope removal must not rewrite the global config-types.ts",
       ).toBe(globalTypesBefore);
-    },
-  );
-
-  it(
-    "s on a persisted [P][G] row folds the project's copy, edits and all, into the global install",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
-    async () => {
-      env = await createGlobalOnlyEnv(E2E_SOURCE);
-      const { fakeHome, projectDir } = env;
-
-      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
-      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
-      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
-      await appendFile(
-        path.join(projectSkillDir, FILES.SKILL_MD),
-        `\n\n${PROJECT_COPY_EDIT_MARKER}\n`,
-      );
-      expect(
-        await readTestFile(path.join(globalSkillDir, FILES.SKILL_MD)),
-        "the global copy must lack the project's edit before the fold, or carrying it is vacuous",
-      ).not.toContain(PROJECT_COPY_EDIT_MARKER);
-      const projectCopy = await readTestFile(path.join(projectSkillDir, FILES.SKILL_MD));
-
-      await runEditWithFirstSkillAction(projectDir, fakeHome, E2E_SOURCE, "scope");
-
-      expect(
-        await readTestFile(path.join(globalSkillDir, FILES.SKILL_MD)),
-        "the fold moves the project's copy into the global install, which every project reads",
-      ).toBe(projectCopy);
-      expect(
-        await directoryExists(projectSkillDir),
-        "the folded project copy is moved, not left behind",
-      ).toBe(false);
-      expect(
-        await readSkillEntries(projectDir, E2E_SKILL.react.id),
-        "the project now inherits the folded global entry",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }]);
-      expect(
-        await readSkillEntries(fakeHome, E2E_SKILL.react.id),
-        "the global install keeps its mode, since the folded copy was Local too",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: "eject" }]);
     },
   );
 });

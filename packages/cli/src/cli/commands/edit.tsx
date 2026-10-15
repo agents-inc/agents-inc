@@ -6,13 +6,10 @@ import { Flags } from "@oclif/core";
 import { difference, indexBy, partition } from "remeda";
 
 import { BaseCommand } from "../base-command.js";
-import { type WizardResultV2 } from "../components/wizard/wizard.js";
-import { runWizardSession } from "../components/wizard/run-wizard-session.js";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import {
   CLI_INVOKE_COMMAND,
   CLI_COLORS,
-  EDIT_PROJECT_SETUP_FLAG,
-  EDIT_PROJECT_SETUP_MARKETPLACE_FLAG,
   EJECT_SOURCE,
   editorConfigUrl,
   formatSourceDisplayName,
@@ -52,22 +49,16 @@ import {
   mutateGlobal,
   type GateReport,
 } from "../lib/config-gate/index.js";
-import { matrix, getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
+import { getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
 import { type AuthoritativeScope } from "../lib/configuration/index.js";
 import {
-  activeAgentNames,
   activeAgentScopeMap,
   isActiveAt,
   isGlobalTombstone,
 } from "../lib/configuration/scope-predicates.js";
 import type { SourceLoadResult } from "../lib/loading/index.js";
-import { discoverAllPluginSkills, buildMarketplacePluginRef } from "../lib/plugins/index.js";
-import {
-  deleteLocalSkill,
-  foldLocalSkillIntoGlobal,
-  migrateLocalSkillScope,
-  unresolvedSkillRemovalReasons,
-} from "../lib/skills/index.js";
+import { buildMarketplacePluginRef } from "../lib/plugins/index.js";
+import { deleteLocalSkill, migrateLocalSkillScope } from "../lib/skills/index.js";
 import type {
   SkillId,
   SkillConfig,
@@ -89,7 +80,7 @@ import {
   writeExternalSkills,
   type ExternalSkillInstall,
 } from "../lib/seed/external-skills.js";
-import { seedToWizardResult, type SeedMapping } from "../lib/seed/seed-to-wizard.js";
+import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-selection.js";
 import {
   arrivalLines,
   arrivalsByScope,
@@ -120,7 +111,6 @@ import {
   refuseAnAmbiguousInstallation,
 } from "../lib/installation/provider-flag.js";
 import { openUrl } from "../utils/open-url.js";
-import { plural } from "../utils/string.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { type StartupMessage } from "../utils/logger.js";
 import {
@@ -144,10 +134,8 @@ import {
   skippedUnknownAgents,
   skippedUnknownSkills,
   unplaceableKept,
-  wizardNeedsTerminal,
 } from "../utils/messages.js";
-import { formatScopeTag } from "../lib/wizard/index.js";
-import { typedKeys } from "../utils/typed-object.js";
+import { formatScopeTag } from "../lib/configuration/scope-diff.js";
 import type { SeedPayload } from "@workspace/matrix/seed";
 
 type ScopeChange = { from: SkillScope; to: SkillScope };
@@ -212,64 +200,44 @@ function formatValueChangeLine(subject: string, change: ValueChange, kind: strin
   );
 }
 
-/** The resolved marketplace, or the source string when there is none. */
-function loadedSourceLabel(sourceResult: SourceLoadResult): string {
-  return sourceResult.marketplace ?? sourceResult.sourceConfig.source;
-}
-
 /** @internal Re-exported for testing — the transform itself lives inside the gate. */
 export { applyMigratedGlobalSources };
 
 type EditContext = {
   installation: Installation;
   projectConfig: ProjectConfig | null;
-  /** The detected installation's root — where this run READS its saved skills from. */
-  projectDir: string;
   sourceResult: SourceLoadResult;
   startupMessages: StartupMessage[];
-  currentSkillIds: SkillId[];
-  /** What `init --marketplace` named for the project setup this run continues. */
-  setupMarketplace?: string;
 };
 
 /** The one directory an `edit` run acts on, decided once and handed to every layer. */
 type EditRoot = {
-  /** Where this run writes, registers plugins and compiles into. */
+  /** Where this run reads its saved skills from, writes, registers plugins and compiles into. */
   dir: string;
-  /** {@link EditRoot.dir} IS the global installation: no project scope to offer. */
+  /** {@link EditRoot.dir} IS the global installation. */
   isGlobal: boolean;
-  /** Materialise {@link EditRoot.dir} as a project even with nothing to change. */
-  isProjectSetup: boolean;
 };
 
 /**
  * The installation `detectProject` found is the only root with a config, so the only one this run
- * may write to. `--project-setup` (`cc init` here) declares this directory the one being set up.
+ * may write to.
  */
-function resolveEditRoot(
-  installation: Installation,
-  cwd: string,
-  setupRequested: boolean,
-): EditRoot {
-  const dir = setupRequested ? cwd : installation.projectDir;
-  const isGlobal = isHomeDirectory(dir);
-  return { dir, isGlobal, isProjectSetup: setupRequested && !isGlobal };
+function resolveEditRoot(installation: Installation): EditRoot {
+  const dir = installation.projectDir;
+  return { dir, isGlobal: isHomeDirectory(dir) };
 }
 
 /**
- * Both producers yield one `WizardResultV2`, applied by one sequence. A shared configuration
- * destroys whatever it leaves out, so its removals are confirmed first.
+ * A shared configuration, as one sequence applies it. It destroys whatever it leaves out, so its
+ * removals are confirmed first.
  */
-type EditSelection =
-  | { producer: "wizard"; result: WizardResultV2 }
-  | {
-      producer: "shared";
-      result: WizardResultV2;
-      /** Statements naming what this run may not remove — rendered in the confirm. */
-      kept: string[];
-      /** Skills the configuration carries rather than names, written once it is approved. */
-      carried: ExternalSkillInstall[];
-    };
+type EditSelection = {
+  result: InstallSelection;
+  /** Statements naming what this run may not remove — rendered in the confirm. */
+  kept: string[];
+  /** Skills the configuration carries rather than names, written once it is approved. */
+  carried: ExternalSkillInstall[];
+};
 
 type SharedConfigPlan = {
   heading: string;
@@ -309,16 +277,15 @@ type DroppedHalves = { skillIds: SkillId[]; agentNames: AgentName[] };
 
 /**
  * The diff records these as project-to-global scope changes, since the id survives at global
- * scope. A pair `s` folded is excluded: its copy moves rather than goes.
+ * scope.
  */
 function droppedProjectHalves(changes: ConfigChanges): DroppedHalves {
-  const droppedSkills = changes.collapsedPairs.filter((pair) => !pair.folded);
   const droppedAgents = [...changes.agentScopeChanges].filter(
     ([name, change]) => change.to === "global" && changes.dualScopeAgentTransitions.has(name),
   );
 
   return {
-    skillIds: droppedSkills.map(({ projectHalf }) => projectHalf.id),
+    skillIds: changes.collapsedPairs.map(({ projectHalf }) => projectHalf.id),
     agentNames: droppedAgents.map(([name]) => name),
   };
 }
@@ -331,16 +298,10 @@ function planHeading(sections: RemovalPlanSection[]): string {
 
 /**
  * From a project a shared configuration holds the global install as installed, so the global pass
- * runs only when the write added something global sub-agents derive from. The wizard keeps both:
- * a mode switch it carried to global scope is recorded before this write.
+ * runs only when the write added something global sub-agents derive from.
  */
-function compilesGlobalScope(
-  producer: EditSelection["producer"],
-  editRoot: EditRoot,
-  written: GateReport,
-): boolean {
-  if (editRoot.isGlobal || producer === "wizard") return true;
-  return movedGlobalAgentInputs(written);
+function compilesGlobalScope(editRoot: EditRoot, written: GateReport): boolean {
+  return editRoot.isGlobal || movedGlobalAgentInputs(written);
 }
 
 /**
@@ -353,18 +314,16 @@ type PlannedChanges = ConfigChanges & { reassignedAgents: AgentName[] };
 type AppliedChanges = PlannedChanges & { rewrittenSkills: SkillId[] };
 
 /**
- * Only a producer that states rows has any: the wizard leaves `assignedStack` undefined. In a
- * project only the project's own sub-agents count; a global one keeps its installed rows
+ * In a project only the project's own sub-agents count; a global one keeps its installed rows
  * (`restoreInstalledGlobal`). A sub-agent already counted as added is not counted twice.
  */
 function withReassignments(
   changes: ConfigChanges,
-  result: WizardResultV2,
+  result: InstallSelection,
   installedStack: ProjectConfig["stack"],
   editRoot: EditRoot,
 ): PlannedChanges {
   const { assignedStack } = result;
-  if (assignedStack === undefined) return { ...changes, reassignedAgents: [] };
 
   const ownedHere = (agent: AgentScopeConfig): boolean =>
     editRoot.isGlobal || isActiveAt(agent, "project");
@@ -383,7 +342,7 @@ function withReassignments(
  * What the apply adds or changes, by landing scope. Excludes what is already installed as stated,
  * and the global copy a dropped project half leaves, which the plan lists as a removal.
  */
-function applyArrivals(changes: PlannedChanges, result: WizardResultV2): Arrivals {
+function applyArrivals(changes: PlannedChanges, result: InstallSelection): Arrivals {
   const changedSkills = new Set<SkillId>([
     ...changes.addedSkills,
     ...changes.sourceChanges.keys(),
@@ -440,8 +399,8 @@ function keptAsInstalledStatement(held: HeldGlobal, revisedCarried: SkillId[]): 
 
 /**
  * At the home root the run owns everything it loaded. In a project it owns only the project's
- * entries: the wizard cannot deselect a live global entry, and a shared configuration only adds to
- * the global install from a project (owner ruling 2026-10-02).
+ * entries: a shared configuration only adds to the global install from a project (owner ruling
+ * 2026-10-02).
  */
 function applyAuthority(editRoot: EditRoot): AuthoritativeScope {
   return editRoot.isGlobal ? "all" : "owned";
@@ -449,43 +408,34 @@ function applyAuthority(editRoot: EditRoot): AuthoritativeScope {
 
 export default class Edit extends BaseCommand {
   static summary = "Edit skills in the plugin";
-  static description = "Modify the currently installed skills via interactive wizard";
+  static description =
+    "Open this installation in agentsinc.sh/editor, or apply a configuration built there with --from";
 
   static examples = [
     {
-      description: "Open the edit wizard",
+      description: "Open this installation in the editor",
       command: "<%= config.bin %> <%= command.id %>",
-    },
-    {
-      description: "Open this installation in the editor instead of the wizard",
-      command: "<%= config.bin %> <%= command.id %> --ui",
     },
     {
       description: "Apply a configuration built in the editor, by its id",
       command: "<%= config.bin %> <%= command.id %> --from <id>",
+    },
+    {
+      description: "Look at a shared configuration without applying it",
+      command: "<%= config.bin %> <%= command.id %> --ui --from <id>",
     },
   ];
 
   static flags = {
     ui: Flags.boolean({
       description:
-        "Open agentsinc.sh/editor instead of the wizard — the id --from names, or this installation",
+        "Open agentsinc.sh/editor on this installation, or on the id --from names without applying it — what a bare edit does",
       default: false,
     }),
     from: Flags.string({
       description:
         "Apply a configuration shared from agentsinc.sh by its id, removing whatever it leaves out — from a project, only the project's own entries",
       helpValue: "<id>",
-    }),
-    [EDIT_PROJECT_SETUP_FLAG]: Flags.boolean({
-      description: "Internal: this run continues an `init` project setup",
-      default: false,
-      hidden: true,
-    }),
-    [EDIT_PROJECT_SETUP_MARKETPLACE_FLAG]: Flags.string({
-      description: "Internal: the marketplace `init --marketplace` named for that project setup",
-      hidden: true,
-      dependsOn: [EDIT_PROJECT_SETUP_FLAG],
     }),
     provider: providerFlag(),
   };
@@ -504,7 +454,7 @@ export default class Edit extends BaseCommand {
     // 2026-08-24, pinned by `edit-ui-from.e2e.test.ts`).
     if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from, cwd);
 
-    // Before the wizard copies or installs anything.
+    // Before anything is copied or installed.
     await refuseAnAmbiguousInstallation(cwd, "edit", providerNamedBy(flags.provider), (message) =>
       this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
@@ -513,28 +463,24 @@ export default class Edit extends BaseCommand {
     await this.ensureConfigReadable(cwd);
     await this.refuseUnofferablePlacements(cwd);
 
-    // Replaces the wizard, so it runs above the source load.
-    if (flags.ui) return this.openInEditor(cwd);
+    // A bare `edit` is `edit --ui`, and needs no source load.
+    if (flags.from === undefined) return this.openInEditor(cwd);
 
     // A destructive apply nobody can confirm must never become a yes; refused before the fetch.
-    const payload =
-      flags.from === undefined ? null : await this.fetchSharedConfigOrFail(flags.from);
+    const payload = await this.fetchSharedConfigOrFail(flags.from);
 
-    const context = await this.loadContextUnderSpinner(flags[EDIT_PROJECT_SETUP_MARKETPLACE_FLAG]);
+    const context = await this.loadContextUnderSpinner();
 
-    const editRoot = resolveEditRoot(context.installation, cwd, flags[EDIT_PROJECT_SETUP_FLAG]);
+    const editRoot = resolveEditRoot(context.installation);
 
     // A skill whose metadata.yaml no longer describes it would be dropped from config.ts.
     await this.ensureSavedSkillsReadable(
       context.projectConfig?.skills ?? [],
       context.sourceResult.matrix,
-      context.projectDir,
+      editRoot.dir,
     );
 
-    const selection = payload
-      ? await this.selectionFromSharedConfig(payload, context, editRoot)
-      : await this.selectionFromWizard(context, editRoot);
-    if (!selection) this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
+    const selection = await this.selectionFromSharedConfig(payload, context, editRoot);
 
     const { result } = selection;
     this.reportValidationErrors(result.validation);
@@ -544,7 +490,7 @@ export default class Edit extends BaseCommand {
     const activeOldSkills = (context.projectConfig?.skills ?? []).filter((s) => !s.excluded);
     const activeOldAgents = (context.projectConfig?.agents ?? []).filter((a) => !a.excluded);
 
-    const filteredResult: WizardResultV2 = {
+    const filteredResult: InstallSelection = {
       ...result,
       skills: activeNewSkills,
       agentConfigs: activeNewAgents,
@@ -566,10 +512,7 @@ export default class Edit extends BaseCommand {
     );
     // After the diff, above every mutation and the no-change return: carried skills may still have
     // bytes to land when the roster is unchanged.
-    const rewritten =
-      selection.producer === "shared"
-        ? await this.confirmAndWriteCarried(selection, planned, filteredResult)
-        : [];
+    const rewritten = await this.confirmAndWriteCarried(selection, planned, filteredResult);
     const changes: AppliedChanges = {
       ...planned,
       rewrittenSkills: difference(rewritten, planned.addedSkills),
@@ -580,27 +523,10 @@ export default class Edit extends BaseCommand {
 
     if (!hasAnyChanges(changes)) {
       this.log(chalk.hex(CLI_COLORS.NEUTRAL)("No changes made."));
-      // `cc init` in a project materialises it (config pair written, path registered) even with no
-      // change; a bare `cc edit`, or a home-root setup, stays an inspection.
-      if (!editRoot.isProjectSetup) return;
-      await this.writeConfigAndCompile(result, context, editRoot, authority, selection.producer);
-      await this.reportWhatThisHostCannotCarry(editRoot);
-      this.logCompletionSummary(changes);
       return;
     }
 
-    const removalReasons = await unresolvedSkillRemovalReasons(
-      result.unresolvableSkillIds,
-      activeOldSkills,
-      context.projectDir,
-      loadedSourceLabel(context.sourceResult),
-    );
-    this.logChangeSummary(
-      changes,
-      filteredResult.skills,
-      filteredOldConfig?.skills ?? [],
-      removalReasons,
-    );
+    this.logChangeSummary(changes, filteredResult.skills, filteredOldConfig?.skills ?? []);
     const migratedSkillIds = await this.applyMigrations(
       changes,
       filteredResult,
@@ -615,30 +541,15 @@ export default class Edit extends BaseCommand {
       context,
     );
     await this.applyScopeChanges(changes, filteredResult, context, editRoot);
-    await this.applyCollapsedPairs(changes, filteredResult, context, editRoot);
+    await this.applyCollapsedPairs(changes, context, editRoot);
     await this.applySourceChanges(changes, activeOldSkills, editRoot, migratedSkillIds);
     await this.applyPluginChanges(changes, filteredResult, activeOldSkills, context, editRoot);
     await this.copyNewLocalSkills(changes, filteredResult, context, editRoot);
     await this.removeDeletedLocalSkills(changes, activeOldSkills, editRoot);
-    await this.writeConfigAndCompile(result, context, editRoot, authority, selection.producer);
+    await this.writeConfigAndCompile(result, context, editRoot, authority);
     await this.cleanupStaleAgentFiles(changes, activeOldAgents, editRoot);
     await this.reportWhatThisHostCannotCarry(editRoot);
     this.logCompletionSummary(changes);
-  }
-
-  private async selectionFromWizard(
-    context: EditContext,
-    editRoot: EditRoot,
-  ): Promise<EditSelection | null> {
-    // The installation refusals above work over a pipe; the mount is the first thing needing a TTY.
-    if (!process.stdin.isTTY) {
-      this.error(wizardNeedsTerminal("edit"), { exit: EXIT_CODES.ERROR });
-    }
-
-    const result = await this.runEditWizard(context, editRoot);
-    if (!result) return null;
-
-    return { producer: "wizard", result };
   }
 
   /**
@@ -689,13 +600,12 @@ export default class Edit extends BaseCommand {
     const heldGlobally = difference(carried, arrivingCarried);
     const revisedGlobally = await carriedSkillsThatDiffer(heldGlobally);
 
-    // Warnings the load buffered for a wizard this run never mounts.
+    // Warnings the load buffered.
     sayCapturedWarnings(context.startupMessages);
     if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
 
     return {
-      producer: "shared",
       result: held.result,
       kept: [
         ...keptStatements(reconciled.kept),
@@ -741,7 +651,7 @@ export default class Edit extends BaseCommand {
 
   private decodeSeedOrFail(payload: SeedPayload, sourceMatrix: MergedSkillsMatrix): SeedMapping {
     try {
-      return seedToWizardResult(payload, sourceMatrix);
+      return seedToInstallSelection(payload, sourceMatrix);
     } catch (error) {
       this.handleError(error);
     }
@@ -760,9 +670,9 @@ export default class Edit extends BaseCommand {
   }
 
   private async confirmAndWriteCarried(
-    selection: Extract<EditSelection, { producer: "shared" }>,
+    selection: EditSelection,
     planned: PlannedChanges,
-    result: WizardResultV2,
+    result: InstallSelection,
   ): Promise<SkillId[]> {
     await this.confirmSharedConfigOrCancel(planned, selection.kept, applyArrivals(planned, result));
     return this.writeCarriedSkills(selection.carried);
@@ -858,13 +768,11 @@ export default class Edit extends BaseCommand {
     if (!opened.ok) this.warn(opened.error);
   }
 
-  private async loadContextUnderSpinner(setupMarketplace?: string): Promise<EditContext> {
-    return awaitUnderSpinner(STATUS_MESSAGES.LOADING_SKILLS, () =>
-      this.loadContext(setupMarketplace),
-    );
+  private async loadContextUnderSpinner(): Promise<EditContext> {
+    return awaitUnderSpinner(STATUS_MESSAGES.LOADING_SKILLS, () => this.loadContext());
   }
 
-  private async loadContext(setupMarketplace?: string): Promise<EditContext> {
+  private async loadContext(): Promise<EditContext> {
     const detected = await detectProject();
     if (!detected) {
       this.error(ERROR_MESSAGES.NO_INSTALLATION, {
@@ -873,104 +781,22 @@ export default class Edit extends BaseCommand {
     }
     const { installation, config: projectConfig } = detected;
 
-    // The installation's own root, which this run READS; writes go to `EditRoot.dir`.
-    const projectDir = installation.projectDir;
-
-    let sourceResult: SourceLoadResult;
-    let startupMessages: StartupMessage[] = [];
     try {
-      const loaded = await loadSource({
-        projectDir,
-        ...(setupMarketplace !== undefined && { sourceFlag: setupMarketplace }),
+      const { sourceResult, startupMessages } = await loadSource({
+        projectDir: installation.projectDir,
         captureStartupMessages: true,
       });
-      sourceResult = loaded.sourceResult;
-      startupMessages = loaded.startupMessages;
-
-      const sourceInfo = sourceResult.isLocal ? "local" : sourceResult.sourceConfig.sourceOrigin;
-      startupMessages.push({
-        level: "info",
-        text: `Loaded ${plural(Object.keys(matrix.skills).length, "skill")} (${sourceInfo})`,
-      });
+      return { installation, projectConfig, sourceResult, startupMessages };
     } catch (error) {
       this.handleError(error);
     }
-
-    let currentSkillIds: SkillId[];
-    try {
-      const discoveredSkills = await discoverAllPluginSkills(projectDir);
-      const pluginSkillIds = typedKeys(discoveredSkills);
-
-      // Config skills catch local and global-scoped plugin skills discoverAllPluginSkills misses.
-      // Excluded entries stay out of the selection; installedSkillConfigs still carries them.
-      const excludedConfigIds = new Set(
-        projectConfig?.skills.filter((s) => s.excluded).map((s) => s.id) ?? [],
-      );
-      const configSkillIds =
-        projectConfig?.skills.filter((s) => !s.excluded).map((s) => s.id) ?? [];
-      const filteredPluginSkillIds = pluginSkillIds.filter((id) => !excludedConfigIds.has(id));
-      const mergedIds = new Set<SkillId>([...filteredPluginSkillIds, ...configSkillIds]);
-      currentSkillIds = [...mergedIds];
-
-      startupMessages.push({
-        level: "info",
-        text: `Found ${plural(currentSkillIds.length, "installed skill")}`,
-      });
-    } catch (error) {
-      this.handleError(error);
-    }
-
-    return {
-      installation,
-      projectConfig,
-      projectDir,
-      sourceResult,
-      startupMessages,
-      currentSkillIds,
-      ...(setupMarketplace !== undefined &&
-        sourceResult.marketplace !== undefined && { setupMarketplace: sourceResult.marketplace }),
-    };
-  }
-
-  private async runEditWizard(
-    context: EditContext,
-    editRoot: EditRoot,
-  ): Promise<WizardResultV2 | null> {
-    const { projectConfig, currentSkillIds } = context;
-    const selectedAgents = projectConfig?.agents && activeAgentNames(projectConfig.agents);
-
-    return runWizardSession({
-      hydrate: {
-        initialStep: "build",
-        ...(projectConfig?.selectedDomains !== undefined && {
-          initialDomains: projectConfig.selectedDomains,
-        }),
-        ...(selectedAgents !== undefined && { initialAgents: selectedAgents }),
-        installedSkillIds: currentSkillIds,
-        ...(projectConfig?.skills !== undefined && { installedSkillConfigs: projectConfig.skills }),
-        ...(projectConfig?.agents !== undefined && { installedAgentConfigs: projectConfig.agents }),
-        isEditingFromGlobalScope: editRoot.isGlobal,
-        ...(context.setupMarketplace !== undefined && {
-          setupMarketplace: context.setupMarketplace,
-        }),
-      },
-      props: {
-        version: this.config.version,
-        initialAgents: selectedAgents,
-        installedSkillIds: currentSkillIds,
-        startupMessages: context.startupMessages,
-      },
-      onCancel: () => this.log("\nEdit cancelled"),
-      clearTerminal: () => this.clearTerminal(),
-    });
   }
 
   /**
    * Records in the GLOBAL config the install-mode migrations this run already performed under
    * `$HOME`, and only their `origin`: `executeMigration` resolves paths from each skill's own
-   * scope, so leaving the record alone would contradict the disk and the plugin registry. The
-   * reachable case is a mode change on a `[P][G]` pair's project half, carried to global by `s`.
-   * Runs before `writeConfigAndCompile`, through the gate so every other project is refreshed.
+   * scope, so leaving the record alone would contradict the disk and the plugin registry. Runs
+   * before `writeConfigAndCompile`, through the gate so every other project is refreshed.
    */
   private async recordGlobalSourceMigrations(
     migratedSkillIds: Set<SkillId>,
@@ -978,7 +804,7 @@ export default class Edit extends BaseCommand {
     editRoot: EditRoot,
     context: EditContext,
   ): Promise<void> {
-    // The wizard write already covers the global config.
+    // At the home root the config write itself is the global config.
     if (editRoot.isGlobal) return;
 
     const migratedSources = new Map(
@@ -1012,7 +838,6 @@ export default class Edit extends BaseCommand {
     changes: AppliedChanges,
     newSkills: SkillConfig[],
     oldSkills: SkillConfig[],
-    removalReasons: ReadonlyMap<SkillId, string>,
   ): void {
     const {
       addedSkills,
@@ -1040,11 +865,7 @@ export default class Edit extends BaseCommand {
     for (const skillId of removedSkills) {
       const scope = oldSkills.find((s) => s.id === skillId)?.scope;
       const scopeLabel = scope ? ` ${formatScopeTag(scope)}` : "";
-      const reason = removalReasons.get(skillId);
-      this.log(
-        chalk.hex(CLI_COLORS.ERROR)(`  - ${getSkillDisplayName(skillId)}${scopeLabel}`) +
-          (reason ? chalk.hex(CLI_COLORS.NEUTRAL)(` (${reason})`) : ""),
-      );
+      this.log(chalk.hex(CLI_COLORS.ERROR)(`  - ${getSkillDisplayName(skillId)}${scopeLabel}`));
     }
     for (const agentName of addedAgents) {
       this.log(
@@ -1094,7 +915,7 @@ export default class Edit extends BaseCommand {
 
   private async applyMigrations(
     changes: ConfigChanges,
-    filteredResult: WizardResultV2,
+    filteredResult: InstallSelection,
     activeOldSkills: SkillConfig[],
     context: EditContext,
     editRoot: EditRoot,
@@ -1168,12 +989,12 @@ export default class Edit extends BaseCommand {
   }
 
   /**
-   * A collapsed `[P][G]` pair is not a move: its project half is dropped or folded
+   * A collapsed `[P][G]` pair is not a move: its project half is dropped
    * ({@link applyCollapsedPairs}).
    */
   private async applyScopeChanges(
     changes: ConfigChanges,
-    filteredResult: WizardResultV2,
+    filteredResult: InstallSelection,
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
@@ -1216,27 +1037,19 @@ export default class Edit extends BaseCommand {
   }
 
   /**
-   * A Local half `s` folded into a Local global install moves there, replacing the global copy.
-   * Every other half is removed at project scope only. The global install's mode is
+   * Each project half is removed at project scope only. The global install's mode is
    * {@link applyMigrations}' to change. The uninstall is diagnostic, as every one here is.
    */
   private async applyCollapsedPairs(
     changes: ConfigChanges,
-    filteredResult: WizardResultV2,
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
-    const [foldedCopies, removedPairs] = partition(changes.collapsedPairs, (pair) =>
-      foldsItsCopyIntoGlobal(pair, filteredResult.skills),
-    );
     const [ejectedHalves, pluginHalves] = partition(
-      removedPairs.map(({ projectHalf }) => projectHalf),
+      changes.collapsedPairs.map(({ projectHalf }) => projectHalf),
       (half) => half.origin === EJECT_SOURCE,
     );
 
-    for (const { projectHalf } of foldedCopies) {
-      await foldLocalSkillIntoGlobal(editRoot.dir, projectHalf.id);
-    }
     for (const half of ejectedHalves) {
       await deleteLocalSkill(editRoot.dir, half.id, half.scope);
     }
@@ -1298,7 +1111,7 @@ export default class Edit extends BaseCommand {
 
   private async applyPluginChanges(
     changes: ConfigChanges,
-    filteredResult: WizardResultV2,
+    filteredResult: InstallSelection,
     activeOldSkills: SkillConfig[],
     context: EditContext,
     editRoot: EditRoot,
@@ -1349,7 +1162,7 @@ export default class Edit extends BaseCommand {
 
   private async copyNewLocalSkills(
     changes: ConfigChanges,
-    filteredResult: WizardResultV2,
+    filteredResult: InstallSelection,
     context: EditContext,
     editRoot: EditRoot,
   ): Promise<void> {
@@ -1387,11 +1200,10 @@ export default class Edit extends BaseCommand {
   }
 
   private async writeConfigAndCompile(
-    result: WizardResultV2,
+    result: InstallSelection,
     context: EditContext,
     editRoot: EditRoot,
     authority: AuthoritativeScope,
-    producer: EditSelection["producer"],
   ): Promise<void> {
     let agentDefsResult: AgentDefs;
     try {
@@ -1404,7 +1216,7 @@ export default class Edit extends BaseCommand {
     let configResult: ConfigWriteResult;
     try {
       configResult = await writeProjectConfig({
-        wizardResult: result,
+        selection: result,
         sourceResult: context.sourceResult,
         projectDir: editRoot.dir,
         agentDefs: agentDefsResult,
@@ -1421,7 +1233,7 @@ export default class Edit extends BaseCommand {
     try {
       const agentScopeMap = activeAgentScopeMap(result.agentConfigs);
       const { allSkills } = await discoverInstalledSkills(editRoot.dir);
-      const compile = compilesGlobalScope(producer, editRoot, configResult.propagation)
+      const compile = compilesGlobalScope(editRoot, configResult.propagation)
         ? compileAgentsAllScopes
         : compileProjectScope;
       const compilationResult = await compile({
@@ -1516,9 +1328,9 @@ export type ConfigChanges = {
   /** Dual-scope add/removes in `scopeChanges`, which the summary must not report as migrations. */
   dualScopeSkillTransitions: Set<SkillId>;
   /**
-   * The `[P][G]` pairs this edit collapsed, as they stood before it. SPACE drops the project's own
-   * install; `s` folds it into the global install. The config cannot tell them apart, so
-   * `sourceChanges` and the mode migrations measure a collapsed skill against `maskedGlobal`.
+   * The `[P][G]` pairs this edit collapsed, as they stood before it. The project's own install is
+   * dropped, so `sourceChanges` and the mode migrations measure a collapsed skill against
+   * `maskedGlobal`.
    */
   collapsedPairs: CollapsedPair[];
   /** Agent equivalent of `dualScopeSkillTransitions`. */
@@ -1531,12 +1343,10 @@ type ValueChange = { from: string; to: string };
 
 /** A collapsed `[P][G]` pair, as the config held it before the edit. */
 type CollapsedPair = {
-  /** The project's own install: the half the collapse drops or folds. */
+  /** The project's own install: the half the collapse drops. */
   projectHalf: SkillConfig;
   /** The global install the project half masked, as its tombstone recorded it. */
   maskedGlobal: SkillConfig;
-  /** Whether `s` folded the half into the global install, rather than SPACE dropping it. */
-  folded: boolean;
 };
 
 /** Full (tombstone-inclusive) entry lists used to classify dual-scope transitions. */
@@ -1555,25 +1365,25 @@ type FullScopeEntries = {
  */
 export function detectConfigChanges(
   oldConfig: ProjectConfig | null,
-  wizardResult: WizardResultV2,
+  selection: InstallSelection,
   fullEntries?: FullScopeEntries,
 ): ConfigChanges {
   const oldSkillIds = oldConfig?.skills.map((s) => s.id) ?? [];
-  const newSkillIds = wizardResult.skills.map((s) => s.id);
+  const newSkillIds = selection.skills.map((s) => s.id);
   const oldAgentNames = oldConfig?.agents.map((a) => a.name) ?? [];
-  const newAgentNames = wizardResult.agentConfigs.map((a) => a.name);
+  const newAgentNames = selection.agentConfigs.map((a) => a.name);
 
   const oldSkillsById = indexBy(oldConfig?.skills ?? [], (s) => s.id);
   const oldAgentsByName = indexBy(oldConfig?.agents ?? [], (a) => a.name);
 
   const scopeChanges = detectPropertyChanges(
-    wizardResult.skills,
+    selection.skills,
     oldSkillsById,
     (s) => s.id,
     (s) => s.scope,
   );
   const agentScopeChanges = detectPropertyChanges(
-    wizardResult.agentConfigs,
+    selection.agentConfigs,
     oldAgentsByName,
     (a) => a.name,
     (a) => a.scope,
@@ -1588,7 +1398,6 @@ export function detectConfigChanges(
     scopeChanges,
     dualScopeSkillTransitions,
     fullEntries?.oldSkills ?? [],
-    wizardResult.foldedSkillIds ?? [],
   );
 
   return {
@@ -1597,7 +1406,7 @@ export function detectConfigChanges(
     addedAgents: difference(newAgentNames, oldAgentNames),
     removedAgents: difference(oldAgentNames, newAgentNames),
     sourceChanges: detectPropertyChanges(
-      wizardResult.skills,
+      selection.skills,
       indexBy(withMaskedGlobalsRestored(oldConfig?.skills ?? [], collapsedPairs), (s) => s.id),
       (s) => s.id,
       (s) => s.origin,
@@ -1613,7 +1422,7 @@ export function detectConfigChanges(
       (a) => a.name,
     ),
     tuningChanges: detectPropertyChanges(
-      wizardResult.agentConfigs,
+      selection.agentConfigs,
       oldAgentsByName,
       (a) => a.name,
       describeTuning,
@@ -1682,24 +1491,13 @@ function collapsedPairsOf(
   scopeChanges: Map<SkillId, ScopeChange>,
   dualScopeSkillTransitions: ReadonlySet<SkillId>,
   fullOldSkills: SkillConfig[],
-  foldedSkillIds: readonly SkillId[],
 ): CollapsedPair[] {
   return [...scopeChanges]
     .filter(([id, change]) => change.to === "global" && dualScopeSkillTransitions.has(id))
     .map(([id]) => ({
       projectHalf: oldHalfOf(fullOldSkills, id, (skill) => isActiveAt(skill, "project")),
       maskedGlobal: oldHalfOf(fullOldSkills, id, isGlobalTombstone),
-      folded: foldedSkillIds.includes(id),
     }));
-}
-
-/** `s` folded a Local half into a Local global entry; a fold into a plugin installs it instead. */
-function foldsItsCopyIntoGlobal(pair: CollapsedPair, newSkills: SkillConfig[]): boolean {
-  const { projectHalf, folded } = pair;
-  const globalEntry = newSkills.find(
-    (skill) => skill.id === projectHalf.id && isActiveAt(skill, "global"),
-  );
-  return folded && projectHalf.origin === EJECT_SOURCE && globalEntry?.origin === EJECT_SOURCE;
 }
 
 /** Present by construction, so a miss is a defect. */

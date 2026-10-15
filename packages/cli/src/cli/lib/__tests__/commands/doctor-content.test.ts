@@ -16,7 +16,7 @@ import {
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { buildAgentConfigs, buildProjectConfig } from "../factories/config-factories.js";
 import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
-import { buildSkillConfigs, type FixtureProjectConfig } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs, type FixtureProjectConfig } from "../helpers/skill-config-builders.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { validateSource } from "../../source-validator";
 import { getInstalledPluginsRegistryPath } from "../../plugins/plugin-settings";

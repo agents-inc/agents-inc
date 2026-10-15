@@ -3,10 +3,11 @@ import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { E2E_AGENT, E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -25,7 +26,11 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
@@ -33,7 +38,7 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
 /**
  * Agent-removal propagation to registered projects.
  *
- * When a GLOBAL agent is removed via `cc edit` at global scope,
+ * When a GLOBAL agent is removed via `cc edit --from` at global scope,
  * `propagateGlobalChangesToProjects` (local-installer.ts) rewrites each
  * registered project's config.ts. The project's own `agents[]` copy is
  * reconciled by `retainReconciledAgents` (drops active-global entries that
@@ -82,8 +87,11 @@ const reactMetadata = renderMetadataYaml({
   contentHash: "b2c3d4e",
 });
 
+/** The global configuration keeping react, with the web-developer sub-agent left out. */
+const WITHOUT_WEB_DEV_ID = "NoWebDv1";
+
 /**
- * The registered project as it would appear after a normal wizard flow:
+ * The registered project as it would appear after an install:
  * the global react skill and global web-developer agent are inlined, plus the
  * project's own project-scoped api-developer. selectedAgents mirrors the
  * inlined global + project union the writer produces.
@@ -101,6 +109,7 @@ function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
 }
 
 describe("global-scope agent removal propagates to registered projects", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
 
   let projectDir: string;
@@ -111,6 +120,19 @@ describe("global-scope agent removal propagates to registered projects", () => {
   let editRawOutput: string;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      WITHOUT_WEB_DEV_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: {},
+          }),
+        },
+      }),
+    );
     tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "project-a");
@@ -124,6 +146,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
     // references the global react.
     const globalConfig = buildProjectConfig({
       name: "propagation-agent-removal-global",
+      marketplace: E2E_SOURCE.sourceDir,
       skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
@@ -146,24 +169,14 @@ describe("global-scope agent removal propagates to registered projects", () => {
       body: "Stale compiled agent body\n",
     });
 
-    // Edit at global scope: keep react, deselect the web-developer AGENT. This
+    // Edit at global scope: keep react, leave the web-developer AGENT out. This
     // rewrites the global config and fires propagateGlobalChangesToProjects for
     // the registered project.
-    const wizard = await EditWizard.launch({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      env: { HOME: globalHome },
-      ...TERMINAL_SIZE.TALL,
-    });
-    const sources = await wizard.build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-    await agents.toggleAgent(E2E_AGENT_DISPLAY["web-developer"]);
-    const confirm = await agents.advance("edit");
-    const result = await confirm.confirm();
-    editExitCode = await result.exitCode;
-    editRawOutput = result.rawOutput;
-    await result.destroy();
+    ({ exitCode: editExitCode, output: editRawOutput } = await applyEditFrom(
+      store,
+      WITHOUT_WEB_DEV_ID,
+      { dir: globalHome },
+    ));
 
     projectConfig = await loadConfigOrFail(projectDir);
 
@@ -176,6 +189,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 

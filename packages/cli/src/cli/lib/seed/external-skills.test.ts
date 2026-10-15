@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { installedSkillTree } from "@workspace/compile/carried-skill";
 
 import { registerExternalSkills, writeExternalSkills } from "./external-skills.js";
-import { seedToWizardResult } from "./seed-to-wizard.js";
+import { seedToInstallSelection } from "./seed-to-selection.js";
 import { STANDARD_FILES } from "../../consts.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
 import { parseFrontmatter } from "../loading/loader.js";
@@ -28,7 +28,7 @@ import {
   renderSkillMd,
   renderUnparseableMetadataYaml,
 } from "../__tests__/content-generators.js";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import { FALLBACK_USAGE } from "../__tests__/mock-data/mock-skills.js";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures.js";
 import { cleanupTempDir, createTempDir, fileExists } from "../__tests__/test-fs-utils.js";
@@ -159,7 +159,7 @@ describe("registerExternalSkills", () => {
     // payload this function seats and that one throws on is one no install can reach the end of.
     // The pair is what decides it, and neither half is stated here: this is the payload the
     // factories compose when a caller says nothing about scope on either side.
-    expect(() => seedToWizardResult(payload, matrix)).not.toThrow();
+    expect(() => seedToInstallSelection(payload, matrix)).not.toThrow();
   });
 
   it("returns the scope each entry names, so its bytes are written where its skill row says", () => {
@@ -219,7 +219,7 @@ describe("registerExternalSkills", () => {
     });
 
     registerExternalSkills(payload, matrix, projectDir);
-    const { result, skippedSkillIds } = seedToWizardResult(payload, matrix);
+    const { result, skippedSkillIds } = seedToInstallSelection(payload, matrix);
 
     // The whole point of seating it: past registration the decode has no idea this id arrived
     // with its own bytes, so the assignment lands in the sub-agent's stack under the confirmed

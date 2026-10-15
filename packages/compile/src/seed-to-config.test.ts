@@ -3,7 +3,7 @@ import type { SeedAgent, SeedPayload } from "@workspace/matrix"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { seatDiagnostics } from "./diagnostics"
-import { seedToWizardResult } from "./seed-to-config"
+import { seedToInstallSelection } from "./seed-to-config"
 
 const WEB_DEV = "web-developer"
 const REACT = "web-framework-react"
@@ -48,7 +48,7 @@ describe("a sub-agent's Codex model, decoded", () => {
   })
 
   it("lands on the sub-agent's row beside its Claude model", () => {
-    const { result } = seedToWizardResult(
+    const { result } = seedToInstallSelection(
       payloadFor({ model: "haiku", codexModel: PINNED_CODEX_MODEL }),
       MATRIX
     )
@@ -66,7 +66,10 @@ describe("a sub-agent's Codex model, decoded", () => {
 
   it("decodes every id this CLI offers", () => {
     for (const codexModel of CODEX_MODEL_NAMES) {
-      const { result } = seedToWizardResult(payloadFor({ codexModel }), MATRIX)
+      const { result } = seedToInstallSelection(
+        payloadFor({ codexModel }),
+        MATRIX
+      )
 
       expect(result.agentConfigs, codexModel).toStrictEqual([
         { name: WEB_DEV, scope: "global", codexModel },
@@ -75,7 +78,7 @@ describe("a sub-agent's Codex model, decoded", () => {
   })
 
   it("drops an id this CLI does not offer and names it, keeping the rest of the row", () => {
-    const { result } = seedToWizardResult(
+    const { result } = seedToInstallSelection(
       payloadFor({ model: "haiku", effort: "high", codexModel: NOT_OFFERED }),
       MATRIX
     )
@@ -91,7 +94,7 @@ describe("a sub-agent's Codex model, decoded", () => {
   })
 
   it("says nothing about a sub-agent that names no Codex model", () => {
-    const { result } = seedToWizardResult(
+    const { result } = seedToInstallSelection(
       payloadFor({ model: "haiku" }),
       MATRIX
     )

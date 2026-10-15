@@ -13,7 +13,7 @@ import type {
 } from "../../types";
 import { isHomeDirectory } from "./is-home-directory";
 import type { AgentScopeConfig, SkillConfig, SkillScope } from "../../types/config";
-import type { WizardResultV2 } from "../../components/wizard/wizard";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import {
   type MergeResult,
   type AuthoritativeScope,
@@ -92,17 +92,17 @@ function wereScopeCompatible(
  */
 function resolveStackProperty(
   generated: ProjectConfig["stack"],
-  assigned: WizardResultV2["assignedStack"],
+  assigned: InstallSelection["assignedStack"],
 ): ProjectConfig["stack"] {
-  return generated && assigned ? assigned : generated;
+  return generated === undefined ? undefined : assigned;
 }
 
 /**
- * A loaded stack (wizard path) wins over a carried description (`init --from`, `stackId: null`).
+ * A loaded stack wins over a carried description (`init --from` with `stackId: null`).
  */
 function resolveDescription(
   loadedStack: Stack | null,
-  shared: WizardResultV2["description"],
+  shared: InstallSelection["description"],
 ): string | undefined {
   return loadedStack === null ? shared : loadedStack.description;
 }
@@ -117,8 +117,8 @@ function configNameFor(projectDir: string): string {
 
 /**
  * A global sub-agent's curation lives only in the global config: the project's stack holds
- * project-scoped agents alone, so reading it by itself would reseed an agent `s` just moved into
- * the project. The project's row wins per agent. The global config is read, never written.
+ * project-scoped agents alone, so reading it by itself would reseed an agent just moved into the
+ * project. The project's row wins per agent. The global config is read, never written.
  */
 async function loadCuratedStack(
   projectDir: string,
@@ -136,29 +136,29 @@ async function loadGlobalStack(): Promise<ProjectConfig["stack"]> {
 }
 
 async function buildInstallConfig(
-  wizardResult: WizardResultV2,
+  selection: InstallSelection,
   sourceResult: SourceLoadResult,
   projectDir: string,
 ): Promise<{ config: ProjectConfig; loadedStack: Stack | null }> {
-  const skillIds = unique(wizardResult.skills.map((s) => s.id));
+  const skillIds = unique(selection.skills.map((s) => s.id));
   verbose(
-    `buildInstallConfig: selectedStackId='${wizardResult.selectedStackId}', ` +
+    `buildInstallConfig: selectedStackId='${selection.selectedStackId}', ` +
       `skills=[${skillIds.join(", ")}], ` +
-      `selectedAgents=[${wizardResult.selectedAgents.join(", ")}]`,
+      `selectedAgents=[${selection.selectedAgents.join(", ")}]`,
   );
 
-  const loadedStack = await loadSelectedStack(wizardResult.selectedStackId, sourceResult);
+  const loadedStack = await loadSelectedStack(selection.selectedStackId, sourceResult);
   const existing = await loadProjectConfig(projectDir);
   const existingStack = await loadCuratedStack(projectDir, existing?.config.stack);
 
   const options = generatorOptionsFor(
-    wizardResult,
+    selection,
     existing?.config,
     stackToPreserve(loadedStack, existingStack),
   );
   const generated = generateProjectConfigFromSkills(configNameFor(projectDir), skillIds, options);
-  const stack = resolveStackProperty(generated.stack, wizardResult.assignedStack);
-  const description = resolveDescription(loadedStack, wizardResult.description);
+  const stack = resolveStackProperty(generated.stack, selection.assignedStack);
+  const description = resolveDescription(loadedStack, selection.description);
   const localConfig: ProjectConfig = {
     ...generated,
     ...(stack && { stack }),
@@ -178,14 +178,14 @@ async function buildInstallConfig(
  * lookup is only the backstop, landing after plugins are installed.
  */
 export async function refuseUnofferedStack(
-  stackId: WizardResultV2["selectedStackId"],
+  stackId: InstallSelection["selectedStackId"],
   sourceResult: SourceLoadResult,
 ): Promise<void> {
   await loadSelectedStack(stackId, sourceResult);
 }
 
 async function loadSelectedStack(
-  stackId: WizardResultV2["selectedStackId"],
+  stackId: InstallSelection["selectedStackId"],
   sourceResult: SourceLoadResult,
 ): Promise<Stack | null> {
   if (!stackId) return null;
@@ -219,7 +219,7 @@ function stackToPreserve(
  * "everything is new".
  */
 function generatorOptionsFor(
-  wizardResult: WizardResultV2,
+  selection: InstallSelection,
   persisted: ProjectConfig | undefined,
   existingStack: Partial<Record<AgentName, StackAgentConfig>>,
 ): {
@@ -231,18 +231,18 @@ function generatorOptionsFor(
   scopeEligibilityGained: ReadonlySet<string>;
 } {
   return {
-    skillConfigs: wizardResult.skills,
-    agentConfigs: wizardResult.agentConfigs,
+    skillConfigs: selection.skills,
+    agentConfigs: selection.agentConfigs,
     existingStack,
-    newlyAddedSkillIds: computeNewlyAddedSkillIds(wizardResult.skills, persisted?.skills),
+    newlyAddedSkillIds: computeNewlyAddedSkillIds(selection.skills, persisted?.skills),
     scopeEligibilityGained: computeScopeEligibilityGained(
-      wizardResult.skills,
-      wizardResult.agentConfigs,
+      selection.skills,
+      selection.agentConfigs,
       persisted?.skills,
       persisted?.agents,
     ),
-    ...(wizardResult.selectedAgents.length > 0 && {
-      selectedAgents: wizardResult.selectedAgents,
+    ...(selection.selectedAgents.length > 0 && {
+      selectedAgents: selection.selectedAgents,
     }),
   };
 }
@@ -253,14 +253,14 @@ function stackSizeForLog(stack: ProjectConfig["stack"]): string {
 
 export function setConfigMetadata(
   config: ProjectConfig,
-  wizardResult: WizardResultV2,
+  selection: InstallSelection,
   sourceResult: SourceLoadResult,
   sourceFlag?: string,
 ): ProjectConfig {
   const result = { ...config };
 
-  if (wizardResult.selectedDomains.length > 0) {
-    result.selectedDomains = wizardResult.selectedDomains;
+  if (selection.selectedDomains.length > 0) {
+    result.selectedDomains = selection.selectedDomains;
   }
 
   if (sourceFlag) {
@@ -277,15 +277,15 @@ export function setConfigMetadata(
 }
 
 export async function buildAndMergeConfig(
-  wizardResult: WizardResultV2,
+  selection: InstallSelection,
   sourceResult: SourceLoadResult,
   projectDir: string,
   sourceFlag?: string,
   authoritativeScope?: AuthoritativeScope,
 ): Promise<MergeResult> {
-  const { config } = await buildInstallConfig(wizardResult, sourceResult, projectDir);
+  const { config } = await buildInstallConfig(selection, sourceResult, projectDir);
   verbose(`buildAndMergeConfig: before merge — stack=${stackSizeForLog(config.stack)}`);
-  const configWithMetadata = setConfigMetadata(config, wizardResult, sourceResult, sourceFlag);
+  const configWithMetadata = setConfigMetadata(config, selection, sourceResult, sourceFlag);
   const result = await mergeWithExistingConfig(configWithMetadata, {
     projectDir,
     ...(authoritativeScope !== undefined && { authoritativeScope }),

@@ -58,7 +58,6 @@ export {
 export { defineConfig } from "./define-config";
 export { defaultCategories } from "./default-categories";
 export { defaultRules } from "./default-rules";
-export { defaultStacks } from "./default-stacks";
 export { ConfigDefaultExportError, loadConfig } from "./config-loader";
 
 /**

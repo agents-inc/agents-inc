@@ -14,7 +14,7 @@ import {
   buildProjectConfig,
   buildSourceConfig,
 } from "../factories/config-factories.js";
-import { buildSkillConfigs, type FixtureSkillConfig } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs, type FixtureSkillConfig } from "../helpers/skill-config-builders.js";
 import { SKILLS } from "../test-fixtures";
 import { AGENT_DEFS } from "../mock-data/mock-agents.js";
 import { initializeMatrix } from "../../matrix/matrix-provider";

@@ -8,7 +8,6 @@ export {
 } from "./skill-resolution";
 
 export {
-  getUnmetRequiredBy,
   getCellState,
   hasUnmetRequirements,
   getUnmetRequirementsReason,

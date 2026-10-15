@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { AgentDefinition, AgentName } from "../../../types";
-import type { WizardResultV2 } from "../../../components/wizard/wizard";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import { buildAgentDefs, createMockAgent } from "../../__tests__/factories/agent-factories";
 import {
   buildGateReport,
-  buildWizardResult,
+  buildInstallSelection,
   buildProjectConfig,
   buildSourceResult,
 } from "../../__tests__/factories/config-factories";
-import { buildSkillConfigs } from "../../__tests__/helpers/wizard-simulation";
+import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders";
 import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices";
 
 // Use vi.hoisted so mock fn is available when vi.mock factory runs (hoisted to top)
@@ -73,13 +73,13 @@ describe("write-project-config", () => {
   const configPath = "/test/project/.agents-inc/claude/config.ts";
   const finalConfig = buildProjectConfig({ name: "test-project" });
 
-  let wizardResult: WizardResultV2;
+  let selection: InstallSelection;
   let sourceResult: SourceLoadResult;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]));
+    selection = buildInstallSelection(buildSkillConfigs(["web-framework-react"]));
     sourceResult = buildSourceResult(EMPTY_MATRIX, sourcePath);
 
     mockResolveInstallPaths.mockReturnValue({
@@ -106,7 +106,7 @@ describe("write-project-config", () => {
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}));
 
     const result = await writeProjectConfig({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir,
     });
@@ -114,7 +114,7 @@ describe("write-project-config", () => {
     expect(mockResolveInstallPaths).toHaveBeenCalledWith(projectDir, "project");
     expect(mockEnsureDir).toHaveBeenCalledWith("/test/project/.agents-inc/claude");
     expect(mockBuildAndMergeConfig).toHaveBeenCalledWith(
-      wizardResult,
+      selection,
       sourceResult,
       projectDir,
       undefined,
@@ -145,7 +145,7 @@ describe("write-project-config", () => {
     mockRealpathSync.mockReturnValue(homeDir);
 
     const result = await writeProjectConfig({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir: homeDir,
     });
@@ -180,7 +180,7 @@ describe("write-project-config", () => {
     };
 
     await writeProjectConfig({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir,
       agentDefs: buildAgentDefs(preloadedAgents),
@@ -213,7 +213,7 @@ describe("write-project-config", () => {
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs(cliAgents));
 
     await writeProjectConfig({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir,
     });
@@ -237,7 +237,7 @@ describe("write-project-config", () => {
     });
 
     const result = await writeProjectConfig({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir,
       sourceFlag: "github:org/skills",
@@ -258,7 +258,7 @@ describe("write-project-config", () => {
     );
 
     const result = await writeProjectConfig({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir,
     });

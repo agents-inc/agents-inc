@@ -10,16 +10,12 @@ import {
   type InstalledGlobal,
   type KeptFromRoundTrip,
 } from "./seed-apply";
-import { seedToWizardResult } from "./seed-to-wizard";
+import { seedToInstallSelection } from "./seed-to-selection";
 import { initializeMatrix } from "../matrix/matrix-provider";
-import {
-  buildAgentConfigs,
-  buildProjectConfig,
-  buildWizardResult,
-} from "../__tests__/factories/config-factories.js";
+import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories.js";
 import { buildSeedPayload, buildSeedSkill } from "../__tests__/factories/seed-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
-import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import {
   CATEGORY_EXCLUSIVITY_MATRIX,
   HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX,
@@ -61,18 +57,20 @@ function payloadFor(skillId: SkillId, scope: "project" | "global" = "project") {
 }
 
 function decodedFor(skillId: SkillId, scope: "project" | "global" = "project") {
-  return seedToWizardResult(payloadFor(skillId, scope), REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX)
-    .result;
+  return seedToInstallSelection(
+    payloadFor(skillId, scope),
+    REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+  ).result;
 }
 
 /** The matrix is named rather than defaulted: it declares which categories hold one skill. */
 function decodedAgainst(skillId: SkillId, catalogue: MergedSkillsMatrix) {
-  return seedToWizardResult(payloadFor(skillId), catalogue).result;
+  return seedToInstallSelection(payloadFor(skillId), catalogue).result;
 }
 
 /** SCSS is named by the configuration and unplaceable here; returned whole, as below. */
 function decodedAlsoNamingScss(catalogue: MergedSkillsMatrix) {
-  return seedToWizardResult(
+  return seedToInstallSelection(
     buildSeedPayload({
       skills: {
         [TAILWIND]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
@@ -86,7 +84,7 @@ function decodedAlsoNamingScss(catalogue: MergedSkillsMatrix) {
 
 /** Returned whole: the skipped ids are what the command hands the reconcile as `unplaceable`. */
 function decodedAlsoNaming(skillId: SkillId, scope: "project" | "global" = "project") {
-  return seedToWizardResult(
+  return seedToInstallSelection(
     buildSeedPayload({
       skills: {
         [skillId]: buildSeedSkill({ scope, assignments: { [WEB_DEV]: "lazy" } }),
@@ -534,8 +532,6 @@ describe("reconcileSharedConfig", () => {
       // Additive: nothing the payload said is restated.
       expect(result.selectedStackId).toBe(decoded.selectedStackId);
       expect(result.validation).toStrictEqual(decoded.validation);
-      expect(result.cancelled).toBe(false);
-      expect(result.unresolvableSkillIds).toStrictEqual([]);
     });
 
     it("returns the payload untouched where there is no installation to reconcile against", () => {
@@ -550,27 +546,6 @@ describe("reconcileSharedConfig", () => {
 
       expect(result).toStrictEqual(decoded);
       expect(kept).toStrictEqual(NOTHING_KEPT);
-    });
-
-    it("keeps nothing off a wizard result that carries no assigned stack", () => {
-      const installed = buildProjectConfig({
-        skills: buildSkillConfigs([ZUSTAND], { scope: "project" }),
-        agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
-        stack: { [WEB_DEV]: { "web-client-state": [sa(ZUSTAND)] } },
-      });
-
-      const { result } = reconcileSharedConfig({
-        decoded: buildWizardResult(buildSkillConfigs([REACT]), {
-          selectedAgents: [WEB_DEV],
-          agentConfigs: buildAgentConfigs([WEB_DEV], { scope: "project" }),
-        }),
-        installed,
-        authoredHere: new Set<SkillId>([ZUSTAND]),
-        unplaceable: new Set(),
-      });
-
-      // Absent leaves the on-disk stack alone; inventing the key would replace it with one row.
-      expect(result.assignedStack).toBeUndefined();
     });
   });
 });
@@ -610,7 +585,7 @@ describe("withUnplaceableAssignees", () => {
   }
 
   function decodeAndKeep(payload: ReturnType<typeof buildSeedPayload>) {
-    const { result, skippedSkillIds } = seedToWizardResult(
+    const { result, skippedSkillIds } = seedToInstallSelection(
       payload,
       REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
     );
@@ -655,7 +630,7 @@ describe("holding the global install as installed", () => {
     global: Record<string, ReturnType<typeof buildSeedSkill>>,
     apiDeveloper: { model?: "haiku"; codexModel?: string } = {},
   ) {
-    return seedToWizardResult(
+    return seedToInstallSelection(
       buildSeedPayload({
         skills: {
           [REACT]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
@@ -766,7 +741,7 @@ describe("holding the global install as installed", () => {
     // named.
     expect(held.result.skills).toContainEqual(buildSkillConfig(HONO, { scope: "global" }));
     expect(held.installed.skillIds).toStrictEqual([ZUSTAND]);
-    expect(held.result.assignedStack?.[API_DEV]).toStrictEqual({
+    expect(held.result.assignedStack[API_DEV]).toStrictEqual({
       "web-client-state": [sa(ZUSTAND)],
       "api-api": [sa(HONO)],
     });
@@ -779,7 +754,7 @@ describe("holding the global install as installed", () => {
 
     const held = holdInstalledGlobal(decoded, installedGlobal);
 
-    expect(held.result.assignedStack?.[API_DEV]).toStrictEqual({
+    expect(held.result.assignedStack[API_DEV]).toStrictEqual({
       "web-client-state": [sa(ZUSTAND)],
       "api-api": [sa(HONO)],
     });
@@ -789,7 +764,7 @@ describe("holding the global install as installed", () => {
   it("adds no row a held sub-agent's exclusive category has no room for, and names it", () => {
     // One-skill category: Pinia arrives globally but not on api-developer, which is named.
     initializeMatrix(CATEGORY_EXCLUSIVITY_MATRIX);
-    const decoded = seedToWizardResult(
+    const decoded = seedToInstallSelection(
       buildSeedPayload({
         skills: { [PINIA]: onApiDeveloper() },
         agents: { [API_DEV]: { scope: "global" } },
@@ -800,7 +775,7 @@ describe("holding the global install as installed", () => {
     const held = holdInstalledGlobal(decoded, installedGlobal);
 
     expect(held.result.skills).toStrictEqual([buildSkillConfig(PINIA, { scope: "global" })]);
-    expect(held.result.assignedStack?.[API_DEV]).toStrictEqual({
+    expect(held.result.assignedStack[API_DEV]).toStrictEqual({
       "web-client-state": [sa(ZUSTAND)],
     });
     expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [API_DEV] });

@@ -10,9 +10,9 @@ import { isGlobalTombstone, isProjectOwned, type ScopedEntry } from "./scope-pre
 
 /**
  * How authoritative `newConfig` is over entries absent from it:
- *  - `"all"`  — global-context EDIT at ~/: the wizard loaded the ENTIRE global config, so any
+ *  - `"all"`  — global-context EDIT at ~/: the edit loaded the ENTIRE global config, so any
  *               absent agent/skill was removed. Every existing entry is in scope.
- *  - `"owned"` — project-context EDIT: the wizard loaded the full project roster and owns only
+ *  - `"owned"` — project-context EDIT: the edit loaded the full project roster and owns only
  *               PROJECT-OWNED entries (project-scoped + the project's own global tombstones).
  *               Inherited global-active entries are read-only and are always preserved.
  *  - `undefined` — init / non-edit merges: additive union-preserve (never drop absent entries).
@@ -103,7 +103,7 @@ function mergeRoster<Entry extends ScopedEntry>(
     const matching = incomingByKey[identity.keyOf(entry)];
     if (matching !== undefined) return [matching];
     // Name is actively managed by the incoming roster but this exact (scope, excluded) slot is
-    // NOT in it → the wizard intentionally dropped this row (scope migration or tombstone
+    // NOT in it → the edit intentionally dropped this row (scope migration or tombstone
     // cleanup). Drop it.
     if (incomingIdentities.has(identity.identityOf(entry))) return [];
     if (dualScopeIdentities.has(identity.identityOf(entry))) return [];
@@ -138,8 +138,7 @@ type MergeOptions = Pick<MergeContext, "authoritativeScope">;
  *
  * Dual-scope semantics (active at one scope + excluded tombstone at another)
  * are preserved because `newConfig.agents`/`newConfig.skills` carry BOTH
- * entries for the same name/id when that dual state is legitimate (wizard
- * output from `generateProjectConfigFromSkills` + `toggleAgentScope`).
+ * entries for the same name/id when that dual state is legitimate.
  *
  * Root cause of the duplicate rows this key fixes: the prior name-only key collapsed
  * distinct-scope entries, and the positional `.map()` over existing rewrote
@@ -147,16 +146,16 @@ type MergeOptions = Pick<MergeContext, "authoritativeScope">;
  * drop stale rows on scope migration.
  *
  * `authoritativeScope`: a full `cc edit` pass presents the complete roster
- * the wizard could edit, so an entry within that authority which is absent from `newConfig` was
+ * it could edit, so an entry within that authority which is absent from `newConfig` was
  * deliberately removed and must be dropped (even a plain active entry with no tombstone), rather
  * than union-preserved. `"all"` (global edit) covers every entry; `"owned"` (project edit) covers
  * only project-scoped entries and the project's own global tombstones — inherited global-active
  * entries are always preserved. `undefined` (init) keeps additive union-preserve.
  *
- * A skill the wizard could not resolve from the loaded source this session is NOT exempt from that
- * drop: it is removed like any other absent entry, and `edit` names it and says why in its Changes
- * block. Exempting it used to keep an entry in `config.ts` that the same run's summary announced as
- * gone and the compiled agent no longer carried — three surfaces, three answers about one skill.
+ * A skill a run could not resolve from the loaded source is NOT exempt from that drop: it is
+ * removed like any other absent entry. Exempting it used to keep an entry in `config.ts` that the
+ * same run's summary announced as gone and the compiled agent no longer carried — three surfaces,
+ * three answers about one skill.
  */
 export function mergeConfigs(
   newConfig: ProjectConfig,
@@ -215,8 +214,8 @@ export function mergeConfigs(
   // record: a rewrite that dropped them put a white-labelled install back on the shipped name.
   Object.assign(merged, pick(existingConfig, HAND_WRITTEN_FIELDS));
 
-  // Preserve the registered project paths from the existing (global) config — the wizard
-  // result never carries them, and losing them silently disables propagation of global
+  // Preserve the registered project paths from the existing (global) config — the selection
+  // never carries them, and losing them silently disables propagation of global
   // changes to registered projects — the tombstone reconcile never runs.
   if (existingConfig.projects && !newConfig.projects) {
     merged.projects = existingConfig.projects;

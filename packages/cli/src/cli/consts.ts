@@ -1,7 +1,6 @@
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import type { Domain, InstallMode } from "./types/index.js";
 
 /**
  * The pure half of this file lives in `@workspace/compile/paths` and is re-exported here, so no
@@ -108,8 +107,8 @@ export function cacheRoot(): string {
 }
 
 /**
- * The editor — the web half of the product, where a configuration is built without the wizard
- * and handed to `init --from <id>`.
+ * The editor — the web half of the product, where a configuration is built and handed to
+ * `init --from <id>`.
  *
  * THE PATH IS PART OF THE ADDRESS. `agentsinc.sh` is the apex, which serves the landing page,
  * and `/docs` beside it is the documentation — both on the `agents-inc-www` Worker. The editor
@@ -133,22 +132,6 @@ export const EDITOR_URL = "https://agentsinc.sh/editor";
 export function editorConfigUrl(id: string): string {
   return `${EDITOR_URL}/?fromId=${encodeURIComponent(id)}`;
 }
-
-/**
- * Internal `edit` flag marking the invocation as the project-setup half of a `cc init`
- * that routed through the dashboard. Not part of the documented CLI surface (declared
- * `hidden`): `init` is the only caller, and it passes the flag so `edit` can tell
- * "set this project up" apart from a bare inspection.
- */
-export const EDIT_PROJECT_SETUP_FLAG = "project-setup";
-
-/**
- * Internal `edit` flag carrying the marketplace `init --marketplace` named into that project
- * setup, which then reads its catalogue from there rather than from the one the installation
- * stored. Hidden for the same reason as {@link EDIT_PROJECT_SETUP_FLAG}: naming a marketplace is
- * `init`'s decision alone, so `edit --marketplace` stays a flag that does not exist.
- */
-export const EDIT_PROJECT_SETUP_MARKETPLACE_FLAG = "project-setup-marketplace";
 
 export const SKILL_CATEGORIES_PATH = "config/skill-categories.ts";
 export const SKILL_RULES_PATH = "config/skill-rules.ts";
@@ -208,9 +191,9 @@ export const UI_SYMBOLS = {
   SCROLL_DOWN: "\u25BC",
   CHECK: CHECK_GLYPH,
   CROSS: "\u2717",
-  /** Removed/pending-removal diff marker (ASCII hyphen). Info panel + Sources tab share it. */
+  /** Removed/pending-removal diff marker (ASCII hyphen). */
   REMOVED: "-",
-  /** Added/newly-selected diff marker (ASCII plus). Info panel + Sources tab share it. */
+  /** Added/newly-selected diff marker (ASCII plus). */
   ADDED: "+",
 } as const;
 
@@ -246,12 +229,6 @@ export const MAX_MARKETPLACE_PLUGINS = 10_000;
 export const SCROLL_VIEWPORT = {
   /** Height of the "N more above" scroll indicator */
   SCROLL_INDICATOR_HEIGHT: 1,
-  /** Estimated lines per category name row (including top margin) */
-  CATEGORY_NAME_LINES: 2,
-  /** Margin between category sections (marginTop on CategorySection) */
-  CATEGORY_MARGIN_LINES: 1,
-  /** Minimum rows to show at least 1 category before enabling scroll */
-  MIN_VIEWPORT_ROWS: 5,
 } as const;
 
 /**
@@ -259,51 +236,11 @@ export const SCROLL_VIEWPORT = {
  * minimum-size gate there is: `BaseCommand.ensureTerminalSize` reads it and
  * blocks until the terminal is at least this big, so raising `ROWS` raises the
  * bar for the whole CLI, tests included.
- *
- * `ROWS: 20` is measured, not guessed. Driving the real binary to the build
- * step — the binding constraint, since it is the tallest step — gives:
- * 15/16/17 corrupt (overlapping card borders, unreadable); 18 the first clean
- * render (one complete category card, correctly clipped); 20 clean with one
- * full card plus the next category heading; 24 comfortable. 18 is the hard
- * correctness floor because it is where {@link SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS}
- * starts being satisfied — below it the shared scroll gate stops clipping and
- * the grid bleeds over its borders. 20 buys two rows of margin above that floor
- * while staying under the 24-row default of common terminals.
  */
 export const MIN_TERMINAL_SIZE = {
   COLS: 80,
   ROWS: 20,
 } as const;
-
-/**
- * The terminal height at or above which the stack step paints the six-row ASCII
- * logo. Below it the logo is dropped — it is decoration, and the stack list is
- * the content.
- *
- * This is NOT a second size gate. {@link MIN_TERMINAL_SIZE} decides whether a
- * command runs at all; this decides only whether one decorative element renders
- * inside a terminal that already cleared that gate. Conflating them would be a
- * regression in both directions: raising `MIN_TERMINAL_SIZE.ROWS` to 26 would
- * refuse to run in the 24-row terminal that is still a common default, and
- * lowering this to 20 brings back the bleed below.
- *
- * 26 is measured against the real binary at 100 columns, on the stack step:
- *
- * | rows | stack step with the logo rendered                                 |
- * | ---- | ----------------------------------------------------------------- |
- * | 20   | bleeds — stack rows paint over the "Start from scratch" row        |
- * | 24   | bleeds — stack rows paint through the hotkey row and the footer    |
- * | 26   | clean                                                              |
- * | 27   | clean                                                              |
- * | 28   | clean                                                              |
- *
- * The mechanism: the logo eats six rows of the stack step's list viewport,
- * starving it below {@link SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS}, at which point
- * the shared scroll hooks stop clipping and the rows bleed. Hiding the logo
- * returns those rows to the viewport; the bail-instead-of-clip behaviour itself
- * is untouched and remains the open underlying defect.
- */
-export const LOGO_MIN_TERMINAL_ROWS = 26;
 
 export const DEFAULT_BRANDING = {
   NAME: "Agents Inc.",
@@ -329,32 +266,12 @@ export const DEFAULT_BRANDING = {
  */
 export const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-/** Human-readable labels for skill source types shown in the wizard and edit command */
+/** Human-readable labels for skill source types */
 export const SOURCE_DISPLAY_NAMES: Record<string, string> = {
   public: "Public",
   eject: "Eject",
   "agents-inc": "Agents Inc",
 };
-
-/** The two install modes a Sources row offers, in the order the grid renders them. */
-export const INSTALL_MODES = ["eject", "plugin"] as const satisfies readonly Exclude<
-  InstallMode,
-  "mixed"
->[];
-
-/**
- * How the Sources grid captions each of its two cells.
- *
- * Deliberately not `INSTALL_MODE_LABELS` (`Eject`/`Plugin`), which names a mode by what it does
- * to the files, nor `SOURCE_DISPLAY_NAMES`, which labels a `SkillConfig.origin` VALUE on the
- * summary surfaces. The grid asks where the skill should LIVE, and the two answers are the
- * project's own copy or the marketplace plugin — so the cells read `Local` and `Plugin`, which
- * is also the two-state badge the editor settled on (`.claude-design/DECISIONS.md`).
- */
-export const INSTALL_MODE_CELL_LABELS = {
-  eject: "Local",
-  plugin: "Plugin",
-} as const satisfies Record<Exclude<InstallMode, "mixed">, string>;
 
 /** Resolves a source name to its human-readable display label. */
 export function formatSourceDisplayName(source: string): string {
@@ -374,32 +291,19 @@ export const CLI_COLORS = {
   SUCCESS: "#90EE90",
   ERROR: "#DC343B",
   WARNING: "#E6A817",
-  INFO: "#3B82F6",
   NEUTRAL: "#888888",
-  FOCUS: "#87CEFA",
-  UNFOCUSED: "#FFFFFF",
   WHITE: "#FFFFFF",
-  BLACK: "#000000",
   DIM: "#666666",
   GRAY_1: "#ddd",
   LABEL_BG: "#383838",
-  TOAST_BG: "#EEEEEE",
-  TOAST_FG: "#000000",
   HOVER_BG: "#333333",
 } as const;
-
-/** Default domains pre-selected when "Start from scratch" is chosen (all except CLI) */
-export const DEFAULT_SCRATCH_DOMAINS: readonly Domain[] = ["web", "api", "mobile"];
-
-/** Domain used when no active domain can be resolved from wizard state. */
-export const FALLBACK_DOMAIN: Domain = "web";
 
 /**
  * The product's own mark, and **deliberately not brandable** (owner ruling 2026-08-24).
  *
- * `branding.name` reaches every command that prints a name — the dashboard, the wizard footer,
- * `doctor`'s header, six surfaces in all — so a white-labelled installation says its own name
- * throughout. This does not follow it, and that is the decision rather than an omission: the mark
+ * `branding.name` reaches every command that prints a name — the dashboard and `doctor`'s header
+ * among them — so a white-labelled installation says its own name throughout. This does not follow it, and that is the decision rather than an omission: the mark
  * is the product's, not the installation's.
  *
  * Filed as CLI-769 by an agent that found a white-labelled install still drawing `AGENTS INC` in

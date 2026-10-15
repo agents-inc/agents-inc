@@ -1,19 +1,22 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { finishWizard } from "../fixtures/dual-scope-helpers.js";
 import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   agentsPath,
   cleanupTempDir,
-  completeWithLocalSources,
+  createPermissionsFile,
   createTempDir,
   readTreeSnapshot,
   sourceFolderIn,
 } from "../helpers/test-utils.js";
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
  * An edit the user changes nothing in must write nothing.
@@ -35,14 +38,18 @@ import { InitWizard } from "../pages/wizards/init-wizard.js";
  *     identically" — a recompile of an unchanged config produces the same bytes, so content
  *     alone cannot see it, and it is invisible in a diff while being plainly a write.
  *
- * From scratch: the install is a real `init` through the PTY, so what the edit passes through is
- * a tree the CLI wrote, not one a fixture described.
+ * From scratch: the install is a real `init --from`, and the edit applies that same configuration
+ * again, so what it passes through is a tree the CLI wrote, not one a fixture described.
  */
 
 /** What a compiled sub-agent is called on disk: its name, and this. */
 const COMPILED_AGENT_SUFFIX = ".md";
 
+/** The E2E stack, every skill ejected into the global installation — installed, then re-applied. */
+const STACK_AT_HOME_ID = "StackHm4";
+
 describe("an edit that changes nothing leaves the installed scope untouched", () => {
+  let store: SeedConfigStore;
   let globalHome: string;
 
   let compiledBefore: Record<string, TreeSnapshotEntry>;
@@ -53,44 +60,34 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
   let editOutput: string;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(STACK_AT_HOME_ID, e2eStackPayload({ scope: "global" }));
     globalHome = await createTempDir();
+    await createPermissionsFile(globalHome);
 
     // Phase A — a real install, so the artefacts the edit must leave alone are the CLI's own.
-    const installWizard = await InitWizard.launchInGlobal({
-      projectDir: globalHome,
-      ...TERMINAL_SIZE.TALL,
-    });
-    const install = await finishWizard(await completeWithLocalSources(installWizard));
+    const install = await runInitFrom(
+      store,
+      STACK_AT_HOME_ID,
+      { dir: globalHome },
+      E2E_SOURCE.sourceDir,
+    );
     expect(install.exitCode, `the install failed: ${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
     compiledBefore = await readTreeSnapshot(agentsPath(globalHome));
     configBefore = await readTreeSnapshot(sourceFolderIn(globalHome));
 
-    // Phase B — the same wizard, walked end to end with no key that selects, deselects or
-    // rescopes anything: Build through every domain, Sources untouched, Agents on defaults.
-    const editWizard = await EditWizard.launchInGlobal({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      ...TERMINAL_SIZE.TALL,
-    });
-    try {
-      const sources = await editWizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const edit = await finishWizard(await confirm.confirm());
-      editExitCode = edit.exitCode;
-      editOutput = edit.output;
-    } catch (error) {
-      await editWizard.destroy();
-      throw error;
-    }
+    // Phase B — the configuration the installation was made from, applied again.
+    ({ exitCode: editExitCode, output: editOutput } = await applyEditFrom(store, STACK_AT_HOME_ID, {
+      dir: globalHome,
+    }));
 
     compiledAfter = await readTreeSnapshot(agentsPath(globalHome));
     configAfter = await readTreeSnapshot(sourceFolderIn(globalHome));
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (globalHome) await cleanupTempDir(globalHome);
   });
 
@@ -113,7 +110,7 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
   });
 
   // Proof of execution. The report is the only observable saying the run got as far as comparing
-  // the wizard's result against the config — a crash on the way there leaves the same clean tree.
+  // the configuration against the installed one — a crash on the way there leaves the same clean tree.
   it("reports that it changed nothing", () => {
     expect(editOutput, `a passthrough must reach its decision and say so: ${editOutput}`).toContain(
       STEP_TEXT.EDIT_UNCHANGED,

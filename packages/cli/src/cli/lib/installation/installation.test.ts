@@ -6,7 +6,7 @@ import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories";
 import { renderUnparseableConfigTs } from "../__tests__/factories/unloadable-config-factories";
 import { writeRawTestConfig, writeTestTsConfig } from "../__tests__/helpers/config-io";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { CLAUDE_DIR, DEFAULT_PUBLIC_SOURCE_NAME, PLUGINS_SUBDIR } from "../../consts";
 import { getProjectConfigPath } from "./install-base-dir.js";

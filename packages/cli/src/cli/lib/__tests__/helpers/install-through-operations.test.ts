@@ -2,8 +2,8 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { installThroughOperations } from "./install-through-operations.js";
-import { buildWizardResult, initMatrixAndSource } from "../factories/config-factories.js";
-import { buildSkillConfigs } from "./wizard-simulation.js";
+import { buildInstallSelection, initMatrixAndSource } from "../factories/config-factories.js";
+import { buildSkillConfigs } from "./skill-config-builders.js";
 import { readTestTsConfig } from "./config-io.js";
 import { useFakeHome } from "./isolated-home.js";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
@@ -39,7 +39,7 @@ describe("installThroughOperations", () => {
     );
 
     const { copied, config, compilation } = await installThroughOperations({
-      wizardResult: buildWizardResult(skills, { selectedAgents: [AGENT] }),
+      selection: buildInstallSelection(skills, { selectedAgents: [AGENT] }),
       sourceResult,
       projectDir: dirs.projectDir,
     });

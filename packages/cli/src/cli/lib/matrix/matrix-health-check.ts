@@ -50,7 +50,6 @@ export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue
   return issues;
 }
 
-// Categories without a domain won't appear in any wizard domain view
 function checkCategoryDomains(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return (
     typedEntries<Category, CategoryDefinition>(matrix.categories)
@@ -59,7 +58,7 @@ function checkCategoryDomains(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
       .map(([catId]) => ({
         severity: "warning" as const,
         finding: "category-missing-domain",
-        details: `Category '${catId}' has no domain — it won't appear in any wizard domain view`,
+        details: `Category '${catId}' has no domain — it won't appear under any domain`,
       }))
   );
 }

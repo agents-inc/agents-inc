@@ -29,7 +29,7 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import {
   buildSeedPayload,
   buildSeedSkill,

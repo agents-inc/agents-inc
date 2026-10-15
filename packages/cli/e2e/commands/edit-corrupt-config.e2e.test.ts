@@ -26,8 +26,7 @@ import "../matchers/setup.js";
 
 /**
  * A configuration that exists but cannot be read is not migrated and not repaired — it is
- * recreated. `edit` therefore refuses it outright rather than opening the wizard against a
- * config it only half-understands, and says what the way out is: `uninstall` (which
+ * recreated. `edit` therefore refuses it outright, and says what the way out is: `uninstall` (which
  * deliberately still works on an unreadable config) and then `init`, or a configuration built
  * in the editor and installed by id.
  *
@@ -90,8 +89,8 @@ describe("edit with an unreadable config", () => {
     // calling it missing and sending the reader back to a command that refuses it.
     expect(result.output).toContain(STEP_TEXT.CONFIG_UNREADABLE_DOCTOR);
 
-    // The wizard must never have opened, and the misleading "no installation" line the
-    // swallowed load error used to produce must be gone.
+    // The misleading "no installation" line the swallowed load error used to produce must be
+    // gone.
     expect(result.output).not.toContain(STEP_TEXT.NO_INSTALLATION);
     expect(result.output).not.toContain(STEP_TEXT.EDIT_SUCCESS);
 
@@ -191,8 +190,8 @@ describe("edit with an unreadable config", () => {
 });
 
 /**
- * `init` reads the same two configs before it decides whether to show the dashboard or the
- * setup wizard, and used to let the raw `ConfigLoadError` escape — a stack-shaped message with
+ * `init` reads the same two configs before it decides whether to show the dashboard, and used
+ * to let the raw `ConfigLoadError` escape — a stack-shaped message with
  * no way out in it. It refuses with the same guidance now, and still writes nothing.
  */
 describe("init with an unreadable config", () => {

@@ -65,6 +65,13 @@ type TestOnlyExport = ExportSite & { posture: Posture };
  */
 const TEST_ONLY_EXPORTS = [
   {
+    file: "src/cli/components/common/summary-panel.tsx",
+    name: "SummaryPanel",
+    // Its production readers were the wizard's layout and confirm step, deleted with the wizard.
+    // Kept by the owner's 2026-10-14 ruling for the `edit --from` info table, which is not built.
+    posture: "unjudged",
+  },
+  {
     file: "src/cli/lib/configuration/config-writer.ts",
     name: "getGlobalConfigImportPath",
     // Not a test utility — a production function with no production caller, which is a different
@@ -76,6 +83,13 @@ const TEST_ONLY_EXPORTS = [
     // argument (`options.globalImportPath`) rather than a read inside `generateConfigSource` —
     // a browser has no `os.homedir()`. Delete-or-keep is a decision the extraction deliberately
     // did not take.
+    posture: "unjudged",
+  },
+  {
+    file: "src/cli/lib/configuration/config.ts",
+    name: "isSameMarketplace",
+    // Its production reader was `init`'s refusal of a marketplace other than the installed one,
+    // which went when `init --marketplace` without `--from` became the editor route.
     posture: "unjudged",
   },
   {
@@ -122,6 +136,31 @@ const TEST_ONLY_EXPORTS = [
     // A host role, for its siblings' reason. `getInstalledPluginsRegistryPath` in
     // `lib/plugins/plugin-settings.ts` is the reader that takes it, and already shares this
     // module's `INSTALLED_PLUGINS_FILE` so the two cannot name different files.
+    posture: "unjudged",
+  },
+  {
+    file: "src/cli/lib/matrix/matrix-provider.ts",
+    name: "findStack",
+    // Its production readers were the wizard's stack step, deleted with the wizard.
+    posture: "unjudged",
+  },
+  {
+    file: "src/cli/lib/matrix/matrix-resolver.ts",
+    name: "getAvailableSkills",
+    // Its production reader was the wizard's build-step grid, deleted with the wizard.
+    posture: "unjudged",
+  },
+  {
+    file: "src/cli/lib/matrix/matrix-resolver.ts",
+    name: "getCellState",
+    // Its production reader was the wizard's build-step grid, deleted with the wizard.
+    posture: "unjudged",
+  },
+  {
+    file: "src/cli/lib/matrix/matrix-resolver.ts",
+    name: "validateSelection",
+    // Its production reader was the wizard's completion check, deleted with the wizard; `init`
+    // and `edit` validate through `@workspace/compile`'s own `validateSelection`.
     posture: "unjudged",
   },
   {

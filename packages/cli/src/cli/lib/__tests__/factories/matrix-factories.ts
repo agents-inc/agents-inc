@@ -1,19 +1,14 @@
 import type {
   Category,
   CategoryDefinition,
-  CategoryMap,
   MergedSkillsMatrix,
   RelationshipDefinitions,
   ResolvedSkill,
-  ResolvedStack,
   SkillId,
   SkillSlug,
-  SkillSlugMap,
 } from "../../../types";
 import type { TestSkill } from "../fixtures/create-test-source";
-import { SKILLS, TEST_CATEGORIES } from "../test-fixtures";
 import { testSkillToResolvedSkill } from "./skill-factories.js";
-import { createMockResolvedStack } from "./stack-factories.js";
 
 /**
  * Builds a matrix from disk-oriented TestSkills by resolving each to a
@@ -94,166 +89,6 @@ export function createMockMatrix(
     generatedAt: new Date().toISOString(),
     ...overrides,
   };
-}
-
-/**
- * Builds a comprehensive test matrix with 8 skills across 7 categories,
- * 2 suggested stacks, display name mappings, and relationship data
- * (conflicts). Includes anti-over-engineering methodology skill.
- * @returns A fully populated MergedSkillsMatrix with realistic test data
- */
-export function createComprehensiveMatrix(
-  overrides?: Partial<MergedSkillsMatrix>,
-): MergedSkillsMatrix {
-  // Skill categories use domain-prefixed Category IDs (matching production
-  // metadata.yaml and the categories map keys, e.g., "web-framework", "api-api").
-  const skills = {
-    "web-framework-react": SKILLS.react,
-    "web-framework-vue-composition-api": {
-      ...SKILLS.vue,
-      conflictsWith: [{ skillId: "web-framework-react", reason: "Choose one framework" }],
-    } satisfies ResolvedSkill,
-    "web-state-zustand": SKILLS.zustand,
-    "web-styling-scss-modules": SKILLS.scss,
-    "api-framework-hono": SKILLS.hono,
-    "api-database-drizzle": SKILLS.drizzle,
-    "web-testing-vitest": SKILLS.vitest,
-    // Methodology skill
-    "meta-reviewing-reviewing": SKILLS.antiOverEng,
-  };
-
-  const categories: CategoryMap = {
-    "web-framework": {
-      ...TEST_CATEGORIES.framework,
-      domain: "web",
-      exclusive: true,
-    },
-    "web-client-state": { ...TEST_CATEGORIES.clientState, domain: "web", order: 1 },
-    "web-styling": { ...TEST_CATEGORIES.styling, domain: "web", order: 2 },
-    "api-api": { ...TEST_CATEGORIES.api, domain: "api", exclusive: true },
-    "api-orm": { ...TEST_CATEGORIES.database, domain: "api", order: 1 },
-    "web-testing": {
-      ...TEST_CATEGORIES.testing,
-      domain: "shared",
-      exclusive: false,
-      order: 10,
-    },
-    "meta-reviewing": {
-      ...TEST_CATEGORIES.methodology,
-      domain: "meta",
-      exclusive: false,
-      order: 11,
-    },
-  };
-
-  const suggestedStacks: ResolvedStack[] = [
-    createMockResolvedStack("nextjs-fullstack", "Next.js Full-Stack", {
-      description: "Complete Next.js stack with React and Hono",
-      skills: {
-        "web-developer": {
-          "web-framework": ["web-framework-react"],
-          "web-client-state": ["web-state-zustand"],
-          "web-styling": ["web-styling-scss-modules"],
-        },
-        "api-developer": {
-          "api-api": ["api-framework-hono"],
-          "api-orm": ["api-database-drizzle"],
-        },
-      } satisfies ResolvedStack["skills"],
-      allSkillIds: [
-        "web-framework-react",
-        "web-state-zustand",
-        "web-styling-scss-modules",
-        "api-framework-hono",
-        "api-database-drizzle",
-      ],
-      philosophy: "Modern, type-safe fullstack development",
-    }),
-    createMockResolvedStack("vue-modern-fullstack", "Vue Modern Full-Stack", {
-      description: "Vue.js frontend stack",
-      skills: {
-        "web-developer": {
-          "web-framework": ["web-framework-vue-composition-api"],
-        },
-      } satisfies ResolvedStack["skills"],
-      allSkillIds: ["web-framework-vue-composition-api"],
-      philosophy: "Progressive framework approach",
-    }),
-  ];
-
-  // Boundary cast: test matrix only contains a subset of all possible slugs
-  const slugToId: SkillSlugMap["slugToId"] = {
-    react: "web-framework-react",
-    "vue-composition-api": "web-framework-vue-composition-api",
-    zustand: "web-state-zustand",
-    "scss-modules": "web-styling-scss-modules",
-    hono: "api-framework-hono",
-    drizzle: "api-database-drizzle",
-    vitest: "web-testing-vitest",
-    reviewing: "meta-reviewing-reviewing",
-  };
-
-  return createMockMatrix(skills, {
-    categories,
-    suggestedStacks,
-    slugMap: { slugToId },
-    ...overrides,
-  });
-}
-
-/**
- * Builds a lightweight test matrix with 5 skills, 5 categories, and 2 stacks.
- * Use instead of createComprehensiveMatrix when relationship data is not needed.
- * @returns A minimal MergedSkillsMatrix for basic integration tests
- */
-export function createBasicMatrix(overrides?: Partial<MergedSkillsMatrix>): MergedSkillsMatrix {
-  // Domain-prefixed Category IDs — see createComprehensiveMatrix comment
-  const skills = {
-    "web-framework-react": SKILLS.react,
-    "web-state-zustand": SKILLS.zustand,
-    "api-framework-hono": SKILLS.hono,
-    "web-testing-vitest": SKILLS.vitest,
-    // Methodology skill
-    "meta-reviewing-reviewing": SKILLS.antiOverEng,
-  };
-
-  const suggestedStacks: ResolvedStack[] = [
-    createMockResolvedStack("react-fullstack", "React Fullstack", {
-      allSkillIds: ["web-framework-react", "web-state-zustand", "api-framework-hono"],
-    }),
-    createMockResolvedStack("testing-stack", "Testing Stack", {
-      allSkillIds: ["web-testing-vitest"],
-    }),
-  ];
-
-  return createMockMatrix(skills, {
-    suggestedStacks,
-    categories: {
-      "web-framework": {
-        ...TEST_CATEGORIES.framework,
-        domain: "web",
-        exclusive: true,
-      },
-      "web-client-state": { ...TEST_CATEGORIES.clientState, domain: "web", order: 1 },
-      "api-api": {
-        ...TEST_CATEGORIES.api,
-        domain: "api",
-        exclusive: true,
-      },
-      "web-testing": {
-        ...TEST_CATEGORIES.testing,
-        displayName: "Testing Framework",
-        domain: "shared",
-        exclusive: false,
-      },
-      "meta-reviewing": {
-        ...TEST_CATEGORIES.methodology,
-        domain: "meta",
-        exclusive: false,
-      },
-    } satisfies CategoryMap,
-    ...overrides,
-  });
 }
 
 /** Decomposed matrix config returned by createMockMatrixConfig (replaces SkillsMatrixConfig) */

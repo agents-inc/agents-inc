@@ -25,12 +25,12 @@ import {
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
 import { CLI } from "../fixtures/cli.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
  * One agent partial, addressed by the category directory it lands under and its

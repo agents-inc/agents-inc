@@ -6,7 +6,7 @@ import type {
   SkillConfig,
   SkillId,
 } from "../../../types";
-import type { WizardResultV2 } from "../../../components/wizard/wizard";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import type { ResolvedConfig } from "../../configuration/config";
 import type { GateReport } from "../../config-gate/index.js";
@@ -18,8 +18,8 @@ import { NOTHING_RECOMPILED } from "../../config-gate/recompile.js";
 import { EJECT_SOURCE } from "../../../consts";
 import { TEST_CUSTOM_SOURCE_URL } from "../test-constants.js";
 import { typedKeys } from "../../../utils/typed-object";
-import { buildSkillConfigs, FACTORY_DEFAULT_SCOPE } from "../helpers/wizard-simulation.js";
-import type { FixtureProjectConfig } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs, FACTORY_DEFAULT_SCOPE } from "../helpers/skill-config-builders.js";
+import type { FixtureProjectConfig } from "../helpers/skill-config-builders.js";
 
 export function buildSourceConfig(
   overrides?: Partial<ResolvedConfig> & Record<string, unknown>,
@@ -90,10 +90,10 @@ export function buildPreRenameSkillEntryConfig(): Record<string, unknown> {
   };
 }
 
-export function buildWizardResult(
+export function buildInstallSelection(
   skills: SkillConfig[],
-  overrides?: Partial<WizardResultV2>,
-): WizardResultV2 {
+  overrides?: Partial<InstallSelection>,
+): InstallSelection {
   const selectedAgents = overrides?.selectedAgents ?? [];
   // generateProjectConfigFromSkills requires a config per selected agent; override to test a
   // mismatch.
@@ -103,11 +103,9 @@ export function buildWizardResult(
     skills,
     selectedAgents: [],
     agentConfigs: defaultAgentConfigs,
+    assignedStack: {},
     selectedStackId: null,
-    domainSelections: {},
     selectedDomains: [],
-    unresolvableSkillIds: [],
-    cancelled: false,
     validation: { valid: true, errors: [] },
     ...overrides,
   };

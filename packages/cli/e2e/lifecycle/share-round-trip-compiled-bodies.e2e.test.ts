@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
+import { installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
 import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
 import {
   runEditUi,
@@ -19,29 +19,27 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * The share round trip with the wizard at one end and `init --from` at the other, compared on
- * the artefact a user actually reads: the compiled sub-agent.
+ * The share round trip, compared on the artefact a user actually reads: the compiled sub-agent.
  *
  * `commands/share` already makes this trip and compares far more of it — config, skills
  * directory, agents directory, and four surfaces at EACH end. What it cannot do is see a
- * difference that is consistent within each installation, and it builds its origin with
- * `init --from` too, so both of its ends run the same producer.
+ * difference that is consistent within each installation.
  *
- * That combination let a real defect through. Five modules assemble a stack and only the
- * wizard's ordered its keys, so a configuration that matched field for field — seven skill
- * entries, two sub-agent entries, the same directories — compiled a `web-developer.md` with two
- * rows of its skill-activation table swapped. `agent.skills` is split into preloaded and
+ * That let a real defect through. Several modules assemble a stack and only one ordered its
+ * keys, so a configuration that matched field for field — seven skill entries, two sub-agent
+ * entries, the same directories — compiled a `web-developer.md` with two rows of its
+ * skill-activation table swapped. `agent.skills` is split into preloaded and
  * dynamic PRESERVING order, so the stack's key order in `config.ts` decides the order of the
  * table a sub-agent is handed; nothing else in the suite reads that.
  *
  * The comparison lived only in `handrun-journeys.ts`, which no script runs. This is the gate.
  *
- * The id is minted by `edit --ui` rather than `share`. The wizard end ejects its skills, which is
+ * The id is minted by `edit --ui` rather than `share`. The origin ejects its skills, which is
  * the one install that needs no Claude CLI, and `share` refuses ejected skills; `edit --ui` mints
  * the same payload through the same function and still opens them. The producer and the decoder
  * this spec holds to each other are the same either way.
  */
-describe("a share round trip that starts at the wizard", () => {
+describe("a share round trip compared on its compiled bodies", () => {
   let store: SeedConfigStore;
   let origin: string;
   let rebuilt: string;
@@ -55,10 +53,7 @@ describe("a share round trip that starts at the wizard", () => {
   });
 
   // Both ends are allocated per attempt rather than per file, because the suite runs at
-  // `retry: 1` and both of them are directories the run INSTALLS into. Carried across a retry,
-  // the wizard's second launch would find the first attempt's installation and open the
-  // dashboard — so a genuine failure here would be followed by a timeout waiting for a stack
-  // step, and the second error is the one a reader sees first.
+  // `retry: 1` and both of them are directories the run INSTALLS into.
   beforeEach(async () => {
     store.reset();
     origin = await createTempDir();
@@ -73,10 +68,7 @@ describe("a share round trip that starts at the wizard", () => {
     "compiles byte-identical sub-agents in a directory that has never seen any of it",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const install = await initGlobalWithEject(E2E_SOURCE, origin);
-      expect(install.exitCode, `the wizard install failed: ${install.output}`).toBe(
-        EXIT_CODES.SUCCESS,
-      );
+      await installE2EStackGlobally(store, origin);
 
       const minted = await runEditUi(store, { dir: origin, globalHome: origin });
       expect(minted.exitCode, `edit --ui failed: ${minted.output}`).toBe(EXIT_CODES.SUCCESS);
@@ -110,7 +102,7 @@ describe("a share round trip that starts at the wizard", () => {
       // swap is the whole subject here.
       expect(
         Object.keys(originBodies).sort(),
-        "the wizard end compiled nothing, so the comparison below has no subject",
+        "the origin compiled nothing, so the comparison below has no subject",
       ).toStrictEqual(E2E_STACK_AGENTS.map((name) => `${name}.md`));
 
       expect(

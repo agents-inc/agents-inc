@@ -20,7 +20,7 @@ import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { sa } from "../__tests__/factories/skill-factories.js";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import { buildProjectConfig, buildAgentConfigs } from "../__tests__/factories/config-factories.js";
 import {
   expectConfigSkills,

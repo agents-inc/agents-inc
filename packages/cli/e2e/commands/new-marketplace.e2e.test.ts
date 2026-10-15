@@ -26,12 +26,22 @@ import {
   STEP_TEXT,
   TIMEOUTS,
 } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT } from "../fixtures/expected-values.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
  * The arc `new marketplace` exists to open: a directory that did not exist becomes
  * one `doctor` accepts, `build plugins` compiles, `build marketplace` publishes,
- * and `init --marketplace` installs from.
+ * and `init --from <id> --marketplace` installs from.
  *
  * The round trip is the point. A scaffold asserted file-by-file passes while
  * producing a marketplace no command downstream will read — the command deleted in
@@ -176,12 +186,14 @@ describe("new marketplace — refusals", () => {
 describe("new marketplace — what it writes", () => {
   let tempDir: string;
   let marketplaceDir: string;
+  let scaffoldStdout: string;
 
   beforeAll(async () => {
     tempDir = await createTempDir();
     marketplaceDir = path.join(tempDir, MARKETPLACE_NAME);
     const scaffold = await CLI.run(["new", "marketplace", MARKETPLACE_NAME], { dir: tempDir });
     expect(scaffold.exitCode, scaffold.output).toBe(EXIT_CODES.SUCCESS);
+    scaffoldStdout = scaffold.stdout;
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
@@ -235,6 +247,22 @@ describe("new marketplace — what it writes", () => {
     ).toContain("export default");
   });
 
+  /**
+   * The editor reads a marketplace from GitHub and nothing else, so the next steps end on pushing
+   * it there — and on the one run that tests local changes against a configuration built there.
+   */
+  it("ends its next steps on the editor's Marketplace button and init --from with --marketplace", () => {
+    expect(scaffoldStdout).toContain(
+      `  6. Push it to GitHub, then add it from the Marketplace button at ${STEP_TEXT.EDITOR_URL}`,
+    );
+    expect(scaffoldStdout).toContain(
+      `  7. ${CLI_INVOKE_COMMAND} init --from <id> --marketplace ${marketplaceDir}   (from a project — tests your local changes against a configuration built there)`,
+    );
+    expect(scaffoldStdout, "a marketplace without --from only opens the editor").not.toContain(
+      `${CLI_INVOKE_COMMAND} init --marketplace`,
+    );
+  });
+
   // Every name a source folder is spelled in, not one: `new marketplace` writes `config/*.ts`
   // and nothing under a source folder, so naming only the legacy one made this true of every
   // marketplace this release creates whatever else had been left beside it.
@@ -248,25 +276,22 @@ describe("new marketplace — what it writes", () => {
 
 describe("new marketplace — round trip through the commands downstream", () => {
   let tempDir: string;
-  let projectTempDir: string;
   let marketplaceDir: string;
-  let wizard: InitWizard | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
     tempDir = await createTempDir();
     marketplaceDir = path.join(tempDir, MARKETPLACE_NAME);
     const scaffold = await CLI.run(["new", "marketplace", MARKETPLACE_NAME], { dir: tempDir });
     expect(scaffold.exitCode, scaffold.output).toBe(EXIT_CODES.SUCCESS);
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
-    if (projectTempDir) await cleanupTempDir(projectTempDir);
-  });
-
-  afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
+    if (env) await cleanupTempDir(env.tempDir);
   });
 
   it(
@@ -341,47 +366,44 @@ describe("new marketplace — round trip through the commands downstream", () =>
   });
 
   it(
-    "installs into a project, which records the marketplace and holds its skill",
-    { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
+    "installs a configuration built on it into a project, which records the marketplace and holds its skill",
+    { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      projectTempDir = await createTempDir();
-      wizard = await InitWizard.launchInProject({
-        source: { sourceDir: marketplaceDir, tempDir },
-        projectDir: projectTempDir,
-      });
-      const globalHome = wizard.globalHome;
+      env = await createTestEnvironment();
+      const webDeveloper = E2E_AGENT["web-developer"].name;
+      store.publish(
+        "Scaffold1",
+        buildSeedPayload({
+          stackId: SCAFFOLDED_STACK_ID,
+          skills: {
+            [EXAMPLE_SKILL_ID]: buildSeedSkill({ assignments: { [webDeveloper]: "lazy" } }),
+          },
+        }),
+      );
 
-      // Not `completeWithLocalSources`: that helper waits on "Framework" and steps
-      // through three domains, both properties of the fixture marketplace's own
-      // categories. A scaffolded marketplace declares one category of its own, so
-      // the walk here waits on the build step's own footer and advances until the
-      // Sources step announces itself.
-      const domain = await wizard.stack.selectFirstStack();
-      const build = await domain.advanceTo(STEP_TEXT.BUILD_FOOTER);
-      const sources = await build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("init");
-      const result = await confirm.confirm();
+      const result = await runInitFrom(
+        store,
+        "Scaffold1",
+        { dir: env.projectDir, globalHome: env.fakeHome },
+        marketplaceDir,
+      );
 
-      expect(
-        await result.exitCode,
-        `init from a scaffolded marketplace failed:\n${result.output}`,
-      ).toBe(EXIT_CODES.SUCCESS);
-      expect(result.rawOutput).toContain(STEP_TEXT.INIT_SUCCESS);
+      expect(result.exitCode, `init from a scaffolded marketplace failed:\n${result.output}`).toBe(
+        EXIT_CODES.SUCCESS,
+      );
+      expect(result.output).toContain(STEP_TEXT.INIT_SUCCESS);
 
       expect(
-        (await loadConfigOrFail(globalHome)).marketplace,
+        (await loadConfigOrFail(env.fakeHome)).marketplace,
         "the install must record the marketplace it read",
       ).toBe(marketplaceDir);
       expect(
-        await listFiles(skillsPath(globalHome)),
+        await listFiles(skillsPath(env.fakeHome)),
         "the scaffolded skill must reach disk under the id its marketplace publishes",
       ).toStrictEqual([EXAMPLE_SKILL_ID]);
-      expect(Object.keys(await readCompiledAgents(globalHome)).length).toBeGreaterThan(0);
-
-      await result.destroy();
+      expect(Object.keys(await readCompiledAgents(env.fakeHome))).toStrictEqual([
+        `${webDeveloper}.md`,
+      ]);
     },
   );
 });

@@ -86,8 +86,8 @@ describe("edit --ui carries an added skill's whole description", () => {
     expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
     store.reset();
 
-    // The subject guard, both halves: the label the install wrote for the wizard is cut, and the
-    // skill's own manifest still states the description whole.
+    // The subject guard, both halves: the short label the install wrote is cut, and the skill's
+    // own manifest still states the description whole.
     const skillDir = path.join(skillsPath(origin), EXTERNAL_ID);
     expect(await readTestFile(path.join(skillDir, FILES.METADATA_YAML))).not.toContain(
       LONG_DESCRIPTION,
@@ -102,7 +102,7 @@ describe("edit --ui carries an added skill's whole description", () => {
     );
     expect(
       posted.external?.[EXTERNAL_ID]?.description,
-      "a re-mint must send the carried skill's own description, not the shortened wizard label",
+      "a re-mint must send the carried skill's own description, not the shortened label",
     ).toBe(LONG_DESCRIPTION);
   });
 });

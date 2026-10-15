@@ -7,7 +7,7 @@ import { HttpResponse, http as route } from "msw";
 
 import { CLI, type CLIResult } from "./cli.js";
 
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "./project-handle.js";
 import type { MockedAnswer } from "@workspace/api-mocks";
 import type { RequestHandler } from "msw";
 
@@ -128,9 +128,9 @@ const mintedHandler = (id: string): RequestHandler =>
  * published under that id and 404s an id that was never published, exactly as the worker does.
  *
  * A real server rather than a module mock, because the specs that use it exist to cover the whole
- * path — argument parsing, network, decode, mapping, and the same write/install/compile pipeline
- * the wizard uses. A mocked fetch would skip the two seams most likely to break: the flag reaching
- * the command, and the payload surviving the wire. It also could not be one: the e2e suite spawns
+ * path — argument parsing, network, decode, mapping, and the write/install/compile pipeline. A
+ * mocked fetch would skip the two seams most likely to break: the flag reaching the command, and
+ * the payload surviving the wire. It also could not be one: the e2e suite spawns
  * `bin/run.js`, and nothing in this process can intercept a child's network.
  *
  * What it ANSWERS with comes from `@workspace/api-mocks` all the same, resolved through `answerFor`

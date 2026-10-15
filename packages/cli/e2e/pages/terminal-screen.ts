@@ -55,32 +55,6 @@ export class TerminalScreen {
     );
   }
 
-  /**
-   * Auto-retrying wait for text appearing AFTER the given RAW-output cursor.
-   * Needed for closed-loop retry: xterm's processed buffer is not append-only
-   * (Ink rewrites lines in place), so cursoring it is unreliable. Raw output
-   * IS append-only, so callers capture `getRawCursor()` before the action and
-   * assert on post-cursor raw output.
-   */
-  async waitForTextAfter(text: string, cursor: number, timeoutMs: number): Promise<void> {
-    await this.waitUntil(
-      () => this.session.getRawOutput().slice(cursor).includes(text),
-      timeoutMs,
-      () =>
-        new Error(
-          `TerminalScreen: timeout waiting for "${text}" after raw cursor ${cursor} ` +
-            `within ${timeoutMs}ms.\n` +
-            `Screen:\n${this.session.getScreen()}\n` +
-            `Post-cursor raw tail:\n${this.session.getRawOutput().slice(cursor).slice(-2000)}`,
-        ),
-    );
-  }
-
-  /** Captures the current raw-output length for use as a cursor in waitForTextAfter. */
-  getRawCursor(): number {
-    return this.session.getRawOutput().length;
-  }
-
   /** Auto-retrying wait for text in raw PTY output (no xterm processing). */
   async waitForRawText(text: string, timeoutMs: number): Promise<void> {
     await this.waitUntil(
@@ -108,34 +82,6 @@ export class TerminalScreen {
             `Full output:\n${this.session.getFullOutput()}`,
         ),
     );
-  }
-
-  /**
-   * ONLY valid on screens rendered by WizardLayout, which paints the footer
-   * containing "select". That footer renders last in the Ink tree, so its
-   * presence means the content above it has painted.
-   *
-   * This is a sentinel match on one literal string, NOT a generic "the UI has
-   * settled" primitive. On a non-wizard screen (the dashboard, a plain
-   * SelectList menu, the post-install result screen) the sentinel never
-   * appears and this burns the full timeout — wait on text that screen
-   * actually renders instead.
-   */
-  async waitForWizardFooter(timeoutMs: number): Promise<void> {
-    await this.waitForText("select", timeoutMs);
-  }
-
-  /**
-   * ONLY valid on screens rendered by WizardLayout (same precondition as
-   * waitForWizardFooter). Cursor-anchored variant: waits for the wizard footer
-   * ("select") to appear in raw output AFTER the given cursor.
-   *
-   * Use this when a previous wizard step already printed "select" into
-   * scrollback — the non-anchored variant would return instantly on the
-   * stale residue, masking the fact that the next frame has not rendered.
-   */
-  async waitForWizardFooterAfter(cursor: number, timeoutMs: number): Promise<void> {
-    await this.waitForTextAfter("select", cursor, timeoutMs);
   }
 
   /**

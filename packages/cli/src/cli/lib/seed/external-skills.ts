@@ -586,7 +586,7 @@ async function readSkillTree(skillDir: string): Promise<SeedSkillTree> {
  * install recorded, and a user may have edited the skill since. Both are what is installed here,
  * and what is installed here is what a share carries.
  *
- * The description is the manifest's own. The `cliDescription` beside it is the wizard's label,
+ * The description is the manifest's own. The `cliDescription` beside it is a short label,
  * cut to the length `doctor` accepts, so a re-share sending it would shorten the skill once per
  * round trip.
  *

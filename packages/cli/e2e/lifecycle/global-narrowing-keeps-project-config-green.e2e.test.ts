@@ -1,30 +1,23 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
-  completeWithLocalSources,
   configTsPath,
   loadConfigOrFail,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import {
-  createTestEnvironment,
-  finishWizard,
-  readAllSkillEntries,
-} from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, readAllSkillEntries } from "../fixtures/dual-scope-helpers.js";
+import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   TS_NOT_ASSIGNABLE,
   TS_UNKNOWN_PROPERTY,
   typecheckGeneratedConfig,
 } from "../helpers/type-check-probe.js";
-import type { WizardResult } from "../pages/wizard-result.js";
 
 /**
  * A global-scope change must not turn an untouched project's generated config
@@ -56,66 +49,12 @@ import type { WizardResult } from "../pages/wizard-result.js";
 const NARROWED_SKILL = E2E_SKILL.zustand;
 const NARROWED_CATEGORY = "web-client-state";
 
-/** `source` recorded for skills installed from a local source via `setAllLocal`. */
+/** `origin` recorded for an ejected skill. */
 const EJECT_SOURCE = "eject";
 
 /** The source folder holding a scope's generated config pair. */
 function sourceFolderOf(dir: string): string {
   return path.dirname(configTsPath(dir));
-}
-
-/**
- * Fresh project install with every skill ejected locally. Skills keep their
- * default GLOBAL scope, so the project owns nothing at project scope — the
- * shape in which its config-types.ts is `SkillId = GlobalSkillId` with no extras
- * of its own, and therefore entirely at the mercy of the global unions.
- */
-async function initProjectWithGlobalSkills(options: {
-  projectDir: string;
-  globalHome: string;
-}): Promise<{ exitCode: number; output: string }> {
-  const wizard = await InitWizard.launchInProject({
-    projectDir: options.projectDir,
-    globalHome: options.globalHome,
-    ...TERMINAL_SIZE.TALL,
-  });
-
-  try {
-    return await finishWizard(await completeWithLocalSources(wizard));
-  } catch (e) {
-    await wizard.destroy();
-    throw e;
-  }
-}
-
-/**
- * One `cc edit` at the global root (HOME === cwd === globalHome) that deselects
- * `skillLabel` and saves. This is the only kind of run that can REMOVE a global
- * entry — a project-scope edit never narrows the global config.
- */
-async function editGlobalRootDeselecting(options: {
-  globalHome: string;
-  skillLabel: string;
-}): Promise<{ exitCode: number; output: string }> {
-  const wizard = await EditWizard.launch({
-    projectDir: options.globalHome,
-    source: E2E_SOURCE,
-    env: { HOME: options.globalHome },
-    ...TERMINAL_SIZE.TALL,
-  });
-
-  try {
-    await wizard.build.selectSkill(options.skillLabel);
-    const sources = await wizard.build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("edit");
-    const result: WizardResult = await confirm.confirm();
-    return await finishWizard(result);
-  } catch (e) {
-    await wizard.destroy();
-    throw e;
-  }
 }
 
 /**
@@ -143,7 +82,16 @@ async function unregisterProjects(globalHome: string): Promise<void> {
 }
 
 describe("a global-scope narrowing keeps an untouched project's config.ts type-checking", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -158,12 +106,13 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      // Phase 1 — a project install whose skills all default to global scope.
-      const install = await initProjectWithGlobalSkills({
-        projectDir,
-        globalHome: fakeHome,
+      // Phase 1 — a project install, every skill ejected at global scope, so the project owns
+      // nothing at project scope: its config-types.ts is `SkillId = GlobalSkillId` with no
+      // extras of its own, and therefore entirely at the mercy of the global unions.
+      await installFromSeed(store, "AllGlobal1", e2eStackPayload(), {
+        dir: projectDir,
+        home: fakeHome,
       });
-      expect(install.exitCode, `Project init failed: ${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Precondition: the project's config.ts inlines the skill as a global row,
       // and the global config is where it actually lives.
@@ -183,12 +132,12 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
 
       await unregisterProjects(fakeHome);
 
-      // Phase 2 — a global-scope edit that narrows the global unions.
-      const edit = await editGlobalRootDeselecting({
-        globalHome: fakeHome,
-        skillLabel: NARROWED_SKILL.display,
+      // Phase 2 — an edit at the global root (HOME === cwd) that removes the skill: the only
+      // kind of run that can REMOVE a global entry, so it narrows the global unions.
+      await applyFromSeed(store, "Narrowed1", e2eStackPayload({ without: [NARROWED_SKILL.id] }), {
+        dir: fakeHome,
+        home: fakeHome,
       });
-      expect(edit.exitCode, `Global edit failed: ${edit.output}`).toBe(EXIT_CODES.SUCCESS);
 
       expect(
         (await readAllSkillEntries(fakeHome)).map((s) => s.id),

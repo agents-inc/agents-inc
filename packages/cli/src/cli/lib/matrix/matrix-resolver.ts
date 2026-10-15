@@ -55,8 +55,7 @@ function initializeSelectionContext(currentSelections: SkillId[]): SelectionCont
 /**
  * The relationship facts the shared selection semantics judge — id, category,
  * conflicts, discourages and requires. Exclusivity defaults to true for a
- * category that does not say, matching the wizard grid's own reading; the
- * `local` pseudo-category is never listed, so it stays non-exclusive here as it
+ * category that does not say; the `local` pseudo-category is never listed, so it stays non-exclusive here as it
  * does in `validateExclusivity`.
  */
 function toSelectionFacts(source: MergedSkillsMatrix): SelectionCatalogFacts {
@@ -99,7 +98,7 @@ function judgeSelections(resolvedSelections: SkillId[]): SelectionJudgement {
   return boundSemantics(resolvedSelections);
 }
 
-// The judgement speaks in ids; this surface answers in the wizard's words.
+// The judgement speaks in ids; this surface answers in labels.
 function renderIncompatibility(cause: IncompatibilityCause): string {
   switch (cause.kind) {
     case "conflict":
@@ -137,42 +136,6 @@ function missingRequirementIds(
 ): SkillId[] {
   if (isRequirementMet(req, selectedSet)) return [];
   return req.needsAny ? [...req.skillIds] : req.skillIds.filter((id) => !selectedSet.has(id));
-}
-
-/**
- * For an unselected skill, finds the first selected skill that needs it
- * and whose requirement is currently unmet. Returns the dependent's display name,
- * or undefined if no selected skill has an unmet need for this skill.
- */
-export function getUnmetRequiredBy(
-  skillId: SkillId,
-  currentSelections: SkillId[],
-): string | undefined {
-  getSkillById(skillId); // assert the id exists in the matrix
-  const { resolvedSelections, selectedSet } = initializeSelectionContext(currentSelections);
-
-  if (selectedSet.has(skillId)) return undefined;
-
-  for (const selectedId of resolvedSelections) {
-    const selectedSkill = matrix.skills[selectedId];
-    if (!selectedSkill) continue;
-
-    for (const req of selectedSkill.requires) {
-      if (!req.skillIds.includes(skillId)) continue;
-
-      if (req.needsAny) {
-        // OR: unmet only if NONE of the options are selected
-        if (!req.skillIds.some((id) => selectedSet.has(id))) {
-          return getLabel(selectedSkill);
-        }
-      } else {
-        // AND: unmet if this specific skill isn't selected
-        return getLabel(selectedSkill);
-      }
-    }
-  }
-
-  return undefined;
 }
 
 /**
@@ -234,7 +197,7 @@ function namesTheMissing(names: string[], needsAny: boolean | undefined): string
  * How much of a rule author's `reason` a grid cell carries.
  *
  * The cell wraps rather than elides, so an unbounded reason grows the tag, grows the frame, and
- * pushes the top of the wizard off the terminal — measured against the shipped catalogue, whose
+ * pushes the top of the frame off the terminal — measured against the shipped catalogue, whose
  * longest reason is 242 characters and whose React Router entry alone cost four lines. A budget is
  * what keeps a variable-length authored string out of a fixed-height layout.
  *
@@ -403,10 +366,7 @@ export function validateSelection(selections: SkillId[]): SelectionValidation {
  * It deliberately states no advisory verdict. {@link getCellState} is the one that
  * does, because a cell is judged against the selection a click on it would produce
  * — inside a pick-one category the swap forgives a conflict that a raw per-option
- * advisory would still report. The raw advisory this function used to carry was
- * therefore not merely unread but the wrong answer for its only caller,
- * `buildCategoriesForDomain` in `lib/wizard/build-step-logic.ts`, which has always
- * called `getCellState` instead.
+ * advisory would still report.
  *
  * @param categoryId - Category path to filter skills by
  * @param currentSelections - Currently selected skill IDs

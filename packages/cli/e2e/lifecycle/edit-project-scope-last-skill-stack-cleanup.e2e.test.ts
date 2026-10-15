@@ -1,18 +1,19 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupTempDir,
   createLocalSkill,
   createPermissionsFile,
   createTempDir,
   directoryExists,
+  FORKED_FROM_METADATA,
   loadConfigOrFail,
-  renderMetadataYaml,
   skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
@@ -21,7 +22,8 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
@@ -31,7 +33,7 @@ import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
  * `{}`-not-`undefined` fix holds when the edit runs at PROJECT scope
  * (authoritativeScope "owned", HOME distinct from the project dir) rather than at
  * global scope. A non-preloaded project-scoped skill is the only entry in an
- * agent's stack category; deselecting it must leave no stale reference in `stack`.
+ * agent's stack category; removing it must leave no stale reference in `stack`.
  */
 
 const singleSkillStack = {
@@ -40,7 +42,25 @@ const singleSkillStack = {
   },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
+/** The project's configuration with vitest left out: its sub-agent on, holding nothing. */
+const WITHOUT_VITEST_ID = "NoVitst4";
+
 describe("edit removes the only project-scoped skill an agent references", () => {
+  let store: SeedConfigStore;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      WITHOUT_VITEST_ID,
+      buildSeedPayload({
+        agents: { [E2E_AGENT["web-developer"].name]: { on: true, scope: "project" } },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
   let tempDir: string | undefined;
 
   afterEach(async () => {
@@ -57,9 +77,8 @@ describe("edit removes the only project-scoped skill an agent references", () =>
       // ================================================================
       // Phase 1: Seed a PROJECT installation (HOME distinct from the project
       // dir) where web-testing-vitest is the ONLY skill and the ONLY entry in
-      // web-developer's stack. vitest is a non-preloaded (dynamic) skill, so it
-      // can be deselected on its own — removing it collapses the whole selection
-      // to empty, the trigger condition for the merge-fallback bug.
+      // web-developer's stack. Removing it collapses the whole selection to
+      // empty, the trigger condition for the merge-fallback bug.
       // ================================================================
 
       tempDir = await createTempDir();
@@ -72,6 +91,7 @@ describe("edit removes the only project-scoped skill an agent references", () =>
 
       const config = buildProjectConfig({
         name: "project-scope-edit-test",
+        marketplace: E2E_SOURCE.sourceDir,
         skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "project", origin: "eject" }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
         selectedDomains: ["web"],
@@ -79,42 +99,23 @@ describe("edit removes the only project-scoped skill an agent references", () =>
       });
       await writeProjectConfig(projectDir, config);
 
+      // Fork provenance, so the round trip owns the copy and the apply may remove it.
       await createLocalSkill(projectDir, E2E_SKILL.vitest.id, {
         description: "Vitest testing framework for project-scope edit testing",
-        metadata: renderMetadataYaml({
-          displayName: E2E_SKILL.vitest.display,
-          category: "web-testing",
-          slug: E2E_SKILL.vitest.slug,
-          cliDescription: "E2E test skill",
-          usageGuidance: "Use when testing E2E scenarios",
-          contentHash: "c3d4e5f",
-        }),
+        metadata: FORKED_FROM_METADATA,
       });
 
       // ================================================================
-      // Phase 2: Run `cc edit` at PROJECT scope and deselect vitest entirely.
+      // Phase 2: Run `cc edit --from` at PROJECT scope with vitest left out.
       // projectDir differs from HOME, so cwd is not the global install root and the
-      // edit writes with authoritativeScope "owned".
+      // apply writes with authoritativeScope "owned".
       // ================================================================
 
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
+      const result = await applyEditFrom(store, WITHOUT_VITEST_ID, {
+        dir: projectDir,
+        globalHome: fakeHome,
       });
-
-      // vitest is currently selected — pressing Space deselects it. It is a
-      // project-scoped, non-preloaded skill, so the deselect goes through.
-      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
-
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // ================================================================
       // Phase 3: Assert on the post-edit project config (structural load) AND

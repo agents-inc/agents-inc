@@ -28,9 +28,7 @@ const EXAMPLE_SKILL_SUFFIX = "example-skill";
  * The domain the scaffolded category sits under.
  *
  * `web` rather than a placeholder of its own: a domain is a member of a generated
- * union, and one invented for the scaffold appears in no wizard domain view and
- * reaches no sub-agent. It is also one of the domains a from-scratch selection
- * opens with, so the example skill is visible without the author choosing anything.
+ * union, and one invented for the scaffold reaches no sub-agent.
  */
 const EXAMPLE_DOMAIN = "web";
 
@@ -173,7 +171,7 @@ function skillCategoriesModule(): string {
  * Relationship rules name skills by slug, and that slug reference is the CLI's own
  * generated union — so a marketplace cannot yet name its OWN skills in a rule, and
  * one that tries fails to load. A marketplace works fully without them; what it
- * loses is the wizard's incompatibility hints between its own skills.
+ * loses is the incompatibility hints between its own skills.
  */
 function skillRulesModule(): string {
   return configModule(
@@ -189,7 +187,7 @@ function skillRulesModule(): string {
 }
 
 function stacksModule(marketplaceName: string, skillId: string): string {
-  return configModule("// The stacks this marketplace offers the wizard.", {
+  return configModule("// The stacks this marketplace offers.", {
     stacks: [
       {
         id: `${marketplaceName}-starter`,

@@ -5,47 +5,8 @@ import { TEST_CATEGORIES } from "../test-fixtures.js";
 import { buildCategoryMap } from "../factories/matrix-factories.js";
 
 // ---------------------------------------------------------------------------
-// Categories from step-build.test.tsx (with domain overrides)
-// ---------------------------------------------------------------------------
-
-export const WEB_FRAMEWORK_CATEGORY = {
-  ...TEST_CATEGORIES.framework,
-};
-
-export const WEB_STYLING_CATEGORY = {
-  ...TEST_CATEGORIES.styling,
-  order: 1,
-};
-
-export const WEB_STATE_CATEGORY = {
-  ...TEST_CATEGORIES.clientState,
-  order: 2,
-};
-
-export const API_FRAMEWORK_CATEGORY = {
-  ...TEST_CATEGORIES.api,
-  displayName: "API Framework",
-  // Boundary cast: narrows string to Domain union
-  domain: "api" as const,
-  order: 0,
-};
-
-export const API_DATABASE_CATEGORY = {
-  ...TEST_CATEGORIES.database,
-  // Boundary cast: narrows string to Domain union
-  domain: "api" as const,
-  order: 1,
-};
-
-// ---------------------------------------------------------------------------
 // Categories from matrix-loader.test.ts (basic, no domain override)
 // ---------------------------------------------------------------------------
-
-export const CLI_FRAMEWORK_CATEGORY = {
-  ...TEST_CATEGORIES.cliFramework,
-  domain: "cli" as const,
-  exclusive: false,
-};
 
 export const FRAMEWORK_CATEGORY = {
   ...TEST_CATEGORIES.framework,

@@ -2,33 +2,46 @@ import { realpathSync } from "fs";
 import { mkdir } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { initGlobalWithEject, initProject } from "../fixtures/dual-scope-helpers.js";
+import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
+  cleanupFixture,
   cleanupTempDir,
   createPermissionsFile,
   createTempDir,
   loadConfigOrFail,
 } from "../helpers/test-utils.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `cc init` registers each project's realpath in the global config's `projects`
- * array via `registerProjectPath` (the project-context branch of
- * `writeScopedFromWizard`). Because `detectInstallation` falls back to the global
- * HOME install, once a global install exists every subsequent project init is
- * driven through the dashboard -> Edit path; both paths reach
- * `registerProjectPath`. Two projects under the same HOME must both be
- * registered, each exactly once, with neither overwriting the other.
+ * `init --from` registers each project's realpath in the global config's `projects` array via
+ * `registerProjectPath`. Two projects under the same HOME must both be registered, each exactly
+ * once, with neither overwriting the other.
  *
- * Global HOME install itself is NOT self-registered — only project-context
- * installs append to `projects`. Each project edit toggles a skill + agent to
- * project scope so the write path runs a genuine change (an unchanged edit
- * short-circuits before `registerProjectPath`).
+ * The global HOME install itself is NOT self-registered — only project-context installs append to
+ * `projects`. Each project install carries a project-scoped skill and sub-agent, so it writes a
+ * project config of its own beside the global one.
  */
 
-describe("cc init registers each project exactly once in the global projects array", () => {
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+const API_DEV = E2E_AGENT["api-developer"].name;
+
+const GLOBAL_ID = "Regist01";
+const PROJECT_ID = "Regist02";
+
+describe("init --from registers each project exactly once in the global projects array", () => {
+  let source: E2ESource;
+  let store: SeedConfigStore;
   let tempDir: string;
   let fakeHome: string;
   let project1: string;
@@ -42,6 +55,33 @@ describe("cc init registers each project exactly once in the global projects arr
   let secondExit: number;
 
   beforeAll(async () => {
+    source = await createE2ESource();
+    store = await startSeedConfigStore();
+    store.publish(
+      GLOBAL_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        agents: { [WEB_DEV]: { on: true, scope: "global" } },
+      }),
+    );
+    store.publish(
+      PROJECT_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.vitest.id]: buildSeedSkill({
+            scope: "project",
+            assignments: { [API_DEV]: "lazy" },
+          }),
+        },
+        agents: { [API_DEV]: { on: true, scope: "project" } },
+      }),
+    );
+
     tempDir = await createTempDir();
     fakeHome = path.join(tempDir, "home");
     project1 = path.join(fakeHome, "project-1");
@@ -51,28 +91,34 @@ describe("cc init registers each project exactly once in the global projects arr
       await createPermissionsFile(dir);
     }
 
-    // Phase A: global install at HOME (eject). Populates the global config so
-    // subsequent project edits have skills to keep at global scope.
-    const globalRes = await initGlobalWithEject(E2E_SOURCE, fakeHome);
+    // Phase A: the global install at HOME.
+    const globalRes = await runInitFrom(store, GLOBAL_ID, { dir: fakeHome }, source.sourceDir);
     globalExit = globalRes.exitCode;
-    const afterGlobal = await loadConfigOrFail(fakeHome);
-    projectsAfterGlobalInit = afterGlobal.projects;
+    projectsAfterGlobalInit = (await loadConfigOrFail(fakeHome)).projects;
 
-    // Phase B: project-1 via dashboard -> Edit, toggling a skill + agent to
-    // project scope (a genuine change that drives the registration write).
-    const firstRes = await initProject(E2E_SOURCE, fakeHome, project1);
+    // Phases B and C: one project install each, under the same HOME.
+    const firstRes = await runInitFrom(
+      store,
+      PROJECT_ID,
+      { dir: project1, globalHome: fakeHome },
+      source.sourceDir,
+    );
     firstExit = firstRes.exitCode;
-    const afterFirst = await loadConfigOrFail(fakeHome);
-    projectsAfterFirst = afterFirst.projects;
+    projectsAfterFirst = (await loadConfigOrFail(fakeHome)).projects;
 
-    // Phase C: project-2 via dashboard -> Edit, same genuine change.
-    const secondRes = await initProject(E2E_SOURCE, fakeHome, project2);
+    const secondRes = await runInitFrom(
+      store,
+      PROJECT_ID,
+      { dir: project2, globalHome: fakeHome },
+      source.sourceDir,
+    );
     secondExit = secondRes.exitCode;
-    const afterSecond = await loadConfigOrFail(fakeHome);
-    projectsAfterSecond = afterSecond.projects;
+    projectsAfterSecond = (await loadConfigOrFail(fakeHome)).projects;
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
+    await cleanupFixture(source);
     if (tempDir) await cleanupTempDir(tempDir);
   });
 

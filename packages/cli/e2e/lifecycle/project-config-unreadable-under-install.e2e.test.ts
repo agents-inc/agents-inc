@@ -15,10 +15,11 @@ import {
   type RunsOverABrokenConfig,
   type RunsOverReadableConfigs,
 } from "../fixtures/config-reading-commands.js";
-import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { createDualScopeEnvFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import {
   compactCliOutput,
   configTsPath,
@@ -35,8 +36,8 @@ import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * scratch.
  *
  * The installation is the product's own work: a real global install and a real project set up
- * under it, both through the wizard. Only the broken file is written by hand, because no command
- * writes one.
+ * under it, both through `init --from`. Only the broken file is written by hand, because no
+ * command writes one.
  *
  * **Every command that reads the configs refuses, and says the same thing** — the write commands
  * `init`, `edit`, `compile`, `update`, `share` and `eject`, and `search` and `list`. Against the
@@ -54,7 +55,7 @@ import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
  * with both configs readable, each of which runs. A guard that had swallowed its whole domain
  * would satisfy every refusal without it.
  *
- * Each shape is driven over the installation as the wizard left it — set aside once, put back
+ * Each shape is driven over the installation as `init --from` left it — set aside once, put back
  * before every shape — so a command that went ahead over one shape cannot leave the next shape's
  * byte-identity check with nothing to catch.
  */
@@ -69,8 +70,8 @@ describe("a real project whose own config.ts cannot be loaded, under a readable 
   let globalClaudeAfter: Record<string, TreeSnapshotEntry>;
 
   beforeAll(async () => {
-    env = await createDualScopeEnv(E2E_SOURCE);
     store = await startSeedConfigStore();
+    env = await createDualScopeEnvFromSeed(store);
     projectConfig = configTsPath(env.projectDir);
     const restoreInstallation = await setAsideInstallation(env.fakeHome);
 
@@ -197,6 +198,7 @@ describe("a real project whose own config.ts cannot be loaded, under a readable 
  * the user round twice: recreate the project, run again, and only then learn of the global one.
  */
 describe("a real project whose own config.ts and the global one both cannot be loaded", () => {
+  let store: SeedConfigStore;
   let env: DualScopeEnv;
   const refusals = new Map<string, CLIResult>();
 
@@ -204,7 +206,8 @@ describe("a real project whose own config.ts and the global one both cannot be l
   const COMMANDS = ["compile", "list"] as const;
 
   beforeAll(async () => {
-    env = await createDualScopeEnv(E2E_SOURCE);
+    store = await startSeedConfigStore();
+    env = await createDualScopeEnvFromSeed(store);
     await writeCorruptConfig(env.projectDir, EMPTY_CONFIG_FILE);
     await writeCorruptConfig(env.fakeHome, EMPTY_CONFIG_FILE);
 
@@ -217,6 +220,7 @@ describe("a real project whose own config.ts and the global one both cannot be l
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     await env.destroy();
   });
 
@@ -253,8 +257,8 @@ describe("the same project with both configs readable", () => {
   let readable: RunsOverReadableConfigs;
 
   beforeAll(async () => {
-    env = await createDualScopeEnv(E2E_SOURCE);
     store = await startSeedConfigStore();
+    env = await createDualScopeEnvFromSeed(store);
     readable = await runEveryReaderOverReadableConfigs(env, store);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
@@ -285,8 +289,10 @@ describe("the same project with both configs readable", () => {
     expect(readable.templateEjected).toBe(true);
   });
 
-  it("opens init's dashboard and edit's wizard", () => {
+  it("opens init's dashboard, and edit mints an id for the installation", () => {
     expect(readable.dashboardScreen).toContain(STEP_TEXT.DASHBOARD);
-    expect(readable.editBuild).toContain(STEP_TEXT.BUILD_FOOTER);
+    expect(readable.edit.exitCode, readable.edit.output).toBe(EXIT_CODES.SUCCESS);
+    expect(readable.edit.minted).toHaveLength(1);
+    expect(readable.edit.output).toContain(`Shared as ${firstElement(readable.edit.minted)}`);
   });
 });

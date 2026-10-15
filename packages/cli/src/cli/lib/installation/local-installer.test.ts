@@ -26,23 +26,22 @@ import {
 import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../../types";
 import { initializeMatrix, matrix as activeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { sa, saUnflagged } from "../__tests__/factories/skill-factories";
+import { sa } from "../__tests__/factories/skill-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories";
-import { createMockStack } from "../__tests__/factories/stack-factories";
 import {
   buildGateReport,
-  buildWizardResult,
+  buildInstallSelection,
   buildProjectConfig,
   buildSourceResult,
   buildAgentConfigs,
 } from "../__tests__/factories/config-factories";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { readGeneratedUnion } from "../__tests__/helpers/generated-types.js";
 import { readTestTsConfig } from "../__tests__/helpers/config-io";
 import { useFakeHome } from "../__tests__/helpers/isolated-home";
 import { loadSkillsFromAllSources } from "../loading";
-import { DEFAULT_SOURCE, defaultStacks } from "../configuration";
+import { DEFAULT_SOURCE } from "../configuration";
 import { NO_CHANGES } from "../config-gate/classify.js";
 import { fileExists } from "../../utils/fs";
 import { SKILLS } from "../__tests__/test-fixtures";
@@ -59,7 +58,6 @@ import {
   DEFAULT_PLUGIN_NAME,
   DEFAULT_PUBLIC_SOURCE_NAME,
   EJECT_SOURCE,
-  GLOBAL_CONFIG_NAME,
   LOCAL_SKILLS_PATH,
   STANDARD_FILES,
 } from "../../consts";
@@ -94,7 +92,7 @@ vi.mock("../resolver", async (importOriginal) => {
 vi.mock("../configuration/config-generator", async (importOriginal) => {
   const original = await importOriginal<typeof import("../configuration/config-generator")>();
   return {
-    // Echoes `name` as the real generator does. The skill is one no wizard below selects, so a
+    // Echoes `name` as the real generator does. The skill is one no spec below selects, so a
     // written skill can only have come from the generator.
     generateProjectConfigFromSkills: vi
       .fn<typeof original.generateProjectConfigFromSkills>()
@@ -175,9 +173,6 @@ const mockBuildSkillRefs = vi.mocked((await import("../resolver")).buildSkillRef
 const mockGenerateProjectConfig = vi.mocked(
   (await import("../configuration/config-generator")).generateProjectConfigFromSkills,
 );
-const mockBuildStackProperty = vi.mocked(
-  (await import("../configuration/config-generator")).buildStackProperty,
-);
 const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).loadStackById);
 
 const BUILT_IN_STACK_ID = "nextjs-fullstack";
@@ -203,11 +198,11 @@ describe("local-installer", () => {
 
     it("should create the config directory and seed the global pair it inherits from", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -221,11 +216,11 @@ describe("local-installer", () => {
 
     it("should write config into the source folder the project is on", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       const result = await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -244,11 +239,11 @@ describe("local-installer", () => {
 
     it("should include source in config from sourceFlag", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
         sourceFlag: "github:my-org/skills",
@@ -267,7 +262,7 @@ describe("local-installer", () => {
 
     it("should include source from sourceResult when no sourceFlag", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir, {
         sourceConfig: {
           source: "github:default/source",
@@ -276,7 +271,7 @@ describe("local-installer", () => {
       });
 
       await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -294,13 +289,13 @@ describe("local-installer", () => {
 
     it("should include marketplace in config when available", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir, {
         marketplace: "my-marketplace",
       });
 
       await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -319,11 +314,11 @@ describe("local-installer", () => {
 
     it("should return correct result structure", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       const result = await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -369,11 +364,11 @@ describe("local-installer", () => {
       );
 
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       const result = await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -386,13 +381,13 @@ describe("local-installer", () => {
 
     it("stores no install mode on the config it writes", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(
+      const selection = buildInstallSelection(
         buildSkillConfigs([SKILLS.react.id], { origin: "eject" }),
       );
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       const result = await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -407,11 +402,11 @@ describe("local-installer", () => {
 
     it("should not set wasMerged when no existing config", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       const result = await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -422,11 +417,11 @@ describe("local-installer", () => {
 
     it("should write valid config with satisfies ProjectConfig", async () => {
       const matrix = EMPTY_MATRIX;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
       await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -447,215 +442,13 @@ describe("local-installer", () => {
       });
     });
 
-    it("should preserve preloaded flags from stack skill assignments", async () => {
-      // Third-party stack YAML flags are the explicit tier and round-trip through the real
-      // generator.
-      initializeMatrix(FULLSTACK_PAIR_MATRIX);
-
-      const configGenerator = await vi.importActual<
-        typeof import("../configuration/config-generator")
-      >("../configuration/config-generator");
-      mockGenerateProjectConfig.mockImplementationOnce(
-        configGenerator.generateProjectConfigFromSkills,
-      );
-      mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
-      mockLoadStackById.mockResolvedValueOnce(
-        createMockStack("test-stack", {
-          name: "Test Stack",
-          description: "A test stack",
-          agents: { "web-developer": { "web-framework": [sa("web-framework-react", true)] } },
-        }),
-      );
-
-      const selectedAgents: AgentName[] = ["web-developer"];
-      const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]), {
-        selectedStackId: "test-stack",
-        selectedAgents,
-        agentConfigs: buildAgentConfigs(selectedAgents),
-      });
-      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
-
-      const result = await writeProjectConfig({
-        wizardResult,
-        sourceResult,
-        projectDir: tempDir,
-      });
-
-      expect(result.config.stack?.["web-developer"]?.["web-framework"]).toStrictEqual([
-        { id: "web-framework-react", preloaded: true },
-      ]);
-
-      const configPath = getProjectConfigPath(tempDir, "claude");
-      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
-      const parsedWebDev = parsedConfig.stack?.["web-developer"] as Record<string, unknown>;
-      expect(parsedWebDev["web-framework"]).toStrictEqual([
-        { id: "web-framework-react", preloaded: true },
-      ]);
-    });
-
-    it("loads a built-in stack's assignments the way the shared mapping does", async () => {
-      // A built-in stack says nothing about loading, so each pair takes the shared mapping, per
-      // pair.
-      initializeMatrix(FULLSTACK_PAIR_MATRIX);
-
-      const configGenerator = await vi.importActual<
-        typeof import("../configuration/config-generator")
-      >("../configuration/config-generator");
-      mockGenerateProjectConfig.mockImplementationOnce(
-        configGenerator.generateProjectConfigFromSkills,
-      );
-      mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
-      mockLoadStackById.mockResolvedValueOnce(
-        defaultStacks.find((stack) => stack.id === BUILT_IN_STACK_ID)!,
-      );
-
-      const selectedAgents: AgentName[] = ["web-developer", "codex-keeper"];
-      const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]), {
-        selectedStackId: BUILT_IN_STACK_ID,
-        selectedAgents,
-        agentConfigs: buildAgentConfigs(selectedAgents),
-      });
-      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
-
-      const result = await writeProjectConfig({
-        wizardResult,
-        sourceResult,
-        projectDir: tempDir,
-      });
-
-      expect(result.config.stack?.["web-developer"]?.["web-framework"]).toStrictEqual([
-        { id: "web-framework-react", preloaded: true },
-      ]);
-      expect(result.config.stack?.["codex-keeper"]?.["web-framework"]).toStrictEqual([
-        { id: "web-framework-react" },
-      ]);
-
-      const configPath = getProjectConfigPath(tempDir, "claude");
-      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
-      const parsedWebDev = parsedConfig.stack?.["web-developer"] as Record<string, unknown>;
-      const parsedKeeper = parsedConfig.stack?.["codex-keeper"] as Record<string, unknown>;
-      expect(parsedWebDev["web-framework"]).toStrictEqual([
-        { id: "web-framework-react", preloaded: true },
-      ]);
-      // A lazy assignment is written as the bare id.
-      expect(parsedKeeper["web-framework"]).toStrictEqual(["web-framework-react"]);
-    });
-
-    it("keeps the saved load when a built-in stack is re-applied over an installed config", async () => {
-      // An installed config is the user's curation; re-picking the stack must not overwrite it.
-      initializeMatrix(FULLSTACK_PAIR_MATRIX);
-
-      const selectedAgents: AgentName[] = ["web-developer", "codex-keeper"];
-      const configPath = getProjectConfigPath(tempDir, "claude");
-      await mkdir(path.dirname(configPath), { recursive: true });
-      await writeConfigFile(
-        buildProjectConfig({
-          skills: buildSkillConfigs(["web-framework-react"]),
-          agents: buildAgentConfigs(selectedAgents),
-          stack: {
-            "web-developer": { "web-framework": [saUnflagged("web-framework-react")] },
-            "codex-keeper": {
-              "web-framework": [sa("web-framework-react", true)],
-            },
-          },
-        }),
-        configPath,
-      );
-
-      const configGenerator = await vi.importActual<
-        typeof import("../configuration/config-generator")
-      >("../configuration/config-generator");
-      mockGenerateProjectConfig.mockImplementationOnce(
-        configGenerator.generateProjectConfigFromSkills,
-      );
-      mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
-      mockLoadStackById.mockResolvedValueOnce(
-        defaultStacks.find((stack) => stack.id === BUILT_IN_STACK_ID)!,
-      );
-
-      const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]), {
-        selectedStackId: BUILT_IN_STACK_ID,
-        selectedAgents,
-        agentConfigs: buildAgentConfigs(selectedAgents),
-      });
-      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
-
-      const result = await writeProjectConfig({
-        wizardResult,
-        sourceResult,
-        projectDir: tempDir,
-      });
-
-      expect(result.config.stack?.["web-developer"]?.["web-framework"]).toStrictEqual([
-        { id: "web-framework-react" },
-      ]);
-      expect(result.config.stack?.["codex-keeper"]?.["web-framework"]).toStrictEqual([
-        { id: "web-framework-react", preloaded: true },
-      ]);
-
-      const parsedConfig = await readTestTsConfig<ProjectConfig>(configPath);
-      const parsedWebDev = parsedConfig.stack?.["web-developer"] as Record<string, unknown>;
-      const parsedKeeper = parsedConfig.stack?.["codex-keeper"] as Record<string, unknown>;
-      expect(parsedWebDev["web-framework"]).toStrictEqual(["web-framework-react"]);
-      expect(parsedKeeper["web-framework"]).toStrictEqual([
-        { id: "web-framework-react", preloaded: true },
-      ]);
-    });
-
-    it("stack-picked init filters unselected agents out of the stack", async () => {
-      // Deselected stack agents are dropped from the stack even though the stack YAML lists them.
-      initializeMatrix(FULLSTACK_PAIR_MATRIX);
-
-      const configGenerator = await vi.importActual<
-        typeof import("../configuration/config-generator")
-      >("../configuration/config-generator");
-      mockGenerateProjectConfig.mockImplementationOnce(
-        configGenerator.generateProjectConfigFromSkills,
-      );
-      mockBuildStackProperty.mockImplementationOnce(configGenerator.buildStackProperty);
-      mockLoadStackById.mockResolvedValueOnce(
-        createMockStack("fullstack", {
-          name: "Fullstack",
-          description: "Web + API",
-          agents: {
-            "web-developer": { "web-framework": [sa("web-framework-react", true)] },
-            "api-developer": { "api-api": [sa("api-framework-hono", true)] },
-          },
-        }),
-      );
-
-      const selectedAgents: AgentName[] = ["web-developer"];
-      const wizardResult = buildWizardResult(
-        buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
-        {
-          selectedStackId: "fullstack",
-          selectedAgents,
-          agentConfigs: buildAgentConfigs(selectedAgents),
-        },
-      );
-      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
-
-      const result = await writeProjectConfig({
-        wizardResult,
-        sourceResult,
-        projectDir: tempDir,
-      });
-
-      expect(Object.keys(result.config.stack ?? {})).toStrictEqual(["web-developer"]);
-      expect(result.config.stack?.["api-developer"]).toBeUndefined();
-      // Full content, so a mutated SkillAssignment payload cannot pass.
-      expect(result.config.stack?.["web-developer"]?.["web-framework"]).toStrictEqual([
-        { id: "web-framework-react", preloaded: true },
-      ]);
-    });
-
     it("names the stack id and the source it asked when the stack does not resolve", async () => {
       // A stack id the loaded source does not have resolves to null, and the install names it.
       initializeMatrix(FULLSTACK_PAIR_MATRIX);
       mockLoadStackById.mockResolvedValueOnce(null);
 
       const selectedAgents: AgentName[] = ["web-developer"];
-      const wizardResult = buildWizardResult(buildSkillConfigs(["web-framework-react"]), {
+      const selection = buildInstallSelection(buildSkillConfigs(["web-framework-react"]), {
         selectedStackId: BUILT_IN_STACK_ID,
         selectedAgents,
         agentConfigs: buildAgentConfigs(selectedAgents),
@@ -664,7 +457,7 @@ describe("local-installer", () => {
         sourceConfig: { source: TEST_CUSTOM_SOURCE_URL, sourceOrigin: "flag" },
       });
 
-      const install = writeProjectConfig({ wizardResult, sourceResult, projectDir: tempDir });
+      const install = writeProjectConfig({ selection, sourceResult, projectDir: tempDir });
       await expect(install).rejects.toThrow(BUILT_IN_STACK_ID);
       await expect(install).rejects.toThrow(TEST_CUSTOM_SOURCE_URL);
 
@@ -688,7 +481,7 @@ describe("local-installer", () => {
       );
 
       const selectedAgents: AgentName[] = ["api-developer", "web-developer"];
-      const wizardResult = buildWizardResult(
+      const selection = buildInstallSelection(
         buildSkillConfigs(["web-framework-react", "api-framework-hono"]),
         {
           selectedAgents,
@@ -706,7 +499,7 @@ describe("local-installer", () => {
       const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
 
       const result = await writeProjectConfig({
-        wizardResult,
+        selection,
         sourceResult,
         projectDir: tempDir,
       });
@@ -740,12 +533,12 @@ describe("local-installer", () => {
       // At $HOME the config takes the product name, not the OS account name.
       initializeMatrix(EMPTY_MATRIX);
       const homeDir = fakeHome.dir;
-      const wizardResult = buildWizardResult(
+      const selection = buildInstallSelection(
         buildSkillConfigs([SKILLS.react.id], { scope: "global" }),
       );
       const sourceResult = buildSourceResult(EMPTY_MATRIX, homeDir);
 
-      const result = await writeProjectConfig({ wizardResult, sourceResult, projectDir: homeDir });
+      const result = await writeProjectConfig({ selection, sourceResult, projectDir: homeDir });
 
       const configPath = getProjectConfigPath(homeDir, "claude");
       const config = await readTestTsConfig<ProjectConfig>(configPath);
@@ -758,93 +551,6 @@ describe("local-installer", () => {
           path.join(sourceFolderInUse(homeDir, "claude").dir, STANDARD_FILES.CONFIG_TYPES_TS),
         ),
       ).toBe(true);
-    });
-
-    it("a sub-agent moved from global to project keeps the catalogue its stack curated", async () => {
-      initializeMatrix(FULLSTACK_PAIR_MATRIX);
-
-      const globalScopedSkills = buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
-        scope: "global",
-      });
-
-      // A global sub-agent's curation lives only in the global config. The api row is cross-domain,
-      // so it can only be there as somebody's choice.
-      const globalConfigPath = getProjectConfigPath(fakeHome.dir, "claude");
-      await mkdir(path.dirname(globalConfigPath), { recursive: true });
-      await writeConfigFile(
-        buildProjectConfig({
-          name: GLOBAL_CONFIG_NAME,
-          skills: globalScopedSkills,
-          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-          stack: {
-            "web-developer": {
-              "web-framework": [sa("web-framework-react", true)],
-              "api-api": [saUnflagged("api-framework-hono")],
-            },
-          },
-        }),
-        globalConfigPath,
-      );
-
-      const projectConfigPath = getProjectConfigPath(tempDir, "claude");
-      await mkdir(path.dirname(projectConfigPath), { recursive: true });
-      await writeConfigFile(
-        buildProjectConfig({
-          skills: globalScopedSkills,
-          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-        }),
-        projectConfigPath,
-      );
-
-      const configGenerator = await vi.importActual<
-        typeof import("../configuration/config-generator")
-      >("../configuration/config-generator");
-      mockGenerateProjectConfig.mockImplementationOnce(
-        configGenerator.generateProjectConfigFromSkills,
-      );
-
-      // The `s` toggle on a global agent. api-developer is uncurated at either scope, so it seeds.
-      const selectedAgents: AgentName[] = ["web-developer", "api-developer"];
-      const wizardResult = buildWizardResult(globalScopedSkills, {
-        selectedAgents,
-        agentConfigs: [
-          ...buildAgentConfigs(selectedAgents, { scope: "project" }),
-          ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
-        ],
-      });
-      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir);
-
-      const result = await writeProjectConfig({ wizardResult, sourceResult, projectDir: tempDir });
-
-      // A scope change moves where a sub-agent lives, never what it knows.
-      expect(result.config.stack?.["web-developer"]).toStrictEqual({
-        "web-framework": [{ id: "web-framework-react", preloaded: true }],
-        "api-api": [{ id: "api-framework-hono" }],
-      });
-      // Uncurated, so it seeds from the relevance rule.
-      expect(result.config.stack?.["api-developer"]).toStrictEqual({
-        "api-api": [{ id: "api-framework-hono", preloaded: true }],
-      });
-
-      // Boundary cast: the writer spells a flag-less assignment as a bare id.
-      const projectConfig = await readTestTsConfig<ProjectConfig>(projectConfigPath);
-      const writtenWebDeveloper = projectConfig.stack?.["web-developer"] as Record<string, unknown>;
-      const writtenApiDeveloper = projectConfig.stack?.["api-developer"] as Record<string, unknown>;
-      expect(writtenWebDeveloper).toStrictEqual({
-        "web-framework": [{ id: "web-framework-react", preloaded: true }],
-        "api-api": ["api-framework-hono"],
-      });
-      expect(writtenApiDeveloper).toStrictEqual({
-        "api-api": [{ id: "api-framework-hono", preloaded: true }],
-      });
-
-      // The global config keeps its curation; nothing migrates out of it.
-      const globalConfig = await readTestTsConfig<ProjectConfig>(globalConfigPath);
-      const globalWebDeveloper = globalConfig.stack?.["web-developer"] as Record<string, unknown>;
-      expect(globalWebDeveloper).toStrictEqual({
-        "web-framework": [{ id: "web-framework-react", preloaded: true }],
-        "api-api": ["api-framework-hono"],
-      });
     });
   });
 
@@ -1655,74 +1361,74 @@ describe("local-installer", () => {
   });
 
   describe("setConfigMetadata", () => {
-    it("should return a new config with selectedDomains when the wizard selected domains", () => {
+    it("should return a new config with selectedDomains when the selection names domains", () => {
       const config = buildProjectConfig();
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]), {
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
         selectedDomains: ["web", "api"],
       });
       const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir);
 
-      const result = setConfigMetadata(config, wizardResult, sourceResult);
+      const result = setConfigMetadata(config, selection, sourceResult);
 
       expect(result.selectedDomains).toStrictEqual(["web", "api"]);
     });
 
-    it("should not set selectedDomains when the wizard selected none", () => {
+    it("should not set selectedDomains when the selection names none", () => {
       const config = buildProjectConfig();
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]), {
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
         selectedDomains: [],
       });
       const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir);
 
-      const result = setConfigMetadata(config, wizardResult, sourceResult);
+      const result = setConfigMetadata(config, selection, sourceResult);
 
       expect(result.selectedDomains).toBeUndefined();
     });
 
     it("never persists a flat agent list — agents[] is the only record of who is selected", () => {
       const config = buildProjectConfig();
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]), {
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
         selectedAgents: ["web-developer", "api-developer"],
       });
       const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir);
 
-      const result = setConfigMetadata(config, wizardResult, sourceResult);
+      const result = setConfigMetadata(config, selection, sourceResult);
 
       expect(Object.keys(result)).not.toContain("selectedAgents");
     });
 
     it("should prefer sourceFlag over sourceResult.sourceConfig.source", () => {
       const config = buildProjectConfig();
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir, {
         sourceConfig: { source: "github:default/source", sourceOrigin: "project" },
       });
 
-      const result = setConfigMetadata(config, wizardResult, sourceResult, "github:my-org/skills");
+      const result = setConfigMetadata(config, selection, sourceResult, "github:my-org/skills");
 
       expect(result.marketplace).toBe("github:my-org/skills");
     });
 
     it("should use sourceResult.sourceConfig.source when no sourceFlag", () => {
       const config = buildProjectConfig();
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir, {
         sourceConfig: { source: "github:default/source", sourceOrigin: "project" },
       });
 
-      const result = setConfigMetadata(config, wizardResult, sourceResult);
+      const result = setConfigMetadata(config, selection, sourceResult);
 
       expect(result.marketplace).toBe("github:default/source");
     });
 
     it("should set marketplace when available", () => {
       const config = buildProjectConfig();
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]));
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir, {
         marketplace: "my-marketplace",
       });
 
-      const result = setConfigMetadata(config, wizardResult, sourceResult);
+      const result = setConfigMetadata(config, selection, sourceResult);
 
       expect(result.marketplaceName).toBe("my-marketplace");
     });
@@ -1730,7 +1436,7 @@ describe("local-installer", () => {
     it("should not mutate the original config object", () => {
       const config = buildProjectConfig();
       const originalName = config.name;
-      const wizardResult = buildWizardResult(buildSkillConfigs([SKILLS.react.id]), {
+      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
         selectedDomains: ["web"],
         selectedAgents: ["web-developer"],
       });
@@ -1738,7 +1444,7 @@ describe("local-installer", () => {
         marketplace: "my-marketplace",
       });
 
-      const result = setConfigMetadata(config, wizardResult, sourceResult, "github:my/repo");
+      const result = setConfigMetadata(config, selection, sourceResult, "github:my/repo");
 
       expect(config.selectedDomains).toBeUndefined();
       expect(config.marketplace).toBeUndefined();
@@ -2028,8 +1734,8 @@ describe("local-installer", () => {
     });
 
     /**
-     * `domains` is a wizard preference never pruned with the last skill of a domain, so the union
-     * must come from the array too. `meta` is named by nothing else.
+     * A config can still name a domain after the last skill of it is gone, so the union must come
+     * from the array too. `meta` is named by nothing else.
      */
     it("covers a domain the config still names after its last skill row is gone", async () => {
       await seedGlobalConfigTypes(fakeHomeHandle.dir);
@@ -2069,7 +1775,7 @@ describe("local-installer", () => {
     });
   });
 
-  // After a compile pass, the types match the wizard write path's for the scope compiled.
+  // After a compile pass, the types match the install write path's for the scope compiled.
   describe("regenerateScopeConfigTypes", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     const fakeHomeHandle = useFakeHome(() => tempDir);

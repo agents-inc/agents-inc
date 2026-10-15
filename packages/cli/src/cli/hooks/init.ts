@@ -24,7 +24,7 @@ const hook: Hook<"init"> = async function (options) {
       this.error(installationConfigsUnreadable(unreadable), { exit: EXIT_CODES.ERROR });
     }
 
-    const dashboard = await runDashboardFlow(projectDir, options.config, "standalone");
+    const dashboard = await runDashboardFlow(projectDir, options.config);
     if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
     if (dashboard === "shown") await endRun(EXIT_CODES.SUCCESS);
   }

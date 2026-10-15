@@ -14,24 +14,27 @@ import {
   type RunsOverABrokenConfig,
   type RunsOverReadableConfigs,
 } from "../fixtures/config-reading-commands.js";
-import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import type { TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { installDualScopeStack } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
+  cleanupTempDir,
   compactCliOutput,
   configTsPath,
   flattenCliOutput,
   writeCorruptConfig,
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
  * A global `config.ts` that EXISTS and cannot be loaded stops every command run from a project
  * under it, though the project's own config is fine — journey 38, driven from scratch.
  *
  * The installation is the product's own work: a real global install and a real project set up
- * under it, both through the wizard. Only the broken file is written by hand, because no command
+ * under it, both by one `init --from`. Only the broken file is written by hand, because no command
  * writes one.
  *
  * **Every command that reads the configs refuses, and says the same thing.** The write commands
@@ -52,21 +55,21 @@ import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants
  * over the same kind of installation with both configs readable, each of which runs. A guard that
  * had swallowed its whole domain would satisfy every refusal without it.
  *
- * Each shape is driven over the installation as the wizard left it — set aside once, put back
+ * Each shape is driven over the installation as the install left it — set aside once, put back
  * before every shape — so a command that went ahead over one shape cannot leave the next shape's
  * byte-identity check with nothing to catch.
  */
 
 describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from its project", () => {
-  let env: DualScopeEnv;
+  let env: TestEnvironment;
   let store: SeedConfigStore;
   let globalConfig: string;
   const broken = new Map<string, RunsOverABrokenConfig>();
   let uninstall: CLIResult;
 
   beforeAll(async () => {
-    env = await createDualScopeEnv(E2E_SOURCE);
     store = await startSeedConfigStore();
+    env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
     globalConfig = configTsPath(env.fakeHome);
     const restoreInstallation = await setAsideInstallation(env.fakeHome);
 
@@ -86,7 +89,7 @@ describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from
 
   afterAll(async () => {
     await store.close();
-    await env.destroy();
+    await cleanupTempDir(env.tempDir);
   });
 
   /** What every command did over one shape, which the hook above recorded for every shape. */
@@ -178,19 +181,19 @@ describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from
 });
 
 describe("the same installation with both configs readable", () => {
-  let env: DualScopeEnv;
+  let env: TestEnvironment;
   let store: SeedConfigStore;
   let readable: RunsOverReadableConfigs;
 
   beforeAll(async () => {
-    env = await createDualScopeEnv(E2E_SOURCE);
     store = await startSeedConfigStore();
+    env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
     readable = await runEveryReaderOverReadableConfigs(env, store);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
     await store.close();
-    await env.destroy();
+    await cleanupTempDir(env.tempDir);
   });
 
   it.each(CONFIG_READER_NAMES.filter((name) => name !== "share"))("runs '%s'", (name) => {
@@ -215,8 +218,10 @@ describe("the same installation with both configs readable", () => {
     expect(readable.templateEjected).toBe(true);
   });
 
-  it("opens init's dashboard and edit's wizard", () => {
+  it("opens init's dashboard, and hands the installation to the editor from edit", () => {
     expect(readable.dashboardScreen).toContain(STEP_TEXT.DASHBOARD);
-    expect(readable.editBuild).toContain(STEP_TEXT.BUILD_FOOTER);
+    expect(readable.edit.exitCode, readable.edit.output).toBe(EXIT_CODES.SUCCESS);
+    expect(readable.edit.minted).toHaveLength(1);
+    expect(readable.edit.output).toContain(`Shared as ${firstElement(readable.edit.minted)}`);
   });
 });

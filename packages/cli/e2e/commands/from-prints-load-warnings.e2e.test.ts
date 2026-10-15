@@ -34,8 +34,7 @@ import {
  * `init --from <id>` and `edit --from <id>` say what loading the marketplace raised, as every
  * other command that loads one does.
  *
- * The load runs with its warnings captured, because the wizard paints them as its startup band.
- * The two `--from` runs mount no wizard, so what the load captured went nowhere: a skill the
+ * The load runs with its warnings captured, and what it captured went nowhere: a skill the
  * marketplace ships with a `metadata.yaml` that will not parse was reported only as one "this
  * catalog does not know", with the cause — the file, and what is wrong with it — held and dropped.
  * The same goes for two folders claiming one id, a stack naming a skill the catalogue lacks, and a

@@ -38,9 +38,8 @@ const AUTO_SYNTH_ORDER = 999;
  * A synthesized category takes its domain from **whichever skill the glob reached first**, and the
  * order a directory walk returns is not a decision anybody made. Two skills sharing an undeclared
  * category while declaring different domains therefore file the second under a domain its own
- * `metadata.yaml` contradicts — silently, until now. The value feeds six product readers of
- * `getCategoryDomain`, `config-generator.ts` and `wizard-store.ts` among them, so it shapes both
- * the emitted `config.ts` and where the wizard puts the skill.
+ * `metadata.yaml` contradicts — silently, until now. The value feeds the product readers of
+ * `getCategoryDomain`, `config-generator.ts` among them, so it shapes the emitted `config.ts`.
  *
  * **Reported, not resolved.** Picking a winner would need a rule the catalogue does not state, and
  * the author is the only one who can say which domain they meant. `checkCategoryDomains` does not
@@ -238,8 +237,7 @@ function narrowToShippedSlugs(
  *
  * The built-in rules are written against the whole public catalogue — 176 slugs — so
  * a source shipping ten of them left the rest dangling. Resolution dropped those
- * references either way; what it ALSO did was warn once per reference per skill, and
- * since the startup band those warnings are painted over the wizard's step. Narrowing
+ * references either way; what it ALSO did was warn once per reference per skill. Narrowing
  * first removes the noise and nothing else: a member that resolves to no skill
  * contributed nothing to the resolved matrix to begin with.
  *
@@ -266,7 +264,7 @@ export function relationshipsForSource(
  * - Extracted skill metadata (from scanning skill directories)
  *
  * Each skill's raw relationship references are resolved to canonical SkillIds.
- * The result is the complete data structure consumed by the wizard UI and validation logic.
+ * The result is the complete data structure consumed by validation logic.
  */
 export function mergeMatrixWithSkills(
   categories: CategoryMap,

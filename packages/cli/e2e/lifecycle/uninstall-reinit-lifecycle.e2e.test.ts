@@ -1,6 +1,5 @@
 import { realpathSync } from "fs";
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
@@ -16,11 +15,9 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
-import {
-  createTestEnvironment,
-  initGlobalWithEject,
-  setupDualScopeWithEject,
-} from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { installE2EStackDualScope, installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
  * Uninstall / re-init lifecycle E2E tests.
@@ -29,6 +26,16 @@ import {
  * 1. Init -> Uninstall -> Re-init produces a clean, equivalent installation
  * 2. Uninstall from project scope preserves the global installation
  */
+
+let store: SeedConfigStore;
+
+beforeAll(async () => {
+  store = await startSeedConfigStore();
+});
+
+afterAll(async () => {
+  await store.close();
+});
 
 describe("uninstall-reinit lifecycle", () => {
   let tempDir: string;
@@ -47,8 +54,7 @@ describe("uninstall-reinit lifecycle", () => {
       const { fakeHome } = env;
 
       // Phase A: Init global with eject mode
-      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
+      await installE2EStackGlobally(store, fakeHome);
 
       // Verify Phase A installation exists
       const globalConfigPath = configTsPath(fakeHome);
@@ -88,8 +94,7 @@ describe("uninstall-reinit lifecycle", () => {
       ).toBe(false);
 
       // Phase C: Re-init global with eject mode
-      const phaseC = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(phaseC.exitCode, `Phase C re-init failed: ${phaseC.output}`).toBe(EXIT_CODES.SUCCESS);
+      await installE2EStackGlobally(store, fakeHome);
 
       // Verify re-init produced a complete installation
       expect(await fileExists(globalConfigPath), "Config must exist after re-init").toBe(true);
@@ -132,7 +137,7 @@ describe("uninstall scope isolation", () => {
       const { fakeHome, projectDir } = env;
 
       // Setup: Dual-scope install (global + project) with eject mode
-      await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
+      await installE2EStackDualScope(store, { fakeHome, projectDir });
 
       // Snapshot global state before project uninstall
       const globalConfigPath = configTsPath(fakeHome);

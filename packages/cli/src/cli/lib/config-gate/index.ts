@@ -172,8 +172,8 @@ async function applyConsequences(
  * registration-only mutation stays offline.
  *
  * `matrixOnly` + `skipExtraSources` are the offline policy the other config
- * readers already use: extra-source loading only annotates wizard UI tagging and
- * never changes the emitted config or types.
+ * readers already use: extra-source loading never changes the emitted config or
+ * types.
  */
 export function lazyGateDeps(projectDir: string): GateDeps {
   return {
@@ -361,7 +361,7 @@ function holdsAnythingOfItsOwn(projectConfig: ProjectConfig): boolean {
 
 /**
  * Regenerates a single scope's config-types.ts from its persisted config,
- * matching the wizard write path's writer selection exactly:
+ * matching `writeScopedFromWizard`'s writer selection exactly:
  * - global scope (home dir): standalone unions narrowed to the config's entries
  * - project scope: import-and-extend form (falls back to standalone when no
  *   global config-types.ts exists)

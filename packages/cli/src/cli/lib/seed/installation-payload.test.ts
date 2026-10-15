@@ -25,13 +25,13 @@ import {
 } from "../__tests__/factories/seed-factories.js";
 import { sa } from "../__tests__/factories/skill-factories.js";
 import { renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators.js";
-import { buildSkillConfig } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../__tests__/helpers/skill-config-builders.js";
 import { SKILLS, TEST_CATEGORIES } from "../__tests__/test-fixtures.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
 import { ERROR_MESSAGES } from "../../utils/messages.js";
 
 import type { SkillConfig, SkillId, SkillScope } from "../../types/index.js";
-import type { FixtureProjectConfig } from "../__tests__/helpers/wizard-simulation.js";
+import type { FixtureProjectConfig } from "../__tests__/helpers/skill-config-builders.js";
 import type { SeedExternalSkill } from "@workspace/matrix/seed";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 
@@ -480,8 +480,8 @@ describe("seedPayloadForInstallation", () => {
         files: { [STANDARD_FILES.SKILL_MD]: renderSkillMd("brainstorming", LONG_DESCRIPTION) },
       });
       await installCarriedConfig();
-      // The subject guard: the install cut the label it wrote for the wizard, so a re-read of that
-      // label cannot be where the whole sentence comes back from.
+      // The subject guard: the install cut the short label it wrote, so a re-read of that label
+      // cannot be where the whole sentence comes back from.
       expect(
         await readFile(path.join(carriedSkillDir(), STANDARD_FILES.METADATA_YAML), "utf8"),
       ).not.toContain(LONG_DESCRIPTION);
@@ -489,7 +489,7 @@ describe("seedPayloadForInstallation", () => {
       const prepared = await seedPayloadForInstallation(projectDir);
 
       expect(prepared.ok).toBe(true);
-      // The label is the wizard's; the description is the skill's own, and it is what the next
+      // The label is the short one; the description is the skill's own, and it is what the next
       // receiver installs the skill with. A re-share that sent the label would shorten the skill
       // once per round trip.
       expect(prepared.ok && prepared.payload.external?.[CARRIED_ID]?.description).toBe(

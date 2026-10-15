@@ -45,7 +45,6 @@ const ACTIVATION_DESCRIPTIONS_FILE = "activation-descriptions.ts";
 
 export type AgentEntry = {
   id: string;
-  domain?: string;
 };
 
 /** One file the generator owns. `path` is relative to the output directory. */
@@ -210,10 +209,7 @@ export function extractAgents(cliRootPath: string): AgentEntry[] {
       );
       if (metadata.custom) continue;
       if (metadata.id) {
-        agents.push({
-          id: metadata.id,
-          ...(metadata.domain !== undefined && { domain: metadata.domain }),
-        });
+        agents.push({ id: metadata.id });
       }
     }
   }
@@ -343,15 +339,11 @@ const withoutActivationDescription = ({
  * first paint, and only its output preview reads that sentence, behind a click — so it is emitted
  * as a file of its own, which the preview loads with itself.
  */
-export function renderMatrix(
-  skills: ExtractedSkillMetadata[],
-  agentEntries: AgentEntry[],
-  skillIdSet: Set<string>,
-): string {
-  // Emission order is a promise, not an accident. matrix.skills and
-  // agentDefinedDomains take their key order from these arrays, and the arrays
-  // arrive in readdirSync order — a property of the filesystem, not of the
-  // marketplace. The first live CI regeneration proved it: same skills commit,
+export function renderMatrix(skills: ExtractedSkillMetadata[], skillIdSet: Set<string>): string {
+  // Emission order is a promise, not an accident. matrix.skills takes its key
+  // order from this array, and the array arrives in readdirSync order — a
+  // property of the filesystem, not of the marketplace. The first live CI
+  // regeneration proved it: same skills commit,
   // byte-different matrix.ts, 17,300-line pull request of pure reordering.
   // Byte-wise comparison rather than localeCompare, deliberately: localeCompare
   // with no locale argument reads the process's default collation from LC_ALL /
@@ -360,7 +352,6 @@ export function renderMatrix(
   const sortedSkills = skills
     .map(withoutActivationDescription)
     .sort((a, b) => bytewise(a.id, b.id));
-  const sortedAgentEntries = [...agentEntries].sort((a, b) => bytewise(a.id, b.id));
 
   // Through the same arrangement the CLI's own loader makes of these three inputs: the
   // built-in rules narrowed to the slugs this catalogue ships, then merged. Reaching
@@ -375,15 +366,6 @@ export function renderMatrix(
 
   // Resolve stacks from defaultStacks
   matrix.suggestedStacks = defaultStacks.map((stack) => resolveStack(stack, skillIdSet));
-
-  // Build agentDefinedDomains from agent metadata
-  const agentDefinedDomains = Object.fromEntries(
-    sortedAgentEntries.flatMap((a) => (a.domain === undefined ? [] : [[a.id, a.domain] as const])),
-  );
-  if (Object.keys(agentDefinedDomains).length > 0) {
-    // Boundary cast: agent IDs and domains are validated by Phase 1
-    matrix.agentDefinedDomains = agentDefinedDomains;
-  }
 
   // Build derived lookup maps (grouped + sorted by key and values)
   const sortedSkillIdsByCategory = sortedGroupBy(
@@ -542,7 +524,7 @@ async function emittedFiles({ skillsSource, cliRoot = CLI_ROOT }: SourceRoots): 
   // out of the same list.
   const sourceTypes = renderSourceTypes(skills, agentEntries);
   const skillIds = new Set(skills.map((skill) => skill.id));
-  const matrix = renderMatrix(skills, agentEntries, skillIds);
+  const matrix = renderMatrix(skills, skillIds);
 
   return {
     files: await formatEmitted([

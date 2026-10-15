@@ -78,7 +78,7 @@ export async function readSkillMetadata(metadataPath: string): Promise<SkillMeta
  * `local` is a trapdoor rather than a category: it belongs to no domain, so a skill wearing it
  * joins no grid tab and is dropped from every sub-agent's stack. Both passes that read an
  * installed skill's metadata.yaml share this verdict — the local-skill discovery behind the
- * wizard's matrix, and the discovery behind `compile`'s skill count. One reader loading what the
+ * matrix, and the discovery behind `compile`'s skill count. One reader loading what the
  * other refused is what printed a discovery total beside a refusal about the same skill, in a
  * single run.
  *

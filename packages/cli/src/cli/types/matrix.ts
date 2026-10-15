@@ -56,9 +56,6 @@ export type CacheTtl = (typeof CACHE_TTLS)[number];
 /** Partial: a marketplace may define only some categories. */
 export type CategoryMap = Partial<Record<Category, CategoryDefinition>>;
 
-/** `{ domain: { category: [skillId, ...] } }`; a category holds one skill when `exclusive`. */
-export type DomainSelections = Partial<Record<Domain, Partial<Record<Category, SkillId[]>>>>;
-
 export type CategoryDefinition = {
   id: Category;
   displayName: string;
@@ -124,8 +121,6 @@ export type MergedSkillsMatrix = {
    * Rule slugs no skill here carries, so `checkMatrixHealth` can report them against their source.
    */
   unresolvedSlugs?: SkillSlug[];
-  /** Explicit domain definitions from agent metadata files */
-  agentDefinedDomains?: Partial<Record<AgentName, Domain>>;
   generatedAt: string;
 };
 
@@ -134,7 +129,7 @@ export type SkillCore = {
   id: SkillId;
   slug: SkillSlug;
   displayName: string;
-  /** The wizard's short label — `cliDescription` from metadata.yaml when the skill states one. */
+  /** The short label — `cliDescription` from metadata.yaml when the skill states one. */
   description: string;
   /** The SKILL.md frontmatter `description`, which a compiled skill-activation table shows. */
   activationDescription?: string;

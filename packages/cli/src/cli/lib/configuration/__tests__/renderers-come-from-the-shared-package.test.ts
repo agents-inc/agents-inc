@@ -51,7 +51,7 @@ import {
   isScopePairCompatible,
   splitConfigByScope,
 } from "../config-generator.js";
-import { seedToWizardResult } from "../../seed/seed-to-wizard.js";
+import { seedToInstallSelection } from "../../seed/seed-to-selection.js";
 import {
   assembleConfigTypesSource,
   deriveCategories,
@@ -124,7 +124,7 @@ const RE_EXPORTED: readonly (readonly [string, unknown, unknown])[] = [
   ["splitConfigByScope", splitConfigByScope, seedToConfig.splitConfigByScope],
   ["buildStackProperty", buildStackProperty, seedToConfig.buildStackProperty],
   ["isScopePairCompatible", isScopePairCompatible, seedToConfig.isScopePairCompatible],
-  ["seedToWizardResult", seedToWizardResult, seedToConfig.seedToWizardResult],
+  ["seedToInstallSelection", seedToInstallSelection, seedToConfig.seedToInstallSelection],
   ["mergeGlobalConfigs", mergeGlobalConfigs, globalConfig.mergeGlobalConfigs],
   // A string, so this pair alone compares values; the declaration check on config.ts below is
   // what holds it to one home.

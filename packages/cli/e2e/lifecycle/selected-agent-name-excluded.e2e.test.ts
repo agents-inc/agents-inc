@@ -4,8 +4,9 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { TIMEOUTS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupTempDir,
   configTypesTsPath,
@@ -16,7 +17,7 @@ import {
 } from "../helpers/test-utils.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
-import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
  * Where SelectedAgentName comes from, through a real CLI run.
@@ -35,6 +36,7 @@ const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config's agents", () => {
   let fixture: E2EPluginSource;
+  let store: SeedConfigStore;
   let sourceDir: string;
   let sourceTempDir: string;
 
@@ -42,9 +44,11 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
     fixture = await createE2EPluginSource();
     sourceDir = fixture.sourceDir;
     sourceTempDir = fixture.tempDir;
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     if (sourceTempDir) await cleanupTempDir(sourceTempDir);
   });
 
@@ -65,59 +69,30 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
       testTempDir = tempDir;
 
       // Phase 1: Global init -- install with default agents
-      const globalWizard = await InitWizard.launch({
-        source: { sourceDir, tempDir: sourceTempDir },
-        projectDir: fakeHome,
-        env: { HOME: fakeHome },
-      });
-      const globalResult = await globalWizard.completeWithDefaults();
-      expect(await globalResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await globalResult.destroy();
+      await installFromSeed(
+        store,
+        "Plugins1",
+        e2eStackPayload({ install: "plugin" }),
+        { dir: fakeHome, home: fakeHome },
+        sourceDir,
+      );
 
-      // Phase 2: Project init -- global install exists, so `cc init` lands on the
-      // dashboard. Drive dashboard -> Edit -> build/sources/agents -> deselect
-      // api-developer -> confirm. The deselect is what the KNOWN GAP below is
-      // about; the run is still what produces the project pair this asserts on.
-      const dashboard = await InitWizard.launchForDashboard({
-        projectDir,
-        source: { sourceDir, tempDir: sourceTempDir },
-        env: { HOME: fakeHome },
-      });
-
-      await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
-
-      // "Edit" is the first (default) dashboard option — press Enter to launch it.
-      const build = await dashboard.selectEdit();
-
-      // Establish project scope by toggling scope on web-framework-react in the
-      // first domain, focused explicitly rather than relying on where the grid
-      // opens. Without a project-scoped skill, no project-level
-      // .agents-inc/claude/config-types.ts is generated.
-      await build.focusSkill(E2E_SKILL.react.display);
-      await build.toggleScopeOnFocusedSkill();
-
-      // Pass through remaining domains, then sources.
-      const sources = await build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-
-      // The press the KNOWN GAP at the end is about, and it is a REFUSAL rather than a
-      // deselect: api-developer is installed globally and this is a project edit, so the
-      // product blocks the toggle and says so in a toast. It used to go through
-      // `toggleAgent`, which was open-loop — the keystroke was spent, nothing moved, and
-      // the run carried on as though the sub-agent had been deselected. `toggleAgent` is
-      // closed-loop now and reports a refusal instead of passing it on, so the press takes
-      // the same cursor-anchored raw wait `lifecycle/global-agent-toggle-guard` uses for
-      // this exact state: the toast is the only surface the refusal reaches, and the wait
-      // IS the assertion on it.
-      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
-      await agents.toggleFocusedAgentAwaiting(STEP_TEXT.GLOBAL_AGENTS_BLOCKED);
-
-      const confirm = await agents.advance("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-      await dashboard.destroy();
+      // Phase 2: Project init over that global install, with web-framework-react moved
+      // into the project (assigned to no sub-agent, since a project skill never reaches the
+      // global web-developer) and api-developer left out. The leaving-out is what the KNOWN
+      // GAP below is about; the run is still what produces the project pair this asserts on.
+      await installFromSeed(
+        store,
+        "ReactProject1",
+        e2eStackPayload({
+          install: "plugin",
+          projectSkills: [E2E_SKILL.react.id],
+          unassigned: [E2E_SKILL.react.id],
+          withoutAgents: [E2E_AGENT["api-developer"].name],
+        }),
+        { dir: projectDir, home: fakeHome },
+        sourceDir,
+      );
 
       // Read the project's config-types.ts
       const configTypesPath = configTypesTsPath(projectDir);
@@ -150,13 +125,11 @@ describe.skipIf(!claudeAvailable)("SelectedAgentName is derived from the config'
       ).toStrictEqual([]);
 
       // KNOWN GAP: the excluded-agent half of this spec's original claim is not
-      // reachable through this flow, and the reason is now asserted rather than
-      // assumed: the product REFUSES the toggle above, which the press's toast wait
-      // pins. Toggling api-developer off at PROJECT scope while it is installed
-      // GLOBALLY does not write an excluded agent row — the
-      // emitted config.ts carries all ten agents as active `scope: "global"`
-      // entries, and its only `excluded` row is the web-framework-react SKILL
-      // tombstone that `toggleScopeOnFocusedSkill` above mints. The original
+      // reachable through this flow. Leaving api-developer out of a PROJECT install
+      // while it is installed GLOBALLY does not write an excluded agent row — the
+      // emitted config.ts carries both agents as active `scope: "global"` entries,
+      // and its only `excluded` row is the web-framework-react SKILL tombstone the
+      // project's own React mints. The original
       // assertion `expect(configContent).toContain("excluded")` was matching that
       // skill tombstone, which is why nobody noticed. The exclusion-filtering
       // itself is covered directly by the "narrows SelectedAgentName to the

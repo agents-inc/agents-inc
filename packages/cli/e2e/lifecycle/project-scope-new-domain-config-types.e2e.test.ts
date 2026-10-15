@@ -1,5 +1,5 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 
@@ -10,15 +10,16 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import {
-  createTestEnvironment,
-  finishWizard,
-  readAllSkillEntries,
-} from "../fixtures/dual-scope-helpers.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { createTestEnvironment, readAllSkillEntries } from "../fixtures/dual-scope-helpers.js";
+import { installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
  * A project-scoped skill whose CATEGORY the global install does not hold must widen the
@@ -32,18 +33,16 @@ import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
  * global roster's own categories — so nothing held the emitted text against an install where the
  * two scopes genuinely differ. This is that install.
  *
- * WHY ONE WIZARD RUN AND NOT TWO. A second `cc init` inside a project that already has a global
- * install opens the DASHBOARD rather than the stack step, so the domain and build steps are not
- * reachable a second time. One scratch run that leaves react at global scope and moves hono to
- * project scope produces the divergence directly, in a flow a user actually has.
+ * One install that puts react at global scope and hono at project scope produces the divergence
+ * directly.
  *
  * The `Domain` union diverges too. A project install adds to the global config only the domains
- * its arriving global skills come from — react's `web` here — while the domains the run selected,
- * `mobile` with no skill among them, stay the project's own. So the global line names `web` alone
- * and the project's extends it with the rest, asserted verbatim for the reason the constants give.
+ * its arriving global skills come from — react's `web` here — while the domains of its own skills
+ * stay the project's own. So the global line names `web` alone and the project's extends it with
+ * the rest, asserted verbatim for the reason the constants give.
  */
 
-/** `origin` recorded for skills installed from a local source via `setAllLocal`. */
+/** `origin` recorded for an ejected skill. */
 const EJECT_SOURCE = "eject";
 
 /**
@@ -65,49 +64,53 @@ const NEW_CATEGORY = "api-api";
 const GLOBAL_CATEGORY_LINE = `export type Category = 'web-framework'`;
 const GLOBAL_DOMAIN_LINE = `export type Domain = 'web'`;
 const PROJECT_CATEGORY_LINE = `export type Category = GlobalCategory | 'api-api' | 'web-framework'`;
-const PROJECT_DOMAIN_LINE = `export type Domain = GlobalDomain | 'api' | 'mobile' | 'web'`;
+const PROJECT_DOMAIN_LINE = `export type Domain = GlobalDomain | 'api' | 'web'`;
+
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+const API_DEV = E2E_AGENT["api-developer"].name;
 
 /**
- * One scratch init in a project directory with no prior global install: react selected on the
- * Web page and left at its default GLOBAL scope, hono selected on the API page and moved to
- * PROJECT scope. That single toggle is the whole of the divergence.
+ * One init in a project directory with no prior global install: react at GLOBAL scope on the
+ * global web-developer, hono at PROJECT scope on a project api-developer. That one skill's scope
+ * is the whole of the divergence.
  */
-async function initReactGlobalHonoProject(options: {
-  fakeHome: string;
-  projectDir: string;
-}): Promise<{ exitCode: number; output: string }> {
-  const wizard = await InitWizard.launch({
-    projectDir: options.projectDir,
-    env: { HOME: options.fakeHome },
-    ...TERMINAL_SIZE.TALL,
-  });
-
-  try {
-    const domain = await wizard.stack.selectScratch();
-    const build = await domain.advance();
-
-    await build.selectSkill(E2E_SKILL.react.display);
-    await build.advanceDomain();
-
-    // `selectSkill` leaves focus on the cell it just toggled, so the scope toggle below lands on
-    // hono rather than on wherever the API page happened to open.
-    await build.selectSkill(E2E_SKILL.hono.display);
-    await build.toggleScopeOnFocusedSkill();
-
-    const sources = await build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    await sources.setAllLocal();
-    const agents = await sources.acceptDefaults();
-    const confirm = await agents.acceptDefaults("init");
-    return await finishWizard(await confirm.confirm());
-  } catch (e) {
-    await wizard.destroy();
-    throw e;
-  }
+async function initReactGlobalHonoProject(
+  store: SeedConfigStore,
+  options: { fakeHome: string; projectDir: string },
+): Promise<{ exitCode: number; output: string }> {
+  return installFromSeed(
+    store,
+    "ReactGlobalHonoProject1",
+    buildSeedPayload({
+      skills: {
+        [E2E_SKILL.react.id]: buildSeedSkill({
+          install: "eject",
+          scope: "global",
+          assignments: { [WEB_DEV]: "preloaded" },
+        }),
+        [E2E_SKILL.hono.id]: buildSeedSkill({
+          install: "eject",
+          scope: "project",
+          assignments: { [API_DEV]: "preloaded" },
+        }),
+      },
+      agents: { [WEB_DEV]: { scope: "global" }, [API_DEV]: { scope: "project" } },
+    }),
+    { dir: options.projectDir, home: options.fakeHome },
+  );
 }
 
 describe("a project-scoped skill in a category the global install lacks widens the project's unions", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -122,7 +125,7 @@ describe("a project-scoped skill in a category the global install lacks widens t
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      const install = await initReactGlobalHonoProject({
+      const install = await initReactGlobalHonoProject(store, {
         fakeHome,
         projectDir,
       });

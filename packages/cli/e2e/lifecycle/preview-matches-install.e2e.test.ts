@@ -1,14 +1,15 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { generateConfigSource } from "@workspace/compile/config-source";
 import { generateConfigTypesSource } from "@workspace/compile/config-types-source";
 import { splitConfigByScope } from "@workspace/compile/seed-to-config";
 
-import { initGlobalWithEject, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
+import { installE2EStackDualScope, installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
 import { E2E_STACK_AGENTS } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
@@ -17,7 +18,7 @@ import {
   readCompiledAgents,
   sourceFolderIn,
 } from "../helpers/test-utils.js";
-import { EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
+import { FILES, TIMEOUTS } from "../pages/constants.js";
 import { loadSkillsMatrixFromSource } from "../../src/cli/lib/loading/index.js";
 import { AGENT_NAMES } from "../../src/cli/types/agents.js";
 import { CORPUS_CLI_VERSION } from "@workspace/compile/corpus";
@@ -62,13 +63,21 @@ import { provenanceMarker } from "@workspace/compile/agent-source";
  * boundary.
  */
 describe("the bytes the shared renderer draws", () => {
+  let store: SeedConfigStore;
   let globalHome: string;
   let projectDir: string;
 
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
+
   // Both directories are allocated per attempt rather than per file: the suite runs at
-  // `retry: 1` and both are directories the run INSTALLS into, so a carried-over first attempt
-  // would put the wizard on the dashboard and the timeout would be the error a reader sees
-  // first.
+  // `retry: 1` and both are directories the run INSTALLS into, so a first attempt carried over
+  // would be installed over.
   beforeEach(async () => {
     globalHome = await createTempDir();
     projectDir = await createTempDir();
@@ -82,10 +91,7 @@ describe("the bytes the shared renderer draws", () => {
     "are the bytes a global install has on disk",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const install = await initGlobalWithEject(E2E_SOURCE, globalHome);
-      expect(install.exitCode, `the global install failed: ${install.output}`).toBe(
-        EXIT_CODES.SUCCESS,
-      );
+      await installE2EStackGlobally(store, globalHome);
 
       const { matrix } = await loadSkillsMatrixFromSource({
         sourceFlag: E2E_SOURCE.sourceDir,
@@ -124,7 +130,7 @@ describe("the bytes the shared renderer draws", () => {
     "are the bytes a project install has on disk, through the inlining writer",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      await setupDualScopeWithEject(E2E_SOURCE, globalHome, projectDir);
+      await installE2EStackDualScope(store, { fakeHome: globalHome, projectDir });
 
       const { matrix } = await loadSkillsMatrixFromSource({
         sourceFlag: E2E_SOURCE.sourceDir,
@@ -217,10 +223,7 @@ describe("the bytes the shared renderer draws", () => {
     "stamp the version every compiled sub-agent on disk carries",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      const install = await initGlobalWithEject(E2E_SOURCE, globalHome);
-      expect(install.exitCode, `the global install failed: ${install.output}`).toBe(
-        EXIT_CODES.SUCCESS,
-      );
+      await installE2EStackGlobally(store, globalHome);
 
       const compiled = await readCompiledAgents(globalHome);
 

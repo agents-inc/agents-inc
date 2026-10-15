@@ -3,8 +3,15 @@ import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 import { CLI } from "../fixtures/cli.js";
-import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
-import { E2E_SKILL, E2E_STACK_DISPLAY } from "../fixtures/expected-values.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   startTarballSourceServer,
@@ -12,15 +19,13 @@ import {
 } from "../helpers/tarball-source-server.js";
 import {
   cleanupTempDir,
-  completeWithLocalSources,
   createTempDir,
   flattenCliOutput,
   loadConfigOrFail,
   readTreeSnapshot,
-  runCLI,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
 import {
   E2E_MARKETPLACE_NAME,
   EXIT_CODES,
@@ -28,7 +33,6 @@ import {
   STEP_TEXT,
   TIMEOUTS,
 } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import { createMockMarketplace } from "../../src/cli/lib/__tests__/factories/plugin-factories.js";
 import "../matchers/setup.js";
 
@@ -42,7 +46,7 @@ import "../matchers/setup.js";
  * skills `agents-inc`, `doctor` passed without mentioning the file, and only a Plugin install
  * failed — after Confirm. So the refusal is pinned where a user meets it:
  *
- * - `init --marketplace`, `search`, `edit` and `eject skills` refuse, write nothing, and name the
+ * - `init --from`, `search`, `edit --from` and `eject skills` refuse, write nothing, and name the
  *   two builds that write the file, in the order an author runs them;
  * - `doctor` reports the finding against the file itself and still finishes its report;
  * - `uninstall` removes the installation regardless, and `compile` and `list` keep working.
@@ -55,10 +59,8 @@ import "../matchers/setup.js";
  * its own builds wrote. A guard that had swallowed every custom marketplace leaves an all-refusal
  * file reading exactly like this one.
  *
- * `init` and `edit` are run without a terminal, as `init-edit-error-guards` runs them: the refusal
- * lands during the load, before the wizard mounts, which is the only reason a run without a PTY
- * can show it at all — and a build that mounts the wizard instead dies on Ink's raw-mode error,
- * which this file's assertions read as the missing refusal it is.
+ * `edit --from` asks before it applies, so it runs in a terminal; the refusal lands during the
+ * load, before the question.
  */
 
 /** A manifest that parses and that the schema refuses: a marketplace must list a plugin. */
@@ -69,6 +71,9 @@ const MANIFEST_LISTING_NO_PLUGIN = JSON.stringify({
 
 /** A manifest that does not parse at all. */
 const MANIFEST_UNPARSEABLE = "{ this is not json";
+
+/** The configuration every install and apply here is made from: the E2E stack, ejected. */
+const STACK_ID = "Manifest1";
 
 type ManifestDefect = "absent" | "unparseable" | "refused by the schema";
 
@@ -113,36 +118,46 @@ function expectRefusalNamingTheBuilds(exitCode: number, combined: string): void 
   expect(exitCode, "a refused marketplace must not exit clean").not.toBe(EXIT_CODES.SUCCESS);
 }
 
-describe("init --marketplace over a marketplace with no valid marketplace.json", () => {
+describe("init --from --marketplace over a marketplace with no valid marketplace.json", () => {
   let tempDir: string | undefined;
   let source: E2ESource | undefined;
-  let wizard: InitWizard | undefined;
+  let store: SeedConfigStore;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(STACK_ID, e2eStackPayload());
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (source) await cleanupTempDir(source.tempDir);
     source = undefined;
     if (tempDir) await cleanupTempDir(tempDir);
     tempDir = undefined;
   });
 
+  /** A fresh project under a HOME of its own, both inside `tempDir`. */
+  async function freshProject(): Promise<{ dir: string; globalHome: string }> {
+    tempDir = await createTempDir();
+    const dir = path.join(tempDir, "project");
+    await mkdir(dir, { recursive: true });
+    return { dir, globalHome: tempDir };
+  }
+
   it(
-    "refuses a folder nobody has built, before the wizard, writing nothing",
+    "refuses a folder nobody has built, writing nothing",
     { timeout: TIMEOUTS.INSTALL },
     async () => {
       source = await createE2ESource({ unbuilt: true });
-      tempDir = await createTempDir();
-      const projectDir = path.join(tempDir, "project");
-      await mkdir(projectDir, { recursive: true });
+      const project = await freshProject();
+      const projectDir = project.dir;
 
-      const { exitCode, combined } = await runCLI(
-        ["init", "--marketplace", source.sourceDir],
-        projectDir,
-        { env: { HOME: tempDir } },
-      );
+      const { exitCode, output } = await runInitFrom(store, STACK_ID, project, source.sourceDir);
 
-      expectRefusalNamingTheBuilds(exitCode, combined);
+      expectRefusalNamingTheBuilds(exitCode, output);
       expect(
         await readTreeSnapshot(projectDir),
         "a refused marketplace must leave the project exactly as it found it",
@@ -156,17 +171,12 @@ describe("init --marketplace over a marketplace with no valid marketplace.json",
     async (defect) => {
       source = await createE2ESource();
       await breakManifest(source, defect);
-      tempDir = await createTempDir();
-      const projectDir = path.join(tempDir, "project");
-      await mkdir(projectDir, { recursive: true });
+      const project = await freshProject();
+      const projectDir = project.dir;
 
-      const { exitCode, combined } = await runCLI(
-        ["init", "--marketplace", source.sourceDir],
-        projectDir,
-        { env: { HOME: tempDir } },
-      );
+      const { exitCode, output } = await runInitFrom(store, STACK_ID, project, source.sourceDir);
 
-      expectRefusalNamingTheBuilds(exitCode, combined);
+      expectRefusalNamingTheBuilds(exitCode, output);
       expect(
         await readTreeSnapshot(projectDir),
         "a refused marketplace must leave the project exactly as it found it",
@@ -175,33 +185,36 @@ describe("init --marketplace over a marketplace with no valid marketplace.json",
   );
 
   it(
-    "opens the wizard on the same marketplace once it carries the manifest its builds wrote",
-    { timeout: TIMEOUTS.INTERACTIVE },
+    "installs from the same marketplace once it carries the manifest its builds wrote",
+    { timeout: TIMEOUTS.INSTALL },
     async () => {
       source = await createE2ESource();
+      const project = await freshProject();
 
-      // `launch` returns once the stack step is ready, which a refused marketplace never paints.
-      wizard = await InitWizard.launch({ source });
+      const { exitCode, output } = await runInitFrom(store, STACK_ID, project, source.sourceDir);
 
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+      expect(output).not.toContain(STEP_TEXT.MANIFEST_REFUSAL_FIRST_BUILD);
       expect(
-        wizard.stack.getScreen(),
-        "a built marketplace reaches the stack step, offering the stack it ships",
-      ).toContain(E2E_STACK_DISPLAY);
+        (await loadConfigOrFail(project.dir)).marketplace,
+        "a built marketplace is the one the installation records",
+      ).toBe(source.sourceDir);
     },
   );
 });
 
 describe("an installation whose marketplace has no valid marketplace.json", () => {
   let source: E2ESource;
-  let wizard: InitWizard;
-  let project: ProjectHandle;
+  let store: SeedConfigStore;
+  let env: TestEnvironment;
+  let project: Required<ProjectHandle>;
   let builtManifest: string;
 
   /** The installation's two roots, which a refused command must leave as it found them. */
   async function installationSnapshot(): Promise<unknown> {
     return {
       project: await readTreeSnapshot(project.dir),
-      global: project.globalHome === undefined ? {} : await readTreeSnapshot(project.globalHome),
+      global: await readTreeSnapshot(project.globalHome),
     };
   }
 
@@ -221,18 +234,25 @@ describe("an installation whose marketplace has no valid marketplace.json", () =
   beforeAll(async () => {
     source = await createE2ESource();
     builtManifest = await readFile(manifestPathIn(source), "utf-8");
+    store = await startSeedConfigStore();
+    env = await createTestEnvironment();
 
-    // Installed the way a user installs, from the marketplace while it is still valid — Local
-    // rows, so no Claude CLI is involved — and broken afterwards: the state a folder installed
-    // from before the rule, or one whose manifest was since removed, leaves behind.
-    wizard = await InitWizard.launchInProject({ source });
-    const result = await completeWithLocalSources(wizard);
-    expect(await result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
-    project = result.project;
+    // Installed the way a user installs, from the marketplace while it is still valid — ejected,
+    // so no Claude CLI is involved — and broken afterwards: the state a folder installed from
+    // before the rule, or one whose manifest was since removed, leaves behind.
+    project = { dir: env.projectDir, globalHome: env.fakeHome };
+    await installFromSeed(
+      store,
+      STACK_ID,
+      e2eStackPayload(),
+      { dir: project.dir, home: project.globalHome },
+      source.sourceDir,
+    );
   }, TIMEOUTS.LIFECYCLE);
 
   afterAll(async () => {
-    await wizard.destroy();
+    await store.close();
+    await cleanupTempDir(env.tempDir);
     await cleanupTempDir(source.tempDir);
   });
 
@@ -259,9 +279,29 @@ describe("an installation whose marketplace has no valid marketplace.json", () =
       await expectRefusedWritingNothing(["search", E2E_SKILL.vitest.slug]);
     });
 
-    it("is refused by edit before the wizard, writing nothing", async () => {
-      await expectRefusedWritingNothing(["edit"]);
-    });
+    it(
+      "is refused by edit --from before it asks, writing nothing",
+      { timeout: TIMEOUTS.INTERACTIVE },
+      async () => {
+        const before = await installationSnapshot();
+
+        const edit = new InteractivePrompt(["edit", "--from", STACK_ID], project.dir, {
+          env: { AGENTS_INC_API_URL: store.url, HOME: project.globalHome },
+        });
+        try {
+          const exitCode = await edit.waitForExit(TIMEOUTS.EXIT_WAIT);
+          expectRefusalNamingTheBuilds(exitCode, edit.getRawOutput());
+          expect(edit.getRawOutput()).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
+        } finally {
+          await edit.destroy();
+        }
+
+        expect(
+          await installationSnapshot(),
+          "'edit --from' was refused, so it must leave the installation exactly as it found it",
+        ).toStrictEqual(before);
+      },
+    );
 
     it("is refused by eject skills, writing nothing", async () => {
       await expectRefusedWritingNothing(["eject", "skills"]);
@@ -318,14 +358,17 @@ describe("an installation whose marketplace has no valid marketplace.json", () =
 
 describe("uninstall over an installation whose marketplace has no marketplace.json", () => {
   let source: E2ESource;
-  let env: DualScopeEnv | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
     source = await createE2ESource();
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    await env?.destroy();
+    await store.close();
+    if (env) await cleanupTempDir(env.tempDir);
     await cleanupTempDir(source.tempDir);
   });
 
@@ -342,7 +385,24 @@ describe("uninstall over an installation whose marketplace has no marketplace.js
     "removes a global installation regardless, and still prunes the project registered under it",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      env = await createDualScopeEnv(source);
+      env = await createTestEnvironment();
+      await installFromSeed(
+        store,
+        "GlobalAll1",
+        e2eStackPayload(),
+        { dir: env.fakeHome, home: env.fakeHome },
+        source.sourceDir,
+      );
+      await installFromSeed(
+        store,
+        "ProjectPair1",
+        e2eStackPayload({
+          projectSkills: [E2E_SKILL.hono.id],
+          projectAgents: [E2E_AGENT["api-developer"].name],
+        }),
+        { dir: env.projectDir, home: env.fakeHome },
+        source.sourceDir,
+      );
       const projectBefore = await loadConfigOrFail(env.projectDir);
       const projectOwnSkills = projectBefore.skills.filter((skill) => skill.scope === "project");
       const projectOwnAgents = projectBefore.agents.filter((agent) => agent.scope === "project");

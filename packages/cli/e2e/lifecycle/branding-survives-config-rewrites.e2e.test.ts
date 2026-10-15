@@ -24,9 +24,9 @@ import {
   skillsPath,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { BRANDING, EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import type { ProjectHandle } from "../pages/wizard-result.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { BRANDING, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import type { ProjectHandle } from "../fixtures/project-handle.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -35,18 +35,18 @@ import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { ProjectConfig } from "../../src/cli/types/index.js";
 import { typedKeys } from "../../src/cli/utils/typed-object.js";
 
 /**
- * `branding.name` is written by hand: no wizard step sets it and no shared configuration carries
- * it, so the config on disk is the only place it lives. Every command that rewrites that config
+ * `branding.name` is written by hand: no shared configuration carries it, so the config on disk is
+ * the only place it lives. Every command that rewrites that config
  * has to carry it across, or a white-labelled install goes back to the shipped name after its
  * first edit and nothing says so.
  *
- * Three rewrites are driven here, one per entry point: `init --from` over a project config, a
- * wizard `edit` of the global installation, and `edit --from` inside a project. Each leg first
+ * Three rewrites are driven here: `init --from` over a project config, and `edit --from` of the
+ * global installation and inside a project. Each leg first
  * proves the rewrite happened — the roster it asked for is in the file and on disk — because a
  * file nobody rewrote keeps its name for free. Then it reads the name back out of the FILE, which
  * is the subject, and out of the next command's heading, which is where a person sees it.
@@ -90,7 +90,7 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 /** The `name` every project config here carries — the config's own name, not the branding. */
 const PROJECT_NAME = "branded-project";
 
-/** The `name` of the global installation the wizard leg edits. */
+/** The `name` of the global installation the `edit --from` leg at the home directory edits. */
 const GLOBAL_INSTALL_NAME = "branded-global-install";
 
 /** What each fixture configures by hand, and what each rewrite must leave in the file. */
@@ -101,12 +101,12 @@ const INIT_FROM_ID = "Rewrite1";
 const EDIT_FROM_ID = "Rewrite2";
 const FIRST_SAVE_ID = "Rewrite3";
 const LAYOUT_EDIT_FROM_ID = "Rewrite4";
+const GLOBAL_EDIT_FROM_ID = "Rewrite5";
 
 /**
  * A source repository's own layout, as its config declares it by hand: each field names a path
  * the repository chose over the default, so a config that lost one would send the next read of
- * that repository to a directory it does not use. No wizard step and no shared configuration
- * sets any of them.
+ * that repository to a directory it does not use. No shared configuration sets any of them.
  */
 const SOURCE_LAYOUT = {
   skillsDir: "catalogue/skills",
@@ -149,9 +149,24 @@ const PROJECT_REACT_AND_VITEST_PAYLOAD = buildSeedPayload({
   agents: { [WEB_DEV]: { scope: "project" } },
 });
 
+/** React and Vitest at GLOBAL scope: applied at the home directory over React alone, it adds. */
+const GLOBAL_REACT_AND_VITEST_PAYLOAD = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      install: "eject",
+      scope: "global",
+      assignments: { [WEB_DEV]: "lazy" },
+    }),
+    [E2E_SKILL.vitest.id]: buildSeedSkill({
+      install: "eject",
+      scope: "global",
+      assignments: { [WEB_DEV]: "lazy" },
+    }),
+  },
+});
+
 describe("what a hand-written config declares, across the commands that rewrite it", () => {
   let store: SeedConfigStore;
-  let wizard: EditWizard | undefined;
   let prompt: InteractivePrompt | undefined;
   const tempDirs: string[] = [];
 
@@ -164,8 +179,6 @@ describe("what a hand-written config declares, across the commands that rewrite 
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     await prompt?.destroy();
     prompt = undefined;
     store.reset();
@@ -226,7 +239,7 @@ describe("what a hand-written config declares, across the commands that rewrite 
   );
 
   it(
-    "keeps the name in the global config a wizard edit rewrites",
+    "keeps the name in the global config edit --from rewrites at the home directory",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       const { fakeHome: home } = await takeEnvironment();
@@ -243,21 +256,10 @@ describe("what a hand-written config declares, across the commands that rewrite 
       );
       await createLocalSkill(home, E2E_SKILL.react.id, { metadata: FORKED_FROM_METADATA });
 
-      wizard = await EditWizard.launchInGlobal({
-        projectDir: home,
-        source: E2E_SOURCE,
-        ...TERMINAL_SIZE.TALL,
-      });
-      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
-      // Local: the source carries no marketplace, so the plugin default an added skill takes in
-      // an edit could not install.
-      const sources = await wizard.build.advanceToSources();
-      await sources.waitForReady();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode, `edit output:\n${result.output}`).toBe(EXIT_CODES.SUCCESS);
+      store.publish(GLOBAL_EDIT_FROM_ID, GLOBAL_REACT_AND_VITEST_PAYLOAD);
+
+      const applied = await applyEditFrom(store, GLOBAL_EDIT_FROM_ID, { dir: home });
+      expect(applied.exitCode, `edit --from output:\n${applied.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const globalConfig = await loadConfigOrFail(home);
       expect(

@@ -1,10 +1,8 @@
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -16,11 +14,14 @@ import {
   runCLI,
   skillsPath,
 } from "../helpers/test-utils.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import {
-  createTestEnvironment,
-  initGlobalWithEject,
-  initProject,
-} from "../fixtures/dual-scope-helpers.js";
+  applyFromSeed,
+  e2eStackPayload,
+  installE2EStackGlobally,
+  installFromSeed,
+} from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
  * Full lifecycle roundtrip E2E test: init (global + project) -> edit -> compile.
@@ -30,15 +31,23 @@ import {
  * in a single lifecycle.
  */
 
+const API_DEV = E2E_AGENT["api-developer"].name;
+
 describe("init-edit-compile roundtrip lifecycle", () => {
+  let store: SeedConfigStore;
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
-  let wizard: EditWizard | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (testTempDir) await cleanupTempDir(testTempDir);
   });
 
@@ -53,9 +62,7 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       projectDir = env.projectDir;
 
       // Phase A: Global init with eject
-      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-
-      expect(phaseA.exitCode, `Phase A failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
+      await installE2EStackGlobally(store, fakeHome);
 
       const globalConfigPath = configTsPath(fakeHome);
       expect(await fileExists(globalConfigPath), "Global config must exist after init").toBe(true);
@@ -71,10 +78,13 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       const globalAgentsDir = agentsPath(fakeHome);
       expect(await directoryExists(globalAgentsDir), "Global agents dir must exist").toBe(true);
 
-      // Phase B: Project init with scope toggle
-      const phaseB = await initProject(E2E_SOURCE, fakeHome, projectDir);
-
-      expect(phaseB.exitCode, `Phase B failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
+      // Phase B: Project init moving Hono and API Developer into the project
+      await installFromSeed(
+        store,
+        "PhaseB1",
+        e2eStackPayload({ projectSkills: [E2E_SKILL.hono.id], projectAgents: [API_DEV] }),
+        { dir: projectDir, home: fakeHome },
+      );
 
       const projectConfigPath = configTsPath(projectDir);
       expect(await fileExists(projectConfigPath), "Project config must exist after init").toBe(
@@ -101,32 +111,18 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "config-types.ts must exist after project init",
       ).toBe(true);
 
-      // Phase C: Edit wizard -- toggle web-framework-react scope to project
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      // Web domain: focus web-framework-react explicitly, then toggle scope to project
-      await wizard.build.focusSkill(E2E_SKILL.react.display);
-      await wizard.build.toggleScopeOnFocusedSkill();
-
-      // Advance through remaining domains
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-
-      await sources.waitForReady();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-
-      const editExitCode = await result.exitCode;
-      expect(editExitCode, "Edit wizard must succeed").toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
-      wizard = undefined;
+      // Phase C: edit --from -- React into the project as well. A project skill never reaches
+      // the global web-developer, so the project's React is assigned to no sub-agent.
+      await applyFromSeed(
+        store,
+        "PhaseC1",
+        e2eStackPayload({
+          projectSkills: [E2E_SKILL.hono.id, E2E_SKILL.react.id],
+          projectAgents: [API_DEV],
+          unassigned: [E2E_SKILL.react.id],
+        }),
+        { dir: projectDir, home: fakeHome },
+      );
 
       // Verify project config has web-framework-react with project scope
       const projectConfigAfterEdit = await readTestFile(projectConfigPath);

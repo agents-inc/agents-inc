@@ -1,9 +1,13 @@
 import path from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
+import {
+  applyFromSeed,
+  e2eStackPayload,
+  installE2EStackDualScope,
+} from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -11,11 +15,11 @@ import {
   fileExists,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment, setupDualScopeWithEject } from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
+import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * Dual-scope edit lifecycle E2E test -- compiled agent content after scope toggle.
+ * Dual-scope edit lifecycle E2E test -- compiled agent content after a scope change.
  *
  * Key invariants:
  * - When a SKILL's scope changes, only the skill moves — agents stay at their scope.
@@ -25,91 +29,36 @@ import { E2E_AGENT_DISPLAY, E2E_SKILL } from "../fixtures/expected-values.js";
  *   global agents.
  */
 
+const API_DEV = E2E_AGENT["api-developer"].name;
+
 describe("dual-scope edit lifecycle -- compiled agent content after scope toggle", () => {
+  let store: SeedConfigStore;
   let testTempDir: string;
   let fakeHome: string;
   let projectDir: string;
-  let testWizard: EditWizard | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   beforeEach(async () => {
     const { tempDir, fakeHome: fh, projectDir: pd } = await createTestEnvironment();
     testTempDir = tempDir;
     fakeHome = fh;
     projectDir = pd;
-    await setupDualScopeWithEject(E2E_SOURCE, fakeHome, projectDir);
+    await installE2EStackDualScope(store, { fakeHome, projectDir });
   }, TIMEOUTS.LIFECYCLE);
 
   afterEach(async () => {
-    await testWizard?.destroy();
-    testWizard = undefined;
     await cleanupTempDir(testTempDir);
   });
 
   it(
-    "G->P skill scope toggle should preserve skill in global agent via mergeGlobalConfigs",
-    { timeout: TIMEOUTS.LIFECYCLE },
-    async () => {
-      // BEFORE: Verify global web-developer contains web-framework-react
-      await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: [E2E_SKILL.react.id],
-      });
-
-      // ACTION: Launch EditWizard, toggle web-framework-react scope to project
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      testWizard = wizard;
-
-      // Build step -- Web domain: toggle web-framework-react scope to project,
-      // focused explicitly rather than relying on where the grid opens.
-      await wizard.build.focusSkill(E2E_SKILL.react.display);
-      await wizard.build.toggleScopeOnFocusedSkill();
-      await wizard.build.advanceDomain();
-
-      // Build step -- API domain (pass through)
-      await wizard.build.advanceDomain();
-
-      // Methodology domain -> Sources -> Agents -> Confirm, all accepting defaults
-      const result = await wizard.build.saveFromBuild("edit");
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // AFTER assertions
-
-      // Global web-developer.md: STILL contains web-framework-react
-      // (mergeGlobalConfigs preserves existing skills in the global config)
-      await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
-        contains: [E2E_SKILL.react.id],
-      });
-
-      // Skill directory exists at project scope (G->P is additive — skill copied to project)
-      const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
-      expect(
-        await directoryExists(projectSkillDir),
-        "web-framework-react must exist at project scope after G->P toggle",
-      ).toBe(true);
-
-      // Skill directory still exists at global scope (global config preserves it)
-      const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
-      expect(
-        await directoryExists(globalSkillDir),
-        "web-framework-react must still exist at global scope (preserved by mergeGlobalConfigs)",
-      ).toBe(true);
-
-      // Project config has web-framework-react with project scope
-      await expect({ dir: projectDir }).toHaveConfig({
-        skillIds: [E2E_SKILL.react.id],
-      });
-
-      await result.destroy();
-    },
-  );
-
-  it(
-    "scope toggle (s) collapses a persisted dual-scope skill locked to a selected agent, leaving the agent untouched",
+    "collapsing a persisted dual-scope skill to its global half leaves the project agent carrying it untouched",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
@@ -117,29 +66,14 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
         contains: [E2E_SKILL.hono.id],
       });
 
-      // api-framework-hono is a persisted dual-scope [P][G] pair AND locked to the
-      // selected api-developer agent: space cannot deselect it (agent lock), but `s`
-      // collapses the pair to its global half. The agent itself must stay put at
-      // project scope — only the skill's project override goes away.
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
+      // api-framework-hono is a persisted dual-scope [P][G] pair carried by the project
+      // api-developer. Naming it at global scope only collapses the pair to its global half.
+      // The agent itself must stay put at project scope — only the skill's project override
+      // goes away.
+      await applyFromSeed(store, "HonoGlobal1", e2eStackPayload({ projectAgents: [API_DEV] }), {
+        dir: projectDir,
+        home: fakeHome,
       });
-      testWizard = wizard;
-
-      // Build step -- Web domain (pass through)
-      await wizard.build.advanceDomain();
-
-      // Build step -- API domain: press `s` on api-framework-hono (collapses the pair)
-      await wizard.build.toggleScopeOnFocusedSkill();
-      await wizard.build.advanceDomain();
-
-      // Methodology domain -> Sources -> Agents -> Confirm, all accepting defaults
-      const result = await wizard.build.saveFromBuild("edit");
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       // AFTER assertions — only the skill's project half moved
 
@@ -165,15 +99,13 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.hono.id);
       expect(
         await directoryExists(projectSkillDir),
-        "api-framework-hono must be removed from project scope after the `s` collapse",
+        "api-framework-hono must be removed from project scope after the collapse",
       ).toBe(false);
-
-      await result.destroy();
     },
   );
 
   it(
-    "Agent scope toggle should recompile agent at new scope with correct skills",
+    "Agent scope change should recompile agent at new scope with correct skills",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       // BEFORE: Verify project api-developer contains api-framework-hono
@@ -181,33 +113,15 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
         contains: [E2E_SKILL.hono.id],
       });
 
-      // ACTION: Launch EditWizard, pass through build domains, toggle api-developer agent to global
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      testWizard = wizard;
-
-      // Build step -- pass through all three domains
-      const sources = await wizard.build.passThroughAllDomains();
-
-      // Sources step (pass through)
-      await sources.waitForReady();
-      const agents = await sources.advance();
-
-      // Agents step -- restore api-developer to global scope. It is a persisted
-      // dual-scope [P][G] agent and `s` collapses [P][G] → [G], the P→G
-      // restoration path.
-      await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["api-developer"]);
-      await agents.toggleScopeOnFocusedAgent();
-      const confirm = await agents.advance("edit");
-
-      // Confirm step
-      const result = await confirm.confirm();
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+      // ACTION: restore api-developer to global scope. It is a persisted dual-scope [P][G]
+      // agent, so this collapses [P][G] → [G], the P→G restoration path. The project's
+      // Hono stays, assigned to no sub-agent, since a project skill never reaches a global one.
+      await applyFromSeed(
+        store,
+        "ApiDevGlobal1",
+        e2eStackPayload({ projectSkills: [E2E_SKILL.hono.id], unassigned: [E2E_SKILL.hono.id] }),
+        { dir: projectDir, home: fakeHome },
+      );
 
       // AFTER assertions
 
@@ -221,15 +135,13 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
       const projectApiDevPath = path.join(agentsPath(projectDir), "api-developer.md");
       expect(
         await fileExists(projectApiDevPath),
-        "api-developer.md must NOT exist at project scope after P->G agent toggle",
+        "api-developer.md must NOT exist at project scope after the P->G agent move",
       ).toBe(false);
 
       // Global config has api-developer agent
       await expect({ dir: fakeHome }).toHaveConfig({
         agents: ["api-developer"],
       });
-
-      await result.destroy();
     },
   );
 });

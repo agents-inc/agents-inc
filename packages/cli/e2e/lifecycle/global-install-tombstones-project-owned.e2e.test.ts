@@ -5,9 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { readSkillEntries } from "../fixtures/dual-scope-helpers.js";
+import { applyFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -23,7 +24,11 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import type { AgentScopeConfig, AgentName, SkillConfig } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
@@ -37,12 +42,12 @@ import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/t
  * the id/name active at BOTH scopes — the malformed "project-then-global leaves
  * both active" state.
  *
- * Setup drives the real `cc edit` pipeline (no code inspection):
+ * Setup drives the real `edit --from` pipeline (no code inspection):
  *   1. A registered project P owns web-testing-vitest at PROJECT scope and
  *      web-developer at PROJECT scope. The global install already has
  *      web-developer active at GLOBAL scope (the agent precondition); vitest is
  *      NOT yet global.
- *   2. `cc edit` at HOME adds vitest at GLOBAL scope — a genuine project-then-
+ *   2. `edit --from` at HOME adds vitest at GLOBAL scope — a genuine project-then-
  *      global transition for the skill — which fires propagation to P.
  *   3. After propagation, P's config.ts must carry the dual-scope pair for BOTH
  *      the owned skill and the owned agent.
@@ -69,7 +74,22 @@ const reactMetadata = renderMetadataYaml({
   contentHash: "b2c3d4e",
 });
 
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
+/** The global install with vitest added beside react, as `edit --from` at HOME applies it. */
+const GLOBAL_WITH_VITEST = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      scope: "global",
+      assignments: { [WEB_DEV]: "preloaded" },
+    }),
+    [E2E_SKILL.vitest.id]: buildSeedSkill({ scope: "global", assignments: { [WEB_DEV]: "lazy" } }),
+  },
+  agents: { [WEB_DEV]: { scope: "global" } },
+});
+
 describe("global-scope install tombstones project-owned skills and agents", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
   let globalHome: string;
   let projectDir: string;
@@ -85,6 +105,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
   let projectWebDeveloper: AgentScopeConfig[];
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "registered-project");
@@ -102,6 +123,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,
+      marketplace: E2E_SOURCE.sourceDir,
       projects: [realpathSync(projectDir)],
     });
     await writeProjectConfig(globalHome, globalConfig);
@@ -125,32 +147,15 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     });
     await writeProjectConfig(projectDir, projectConfig);
 
-    // Phase 2: `cc edit` at HOME, add vitest at global scope. Adding a new
+    // Phase 2: `edit --from` at HOME, add vitest at global scope. Adding a new
     // global skill forces the global write path and fires
     // propagateGlobalChangesToProjects for the registered project.
-    const wizard = await EditWizard.launch({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      env: { HOME: globalHome },
-      ...TERMINAL_SIZE.TALL,
-    });
-    try {
-      await wizard.build.selectSkill(E2E_SKILL.vitest.display);
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      // Switch all skills to local (eject) — adding a new skill otherwise
-      // defaults to plugin mode, which the local test source cannot resolve.
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      editExitCode = await result.exitCode;
-      editRawOutput = result.rawOutput;
-      await result.destroy();
-    } catch (e) {
-      await wizard.destroy();
-      throw e;
-    }
+    ({ exitCode: editExitCode, output: editRawOutput } = await applyFromSeed(
+      store,
+      "AddVitest1",
+      GLOBAL_WITH_VITEST,
+      { dir: globalHome, home: globalHome },
+    ));
 
     globalVitestInstalled = await directoryExists(
       path.join(skillsPath(globalHome), E2E_SKILL.vitest.id),
@@ -163,6 +168,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 

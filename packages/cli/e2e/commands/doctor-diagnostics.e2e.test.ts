@@ -25,7 +25,7 @@ import {
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /** `checkSourceReachable` counts what the marketplace carries, which the E2E source defines. */
 const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}`;

@@ -16,8 +16,11 @@ import {
 } from ".";
 import { createMockSkill } from "../__tests__/factories/skill-factories.js";
 import { createMatrixFromTestSkills } from "../__tests__/factories/matrix-factories.js";
-import { buildWizardResult, buildSourceResult } from "../__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation.js";
+import {
+  buildInstallSelection,
+  buildSourceResult,
+} from "../__tests__/factories/config-factories.js";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import { readTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { expectConfigSkills } from "../__tests__/assertions/index.js";
 import {
@@ -123,7 +126,7 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // sourceSelections maps SkillId -> source name (user's choice from wizard)
+      // sourceSelections maps SkillId -> source name
       const sourceSelections: Partial<Record<SkillId, string>> = {
         "web-framework-react": "internal",
         "web-testing-vitest": "acme-corp",
@@ -441,7 +444,7 @@ describe("Integration: Multi-Source Install Pipeline", () => {
     const matrix = buildPipelineMatrix();
     initializeMatrix(matrix);
 
-    const wizardResult = buildWizardResult(
+    const selection = buildInstallSelection(
       [
         ...buildSkillConfigs(["web-framework-react", "web-testing-vitest"], { origin: "public" }),
         ...buildSkillConfigs(["api-framework-hono", "api-database-drizzle"], {
@@ -460,7 +463,7 @@ describe("Integration: Multi-Source Install Pipeline", () => {
       config: configResult,
       compilation,
     } = await installThroughOperations({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir: dirs.projectDir,
     });
@@ -488,13 +491,13 @@ describe("Integration: Multi-Source Install Pipeline", () => {
     const matrix = buildPipelineMatrix();
     initializeMatrix(matrix);
 
-    const wizardResult = buildWizardResult(buildSkillConfigs(selectedSkills));
+    const selection = buildInstallSelection(buildSkillConfigs(selectedSkills));
     const sourceResult = buildSourceResult(matrix, dirs.sourceDir, {
       marketplace: "test-marketplace",
     });
 
     const configResult = await writeProjectConfig({
-      wizardResult,
+      selection,
       sourceResult,
       projectDir: dirs.projectDir,
       sourceFlag: "github:test-org/skills",

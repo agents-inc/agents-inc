@@ -1,11 +1,9 @@
 import { mkdir } from "fs/promises";
 import path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -14,13 +12,13 @@ import {
   fileExists,
   readTestFile,
 } from "../helpers/test-utils.js";
+import { createTestEnvironment, readActiveAgentNames } from "../fixtures/dual-scope-helpers.js";
 import {
-  createTestEnvironment,
-  finishWizard,
-  readActiveAgentNames,
-} from "../fixtures/dual-scope-helpers.js";
-import { E2E_AGENT_DISPLAY } from "../fixtures/expected-values.js";
-import { EDIT_PROJECT_SETUP_FLAG } from "../../src/cli/consts.js";
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 
 /**
@@ -39,19 +37,16 @@ import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/g
  * spec pins.
  *
  * Setup (exercises the real CLI pipeline end-to-end):
- *   1. Global init at HOME with api-developer DESELECTED — the global agents
- *      rows (and the union they seed) start without it.
- *   2. Register Project B via the Edit an `init` dashboard opens — `cc edit
- *      --project-setup`, the door that makes that directory the run's subject —
- *      with a minimal agent-scope change (web-developer G→P). A pure passthrough
- *      edit does not create the project config, so the toggle forces config
- *      generation and project registration. B's rows inherit the narrow global set.
+ *   1. `init --from` at HOME of the stack without api-developer — the global
+ *      agents rows (and the union they seed) start without it.
+ *   2. Register Project B with `init --from` of the same configuration with
+ *      web-developer at project scope, so the project owns a sub-agent and
+ *      every skill stays global. B's rows inherit the narrow global set.
  *   3. Register Project A the same way.
- *   4. Run `cc edit` in Project A and toggle api-developer ON. The agent
- *      lands at the wizard's default `scope: global`; `splitConfigByScope`
- *      routes it to the global partition, `mergeGlobalConfigs` appends the
- *      new global agent, and `propagateGlobalChangesToProjects` rewrites
- *      Project B's config pair.
+ *   4. `edit --from` in Project A of the configuration WITH api-developer at
+ *      global scope. From a project the global install is only added to, and
+ *      api-developer is what it lacks, so it arrives globally and
+ *      `propagateGlobalChangesToProjects` rewrites Project B's config pair.
  *
  * Assertion: after propagation, Project B's active agent rows (via
  * `activeAgentNames` over its `config.ts`) and its `SelectedAgentName` union
@@ -62,147 +57,42 @@ const WEB_DEVELOPER_AGENT = "web-developer";
 const API_DEVELOPER_AGENT = "api-developer";
 const SELECTED_AGENT_ALIAS = "SelectedAgentName";
 
-/**
- * Launch `cc init` at HOME and complete the wizard with api-developer
- * DESELECTED in the agents step. Sources set to local (eject mode).
- *
- * Selecting the E2E stack preselects the roster that stack declares —
- * web-developer and api-developer, and nothing the domains would have
- * added. Toggling api-developer off leaves the rest of the declared
- * roster intact. A fresh init with no pre-existing installedAgentConfigs
- * treats toggle-off as a CLEAN removal (no tombstone) — verified in
- * wizard-store.toggleAgent where `effectiveInstalledConfigs` is `null`
- * for fresh init — so api-developer gets no row in the global `agents`
- * array at all, and therefore none in the union derived from it.
- */
-async function initGlobalWithoutApiDeveloper(
-  homeDir: string,
-): Promise<{ exitCode: number; output: string }> {
-  const wizard = await InitWizard.launch({
-    projectDir: homeDir,
-    env: { HOME: homeDir },
-  });
+/** Phase 1: the stack at global scope, without api-developer. */
+const GLOBAL_WITHOUT_API_ID = "Lockstp1";
 
-  try {
-    const domain = await wizard.stack.selectFirstStack();
-    const build = await domain.acceptDefaults();
-    const sources = await build.passThroughAllDomains();
-    await sources.waitForReady();
-    await sources.setAllLocal();
-    const agents = await sources.advance();
+/** Phases 2 and 3: the same, with web-developer in the project. */
+const PROJECT_WEB_ID = "Lockstp2";
 
-    // Deselect api-developer. Fresh global init → no tombstone → the row
-    // simply leaves `config.agents`.
-    await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
-    const confirm = await agents.advance("init");
-    return finishWizard(await confirm.confirm());
-  } catch (e) {
-    await wizard.destroy();
-    throw e;
-  }
-}
-
-/**
- * Register a project with the global config by driving the Edit wizard an `init`-originated
- * dashboard selection would open, and toggling the scope of one existing global agent to
- * project (web-developer G→P). A pure passthrough edit does NOT create the project config
- * (see `edit-global-fallback.e2e.test.ts`), so we need some state change to force config
- * generation and project registration.
- *
- * `--project-setup` is the flag `init`'s dashboard appends for an `init`-originated Edit, and
- * it is what makes this directory the run's subject. Without it a bare `cc edit` here edits
- * the installation it FOUND — the global one — because this directory holds no config of its
- * own; `resolveEditRoot` in `commands/edit.tsx` decides that, the scope toggle is inert under
- * it, and the registration this helper exists to perform would silently not happen. Reaching
- * the same wizard by the same door the docblock always described.
- *
- * We toggle an AGENT's scope (not a skill's) so the registration leaves every
- * skill at global scope. Phase 4 then adds api-developer as the ONLY new
- * global-scoped entry, which is what makes `classifyGlobalChange` report a
- * change whose consequence tier propagates — a project-scoped skill added here
- * would register the project just as well but would not isolate the promotion
- * as the propagating change.
- */
-async function registerProjectViaAgentScopeChange(
-  fakeHome: string,
-  projectDir: string,
-): Promise<{ exitCode: number; output: string }> {
-  const editWizard = await EditWizard.launch({
-    projectDir,
-    source: E2E_SOURCE,
-    env: { HOME: fakeHome },
-    extraArgs: [`--${EDIT_PROJECT_SETUP_FLAG}`],
-    ...TERMINAL_SIZE.TALL,
-  });
-
-  try {
-    const sources = await editWizard.build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-
-    // Toggle web-developer's scope G→P. Minimal project-level change
-    // that creates a project-scoped agent without creating any
-    // project-scoped skills, so Phase 4's promotion is the only global
-    // change in play.
-    await agents.navigateCursorToAgent(E2E_AGENT_DISPLAY["web-developer"]);
-    await agents.toggleScopeOnFocusedAgent();
-
-    const confirm = await agents.advance("edit");
-    return finishWizard(await confirm.confirm());
-  } catch (e) {
-    await editWizard.destroy();
-    throw e;
-  }
-}
-
-/**
- * Run `cc edit` in the given project (A) and toggle api-developer ON.
- * `applyAgentToggle` (`stores/wizard-store.ts`) appends every newly
- * selected agent as `{ name, scope: "global" }`, so the promotion needs
- * no further nudging.
- *
- * `splitConfigByScope` routes that row to the global partition,
- * `mergeGlobalConfigs` appends it as a new global agent, and
- * `writeScopedFromWizard`'s project-context branch
- * (`writeFromProjectContext` in `lib/config-gate/index.ts`) hands the
- * classified change to `applyConsequences`, which calls
- * `propagateGlobalChangesToProjects` for every OTHER registered project
- * — Project B.
- *
- * Driving the promotion from a project context rather than from HOME is
- * the point: this spec is about a project edit fanning a new global
- * agent out to a sibling project, which is the shape the value/type
- * drift showed up in.
- */
-async function addApiDeveloperGloballyViaProjectEdit(
-  fakeHome: string,
-  projectDir: string,
-): Promise<{ exitCode: number; output: string }> {
-  const editWizard = await EditWizard.launch({
-    projectDir,
-    source: E2E_SOURCE,
-    env: { HOME: fakeHome },
-    ...TERMINAL_SIZE.TALL,
-  });
-
-  try {
-    const sources = await editWizard.build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-
-    // Toggle api-developer ON. `applyAgentToggle` appends it at
-    // `scope: "global"`, which is what routes it to the global partition.
-    await agents.toggleAgent(E2E_AGENT_DISPLAY["api-developer"]);
-    const confirm = await agents.advance("edit");
-    return finishWizard(await confirm.confirm());
-  } catch (e) {
-    await editWizard.destroy();
-    throw e;
-  }
-}
+/** Phase 4: web-developer in the project, and api-developer at global scope. */
+const PROJECT_WEB_GLOBAL_API_ID = "Lockstp3";
 
 describe("global-agent propagation -- value and type sides stay in lockstep", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      GLOBAL_WITHOUT_API_ID,
+      e2eStackPayload({ scope: "global", withoutAgents: [API_DEVELOPER_AGENT] }),
+    );
+    store.publish(
+      PROJECT_WEB_ID,
+      e2eStackPayload({
+        scope: "global",
+        withoutAgents: [API_DEVELOPER_AGENT],
+        projectAgents: [WEB_DEVELOPER_AGENT],
+      }),
+    );
+    store.publish(
+      PROJECT_WEB_GLOBAL_API_ID,
+      e2eStackPayload({ scope: "global", projectAgents: [WEB_DEVELOPER_AGENT] }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
     if (tempDir) await cleanupTempDir(tempDir);
@@ -214,9 +104,9 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
       // ================================================================
-      // Phase 1: Build global install with api-developer DESELECTED at
-      // the agents step, so the global agent rows (and the
-      // `SelectedAgentName` union they seed) start without it.
+      // Phase 1: Build global install without api-developer, so the global
+      // agent rows (and the `SelectedAgentName` union they seed) start
+      // without it.
       // ================================================================
       const env = await createTestEnvironment();
       tempDir = env.tempDir;
@@ -229,7 +119,12 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       await createPermissionsFile(projectADir);
       await createPermissionsFile(projectBDir);
 
-      const phase1 = await initGlobalWithoutApiDeveloper(fakeHome);
+      const phase1 = await runInitFrom(
+        store,
+        GLOBAL_WITHOUT_API_ID,
+        { dir: fakeHome },
+        E2E_SOURCE.sourceDir,
+      );
       expect(phase1.exitCode, `Global init failed: ${phase1.output}`).toBe(EXIT_CODES.SUCCESS);
 
       const globalConfigPath = configTsPath(fakeHome);
@@ -237,9 +132,9 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(await fileExists(globalConfigPath)).toBe(true);
       expect(await fileExists(globalTypesPath)).toBe(true);
 
-      // Sanity: global starts WITHOUT api-developer. The preselected set
-      // is the stack's declared roster minus the one agent the helper
-      // toggled off — what matters here is that api-developer is absent
+      // Sanity: global starts WITHOUT api-developer. The set is the stack's
+      // declared roster minus the one agent the configuration leaves out —
+      // what matters here is that api-developer is absent
       // and that the value/type sides agree on the initial narrow set.
       const globalTypesPhase1 = await readTestFile(globalTypesPath);
       const globalSelectedPhase1 = await readActiveAgentNames(fakeHome);
@@ -252,16 +147,17 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect([...globalTypeUnionPhase1].sort()).toStrictEqual([...globalSelectedPhase1].sort());
 
       // ================================================================
-      // Phase 2: Register Project B. A pure passthrough edit would NOT
-      // create B's project config (see edit-global-fallback.e2e.test.ts)
-      // — the edit command returns early with "No changes made". So we
-      // make the minimal change that forces project config creation:
-      // toggle web-developer G→P in the agents step. An agent-scope
-      // change (not a skill-scope change) is intentional — see the
-      // helper's docstring for why. B's stored agent rows inherit from
-      // the narrow global verbatim.
+      // Phase 2: Register Project B with web-developer at project scope
+      // and every skill global, so Phase 4's promotion is the only global
+      // change in play. B's stored agent rows inherit from the narrow
+      // global verbatim.
       // ================================================================
-      const projectBRegistration = await registerProjectViaAgentScopeChange(fakeHome, projectBDir);
+      const projectBRegistration = await runInitFrom(
+        store,
+        PROJECT_WEB_ID,
+        { dir: projectBDir, globalHome: fakeHome },
+        E2E_SOURCE.sourceDir,
+      );
       expect(projectBRegistration.exitCode, "Project B registration should succeed").toBe(
         EXIT_CODES.SUCCESS,
       );
@@ -300,20 +196,28 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       // that is NOT the current one — so B must be registered before
       // the promotion edit is run.
       // ================================================================
-      const projectARegistration = await registerProjectViaAgentScopeChange(fakeHome, projectADir);
+      const projectARegistration = await runInitFrom(
+        store,
+        PROJECT_WEB_ID,
+        { dir: projectADir, globalHome: fakeHome },
+        E2E_SOURCE.sourceDir,
+      );
       expect(projectARegistration.exitCode, "Project A registration should succeed").toBe(
         EXIT_CODES.SUCCESS,
       );
 
       // ================================================================
-      // Phase 4: Promote api-developer to global via `cc edit` in Project
-      // A. The edit adds a NEW global-scoped agent to global config
+      // Phase 4: Promote api-developer to global via `cc edit --from` in
+      // Project A. The apply adds a NEW global-scoped agent to global config
       // (via splitConfigByScope → mergeGlobalConfigs), triggering
       // `propagateGlobalChangesToProjects` for every other registered
       // project — specifically Project B.
       // ================================================================
       const projectBContentBefore = await readTestFile(projectBConfigPath);
-      const phase4 = await addApiDeveloperGloballyViaProjectEdit(fakeHome, projectADir);
+      const phase4 = await applyEditFrom(store, PROJECT_WEB_GLOBAL_API_ID, {
+        dir: projectADir,
+        globalHome: fakeHome,
+      });
       expect(phase4.exitCode, `Global edit failed: ${phase4.output}`).toBe(EXIT_CODES.SUCCESS);
 
       // Sanity: propagation must actually have rewritten B's config.ts

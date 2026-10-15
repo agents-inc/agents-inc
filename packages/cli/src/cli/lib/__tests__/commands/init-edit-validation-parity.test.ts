@@ -4,20 +4,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "@oclif/core";
 import type { ReactElement } from "react";
 
+import { storedConfigHandlerFor } from "@workspace/api-mocks";
+import { configMockServer } from "@workspace/api-mocks/node";
+
 import { CLI_ROOT } from "../helpers/cli-runner.js";
+import { useMockWorker } from "../helpers/mock-worker.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 import { stubInkInstance } from "../helpers/stub-ink-instance.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { buildAgentDefs } from "../factories/agent-factories.js";
 import {
   buildConfigWriteResult,
   buildGateReport,
   buildProjectConfig,
   buildSourceResult,
-  buildWizardResult,
 } from "../factories/config-factories.js";
+import { buildSeedPayload, buildSeedSkill } from "../factories/seed-factories.js";
 import {
   buildCompilationResult,
   buildDiscoveredSkills,
@@ -29,7 +33,6 @@ import { initializeMatrix } from "../../matrix/matrix-provider";
 import { validateSelection } from "../../matrix/index.js";
 import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
 import type { SkillId } from "../../../types";
-import type { WizardResultV2 } from "../../../components/wizard/wizard.js";
 import type {
   compileAgentsAllScopes,
   copyLocalSkills,
@@ -45,10 +48,9 @@ import { getProjectConfigPath } from "../../installation/install-base-dir.js";
  * One rejected selection, two commands, one wording.
  *
  * A selection the matrix rejects — a conflict, an unmet requirement, an exclusive category with
- * two picks — is a fact about the selection, not about the command that produced it. `edit` has
- * always warned about it; `init` dropped it on the floor. These specs drive BOTH commands over the
- * SAME validation result and compare the warnings verbatim, because "init warns too" is a weaker
- * claim than "init warns the same".
+ * two picks — is a fact about the selection, not about the command that produced it. These specs
+ * drive `init --from` and `edit --from` over the SAME shared configuration and compare the
+ * warnings verbatim, because "init warns too" is a weaker claim than "init warns the same".
  */
 
 const {
@@ -78,7 +80,7 @@ vi.mock("ink", async (importOriginal) => ({
   render: mockRender,
 }));
 
-// The source load and the write/compile tail are stubbed; nothing between the wizard result and
+// The source load and the write/compile tail are stubbed; nothing between the fetched payload and
 // the reporting under test is.
 vi.mock("../../operations/index.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../operations/index.js")>()),
@@ -116,24 +118,27 @@ const REJECTED_VALIDATION = validateSelection([REQUIRING_SKILL_ID]);
 /** What either command owes the user for {@link REJECTED_VALIDATION}. */
 const EXPECTED_WARNINGS = REJECTED_VALIDATION.errors.map((error) => error.message);
 
-const REJECTED_WIZARD_RESULT = buildWizardResult(buildSkillConfigs([REQUIRING_SKILL_ID]), {
-  validation: REJECTED_VALIDATION,
-});
+/** The id both commands are handed; the mock worker serves whichever payload a spec stores. */
+const SEED_ID = "ParityCheck1";
+
+/** A project-scoped skill, so a run from a project holds nothing back as the global install's. */
+const PROJECT_SKILL = buildSeedSkill({ scope: "project" });
+
+const REJECTED_PAYLOAD = buildSeedPayload({ skills: { [REQUIRING_SKILL_ID]: PROJECT_SKILL } });
 
 /** The same selection with the requirement met — the negative control. */
 const ACCEPTED_SELECTION: SkillId[] = [REQUIRING_SKILL_ID, REQUIRED_SKILL_ID];
-const ACCEPTED_WIZARD_RESULT = buildWizardResult(buildSkillConfigs(ACCEPTED_SELECTION), {
-  validation: validateSelection(ACCEPTED_SELECTION),
+const ACCEPTED_PAYLOAD = buildSeedPayload({
+  skills: { [REQUIRING_SKILL_ID]: PROJECT_SKILL, [REQUIRED_SKILL_ID]: PROJECT_SKILL },
 });
 
 const PROJECT_NAME = "validation-parity-project";
 
-/** Renders the wizard by handing it straight back the result under test. */
-function stubWizardCompletion(result: WizardResultV2): void {
+/** Answers yes to whichever confirm a run puts up. */
+function confirmEveryPrompt(): void {
   mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
-    const onComplete = element.props.onComplete as
-      ((completed: WizardResultV2) => void) | undefined;
-    onComplete?.(result);
+    const onConfirm = element.props.onConfirm as (() => void) | undefined;
+    onConfirm?.();
     return stubInkInstance();
   });
 }
@@ -156,9 +161,11 @@ describe("init and edit report a rejected selection identically", () => {
   let editProjectDir: string;
   let originalCwd: string;
 
-  // Both runs drive the wizard through a stubbed completion, which stands in for a person at a
-  // terminal — and both commands refuse to mount a wizard where stdin is not one. Stated rather
-  // than inherited from whatever the runner was started from.
+  useMockWorker();
+
+  // Both runs confirm through a stubbed prompt, which stands in for a person at a terminal — and
+  // `edit --from` refuses to apply where stdin is not one. Stated rather than inherited from
+  // whatever the runner was started from.
   standAtTerminal();
 
   beforeEach(async () => {
@@ -182,20 +189,14 @@ describe("init and edit report a rejected selection identically", () => {
       JSON.stringify({ permissions: { allow: ["Read(*)"] } }),
     );
 
-    // The installed roster matches the rejected wizard result exactly, so `edit` reaches its
+    // The installed roster matches the payload each spec serves exactly, so `edit` reaches its
     // no-change branch: the validation report is then the only thing that run has to say.
     // `agents: []` is named because the factory's default roster would give edit a change to make.
-    await writeTestTsConfig(
-      editProjectDir,
-      buildProjectConfig({
-        name: PROJECT_NAME,
-        skills: buildSkillConfigs([REQUIRING_SKILL_ID]),
-        agents: [],
-      }),
-    );
+    await writeEditInstallation([REQUIRING_SKILL_ID]);
 
     initializeMatrix(BUILD_STEP_REQUIRES_MATRIX);
-    stubWizardCompletion(REJECTED_WIZARD_RESULT);
+    confirmEveryPrompt();
+    configMockServer.use(storedConfigHandlerFor(SEED_ID, REJECTED_PAYLOAD));
     mockLoadSource.mockResolvedValue(
       buildLoadedSource(buildSourceResult(BUILD_STEP_REQUIRES_MATRIX, tempDir)),
     );
@@ -218,6 +219,13 @@ describe("init and edit report a rejected selection identically", () => {
     mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 
+  async function writeEditInstallation(skillIds: SkillId[]): Promise<void> {
+    await writeTestTsConfig(
+      editProjectDir,
+      buildProjectConfig({ name: PROJECT_NAME, skills: buildSkillConfigs(skillIds), agents: [] }),
+    );
+  }
+
   afterEach(async () => {
     process.chdir(originalCwd);
     vi.unstubAllEnvs();
@@ -228,7 +236,7 @@ describe("init and edit report a rejected selection identically", () => {
   it("edit warns once per validation error, in the validator's own wording", async () => {
     process.chdir(editProjectDir);
 
-    const warnings = await warningsFrom(() => Edit.run([], { root: CLI_ROOT }));
+    const warnings = await warningsFrom(() => Edit.run(["--from", SEED_ID], { root: CLI_ROOT }));
 
     expect(
       EXPECTED_WARNINGS,
@@ -240,29 +248,38 @@ describe("init and edit report a rejected selection identically", () => {
   it("init warns once per validation error, in the validator's own wording", async () => {
     process.chdir(initProjectDir);
 
-    const warnings = await warningsFrom(() => Init.run([], { root: CLI_ROOT }));
+    const warnings = await warningsFrom(() => Init.run(["--from", SEED_ID], { root: CLI_ROOT }));
 
     expect(warnings).toStrictEqual(EXPECTED_WARNINGS);
   });
 
   it("init and edit emit the same warnings, verbatim and in the same order", async () => {
     process.chdir(editProjectDir);
-    const editWarnings = await warningsFrom(() => Edit.run([], { root: CLI_ROOT }));
+    const editWarnings = await warningsFrom(() =>
+      Edit.run(["--from", SEED_ID], { root: CLI_ROOT }),
+    );
 
     process.chdir(initProjectDir);
-    const initWarnings = await warningsFrom(() => Init.run([], { root: CLI_ROOT }));
+    const initWarnings = await warningsFrom(() =>
+      Init.run(["--from", SEED_ID], { root: CLI_ROOT }),
+    );
 
     expect(initWarnings).toStrictEqual(editWarnings);
   });
 
   it("neither command warns when the selection is accepted", async () => {
-    stubWizardCompletion(ACCEPTED_WIZARD_RESULT);
+    configMockServer.use(storedConfigHandlerFor(SEED_ID, ACCEPTED_PAYLOAD));
+    await writeEditInstallation(ACCEPTED_SELECTION);
 
     process.chdir(editProjectDir);
-    const editWarnings = await warningsFrom(() => Edit.run([], { root: CLI_ROOT }));
+    const editWarnings = await warningsFrom(() =>
+      Edit.run(["--from", SEED_ID], { root: CLI_ROOT }),
+    );
 
     process.chdir(initProjectDir);
-    const initWarnings = await warningsFrom(() => Init.run([], { root: CLI_ROOT }));
+    const initWarnings = await warningsFrom(() =>
+      Init.run(["--from", SEED_ID], { root: CLI_ROOT }),
+    );
 
     expect(editWarnings).toStrictEqual([]);
     expect(initWarnings).toStrictEqual([]);

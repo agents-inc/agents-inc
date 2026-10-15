@@ -176,7 +176,7 @@ describe("defaultCategories", () => {
     expect(defaultCategories["desktop-packaging"].exclusive).toBe(true);
   });
 
-  it("carries both non-exclusive flags into the generated matrix the wizard reads", () => {
+  it("carries both non-exclusive flags into the generated matrix", () => {
     expect(BUILT_IN_MATRIX.categories["shared-monorepo"]).toStrictEqual({
       id: "shared-monorepo",
       displayName: "Monorepo",

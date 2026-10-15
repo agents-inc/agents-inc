@@ -9,7 +9,7 @@ import {
   buildProjectConfig,
 } from "../../__tests__/factories/config-factories.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
-import { buildSkillConfig } from "../../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../../__tests__/helpers/skill-config-builders.js";
 import type { ProjectConfig } from "../../../types/index.js";
 
 /**

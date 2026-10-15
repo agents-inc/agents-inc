@@ -8,6 +8,7 @@ import treeKill from "tree-kill";
 import {
   BIN_RUN,
   NO_BACKGROUND_VERSION_CHECK,
+  NO_LIVE_SEED_API,
   claudeConfigDir,
   cleanupTempDir,
   codexHome,
@@ -49,13 +50,6 @@ export type TerminalSessionOptions = {
   env?: Record<string, string | undefined>;
   /** Override the default timeout for waitForText, waitForExit, etc. */
   defaultTimeout?: number;
-  /**
-   * The global HOME directory this session's install content lands in, echoed
-   * back for assertions. Set by the wizard launchers (launchInProject /
-   * launchInGlobal) alongside an explicit env.HOME; left undefined for plain
-   * launches whose HOME is the internal auto-allocated dir.
-   */
-  globalHome?: string;
 };
 
 /**
@@ -86,18 +80,11 @@ export class TerminalSession {
   /** Auto-allocated HOME dir, removed on destroy(). Undefined when the caller supplied HOME. */
   private autoHomeDir: string | undefined;
   readonly defaultTimeout: number;
-  /**
-   * The global HOME directory this session's install content lands in, exposed
-   * for filesystem assertions. Set only by the scope-explicit wizard launchers;
-   * undefined for plain launches (whose HOME is the internal autoHomeDir).
-   */
-  readonly globalHome: string | undefined;
 
   constructor(args: string[], cwd: string, options?: TerminalSessionOptions) {
     const cols = options?.cols ?? DEFAULT_COLS;
     const rows = options?.rows ?? DEFAULT_ROWS;
     this.defaultTimeout = options?.defaultTimeout ?? getDefaultTimeout();
-    this.globalHome = options?.globalHome;
 
     this.xterm = new Terminal({ allowProposedApi: true, cols, rows });
 
@@ -118,17 +105,19 @@ export class TerminalSession {
       // session's fake HOME after the process has exited. See its own doc for the mechanism;
       // ahead of options.env so a session that needs the warning can still drop it.
       ...NO_BACKGROUND_VERSION_CHECK,
-      // The CLI's own overrides — every variable `src/cli/` reads by name that is not the
+      // The seed API, DEFAULTED to an unroutable address rather than cleared: the product falls
+      // back to the live store when it is unset. Ahead of `options.env`, so a session that names
+      // its own store wins — `InteractivePrompt` passes `AGENTS_INC_API_URL` that way.
+      ...NO_LIVE_SEED_API,
+      // The CLI's own overrides — every other variable `src/cli/` reads by name that is not the
       // harness's. Each is a knob a developer's shell may legitimately carry for their own use,
       // and the spread above hands all of them to the spawned binary: an exported marketplace
-      // points `init` somewhere no spec declares, an exported seed API answers `--from`, a
-      // shared giget cache serves a source this run never fetched, and a token authenticates a
-      // fetch that should have failed. Ahead of `options.env`, so a session that needs a value
-      // still names its own — `InteractivePrompt` passes `AGENTS_INC_API_URL` that way.
+      // points `init` somewhere no spec declares, a shared giget cache serves a source this run
+      // never fetched, and a token authenticates a fetch that should have failed. Ahead of
+      // `options.env`, so a session that needs a value still names its own.
       // `src/cli/lib/__tests__/e2e-runner-environment.test.ts` keeps this list and `CLI.run`'s
       // copy of it complete.
       CC_MARKETPLACE: undefined,
-      AGENTS_INC_API_URL: undefined,
       XDG_CACHE_HOME: undefined,
       GIGET_AUTH: undefined,
       ...options?.env,
@@ -136,13 +125,13 @@ export class TerminalSession {
       // Each host's state directory, PINNED to this HOME after the caller's environment — the
       // same position `CLI.run` and `runCLI` pin them in. Both variables beat `HOME` in the binary
       // that reads them, so the `process.env` spread above would otherwise send every `claude` or
-      // `codex` call the wizard makes into the developer's own installation whenever their shell
+      // `codex` call the run makes into the developer's own installation whenever their shell
       // exports one. This door pinned neither until 2026-09-19.
       CLAUDE_CONFIG_DIR: claudeConfigDir(home),
       CODEX_HOME: codexHome(home),
       // The pinned codex, PREPENDED to whatever PATH is in effect — the line `CLI.run` carries, for
-      // its reason: the product resolves its Codex host's binary BY NAME in this child, so a wizard
-      // run over a Codex installation otherwise found whatever `codex` this machine has, or none.
+      // its reason: the product resolves its Codex host's binary BY NAME in this child, so a run
+      // over a Codex installation otherwise found whatever `codex` this machine has, or none.
       // Absent from this door until 2026-09-26, which no spec noticed because none drove the
       // wizard over a Codex installation (CLI-894).
       PATH: withCodexOnIt(options?.env?.["PATH"]),
@@ -155,7 +144,7 @@ export class TerminalSession {
       // PINNED, NOT DEFAULTED — and deliberately (owner ruling 2026-08-21). This sits
       // AFTER `...options?.env` where the other two spawn doors put it BEFORE, so a caller here
       // cannot re-inject it. That asymmetry is the intent rather than an oversight: this door
-      // drives the interactive wizard, where a silenced product warning is exactly the failure
+      // drives the interactive commands, where a silenced product warning is exactly the failure
       // the suite exists to catch, and no spec has a legitimate reason to want it back. A spec
       // that genuinely needs `VITEST` set re-injects it through `CLI.run`, which defaults rather
       // than pins. Do not "fix" this by moving it above the spread for consistency.
@@ -222,9 +211,7 @@ export class TerminalSession {
    * 2026-08-21 at three geometries — 6 rows/20 lines, 40 rows/200 lines, 40 rows/5 lines —
    * `viewportY + rows === length` held at all three. So choosing between the two readers protects
    * nothing, and a comment or a spec header offering one as the safer of the pair is describing a
-   * protection this harness does not have. Where a negative on `getScreen()` IS sound, what makes
-   * it sound is `waitForWizardFooter()` having just proved `viewportY === 0` — a property the
-   * assertion establishes rather than one the reader has to trust.
+   * protection this harness does not have.
    */
   getScreen(): string {
     return this.readBufferLines(this.xterm.buffer.active.viewportY + this.xterm.rows);
@@ -233,26 +220,6 @@ export class TerminalSession {
   /** Reads the whole buffer. The same range {@link getScreen} reads — see the measurement there. */
   getFullOutput(): string {
     return this.readBufferLines(this.xterm.buffer.active.length);
-  }
-
-  /**
-   * The lines sitting ABOVE the top of the viewport right now — empty while everything the
-   * emulator holds is on screen, one entry per row that has been driven out of sight.
-   *
-   * `viewportY` is the absolute buffer row of the TOP of the viewport, so it counts those rows
-   * exactly. Reading it says nothing on its own about whether they SHOULD be off screen: an
-   * ordinary command is entitled to scroll. It becomes an assertion only under a caller that
-   * knows a full-screen frame is painted — `BaseStep.waitForWizardFooter` is the one, and it
-   * carries the reason zero is the floor there.
-   *
-   * Measured, because Ink reprints an overflowing frame behind its own `clearTerminal` (which
-   * empties the emulator's scrollback as well as its screen), so the count is a gauge of the
-   * frame painted NOW rather than a running total: it falls back to zero the moment a frame
-   * that fits replaces one that did not. A frame that overflowed and has since been replaced is
-   * not retrievable here — read it while the frame is on screen.
-   */
-  linesAboveViewport(): readonly string[] {
-    return this.readBufferRange(0, this.xterm.buffer.active.viewportY);
   }
 
   /**
@@ -298,35 +265,8 @@ export class TerminalSession {
     return exitCode;
   }
 
-  /**
-   * Every keystroke this session has sent, in order. The page objects drive the
-   * wizard by writing single keys, so the length is what a navigation helper
-   * COST — which is the only observable a spec has for "this walk should not
-   * have had to travel". Kept as the sequence rather than a bare count so a
-   * failure can say which keys were spent, not merely how many.
-   */
-  private readonly keysWritten: string[] = [];
-
-  /** @see keysWritten — the sequence itself, for specs that assert on cost. */
-  keystrokes(): readonly string[] {
-    return this.keysWritten;
-  }
-
   write(data: string): void {
-    this.keysWritten.push(data);
     this.ptyProcess.write(data);
-  }
-
-  /**
-   * Resize the PTY **and** the emulator. Both, always: resizing only the PTY
-   * delivers SIGWINCH to the process but leaves xterm laying the new output out
-   * at the old geometry, so `getScreen()` reads a viewport the process never
-   * drew; resizing only xterm never reaches the process at all, so nothing
-   * repaints.
-   */
-  resize(cols: number, rows: number): void {
-    this.ptyProcess.resize(cols, rows);
-    this.xterm.resize(cols, rows);
   }
 
   enter(): void {
@@ -341,20 +281,8 @@ export class TerminalSession {
     this.write("\x1b[A");
   }
 
-  arrowRight(): void {
-    this.write("\x1b[C");
-  }
-
-  tab(): void {
-    this.write("\t");
-  }
-
   escape(): void {
     this.write("\x1b");
-  }
-
-  space(): void {
-    this.write(" ");
   }
 
   ctrlC(): void {

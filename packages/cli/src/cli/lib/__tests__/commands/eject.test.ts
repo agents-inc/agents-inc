@@ -5,9 +5,9 @@ import { argOptionRefusal, parseRefusal, runCliCommand } from "../helpers/cli-ru
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
 import { readTestYaml, readTestTsConfig } from "../helpers/config-io.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { createMockMatrix } from "../factories/matrix-factories.js";
-import { buildWizardResult, buildSourceResult } from "../factories/config-factories.js";
+import { buildInstallSelection, buildSourceResult } from "../factories/config-factories.js";
 import { parseTestFrontmatter } from "../helpers/index.js";
 import { SKILLS } from "../test-fixtures";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
@@ -622,7 +622,7 @@ describe("eject skills from initialized project", () => {
     initializeMatrix(installMatrix);
     const installSource = buildSourceResult(installMatrix, dirs.sourceDir);
     await installThroughOperations({
-      wizardResult: buildWizardResult(buildSkillConfigs(EJECT_INSTALLED_SKILL_IDS)),
+      selection: buildInstallSelection(buildSkillConfigs(EJECT_INSTALLED_SKILL_IDS)),
       sourceResult: installSource,
       projectDir: dirs.projectDir,
     });
@@ -760,7 +760,7 @@ describe("eject in plugin mode", () => {
     initializeMatrix(installMatrix);
     const installSource = buildSourceResult(installMatrix, dirs.sourceDir);
     await writeProjectConfig({
-      wizardResult: buildWizardResult(
+      selection: buildInstallSelection(
         buildSkillConfigs(EJECT_INSTALLED_SKILL_IDS, { origin: "agents-inc" }),
       ),
       sourceResult: installSource,

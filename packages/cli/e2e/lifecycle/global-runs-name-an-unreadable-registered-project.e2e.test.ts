@@ -36,7 +36,7 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
-import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 
 /**

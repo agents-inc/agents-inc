@@ -1,10 +1,11 @@
 import path from "path";
 import { mkdir } from "fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -14,9 +15,11 @@ import {
   createTempDir,
   directoryExists,
   fileExists,
+  FORKED_FROM_METADATA,
   listFiles,
   loadConfigOrFail,
   readTestFile,
+  recordInstallSource,
   renderMetadataYaml,
   runCLI,
   skillsPath,
@@ -27,7 +30,11 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { CLAUDE_DIR } from "../../src/cli/consts.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
@@ -60,13 +67,37 @@ const reactSkillMetadata = renderMetadataYaml({
   contentHash: "empty-scope-dirs-react",
 });
 
+/** The project's react kept, with no sub-agent left to hold it. */
+const NO_AGENT_ID = "NoAgent2";
+
+/** The global installation's sub-agent kept, with no skill left in it. */
+const NO_SKILL_ID = "NoSkill1";
+
 describe("empty scope directories", () => {
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
-  let wizard: EditWizard | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(
+      NO_AGENT_ID,
+      buildSeedPayload({
+        skills: { [E2E_SKILL.react.id]: buildSeedSkill({ scope: "project", assignments: {} }) },
+      }),
+    );
+    store.publish(
+      NO_SKILL_ID,
+      buildSeedPayload({
+        agents: { [E2E_AGENT["web-developer"].name]: { on: true, scope: "global" } },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (tempDir) {
       await cleanupTempDir(tempDir);
       tempDir = undefined;
@@ -204,12 +235,12 @@ describe("empty scope directories", () => {
   );
 
   it(
-    "deselecting the last agent takes the agents directory with it",
+    "removing the last agent takes the agents directory with it",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const { fakeHome, projectDir } = await createEnvironment();
       await seedProjectScopedInstall(projectDir, [E2E_AGENT["web-developer"].name]);
-      // The compiled artefact a prior install left behind — what the deselect removes.
+      // The compiled artefact a prior install left behind — what the removal deletes.
       await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, { frontmatter: true });
 
       expect(
@@ -218,28 +249,20 @@ describe("empty scope directories", () => {
       ).toStrictEqual([`${E2E_AGENT["web-developer"].name}.md`]);
 
       // A PROJECT context (HOME is a separate empty dir), so the recompile runs
-      // its scope-filtered passes and prunes nothing — the deselection itself is
+      // its scope-filtered passes and prunes nothing — the removal itself is
       // the only thing that empties the directory.
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
+      await recordInstallSource([projectDir], E2E_SOURCE.sourceDir);
+      const result = await applyEditFrom(store, NO_AGENT_ID, {
+        dir: projectDir,
+        globalHome: fakeHome,
       });
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      await agents.toggleAgent(E2E_AGENT["web-developer"].display);
-      const confirm = await agents.advance("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // Config side: no agent is left active in the roster.
       const finalConfig = await loadConfigOrFail(projectDir);
       expect(
         finalConfig.agents.filter((agent) => !agent.excluded).map((agent) => agent.name),
-        "the deselected agent must not remain active in config.ts",
+        "the removed agent must not remain active in config.ts",
       ).toStrictEqual([]);
 
       // Filesystem side: the compiled file goes, and so does the directory it emptied.
@@ -247,11 +270,11 @@ describe("empty scope directories", () => {
         await fileExists(
           path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`),
         ),
-        "the deselected agent's compiled file must be deleted",
+        "the removed agent's compiled file must be deleted",
       ).toBe(false);
       expect(
         await directoryExists(agentsPath(projectDir)),
-        "an agents directory the deselection emptied must not survive it",
+        "an agents directory the removal emptied must not survive it",
       ).toBe(false);
       expect(
         await directoryExists(path.join(projectDir, CLAUDE_DIR)),
@@ -261,7 +284,7 @@ describe("empty scope directories", () => {
   );
 
   it(
-    "the agents directory stays when a hand-authored agent outlives the deselected one",
+    "the agents directory stays when a hand-authored agent outlives the removed one",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const { fakeHome, projectDir } = await createEnvironment();
@@ -269,20 +292,12 @@ describe("empty scope directories", () => {
       await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, { frontmatter: true });
       await writeAgentFile(projectDir, HAND_AUTHORED_AGENT);
 
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
+      await recordInstallSource([projectDir], E2E_SOURCE.sourceDir);
+      const result = await applyEditFrom(store, NO_AGENT_ID, {
+        dir: projectDir,
+        globalHome: fakeHome,
       });
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      await agents.toggleAgent(E2E_AGENT["web-developer"].display);
-      const confirm = await agents.advance("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // Emptiness is FILESYSTEM emptiness: the roster is empty, the directory is not.
       expect(
@@ -294,13 +309,13 @@ describe("empty scope directories", () => {
   );
 
   it(
-    "deselecting the last ejected skill takes the skills directory with it",
+    "removing the last ejected skill takes the skills directory with it",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const { fakeHome: globalHome } = await createEnvironment();
 
       // Global install (HOME === project dir) where react is the ONLY skill, so
-      // deselecting it empties ~/.claude/skills/ outright.
+      // removing it empties ~/.claude/skills/ outright.
       await writeProjectConfig(
         globalHome,
         buildProjectConfig({
@@ -311,9 +326,10 @@ describe("empty scope directories", () => {
           stack: webDeveloperStack,
         }),
       );
+      // Fork provenance, so the round trip owns the copy and the apply may remove it.
       await createLocalSkill(globalHome, E2E_SKILL.react.id, {
         description: "The only installed skill",
-        metadata: reactSkillMetadata,
+        metadata: FORKED_FROM_METADATA,
       });
       // Puts settings.json in .claude/, so ".claude survived" is a claim about
       // .claude rather than about a directory that had nothing else in it anyway.
@@ -324,20 +340,9 @@ describe("empty scope directories", () => {
         "the skills directory must hold exactly the one skill before the edit",
       ).toStrictEqual([E2E_SKILL.react.id]);
 
-      wizard = await EditWizard.launch({
-        projectDir: globalHome,
-        source: E2E_SOURCE,
-        env: { HOME: globalHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      await wizard.build.selectSkill(E2E_SKILL.react.display);
-      const sources = await wizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      await recordInstallSource([globalHome], E2E_SOURCE.sourceDir);
+      const result = await applyEditFrom(store, NO_SKILL_ID, { dir: globalHome });
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       // Config side: the skill is gone from the roster.
       const finalConfig = await loadConfigOrFail(globalHome);

@@ -17,11 +17,8 @@ import { discoverAllPluginSkills } from "../plugins";
 /**
  * True when the tagging pass looked at this skill and found only the copy on disk.
  *
- * The one reading of `availableSources` every surface that asks "can this be a plugin?"
- * must share: the Sources grid offers a cell on it and the install pipeline refuses on
- * it, and a second copy of the rule is how those two come to disagree. Asked of the
- * tagged sources rather than of `custom` — what a plugin install needs is a marketplace
- * that HAS the skill, and who wrote it decides nothing. A skill the pass never reached
+ * Asked of the tagged sources rather than of `custom` — what a plugin install needs is a
+ * marketplace that HAS the skill, and who wrote it decides nothing. A skill the pass never reached
  * carries no sources at all and answers `false`: absence of an answer is not an answer.
  */
 export function isLocalOnlySkill(skill: ResolvedSkill | undefined): boolean {
@@ -55,8 +52,8 @@ function addAvailableSource(
  * 4. **Active source** -- sets `activeSource` to the installed variant, or first available
  *
  * After this function completes, each skill in the matrix has `availableSources` -- at most
- * the local copy and the one marketplace, which are the two install modes the Sources step
- * offers -- and `activeSource` (the one currently in use) populated.
+ * the local copy and the one marketplace -- and `activeSource` (the one currently in use)
+ * populated.
  *
  * @param primaryMatrix - The merged skills matrix to annotate. Mutated in place --
  *                        `availableSources` and `activeSource` are set on each skill.
@@ -229,7 +226,7 @@ async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   return skillIds;
 }
 
-/** Prefers installed source so the wizard shows current state; falls back to first available */
+/** Prefers installed source; falls back to first available */
 function setActiveSources(matrix: MergedSkillsMatrix): void {
   for (const [, skill] of typedEntries(matrix.skills)) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot

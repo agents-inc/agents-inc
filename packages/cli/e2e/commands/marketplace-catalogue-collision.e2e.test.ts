@@ -7,10 +7,15 @@ import {
   createTempDir,
   readTreeSnapshot,
   renderSkillMd,
-  runCLI,
 } from "../helpers/test-utils.js";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
 import { CLI } from "../fixtures/cli.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
@@ -34,6 +39,9 @@ const CATALOGUE_OWNED_ID = "web-framework-react";
 /** The word the refusal has to reach for, since a namespace is the fix. */
 const NAMESPACE_REMEDY = "namespace";
 
+/** What `init --from` is asked to install from the colliding marketplace. */
+const STACK_ID = "Collide01";
+
 /**
  * Republishes one of the fixture's skills under an id the public catalogue owns.
  * The id a source registers a skill under is its SKILL.md frontmatter `name`, so
@@ -53,15 +61,19 @@ async function republishUnderCatalogueId(source: E2ESource): Promise<void> {
 describe("a marketplace colliding with the public catalogue", () => {
   let namespacedSource: E2ESource;
   let collidingSource: E2ESource;
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     namespacedSource = await createE2ESource();
     collidingSource = await createE2ESource();
     await republishUnderCatalogueId(collidingSource);
+    store = await startSeedConfigStore();
+    store.publish(STACK_ID, e2eStackPayload());
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     await cleanupTempDir(namespacedSource.tempDir);
     await cleanupTempDir(collidingSource.tempDir);
   });
@@ -80,19 +92,20 @@ describe("a marketplace colliding with the public catalogue", () => {
     ).toBe(true);
   });
 
-  it("is refused by init, naming the id and the namespace that fixes it", async () => {
+  it("is refused by init --from, naming the id and the namespace that fixes it", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
     const projectBefore = await readTreeSnapshot(projectDir);
 
-    const { exitCode, combined } = await runCLI(
-      ["init", "--marketplace", collidingSource.sourceDir],
-      projectDir,
-      { env: { HOME: tempDir } },
+    const { exitCode, output: combined } = await runInitFrom(
+      store,
+      STACK_ID,
+      { dir: projectDir, globalHome: tempDir },
+      collidingSource.sourceDir,
     );
 
-    expect(exitCode, "a colliding marketplace must not reach the wizard").not.toBe(
+    expect(exitCode, "a colliding marketplace must not be installed from").not.toBe(
       EXIT_CODES.SUCCESS,
     );
     const output = flattenCliOutput(combined);

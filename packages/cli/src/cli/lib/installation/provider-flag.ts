@@ -10,9 +10,7 @@
  * 1. **A greenfield `init --from <id> --provider codex`** — the folder does not exist yet, so
  *    there is nothing to read. This is the flag's whole purpose, and it is why the flag is
  *    meaningless without `--from`: the provider is chosen in the web app, so the only run that can
- *    be told one is the run that installs what the app produced (D15). A wizard walked to the end
- *    and then refused would have spent the user's time before saying so, and there is no wizard
- *    step to choose a provider in.
+ *    be told one is the run that installs what the app produced (D15).
  * 2. **A scope holding BOTH folders** — the disk has two answers, `providerInUse` resolves them by
  *    roster order, and a command that acted on the roster's first answer would act on a user's
  *    other installation with nothing on screen saying so. `edit`, `uninstall`, `share`, `eject`,

@@ -4,8 +4,9 @@ import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
+import { applyFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupTempDir,
   createLocalSkill,
@@ -20,22 +21,39 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * A global-scope `cc edit` at ~/ must preserve the global config's registered
+ * A global-scope edit at ~/ must preserve the global config's registered
  * `projects` array across the write. `mergeConfigs` seeds `merged` from
- * `newConfig` (which never carries `projects` — the wizard result has no such
+ * `newConfig` (which never carries `projects` — an install selection has no such
  * field), so without an explicit carry-forward the field would be dropped and
  * the home-context propagation guard `if (finalConfig.projects?.length)` would
  * silently never fire.
  *
  * This exercises the merger's `projects` preservation branch through the real
- * edit-at-HOME pipeline (writeProjectConfig -> buildAndMergeConfig ->
- * mergeWithExistingConfig -> mergeConfigs -> writeScopedFromWizard HOME-context).
+ * `edit --from` at HOME pipeline.
  */
+
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+
+/** The global install plus vitest: any change forces the HOME-context write path. */
+const GLOBAL_WITH_VITEST = buildSeedPayload({
+  skills: {
+    [E2E_SKILL.react.id]: buildSeedSkill({
+      scope: "global",
+      assignments: { [WEB_DEV]: "preloaded" },
+    }),
+    [E2E_SKILL.vitest.id]: buildSeedSkill({ scope: "global", assignments: { [WEB_DEV]: "lazy" } }),
+  },
+  agents: { [WEB_DEV]: { scope: "global" } },
+});
 
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
@@ -53,15 +71,17 @@ const reactMetadata = renderMetadataYaml({
 });
 
 describe("global edit at HOME preserves the registered projects array", () => {
+  let store: SeedConfigStore;
   let tempDir: string;
   let globalHome: string;
   let registeredProject: string;
 
   let projectsBefore: string[] | undefined;
   let projectsAfter: string[] | undefined;
-  let editExitCode: number;
+  let skillsAfter: string[];
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
     tempDir = await createTempDir();
     globalHome = path.join(tempDir, "home");
     registeredProject = path.join(tempDir, "registered-project");
@@ -89,6 +109,7 @@ describe("global edit at HOME preserves the registered projects array", () => {
       agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
       selectedDomains: ["web"],
       stack: globalStack,
+      marketplace: E2E_SOURCE.sourceDir,
       projects: [realpathSync(registeredProject)],
     });
     await writeProjectConfig(globalHome, globalConfig);
@@ -99,32 +120,25 @@ describe("global edit at HOME preserves the registered projects array", () => {
 
     projectsBefore = (await loadConfigOrFail(globalHome)).projects;
 
-    // Edit at global scope and toggle react off — any change forces the
-    // HOME-context write path, which is where `projects` would be lost.
-    const wizard = await EditWizard.launch({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      env: { HOME: globalHome },
-      ...TERMINAL_SIZE.TALL,
+    // Edit at global scope, adding vitest — any change forces the HOME-context
+    // write path, which is where `projects` would be lost.
+    await applyFromSeed(store, "AddVitest1", GLOBAL_WITH_VITEST, {
+      dir: globalHome,
+      home: globalHome,
     });
-    await wizard.build.selectSkill(E2E_SKILL.react.display);
-    const sources = await wizard.build.passThroughAllDomainsGeneric();
-    await sources.waitForReady();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("edit");
-    const result = await confirm.confirm();
-    editExitCode = await result.exitCode;
-    await result.destroy();
 
-    projectsAfter = (await loadConfigOrFail(globalHome)).projects;
+    const after = await loadConfigOrFail(globalHome);
+    projectsAfter = after.projects;
+    skillsAfter = after.skills.map((skill) => skill.id);
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
-  it("completes the global edit successfully", () => {
-    expect(editExitCode).toBe(EXIT_CODES.SUCCESS);
+  it("completes the global edit, writing the change", () => {
+    expect(skillsAfter).toStrictEqual([E2E_SKILL.react.id, E2E_SKILL.vitest.id]);
   });
 
   it("seeds the projects array before the edit", () => {

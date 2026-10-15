@@ -4,9 +4,7 @@ import { awaitUnderSpinner } from "./spinner";
 
 /**
  * The spinner's hand-off, watched on a terminal emulator: whatever the spinner drew must be gone,
- * and the cursor back where the spinner started, by the time the await returns — because the next
- * thing `init` and `edit` render is a wizard sized to the terminal's full height, and one line
- * left above it pushes the wizard's top line off the screen.
+ * and the cursor back where the spinner started, by the time the await returns.
  *
  * **The race these specs hold still.** Ink paints through a render throttle (32ms at its default
  * 30fps). A spinner frame that arrives inside that window is held, not painted, and `unmount()`

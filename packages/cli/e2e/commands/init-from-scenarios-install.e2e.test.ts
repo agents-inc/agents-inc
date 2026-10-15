@@ -32,7 +32,7 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 

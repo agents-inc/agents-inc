@@ -80,7 +80,7 @@ describe("loadSource", () => {
   it("should return startup messages when captureStartupMessages is true", async () => {
     const messages = [
       { level: "warn" as const, text: "warning 1" },
-      { level: "info" as const, text: "info 1" },
+      { level: "warn" as const, text: "warning 2" },
     ];
     mockDrainBuffer.mockReturnValue(messages);
 

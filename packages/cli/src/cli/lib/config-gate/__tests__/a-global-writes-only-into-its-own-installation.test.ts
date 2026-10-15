@@ -11,7 +11,7 @@
  *   installation that happens to be reachable, and rewriting its pair from this global's data is
  *   the cross-installation write the folders exist to prevent.
  * - *"the runtime assertion fires when the path is forced wrong"* — an ASSERTION, inside the
- *   single writer both the fan-out and the wizard write go through. It cannot be a
+ *   single writer both the fan-out and the install write go through. It cannot be a
  *   compile-time proof: propagation resolves its destination from a config-derived STRING,
  *   so deleting `DEFAULT_PROVIDER` found every typed caller and none of these.
  *
@@ -44,7 +44,7 @@ import {
 } from "../../__tests__/factories/config-factories.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
-import { buildSkillConfig } from "../../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../../__tests__/helpers/skill-config-builders.js";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 import { matrix } from "../../matrix/matrix-provider.js";

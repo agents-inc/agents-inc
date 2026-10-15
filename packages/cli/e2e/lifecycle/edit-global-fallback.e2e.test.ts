@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { CLI } from "../fixtures/cli.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -12,84 +12,94 @@ import {
   readTestFile,
   skillsPath,
 } from "../helpers/test-utils.js";
-import { createTestEnvironment, initGlobalWithEject } from "../fixtures/dual-scope-helpers.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
  * Edit global fallback E2E tests.
  *
- * Verifies that `cc edit` works correctly when launched from a project
- * directory that has NO project config (.agents-inc/claude/config.ts), falling
- * back to the global installation.
+ * Verifies that a bare `cc edit` launched from a project directory that has NO
+ * project config (.agents-inc/claude/config.ts) falls back to the global
+ * installation, hands that to the editor, and writes nothing.
  */
 
+/** The E2E stack, every skill ejected into the global installation. */
+const STACK_AT_HOME_ID = "StackHm3";
+
 describe("edit with global-only installation (no project config)", () => {
-  let testTempDir: string;
-  let fakeHome: string;
-  let projectDir: string;
-  let testWizard: EditWizard | undefined;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
+
+  beforeAll(async () => {
+    store = await startSeedConfigStore();
+  });
+
+  afterAll(async () => {
+    await store.close();
+  });
 
   afterEach(async () => {
-    await testWizard?.destroy();
-    testWizard = undefined;
-    if (testTempDir) await cleanupTempDir(testTempDir);
+    store.reset();
+    if (env) await cleanupTempDir(env.tempDir);
+    env = undefined;
   });
+
+  /** A global install and nothing in the project directory. */
+  async function installGlobalOnly(): Promise<TestEnvironment> {
+    const created = await createTestEnvironment();
+    store.publish(STACK_AT_HOME_ID, e2eStackPayload({ scope: "global" }));
+    const installed = await runInitFrom(
+      store,
+      STACK_AT_HOME_ID,
+      { dir: created.fakeHome },
+      E2E_SOURCE.sourceDir,
+    );
+    expect(installed.exitCode, `Global init failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
+    return created;
+  }
+
+  /** A bare `edit` from the project directory, against the store; no TTY, so the link is printed. */
+  function editFromProject({ fakeHome, projectDir }: TestEnvironment) {
+    return CLI.run(
+      ["edit"],
+      { dir: projectDir, globalHome: fakeHome },
+      { env: { AGENTS_INC_API_URL: store.url } },
+    );
+  }
 
   it(
     "edit launches from project dir with global-only installation",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // Setup: global install only -- NO initProject
-      const env = await createTestEnvironment();
-      testTempDir = env.tempDir;
-      fakeHome = env.fakeHome;
-      projectDir = env.projectDir;
+      env = await installGlobalOnly();
+      store.reset();
 
-      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(phaseA.exitCode, `Global init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
-
-      // Verify: no project config exists before edit
-      const projectConfigPath = configTsPath(projectDir);
       expect(
-        await fileExists(projectConfigPath),
+        await fileExists(configTsPath(env.projectDir)),
         "Project config must NOT exist before edit (global-only setup)",
       ).toBe(false);
 
-      // Launch edit wizard from project dir (falls back to global installation)
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      testWizard = wizard;
+      const { exitCode, output } = await editFromProject(env);
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
 
-      // Pass through all steps without changes
-      const sources = await wizard.build.passThroughAllDomains();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      // The global installation is the one handed to the editor: one id minted for it.
+      expect(store.minted).toHaveLength(1);
+      expect(output).toContain(`Shared as ${firstElement(store.minted)}`);
 
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // A no-changes passthrough from global fallback produces "No changes made"
-      // and does NOT create a project config. The edit command returns early.
-      // This verifies the global fallback path completes without error.
-
-      // Assertion: global config still exists and is unchanged
-      const globalConfigPath = configTsPath(fakeHome);
       expect(
-        await fileExists(globalConfigPath),
-        "Global config must still exist after project edit",
-      ).toBe(true);
-
-      await expect({ dir: fakeHome }).toHaveConfig({
+        await fileExists(configTsPath(env.projectDir)),
+        "an edit falling back to the global installation must not write a project config",
+      ).toBe(false);
+      await expect({ dir: env.fakeHome }).toHaveConfig({
         agents: ["web-developer"],
       });
-
-      await result.destroy();
     },
   );
 
@@ -97,63 +107,24 @@ describe("edit with global-only installation (no project config)", () => {
     "edit with global fallback preserves global skills",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // Setup: global install only -- NO initProject
-      const env = await createTestEnvironment();
-      testTempDir = env.tempDir;
-      fakeHome = env.fakeHome;
-      projectDir = env.projectDir;
-
-      const phaseA = await initGlobalWithEject(E2E_SOURCE, fakeHome);
-      expect(phaseA.exitCode, `Global init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
-
-      // Snapshot global state before edit
-      const globalSkillsDir = skillsPath(fakeHome);
-      const globalAgentsDir = agentsPath(fakeHome);
-      const globalConfigPath = configTsPath(fakeHome);
+      env = await installGlobalOnly();
+      const globalConfigPath = configTsPath(env.fakeHome);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
-      // Launch edit wizard from project dir (falls back to global installation)
-      const wizard = await EditWizard.launch({
-        projectDir,
-        source: E2E_SOURCE,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-      testWizard = wizard;
+      const { exitCode, output } = await editFromProject(env);
+      expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
 
-      // Pass through all steps without changes
-      const sources = await wizard.build.passThroughAllDomains();
-      await sources.waitForReady();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-
-      const exitCode = await result.exitCode;
-      expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // Assertion: global config is unchanged
-      const globalConfigAfter = await readTestFile(globalConfigPath);
-      expect(globalConfigAfter).toStrictEqual(globalConfigBefore);
-
-      // Assertion: global skills directory still exists with skill files
+      expect(await readTestFile(globalConfigPath)).toStrictEqual(globalConfigBefore);
       expect(
-        await directoryExists(globalSkillsDir),
+        await directoryExists(skillsPath(env.fakeHome)),
         "Global skills directory must still exist after project edit",
       ).toBe(true);
-
-      // Assertion: global agents directory still exists with agent files
       expect(
-        await directoryExists(globalAgentsDir),
+        await directoryExists(agentsPath(env.fakeHome)),
         "Global agents directory must still exist after project edit",
       ).toBe(true);
-
-      // Assertion: specific global skill still present
-      await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
-
-      // Assertion: global agent still compiled
-      await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
-
-      await result.destroy();
+      await expect({ dir: env.fakeHome }).toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect({ dir: env.fakeHome }).toHaveCompiledAgent("web-developer");
     },
   );
 });

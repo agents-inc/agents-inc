@@ -1,10 +1,23 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
-import { E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
-import { cleanupFixture, cleanupTempDir, loadConfigOrFail } from "../helpers/test-utils.js";
-import { EXIT_CODES, STEP_TEXT, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import {
+  cleanupFixture,
+  cleanupTempDir,
+  flattenCliOutput,
+  loadConfigOrFail,
+} from "../helpers/test-utils.js";
+import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import "../matchers/setup.js";
 
 /**
@@ -12,17 +25,23 @@ import "../matchers/setup.js";
  * correct, documented and enforced at four layers — and every one of them is
  * silent.
  *
- * Pick one skill into project scope while every selected sub-agent stays global
- * (the default), and the skill is copied to `<project>/.claude/skills/`, written
- * into `config.ts`, and assigned to nothing. The run reports `0 agents rewritten`
- * and `doctor` is green, so the one thing the user is never told is the one thing
- * that matters: the skill will never be loaded.
+ * Install one skill at project scope while every sub-agent rests global, and the
+ * skill is copied to `<project>/.claude/skills/`, written into `config.ts`, and
+ * assigned to nothing. The run reports `0 agents rewritten` and `doctor` is green,
+ * so the one thing the user is never told is the one thing that matters: the skill
+ * will never be loaded.
  *
  * This spec asserts the install AND the silence, so the shape survives even if the
  * warning's wording moves — see STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT.
  */
-describe("a project-scoped skill picked alongside only global sub-agents", () => {
+
+const WEB_DEV = E2E_AGENT["web-developer"].name;
+const API_DEV = E2E_AGENT["api-developer"].name;
+const INSTALLED_ID = "NoAgent02";
+
+describe("a project-scoped skill installed alongside only global sub-agents", () => {
   let source: E2ESource | undefined;
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
   let fakeHome: string;
   let projectDir: string;
@@ -31,53 +50,49 @@ describe("a project-scoped skill picked alongside only global sub-agents", () =>
 
   beforeAll(async () => {
     source = await createE2ESource();
+    store = await startSeedConfigStore();
+    store.publish(
+      INSTALLED_ID,
+      buildSeedPayload({
+        skills: {
+          // Ejected, so the copy that lands with no assignment is observable on disk.
+          [E2E_SKILL.react.id]: buildSeedSkill({ scope: "project" }),
+          [E2E_SKILL.vitest.id]: buildSeedSkill({
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        // Every sub-agent at GLOBAL scope — the whole point.
+        agents: {
+          [WEB_DEV]: { on: true, scope: "global" },
+          [API_DEV]: { on: true, scope: "global" },
+        },
+      }),
+    );
 
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
     fakeHome = env.fakeHome;
     projectDir = env.projectDir;
 
-    const wizard = await InitWizard.launch({
-      source,
-      projectDir,
-      env: { HOME: fakeHome },
-      ...TERMINAL_SIZE.TALL,
-    });
-
-    try {
-      const domain = await wizard.stack.selectFirstStack();
-      const build = await domain.acceptDefaults();
-
-      // Web domain: send React to PROJECT scope, focused explicitly rather than
-      // relying on where the grid opens.
-      await build.focusSkill(E2E_SKILL.react.display);
-      await build.toggleScopeOnFocusedSkill();
-
-      const sources = await build.passThroughAllDomains();
-      await sources.waitForReady();
-      // Eject, so the copy that lands with no assignment is observable on disk.
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-
-      // Every sub-agent left at the default GLOBAL scope — the whole point.
-      const confirm = await agents.acceptDefaults("init");
-      const result = await confirm.confirm();
-
-      initExitCode = await result.exitCode;
-      initOutput = result.output;
-      await result.destroy();
-    } finally {
-      await wizard.destroy();
-    }
+    const result = await runInitFrom(
+      store,
+      INSTALLED_ID,
+      { dir: projectDir, globalHome: fakeHome },
+      source.sourceDir,
+    );
+    initExitCode = result.exitCode;
+    initOutput = result.output;
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (tempDir) await cleanupTempDir(tempDir);
     await cleanupFixture(source);
   });
 
   it("installs the skill and records it at project scope", async () => {
-    expect(initExitCode).toBe(EXIT_CODES.SUCCESS);
+    expect(initExitCode, initOutput).toBe(EXIT_CODES.SUCCESS);
 
     // The filesystem half: the copy really landed under the project.
     await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
@@ -89,17 +104,8 @@ describe("a project-scoped skill picked alongside only global sub-agents", () =>
     const projectStack = (await loadConfigOrFail(projectDir)).stack;
     const globalStack = (await loadConfigOrFail(fakeHome)).stack;
 
-    // Serialized rather than walked: the claim is that the id appears in no
-    // agent's catalogue at all, which needs no structure to state.
-    //
-    // The two `expect(...).toBeDefined()` lines are the control, and without them the negatives
-    // below pass for free: `JSON.stringify(undefined ?? {})` is `"{}"`, which contains no id
-    // whatever the product did, so an install that wrote no stack at all satisfied them. The
-    // fallback is gone for the same reason — an absent stack must fail here, not be excused.
     // The project side is the stronger claim and the one this journey is about: a skill that
     // reaches no sub-agent leaves NO project stack at all, not one that merely omits the id.
-    // `JSON.stringify(projectStack ?? {})` said the weaker thing and could not fail — `"{}"`
-    // contains no id however the run went — so the absence it was written for went unasserted.
     expect(projectStack).toBeUndefined();
 
     // The global side really is populated, so its negative discriminates. Asserted as the
@@ -111,7 +117,8 @@ describe("a project-scoped skill picked alongside only global sub-agents", () =>
   });
 
   it("says so, naming the skill", () => {
-    expect(initOutput).toContain(STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT);
-    expect(initOutput).toContain(E2E_SKILL.react.id);
+    expect(flattenCliOutput(initOutput)).toContain(
+      `Skill '${E2E_SKILL.react.id}' ${STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT}`,
+    );
   });
 });

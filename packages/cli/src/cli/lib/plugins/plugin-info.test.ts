@@ -49,7 +49,7 @@ import {
   buildPluginInstallation,
 } from "../__tests__/factories/installation-factories.js";
 import { createMockSkillDefinition } from "../__tests__/factories/skill-factories";
-import { buildSkillConfigs } from "../__tests__/helpers/wizard-simulation";
+import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { getProjectConfigPath } from "../installation/install-base-dir.js";
 
 const mockedReaddir = vi.mocked(readdir);

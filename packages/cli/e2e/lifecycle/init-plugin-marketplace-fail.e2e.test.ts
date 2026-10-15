@@ -7,8 +7,13 @@ import {
   cleanupTempDir,
   createTempDir,
   flattenCliOutput,
-  runCLI,
 } from "../helpers/test-utils.js";
+import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
 import {
   EXIT_CODES,
   MANIFEST_REFUSAL_BUILDS_IN_ORDER,
@@ -33,24 +38,25 @@ import "../matchers/setup.js";
  * marketplace before any filesystem mutation.
  *
  * The fixture that reached it — a local directory with no `.claude-plugin/marketplace.json` — is
- * now refused by the load itself, before the wizard and so before any mode can be chosen (owner
- * ruling 2026-10-02: a custom marketplace must carry a valid manifest). The rule is unchanged and
- * the resolution has only moved earlier, so what this holds is still the disk: not one skill
- * copied, and no success line.
- *
- * Run without a terminal, because the refusal lands before the wizard mounts.
+ * now refused by the load itself, before any mode can be chosen (owner ruling 2026-10-02: a custom
+ * marketplace must carry a valid manifest). The rule is unchanged and the resolution has only moved
+ * earlier, so what this holds is still the disk: not one skill copied, and no success line.
  */
 
 describe("init over a marketplace that cannot serve it: filesystem integrity", () => {
   let unbuilt: E2ESource;
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     // A directory nobody has built — no `.claude-plugin/marketplace.json`.
     unbuilt = await createE2ESource({ unbuilt: true });
+    store = await startSeedConfigStore();
+    store.publish("Unbuilt1", e2eStackPayload());
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(unbuilt);
   });
 
@@ -67,10 +73,11 @@ describe("init over a marketplace that cannot serve it: filesystem integrity", (
       const projectDir = path.join(tempDir, "project");
       await mkdir(projectDir, { recursive: true });
 
-      const { exitCode, combined } = await runCLI(
-        ["init", "--marketplace", unbuilt.sourceDir],
-        projectDir,
-        { env: { HOME: tempDir } },
+      const { exitCode, output: combined } = await runInitFrom(
+        store,
+        "Unbuilt1",
+        { dir: projectDir, globalHome: tempDir },
+        unbuilt.sourceDir,
       );
 
       const output = flattenCliOutput(combined);

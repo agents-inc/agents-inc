@@ -26,9 +26,7 @@ export function pluginInstallFailureError(failedCount: number): string {
  *
  * A skill that exists only in this project cannot be pulled from anywhere, so the ask is
  * refusable BEFORE anything is attempted — which is what separates it from an install
- * that was tried and failed. The Sources grid reads {@link isLocalOnlySkill} to decide
- * whether to offer the plugin cell at all, so this guard shares it: a caller reaching
- * past that surface must meet the same rule it did.
+ * that was tried and failed.
  */
 export function unbackedPluginSkillIds(
   skills: SkillConfig[],
@@ -47,7 +45,7 @@ export function unbackedPluginSkillIds(
  * failures owe different advice.
  */
 export function unbackedPluginInstallError(ids: SkillId[]): string {
-  return `Cannot install ${ids.length} skill(s) as plugins — no marketplace carries them: ${ids.join(", ")}. A skill that exists only in this project can only be installed as a local copy. Set it to Local on the Sources step, or publish it to a marketplace first.`;
+  return `Cannot install ${ids.length} skill(s) as plugins — no marketplace carries them: ${ids.join(", ")}. A skill that exists only in this project can only be installed as a local copy. Set its Install mode to eject in the editor, or publish it to a marketplace first.`;
 }
 
 /**

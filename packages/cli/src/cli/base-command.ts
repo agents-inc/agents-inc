@@ -31,7 +31,7 @@ import { EXIT_CODES } from "./lib/exit-codes.js";
 import { isActiveAt } from "./lib/configuration/scope-predicates.js";
 import { resolveBranding } from "./lib/configuration/config.js";
 import { isHomeDirectory, refuseUnofferedStack } from "./lib/installation/index.js";
-import type { WizardResultV2 } from "./components/wizard/wizard.js";
+import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import { getStackSkillIds } from "./lib/stacks/index.js";
 import type {
   AgentName,
@@ -146,7 +146,7 @@ function hasActiveProjectEntry(skills: readonly SkillConfig[], skillId: SkillId)
  * and a sub-agent's are independent decisions in a payload — a refusal naming only one kind
  * would send the sharer to change the wrong entry.
  */
-function projectScopedContent(result: WizardResultV2): {
+function projectScopedContent(result: InstallSelection): {
   skillIds: SkillId[];
   agentNames: AgentName[];
 } {
@@ -188,9 +188,8 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
-   * Blocks the command from launching in a terminal below
-   * {@link MIN_TERMINAL_SIZE}. This runs once, before Ink mounts; the terminal
-   * shrinking mid-session is caught by the matching guard in `WizardLayout`.
+   * Blocks the command from launching in a terminal below {@link MIN_TERMINAL_SIZE}. This runs
+   * once, before Ink mounts.
    */
   protected async ensureTerminalSize(): Promise<void> {
     if (isTerminalBigEnough()) return;
@@ -431,7 +430,7 @@ export abstract class BaseCommand extends Command {
    * Both configs this run would read are checked, because both are read on the way through: a
    * project's own `config.ts` and the global one every project write inlines. Checking up
    * front is the whole point — an unreadable GLOBAL config otherwise surfaced only at the
-   * config write, after the wizard had copied skills and installed plugins, as a warning that
+   * config write, after the install had copied skills and installed plugins, as a warning that
    * the write never happened.
    *
    * Every command that reads an installation's config calls it before anything else reads one:
@@ -454,18 +453,14 @@ export abstract class BaseCommand extends Command {
    * metadata.yaml describes no skill.
    *
    * One layer below {@link ensureConfigReadable} and for the same reason: the config parses,
-   * and a file it points at does not. Both wizards resolve their saved roster against the
-   * loaded catalogue, and an id nothing can be loaded for reaches no screen — so without this
-   * the entry is dropped and reported as a skill the marketplace no longer carries, which is a
-   * removal the user never asked for and a sentence blaming the wrong thing.
+   * and a file it points at does not.
    *
    * Only entries the catalogue does not carry are looked at, so a healthy install pays a
    * filesystem read for nothing. An entry whose files are simply GONE is not refused — there
-   * is no file to repair, so it is removed with a reason that says so
-   * (`unresolvedSkillRemovalReasons`).
+   * is no file to repair.
    *
-   * Runs before the wizard mounts, which is the whole point: past that, a refusal costs the
-   * user the session they had already spent, and everything this protects has been rewritten.
+   * Runs before anything is asked or written, which is the whole point: past that, everything
+   * this protects has been rewritten.
    */
   protected async ensureSavedSkillsReadable(
     savedSkills: readonly SkillConfig[],
@@ -506,17 +501,13 @@ export abstract class BaseCommand extends Command {
    * more on the destructive one — `edit --from` reaches the same contradiction through the other
    * door and can remove global entries on the way.
    *
-   * The interactive producer has always answered this for itself — `isHomeDirectory(projectDir)`
-   * reaches the wizard session as `isGlobalRoot` and the scope toggles are inert under it — so
-   * this puts both `--from` paths on the rule the wizard already follows.
-   *
    * It takes the DECODED selection, so it must run after the decode and can run no earlier: an
    * all-global configuration is exactly what a global installation is for, and only the decode
    * says which entries survived this catalogue and what scope each rests at. Every caller runs it
    * before it reports a skip and before it writes anything, so a run about to be refused neither
    * narrates nor mutates.
    */
-  protected refuseProjectScopedContentAtHome(result: WizardResultV2, projectDir: string): void {
+  protected refuseProjectScopedContentAtHome(result: InstallSelection, projectDir: string): void {
     if (!isHomeDirectory(projectDir)) return;
 
     const { skillIds, agentNames } = projectScopedContent(result);
@@ -554,7 +545,7 @@ export abstract class BaseCommand extends Command {
    * is: an invariant enforced on one producer and not the other is enforced nowhere.
    */
   protected async refuseSharedConfigBeforeAsking(
-    selection: WizardResultV2,
+    selection: InstallSelection,
     carried: ExternalSkillInstall[],
     root: string,
     sourceResult: SourceLoadResult,

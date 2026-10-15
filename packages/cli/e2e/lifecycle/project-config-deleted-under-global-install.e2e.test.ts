@@ -1,9 +1,10 @@
 import { mkdir, rm } from "fs/promises";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { CLI, type CLIResult } from "../fixtures/cli.js";
-import { createDualScopeEnv, type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { type DualScopeEnv } from "../fixtures/dual-scope-helpers.js";
+import { createDualScopeEnvFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   configTsPath,
   fileExists,
@@ -51,6 +52,7 @@ const CONFIG_RELATIVE = `${DIRS.SOURCE_CLAUDE}/${FILES.CONFIG_TS}`;
 const NEVER_CONFIGURED = "never-configured";
 
 describe("doctor's Config Valid row under a live global installation", () => {
+  let store: SeedConfigStore;
   let env: DualScopeEnv;
 
   let ownConfig: CLIResult;
@@ -61,7 +63,8 @@ describe("doctor's Config Valid row under a live global installation", () => {
   let deletedTreeAfter: Record<string, TreeSnapshotEntry>;
 
   beforeAll(async () => {
-    env = await createDualScopeEnv(E2E_SOURCE);
+    store = await startSeedConfigStore();
+    env = await createDualScopeEnvFromSeed(store);
     const { fakeHome, projectDir } = env;
     const asUser = { env: { HOME: fakeHome } };
 
@@ -85,6 +88,7 @@ describe("doctor's Config Valid row under a live global installation", () => {
 
   afterAll(async () => {
     await env.destroy();
+    await store.close();
   });
 
   it("labels a project's own config as this project's", () => {

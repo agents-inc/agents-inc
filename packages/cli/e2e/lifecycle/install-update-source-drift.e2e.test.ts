@@ -35,10 +35,9 @@ import {
  * must all be byte-identical across the update, and the one line the command prints about
  * them must say they are the user's.
  *
- * `init --from` rather than the wizard because it is the non-interactive way to reach a
- * real install; the install itself is the same code path either way. A real install
- * matters here even though nothing is compared any more: it is what makes the fixture an
- * ejected skill the CLI itself wrote and stamped, rather than a directory a spec planted.
+ * A real install matters here even though nothing is compared any more: it is what makes the
+ * fixture an ejected skill the CLI itself wrote and stamped, rather than a directory a spec
+ * planted.
  *
  * The source edit lands between the install and the update, and the marker it appends is
  * the proof-of-execution counterpart to the byte comparison — an update that quietly

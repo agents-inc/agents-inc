@@ -202,7 +202,7 @@ function toSeedAgent(agent: AgentScopeConfig): SeedAgent {
 }
 
 /**
- * The inverse of `seedToWizardResult`; anything the contract cannot state is refused by name.
+ * The inverse of `seedToInstallSelection`; anything the contract cannot state is refused by name.
  * `stackId` is always null: assignments carry the expansion, `description` the rest.
  */
 export function configToSeedPayload(

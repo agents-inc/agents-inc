@@ -18,7 +18,7 @@ import {
   writeProjectConfigIn,
 } from "../helpers/test-utils.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 

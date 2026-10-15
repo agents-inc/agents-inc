@@ -2,9 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import EventEmitter from "events";
 
 // The hook uses ink's useStdout, which is hard to test without the full ink
-// rendering environment. Instead, we test the core behavior through the
-// CategoryGrid integration (in category-grid.test.tsx) and verify the hook's
-// contract through a simplified mock test.
+// rendering environment, so its contract is verified through a simplified mock test.
 
 type MockStdout = EventEmitter & {
   columns: number | undefined;

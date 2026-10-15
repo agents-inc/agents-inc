@@ -4,9 +4,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT } from "../fixtures/expected-values.js";
 import { CLI } from "../fixtures/cli.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
+import { e2eStackPayload, installFromSeed } from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupTempDir,
-  completeWithLocalSources,
   configTsPath,
   configTypesTsPath,
   fileExists,
@@ -16,7 +18,6 @@ import {
   sourceFolderIn,
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
 import {
   TS_NOT_ASSIGNABLE,
   probeConfigTypesNarrowing,
@@ -31,7 +32,7 @@ import "../matchers/setup.js";
  * user actually made, because the ejected copy has to win over the source's own
  * template and the CLI's bundled partials at the same time.
  *
- * Both specs here start from nothing: a real `init` through the PTY builds the
+ * Both specs here start from nothing: a real `init --from` builds the
  * installation, and every later step is the real binary. The existing
  * template-precedence coverage all begins from a `ProjectBuilder`-written config,
  * which cannot show that the state is reachable.
@@ -56,36 +57,49 @@ const EJECTED_PARTIAL_CATEGORY = "developer";
 const GENERATED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
 describe("ejected customisations survive a recompile", () => {
-  let wizard: InitWizard | undefined;
-  let source: E2ESource | undefined;
+  let source: E2ESource;
+  let store: SeedConfigStore;
+  let env: TestEnvironment | undefined;
 
   beforeAll(async () => {
     source = await createE2ESource();
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    if (source) await cleanupTempDir(source.tempDir);
+    await store.close();
+    await cleanupTempDir(source.tempDir);
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
+    store.reset();
+    if (env) await cleanupTempDir(env.tempDir);
+    env = undefined;
   });
+
+  /**
+   * The E2E stack installed at the home directory, ejected. HOME === cwd, so the install, the
+   * ejected copy and the recompile all address one directory.
+   */
+  async function installAtHome(): Promise<string> {
+    env = await createTestEnvironment();
+    const home = env.fakeHome;
+    await installFromSeed(
+      store,
+      "EjectHome1",
+      e2eStackPayload(),
+      { dir: home, home },
+      source.sourceDir,
+    );
+    return home;
+  }
 
   it(
     "compiles every agent through an edited ejected template without touching the configuration",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // HOME === cwd, so the install, the ejected template and the recompile all
-      // address one directory — the shape a user ejecting templates is in.
-      wizard = await InitWizard.launchInGlobal({
-        ...(source !== undefined && { source }),
-      });
-      const installDir = wizard.globalHome;
-
-      const install = await completeWithLocalSources(wizard);
-      expect(await install.exitCode, `init failed:\n${install.output}`).toBe(EXIT_CODES.SUCCESS);
-      await install.destroy();
+      // The shape a user ejecting templates is in.
+      const installDir = await installAtHome();
 
       const beforeEject = await readCompiledAgents(installDir);
       expect(
@@ -158,14 +172,7 @@ describe("ejected customisations survive a recompile", () => {
     "compiles an agent through its edited ejected partial",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      wizard = await InitWizard.launchInGlobal({
-        ...(source !== undefined && { source }),
-      });
-      const installDir = wizard.globalHome;
-
-      const install = await completeWithLocalSources(wizard);
-      expect(await install.exitCode, `init failed:\n${install.output}`).toBe(EXIT_CODES.SUCCESS);
-      await install.destroy();
+      const installDir = await installAtHome();
 
       const agentName = E2E_AGENT["web-developer"].name;
       const configBefore = await readTestFile(configTsPath(installDir));

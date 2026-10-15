@@ -10,11 +10,11 @@ import { writeConfigFile } from "../../config-gate/propagate.js";
 import { deriveInstallMode } from "../../installation/installation";
 import {
   buildProjectConfig,
-  buildWizardResult,
+  buildInstallSelection,
   initMatrixAndSource,
 } from "../factories/config-factories.js";
 import { readTestTsConfig, writeTestTsConfig } from "../helpers/config-io.js";
-import { buildSkillConfigs } from "../helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../helpers/skill-config-builders.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { FULLSTACK_TRIO_MATRIX } from "../mock-data/mock-matrices";
 import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/create-test-source";
@@ -55,7 +55,7 @@ describe("Integration: Install Mode Persistence", () => {
   it("should persist skills with 'local' source in config after install", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const result = await writeProjectConfig({
-      wizardResult: buildWizardResult(skills, {
+      selection: buildInstallSelection(skills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -69,7 +69,7 @@ describe("Integration: Install Mode Persistence", () => {
   it("should persist skills with 'plugin' source in config after install", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const result = await writeProjectConfig({
-      wizardResult: buildWizardResult(skills, {
+      selection: buildInstallSelection(skills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -86,7 +86,7 @@ describe("Integration: Install Mode Persistence", () => {
       { id: VITEST_SKILL_ID, scope: "project", origin: "agents-inc" },
     ];
     const result = await writeProjectConfig({
-      wizardResult: buildWizardResult(skills, {
+      selection: buildInstallSelection(skills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -101,7 +101,7 @@ describe("Integration: Install Mode Persistence", () => {
     const skills = MIXED_SOURCE_SKILLS;
 
     const result = await writeProjectConfig({
-      wizardResult: buildWizardResult(skills, {
+      selection: buildInstallSelection(skills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -120,7 +120,7 @@ describe("Integration: Install Mode Persistence", () => {
   it("should have all skills as local when no explicit source set", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const result = await writeProjectConfig({
-      wizardResult: buildWizardResult(skills, {
+      selection: buildInstallSelection(skills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -139,7 +139,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
     // First install with "eject" sources
     const localSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const result1 = await writeProjectConfig({
-      wizardResult: buildWizardResult(localSkills, {
+      selection: buildInstallSelection(localSkills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -152,7 +152,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
     // Second install with "plugin" sources — config gets overwritten
     const pluginSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const result2 = await writeProjectConfig({
-      wizardResult: buildWizardResult(pluginSkills, {
+      selection: buildInstallSelection(pluginSkills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -167,7 +167,7 @@ describe("Integration: Install Mode Config Round-Trip", () => {
     const skills = MIXED_SOURCE_SKILLS;
 
     const result = await writeProjectConfig({
-      wizardResult: buildWizardResult(skills, {
+      selection: buildInstallSelection(skills, {
         selectedAgents: ["web-developer"],
       }),
       sourceResult,
@@ -185,11 +185,11 @@ describe("Integration: Install Mode Config Round-Trip", () => {
 describe("Integration: buildAndMergeConfig Install Mode", () => {
   it("should derive installMode from skills in merged config", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
-    const wizardResult = buildWizardResult(skills, {
+    const selection = buildInstallSelection(skills, {
       selectedAgents: ["web-developer"],
     });
 
-    const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, dirs.projectDir);
+    const mergeResult = await buildAndMergeConfig(selection, sourceResult, dirs.projectDir);
 
     expect(deriveInstallMode(mergeResult.config.skills)).toBe("plugin");
   });
@@ -197,11 +197,11 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
   it("should preserve per-skill source in merged config when non-uniform", async () => {
     const skills = MIXED_SOURCE_SKILLS;
 
-    const wizardResult = buildWizardResult(skills, {
+    const selection = buildInstallSelection(skills, {
       selectedAgents: ["web-developer"],
     });
 
-    const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, dirs.projectDir);
+    const mergeResult = await buildAndMergeConfig(selection, sourceResult, dirs.projectDir);
 
     const reactConfig = mergeResult.config.skills.find((s) => s.id === REACT_SKILL_ID);
     const honoConfig = mergeResult.config.skills.find((s) => s.id === HONO_SKILL_ID);
@@ -211,18 +211,18 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
 
   it("should have all-local skills in merged config when all sources are local", async () => {
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
-    const wizardResult = buildWizardResult(skills, {
+    const selection = buildInstallSelection(skills, {
       selectedAgents: ["web-developer"],
     });
 
-    const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, dirs.projectDir);
+    const mergeResult = await buildAndMergeConfig(selection, sourceResult, dirs.projectDir);
 
     for (const skill of mergeResult.config.skills) {
       expect(skill.origin).toBe("eject");
     }
   });
 
-  it("should merge with existing config preserving install mode from new wizard result", async () => {
+  it("should merge with existing config preserving install mode from a new selection", async () => {
     // Write initial config with "eject" source skills
     await writeTestTsConfig(
       dirs.projectDir,
@@ -231,15 +231,15 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
       }),
     );
 
-    // Build wizard result with "plugin" source skills
+    // Build a selection with "plugin" source skills
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
-    const wizardResult = buildWizardResult(skills, {
+    const selection = buildInstallSelection(skills, {
       selectedAgents: ["web-developer"],
     });
 
-    const mergeResult = await buildAndMergeConfig(wizardResult, sourceResult, dirs.projectDir);
+    const mergeResult = await buildAndMergeConfig(selection, sourceResult, dirs.projectDir);
 
-    // New wizard result's skills should take precedence
+    // The new selection's skills should take precedence
     expect(deriveInstallMode(mergeResult.config.skills)).toBe("plugin");
     expect(mergeResult.merged).toBe(true);
   });

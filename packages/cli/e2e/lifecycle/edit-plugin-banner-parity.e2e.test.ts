@@ -8,12 +8,16 @@ import {
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import {
   cleanupFixture,
   cleanupTempDir,
-  completeWithLocalSources,
+  createPermissionsFile,
   createTempDir,
   injectMarketplaceIntoConfig,
   isClaudeCLIAvailable,
@@ -47,15 +51,26 @@ const INSTALLED_PLUGIN_TOTAL = /Installed \d+ skill plugins?\b/;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
+/** The stack, every skill a plugin. */
+const PLUGIN_STACK_ID = "PlugStk5";
+
+/** The stack, every skill ejected. */
+const EJECT_STACK_ID = "EjctStk1";
+
 describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init does", () => {
   let fixture: E2EPluginSource;
+  let store: SeedConfigStore;
   let tempDir: string | undefined;
 
   beforeAll(async () => {
     fixture = await createE2EPluginSource();
+    store = await startSeedConfigStore();
+    store.publish(PLUGIN_STACK_ID, e2eStackPayload({ scope: "global", install: "plugin" }));
+    store.publish(EJECT_STACK_ID, e2eStackPayload({ scope: "global" }));
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(fixture);
   });
 
@@ -74,17 +89,18 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       // --- The reference: a plugin-mode init installing the same skill. ---
 
       const initDir = path.join(tempDir, "init-project");
-      const pluginInit = await InitWizard.launchInGlobal({
-        source: fixture,
-        projectDir: initDir,
-      });
-      const pluginInitResult = await pluginInit.completeWithDefaults();
-      await expectPhaseSuccess(pluginInitResult, {
-        skillIds: [E2E_SKILL.react.id],
-        origin: fixture.marketplaceName,
-      });
+      await createPermissionsFile(initDir);
+      const pluginInitResult = await runInitFrom(
+        store,
+        PLUGIN_STACK_ID,
+        { dir: initDir },
+        fixture.sourceDir,
+      );
+      await expectPhaseSuccess(
+        { project: { dir: initDir }, exitCode: pluginInitResult.exitCode },
+        { skillIds: [E2E_SKILL.react.id], origin: fixture.marketplaceName },
+      );
       const initOutput = pluginInitResult.output;
-      await pluginInitResult.destroy();
 
       expect(initOutput).toContain(STEP_TEXT.INSTALLING_PLUGINS_ELLIPSIS);
       expect(initOutput).toContain(STEP_TEXT.PLUGIN_NATIVE);
@@ -94,37 +110,29 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       // --- The subject: an edit performing that same install. ---
 
       const editDir = path.join(tempDir, "edit-project");
-      const ejectInit = await InitWizard.launchInGlobal({
-        source: fixture,
-        projectDir: editDir,
-      });
-      const ejectInitResult = await completeWithLocalSources(ejectInit);
-      await expectPhaseSuccess(ejectInitResult, {
-        skillIds: [E2E_SKILL.react.id],
-        origin: "eject",
-        copiedSkills: [E2E_SKILL.react.id],
-      });
-      await ejectInitResult.destroy();
+      await createPermissionsFile(editDir);
+      const ejectInitResult = await runInitFrom(
+        store,
+        EJECT_STACK_ID,
+        { dir: editDir },
+        fixture.sourceDir,
+      );
+      await expectPhaseSuccess(
+        { project: { dir: editDir }, exitCode: ejectInitResult.exitCode },
+        { skillIds: [E2E_SKILL.react.id], origin: "eject", copiedSkills: [E2E_SKILL.react.id] },
+      );
       await injectMarketplaceIntoConfig(editDir, fixture.marketplaceName);
 
-      const editWizard = await EditWizard.launchInGlobal({
-        projectDir: editDir,
-        source: fixture,
-      });
-      const editSources = await editWizard.build.passThroughAllDomains();
-      await editSources.setAllPlugin();
-      const editAgents = await editSources.advance();
-      const editConfirm = await editAgents.acceptDefaults("edit");
-      const editResult = await editConfirm.confirm();
+      const editResult = await applyEditFrom(store, PLUGIN_STACK_ID, { dir: editDir });
 
-      await expectPhaseSuccess(editResult, {
-        skillIds: [E2E_SKILL.react.id],
-        origin: fixture.marketplaceName,
-      });
-      const editOutput = editResult.rawOutput;
+      await expectPhaseSuccess(
+        { project: { dir: editDir }, exitCode: editResult.exitCode },
+        { skillIds: [E2E_SKILL.react.id], origin: fixture.marketplaceName },
+      );
+      const editOutput = editResult.output;
 
       // The install really happened, so the narration below describes real work.
-      await expect(editResult.project).toHavePlugin(reactPluginRef);
+      await expect({ dir: editDir }).toHavePlugin(reactPluginRef);
 
       expect(
         editOutput,
@@ -143,7 +151,6 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       );
 
       expect(editOutput).not.toContain("Failed to install plugin");
-      await editResult.destroy();
     },
   );
 });

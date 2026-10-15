@@ -3,14 +3,14 @@ import { SEED_VERSION, installableSeedPayloadSchema } from "@workspace/matrix/se
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configToSeedPayload } from "./config-to-seed";
-import { seedToWizardResult } from "./seed-to-wizard";
+import { seedToInstallSelection } from "./seed-to-selection";
 import { isScopePairCompatible } from "../configuration/config-generator";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories.js";
 import { buildSeedExternalSkill } from "../__tests__/factories/seed-factories.js";
 import { sa, saUnflagged } from "../__tests__/factories/skill-factories.js";
-import { buildSkillConfig } from "../__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfig } from "../__tests__/helpers/skill-config-builders.js";
 import { REACT_HONO_WEB_API_DOMAINS_MATRIX } from "../__tests__/mock-data/mock-matrices.js";
 import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants.js";
 import { SKILLS } from "../__tests__/test-fixtures.js";
@@ -24,7 +24,7 @@ vi.mock("../configuration/config-generator", async (importOriginal) => {
 });
 
 /**
- * The inverse of `seed-to-wizard.ts`. A minted payload must decode to the same install, and what
+ * The inverse of `seed-to-selection.ts`. A minted payload must decode to the same install, and what
  * the wire cannot say must be refused by name rather than shared thinner.
  */
 
@@ -70,7 +70,7 @@ describe("configToSeedPayload", () => {
         },
       });
 
-      const { result } = seedToWizardResult(
+      const { result } = seedToInstallSelection(
         configToSeedPayload(config, CARRIES_NOTHING),
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
       );
@@ -94,7 +94,7 @@ describe("configToSeedPayload", () => {
       });
 
       const payload = configToSeedPayload(config, CARRIES_NOTHING);
-      const { result } = seedToWizardResult(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX);
+      const { result } = seedToInstallSelection(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX);
 
       expect(payload.agents[WEB_DEV]).toStrictEqual({
         on: true,
@@ -116,7 +116,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
       });
 
-      const { result } = seedToWizardResult(
+      const { result } = seedToInstallSelection(
         configToSeedPayload(config, CARRIES_NOTHING),
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
       );
@@ -133,7 +133,7 @@ describe("configToSeedPayload", () => {
         stack: { [WEB_DEV]: { [REACT_CATEGORY]: [saUnflagged(SKILLS.react.id)] } },
       });
 
-      const { result } = seedToWizardResult(
+      const { result } = seedToInstallSelection(
         configToSeedPayload(config, CARRIES_NOTHING),
         REACT_HONO_WEB_API_DOMAINS_MATRIX,
       );

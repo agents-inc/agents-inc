@@ -6,14 +6,15 @@ import {
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
+import { TIMEOUTS } from "../pages/constants.js";
+import { createTestEnvironment, readAllSkillEntries } from "../fixtures/dual-scope-helpers.js";
 import {
-  createTestEnvironment,
-  initGlobal,
-  initProject,
-  readAllSkillEntries,
-} from "../fixtures/dual-scope-helpers.js";
+  DUAL_SCOPE,
+  applyFromSeed,
+  e2eStackPayload,
+  installFromSeed,
+} from "../fixtures/e2e-stack-seed.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import {
   cleanupFixture,
   cleanupTempDir,
@@ -28,21 +29,15 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
  * A source switch driven from a PROJECT context, applied to skills that live at
  * GLOBAL scope.
  *
- * `cc edit` resolves migration paths per-skill from each skill's own scope, so a
+ * `edit --from` resolves migration paths per-skill from each skill's own scope, so a
  * plugin -> eject switch on a global-scoped skill copies the skill under $HOME and
  * uninstalls its user-scope plugin registration. The config write, however, runs
  * with project authority ("owned"), under which an inherited global-active entry is
  * out of scope and preserved verbatim. Whatever the product decides — refuse the
  * switch for global-scoped skills (matching the existing project-scope guard) or
- * record it — the recorded source and the on-disk install mode must not diverge.
- *
- * The product has since decided: it REFUSES. The Sources step's bulk set-all keys are
- * withdrawn, `setAllLocal` walks the rows one at a time, and an inherited global install
- * renders as a locked row that the walk skips and `setInstallMode` would refuse anyway. So
- * react is expected to come out of Phase C exactly as it went in, and the divergence assertion
- * below has become a CONTAINMENT invariant: it can only break if something reaches the global
- * entry from here again. What keeps it from being vacuous is hono — the project-owned half the
- * walk genuinely does switch, asserted first, which proves the source-switch path fired at all.
+ * record it — the recorded source and the on-disk install mode must not diverge. What keeps
+ * the check from being vacuous is hono — the project-owned half the run genuinely does switch,
+ * asserted first, which proves the source-switch path fired at all.
  */
 
 const REACT_ID = E2E_SKILL.react.id;
@@ -52,20 +47,20 @@ const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("project-context source switch on global-scoped skills", () => {
   let pluginSource: E2EPluginSource;
-  let wizard: EditWizard | undefined;
+  let store: SeedConfigStore;
   let currentTempDir: string | undefined;
 
   beforeAll(async () => {
     pluginSource = await createE2EPluginSource();
+    store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP_DUAL);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(pluginSource);
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     if (currentTempDir) {
       await cleanupTempDir(currentTempDir);
       currentTempDir = undefined;
@@ -85,13 +80,24 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
 
       // Phase A: init at HOME against the plugin marketplace — every skill is
       // global-scoped and plugin-sourced.
-      const phaseA = await initGlobal(pluginSource, fakeHome);
-      expect(phaseA.exitCode, `Phase A init failed: ${phaseA.output}`).toBe(EXIT_CODES.SUCCESS);
+      await installFromSeed(
+        store,
+        "Plugins1",
+        e2eStackPayload({ install: "plugin" }),
+        { dir: fakeHome, home: fakeHome },
+        pluginSource.sourceDir,
+      );
 
       // Phase B: establish a real project installation. hono moves G->P; sources stay
       // plugin, so no source switch has happened yet.
-      const phaseB = await initProject(pluginSource, fakeHome, projectDir, { setLocal: false });
-      expect(phaseB.exitCode, `Phase B init failed: ${phaseB.output}`).toBe(EXIT_CODES.SUCCESS);
+      const project = { dir: projectDir, home: fakeHome };
+      await installFromSeed(
+        store,
+        "Plugins2",
+        e2eStackPayload({ ...DUAL_SCOPE, install: "plugin" }),
+        project,
+        pluginSource.sourceDir,
+      );
 
       // Pre-state: react is global, plugin-sourced, registered at user scope, and
       // has no ejected copy under $HOME.
@@ -100,7 +106,7 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       );
       expect(reactBefore, "global config must carry an active global react entry").toBeDefined();
       if (!reactBefore) return;
-      // The label the wizard records for the marketplace source (distinct from the
+      // The label recorded for the marketplace source (distinct from the
       // marketplace.json name used to build plugin refs).
       const pluginSourceLabel = reactBefore.origin;
       expect(pluginSourceLabel, "react must start plugin-sourced").not.toBe(EJECT_SOURCE);
@@ -110,23 +116,8 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       ).toBe(false);
       await expect({ dir: fakeHome }).toHavePluginInRegistry(reactPluginRef, "user");
 
-      // Phase C: from the PROJECT directory, switch every EDITABLE source to local.
-      wizard = await EditWizard.launch({
-        projectDir,
-        source: pluginSource,
-        env: { HOME: fakeHome },
-        ...TERMINAL_SIZE.TALL,
-      });
-
-      const sources = await wizard.build.passThroughAllDomains();
-      await sources.waitForReady();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
-
-      expect(await result.exitCode, result.rawOutput).toBe(EXIT_CODES.SUCCESS);
-      await result.destroy();
+      // Phase C: from the PROJECT directory, every source local.
+      await applyFromSeed(store, "Ejected1", e2eStackPayload(DUAL_SCOPE), project);
 
       // Proof the source-switch path fired: the PROJECT-scoped skill, which the
       // project genuinely owns, records eject and has its copied directory.

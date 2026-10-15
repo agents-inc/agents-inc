@@ -120,8 +120,7 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
    * What a module does with the sub-agent definitions it loads. The four are exhaustive over the
    * roster below, and the distinction that matters is the first two against the last two: a
    * roster that reaches `config-types.ts` decides a literal union a user's hand-written `config.ts`
-   * is checked against, and a roster that reaches only a compile pass or the wizard's grouping
-   * decides no type at all.
+   * is checked against, and any other roster decides no type at all.
    */
   type UnionPosture =
     /** `loadAgentDefs` itself — the single definition of "which sub-agents exist". */
@@ -185,11 +184,6 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
       why: "Declares `loadAllAgents` / `loadMergedAgents` / `loadProjectAgents`. It reads metadata off a directory it is handed and chooses nothing.",
     },
     {
-      file: "src/cli/lib/loading/source-loader.ts",
-      posture: "not the union",
-      why: "Reads the `domain:` field off a source's agent metadata into `matrix.agentDefinedDomains`, which groups rows on the wizard's agents step. No name from here reaches config-types.ts.",
-    },
-    {
       file: "src/cli/lib/operations/index.ts",
       posture: "re-export only",
       why: "The operations barrel.",
@@ -212,7 +206,7 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
     {
       file: "src/cli/lib/operations/project/write-project-config.ts",
       posture: "derives from the one function",
-      why: "The `agents` it hands `writeScopedFromWizard` becomes the config-types roster for `init` and for `init --from`. It loaded CLI ∪ marketplace until 2026-08-21, which is the half of the defect a user could actually reach.",
+      why: "The `agents` it hands `writeScopedFromWizard` becomes the config-types roster for `init --from`. It loaded CLI ∪ marketplace until 2026-08-21, which is the half of the defect a user could actually reach.",
     },
   ] as const satisfies readonly AgentDefReader[];
 

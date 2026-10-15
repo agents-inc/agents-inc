@@ -199,8 +199,8 @@ async function writeMarketplaceStacks(marketplaceDir: string): Promise<void> {
   });
 }
 
-/** A skill's short wizard label, distinct from its SKILL.md description on purpose. */
-const WIZARD_LABEL = "Short wizard label";
+/** A skill's short `cliDescription` label, distinct from its SKILL.md description on purpose. */
+const SHORT_LABEL = "Short label";
 
 describe("build:marketplace catalog emission", () => {
   let projectDir: string;
@@ -275,22 +275,22 @@ describe("build:marketplace catalog emission", () => {
     });
 
     /**
-     * CLI-898: the editor's preview drew each skill's `description` — the wizard's short
+     * CLI-898: the editor's preview drew each skill's `description` — the short
      * `cliDescription` — into the activation table, where the install writes the SKILL.md
      * description. The catalogue carries both, so the preview can draw the one the install does.
      */
-    it("carries the SKILL.md description beside the wizard's short label", async () => {
+    it("carries the SKILL.md description beside the short label", async () => {
       const skill = marketplaceSkill();
       await appendFile(
         path.join(projectDir, SKILLS_DIR_PATH, skill.id, STANDARD_FILES.METADATA_YAML),
-        `cliDescription: ${WIZARD_LABEL}\n`,
+        `cliDescription: ${SHORT_LABEL}\n`,
       );
 
       await runCliCommand(["build:marketplace"]);
 
       const catalog = await readTestJson<Matrix>(catalogPath);
       expect(catalog.skills[MARKETPLACE_SKILL_ID]).toMatchObject({
-        description: WIZARD_LABEL,
+        description: SHORT_LABEL,
         activationDescription: skill.description,
       });
     });

@@ -2,7 +2,9 @@ import path from "path";
 import { chmod, rm } from "fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { ProjectBuilder } from "../fixtures/project-builder.js";
-import { E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import { E2E_AGENT, E2E_AGENTS, E2E_SKILL } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import {
   cleanupFixture,
@@ -15,9 +17,11 @@ import {
 } from "../helpers/test-utils.js";
 import { foundByName } from "../helpers/found-by-name.js";
 import { pathHoldingOnly } from "../helpers/path-holding-only.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import type { WizardResult } from "../pages/wizard-result.js";
 import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import "../matchers/setup.js";
 
 /**
@@ -75,9 +79,12 @@ const WRITABLE_DIR = 0o755;
 /** The binary `claudePluginUninstall` spawns by name, which the case below must not find. */
 const CLAUDE_BINARY = "claude";
 
+/** The installation's own configuration with its one skill ejected rather than a plugin. */
+const REACT_EJECTED_ID = "EjctFal1";
+
 describe("an eject migration that could not do its work must not report success", () => {
   let source: E2ESource;
-  let wizard: EditWizard | undefined;
+  let store: SeedConfigStore;
   let lockedDirs: string[] = [];
   /** Holds the directory `node` is linked into, outside every project. */
   let nodeLinkRoot: string;
@@ -94,19 +101,32 @@ describe("an eject migration that could not do its work must not report success"
 
   beforeAll(async () => {
     source = await createE2ESource();
+    store = await startSeedConfigStore();
+    store.publish(
+      REACT_EJECTED_ID,
+      buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "project",
+            assignments: { [E2E_AGENT["web-developer"].name]: "lazy" },
+          }),
+        },
+        agents: { [E2E_AGENT["web-developer"].name]: { scope: "project" } },
+      }),
+    );
     nodeLinkRoot = await createTempDir();
     const nodeAlone = await pathHoldingOnly({ root: nodeLinkRoot }, ["node"]);
     pathWithoutClaude = [nodeAlone, "/usr/bin", "/bin"].join(path.delimiter);
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
+    await store.close();
     await cleanupFixture(source);
     await cleanupTempDir(nodeLinkRoot);
   });
 
   afterEach(async () => {
-    await wizard?.destroy();
-    wizard = undefined;
     for (const dir of lockedDirs) {
       await chmod(dir, WRITABLE_DIR);
     }
@@ -126,14 +146,16 @@ describe("an eject migration that could not do its work must not report success"
     return project;
   }
 
-  /** Drives the Sources step to switch every editable row to a local copy, then saves. */
-  async function switchAllToLocalExpectingExit(projectDir: string): Promise<WizardResult> {
-    wizard = await EditWizard.launch({ projectDir, source });
-    const sources = await wizard.build.advanceToSources();
-    await sources.setAllLocal();
-    const agents = await sources.advance();
-    const confirm = await agents.acceptDefaults("edit");
-    return confirm.confirmExpectingExit();
+  /**
+   * Applies the configuration that ejects the installation's one skill, under a HOME of its own
+   * — the project's parent, which holds no installation — so the run is a project one.
+   */
+  function switchToLocal(
+    project: { dir: string },
+    env?: Record<string, string>,
+  ): Promise<{ exitCode: number; output: string }> {
+    const site = { dir: project.dir, globalHome: path.dirname(project.dir) };
+    return applyEditFrom(store, REACT_EJECTED_ID, site, env);
   }
 
   it(
@@ -148,9 +170,9 @@ describe("an eject migration that could not do its work must not report success"
       await chmod(destination, READ_ONLY_DIR);
       lockedDirs.push(destination);
 
-      const result = await switchAllToLocalExpectingExit(project.dir);
+      const result = await switchToLocal(project);
 
-      expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.ERROR);
 
       const output = result.output;
       expect(output).toContain("Eject intent could not be honored");
@@ -158,12 +180,12 @@ describe("an eject migration that could not do its work must not report success"
 
       // The half an exit-code-only assertion cannot see: a fix that errors but still lets
       // the write happen leaves config.ts claiming a local copy that is not on disk.
-      await expect(result.project).toHaveConfig({
+      await expect(project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
         origin: E2E_MARKETPLACE_NAME,
       });
       expect(await readTestFile(configPath)).toStrictEqual(configBefore);
-      await expect(result.project).not.toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect(project).not.toHaveSkillCopied(E2E_SKILL.react.id);
     },
   );
 
@@ -178,14 +200,14 @@ describe("an eject migration that could not do its work must not report success"
       await chmod(configDir, READ_ONLY_DIR);
       lockedDirs.push(configDir, configTsPath(project.dir));
 
-      const result = await switchAllToLocalExpectingExit(project.dir);
+      const result = await switchToLocal(project);
 
-      expect(await result.exitCode).toBe(EXIT_CODES.ERROR);
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.ERROR);
       expect(result.output).toContain("Could not update config");
 
       // Proof of execution: the migration itself succeeded, so the run reached the config
       // write rather than failing earlier for the reason the first test covers.
-      await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect(project).toHaveSkillCopied(E2E_SKILL.react.id);
     },
   );
 
@@ -199,19 +221,10 @@ describe("an eject migration that could not do its work must not report success"
         "the PATH this edit is handed finds a claude, so its uninstall can fail for a reason other than a missing binary",
       ).toBe("");
 
-      wizard = await EditWizard.launch({
-        projectDir: project.dir,
-        source,
-        env: { PATH: pathWithoutClaude },
-      });
-      const sources = await wizard.build.advanceToSources();
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const result = await confirm.confirm();
+      const result = await switchToLocal(project, { PATH: pathWithoutClaude });
 
       // The copy is the work; the uninstall is diagnostic-only, so the run still succeeds.
-      expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
+      expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       const output = result.output;
       // The subject guard for the negative below: the copy pass ran and reported its count,
@@ -223,8 +236,8 @@ describe("an eject migration that could not do its work must not report success"
       expect(output).toContain(E2E_SKILL.react.id);
       expect(output).not.toContain("Could not copy skills for eject");
 
-      await expect(result.project).toHaveSkillCopied(E2E_SKILL.react.id);
-      await expect(result.project).toHaveConfig({
+      await expect(project).toHaveSkillCopied(E2E_SKILL.react.id);
+      await expect(project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
         origin: "eject",
       });

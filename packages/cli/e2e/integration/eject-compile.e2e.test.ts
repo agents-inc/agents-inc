@@ -30,7 +30,7 @@ import {
   buildAgentConfigs,
   buildProjectConfig,
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /** Local skills this spec writes itself, so their ids are its own rather than the catalogue's. */
 const E2E_FIRST_SKILL = "web-testing-e2e-first";

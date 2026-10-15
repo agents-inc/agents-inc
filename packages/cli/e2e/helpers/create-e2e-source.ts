@@ -33,16 +33,7 @@ import {
  *
  * **Reach for {@link E2E_SOURCE}, and build nothing.** It is the shared built tree, written once
  * per run by `globalSetup` and frozen, and it is what a spec wants unless its subject is the
- * source itself:
- *
- *   `InitWizard.launch()`                  — the default, so nothing is named at all
- *   `EditWizard.launch({ projectDir, source: E2E_SOURCE })` — named, because `edit` RECORDS it
- *
- * `edit` takes no `--marketplace`, so its launcher writes the source into the install's config
- * before the wizard starts, and `recordInstallSource` refuses an install that has no config yet.
- * A default there would turn "this project has nothing to edit" into a throw from a fixture
- * helper, so the source stays explicit on that side. `init` names its source on the command line
- * and defaults cleanly.
+ * source itself.
  *
  * Build your own only when the shared tree is not the source under test:
  *
@@ -73,10 +64,7 @@ import {
  */
 export { e2eSkillId };
 
-/**
- * Display title written into each E2E source agent's metadata.yaml, and
- * therefore the text the wizard's agents step renders for that agent.
- */
+/** Display title written into each E2E source agent's metadata.yaml. */
 export const E2E_AGENT_TITLES = {
   "web-developer": "Web Developer",
   "api-developer": "API Developer",
@@ -104,7 +92,7 @@ type E2ESkill = {
  * fixture ships.
  *
  * Everything else about these skills is read off this array: the ids
- * (`E2E_SKILL_IDS`), the titles the wizard renders (`E2E_SKILL_TITLES` is keyed by
+ * (`E2E_SKILL_IDS`), the titles the CLI renders (`E2E_SKILL_TITLES` is keyed by
  * its slugs and must cover them exactly), and the directories `writeSkills`
  * creates. It is `as const` so those derivations keep the literal SLUGS; the ids
  * are composed at runtime by {@link e2eSkillId} and are `string` either way.
@@ -214,7 +202,7 @@ export const E2E_SKILL_IDS: readonly string[] = E2E_SKILLS.map((skill) => skill.
 
 /**
  * Display title written into each E2E source skill's metadata.yaml, and
- * therefore the text the wizard renders for that skill.
+ * therefore the text the CLI renders for that skill.
  *
  * Single source of truth: assertions that match on rendered skill text should
  * key off this instead of re-typing the strings.
@@ -230,22 +218,15 @@ export const E2E_SKILL_IDS: readonly string[] = E2E_SKILLS.map((skill) => skill.
  * preference: an id is namespaced at runtime, so it is no longer a literal type
  * and cannot key anything exhaustively. The second is that a marketplace rename
  * moves every id and no slug, so a slug-keyed map is one this file never has to
- * revisit. The VALUES are not derived from ids at all — the build grid sorts by
- * display name, so a title that tracked its id would relocate every cursor target
- * the moment ids change.
+ * revisit.
  *
  * **A title must be neither an id nor a public-catalogue display name**, and five
  * of these were both until 2026-08-19: `react` read `"web-framework-react"`, a
  * verbatim catalogue id AND a strict substring of the fixture id
- * `e2e-test-fixture-web-framework-react` that the wizard paints beside it — so the
+ * `e2e-test-fixture-web-framework-react` rendered beside it — so the
  * 234 `toContain(display)` assertions across the suite were answered by the id
- * being rendered and proved nothing about the title. The bare catalogue names
- * ("React", "Vitest", …) are the other trap: a spec that installs a fixture skill
- * and opens the wizard against the DEFAULT source renders both catalogues at once,
- * and two cells sharing a label make `focusSkill` pick whichever comes first. The
- * `E2E ` prefix is what the fixture's own stack already does ({@link E2E_STACK_NAME}
- * is "E2E Test Stack"). `CLI Reviewing` and `Visual Regression` are still verbatim
- * catalogue titles and are the remaining hazard of that second kind.
+ * being rendered and proved nothing about the title. The `E2E ` prefix is what the
+ * fixture's own stack already does ({@link E2E_STACK_NAME} is "E2E Test Stack").
  */
 export const E2E_SKILL_TITLES = {
   react: "E2E React",
@@ -286,15 +267,8 @@ const apiDeveloperAgentConfig: FixtureStackAgentConfig = {
   "meta-reviewing": [createMockSkillAssignment(e2eSkillId("meta-reviewing-reviewing"))],
 };
 
-/**
- * Display name written into the E2E source's `config/stacks.ts`, and therefore
- * the text the wizard renders for it — in the stack list, in the confirm step's
- * "Ready to install <stack>" dropdown, and in the summary panel's Stack row.
- *
- * Single source of truth: assertions matching on rendered stack text should key
- * off this instead of re-typing the string.
- */
-export const E2E_STACK_NAME = "E2E Test Stack";
+/** Display name written into the E2E source's `config/stacks.ts`. */
+const E2E_STACK_NAME = "E2E Test Stack";
 
 /**
  * Stack id and description as written into the source's `config/stacks.ts`.
@@ -305,17 +279,6 @@ export const E2E_STACK_NAME = "E2E Test Stack";
  */
 export const E2E_STACK_ID = "e2e-test-stack";
 export const E2E_STACK_DESCRIPTION = "Minimal stack for E2E testing";
-
-/**
- * A sub-agent name the CLI does not declare, for the source
- * {@link E2ESourceOptions.withUndeclaredStackAgent} writes.
- *
- * Deliberately plausible rather than obviously junk — a marketplace author's mistake looks like
- * a sub-agent, which is what makes the name reach `config/stacks.ts` in the first place. It is
- * not a member of `AgentName`, so it is written as the `string` a hand-authored stacks file
- * actually holds and never cast into the union.
- */
-export const UNDECLARED_STACK_AGENT = "frontend-dev";
 
 /**
  * `Stack` with its agents' assignments widened, for the reason {@link E2ESkill.id}
@@ -373,8 +336,7 @@ type E2ESourceOptions = {
    * This is the ONLY way a source built here says anything about unresolved slugs.
    * The CLI's built-in rules are narrowed to the slugs a source ships before they
    * are applied (`relationshipsForSource` in `lib/loading/source-loader.ts`), so a
-   * plain `createE2ESource()` warns about nothing — it used to warn 2384 times, and
-   * the wizard's startup band painted three of them over every frame in this suite.
+   * plain `createE2ESource()` warns about nothing — it used to warn 2384 times.
    *
    * A spec that needs an unresolved-slug warning therefore names its own dangling
    * slug here, deliberately and in ones, rather than inheriting thousands.
@@ -393,20 +355,9 @@ type E2ESourceOptions = {
    * Write no `config/stacks.ts` at all — a marketplace that ships no stacks.
    *
    * The CLI's built-in stacks stand in only for the default public marketplace,
-   * so a source created this way offers the wizard nothing to choose between on
-   * its stack step and the wizard skips that step entirely.
+   * so a source created this way offers no stacks at all.
    */
   withoutStacks?: boolean;
-  /**
-   * Write `config/stacks.ts` with one extra sub-agent the CLI does not declare
-   * ({@link UNDECLARED_STACK_AGENT}) beside the real ones.
-   *
-   * A marketplace's stacks file is authored by hand and nothing narrows its agent keys, so this
-   * is the shape an author's typo takes on disk. The declared sub-agents are left in place
-   * because the claim under test is a DROP: a source whose stack named only the unknown one
-   * could not tell a narrowing apart from a load that failed.
-   */
-  withUndeclaredStackAgent?: boolean;
   /**
    * Leave the tree as a marketplace author's checkout stands before `build plugins` and
    * `build marketplace`: no `.claude-plugin/marketplace.json`, no `dist/plugins/`, no
@@ -431,7 +382,7 @@ export type E2ESource = {
 };
 
 /**
- * Creates a complete skills source directory for E2E init wizard tests.
+ * Creates a complete skills source directory for E2E tests.
  *
  * Includes skills, agents, stacks, and the minimal matrix/template structure
  * needed for the full init -> compile pipeline to succeed.
@@ -445,11 +396,7 @@ export type E2ESource = {
  * written to the source with those relationship rules. This enables E2E testing
  * of slug-based relationship resolution via `cc validate` and `cc info`.
  *
- * When `options.withoutStacks` is set, the stacks file is omitted — see the
- * option's own note for what a stackless marketplace makes the wizard do.
- *
- * When `options.withUndeclaredStackAgent` is set, the stack names one sub-agent the CLI does
- * not declare beside its real ones — see that option's note.
+ * When `options.withoutStacks` is set, the stacks file is omitted.
  *
  * When `options.withoutSkills` names skills, they are not written at all — see
  * that option's note for the pair of sources it exists to produce.
@@ -473,7 +420,7 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
     E2E_SKILLS.filter((skill) => !omitted.has(skill.id)),
   );
   if (!options?.withoutStacks) {
-    await writeStacks(sourceDir, options?.withUndeclaredStackAgent === true);
+    await writeStacks(sourceDir);
   }
   await writeAgents(sourceDir);
 
@@ -497,7 +444,7 @@ export async function createE2ESource(options?: E2ESourceOptions): Promise<E2ESo
  */
 async function writeE2ESourceInto(sourceDir: string): Promise<void> {
   await writeSkills(sourceDir, E2E_SKILLS);
-  await writeStacks(sourceDir, false);
+  await writeStacks(sourceDir);
   await writeAgents(sourceDir);
 }
 
@@ -556,9 +503,7 @@ const SHARED_PLAIN_SEGMENT = "plain";
  *
  * **It is a built marketplace, published under {@link E2E_MARKETPLACE_NAME}**, because a custom
  * marketplace with no valid `.claude-plugin/marketplace.json` is refused by every command that
- * loads it. The wizard therefore offers its rows as Plugin installs from that marketplace, and a
- * spec whose subject is an eject install still says so (`setAllLocal`, `completeWithLocalSources`).
- * `createE2EPluginSource()` is the same tree at its own path, described with its name and
+ * loads it. `createE2EPluginSource()` is the same tree at its own path, described with its name and
  * `dist/plugins/` for a spec whose subject is plugin install.
  *
  * Frozen, so a spec that writes into it fails at the write rather than corrupting whatever runs
@@ -603,16 +548,10 @@ async function writeSkills(sourceDir: string, skills: readonly E2ESkillEntry[]):
   }
 }
 
-async function writeStacks(sourceDir: string, withUndeclaredAgent: boolean): Promise<void> {
+async function writeStacks(sourceDir: string): Promise<void> {
   const stacksFilePath = path.join(sourceDir, STACKS_FILE_PATH);
   await mkdir(path.dirname(stacksFilePath), { recursive: true });
-  const stack = withUndeclaredAgent
-    ? {
-        ...E2E_STACK,
-        agents: { ...E2E_STACK.agents, [UNDECLARED_STACK_AGENT]: webDeveloperAgentConfig },
-      }
-    : E2E_STACK;
-  await writeFile(stacksFilePath, renderConfigTs({ stacks: [stack] }));
+  await writeFile(stacksFilePath, renderConfigTs({ stacks: [E2E_STACK] }));
 }
 
 async function writeSkillRules(

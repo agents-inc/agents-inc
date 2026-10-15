@@ -66,8 +66,8 @@ const ROSTER_HELD_AGAINST_A_NAMESPACE = [
 
 /**
  * The other derivation this repository uses: a filesystem walk reached through a local function,
- * as `page-object-space-presses.test.ts` and `config-types-agent-defs-agree.test.ts` both do. A
- * reader that only looked INSIDE the `expect` would condemn every one of them.
+ * as `config-types-agent-defs-agree.test.ts` does. A reader that only looked INSIDE the `expect`
+ * would condemn it.
  */
 const ROSTER_HELD_AGAINST_A_WALK_THROUGH_A_LOCAL = [
   PRODUCT_IMPORT,

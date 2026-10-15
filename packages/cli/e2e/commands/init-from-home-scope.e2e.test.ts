@@ -24,7 +24,7 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-simulation.js";
+import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
  * A global installation holds only global-scoped content, and `init --from` is the one producer
@@ -36,10 +36,6 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/wizard-si
  * label that contradicts the file it is in. Nothing downstream can notice: `toClaudePluginScope`
  * maps the DECLARED scope, so what the boundary lets through becomes the truth, and a plugin skill
  * is registered against `$HOME` as a project rather than for the user.
- *
- * The interactive producer has always answered this question — `init.tsx` computes
- * `isHomeDirectory(projectDir)` and the wizard's scope toggles are inert under it — so the refusal
- * here is what puts the two producers back on the same rule rather than a new one.
  *
  * Two things this must NOT do, and each has its own spec: refuse an all-global payload at home (the
  * case the invariant exists to protect), and refuse a project-scoped payload anywhere else (project

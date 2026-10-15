@@ -1,12 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { expectFourSurfaces } from "../assertions/four-surfaces.js";
-import { finishWizard, readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
+import { readConfigSkillIds } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
+import {
+  runInitFrom,
+  startSeedConfigStore,
+  type SeedConfigStore,
+} from "../fixtures/seed-config-store.js";
+import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import {
   cleanupTempDir,
-  completeWithLocalSources,
   configTypesTsPath,
+  createPermissionsFile,
   createTempDir,
   listFiles,
   loadConfigOrFail,
@@ -15,9 +21,8 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, TERMINAL_SIZE, TIMEOUTS } from "../pages/constants.js";
-import { EditWizard } from "../pages/wizards/edit-wizard.js";
-import { InitWizard } from "../pages/wizards/init-wizard.js";
+import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { buildSeedSkill } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 
 /**
@@ -26,16 +31,16 @@ import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generate
  * wrote (`ProjectBuilder.editable`, or `buildProjectConfig` +
  * `writeProjectConfig`), so what they curate is a stack nothing installed.
  *
- * Here the stack arrives the way a user's does — picked at the stack step of a
- * real `init` — and is then curated by a real `edit` in one pass that does both
- * halves the journey names:
+ * Here the stack arrives the way a user's does — a configuration naming it,
+ * installed by a real `init --from` — and is then curated by a real `edit --from`
+ * of the configuration the editor hands back, in one pass that does both halves
+ * the journey names:
  *
- *   - DESELECT a skill the stack chose (`web-testing-vitest`, the stack's own
- *     pick for the `web-testing` category, and not preloaded — a preloaded skill
- *     is locked to its sub-agent and cannot be deselected on its own).
- *   - SELECT one the stack did not (`web-testing-visual-regression`, the
- *     fixture's spare: it is assigned to no agent by the stack, so picking it is
- *     a genuine addition rather than a re-selection).
+ *   - DROP a skill the stack chose (`web-testing-vitest`, the stack's own pick
+ *     for the `web-testing` category).
+ *   - ADD one the stack did not (`web-testing-visual-regression`, the fixture's
+ *     spare: it is assigned to no agent by the stack, so adding it is a genuine
+ *     addition rather than a re-selection).
  *
  * Both land in the same category, so the stack entry the curation leaves behind
  * is the discriminating one — a `web-testing` list still naming vitest, or
@@ -47,10 +52,10 @@ import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generate
  * gains or loses a skill cannot leave this spec agreeing with itself.
  */
 
-/** The stack's own pick for `web-testing`, deselected by the edit. */
+/** The stack's own pick for `web-testing`, dropped by the edit. */
 const DESELECTED_STACK_SKILL = E2E_SKILL.vitest;
 
-/** The fixture's spare, in the same category, selected by the same edit. */
+/** The fixture's spare, in the same category, added by the same edit. */
 const SELECTED_NON_STACK_SKILL = E2E_SKILL["visual-regression"];
 
 /** The sub-agent whose `web-testing` assignment both halves of the curation move. */
@@ -69,7 +74,27 @@ const CURATED_SKILL_IDS = [
 
 const SKILL_ID_ALIAS = "SkillId";
 
+/** The stack, ejected into the global installation. */
+const STACK_PAYLOAD = e2eStackPayload({ scope: "global" });
+const STACK_ID = "Curate01";
+
+/** The stack as the editor hands it back curated: its `web-testing` pick swapped for the spare. */
+const CURATED_ID = "Curate02";
+const CURATED_BASE = e2eStackPayload({ scope: "global", without: [DESELECTED_STACK_SKILL.id] });
+const CURATED_PAYLOAD = {
+  ...CURATED_BASE,
+  skills: {
+    ...CURATED_BASE.skills,
+    [SELECTED_NON_STACK_SKILL.id]: buildSeedSkill({
+      install: "eject",
+      scope: "global",
+      assignments: { [CURATED_AGENT.name]: "lazy" },
+    }),
+  },
+};
+
 describe("an installed stack's picks are curated by a later edit, from nothing", () => {
+  let store: SeedConfigStore;
   let globalHome: string;
 
   let installedSkillIds: string[];
@@ -83,42 +108,23 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
   let editOutput: string;
 
   beforeAll(async () => {
+    store = await startSeedConfigStore();
+    store.publish(STACK_ID, STACK_PAYLOAD);
+    store.publish(CURATED_ID, CURATED_PAYLOAD);
     globalHome = await createTempDir();
+    await createPermissionsFile(globalHome);
 
-    // Phase A — pick the stack at the stack step and install it, eject mode.
-    const installWizard = await InitWizard.launchInGlobal({
-      projectDir: globalHome,
-      ...TERMINAL_SIZE.TALL,
-    });
-    const install = await finishWizard(await completeWithLocalSources(installWizard));
+    // Phase A — install the stack, eject mode.
+    const install = await runInitFrom(store, STACK_ID, { dir: globalHome }, E2E_SOURCE.sourceDir);
     expect(install.exitCode, `stack install failed: ${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
     installedSkillIds = (await readConfigSkillIds(globalHome)).slice().sort();
     installedSkillDirs = await listFiles(skillsPath(globalHome));
 
     // Phase B — curate that stack: drop its `web-testing` pick, add the spare.
-    const editWizard = await EditWizard.launchInGlobal({
-      projectDir: globalHome,
-      source: E2E_SOURCE,
-      ...TERMINAL_SIZE.TALL,
-    });
-    try {
-      await editWizard.build.selectSkill(DESELECTED_STACK_SKILL.display);
-      await editWizard.build.selectSkill(SELECTED_NON_STACK_SKILL.display);
-      const sources = await editWizard.build.passThroughAllDomainsGeneric();
-      await sources.waitForReady();
-      // The addition is a skill the install never placed, so it has no saved source and
-      // would default to a plugin install — which needs the real Claude CLI. Eject it.
-      await sources.setAllLocal();
-      const agents = await sources.advance();
-      const confirm = await agents.acceptDefaults("edit");
-      const edit = await finishWizard(await confirm.confirm());
-      editExitCode = edit.exitCode;
-      editOutput = edit.output;
-    } catch (error) {
-      await editWizard.destroy();
-      throw error;
-    }
+    ({ exitCode: editExitCode, output: editOutput } = await applyEditFrom(store, CURATED_ID, {
+      dir: globalHome,
+    }));
 
     const curated = await loadConfigOrFail(globalHome);
     curatedSkillIds = curated.skills.map((skill) => skill.id).sort();
@@ -126,7 +132,7 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
     curatedSkillDirs = await listFiles(skillsPath(globalHome));
 
     // An asserting lookup, not a default: an absent compiled file read as an empty body would
-    // satisfy the "no longer references the deselected skill" negative below for free.
+    // satisfy the "no longer references the dropped skill" negative below for free.
     const compiled = (await readCompiledAgents(globalHome))[`${CURATED_AGENT.name}.md`];
     if (compiled === undefined) {
       throw new Error(`no compiled ${CURATED_AGENT.name}.md at ${globalHome}`);
@@ -140,11 +146,12 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
   }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
   afterAll(async () => {
+    await store.close();
     if (globalHome) await cleanupTempDir(globalHome);
   });
 
-  // The subject guard for everything below: the skill the edit deselects must have been
-  // installed by the stack, and the one it selects must NOT have been — otherwise the
+  // The subject guard for everything below: the skill the edit drops must have been
+  // installed by the stack, and the one it adds must NOT have been — otherwise the
   // curation is a no-op that every after-assertion would hold for.
   it("installs exactly the stack's own skills, spare excluded", () => {
     expect(
@@ -161,7 +168,7 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
     expect(editExitCode, `the curating edit must succeed: ${editOutput}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  it("swaps the deselected stack skill for the selected non-stack one in config.ts", () => {
+  it("swaps the dropped stack skill for the added non-stack one in config.ts", () => {
     expect(
       curatedSkillIds,
       "the curated roster must be the stack's, less its pick, plus the spare",
@@ -181,7 +188,7 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
   it("moves the ejected skill directories with the curation", () => {
     expect(
       curatedSkillDirs,
-      "the deselected skill's directory must be gone and the added one's present",
+      "the dropped skill's directory must be gone and the added one's present",
     ).toStrictEqual(CURATED_SKILL_IDS);
   });
 
@@ -191,12 +198,12 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
     );
     expect(
       compiledAgentBody,
-      "the compiled sub-agent must no longer reference the deselected skill",
+      "the compiled sub-agent must no longer reference the dropped skill",
     ).not.toContain(DESELECTED_STACK_SKILL.id);
   });
 
   // Surface 4, the one this journey's three variants leave unasserted. Read off the emitted
-  // alias rather than the whole file: the deselected id also appears in comments and in the
+  // alias rather than the whole file: the dropped id also appears in comments and in the
   // sibling `config.ts`, so a whole-file negative would be answering a different question.
   it("regenerates the SkillId union around the curated roster", () => {
     expect(generatedSkillIdUnion, `config-types.ts must declare a ${SKILL_ID_ALIAS}`).toBeDefined();
@@ -205,7 +212,7 @@ describe("an installed stack's picks are curated by a later edit, from nothing",
     );
     expect(
       generatedSkillIdUnion,
-      `${SKILL_ID_ALIAS} must not name the deselected skill`,
+      `${SKILL_ID_ALIAS} must not name the dropped skill`,
     ).not.toContain(DESELECTED_STACK_SKILL.id);
   });
 

@@ -14,12 +14,9 @@ export function isTerminalLargeEnough(columns: number, rows: number): boolean {
 }
 
 /**
- * The one resize prompt, worded in one place because two gates print it and they
- * must not drift: `BaseCommand.ensureTerminalSize` blocks a command from
- * launching too small, and `WizardLayout` replaces the wizard tree when the
- * terminal shrinks under a session already running. The E2E constants
- * `STEP_TEXT.TOO_NARROW` / `TOO_SHORT` key off this text, so a second wording
- * would leave one of the two gates unassertable.
+ * The one resize prompt, printed by `BaseCommand.ensureTerminalSize` when a command
+ * would launch too small. The E2E constants `STEP_TEXT.TOO_NARROW` / `TOO_SHORT`
+ * key off this text.
  *
  * Precondition: {@link isTerminalLargeEnough} is false. Width is reported in
  * preference to height, so "not too narrow" here means "too short" — which is
