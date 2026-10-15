@@ -4,8 +4,6 @@ Rulings: [`CLI-923-remove-the-wizard.md`](./CLI-923-remove-the-wizard.md) plus t
 not re-opened. **[r]** = line re-read 2026-10-14 at `6c526f5e`. Paths are under `packages/cli/` unless they start
 `apps/`, `packages/`, `todo/`. Counts are commands; re-derive before acting.
 
-**REPO-43 (2026-10-14) deleted** `check-enumeration-drift`, `check-symbol-file-pairs`, the journey gates in `spec-gates.test.ts` and the `.ai-docs` journeys page. Drop them from this spec's lane lists and check lists.
-
 ## 1. Command contract
 
 ### `init` — routes of `install()` (`src/cli/commands/init.tsx`:456-515 [r]), in order

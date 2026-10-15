@@ -8,7 +8,7 @@ new user-facing capability is not. 54 of the 58 went back into the work.
 
 What is left genuinely gives the user something that does not exist today.
 
-## `2026-08-16-the-seed-contract-cannot-carry-half-of-what-a-config-holds`
+## The seed contract cannot carry half of what a config holds
 
 Items 1 and 6 closed and the enum-alignment doc row is correct; items 2 and 3 remain missing wire capability — `model: "inherit"` has no spelling and `agentsSource` has no field — and closing either means new schema fields and a SEED_VERSION bump the editor and worker share.
 
@@ -20,6 +20,6 @@ Its central claim is false today — `skipped` IS surfaced at the command layer 
 
 The claim is still true but every remedy it offers (Options A/B/C) is a NEW user-visible signal — a verbose line, a warn, or a `droppedStale` return field — none of which exists; nothing is wrong, a signal is missing.
 
-## `2026-08-18-half-the-health-check-routing-table-cannot-be-reached-through-a-source-on-disk`
+## Half the health-check routing table cannot be reached through a source on disk
 
-Nothing is wrong — the routing landed with an exhaustive switch — and the residual is a reachability column the finding itself gates on "if anyone acts on this".
+Nothing is wrong — the routing landed with an exhaustive switch — and the residual is a reachability column.

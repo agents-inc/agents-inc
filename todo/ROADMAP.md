@@ -13,11 +13,15 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Next — CLI-923: remove the wizard (ruled 2026-10-14)
+## Now — finish the wizard removal (owner order, 2026-10-15)
 
-0.168.0 (EDITOR-09 Phase H) is committed and pushed, with its deploy and `npm publish` pending. CLI-923 is the next
-CLI programme: spec first (`plans/CLI-923-remove-the-wizard.md`), then lanes. 0.168.0 is the last version published
-with the wizard.
+CLI-923 (wizard removed) and CLI-924 (journeys rewritten and hand-run) landed 2026-10-15 in 0.169.0; CLI-926 finishes the
+removal.
+CLI-925 holds the run's unruled findings. Working list: `plans/2026-10-14-session-queue.md`.
+
+## Next — REPO-44: tech debt and lint rules
+
+Step 1 (lint-rules measurement) landed 2026-10-15; the rest is next. Order: `plans/REPO-44-tech-debt-and-lint.md`.
 
 ## 2026-10-04: the post-CLI-902 audit, rounds 1–6 landed
 
