@@ -34,8 +34,8 @@ Its subtitle names what you're installing _from_: `marketplace <ref> · stack <n
 | `click to copy`                                                   | Ready.                                                                                                            |
 | `copied`                                                          | On your clipboard.                                                                                                |
 | `out of date — reload the page for an id`                         | This tab is running a build older than the service. Reload; re-opening the dialog won't help.                     |
-| `id unavailable — this command starts a fresh wizard`             | The id couldn't be stored. The command is still valid — it just starts the wizard from nothing.                   |
-| `offline — this command starts a fresh wizard`                    | Same, with the network as the cause.                                                                              |
+| `id unavailable — this command starts over in the editor`         | The id couldn't be stored. The command is still valid — it just starts over in the editor.                        |
+| `offline — this command starts over in the editor`                | Same, with the network as the cause.                                                                              |
 | `a sub-agent needs project scope — close and fix the marked rows` | A project skill is assigned to a sub-agent resting at global. Re-opening won't help; the marked rows are the fix. |
 
 Where no id could be minted the command degrades to a bare `npx agents-inc init` rather than a broken one. On Codex it stays bare too, because `--provider` needs `--from`, and the line says so: `· a provider needs --from`.
@@ -112,7 +112,7 @@ Share is disabled with nothing selected, and disabled while any sub-agent scope 
 
 ## Coming back the other way
 
-The id flow runs both directions, so starting in the terminal doesn't lock you out of the grid.
+The id flow runs both directions.
 
 ```bash
 npx agents-inc share      # print the id for what is installed here

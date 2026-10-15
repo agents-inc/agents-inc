@@ -36,7 +36,7 @@ The `reviewer` is the sharpest example. It is a single agent that reviews every 
 
 ## Which skills an agent receives
 
-That mapping is the `stack` field in your `config.ts`. In the editor you set it by clicking: a skill's `•••` panel carries a **Sub-agents** matrix whose cells step that sub-agent's copy of the skill through unassigned, dynamic and preloaded, and under each sub-agent in the roster its skills are rows you can switch off one at a time. The wizard has no equivalent — from the terminal it is a hand edit followed by `npx agents-inc compile`. See [Stacks](/docs/concepts/stacks) for the shape and [Editing your config](/docs/guides/editing-config) for the fields.
+That mapping is the `stack` field in your `config.ts`. In the editor you set it by clicking: a skill's `•••` panel carries a **Sub-agents** matrix whose cells step that sub-agent's copy of the skill through unassigned, dynamic and preloaded, and under each sub-agent in the roster its skills are rows you can switch off one at a time. From the terminal it is a hand edit followed by `npx agents-inc compile`. See [Stacks](/docs/concepts/stacks) for the shape and [Editing your config](/docs/guides/editing-config) for the fields.
 
 ## Creating your own
 

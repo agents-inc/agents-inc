@@ -21,7 +21,7 @@ skill](/docs/guides/adding-to-an-existing-project) reads your dependencies
 instead of asking you to retype them. **Starting from nothing?**
 [The composer](/docs/editor/composer) takes a sentence describing the project.
 Both end at the same command this page explains, so nothing below is wasted
-either way — [Four ways in](/docs/ways-in) compares all four.
+either way — [Three ways in](/docs/ways-in) compares all three.
 :::
 
 ## Before you start
@@ -55,22 +55,6 @@ your home directory, in `~/.claude` and `~/.agents-inc/claude/`, wherever you
 run from. Global is the recommended starting point —
 see [Global-first setup](/docs/guides/global-first-setup).
 
-:::note[Prefer the terminal?]
-`npx agents-inc init` runs the same selection as a wizard. Same catalogue, same
-output — it skips the id because it is already standing where the files go.
-:::
-
-{/* WALKTHROUGH VIDEO PLACEHOLDER. */}
-{/* A recorded walkthrough of `init` exists and is embedded in the CLI's README */}
-{/* (packages/cli/README.md, under "Walkthrough (recommended)") as a GitHub */}
-{/* user-attachment URL. That URL only renders inside GitHub, so it cannot */}
-{/* simply be pasted here. */}
-{/* What belongs in this slot: the same walkthrough, re-hosted somewhere this */}
-{/* site can embed it. It records the terminal wizard rather than the editor, */}
-{/* so it belongs in the CLI tab of the section below — the reader has just */}
-{/* been told the wizard is there and has not yet been told what they will see */}
-{/* in it. */}
-
 ## What you're choosing
 
 <Tabs syncKey="tool">
@@ -98,34 +82,6 @@ with the skills each one carries listed underneath.
 
 [The editor](/docs/editor) covers the whole screen, including the things it
 deliberately cannot do.
-
-  </TabItem>
-  <TabItem label="CLI">
-
-The wizard has six steps. You can go back at any point.
-
-1. **Stack** — pick a pre-built stack, or "Start from scratch". A stack is a
-   named selection of skills for a common setup; picking one gives you a
-   starting point rather than a blank grid. See
-   [Stacks](/docs/concepts/stacks).
-2. **Domains** — which areas you are configuring: web, api, cli, mobile,
-   shared, and so on. This decides which categories the next step shows you.
-3. **Skills** — the skill grid, organised by category. This is the main step:
-   one framework, one styling approach, one test runner, and so on. Categories
-   marked exclusive take a single choice.
-4. **Sources** — where each skill's files should live: `Plugin`, registered
-   with Claude Code, or `Local`, copied into your project. It is set per skill,
-   so a mixed installation is normal. See
-   [Install modes](/docs/concepts/install-modes).
-5. **Agents** — which sub-agents to compile from what you just selected.
-6. **Confirm** — the summary. Nothing is written until you accept it.
-
-Picking a stack always lands you on **Domains**. From there, press `A` on the
-**Skills** step to accept the stack's selections exactly as they stand and go
-straight to **Confirm**; Sources and Agents are skipped with it.
-
-Model and reasoning effort are not wizard choices. They are config fields —
-see [Models and effort](/docs/configuration/models-and-effort).
 
   </TabItem>
 </Tabs>
@@ -208,17 +164,11 @@ npx agents-inc edit --ui          # publishes this installation and opens it
 npx agents-inc edit --from <id>   # applies what you changed there
 ```
 
-The second command is the one to get right. The install dialog only ever hands
-out `init --from`, and that one refuses a directory that already has an
+The second command is the one to get right. The install dialog hands out
+`init --from`, and that one refuses a directory that already has an
 installation — `An installation already exists at …`. `edit --from` is the one
 that accepts a setup already in place. It states a whole roster, so whatever it
 leaves out is removed, and every removal is named before anything is written.
-
-:::note[Doing this from the terminal]
-`npx agents-inc edit` reopens the wizard with your current selections loaded,
-shows a diff at the confirm step, and on confirm reinstalls, rewrites the
-config and recompiles.
-:::
 
 `npx agents-inc update` refreshes the listing of every marketplace your config
 names through Claude Code's own plugin commands, and that is all it does — the

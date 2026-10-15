@@ -12,7 +12,6 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 | Message or symptom                                                         | Likely cause                                                  | Fix                                                                        |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `Config at '…' could not be loaded`                                        | `config.ts` doesn't parse                                     | [Recreate it](#a-config-that-will-not-parse) — there's no repair           |
-| `ConfigLoadError: Config at '…' could not be loaded`                       | the same fault, from `list`, which prints no remedy           | [Recreate it](#a-config-that-will-not-parse)                               |
 | `Repository not found:` / `Network error fetching:`                        | the marketplace can't be reached                              | [Check the ref, the token, the proxy](#a-marketplace-that-will-not-load)   |
 | `Could not reach … — using the cached copy, which may be out of date.`     | offline, and a cached copy was used                           | Nothing — the run succeeded                                                |
 | `0/1 skills found` / `- <id> (not found)`                                  | the catalogue doesn't carry that id                           | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
@@ -25,11 +24,9 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 | `An installation already exists at …`                                      | `init --from` is greenfield-only                              | [Uninstall first](#a-shared-id-that-will-not-install)                      |
 | A sub-agent doesn't show up in Claude Code                                 | it was never compiled, or compiled at the other scope         | [Compile it](#sub-agents-that-never-appeared-in-claude-code)               |
 | Your edits to `.claude/agents/*.md` keep vanishing                         | compiled agents are build outputs                             | [Edit the partials](#hand-edits-to-a-compiled-sub-agent-keep-disappearing) |
-| `Global skills cannot be changed from project scope`                       | a global install is read-only from inside a project           | [Three ways out](#a-global-skill-you-cannot-remove-from-inside-a-project)  |
 | `Failed to install N plugin skill(s).`                                     | the plugin install didn't happen                              | [Refresh or switch to eject](#a-plugin-install-that-failed)                |
-| `Cannot install N skill(s) as plugins — no marketplace carries them`       | a skill that exists only here                                 | [Set it to Local](#a-plugin-install-that-failed)                           |
+| `Cannot install N skill(s) as plugins — no marketplace carries them`       | a skill that exists only here                                 | [Set its Install mode to eject](#a-plugin-install-that-failed)             |
 | `No skills found. Run 'npx agents-inc init' …`                             | `compile` found nothing installed under the config            | [Reinstall the skills](#compile-says-there-are-no-skills)                  |
-| `Raw mode is not supported on the current process.stdin`                   | a wizard command with no terminal                             | [Use the headless flags](#a-wizard-command-in-a-pipeline)                  |
 | `✓ Eject complete!` and nothing was copied                                 | the destination already existed                               | [Pass `--force`](#an-eject-that-reports-success-and-copies-nothing)        |
 | The command prints one line and hangs                                      | the terminal is under 80×20                                   | [Resize it](#a-command-that-hangs-instead-of-starting)                     |
 | `Completed with N failure(s) — the changes above landed, these did not:`   | the run finished and part of it didn't happen                 | [Do what the indented line says](#a-command-that-finished-with-failures)   |
@@ -41,21 +38,18 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 `init` and `edit` name the file and then the way out:
 
 ```
-Error: Config at '/home/me/project/.agents-inc/claude/config.ts' could not be loaded:
-Failed to load config from '/home/me/project/.agents-inc/claude/config.ts': ParseError: Unexpected token, expected ","
-There is no automatic repair for this — recreate the configuration:
-'npx agents-inc uninstall' still works on a config it cannot read, then 'npx agents-inc init'.
+Error: This project's config at '/home/me/project/.agents-inc/claude/config.ts' could not be loaded: Failed to load config from '/home/me/project/.agents-inc/claude/config.ts': ParseError: Unexpected token
+ /home/me/project/.agents-inc/claude/config.ts:1:26
+There is no automatic repair for this — recreate the configuration by running 'npx agents-inc uninstall', which still works on a config it cannot read, then 'npx agents-inc init', from '/home/me/project'.
 Or build one at https://agentsinc.sh/editor and install it with 'npx agents-inc init --from <id>'.
 'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.
 ```
-
-`compile` and `update` print the first line alone. `list` prints it with the error class still attached — `ConfigLoadError: Config at '…'` — and no remedy at all; it's the same fault, and the instructions above apply.
 
 **There are no versioned migrations, so an unreadable config is recreated rather than repaired.** `uninstall` deliberately keeps working on one — it identifies skill directories by their own `forkedFrom` metadata and compiled agents by the marker each carries, neither of which needs the config:
 
 ```bash
 npx agents-inc uninstall   # warns that it can't read the config, and proceeds
-npx agents-inc init
+npx agents-inc init --from <id>
 ```
 
 If the mistake is obvious, editing `config.ts` by hand and re-running is faster. `npx agents-inc doctor` reports the same file under its `Config` row, with the parse error and the line number. See [Editing your config](/docs/guides/editing-config) for the shape the file has to hold.
@@ -184,7 +178,7 @@ A sub-agent exists for Claude Code when its compiled `.md` file is in an agents 
 npx agents-inc compile
 ```
 
-**Check the scope before you re-run it.** A compile from a project directory writes the project's agents and nothing else, so a global sub-agent stays stale however many times you run it there. `compile` says so when it notices: `13 agents are global-scoped — run 'npx agents-inc compile' from your home directory, or edit from this project, to recompile them.` `npx agents-inc list` prints every directory that actually holds compiled agents, which settles where yours went.
+**Check the scope before you re-run it.** A compile from a project directory writes the project's agents and nothing else, so a global sub-agent stays stale however many times you run it there. `compile` says so when it notices: `13 agents are global-scoped — run 'npx agents-inc compile' from your home directory to recompile them.` `npx agents-inc list` prints every directory that actually holds compiled agents, which settles where yours went.
 
 **A file that exists and still doesn't load** is a frontmatter problem, and `doctor`'s `Agents` content row is where it shows: `Missing or invalid YAML frontmatter`, or `name must be kebab-case: "MyAgent"`. That row validates every `.md` in both agents directories, whoever wrote it.
 
@@ -215,19 +209,11 @@ npx agents-inc compile                # rebuild from what you edited
 
 ## A global skill you cannot remove from inside a project
 
-Inside a project, globally installed rows are inherited and locked, and the wizard shows it two ways. On the Sources step they carry a padlock and focus skips straight over them. On the Build and Agents steps they look like any other row, and pressing space on one raises a toast:
+This is deliberate: one global install serves every project on the machine, so one project must not uninstall it for the others.
 
-```
-Global skills cannot be changed from project scope
-```
-
-Sub-agents get the matching line, `Global agents cannot be changed from project scope`. This is deliberate: one global install serves every project on the machine, so one project must not uninstall it for the others.
-
-**Three ways out, in increasing order of reach.**
+**Two ways out, in increasing order of reach.**
 
 **Don't hand it to this project's agents.** The skill stays installed and isn't part of any prompt here — leave it out of the relevant agent's `stack` entry in `.agents-inc/claude/config.ts` and run `npx agents-inc compile`. This is the right answer nearly always.
-
-**Take a project-scoped copy alongside it.** Press `s` on the row in the wizard; it then shows both `[P]` and `[G]`, and the global install is untouched.
 
 **Edit at global scope.** The only way to actually remove it:
 
@@ -256,7 +242,7 @@ Work through those three in order. `npx agents-inc update` shells out to the Cla
 ```
 Cannot install 1 skill(s) as plugins — no marketplace carries them: my-own-skill.
 A skill that exists only in this project can only be installed as a local copy.
-Set it to Local on the Sources step, or publish it to a marketplace first.
+Set its Install mode to eject in the editor, or publish it to a marketplace first.
 ```
 
 **An install that succeeded and later stopped registering** shows in `doctor` as a warning with one line per skill: `44 skills not installed as plugins`, each `- <id> (no enabled plugin found)`. That reads the plugin registry rather than the disk. If the registry file itself is broken, the `Plugins` content row says so — `- [ERROR] ~/.claude/plugins/installed_plugins.json: Expected property name or '}' in JSON at position 1 (line 1 column 2)` — and `Plugins Installed` stands down rather than blaming every configured skill for one file.
@@ -269,29 +255,9 @@ Error: No skills found. Run 'npx agents-inc init' to choose skills, or add your 
 
 This is reached only after an installation was detected, so it means the config declares skills and none of them are installed under it. The usual cause is a plugin-mode install whose plugins are gone or disabled — nothing is on disk under `.claude/skills/`, and the registry has nothing either.
 
-Run `npx agents-inc doctor` first: `Plugins Installed` and `Skills Installed` say which half is empty. Then `npx agents-inc edit` to reinstall the selection, or `npx agents-inc init` if the config declares nothing at all.
+Run `npx agents-inc doctor` first: `Plugins Installed` and `Skills Installed` say which half is empty.
 
 The neighboring message, `No installation found. Run 'npx agents-inc init' first to set up Agents Inc.`, means something different — there's no config here or at your home directory. It's fatal for `compile`, `edit` and `share`, and only a warning for `update`.
-
-## A wizard command in a pipeline
-
-`init` and `edit` mount a terminal UI, and so does `uninstall` without `--yes` — that flag is `uninstall`'s alone. With no TTY they print a React stack trace and exit 4:
-
-```
-  ERROR Raw mode is not supported on the current process.stdin, which Ink uses
-        as input stream by default.
-```
-
-**Nothing is written when this happens** — the failed render is treated as a cancel, which is the correct outcome behind an alarming presentation. Exit 4 is `CANCELLED`, the same code you get for answering no.
-
-The headless equivalents exist:
-
-```bash
-npx agents-inc init --from <id>   # installs a shared configuration, no wizard
-npx agents-inc uninstall --yes    # prints the removal plan instead of prompting
-```
-
-`doctor`, `compile`, `list`, `search`, `update`, `share`, `share --stdin` and `eject` need no terminal at all. `edit --from` is the one that can't be made headless: it removes what the payload leaves out, and a confirmation nobody can answer must never become a yes.
 
 ## An eject that reports success and copies nothing
 

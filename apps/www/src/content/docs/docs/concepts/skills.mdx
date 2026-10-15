@@ -23,7 +23,7 @@ Open the [editor](/editor) and type into the **search skills** field above the g
 npx agents-inc search zustand
 ```
 
-`search` matches a query against every skill's id, display name, slug, description and category, and prints what hits. It reads the marketplace this installation points at plus the local skills already on disk, and it selects nothing — installing what you find is the wizard's Skills step, which [Quickstart](/docs/quickstart) walks.
+`search` matches a query against every skill's id, display name, slug, description and category, and prints what hits. It reads the marketplace this installation points at plus the local skills already on disk, and it selects nothing.
 :::
 
 ## What a skill is on disk
@@ -38,7 +38,7 @@ Both files are required — the CLI's loader validates the pair, and `npx agents
 
 ## How skills are organised
 
-Each skill belongs to one of {DOMAIN_COUNT} **domains** — {DOMAIN_IDS} — and to a **category** within it (`web-framework`, `web-client-state`, `api-api`, and so on). A category can be marked exclusive: the editor heads it `one of` and a click swaps your pick rather than adding to it, and the wizard treats it as a radio group. Either way you get one framework, not three.
+Each skill belongs to one of {DOMAIN_COUNT} **domains** — {DOMAIN_IDS} — and to a **category** within it (`web-framework`, `web-client-state`, `api-api`, and so on). A category can be marked exclusive: the editor heads it `one of` and a click swaps your pick rather than adding to it. You get one framework, not three.
 
 Skills also declare relationships to each other (`requires`, `conflictsWith`). Those relationships drive the compatibility filtering you see while selecting.
 

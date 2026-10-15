@@ -11,7 +11,7 @@ sidebar:
 
 An installation belongs to one **provider** — the coding agent it is for. There are two: **Claude Code** and **OpenAI Codex**.
 
-You pick it in the [web app](/docs/editor). There is no question about it in the terminal wizard, because the choice changes one visible thing: the command the app hands you to paste.
+You pick it in the [web app](/docs/editor). The choice changes one visible thing: the command the app hands you to paste.
 
 ```bash
 npx agents-inc init --from Ab3xY9_Q                    # Claude Code

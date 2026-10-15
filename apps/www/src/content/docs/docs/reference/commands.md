@@ -15,8 +15,8 @@ Every command available in the `agents-inc` CLI. Run `agents-inc <command> --hel
 
 | Command                  | Purpose                                                          | Interactive | Flags                                                           |
 | ------------------------ | ---------------------------------------------------------------- | ----------- | --------------------------------------------------------------- |
-| `init`                   | First-time wizard: pick a stack, skills, agents, compile         | Yes         | `--marketplace/-m`, `--from <id>`, `--ui`, `--provider`         |
-| `edit`                   | Modify an existing installation via the wizard                   | Yes         | `--ui`, `--from <id>`, `--provider`                             |
+| `init`                   | Open the editor, or install a configuration by id with `--from`  | Yes         | `--marketplace/-m`, `--from <id>`, `--ui`, `--provider`         |
+| `edit`                   | Open this installation in the editor; `--from` applies an id     | Yes         | `--ui`, `--from <id>`, `--provider`                             |
 | `compile`                | Recompile agents from the current config                         | No          | `--verbose/-v`, `--provider`                                    |
 | `update`                 | Refresh the marketplaces this installation uses                  | No          | `--provider`                                                    |
 | `search <query>`         | Read-only search of the marketplace and the local skills on disk | No          | (none — no base)                                                |
@@ -26,12 +26,12 @@ Every command available in the `agents-inc` CLI. Run `agents-inc <command> --hel
 | `build plugins`          | Compile skills/agents into distributable plugin bundles          | No          | `--agents-dir/-a`, `--output-dir/-o`, `--skill`, `--verbose/-v` |
 | `build marketplace`      | Generate `marketplace.json` from built plugins + `package.json`  | No          | `--name`, `--plugins-dir/-p`, `--output/-o`, `--verbose/-v`     |
 | `doctor`                 | Validate content, then diagnose installation, agents, orphans    | No          | (none — always verbose)                                         |
-| `list` (alias `ls`)      | Show installation mode, source, skills, agents                   | No          | `--provider`                                                    |
+| `list` (alias `ls`)      | Show installation mode, source, skills, agents                   | Yes         | `--provider`                                                    |
 | `uninstall`              | Remove CLI-managed files and the source folder's config manifest | Yes         | `--yes/-y`, `--provider`                                        |
 
 **This table is the roster, and it is checked.** `apps/www/scripts/check-cli-claims.ts` binds it to `packages/cli/src/cli/commands/**` — oclif's `commands.strategy` is `pattern`, so a module under that tree _is_ a command and a command is nothing else — and to each command's `static flags`. A row for a command that no longer exists, a command with no row, and a Flags cell that has fallen behind all fail the site's `test` script. The two stock oclif commands, `help` and `autocomplete`, come from plugins rather than from that tree and are deliberately out of scope here.
 
-Interactive = renders an Ink UI. Two exceptions are not visible in that column: `init --from <id>` installs a shared configuration without opening the wizard, and `edit --ui` hands the installation to the browser instead of opening one. Neither renders anything, and neither needs a terminal.
+Interactive = renders an Ink UI.
 
 ---
 
@@ -41,21 +41,17 @@ Interactive = renders an Ink UI. Two exceptions are not visible in that column: 
 
 **File:** [`src/cli/commands/init.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/init.tsx)
 
-Greenfield setup. Detects if already installed (shows dashboard), otherwise opens the wizard. Writes config and compiles agents.
+Greenfield setup. Detects if already installed (shows dashboard), otherwise opens agentsinc.sh/editor.
 
-**The six wizard steps, in order:** stack → domains → build → sources → agents → confirm. `WIZARD_STEP_ORDER` in `src/cli/stores/wizard-store.ts` is the single source for that order, and [Quickstart](/docs/quickstart) walks each step in prose. Taking a stack's defaults without customising skips the middle steps.
-
-**Flags:** `--marketplace/-m` (the marketplace this installation is made from, and the only command that takes it), `--from <id>` (install a configuration shared from the web editor, without the wizard), `--ui` (build this project's configuration in the browser instead), `--provider <claude|codex>` (which provider this run installs for — only meaningful beside `--from`, and the default is Claude).
+**Flags:** `--marketplace/-m` (the marketplace this installation is made from, and the only command that takes it), `--from <id>` (install a configuration shared from the web editor), `--ui` (build this project's configuration in the browser instead), `--provider <claude|codex>` (which provider this run installs for — only meaningful beside `--from`, and the default is Claude).
 
 **`--provider` names a location, not a feature.** It decides one thing: which folder this run creates, and therefore which host's directories the install writes into, which renderer compiles the sub-agents, and which placements are offered. It writes nothing down — after the install, the folder is the record. `--provider claude` is the control that proves it: naming the default out loud installs byte-for-byte what no flag installs. `--provider codex` over an existing Claude installation creates a second installation beside it rather than being refused; from then on the commands that change something ask which one you mean. [Claude or Codex](/docs/configuration/providers) is what each provider can and cannot do.
 
 **When to use:** First run on a machine, or first run inside a project that needs a project-scoped config.
 
-**`--from <id>` is the web editor's other half.** The editor cannot write to your `.claude/`, so it hands you a short id and this flag does the install: the CLI fetches that configuration, maps it onto the current catalogue, and runs the same install pipeline the wizard feeds. It is headless — no Ink UI and no TTY required, so it works over a pipe and in CI — and it is greenfield-only: in an already-installed directory it does not divert to the dashboard, it refuses to run and tells you to `uninstall` first, because a shared configuration replaces a stack wholesale — installing one is a fresh setup, not a merge. Three situations draw that refusal: the directory already carries an installation (refused before the configuration is even fetched); the directory is clean but the payload carries global-scoped entries and your home directory is already installed (run `uninstall` there first); and a payload that assigns a project-scoped skill to a sub-agent resting at global scope — an assignment the config has nowhere to write — which is refused with every such pair named, so a single re-share (each named agent pinned to the project, or each named skill moved to global scope) can fix them all. Skills or sub-agents this catalogue no longer knows are named and skipped rather than failing the run. Shipped in 0.149.0; see [CLI or web](/docs/cli-or-web).
+**`--from <id>` is the web editor's other half.** The editor cannot write to your `.claude/`, so it hands you a short id and this flag does the install: the CLI fetches that configuration, maps it onto the current catalogue, and runs the install pipeline. It is headless — no Ink UI and no TTY required, so it works over a pipe and in CI — and it is greenfield-only: in an already-installed directory it does not divert to the dashboard, it refuses to run and tells you to `uninstall` first, because a shared configuration replaces a stack wholesale — installing one is a fresh setup, not a merge. Three situations draw that refusal: the directory already carries an installation (refused before the configuration is even fetched); the directory is clean but the payload carries global-scoped entries and your home directory is already installed (run `uninstall` there first); and a payload that assigns a project-scoped skill to a sub-agent resting at global scope — an assignment the config has nowhere to write — which is refused with every such pair named, so a single re-share (each named agent pinned to the project, or each named skill moved to global scope) can fix them all. Skills or sub-agents this catalogue no longer knows are named and skipped rather than failing the run. Shipped in 0.149.0; see [CLI or web](/docs/cli-or-web).
 
 **`--ui` opens the editor instead, and it opens on nothing.** `edit --ui` carries the installation in this directory across, because there is one; here there is not, so this is the bare address and the browser starts from the catalogue. The way back is the way back from anywhere — build a configuration, share it, and install the id with `init --from <id>`. It reads no installation at all, so a config too broken to load cannot stop you reaching the editor. The address is printed before any browser is opened, which is what keeps the flag usable over a pipe, in CI and on a machine with no desktop session; a browser that will not launch is a warning beside a link that still works. Passing `--ui` with `--from` opens **that id** rather than the catalogue — the same rule `edit` follows, and what turns a shared id into something you can look at before you install it. Nothing is minted and nothing is fetched on that path: the id already is a stored configuration, so this is only a link.
-
-**Global entries are read-only from a project.** If a global installation already exists, `init` inside a project routes to the dashboard (and from there to `edit`), where globally installed skills and agents are locked — see `edit` below.
 
 ---
 
@@ -63,9 +59,9 @@ Greenfield setup. Detects if already installed (shows dashboard), otherwise open
 
 **File:** [`src/cli/commands/edit.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/edit.tsx)
 
-Re-enters the wizard with the current selections pre-loaded. Diff is shown at the confirm step. On confirm: re-copies locals, installs/uninstalls plugins, re-writes config, recompiles agents.
+A bare `edit` does what `edit --ui` does.
 
-**Flags:** `--ui`, `--from <id>`, `--provider` (which installation to edit, where this scope holds one of each — it selects, it never converts). **`--ui` opens whatever `--from` names** — so `edit --ui` opens the installation in this directory, and `edit --ui --from <id>` opens that shared id instead. They were mutually exclusive until 2026-08-24, on the reading that they were opposite directions of one round trip; opening an id is neither direction, and the pairing is what lets someone LOOK at a configuration before applying it. The paired form needs no installation here at all, because opening an id in a browser reads nothing local. There is no marketplace flag: the wizard opens on the catalogue the installation's config names, and `edit` cannot be pointed somewhere else, because a roster edited against one marketplace and recorded against another is the mixed-source state the config has no way to describe.
+**Flags:** `--ui`, `--from <id>`, `--provider` (which installation to edit, where this scope holds one of each — it selects, it never converts). **`--ui` opens whatever `--from` names** — so `edit --ui` opens the installation in this directory, and `edit --ui --from <id>` opens that shared id instead. They were mutually exclusive until 2026-08-24, on the reading that they were opposite directions of one round trip; opening an id is neither direction, and the pairing is what lets someone LOOK at a configuration before applying it. The paired form needs no installation here at all, because opening an id in a browser reads nothing local. There is no marketplace flag: `edit` cannot be pointed somewhere else, because a roster edited against one marketplace and recorded against another is the mixed-source state the config has no way to describe.
 
 **`--ui` hands this installation to the browser.** It reads the installed skills, sub-agents and per-agent curation, mints them as a configuration the store holds — the same mint `share` performs, from the same reader, so the two commands give one directory one id — prints the id with both destinations, and then opens `agentsinc.sh/editor/?fromId=<id>` if there is a terminal to have a browser. Nothing on disk is touched: a run that changed anything here would be editing the project on the way to offering to edit it. Over a pipe or in CI the link is printed and nothing is opened, which is why the print comes first.
 
@@ -73,10 +69,9 @@ Re-enters the wizard with the current selections pre-loaded. Diff is shown at th
 
 **When to use:** Change skills, agents, scope, or mode after `init`.
 
-**Global entries are read-only from a project.** Editing inside a project cannot remove a globally installed skill or agent — space is inert on those rows and the wizard shows `Global skills cannot be changed from project scope` (or `Global agents ...`). The global install is shared, so one project may not uninstall it for the others. Your options:
+**Global entries are read-only from a project.** Editing inside a project cannot remove a globally installed skill or agent. The global install is shared, so one project may not uninstall it for the others. Your options:
 
 - **Don't hand the skill to this project's agents** — curate `stack` in `.agents-inc/claude/config.ts`. See [Editing Your Config](/docs/guides/editing-config).
-- **Take project ownership** — press `s` on the row to add a project-scoped copy alongside the global install (the row shows `[P][G]`).
 - **Really uninstall it** — run `npx agents-inc edit` from your home directory (`cd ~`), where the global config is the one being edited.
 
 ---
@@ -121,7 +116,7 @@ Read-only catalog browse. Takes one required positional arg and zero flags. Sear
 
 **Flags:** none (`static flags = {}`).
 
-**When to use:** See what skills are available before wiring them into config. To actually install one, open the wizard (`init` / `edit`) and select it there.
+**When to use:** See what skills are available before wiring them into config.
 
 ---
 
@@ -137,13 +132,11 @@ The other direction of the round trip [CLI or web](/docs/cli-or-web) describes. 
 
 **The id is the configuration's own hash**, so sharing an unchanged installation returns the id it already had — running it twice does not mint two.
 
-**A skill you wrote by hand into `.claude/skills/` does not travel, and is not refused either.** Ownership is decided by the `forkedFrom` key the CLI stamps into every directory it writes — an ejected catalogue skill, or one a payload carried inline. A directory that exists and carries no such key is somebody's own work, so it is simply outside the round trip, and the `stack` rows naming it go with it. `edit --from` reads the same judgement from the same place, which is why a payload that never mentioned your skill is not read as an instruction to delete it.
+**A skill you wrote by hand into `.claude/skills/` does not travel, and is not refused either.** Ownership is decided by the `forkedFrom` key the CLI stamps into every directory it writes. A directory that exists and carries no such key is somebody's own work, so it is simply outside the round trip, and the `stack` rows naming it go with it. `edit --from` reads the same judgement from the same place, which is why a payload that never mentioned your skill is not read as an instruction to delete it.
 
 **Args:** none.
 
 Everything that can fail locally fails before the write: an installation that cannot be read, or a selection the payload contract cannot express, stops the run without spending a write on a configuration nobody could install.
-
-`share` and `edit --ui` mint identically — same reader, same mapping, same refusals — and differ only in the ending. `share` prints the id; `edit --ui` opens it.
 
 **When to use:** You configured in the terminal and want to hand the result to someone else, to another machine, or to the editor.
 
@@ -231,7 +224,7 @@ The single "is everything OK?" command. It answers in two layers, and the order 
 
 **A content error stands down only the rows that read what it is about.** A broken skill `metadata.yaml` skips `Skills Resolved` with `Skipped — this row would only restate the skill errors above`, and every other row still answers: an unresolved skill on top of a broken `metadata.yaml` is that error's cascade, not a second finding. The whole layer stands down in two cases alone — a `config.ts` that cannot be read, which prints `Skipped — fix the content errors above first`, and a marketplace repository with nothing installed, below.
 
-**The orphan row when there is no configuration at all.** With a config, an orphan is a compiled agent file the config does not name, and it is a warning — the next `compile` prunes it. With no config on disk the question is settled rather than unanswerable: every skill directory carrying `forkedFrom` and every agent file carrying the compiler's marker is unowned, so the row names each one and reports an **error**. A file with neither is somebody's own and is not listed. Nothing repairs that state on its own — `compile` and `edit` refuse without a config — so the row's tip names both ways out: `init` writes a configuration that can own them again, and `uninstall` removes them, compiled agents included, because it reads the same marks. A config that exists and cannot be read still skips the row: that is a content-layer finding, and it gates the whole operational layer.
+**The orphan row when there is no configuration at all.** With a config, an orphan is a compiled agent file the config does not name, and it is a warning — the next `compile` prunes it. With no config on disk the question is settled rather than unanswerable: every skill directory carrying `forkedFrom` and every agent file carrying the compiler's marker is unowned, so the row names each one and reports an **error**. A file with neither is somebody's own and is not listed. Nothing repairs that state on its own — `compile` and `edit` refuse without a config — so the row's tip names both ways out: `init --from <id>` writes a configuration that can own them again, and `uninstall` removes them, compiled agents included, because it reads the same marks. A config that exists and cannot be read still skips the row: that is a content-layer finding, and it gates the whole operational layer.
 
 **Marketplace-author context.** Run from a skills source repository with nothing installed, `doctor` validates the repository's own content and prints `Skipped — no installation here (marketplace repository)` for the operational layer. One command, two contexts. The skip requires the _absence_ of this directory's `config.ts` — a config file that exists but fails to load is a finding, not an absence, so it still reaches the operational layer.
 

@@ -112,7 +112,7 @@ install dialog and a command you run —
 
 ## Where to go next
 
-- [Four ways in](/docs/ways-in) — the composer beside the other three routes.
+- [Three ways in](/docs/ways-in) — the composer beside the other two routes.
 - [Selecting skills](/docs/editor/selecting-skills) — the grid the composer
   writes into.
 - [Adding to an existing project](/docs/guides/adding-to-an-existing-project) —

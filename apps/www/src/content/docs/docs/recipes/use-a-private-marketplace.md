@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-Every installation reads one marketplace. The default is the public `github:agents-inc/skills`; naming your own swaps the whole catalogue the wizard and the grid offer. [Creating a marketplace](/docs/guides/creating-a-marketplace) covers building one — this is how you point at it once it exists.
+Every installation reads one marketplace. The default is the public `github:agents-inc/skills`; naming your own swaps the whole catalogue the grid offers. [Creating a marketplace](/docs/guides/creating-a-marketplace) covers building one — this is how you point at it once it exists.
 
 ## Quick start
 
@@ -28,14 +28,14 @@ Two things the editor needs that the CLI doesn't:
 `init` takes the marketplace as a flag, and it's the only command that does:
 
 ```bash
-npx agents-inc init --marketplace github:acme/skills
+npx agents-inc init --from <id> --marketplace github:acme/skills
 ```
 
 For a private repository, give giget a token first:
 
 ```bash
 export GIGET_AUTH=<your github token>
-npx agents-inc init --marketplace github:acme/skills
+npx agents-inc init --from <id> --marketplace github:acme/skills
 ```
 
 The token needs the `repo` scope for a private repository, or `public_repo` for a public one.
@@ -54,7 +54,7 @@ The first rung that names one wins:
 | `marketplace` in `~/.agents-inc/claude/config.ts`              | every command                      |
 | `github:agents-inc/skills`                                     | the default when nothing names one |
 
-Naming one on the command line outranks the ref a `--from` id carries: the flag is an instruction about this install, while the payload's ref is a record of where the sharer's came from. A value passed to `--marketplace` that can't be a marketplace stops the run — somebody named it, so falling through would install from a place they didn't name. A bad `CC_MARKETPLACE` warns and falls through to the next rung instead, because it was already in the environment rather than typed at this command.
+Naming one on the command line outranks the ref a `--from` id carries: the flag is an instruction about this install, while the payload's ref is a record of where the sharer's came from. A value passed to `--marketplace` beside `--from` that can't be a marketplace stops the run — somebody named it, so falling through would install from a place they didn't name. A bad `CC_MARKETPLACE` warns and falls through to the next rung instead, because it was already in the environment rather than typed at this command.
 
 **Choosing a marketplace happens at `init`.** `edit` changes what you have installed, not where it comes from.
 
@@ -63,7 +63,7 @@ Naming one on the command line outranks the ref a `--from` id carries: the flag 
 A ref starting with `github:`, `gh:`, `gitlab:`, `bitbucket:`, `sourcehut:`, `https://` or `http://` is remote. Anything else is read as a path on your own disk, so a local checkout works too:
 
 ```bash
-npx agents-inc init --marketplace ./acme-skills
+npx agents-inc init --from <id> --marketplace ./acme-skills
 ```
 
 Refs are capped at 512 characters. A remote ref may not contain `..`, may not point at a private or reserved IP address, and a shorthand one has to spell `owner/repo`; a local path may not be a Windows UNC network path.

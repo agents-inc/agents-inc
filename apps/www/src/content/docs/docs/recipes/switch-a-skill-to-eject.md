@@ -20,17 +20,7 @@ npx agents-inc edit --from <id>  # applies what you changed there
 
 `edit --ui` prints `init --from <id>` beside the link, but that command is greenfield-only and refuses a directory that already carries an installation. `edit --from <id>` is the one that comes back.
 
-:::note[Doing this from the terminal]
-`npx agents-inc edit` does it in one command, with no round trip. On the Sources step, move to the skill's row and press SPACE on its `Local` cell, then confirm the edit. The switch is reported as it happens:
-
-```
-Switching 1 skill(s) to Eject (copy to .claude/skills/)
-Copied 1 local skill(s)
-```
-
-:::
-
-Either way the files land at `.claude/skills/<skill-id>/` — `SKILL.md` and `metadata.yaml`, plus whatever else that skill ships. Edit them and run `npx agents-inc compile`.
+The files land at `.claude/skills/<skill-id>/` — `SKILL.md` and `metadata.yaml`, plus whatever else that skill ships. Edit them and run `npx agents-inc compile`.
 
 ## What changes
 
@@ -41,7 +31,7 @@ Either way the files land at `.claude/skills/<skill-id>/` — `SKILL.md` and `me
 | Plugin registration | registered with Claude Code                              | dropped, once the copy has landed                  |
 | Compiled sub-agent  | invokes the skill by its plugin ref                      | invokes it by its bare id                          |
 
-The copy also gets a `forkedFrom` block written into its `metadata.yaml`, recording the id, a hash of the source content and the date. That block is what later lets `uninstall` remove the directory and `share` include the skill — a skill directory without one is treated as your own work and left alone. `share` carries an ejected catalogue skill as its id, so a teammate gets a fresh copy rather than your edits.
+The copy also gets a `forkedFrom` block written into its `metadata.yaml`, recording the id, a hash of the source content and the date. That block is what later lets `uninstall` remove the directory — a skill directory without one is treated as your own work and left alone.
 
 The order matters and it is deliberate: the copy is written first, and the plugin registration is dropped only for skills whose copy landed. A failed copy leaves the plugin install exactly as it was.
 
@@ -57,7 +47,7 @@ So upstream fixes and additions stop arriving for that skill. Merging them back 
 
 ## Switching back deletes the local copy
 
-Going the other way — `plugin` in the cell's pair, or `Local` back to `Plugin` in the wizard — installs the plugin first and deletes the working copy the moment that skill's plugin registers. Anything you edited is gone. Copy the directory somewhere else first if you want to keep it.
+Going the other way — `plugin` in the cell's pair — installs the plugin first and deletes the working copy the moment that skill's plugin registers. Anything you edited is gone. Copy the directory somewhere else first if you want to keep it.
 
 ## `eject skills` is a different command
 
@@ -65,4 +55,4 @@ Going the other way — `plugin` in the cell's pair, or `Local` back to `Plugin`
 
 ## A global install can't be switched from a project
 
-A skill installed at global scope is inherited inside a project, and its row is locked — the install-mode cell does nothing there. Run `npx agents-inc edit` from your home directory to switch it for every project. [Global-first setup](/docs/guides/global-first-setup) explains why the lock exists.
+A skill installed at global scope is inherited inside a project. Run `npx agents-inc edit` from your home directory to switch it for every project. [Global-first setup](/docs/guides/global-first-setup) explains why the lock exists.

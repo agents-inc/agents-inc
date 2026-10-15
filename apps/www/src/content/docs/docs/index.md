@@ -28,14 +28,9 @@ That installs the skills you picked and compiles a sub-agent for each role you
 kept. [Quickstart](/docs/quickstart) walks the whole run and names every file
 it leaves on disk.
 
-:::note[Prefer the terminal?]
-`npx agents-inc init` runs the same selection as a wizard — same catalogue,
-same output.
-:::
-
 ## Start here
 
-- [Four ways in](/docs/ways-in) — the four routes to a selection, and which one
+- [Three ways in](/docs/ways-in) — the three routes to a selection, and which one
   suits where you are starting from. **Adding this to a codebase that already
   exists** and **starting from nothing** have a different answer each, and
   neither of them is the grid.
@@ -45,8 +40,7 @@ same output.
   disk.
 - [Why Agents Inc](/docs/why) — the problem, the approach, and who this is not
   for. Read this first if you have not decided yet.
-- [CLI or web](/docs/cli-or-web) — two ways to select, one way to install, and
-  how a configuration moves between them.
+- [CLI or web](/docs/cli-or-web) — how a configuration moves between them.
 
 ## Then
 

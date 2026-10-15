@@ -31,7 +31,7 @@ Those are a **Claude Code** installation's roots. A [Codex](/docs/configuration/
 
 `$CODEX_HOME` is Codex's own state root, `~/.codex` unless that variable relocates it. _(trust)_ marks the one root whose contents are read only while your global `$CODEX_HOME/config.toml` trusts that exact project directory — the install says so when it is missing.
 
-**Changing a `scope` value by hand doesn't move anything.** It edits the manifest, not the disk. Press `s` on the row in `npx agents-inc edit` instead — that runs the install at the new scope.
+**Changing a `scope` value by hand doesn't move anything.** It edits the manifest, not the disk.
 
 :::note[Doing this from the editor]
 Both halves are controls there, and nothing has to move because nothing has landed yet. A skill's `project`/`global` badge sits on its cell in the grid, repeated as **Install scope** in the panel behind its `•••` button; a sub-agent's scope is the word on its roster row. `npx agents-inc init --from <id>` writes what you picked straight into `config.ts`.
@@ -63,15 +63,12 @@ So a project file describes the whole picture, not just its own half. Two things
 
 ## Globally installed items are read-only inside a project
 
-A skill or sub-agent installed at global scope belongs to the global config, and a project may not remove it. In the wizard, space is inert on those rows and it says `Global skills cannot be changed from project scope`. The global install is shared by every project, so one project must not be able to uninstall it for the others.
+A skill or sub-agent installed at global scope belongs to the global config, and a project may not remove it. The global install is shared by every project, so one project must not be able to uninstall it for the others.
 
-You have three ways forward, and only the third actually uninstalls anything:
+You have two ways forward, and only the second actually uninstalls anything:
 
 - **Don't hand it to this project's sub-agents.** Leave the skill out of the relevant entry in `stack`. It stays installed and no prompt here mentions it.
-- **Take your own copy.** Press `s` on the row to add a project-scoped copy alongside the global install — the row then shows both `[P]` and `[G]`.
 - **Actually remove it.** Run `npx agents-inc edit` from your home directory, where the global config is the one being edited.
-
-**What the config writes for the first option is a tombstone**: a `{ scope: 'global', excluded: true }` entry in the project file. It masks the global item for this project and leaves every other project untouched. An active entry for the same id at project scope overrules it — which is what the second option writes.
 
 ## The scope rule compile enforces
 

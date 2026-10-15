@@ -39,7 +39,7 @@ The default export. Seventeen fields, three of them required.
 | `marketplace`     | `string`                           | No       | The path or URL skills are fetched from. Defaults to `github:agents-inc/skills`. See [`marketplace` and its two neighbors](#marketplace-and-its-two-neighbors).            |
 | `marketplaceName` | `string`                           | No       | The name that marketplace's own `marketplace.json` gives it. Plugin skills are registered under it.                                                                        |
 | `agentsSource`    | `string`                           | No       | Declared and preserved. Nothing in the CLI reads it — see [Fields that are accepted but inert](#fields-that-are-accepted-but-inert).                                       |
-| `selectedDomains` | `Domain[]`                         | No       | The domains this installation covers — picked in the wizard, or derived from your skills by `init --from`. Reopening the wizard restores them. Omitted when empty.         |
+| `selectedDomains` | `Domain[]`                         | No       | The domains this installation covers — derived from your skills by `init --from`. Omitted when empty.                                                                      |
 | `branding`        | `BrandingConfig`                   | No       | The display name commands print. See [Models and effort](/docs/configuration/models-and-effort#branding).                                                                  |
 | `skillsDir`       | `string`                           | No       | Where a **marketplace repository** keeps its skills. Default `src/skills`. See [Scopes and paths](/docs/configuration/scopes-and-paths#the-five-path-overrides).           |
 | `agentsDir`       | `string`                           | No       | Declared for a marketplace's sub-agent partials, and not reached — sub-agent definitions ship with the CLI.                                                                |
@@ -154,13 +154,13 @@ Write whichever reads best. What comes back out is normalized: an assignment car
 
 The mode of the whole installation is derived from the set: all-eject is `eject`, all-plugin is `plugin`, a mix is `mixed`, and an empty `skills` array is `eject`. That derived mode is the one `npx agents-inc list` prints. Per skill, `origin` also decides how the compiled agent refers to it — a plugin skill is written as `<id>:<id>`, an ejected one as the bare id.
 
-**Changing `origin` by hand doesn't move any files.** It relabels the manifest. Use `npx agents-inc edit` to switch a skill between plugin and eject, which runs the install and removal. See [Install modes](/docs/concepts/install-modes).
+**Changing `origin` by hand doesn't move any files.** It relabels the manifest. Use `npx agents-inc edit --from <id>` to switch a skill between plugin and eject, which runs the install and removal. See [Install modes](/docs/concepts/install-modes).
 
 ## `excluded`, and what a tombstone is
 
 `excluded: true` on a skill or agent entry is a tombstone: the entry stays in the file, and the thing it names is treated as not present. It exists for one case — a project masking a globally installed item that the project isn't allowed to uninstall. A `{ scope: 'global', excluded: true }` entry in a project config means "this project doesn't get it", while every other project keeps it.
 
-**A tombstone is overruled by an active entry for the same id.** If a skill is tombstoned at global scope but also listed active at project scope, it isn't excluded — the project took its own copy. That's what the scope toggle in the wizard writes.
+**A tombstone is overruled by an active entry for the same id.** If a skill is tombstoned at global scope but also listed active at project scope, it isn't excluded — the project took its own copy.
 
 For an agent, `excluded: true` removes it from compilation entirely.
 

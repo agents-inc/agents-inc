@@ -24,7 +24,7 @@ Sharing 12 skill(s) across 4 sub-agent(s)...
   Open it:     https://agentsinc.sh/editor/?fromId=<id>
 ```
 
-Hand over the id. Your teammate runs `npx agents-inc init --from <id>` in a clean directory — no wizard, no terminal needed, so it works over a pipe and in CI.
+Hand over the id. Your teammate runs `npx agents-inc init --from <id>` in a clean directory — no terminal needed, so it works over a pipe and in CI.
 
 The id is the configuration's own hash. Sharing an unchanged installation returns the id it already had.
 
@@ -48,7 +48,6 @@ A link minted in the editor carries the same fields, and a skill you added there
 ```
 Kept — written here rather than installed, so a shared configuration never carried them:
   skill my-house-style
-Remove them with 'npx agents-inc edit'.
 ```
 
 The `projects` registry, `author` and `branding` stay behind too. They describe your machine rather than the configuration, and the payload has no field for any of them.

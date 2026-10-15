@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-Most of the CLI runs headless. Three commands need a terminal, and off one they exit cleanly with nothing changed rather than hanging. This is what a pipeline can rely on, and what it has to check beyond the exit code.
+Most of the CLI runs headless. Two commands need a terminal, and off one they exit cleanly with nothing changed rather than hanging. This is what a pipeline can rely on, and what it has to check beyond the exit code.
 
 ## Quick start
 
@@ -16,7 +16,7 @@ npx agents-inc init --from <id>
 npx agents-inc compile
 ```
 
-The id comes from the editor's install dialog, or from `npx agents-inc share` run against an installation you already have. `init --from <id>` opens no wizard and needs no terminal — that is most of why the flag exists. It's greenfield-only: in a directory that already carries an installation it refuses rather than merging.
+The id comes from the editor's install dialog, or from `npx agents-inc share` run against an installation you already have. `init --from <id>` needs no terminal — that is most of why the flag exists. It's greenfield-only: in a directory that already carries an installation it refuses rather than merging.
 
 ## What runs headless
 
@@ -34,19 +34,19 @@ The id comes from the editor's install dialog, or from `npx agents-inc share` ru
 | `uninstall --yes`                                       | yes      | prints the plan instead of prompting                                                                           |
 | `new marketplace`, `build plugins`, `build marketplace` | yes      |                                                                                                                |
 | `edit --from <id>`                                      | **no**   | exits **1**, not 4 — match on the message, not the code                                                        |
-| `init`, `edit`, `uninstall` without `--yes`             | **no**   | exits 4 with nothing changed                                                                                   |
+| `uninstall` without `--yes`                             | **no**   | exits **1** with nothing changed                                                                               |
 
 The terminal-size gate never bites in CI. It reads `process.stdout.columns`, which is undefined when standard output isn't a terminal, so a piped run always clears the minimum.
 
 ## Exit codes
 
-| Code | Means                                                                           |
-| ---- | ------------------------------------------------------------------------------- |
-| `0`  | the command completed                                                           |
-| `1`  | it refused or aborted; nothing landed, and the run can be repeated              |
-| `2`  | bad arguments or flags                                                          |
-| `4`  | cancelled — a declined confirmation, or an interactive command with no terminal |
-| `5`  | the run landed and part of it did not                                           |
+| Code | Means                                                              |
+| ---- | ------------------------------------------------------------------ |
+| `0`  | the command completed                                              |
+| `1`  | it refused or aborted; nothing landed, and the run can be repeated |
+| `2`  | bad arguments or flags                                             |
+| `4`  | cancelled — a declined confirmation                                |
+| `5`  | the run landed and part of it did not                              |
 
 **Code 5 is the one to special-case.** `init`, `edit` and `eject` raise it at the end of a run that completed. The output names each failure and the single command that finishes it, so repeating the whole thing is the wrong response:
 

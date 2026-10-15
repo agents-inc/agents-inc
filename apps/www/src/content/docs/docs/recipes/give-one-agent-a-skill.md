@@ -19,7 +19,7 @@ Both write the same thing, and the install command carries it. [Selecting skills
 
 ## The terminal route is a hand edit
 
-**There is no wizard step for this.** `npx agents-inc edit` picks skills and sub-agents; the mapping between them comes from the stack you chose, and nothing in the wizard curates it. So the terminal route isn't the same job done differently — it's editing the file the editor would have written. Open `.agents-inc/claude/config.ts`, add the skill under the sub-agent that should have it, and recompile.
+Open `.agents-inc/claude/config.ts`, add the skill under the sub-agent that should have it, and recompile.
 
 <!-- prettier-ignore -->
 ```typescript
@@ -47,7 +47,7 @@ The skill has to already be installed — a plugin from a marketplace, or a dire
 Skill 'web-testing-vitest' is configured but was not found — agents will be compiled without it.
 ```
 
-That's a warning, not a failure — `compile` still exits 0. To install a skill first, select it in the editor and run the command it hands you, or run `npx agents-inc edit` and select it there.
+That's a warning, not a failure — `compile` still exits 0.
 
 ## Preloaded or dynamic
 

@@ -173,7 +173,7 @@ An invalid configuration cannot get through at all.
 
 ## Where to go next
 
-- [Four ways in](/docs/ways-in) — the other three routes to a selection, and
+- [Three ways in](/docs/ways-in) — the other two routes to a selection, and
   when each one is the right one.
 - [Quickstart](/docs/quickstart) — what `init --from` actually writes to disk.
 - [The composer](/docs/editor/composer) — the same job for a project that does

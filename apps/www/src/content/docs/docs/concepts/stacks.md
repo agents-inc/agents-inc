@@ -9,13 +9,9 @@ A **stack** is a named selection: which [skills](/docs/concepts/skills) each [su
 
 Open the [editor](/editor) and click a stack in its stack grid. Every pre-built stack is a cell there, alongside "Start from scratch". Picking one selects every skill that stack names and staffs the sub-agents it names, so the skills grid below it arrives with those choices already made, for you to keep or change.
 
-:::note[From the terminal]
-`npx agents-inc init` opens the wizard on the same stacks, as a list rather than a grid. Picking one pre-fills the wizard, so the Skills grid two steps later arrives already filled in. Press `A` there to take it exactly as it stands and go straight to the confirm screen.
-:::
-
 ## Two places you meet the word
 
-**A pre-built stack** is a starting point — `nextjs-fullstack`, `react-hono-fullstack`, `sveltekit-fullstack` and so on. The editor draws them as a grid and `npx agents-inc init` opens on a list of them; either way, picking one pre-fills your selection. You can also start from scratch.
+**A pre-built stack** is a starting point — `nextjs-fullstack`, `react-hono-fullstack`, `sveltekit-fullstack` and so on. The editor draws them as a grid, and picking one pre-fills your selection. You can also start from scratch.
 
 **The `stack` field in your `config.ts`** is the result: the per-agent, per-category mapping that the compiler actually reads.
 
@@ -37,10 +33,9 @@ The mapping is the interesting part of a setup, and it is the part worth sharing
 
 ## Changing it
 
-Three routes, same outcome:
+Two routes, same outcome:
 
 - `npx agents-inc edit --ui` — reads this installation, mints an id for it and opens the editor on that id. Change what you like in the grid, then apply it with `npx agents-inc edit --from <id>`. That is the command to use, not the `init --from` the editor's install dialog hands you: `init` refuses a directory that already holds an installation, because installing a shared configuration is a fresh setup rather than a merge.
-- `npx agents-inc edit` — the wizard, with your current selections pre-loaded.
 - Edit `.agents-inc/claude/config.ts` by hand, then `npx agents-inc compile`. The generated `config-types.ts` gives you type checking while you do, so a mistyped skill ID is a compile error rather than a silent no-op.
 
 See [Editing your config](/docs/guides/editing-config) for the full config shape, and the [config reference](/docs/configuration/config-reference) for every field the file accepts.

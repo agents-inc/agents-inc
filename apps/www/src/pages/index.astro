@@ -175,8 +175,7 @@ import {
 
 /**
  * The command in the hero is the first one a new user would actually run, and
- * it is the only one on the page. `init` with no flags starts the wizard from
- * nothing, which is exactly what a first-time visitor wants.
+ * it is the only one on the page.
  */
 const INSTALL_COMMAND = "npx agents-inc init"
 
@@ -332,8 +331,7 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
 
               IT LEADS, and that is an owner ruling rather than a layout
               preference. The editor is the main way in; the command block
-              beside it is the terminal route, which is the alternative for
-              SELECTING and not an alternative to installing. Position is what
+              beside it is the terminal route. Position is what
               says so — amber cannot, because rule 4 reserves it for what the
               user deliberately chose and neither of these is a choice yet. */}
           <a
@@ -538,11 +536,6 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
             ))
           }
         </ol>
-        <p class={`mt-6 max-w-measure ${PARAGRAPH_CLASS}`}>
-          Prefer the terminal? <em class={INLINE_CODE_CLASS}>{INSTALL_COMMAND}</em> runs the
-          same selection as a wizard, and ends at the same install. The browser cannot write
-          to your disk, so step three is the CLI either way.
-        </p>
       </section>
 
       {/*
@@ -588,16 +581,6 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
 
         Keep `aspect-video` (or set width and height on the element) so the
         reserved space still matches the file and the page does not jump.
-
-        Two recordings already exist in the repo. Neither is wired up here,
-        and both need a decision before they are:
-          · packages/cli/assets/demo.gif — the VHS recording, 1400x1200
-            (7:6) and 2.4 MB. Heavy, and the wrong shape for the box below;
-            if it is used anyway, change `aspect-video` to `aspect-[7/6]` in
-            the same place.
-          · the walkthrough video linked from packages/cli/README.md, hosted
-            on GitHub's user-attachments CDN. Not a same-origin asset, so it
-            would need downloading into public/ rather than hotlinking.
       */}
       <div
         class="mt-gutter flex aspect-video w-full max-w-measure items-center justify-center border border-hairline bg-code"

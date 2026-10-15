@@ -11,15 +11,14 @@ A rough overview of the Agents Inc. CLI codebase.
 
 ## Overview
 
-Agents Inc. CLI (`agents-inc`) is a TypeScript CLI that manages AI agent configurations for Claude Code — and for OpenAI Codex, which is not in a release yet. It loads skill definitions from a marketplace, lets users select technology stacks via an interactive terminal wizard, compiles agent prompts from Liquid templates with selected skills injected, and installs the results as Claude plugins or local files.
+Agents Inc. CLI (`agents-inc`) is a TypeScript CLI that manages AI agent configurations for Claude Code — and for OpenAI Codex, which is not in a release yet. It loads skill definitions from a marketplace, compiles agent prompts from Liquid templates with selected skills injected, and installs the results as Claude plugins or local files.
 
 ## Technology Stack
 
 | Layer             | Library              | Purpose                                   |
 | ----------------- | -------------------- | ----------------------------------------- |
 | CLI Framework     | oclif                | Command parsing, flags, plugins, hooks    |
-| Terminal UI       | Ink + React          | Interactive wizard, terminal rendering    |
-| State Management  | Zustand              | Wizard step state and selections          |
+| Terminal UI       | Ink + React          | Terminal rendering                        |
 | Schema Validation | Zod                  | Runtime validation at parse boundaries    |
 | Template Engine   | LiquidJS             | Agent prompt compilation from partials    |
 | Config Loader     | jiti                 | TypeScript config files loaded at runtime |
@@ -39,8 +38,7 @@ src/
     commands/            # oclif command classes (build, new, + top-level)
     components/          # Ink React components
       common/            #   Shared UI (confirm, spinner, select-list)
-      hooks/             #   React hooks for wizard behavior
-      wizard/            #   Multi-step wizard components
+      hooks/             #   React hooks
     hooks/
       init.ts            #   oclif init hook (the dashboard, when no command is given)
     lib/                 # Core business logic (no UI)
@@ -54,12 +52,9 @@ src/
       plugins/           #   Plugin discovery, validation, manifest, versioning
       skills/            #   Skill fetching, copying, metadata, local-copy moves
       stacks/            #   Stack loading, resolution, compilation
-      wizard/            #   Build step logic (pure functions, no UI)
       compiler.ts        #   Liquid template engine for agent compilation
       schemas.ts         #   The Zod schemas every parse boundary uses
       exit-codes.ts      #   Named exit code constants
-    stores/
-      wizard-store.ts    #   Zustand store for wizard state + actions
     types/               # TypeScript type definitions (agents, config, matrix, plugins, skills, stacks)
       generated/         #   Auto-generated union types and built-in matrix from skills source
     utils/               # Cross-cutting utilities (errors, exec, fs, logger, type-guards)
@@ -69,7 +64,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 ## Core Data Flow
 
 ```
-1. User runs command (e.g., `agents-inc init`)
+1. User runs command (e.g., `agents-inc init --from <id>`)
    -> the oclif init hook acts only when no command is given: it shows the dashboard
 
 2. Command loads skills matrix
@@ -78,18 +73,13 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
    -> fetches categories, rules, skills
    -> Returns SourceLoadResult (merged matrix + resolved source config)
 
-3. Wizard renders (Ink/React)
-   -> Zustand store manages step-by-step state
-   -> Steps: stack -> domains -> build -> sources -> agents -> confirm
-   -> Returns WizardResultV2 (selected skills, agent configs, scope settings)
-
-4. Installation
+3. Installation
    -> Installs plugin skills, copies ejected ones
    -> writeProjectConfig() generates the TypeScript config
    -> config-gate's writeScopedFromWizard() splits it into global + project scopes,
       fans the global change out to registered projects and recompiles their agents
 
-5. Compilation
+4. Compilation
    -> Reads agent partials (identity.md, playbook.md, output.md, etc.)
    -> Builds template context from selected skills
    -> Sanitizes to prevent Liquid injection
@@ -111,7 +101,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 - **Zod at boundaries**: YAML and JSON are parsed through Zod schemas — the CLI's in `schemas.ts`, the share payload's in `@workspace/matrix`. Lenient schemas (`.passthrough()`) at loading boundaries, strict schemas for validation. Bridge pattern (`z.ZodType<ExistingType>`) ensures runtime matches compile-time types.
 
-- **One marketplace per installation**: An installation reads the one marketplace its config names, public or private, and the local skills already on disk are merged into that catalogue when it loads. The wizard's Sources step chooses each skill's install mode, not its marketplace.
+- **One marketplace per installation**: An installation reads the one marketplace its config names, public or private, and the local skills already on disk are merged into that catalogue when it loads.
 
 - **Generated types**: Union types (`SkillId`, `Domain`, `Category`, `AgentName`, etc.) are auto-generated from the skills source into `types/generated/`. Runtime type guards validate strings against these unions.
 
@@ -139,7 +129,7 @@ The same pass writes each agent's completion gate into that frontmatter: the pro
 | Commands    | `commands`             | oclif command execution via `runCommand()`      |
 | E2E         | `e2e/vitest.config.ts` | Full CLI flows with real terminal interaction   |
 
-E2E tests cover 5 categories: commands, interactive wizards, lifecycle flows, integration scenarios, and smoke tests. Test data uses factories from `__tests__/factories/` and `__tests__/helpers/` and canonical fixtures from `__tests__/mock-data/`.
+E2E tests cover 5 categories: commands, interactive prompts, lifecycle flows, integration scenarios, and smoke tests. Test data uses factories from `__tests__/factories/` and `__tests__/helpers/` and canonical fixtures from `__tests__/mock-data/`.
 
 ## Conventions
 

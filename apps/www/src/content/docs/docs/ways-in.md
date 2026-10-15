@@ -1,21 +1,20 @@
 ---
-title: Four ways in
-description: Describe your project to the composer, let the stack-detection skill read it, click through the editor's grid, or answer the terminal wizard — the four routes to a selection, and which one suits where you are starting from.
+title: Three ways in
+description: Describe your project to the composer, let the stack-detection skill read it, or click through the editor's grid — the three routes to a selection, and which one suits where you are starting from.
 ---
 
 Every setup is the same two moves: arrive at a selection of skills, then run one
 command that writes it. **The second move never changes.** This page is about
-the first, because there are four ways to make it and the right one depends
+the first, because there are three ways to make it and the right one depends
 entirely on what you already have.
 
-|                         | Where it runs            | Best when                                              |
-| ----------------------- | ------------------------ | ------------------------------------------------------ |
-| **Stack detection**     | Claude Code, in the repo | You are adding this to a codebase that already exists  |
-| **The composer**        | The editor               | You are starting from nothing and can describe it      |
-| **The grid**            | The editor               | You know what you want and would rather click it       |
-| **The terminal wizard** | Your shell               | No browser, or you are already standing in the project |
+|                     | Where it runs            | Best when                                             |
+| ------------------- | ------------------------ | ----------------------------------------------------- |
+| **Stack detection** | Claude Code, in the repo | You are adding this to a codebase that already exists |
+| **The composer**    | The editor               | You are starting from nothing and can describe it     |
+| **The grid**        | The editor               | You know what you want and would rather click it      |
 
-Two of those four are the ones to reach for first, and they split on one
+Two of those three are the ones to reach for first, and they split on one
 question: **does the code already exist?**
 
 ## Adding to a project you already have
@@ -59,7 +58,7 @@ attributable to somebody. [The composer](/docs/editor/composer) covers what it
 will and will not decide, and why applying a proposal can never reach a
 configuration you could not have clicked to by hand.
 
-## The two you already know
+## The one you already know
 
 **The grid** is the editor with no shortcut — the whole catalogue on screen,
 grouped by domain, and you click what you want. Reach for it when you know the
@@ -68,22 +67,16 @@ when you want something neither of them offers: a sub-agent's model and
 reasoning effort, which sub-agents carry which skill, or a skill from outside
 the catalogue. [Selecting skills](/docs/editor/selecting-skills) is that page.
 
-**The terminal wizard** is `npx agents-inc init` — the same catalogue as an Ink
-UI in your shell. Reach for it when a browser is not available or not wanted,
-or when you are already in the project and want this over with.
-[CLI or web](/docs/cli-or-web) compares the two surfaces properly.
-
 ## They all end in the same place
 
-None of the four installs anything. Three of them hand you a short id and the
-command that installs it; the wizard skips the id because it is already standing
-where the files go.
+None of the three installs anything. All three hand you a short id and the
+command that installs it.
 
 ```bash
 npx agents-inc init --from Ab3xY9_Q
 ```
 
-That is not four pipelines with a shared ending — it is one pipeline with four
+That is not three pipelines with a shared ending — it is one pipeline with three
 intakes. The catalogue is the same catalogue, the payload is the same payload,
 and an id minted by the detection skill is the same kind of id the editor's
 install dialog mints. So the routes mix: detect a stack, open the result in the

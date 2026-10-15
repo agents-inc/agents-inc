@@ -3,7 +3,7 @@ title: Install modes
 description: Plugin versus eject — the per-skill choice that decides whether a skill's files are registered with Claude Code or copied into your project for you to own.
 ---
 
-A skill installs one of two ways: as a Claude Code **plugin**, or **ejected** — copied into your project as files you own. It's a per-skill choice, so a mixed installation is normal, and it's independent of the skill's [scope](/docs/concepts/scopes). Set it wherever you pick your skills — the [editor](/docs/editor)'s grid, or the wizard.
+A skill installs one of two ways: as a Claude Code **plugin**, or **ejected** — copied into your project as files you own. It's a per-skill choice, so a mixed installation is normal, and it's independent of the skill's [scope](/docs/concepts/scopes). Set it wherever you pick your skills — the [editor](/docs/editor)'s grid.
 
 ## Quick start
 
@@ -16,12 +16,6 @@ The choice travels in the id the Install dialog mints, so install with the comma
 ```bash
 npx agents-inc init --from Ab3xY9_Q
 ```
-
-`npx agents-inc init` on its own starts the wizard from nothing — it's a valid command, it just doesn't carry what you configured in the browser.
-
-:::note[From the terminal]
-On the wizard's Sources step, `SPACE` on a row's `Local` cell is the same choice — `Local` is what that step calls eject. It's the only install-mode surface there: the step has no bulk keys, and `SPACE` is inert on a row inherited from a global install. To change a skill already installed, `npx agents-inc edit` and the same step; `npx agents-inc eject skills` copies the marketplace's skills into `.claude/skills/` in one go.
-:::
 
 `npx agents-inc list` prints which mode an installation is on: `Plugin`, `Eject` or `Mixed`. The mode isn't stored anywhere — it's read off the skills in your config, so an installation holding one local copy and the rest as plugins reports `Mixed`.
 
@@ -37,7 +31,7 @@ You can switch modes after initial install using `npx agents-inc edit`.
 
 Install mode decides how a skill's files get there. Scope decides who can see them — this project, or every project on the machine. The two are set independently, so a skill can be an ejected copy at global scope, a plugin at project scope, or either of the other two combinations.
 
-In the editor, scope is the second pair on a skill's cell, `project | global`; a sub-agent carries the same word on its roster row. In the wizard it's `S` on the focused row, on the Skills and Agents steps alike.
+In the editor, scope is the second pair on a skill's cell, `project | global`; a sub-agent carries the same word on its roster row.
 
 [Scopes](/docs/concepts/scopes) covers what each one means, why global is the default, and the one pairing the CLI refuses to write.
 

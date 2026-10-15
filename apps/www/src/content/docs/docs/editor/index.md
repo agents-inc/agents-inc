@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-The editor is the browser front door onto the same catalogue the CLI reads. Pick a stack, click the skills you want, decide which sub-agents carry them, and it hands you a command to run. [CLI or web](/docs/cli-or-web) has the full comparison — the short of it is that the editor is the one that shows you the whole catalogue at once, and the one you can hand to somebody else.
+The editor is the browser front door onto the same catalogue the CLI reads. Pick a stack, click the skills you want, decide which sub-agents carry them, and it hands you a command to run.
 
 **You do not have to build the selection yourself.** [The composer](/docs/editor/composer), docked at the foot of the skills column, takes a sentence describing your project and proposes the skills for it; for a project that already exists, the [stack-detection skill](/docs/guides/adding-to-an-existing-project) reads the repository and proposes one from the code. Both leave you here, in the grid, with something to correct rather than something to assemble.
 

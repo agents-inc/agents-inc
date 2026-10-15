@@ -1,11 +1,11 @@
 ---
 title: Configuration
-description: What .agents-inc/claude/config.ts is, which of the two files beside it you edit by hand, when to reach for the editor or the wizard instead, and what compile does with what you wrote.
+description: What .agents-inc/claude/config.ts is, which of the two files beside it you edit by hand, when to reach for the editor instead, and what compile does with what you wrote.
 sidebar:
   order: 1
 ---
 
-Your installation is described by one file: `.agents-inc/claude/config.ts`. It's plain TypeScript, it's meant to be hand-edited, and it's the source of truth `npx agents-inc compile` reads every time it rebuilds your sub-agents. Whichever front door you came through writes it on first run — the editor hands you an `npx agents-inc init --from <id>` command that does it, and `npx agents-inc init` on its own does it from the terminal wizard. Nothing in it is off-limits afterwards.
+Your installation is described by one file: `.agents-inc/claude/config.ts`. It's plain TypeScript, it's meant to be hand-edited, and it's the source of truth `npx agents-inc compile` reads every time it rebuilds your sub-agents. Whichever front door you came through writes it on first run — the editor hands you an `npx agents-inc init --from <id>` command that does it. Nothing in it is off-limits afterwards.
 
 ## Quick start
 
@@ -70,15 +70,13 @@ Key order is the writer's, not the order you selected things in — top-level fi
 
 **A field the loader accepts is not always a field the generated types declare.** `branding` and the five path overrides are read and preserved by the CLI, but the `ProjectConfig` interface in `config-types.ts` doesn't declare them — so writing one into `config.ts` draws a TypeScript error from `satisfies ProjectConfig` even though the CLI honors it. See [Models and effort](/docs/configuration/models-and-effort) for `branding` and [Scopes and paths](/docs/configuration/scopes-and-paths) for the path overrides.
 
-## Editing by hand, the wizard, or the editor
+## Editing by hand or the editor
 
 **Go back to the editor** when you're reconsidering the selection rather than adjusting a line of it — the whole catalog is on screen there, and a hand-edit only shows you what you already have. It's a round trip, because the browser can't read your disk: `npx agents-inc edit --ui` publishes this installation and opens it at agentsinc.sh/editor, and `npx agents-inc edit --from <id>` applies what you changed back. Reach for `edit --from` and not `init --from` — the second refuses a directory that's already installed, since installing a shared configuration is a fresh setup rather than a merge.
 
-**Run `npx agents-inc edit`** when the change involves files landing on or leaving disk and you'd rather stay in the terminal: adding a skill, removing one, switching a skill between plugin and eject, or moving something between project and global scope. The wizard runs the install pipeline; hand-editing `skills` only edits the manifest, and a config naming a skill nothing installed compiles to an agent referencing something that isn't there.
-
 **Edit by hand** when you're rearranging what's already installed: moving a skill from one agent to another, marking one preloaded, pinning a model, dropping an agent's entry in `stack`. None of that installs or removes anything, so `compile` is all it needs.
 
-All three write the same file. See [Commands](/docs/reference/commands) for what each one does.
+Both write the same file. See [Commands](/docs/reference/commands) for what each one does.
 
 ## What `compile` does with it
 

@@ -96,7 +96,7 @@ Which values `model` and `effort` accept, and what each does, is in [Models and 
 
 ## Globally Installed Items Are Read-Only in a Project
 
-A skill or agent installed at global scope belongs to the global config, and a project may not remove it. In the wizard, pressing space on a globally installed skill or agent from inside a project does nothing and shows `Global skills cannot be changed from project scope` (or the agent equivalent). This is deliberate: the global install is shared by every project, so one project must not be able to uninstall it for the others.
+A skill or agent installed at global scope belongs to the global config, and a project may not remove it. This is deliberate: the global install is shared by every project, so one project must not be able to uninstall it for the others.
 
 **If you don't want a global skill used in a project, don't give it to that project's agents.** Curate the `stack` instead of trying to deselect the skill:
 
@@ -112,8 +112,6 @@ const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
 ```
 
 The skill stays installed and available; it just isn't part of any agent's prompt in this project. Run `npx agents-inc compile` after editing.
-
-To take genuine project ownership of a globally installed skill instead, press `s` (scope toggle) on its row in the wizard. That gives the project its own copy at project scope while the global install stays intact — the row then shows both `[P]` and `[G]`.
 
 To actually uninstall a global skill or agent, edit at global scope: run `npx agents-inc edit` from your home directory (`cd ~`).
 

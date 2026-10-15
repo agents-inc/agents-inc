@@ -11,10 +11,6 @@ Global is the default on both front doors, and most of the time it's the one you
 
 In the editor, scope is the `project | global` pair on a skill's cell — click the one you want — and a word on a sub-agent's roster row, which opens the panel you pick it in. Reach for project scope only where a project genuinely differs from your defaults.
 
-:::note[From the terminal]
-`S` on the focused row flips scope, on the Skills step and the Agents step alike. [Global-first setup](/docs/guides/global-first-setup) walks the whole decision as a task.
-:::
-
 ## What each scope means
 
 |                     | Global                             | Project                        |
@@ -57,7 +53,7 @@ Two ways out: move the skill to global scope, or pin the sub-agent to the projec
 
 ## Global entries are read-only inside a project
 
-`npx agents-inc edit` from a project shows global skills and sub-agents alongside the project's own, and locks them. Space is inert on those rows and the wizard says `Global skills cannot be changed from project scope`. One project must not uninstall something every other project is using.
+One project must not uninstall something every other project is using.
 
 To change a global item, edit at global scope — run `edit` from your home directory, or from any directory that has no project installation of its own.
 

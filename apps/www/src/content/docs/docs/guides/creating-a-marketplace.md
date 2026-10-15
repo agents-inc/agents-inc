@@ -19,7 +19,7 @@ npx agents-inc build plugins          # package each skill and agent
 npx agents-inc build marketplace      # write marketplace.json, the index an install reads
 ```
 
-Point a project at it with `npx agents-inc init --marketplace github:acme/skills`. The rest of
+Point a project at it with `npx agents-inc init --from <id> --marketplace github:acme/skills`. The rest of
 this page is what each of those steps expects of the directory, and what `build marketplace`
 refuses to publish.
 
@@ -39,7 +39,7 @@ make a directory a marketplace the CLI can read:
 package.json                  # name, version, description and author — all four required
 config/skill-categories.ts    # the categories your skills fall into
 config/skill-rules.ts         # relationships — see the note below
-config/stacks.ts              # the stacks the wizard offers
+config/stacks.ts              # the stacks the editor offers
 src/skills/{skill-name}/      # at least one skill — SKILL.md + metadata.yaml
 ```
 
@@ -53,7 +53,7 @@ export default { version: "1.0.0" }
 ```
 
 Your marketplace works fully without them: skills install, reach their sub-agents and compile. What
-you lose is the wizard's incompatibility hints between your own skills. Generating those
+you lose is the incompatibility hints between your own skills. Generating those
 automatically is planned.
 
 Copy the shapes of those files from the public marketplace at
@@ -119,7 +119,7 @@ This generates `marketplace.json`, the index that the CLI reads when installing 
 4. Point a project at your marketplace when you install it:
 
 ```bash
-npx agents-inc init --marketplace github:acme/skills
+npx agents-inc init --from <id> --marketplace github:acme/skills
 ```
 
 Choosing a marketplace happens at `init` — that is the moment an install decides where its skills
@@ -137,7 +137,7 @@ having to name it. See [Marketplaces in the editor](/docs/editor/marketplaces), 
 of it.
 
 :::note[Doing this from the terminal]
-`npx agents-inc init --marketplace github:acme/skills` names it at install time. The flag outranks
+`npx agents-inc init --from <id> --marketplace github:acme/skills` names it at install time. The flag outranks
 whatever a `--from` payload carries — naming one is an instruction about this install, where the
 payload's ref is only a record of where the sharer's came from.
 :::

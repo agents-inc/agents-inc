@@ -15,7 +15,7 @@ On Claude Code the editor offers those four models and no more, so `inherit` isn
 
 ## The terminal route is a hand edit
 
-**There is no wizard step for either value.** `npx agents-inc edit` won't offer you a model, so the terminal route isn't the same job done differently — it's editing the file the editor would have written. Add `model`, `effort`, or both to the agent's entry, then recompile.
+Add `model`, `effort`, or both to the agent's entry, then recompile.
 
 <!-- prettier-ignore -->
 ```typescript

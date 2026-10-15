@@ -236,8 +236,8 @@ export default defineConfig({
             { slug: "docs/why" },
             // Between the two on purpose: "should I" is answered above it and
             // "walk me through one" below it, and the question in the middle —
-            // which of the four intakes suits what I am holding — had no page
-            // at all until 2026-08-31. Two of the four were undocumented
+            // which of the three intakes suits what I am holding — had no page
+            // at all until 2026-08-31. Two of the three were undocumented
             // entirely; the composer had one subordinate clause on the editor
             // page and stack detection was not named anywhere on this site.
             { slug: "docs/ways-in" },
@@ -269,7 +269,7 @@ export default defineConfig({
 
         // The four groups below join the three above them in ascending
         // commitment: a reader arrives at Guides with a task, at Configuration
-        // once the wizard's choices stop being enough, at The editor if they
+        // once the editor's choices stop being enough, at The editor if they
         // would rather see the catalogue than type at it, and at Recipes and
         // Troubleshooting with something specific already in mind.
         //
