@@ -13,9 +13,9 @@ import type { ShareRefusal, ShareResult } from "@/lib/api/configs"
 
 const COPIED_DECAY_MS = 2_000
 
-// `init` alone is a valid CLI invocation — it just starts the wizard from
-// nothing. That is the fallback when an id cannot be minted: the command still
-// works, it simply does not carry what was configured here.
+// `init` alone is a valid CLI invocation. That is the fallback when an id
+// cannot be minted: the command still works, it simply does not carry what was
+// configured here.
 const BASE_COMMAND = "npx agents-inc init"
 
 // A flag rather than a positional. Nobody types this line — the block copies
@@ -39,11 +39,9 @@ const PROVIDER_FLAG = "--provider"
 /**
  * D15: `--provider` IS INVALID WITHOUT `--from`, so the flag cannot ride along on the fallback.
  *
- * `init --provider codex` with no id exits INVALID_ARGS, which is what makes "the interactive flow
- * is Claude-only" provable rather than conventional. Appending it to the bare command would hand
- * somebody whose worker is down a line that exits non-zero instead of one that starts a wizard — so
- * the command stays bare and the absence is EXPLAINED here, or a Codex visitor reads a Claude
- * command and finds out on their own machine.
+ * `init --provider codex` with no id exits INVALID_ARGS. Appending it to the bare command would hand
+ * somebody whose worker is down a line that exits non-zero — so the command stays bare and the
+ * absence is EXPLAINED here.
  */
 const PROVIDER_NEEDS_AN_ID = "a provider needs --from"
 
@@ -82,8 +80,8 @@ export const COMMAND_NOTES = {
   // The only ending that names an action. Re-opening the dialog mints again
   // and is refused again, so without the reload no id ever arrives.
   "out-of-date": "out of date — reload the page for an id",
-  refused: "id unavailable — this command starts a fresh wizard",
-  unreachable: "offline — this command starts a fresh wizard",
+  refused: "id unavailable — this command starts over in the editor",
+  unreachable: "offline — this command starts over in the editor",
   // The other ending with a remedy, and the only one whose remedy is behind
   // this dialog rather than in front of it. Re-opening mints again and is
   // refused again, so the sentence has to send the reader back to the rows.
