@@ -902,105 +902,16 @@ describe("a finding the INDEX names nowhere", () => {
   });
 });
 
-/** The findings a pin below names more than once, and the path prefix they repeat. */
-const INK_PROMPT_CLOSURE = "2026-07-19-ink-prompt-closure-lets-hang-anti-pattern.md";
-const QA_SWEEP_V0144 = "2026-07-29-qa-sweep-working-tree-v0144.md";
-const UNUSED_BINDINGS =
-  "2026-08-01-unused-bindings-in-tests-mark-assertions-that-were-planned-but-never-written.md";
-const DUAL_SCOPE_CONTENTION =
-  "2026-07-19-e2e-dual-scope-contention-flake-silent-marketplace-catch.md";
-const HARDCODED_HEADER =
-  "2026-07-31-a-hardcoded-header-lets-its-fixture-omit-the-field-it-will-derive-from.md";
-const CATALOG_EMISSION = "2026-08-17-catalog-emission-blocked-by-private-relationship-narrowing.md";
-const INTEGRATION = "src/cli/lib/__tests__/integration/";
-
-const STANDARDS_DOCS = "standards_docs";
-const PARTIAL_NOTE = "partial_note";
-const RESOLVED_BY = "resolved_by";
-
-function unresolved(file: string, key: string, value: string): UnresolvedReference {
-  return { file, key, value };
-}
-
 /**
- * Every dangling frontmatter reference on disk, named rather than counted — 11 across 7 findings,
- * and the worklist for whoever repairs them. The repair is one line per row and belongs to the
- * `.ai-docs/` owners; this pin is what makes the set a fact rather than a claim, and it reddens on
- * the next one added as well as the next one fixed.
+ * Every dangling frontmatter reference on disk, named rather than counted, and the worklist for
+ * whoever repairs them. The repair is one line per row and belongs to the `.ai-docs/` owners; this
+ * pin is what makes the set a fact rather than a claim, and it reddens on the next one added as well
+ * as the next one fixed.
  *
  * A reference outside the repository, or onto a path git ignores, is never judged, so it never
  * belongs here: a red listing one is the scan depending on the machine, not a pin to re-derive.
- *
- * Two groups, and they are not the same defect:
- *
- *   - **One value that is not a path at all** — a summary sentence where `TEMPLATE.md` rule 6 calls
- *     for the grep's output pasted. It is here because a list entry is judged as a path whatever it
- *     looks like, which is the clause that catches it.
- *   - **The rest name source files, specs and a `docs/` tree that were deleted after the finding
- *     was written.** Arguably a dated record rather than a defect — the argument that keeps
- *     `changelogs/` out of the deletion protocol. They are pinned rather than excluded because the
- *     scan cannot tell the two apart from the value, and a reader who greps one and finds nothing
- *     is owed the same repair either way: state what the file held, or drop the entry.
- *
- * A third group sat above these and is now empty: a finding pointing at a finding that is gone,
- * which is the only kind a reader loses information to. Four of them lived in one frontmatter-drift
- * audit and left when a batch deleted the audit itself; a fifth arrived in the same batch, in
- * `2026-08-01-link-integrity-scan-scope-excludes-the-keys-that-dangle.md` — the finding written
- * about this very class, left carrying the last instance of it. That row was retired by REPAIRING
- * the citation rather than by deleting the file that held it, so the empty group is this scan
- * working rather than losing its subject, and a row arriving here again is a different and worse
- * event than one arriving in either group above.
  */
-const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [
-  unresolved(
-    "2026-04-21-task-ids-in-test-names-sweep-needed.md",
-    AFFECTED_FILES,
-    "plus ~20 more test files (151 D-NNN occurrences across 30 files)",
-  ),
-  unresolved(
-    DUAL_SCOPE_CONTENTION,
-    AFFECTED_FILES,
-    "e2e/lifecycle/dual-scope-spacebar-reselect-restore.e2e.test.ts",
-  ),
-  unresolved(INK_PROMPT_CLOSURE, AFFECTED_FILES, "src/cli/commands/update.tsx"),
-  unresolved(INK_PROMPT_CLOSURE, AFFECTED_FILES, "src/cli/commands/new/agent.tsx"),
-  unresolved(
-    "2026-07-20-page-object-adoption-must-not-silently-change-sentinel-or-budget.md",
-    AFFECTED_FILES,
-    "e2e/lifecycle/source-switching-per-skill.e2e.test.ts",
-  ),
-  unresolved(
-    "2026-07-20-shared-mutable-constants-and-false-dry.md",
-    AFFECTED_FILES,
-    "src/cli/lib/skills/generators.ts",
-  ),
-  unresolved(QA_SWEEP_V0144, AFFECTED_FILES, "src/cli/commands/validate.ts"),
-  unresolved(QA_SWEEP_V0144, STANDARDS_DOCS, "docs/guides/editing-config.md"),
-  unresolved(QA_SWEEP_V0144, STANDARDS_DOCS, "docs/reference/commands.md"),
-  unresolved(UNUSED_BINDINGS, AFFECTED_FILES, `${INTEGRATION}init-end-to-end.integration.test.ts`),
-  unresolved(UNUSED_BINDINGS, AFFECTED_FILES, `${INTEGRATION}source-switching.integration.test.ts`),
-];
-
-/**
- * The finding whose `resolved_by` names the producer that loaded its own sub-agent roster. The
- * roster is still the ruling; the symbol was deleted as a test-only export, so the note now names
- * something a reader cannot grep for.
- */
-const FOUR_PRODUCERS =
-  "2026-08-21-four-producers-of-one-union-and-two-of-them-read-the-marketplace.md";
-
-/**
- * The finding whose `resolved_by` records that two frozen constants BECAME functions. Naming the
- * dead names is the note's content rather than a slip: it says `CACHE_DIR` is now `cacheRoot()`
- * and `GLOBAL_INSTALL_ROOT` is now `globalInstallRoot()`, and a rename note that cannot spell the
- * old name says nothing. Both are pinned below rather than edited out.
- */
-const FAKE_HOME_OUTLIVED =
-  "2026-08-21-a-fake-home-is-outlived-by-a-frozen-constant-and-a-detached-child.md";
-
-function undeclaredSymbol(file: string, key: string, symbol: string): UndeclaredSymbol {
-  return { file, key, symbol };
-}
+const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [];
 
 /**
  * Every name a lifecycle note pins its claim to that nothing in the repository declares. Each is a
@@ -1008,44 +919,12 @@ function undeclaredSymbol(file: string, key: string, symbol: string): Undeclared
  * rename half of the class and the half a scanner can see. Re-derive the population from the diff
  * this assertion prints rather than from a count written here, which rots on the next deletion.
  *
- * `loadAndMergeSkillsMatrix` is the one already written up twice: a doc pass found four passages
- * describing it as live, one of them an instruction not to call it, and the function does not
- * exist. Its `partial_note` here says the same thing and outlived that repair, because nothing had
- * ever read a note against source.
- *
  * `writeScopedConfigs` is deliberately NOT in this list and is the reason the scan is written the
  * weaker way: a test-local shim still declares it, so a note naming it resolves. The scan catches
  * renames, not landed fixes — re-deriving the claim itself is a reader's job, and `TEMPLATE.md`
  * binds it to the act of editing a finding at all.
- *
- * `CACHE_DIR` and `GLOBAL_INSTALL_ROOT` are the pair this list existed for and did not hold, and
- * how they got past it is worth more than the entries. **This assertion reads the WORKING TREE,
- * gitignored files included**, so a name lives on in whatever debris a machine happens to carry —
- * here `packages/cli/.cache/handrun.mjs`, `e2e/helpers/handrun.gen.mjs` and the ignored
- * `todo/plans/CLI-729-skill-olympics/` arena, all of which still declare the pre-rename constants.
- * Locally the scan therefore answered 10 and passed; on a clean checkout it answers 12, and CI has
- * been red on it since the 0.157.0 push. `UNAUTHORED_DIRECTORIES` in the checker is a hardcoded
- * denylist and cannot track `.gitignore`, which is the defect underneath — filed, not fixed here.
- * Reproduce the CI answer without a clean checkout by scanning `git ls-files` instead of the tree.
  */
-const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [
-  undeclaredSymbol(DUAL_SCOPE_CONTENTION, PARTIAL_NOTE, "FOCUS_EFFECT_FLUSH_MS"),
-  undeclaredSymbol(DUAL_SCOPE_CONTENTION, PARTIAL_NOTE, "inputReady"),
-  undeclaredSymbol(DUAL_SCOPE_CONTENTION, PARTIAL_NOTE, "inputReady"),
-  undeclaredSymbol(HARDCODED_HEADER, RESOLVED_BY, "formatEnabledMarketplaces"),
-  undeclaredSymbol(HARDCODED_HEADER, RESOLVED_BY, "enabledSources"),
-  undeclaredSymbol(HARDCODED_HEADER, RESOLVED_BY, "setEnabledSources"),
-  undeclaredSymbol(
-    "2026-08-06-demoting-a-meta-rows-reviewer-flavor-removes-its-reach-not-just-its-eagerness.md",
-    RESOLVED_BY,
-    "REVIEWER_CRAFT_CATEGORIES",
-  ),
-  undeclaredSymbol(CATALOG_EMISSION, PARTIAL_NOTE, "generatePhase2"),
-  undeclaredSymbol(CATALOG_EMISSION, PARTIAL_NOTE, "loadAndMergeSkillsMatrix"),
-  undeclaredSymbol(FAKE_HOME_OUTLIVED, RESOLVED_BY, "CACHE_DIR"),
-  undeclaredSymbol(FAKE_HOME_OUTLIVED, RESOLVED_BY, "GLOBAL_INSTALL_ROOT"),
-  undeclaredSymbol(FOUR_PRODUCERS, RESOLVED_BY, "loadConfigTypesDataInBackground"),
-];
+const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [];
 
 /**
  * Read once for the whole block rather than per assertion. The symbol scan parses every module in
