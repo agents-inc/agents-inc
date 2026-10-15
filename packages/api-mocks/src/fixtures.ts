@@ -63,7 +63,7 @@ export const STORE_REFUSED_BODY = "Could not store this config"
 // than flavour: the skill below is project-scoped, and a project skill never
 // reaches a sub-agent whose front-matter is written to ~/.claude. Without the
 // pin this fixture is a payload `init --from` THROWS on
-// (`seedToWizardResult` -> `unwritableAssignmentsError`), which is not what the
+// (`seedToInstallSelection` -> `unwritableAssignmentsError`), which is not what the
 // canonical "a configuration the worker holds" fixture should be — it is the
 // EDITOR-08 defect, frozen into the one payload both suites read.
 //

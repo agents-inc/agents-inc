@@ -59,7 +59,7 @@ const matrixSkillSchema = z.object({
   // `catalog.json` and make every marketplace look like it states none.
   usageGuidance: z.string().exactOptional(),
   // The SKILL.md description a compiled sub-agent's activation table shows —
-  // `description` is the wizard's short label. The preview renders this one so
+  // `description` is the short label. The preview renders this one so
   // it shows what the install writes (CLI-898); absent on older catalogues.
   activationDescription: z.string().exactOptional(),
   category: idSchema,

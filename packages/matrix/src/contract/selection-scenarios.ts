@@ -4,13 +4,13 @@
 // questions — the CLI's `matrix-resolver.ts` plus `build-step-logic.ts`, and
 // the editor's `derive.ts` — and did not always agree. The expectations are
 // the CLI's, which the owner ruled authoritative. Both sides now delegate to
-// `read-model/selection-semantics.ts`, and the scenarios hold that module and
-// each side's rendering of it to one contract instead of to each other.
+// `read-model/selection-semantics.ts`, and the scenarios hold that module to
+// one contract.
 //
 // Nothing here imports either implementation, and nothing here is
 // editor-shaped or CLI-shaped: a scenario is a selection against the real
-// catalogue and the outcomes that selection must produce. Each side writes
-// its own runner that maps its API onto these fields.
+// catalogue and the outcomes that selection must produce. A runner maps its
+// side's API onto these fields.
 //
 // `outOfReach` and `inReach` are *samples*, not the whole catalogue. Listing
 // every skill would pin hundreds of incidental answers that nobody decided and
@@ -282,7 +282,7 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
     inReach: [EXPO, REACT_NATIVE],
     discouraged: [],
     divergence: null,
-    why: "Expo is for React Native, and React alone is not React Native — but React rules React Native out of nothing, so Expo's requirement is unmet rather than unreachable and the cell stays live. Until 2026-08-07 this asserted Expo ruled out, on the CLI's `compatibleWith` whitelist; the owner ruled that verdict an accepted loss when CLI-389 phase C deleted the field. Nudging the user toward the base it still needs is another surface's job — `getUnmetRequiredBy` in the wizard, not a verdict.",
+    why: "Expo is for React Native, and React alone is not React Native — but React rules React Native out of nothing, so Expo's requirement is unmet rather than unreachable and the cell stays live. Until 2026-08-07 this asserted Expo ruled out, on the CLI's `compatibleWith` whitelist; the owner ruled that verdict an accepted loss when CLI-389 phase C deleted the field. Nudging the user toward the base it still needs is another surface's job, not a verdict.",
   },
   {
     id: "a-framework-beside-a-companion-bound-to-another",

@@ -1,14 +1,11 @@
 // The selection semantics, implemented once. Both surfaces delegate here —
-// the editor's `derive.ts` and the CLI's `matrix-resolver.ts` /
-// `build-step-logic.ts` — so a verdict is the same verdict wherever it is
-// rendered; `contract/selection-scenarios.ts` is the specification this module
-// answers to, and each side's runner holds its own view layer to the same
-// scenarios.
+// the editor's `derive.ts` and the CLI's `matrix-resolver.ts` — so a verdict is
+// the same verdict wherever it is rendered; `contract/selection-scenarios.ts`
+// is the specification this module answers to.
 //
 // Verdicts are structured rather than worded: this module decides *that* a
 // skill is out of reach and *why*, and each surface renders the why in its own
-// words ("Needs Svelte" in the editor, "requires Svelte which conflicts with
-// current selection" in the wizard).
+// words ("Needs Svelte" in the editor).
 //
 // Parameterized over the catalogue like `createLoadStateResolver`, never
 // closed over one: the CLI judges a merged matrix that carries local skills

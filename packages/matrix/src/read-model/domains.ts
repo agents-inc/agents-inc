@@ -1,9 +1,8 @@
 import { DOMAINS, type Domain } from "../vendor/generated/source-types"
 
-// The canonical display order. The CLI's wizard imports it from here — the
-// byte-duplicate it used to keep in sync by hand (`BUILT_IN_DOMAIN_ORDER` in
-// src/cli/consts.ts) was folded into this one when the selection semantics
-// moved onto this shared surface.
+// The canonical display order. The byte-duplicate the CLI used to keep in sync
+// by hand (`BUILT_IN_DOMAIN_ORDER` in src/cli/consts.ts) was folded into this
+// one when the selection semantics moved onto this shared surface.
 export const DOMAIN_ORDER: readonly Domain[] = [
   "web",
   "api",
@@ -30,9 +29,7 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   shared: "Shared",
 }
 
-// One-line descriptions: the editor's chip and group tooltips, and the CLI's
-// domain-selection grid — its own copy folded into this one alongside
-// DOMAIN_ORDER above.
+// One-line descriptions: the editor's chip and group tooltips.
 export const DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
   web: "Frontend web applications",
   api: "Backend APIs and services",
@@ -62,9 +59,6 @@ export const isDomain = (domainId: string): domainId is Domain =>
 // (`agent-summoner`, `codex-keeper`, `convention-keeper`, `skill-summoner`, and the two
 // consolidated role agents `pm` and `reviewer`) have no domain prefix and land in `meta`,
 // alongside the meta-domain skills.
-//
-// The CLI's `MergedSkillsMatrix.agentDefinedDomains` would be the authoritative source, but it
-// is never populated and the CLI has it queued for deletion, so the prefix is what we have.
 export const agentDomainOf = (agentId: string): Domain => {
   const prefix = agentId.split("-")[0]
   return prefix && isDomain(prefix) ? prefix : "meta"

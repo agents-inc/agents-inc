@@ -128,7 +128,7 @@ export const useShareLink = (config: ConfigSelection) => {
   const [narration, setNarration] = useState<ShareNarration>(RESTING)
 
   // A link is only worth minting if the CLI can install it, and
-  // `seedToWizardResult` THROWS on a project skill assigned to a sub-agent
+  // `seedToInstallSelection` THROWS on a project skill assigned to a sub-agent
   // resting at global — so a link minted from one of those fails on the
   // RECIPIENT, which is worse than no link at all (EDITOR-08).
   //

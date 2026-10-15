@@ -55,9 +55,7 @@ export type CompileCatalog = {
  *
  * A category the catalogue does not declare is deliberately NOT treated as
  * exclusive, and that is a choice rather than a default: a rule that decides what
- * gets persisted must fire on a flag the data actually carries. The wizard's
- * toggle handler reads the same flag as `?? true` while a selection is being
- * made, which is a different question.
+ * gets persisted must fire on a flag the data actually carries.
  */
 export function isExclusiveCategory(
   catalog: CompileCatalog,

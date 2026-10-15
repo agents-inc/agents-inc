@@ -30,7 +30,7 @@
 # helpers/shared-source.ts beside it states the rule in full.
 #
 # What is still live is a THIRD cause the same measurement found:
-# src/cli/components/wizard/summary-panel.test.tsx fails about 1 run in 10
+# src/cli/components/common/summary-panel.test.tsx fails about 1 run in 10
 # under CPU contention. Concurrent went 9/10 green where the unit suite alone
 # went 6/6. The CAUSE IS OPEN — CLI-865 — and the shared-singleton diagnosis
 # this header used to assert was falsified on 2026-09-02: the fixture builder

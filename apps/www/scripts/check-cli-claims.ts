@@ -254,12 +254,9 @@ function staticStringsOf(
  * Every flag a command declares, written the way the reference writes one:
  * `--name`, or `--name/-c` where the flag has a short form.
  *
- * A hidden flag is not part of the documented surface and is dropped. That test
- * comes BEFORE the name is read, and deliberately: the one flag in the CLI
- * whose key is a computed property — `edit`'s internal project-setup flag — is
- * also the one flag marked hidden, so it never reaches a reader that would have
- * to refuse it. A computed key on a VISIBLE flag still refuses, because that is
- * a flag the document is expected to name and this cannot say what it is called.
+ * A hidden flag is not part of the documented surface and is dropped. A computed
+ * key on a VISIBLE flag still refuses, because that is a flag the document is
+ * expected to name and this cannot say what it is called.
  */
 function staticFlagsOf(
   declared: ts.ClassDeclaration,

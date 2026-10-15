@@ -128,7 +128,7 @@ const CLI_DESCRIPTION_MAX_LENGTH = 60
 const ELLIPSIS = "…"
 
 /**
- * The description as the wizard's short label: whole where it fits the length `doctor` accepts,
+ * The description as the short label: whole where it fits the length `doctor` accepts,
  * otherwise cut at the last word that fits and marked as cut. A sub-agent is compiled from the
  * SKILL.md's own description, so nothing it reads is shortened.
  */

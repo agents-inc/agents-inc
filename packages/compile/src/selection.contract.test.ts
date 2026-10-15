@@ -11,13 +11,12 @@
  * multilateral rather than a set of goldens two of three implementations are
  * ever measured against.
  *
- * THE SUBJECT IS A DIFFERENT QUESTION FROM THE OTHER TWO RUNNERS', and saying
- * which is most of the work here. `derive.contract.test.ts` and
- * `selection-scenarios.contract.test.ts` both ask a REACHABILITY question — is
- * this cell still offerable — which forgives whatever a pick-one swap would
- * resolve. `validateSelection` asks a VALIDITY question: it judges the set it
- * is handed, exactly as handed, because its callers (`init --from`'s decode and
- * the wizard's confirm step) are about to write that set to a config. So the
+ * THE SUBJECT IS A DIFFERENT QUESTION FROM THE OTHER RUNNER'S, and saying
+ * which is most of the work here. `derive.contract.test.ts` asks a
+ * REACHABILITY question — is this cell still offerable — which forgives
+ * whatever a pick-one swap would resolve. `validateSelection` asks a VALIDITY
+ * question: it judges the set it is handed, exactly as handed, because its
+ * callers (`init --from`'s decode) are about to write that set to a config. So the
  * scenario fields are mapped onto claims validity can actually carry, and each
  * claim below says which field it is reading and why that reading is the honest
  * one. A mapping that asserted "in reach ⇒ valid" would be neither: a pick-one

@@ -68,8 +68,8 @@ const EXTRACTED_FIELDS = new Set([
 ])
 
 /**
- * The loader schema's field order, so the writer is a fixed point: the wizard, a Zod load and a
- * merge insert keys in different orders.
+ * The loader schema's field order, so the writer is a fixed point: a Zod load and a merge insert
+ * keys in different orders.
  */
 const CANONICAL_FIELD_ORDER = [
   "name",

@@ -38,9 +38,8 @@ export function activeProjectAgentNames(
  * Names of every active (non-excluded) agent, at either scope — the config's own
  * record of who is selected, now that no flat `selectedAgents` list is persisted.
  * Exported ahead of a second caller by the key-builder exception: the emitted
- * `SelectedAgentName` union and the wizard's agent hydration must derive the same
- * set from the same rows, and two surfaces each writing their own filter is the
- * drift this replaces.
+ * `SelectedAgentName` union must derive the same set from the same rows, and two
+ * surfaces each writing their own filter is the drift this replaces.
  */
 export function activeAgentNames(
   agents: readonly AgentScopeConfig[]
