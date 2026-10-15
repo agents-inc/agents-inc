@@ -18,13 +18,6 @@ export type PluginSkillRef = `${SkillId}:${SkillId}`;
 export type CategoryPath = Category | "local";
 
 /**
- * Category-keyed selections mapping to arrays of canonical skill IDs.
- * Used in the wizard Build step for single-domain selections.
- * Partial because only categories the user has interacted with will have entries.
- */
-export type CategorySelections = Partial<Record<Category, SkillId[]>>;
-
-/**
  * Resolved category-to-skill mappings after alias resolution.
  * Maps each category to a single canonical skill ID (used in stack configs
  * where each category has exactly one skill per agent).
