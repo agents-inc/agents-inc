@@ -50,7 +50,7 @@ route left out of it is missing from every client.
 editor (apps/editor)              worker (apps/server)            CLI (packages/cli)
 toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──▶  npx agents-inc init --from <id>
   features/configure/lib/seed.ts                                fetchSeedConfig ◀─GET /configs/{id}
-  lib/api/configs.ts                                            seedToWizardResult (@workspace/compile)
+  lib/api/configs.ts                                            seedToInstallSelection (@workspace/compile)
                                                                 install: plugin or eject, per skill
                                                                 writeScopedFromWizard → config.ts pair
                                                                 compileAgentForHost → sub-agent files
@@ -65,7 +65,7 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
    configuration always gets the same id. The id is immutable.
 3. **CLI.** `init --from` (`selectionFromSharedConfig` in `commands/init.tsx`) fetches the payload
    through `@workspace/api` against `SEED_API_URL` (`AGENTS_INC_API_URL` overrides it), maps it
-   with `seedToWizardResult` and skips the wizard. `edit --from` applies a payload to an existing
+   with `seedToInstallSelection`. `edit --from` applies a payload to an existing
    installation. `share` and `edit --ui` go the other way: `seedPayloadForInstallation` then
    `publishSeedConfig`.
 4. **Install and write.** Skills are installed per skill (see below), and skills the editor added
@@ -81,7 +81,7 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
 worker, the CLI and the api-mocks fixtures. Changing the payload's shape means bumping
 `SEED_VERSION`. The schema accepts exactly one version, with no migration, so old ids and saves
 stop installing and must be re-shared. Then update `toSeedPayload` and `fromSeedPayload` in the
-editor, `configToSeedPayload` and `seedToWizardResult` on the CLI side, and the fixtures in
+editor, `configToSeedPayload` and `seedToInstallSelection` on the CLI side, and the fixtures in
 `packages/api-mocks/src/fixtures.ts`.
 
 **The preview and the install share their renderers.** The editor's output preview renders with

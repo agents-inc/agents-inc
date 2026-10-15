@@ -20,12 +20,6 @@ See the [Guides](#guides) section below for more.
 
 <br />
 
-<img src="./assets/demo.gif" alt="Agents Inc init wizard">
-
-### Walkthrough (recommended)
-
-https://github.com/user-attachments/assets/387b99ff-0a43-40e2-b757-9d035be5b550
-
 ## Getting Started
 
 ```bash
@@ -100,13 +94,13 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 
 ### Core
 
-| Command   | Description                                                                 |
-| --------- | --------------------------------------------------------------------------- |
-| `init`    | Interactive setup wizard: pick a stack, customize skills, compile subagents |
-| `edit`    | Modify skill selection via the interactive wizard                           |
-| `compile` | Recompile subagents after changes                                           |
-| `update`  | Refresh the marketplaces this installation uses (ejected skills are yours)  |
-| `search`  | Search this installation's marketplace and your local skills                |
+| Command   | Description                                                                                       |
+| --------- | ------------------------------------------------------------------------------------------------- |
+| `init`    | Build a configuration in agentsinc.sh/editor, or install one by id with `--from`                  |
+| `edit`    | Open this installation in agentsinc.sh/editor, or apply a configuration built there with `--from` |
+| `compile` | Recompile subagents after changes                                                                 |
+| `update`  | Refresh the marketplaces this installation uses (ejected skills are yours)                        |
+| `search`  | Search this installation's marketplace and your local skills                                      |
 
 ### Customization
 
