@@ -37,9 +37,6 @@ const EVERY_E2E_SPEC = "e2e/**/*.test.ts";
  * whole job is to say what has been proved, so a new name lands here with its reason or it fails.
  */
 const RECOGNISED_NON_SPEC_NAMES = [
-  // Journey 1: the fixture helper that drives the global eject install for ~30 lifecycle specs. It
-  // is the seed those specs share, not a spec of its own, and it has no opening state to read.
-  "fixtures/dual-scope-helpers.initGlobalWithEject",
   // Journey 17: the vitest guard the blocked plugin leg is skipped by, named to say why that leg
   // does not run. A code symbol, so there is no file for it to resolve to.
   "skipIf",
@@ -103,77 +100,28 @@ const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "integration/custom-agents",
   "integration/eject-compile",
   "integration/eject-integration",
-  "interactive/build-step-category-ordering",
-  "interactive/build-step-focus-walk-cost",
-  "interactive/build-step-space-confirmation",
-  "interactive/confirm-step-info-panel-parity",
-  "interactive/confirm-step-mode-change-indicator",
-  "interactive/default-sandbox-runs-project-scope",
-  "interactive/edit-custom-skill",
   "interactive/edit-eject-migration-reports-copies",
+  "interactive/edit-from-plugin-migration",
+  "interactive/edit-from-plugin-operations",
   "interactive/edit-migration-eject-to-plugin-no-marketplace",
   "interactive/edit-plugin-hard-error",
-  "interactive/edit-skill-accumulation",
-  "interactive/edit-unresolvable-entry-removal-reasons",
-  "interactive/edit-wizard-added-skill-source-marker",
-  "interactive/edit-wizard-completion",
-  "interactive/edit-wizard-detection",
-  "interactive/edit-wizard-dual-scope-added-marker",
-  "interactive/edit-wizard-dual-scope-collapse-removal-row",
-  "interactive/edit-wizard-dual-scope-indicator",
-  "interactive/edit-wizard-excluded-skills",
-  "interactive/edit-wizard-global-scope-pending-removal-row",
-  "interactive/edit-wizard-launch",
-  "interactive/edit-wizard-local",
-  "interactive/edit-wizard-pending-removal-row",
-  "interactive/edit-wizard-plugin-migration",
-  "interactive/edit-wizard-plugin-operations",
-  "interactive/info-panel-scope-toggle-diff",
-  "interactive/init-plugin-config-marketplace-source",
+  "interactive/init-from-mixed-scope-config-split",
   "interactive/init-project-skill-reaching-no-agent",
-  "interactive/init-wizard-default-source",
-  "interactive/init-wizard-exclusive-compat",
-  "interactive/init-wizard-existing",
-  "interactive/init-wizard-flags",
-  "interactive/init-wizard-interactions",
-  "interactive/init-wizard-navigation",
-  "interactive/init-wizard-plugin",
-  "interactive/init-wizard-scope-split",
-  "interactive/init-wizard-scratch",
-  "interactive/init-wizard-sources-added-markers",
-  "interactive/init-wizard-stack-agents",
-  "interactive/init-wizard-stack-banner",
-  "interactive/init-wizard-ui",
-  "interactive/init-wizard-unreachable-source",
-  "interactive/init-wizard-validation-warning",
   "interactive/refusal-lands-before-the-spinner",
   "interactive/scenario-c-init-registers-project",
   "interactive/search-static",
-  "interactive/sources-focused-row-marker-spacing",
-  "interactive/sources-grid-scope-row-headers",
-  "interactive/sources-inert-row-selection-check",
-  "interactive/sources-overflow-pending-removal",
   "interactive/uninstall",
-  "interactive/wizard-overflow-affordance",
-  "interactive/wizard-terminal-resize-guard",
-  "lifecycle/agent-scope-toggle-keeps-curation",
-  "lifecycle/cancelled-init-blank-global-config",
+  "interactive/uninstall-below-the-minimum-terminal-size",
   "lifecycle/compile-after-scope-change",
   "lifecycle/compile-at-home-propagates-global-hand-edit",
   "lifecycle/config-scope-integrity",
-  "lifecycle/cross-scope-lifecycle",
   "lifecycle/doctor-dual-scope",
   "lifecycle/doctor-global-scope-blind-spots",
-  "lifecycle/dual-scope-collapse-live-selection",
-  "lifecycle/dual-scope-edit-display",
   "lifecycle/dual-scope-edit-integrity",
   "lifecycle/dual-scope-edit-mixed-sources",
-  "lifecycle/dual-scope-edit-scope-changes",
-  "lifecycle/dual-scope-edit-source-changes",
   "lifecycle/dual-scope-mixed-source-compiled-ref",
-  "lifecycle/dual-scope-s-round-trip-space-inert",
   "lifecycle/edit-add-local-skills",
-  "lifecycle/edit-deselect-reselect-discards-source-scope",
+  "lifecycle/edit-from-plugin-install",
   "lifecycle/edit-global-fallback",
   "lifecycle/edit-global-propagation-stale-stack-ref",
   "lifecycle/edit-global-remove-dual-scope-partial",
@@ -181,20 +129,14 @@ const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "lifecycle/edit-project-scope-last-skill-stack-cleanup",
   "lifecycle/edit-remove-skill-stack-surgical",
   "lifecycle/eject-migration-failure-hard-error",
-  "lifecycle/eject-skill-directory-cleanup",
   "lifecycle/empty-scope-dirs-removed",
-  "lifecycle/exclusion-lifecycle",
   "lifecycle/global-agent-propagation-type-consistency",
-  "lifecycle/global-agent-toggle-guard",
   "lifecycle/global-blank-config-overinstalls-agents",
   "lifecycle/global-fan-out-re-emit-is-byte-stable",
   "lifecycle/global-install-masks-project-owned-exclusive-category",
   "lifecycle/global-install-tombstones-project-owned",
   "lifecycle/global-scope-install-reporting",
-  "lifecycle/global-skill-toggle-guard",
-  "lifecycle/init-dashboard-edit-plugin-install",
   "lifecycle/init-edit-error-guards",
-  "lifecycle/init-global-preselection-confirm",
   "lifecycle/init-plugin-marketplace-fail",
   "lifecycle/init-then-edit-merge",
   "lifecycle/local-lifecycle",
@@ -231,20 +173,24 @@ const FIXTURE_SEED_CALLS = [
 ];
 
 /**
- * Calls that drive the real binary into a directory holding nothing — the wizard through a PTY,
- * and the two non-interactive installs. A file carrying one of these has a from-scratch leg
- * however many variant legs sit beside it, which is why the judgement below needs both lists:
+ * Calls that drive the real binary into a directory holding nothing — `init` itself, and the
+ * fixtures that install a seed payload through it. A file carrying one of these has a from-scratch
+ * leg however many variant legs sit beside it, which is why the judgement below needs both lists:
  * `commands/share` seeds one of its five specs from a fixture and installs the other four
  * through `init --from`.
  *
- * A closed set, so a FOURTH way to install from nothing makes every spec using it read as a
+ * A closed set, so a new way to install from nothing makes every spec using it read as a
  * variant and this gate fail. The fix is to add the call shape here, never to reword the row it
  * condemned — a row's marker follows what its specs do, not the other way round.
  */
 const FROM_SCRATCH_INSTALLS = [
-  /\bInitWizard\.launch[A-Za-z]*\s*\(/,
   /\bCLI\.run\(\s*\[\s*"init"/,
-  /\brunInitFrom\s*\(/,
+  /\bnew InteractivePrompt\(\s*\[\s*"init"/,
+  /\brunInitFrom[A-Za-z]*\s*\(/,
+  /\binstallFromSeed\s*\(/,
+  /\binstallE2EStack[A-Za-z]*\s*\(/,
+  /\binstallDualScopeStack\s*\(/,
+  /\bcreate[A-Za-z]*EnvFromSeed\s*\(/,
 ];
 
 /**
@@ -547,9 +493,11 @@ function installsNothing(source: string): boolean {
  */
 const INSTALLING_CALLS = [
   ...FROM_SCRATCH_INSTALLS,
-  /\bEditWizard\.launch[A-Za-z]*\s*\(/,
   /\bCLI\.run\(\s*\[\s*"(edit|compile|update|uninstall|eject)"/,
+  /\bnew InteractivePrompt\(\s*\[\s*"edit"/,
   /\brunEditFrom\s*\(/,
+  /\bapplyFromSeed\s*\(/,
+  /\bapplyEditFrom\s*\(/,
 ];
 
 /**
