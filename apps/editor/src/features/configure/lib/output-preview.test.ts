@@ -649,13 +649,13 @@ describe("a Codex model pin", () => {
 })
 
 // CLI-898: the install writes each skill's SKILL.md description, not the
-// wizard's label.
+// short label.
 describe("the description a skill is listed under", () => {
   afterEach(() => {
     useCatalogStore.getState().reset()
   })
 
-  const WIZARD_LABEL = "A short wizard label"
+  const SHORT_LABEL = "A short label"
   const SKILL_MD_DESCRIPTION = "What SKILL.md says, and what the install writes"
 
   const seatAcmeWith = (fields: Record<string, string>) => {
@@ -686,9 +686,9 @@ describe("the description a skill is listed under", () => {
       `${WEB_DEVELOPER}.md`
     )
 
-  it("draws the SKILL.md description, never the wizard's label", async () => {
+  it("draws the SKILL.md description, never the short label", async () => {
     seatAcmeWith({
-      description: WIZARD_LABEL,
+      description: SHORT_LABEL,
       activationDescription: SKILL_MD_DESCRIPTION,
     })
 
@@ -696,18 +696,18 @@ describe("the description a skill is listed under", () => {
 
     expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
     expect(body).toContain(SKILL_MD_DESCRIPTION)
-    expect(body).not.toContain(WIZARD_LABEL)
+    expect(body).not.toContain(SHORT_LABEL)
   })
 
   it("draws the label from a catalogue built before it carried the SKILL.md one", async () => {
-    seatAcmeWith({ description: WIZARD_LABEL })
+    seatAcmeWith({ description: SHORT_LABEL })
 
-    expect(await acmeBody()).toContain(WIZARD_LABEL)
+    expect(await acmeBody()).toContain(SHORT_LABEL)
   })
 
   // The vendored catalogue every visitor starts on. The table is imported after
   // the negative, so a tree predating it fails on the label it draws.
-  it("draws no wizard label on the vendored catalogue, the seat every visitor starts on", async () => {
+  it("draws no short label on the vendored catalogue, the seat every visitor starts on", async () => {
     useCatalogStore.getState().reset()
     const label = activeMatrix().skills[REACT]?.description
 

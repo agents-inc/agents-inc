@@ -123,8 +123,7 @@ test.describe("install dialog", () => {
   })
 
   // The id is what carries this configuration to the CLI; without it the
-  // command would start a fresh wizard and silently discard everything the
-  // user just chose.
+  // command would silently discard everything the user just chose.
   test("appends the minted id to the init command", async ({ configure }) => {
     await expect(
       configure.installDialog.command(`npx agents-inc init --from ${STORED_ID}`)
@@ -172,8 +171,8 @@ test.describe("install dialog", () => {
 // touched. Minting happens when this dialog OPENS, so a tab running a bundle
 // from before the last deploy is refused here exactly as the Share button is —
 // and the line under the command is the only surface that can say so. It said
-// "id unavailable — this command starts a fresh wizard" for all three
-// refusals, which told the one reader with a remedy nothing about it.
+// one sentence for all three refusals, which told the one reader with a
+// remedy nothing about it.
 test.describe("install dialog when the id cannot be minted", () => {
   test("a stale page is told to reload", async ({ configure, page }) => {
     stubCreateConfigRefusal(page, OUT_OF_DATE)
@@ -196,7 +195,7 @@ test.describe("install dialog when the id cannot be minted", () => {
     await configure.roster.installButton.click()
 
     await expect(configure.installDialog.root).toContainText(
-      "id unavailable — this command starts a fresh wizard"
+      "id unavailable — this command starts over in the editor"
     )
     await expect(configure.installDialog.root).not.toContainText("out of date")
   })

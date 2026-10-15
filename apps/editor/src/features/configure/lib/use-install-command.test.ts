@@ -4,9 +4,8 @@ import { COMMAND_NOTES } from "./use-install-command"
 
 // The install dialog is the SECOND door on `createSharedConfig`, and the line
 // under the command is the only thing it has to say anything with. It had the
-// same defect the Share button had: three refusals, one sentence between them
-// ("id unavailable — this command starts a fresh wizard"), so the one a reload
-// fixes read exactly like the two nothing fixes.
+// same defect the Share button had: three refusals, one sentence between them,
+// so the one a reload fixes read exactly like the two nothing fixes.
 //
 // The words rather than the hook, for the reason the sibling suite gives: the
 // editor's unit suite runs in node with no DOM, and the decision worth pinning
@@ -34,5 +33,12 @@ describe("what the install command's note says", () => {
   it("does not offer a reload to a reader a reload cannot help", () => {
     expect(COMMAND_NOTES.refused.toLowerCase()).not.toContain("reload")
     expect(COMMAND_NOTES.unreachable.toLowerCase()).not.toContain("reload")
+  })
+
+  // What the bare command on screen does instead: a bare `init` opens the
+  // editor (CLI-923), so the reader is starting over rather than installing.
+  it("tells a reader with no id that the command starts over in the editor", () => {
+    expect(COMMAND_NOTES.refused).toContain("starts over in the editor")
+    expect(COMMAND_NOTES.unreachable).toContain("starts over in the editor")
   })
 })

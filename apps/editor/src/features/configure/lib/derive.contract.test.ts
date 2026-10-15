@@ -3,8 +3,7 @@
  *
  * `SELECTION_SCENARIOS` lives in `@workspace/matrix` beside the shared
  * selection semantics both sides now consume. This runner holds `derive.ts` —
- * the view layer over those semantics — to the contract; a second runner on
- * the CLI side reads the same scenarios through the wizard's grid.
+ * the view layer over those semantics — to the contract.
  *
  * A scenario's `divergence` names the historical bug it pinned, from when this
  * file's subject still carried a parallel implementation. Every scenario runs
