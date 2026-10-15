@@ -180,7 +180,7 @@ describe("the checker refuses a subject it cannot judge", () => {
  * Keyed by file rather than by line, because a line number rots on the next edit to the file while
  * the claim — "this module still contains one" — does not. Repairing one means deleting its entry
  * here in the same change, which is the only way this list shrinks. A row does NOT leave by
- * emigration: `seed-to-wizard.ts` moved to `@workspace/compile` and its row moved with it, into
+ * emigration: the CLI's seed decode moved to `@workspace/compile` and its row moved with it, into
  * {@link COMPILE_BACKLOG} below rather than out of the file.
  *
  * Each of these is a `string` the type system did not narrow being asserted into a generated union.
@@ -214,7 +214,7 @@ const CLI_BACKLOG: readonly string[] = [
  * The same population in `@workspace/compile`, which is where the config and seed decoders now live.
  *
  * Held here rather than in that package because the rule is one rule and a second copy of it would
- * drift. `seed-to-config.ts` is `seed-to-wizard.ts` after the extraction, so its row is the one
+ * drift. `seed-to-config.ts` is the CLI's seed decode after the extraction, so its row is the one
  * deleted from {@link CLI_BACKLOG} rather than a new admission — a gate keyed on a module's path
  * goes quiet when the module moves, and this is that gate declining to.
  *

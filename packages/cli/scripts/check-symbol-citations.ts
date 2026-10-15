@@ -41,8 +41,8 @@
  *     to fix.
  *
  * Nothing runs at module scope — the suite beside it is the enforcement, as with
- * `check-screen-sentinels.ts` and `check-finding-citations.ts`, and the package root is a parameter
- * so it can be driven against a fixture tree.
+ * `check-finding-citations.ts`, and the package root is a parameter so it can be driven against a
+ * fixture tree.
  */
 import { existsSync, readFileSync } from "fs";
 import path from "path";

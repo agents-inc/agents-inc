@@ -1,17 +1,10 @@
 /**
  * Every structural value `e2e/pages/constants.ts` mirrors still reads what the product declares.
  *
- * **The mirroring is deliberate and stays; what was missing is a third party comparing it.** That
- * is `check-screen-sentinels.ts`'s argument for the wizard's screen subtitles, and it holds here
- * for the same reason: a spec that imported the constant under test would move both sides at once
- * and assert nothing. `EXIT_CODES` is the clearest case — an e2e spec asserting
+ * **The mirroring is deliberate and stays; what was missing is a third party comparing it.** A
+ * spec that imported the constant under test would move both sides at once and assert nothing. `EXIT_CODES` is the clearest case — an e2e spec asserting
  * `toBe(EXIT_CODES.CANCELLED)` is stating that this command cancels, and if the product renumbered
  * `CANCELLED` the imported form would agree with the new number and stay green.
- *
- * Its sibling registers the wizard's four screen sentinels **and nothing else**, deliberately: a
- * pair is registerable there when both halves are a literal STRING under a key, and its docblock
- * turns away the composed and the numeric. This file is the other half of that boundary — the
- * mirrors whose values are numbers, or nested a level down, which that check refuses by design.
  *
  * **The rule the file header states, enforced here.** `e2e/pages/constants.ts` carried a flat
  * "NO imports from src/cli" for years while 233 imports from `src/` lived across every other
@@ -26,8 +19,8 @@
  * command-not-found status, which a spec sees when `dist/` is absent and the CLI never emits.
  *
  * Nothing runs at module scope — the suite beside it is the enforcement, as with
- * `check-screen-sentinels.ts` and `check-enumeration-drift.ts`, and the package root is a
- * parameter so it can be driven against a fixture.
+ * `check-enumeration-drift.ts`, and the package root is a parameter so it can be driven against a
+ * fixture.
  */
 import { existsSync, readFileSync } from "fs";
 import path from "path";
@@ -76,13 +69,8 @@ export type CheckResult = { clean: boolean; verdicts: MirrorVerdict[] };
  *
  * `TERMINAL_SIZE.SHORT` contributes its `rows` and NOT its `cols`: the constant's own docblock
  * says `rows` must track the gate exactly — one lower and every spec using it hangs on the resize
- * prompt, one higher and the specs stop being the tightest geometry the wizard supports — while
- * `cols: 100` sits deliberately above `MIN_TERMINAL_SIZE.COLS: 80`, wide enough to render
- * normally. Registering `cols` would assert an equality the design does not want.
- *
- * `TERMINAL_SIZE.BELOW_MINIMUM` is left out for the opposite reason: what it owes the gate is an
- * inequality (it must sit BELOW it), and this check compares values for equality. Its own docblock
- * carries that requirement.
+ * prompt — while `cols: 100` sits deliberately above `MIN_TERMINAL_SIZE.COLS: 80`, wide enough to
+ * render normally. Registering `cols` would assert an equality the design does not want.
  */
 export const MIRRORS: Mirror[] = [
   {

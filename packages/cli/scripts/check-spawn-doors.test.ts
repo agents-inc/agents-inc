@@ -1,6 +1,6 @@
 /**
  * Contract for `scripts/check-spawn-doors.ts` — the scan that every site starting the built binary
- * hands it `NO_BACKGROUND_VERSION_CHECK`.
+ * hands it every one of the harness's defaults, `GUARD_CONSTANTS`.
  *
  * Two halves, like every check beside it. The first drives the scan against fixture packages,
  * because an unguarded door must not exist in this repository at all — the second half is the
@@ -23,7 +23,7 @@ import {
   check,
   clearances,
   type DoorVerdict,
-  GUARD_CONSTANT,
+  GUARD_CONSTANTS,
   NO_DOORS,
 } from "./check-spawn-doors.js";
 import { expectRefusal } from "./refusal-expectations.js";
@@ -31,8 +31,12 @@ import { expectRefusal } from "./refusal-expectations.js";
 const DOOR_FILE = "e2e/helpers/runner.ts";
 const GENERATED_FILE = "e2e/helpers/handrun.gen.mjs";
 
-/** The env `runCLI` passes, and the same env with the guard deleted — the drift under test. */
-const GUARDED_ENV = `{ ...${GUARD_CONSTANT}, ...options?.env, HOME: home }`;
+/** Every guard, spread — the way each door hands them over — and imported, for the fixtures' headers. */
+const GUARDS = GUARD_CONSTANTS.map((name) => `...${name}`).join(", ");
+const IMPORTED_GUARDS = GUARD_CONSTANTS.join(", ");
+
+/** The env `runCLI` passes, and the same env with the guards deleted — the drift under test. */
+const GUARDED_ENV = `{ ${GUARDS}, ...options?.env, HOME: home }`;
 const UNGUARDED_ENV = "{ ...options?.env, HOME: home }";
 
 /**
@@ -43,7 +47,7 @@ function doorSpawningInline(env: string): string {
   return [
     `import { execa } from "execa";`,
     ``,
-    `import { BIN_RUN, ${GUARD_CONSTANT} } from "./test-utils.js";`,
+    `import { BIN_RUN, ${IMPORTED_GUARDS} } from "./test-utils.js";`,
     ``,
     `export async function runCLI(args: string[], home: string, options?: { env?: object }) {`,
     `  return execa("node", [BIN_RUN, ...args], {`,
@@ -64,7 +68,7 @@ function doorSpawningThroughLocals(env: string): string {
   return [
     `import pty from "@lydell/node-pty";`,
     ``,
-    `import { BIN_RUN, ${GUARD_CONSTANT} } from "./test-utils.js";`,
+    `import { BIN_RUN, ${IMPORTED_GUARDS} } from "./test-utils.js";`,
     ``,
     `export function open(args: string[], cwd: string) {`,
     `  const rawEnv: Record<string, string | undefined> = ${env};`,
@@ -96,9 +100,9 @@ const DOOR_WITH_NO_ENV = [
 const DOOR_BESIDE_AN_UNRELATED_SPREAD = [
   `import { execa } from "execa";`,
   ``,
-  `import { BIN_RUN, ${GUARD_CONSTANT} } from "./test-utils.js";`,
+  `import { BIN_RUN, ${IMPORTED_GUARDS} } from "./test-utils.js";`,
   ``,
-  `export const documented = { ...${GUARD_CONSTANT} };`,
+  `export const documented = { ${GUARDS} };`,
   ``,
   `export async function runCLI(args: string[], cwd: string) {`,
   `  return execa("node", [BIN_RUN, ...args], { cwd, env: { HOME: cwd } });`,
@@ -153,7 +157,7 @@ const DOOR_NAMING_THE_GUARD_AS_A_KEY = [
   `export function open(args: string[], cwd: string) {`,
   `  return pty.spawn("node", [BIN_RUN, ...args], {`,
   `    cwd,`,
-  `    env: { ...process.env, ${GUARD_CONSTANT}: "1" },`,
+  `    env: { ...process.env, ${GUARD_CONSTANTS.map((name) => `${name}: "1"`).join(", ")} },`,
   `  });`,
   `}`,
   ``,
@@ -166,12 +170,12 @@ const CLEARED_VARIABLE = "VITEST";
 const DOOR_CLEARING_INLINE = [
   `import { execa } from "execa";`,
   ``,
-  `import { BIN_RUN, ${GUARD_CONSTANT} } from "./test-utils.js";`,
+  `import { BIN_RUN, ${IMPORTED_GUARDS} } from "./test-utils.js";`,
   ``,
   `export async function runCLI(args: string[], cwd: string) {`,
   `  return execa("node", [BIN_RUN, ...args], {`,
   `    cwd,`,
-  `    env: { ...${GUARD_CONSTANT}, ${CLEARED_VARIABLE}: undefined, HOME: cwd },`,
+  `    env: { ${GUARDS}, ${CLEARED_VARIABLE}: undefined, HOME: cwd },`,
   `  });`,
   `}`,
   ``,
@@ -186,13 +190,13 @@ const DOOR_CLEARING_INLINE = [
 const DOOR_NAMING_THE_VARIABLE_IN_PROSE = [
   `import { execa } from "execa";`,
   ``,
-  `import { BIN_RUN, ${GUARD_CONSTANT} } from "./test-utils.js";`,
+  `import { BIN_RUN, ${IMPORTED_GUARDS} } from "./test-utils.js";`,
   ``,
   `export async function runCLI(args: string[], cwd: string) {`,
   `  return execa("node", [BIN_RUN, ...args], {`,
   `    cwd,`,
   `    // the runners hand the spawned binary ${CLEARED_VARIABLE}: undefined`,
-  `    env: { ...${GUARD_CONSTANT}, HOME: cwd },`,
+  `    env: { ${GUARDS}, HOME: cwd },`,
   `  });`,
   `}`,
   ``,
@@ -235,6 +239,20 @@ describe("a site that starts the built binary", () => {
     });
   });
 
+  it.each(GUARD_CONSTANTS)("is reported when it spreads every guard but %s", async (missing) => {
+    const others = GUARD_CONSTANTS.filter((name) => name !== missing)
+      .map((name) => `...${name}`)
+      .join(", ");
+    const root = await writeFixturePackage({
+      [DOOR_FILE]: doorSpawningInline(`{ ${others}, ...options?.env, HOME: home }`),
+    });
+
+    expect(
+      check({ packageRoot: root }).doors,
+      "a door carrying one default and not the other is half-guarded, and that half is the one a spec hits",
+    ).toStrictEqual([unguarded(DOOR_FILE, "execa")]);
+  });
+
   it("is reported when the same call hands over an env the constant is missing from", async () => {
     const root = await writeFixturePackage({ [DOOR_FILE]: doorSpawningInline(UNGUARDED_ENV) });
 
@@ -252,7 +270,7 @@ describe("a site that starts the built binary", () => {
 
   it("is guarded when its env is assembled through locals, which is how the PTY harness writes it", async () => {
     const root = await writeFixturePackage({
-      [DOOR_FILE]: doorSpawningThroughLocals(`{ ...process.env, ...${GUARD_CONSTANT} }`),
+      [DOOR_FILE]: doorSpawningThroughLocals(`{ ...process.env, ${GUARDS} }`),
     });
 
     expect(
@@ -396,7 +414,7 @@ describe("this repository", () => {
   it("starts the binary from exactly these doors, each carrying the guard", () => {
     expect(
       check().doors,
-      `a door here that no longer carries ${GUARD_CONSTANT} lets oclif's update plugin detach a child into a fixture's fake HOME after the run returns`,
+      `a door here missing one of ${IMPORTED_GUARDS} either lets oclif's update plugin detach a child into a fixture's fake HOME, or lets a run reach the live seed API`,
     ).toStrictEqual(DOORS_ON_DISK);
   });
 

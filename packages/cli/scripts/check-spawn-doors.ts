@@ -1,5 +1,11 @@
 /**
- * Every site that starts the built binary hands it `NO_BACKGROUND_VERSION_CHECK`.
+ * Every site that starts the built binary hands it `NO_BACKGROUND_VERSION_CHECK` and
+ * `NO_LIVE_SEED_API` — the defaults the harness owes every run, {@link GUARD_CONSTANTS}.
+ *
+ * `NO_LIVE_SEED_API` joined it after a spec minted a real id on the live store: the doors CLEARED
+ * the seed API's variable, and the product falls back to `https://api.agentsinc.sh` when it is
+ * unset, so clearing it sent every run no spec pointed at a store to production. What follows is
+ * written about the first constant and holds for both.
  *
  * It exists because that variable is spread at three doors — `runCLI` in `e2e/helpers/test-utils.ts`,
  * `CLI.run` in `e2e/fixtures/cli.ts` and `TerminalSession` in `e2e/helpers/terminal-session.ts` —
@@ -29,20 +35,20 @@
  *
  * **The same read answers a second question, and `clearances()` is where it comes out.** The
  * environment roster in `src/cli/lib/__tests__/e2e-runner-environment.test.ts` requires every door
- * to hand the child `<NAME>: undefined` for each variable the product reads. That used to be
- * checked by looking for the string in the runner's SOURCE TEXT, which a comment satisfies —
- * measured, by replacing `runCLI`'s clearing line with a comment saying it: the roster stayed green
- * while that door leaked the harness's `VITEST` into every binary it spawned, and the only thing
- * that noticed was an e2e spec covering one of the five variables. A property set to `undefined`
- * and a sentence describing one are the same substring and different syntax trees.
+ * to hand the child `<NAME>: undefined` for each variable the product reads and no door defaults.
+ * That used to be checked by looking for the string in the runner's SOURCE TEXT, which a comment
+ * satisfies — measured, by replacing `runCLI`'s clearing line with a comment saying it: the roster
+ * stayed green while that door leaked the harness's `VITEST` into every binary it spawned, and the
+ * only thing that noticed was an e2e spec covering one of the five variables. A property set to
+ * `undefined` and a sentence describing one are the same substring and different syntax trees.
  *
  * A generated bundle is not judged. `e2e/helpers/handrun.gen.mjs` carries the doors of the sources
  * this scan already reads, so judging it reports each of them twice — and a STALE bundle would red
  * for a defect no edit fixes, sending a reader to rebuild rather than to the door.
  *
  * Nothing runs at module scope here — the suite beside it is the enforcement, as with
- * `check-screen-sentinels.ts` and `check-findings-frontmatter.ts`, and the package root is a
- * parameter so it can be driven against a fixture.
+ * `check-findings-frontmatter.ts`, and the package root is a parameter so it can be driven
+ * against a fixture.
  */
 import { readdirSync, readFileSync } from "fs";
 import path from "path";
@@ -70,8 +76,10 @@ const PATH_SEPARATOR = "/";
  */
 const BINARY_PATH = `bin${PATH_SEPARATOR}${BINARY_FILE}`;
 
-/** The constant every door must hand the binary. Exported because the suite reports against it. */
-export const GUARD_CONSTANT = "NO_BACKGROUND_VERSION_CHECK";
+/**
+ * The constants every door must hand the binary. Exported because the suite reports against them.
+ */
+export const GUARD_CONSTANTS = ["NO_BACKGROUND_VERSION_CHECK", "NO_LIVE_SEED_API"] as const;
 
 /** The property a spawn call carries the child's environment under. */
 const ENV_PROPERTY = "env";
@@ -291,15 +299,13 @@ function envSourcesOf(env: ts.Expression, file: ts.SourceFile): ts.Expression[] 
   return sources;
 }
 
-/** Whether the guard is reachable from the expression a door hands over. */
+/** Whether every guard is reachable from the expression a door hands over. */
 function reachesGuard(env: ts.Expression | undefined, file: ts.SourceFile): boolean {
   if (env === undefined) return false;
 
-  return envSourcesOf(env, file).some(namesTheGuard);
-}
+  const named = envSourcesOf(env, file).flatMap(valueIdentifiersIn);
 
-function namesTheGuard(source: ts.Expression): boolean {
-  return valueIdentifiersIn(source).includes(GUARD_CONSTANT);
+  return GUARD_CONSTANTS.every((guard) => named.includes(guard));
 }
 
 /**
