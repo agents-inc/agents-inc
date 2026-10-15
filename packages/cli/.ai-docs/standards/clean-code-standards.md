@@ -245,19 +245,18 @@ permitted case sitting in a different spec is not a control — nothing makes th
 
 **6.2** Import shared utilities from these directories -- never redefine locally:
 
-| Utility                                              | Source                                                    |
-| ---------------------------------------------------- | --------------------------------------------------------- |
-| `fileExists`, `directoryExists`                      | `__tests__/helpers/` (test) or `utils/fs.ts` (production) |
-| `readTestYaml`                                       | `__tests__/helpers/`                                      |
-| `buildWizardResult`, `buildSourceResult`             | `__tests__/helpers/`                                      |
-| `parseTestFrontmatter`                               | `__tests__/helpers/`                                      |
-| `SKILLS.react`, `SKILLS.hono`, etc.                  | `__tests__/test-fixtures.ts` (canonical registry)         |
-| `createMockSkill(id, overrides?)`                    | `__tests__/factories/skill-factories.ts`                  |
-| `createComprehensiveMatrix()`, `createBasicMatrix()` | `__tests__/factories/matrix-factories.ts`                 |
-| `createTestDirs()`, `cleanupTestDirs()`              | `__tests__/helpers/test-dir-setup.ts`                     |
-| `createTempDir()`, `cleanupTempDir()`                | `__tests__/helpers/test-dir-setup.ts`                     |
-| `createTestSource()`, `cleanupTestSource()`          | `__tests__/fixtures/create-test-source.ts`                |
-| `createMockCategory(id, displayName, overrides?)`    | `__tests__/factories/category-factories.ts`               |
+| Utility                                           | Source                                                    |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| `fileExists`, `directoryExists`                   | `__tests__/helpers/` (test) or `utils/fs.ts` (production) |
+| `readTestYaml`                                    | `__tests__/helpers/`                                      |
+| `buildWizardResult`, `buildSourceResult`          | `__tests__/helpers/`                                      |
+| `parseTestFrontmatter`                            | `__tests__/helpers/`                                      |
+| `SKILLS.react`, `SKILLS.hono`, etc.               | `__tests__/test-fixtures.ts` (canonical registry)         |
+| `createMockSkill(id, overrides?)`                 | `__tests__/factories/skill-factories.ts`                  |
+| `createTestDirs()`, `cleanupTestDirs()`           | `__tests__/helpers/test-dir-setup.ts`                     |
+| `createTempDir()`, `cleanupTempDir()`             | `__tests__/helpers/test-dir-setup.ts`                     |
+| `createTestSource()`, `cleanupTestSource()`       | `__tests__/fixtures/create-test-source.ts`                |
+| `createMockCategory(id, displayName, overrides?)` | `__tests__/factories/category-factories.ts`               |
 
 **6.3** Extract local test helpers when 3+ tests share identical setup/assertion logic.
 
@@ -452,7 +451,7 @@ Two exceptions and one adjacent rule:
 
 **Namespacing an id also removes it from every built-in table keyed by the generated `SkillId` union** — the coupling is a membership test, not a parse, and the miss usually has a silent fallback. Classification of those tables: [`standards/e2e/user-journeys.md` § Journey 26](./e2e/user-journeys.md).
 
-**6.22 When you wire a hardcoded display value to real data, the tests that still pass are the suspects.** A value that cannot vary makes its own inputs unobservable, so every fixture rendering it is free to omit the field the value will one day derive from — and the drift is invisible until the wiring lands. Grepping the asserted string finds the test; nothing finds the fixture that was never asked to be right. Before wiring, list every test asserting the old constant and confirm each fixture states the field the new derivation reads **independently**, rather than inheriting it from a factory default: `buildSkillConfig` in `__tests__/helpers/wizard-simulation.ts` defaults `origin` to `"eject"`, so a summary-panel spec built with `buildSkillConfigs(["web-framework-react"])` asserted `Marketplace Agents Inc` over a fixture whose skills were all ejected, which under the real derivation names no marketplace at all. The assertion was strict and the fixture was silently meaningless; the header now comes from `formatSkillMarketplaces(skillConfigs)` in `components/wizard/summary-panel.tsx`, and the fixture states `origin` explicitly. **When such a test then fails, fix the fixture, never the assertion** — this is the concrete case CLAUDE.md's "NEVER broaden an assertion to make a failing test pass" is guarding.
+**6.22 When you wire a hardcoded display value to real data, the tests that still pass are the suspects.** A value that cannot vary makes its own inputs unobservable, so every fixture rendering it is free to omit the field the value will one day derive from — and the drift is invisible until the wiring lands. Grepping the asserted string finds the test; nothing finds the fixture that was never asked to be right. Before wiring, list every test asserting the old constant and confirm each fixture states the field the new derivation reads **independently**, rather than inheriting it from a factory default: `buildSkillConfig` in `__tests__/helpers/skill-config-builders.ts` defaults `origin` to `"eject"`, so a summary-panel spec built with `buildSkillConfigs(["web-framework-react"])` asserted `Marketplace Agents Inc` over a fixture whose skills were all ejected, which under the real derivation names no marketplace at all. The assertion was strict and the fixture was silently meaningless; the header now comes from `formatSkillMarketplaces(skillConfigs)` in `components/common/summary-panel.tsx`, and the fixture states `origin` explicitly. **When such a test then fails, fix the fixture, never the assertion** — this is the concrete case CLAUDE.md's "NEVER broaden an assertion to make a failing test pass" is guarding.
 
 **6.23 A fixture can build states the loader forbids, so check the production path before writing a spec around an "impossible" input.** If the input cannot be produced, the spec is testing the fixture and the throw it provokes is not a bug report. `validateRequirements` in `lib/matrix/matrix-resolver.ts` renders every unmet requirement through `getLabel(getSkillById(id))`, and `getSkillById` throws on a miss; it is safe only because `resolveEveryNeed` in `lib/matrix/skill-resolution.ts` takes a requirement's needs **whole or not at all**, returning `null` unless every one resolves, so no loaded catalog can carry a requirement naming a skill it does not have. A hand-built matrix has no loader in front of it — `createMockSkill(id, { requires: [...] })` will happily name an id the matrix omits — and `validateSelection` over that fixture throws instead of reporting. Write the reachable shape instead: a requirement the catalog carries and the payload does not satisfy, which is what `REACT_REQUIRES_ZUSTAND_WEB_API_DOMAINS_MATRIX` in `mock-data/mock-matrices.ts` names, with the unknown-id skip pinned beside it in the same payload so the two outputs move together.
 
@@ -597,7 +596,7 @@ grep -rnP '^\s+[a-z][A-Za-z0-9]*(\.[a-zA-Z0-9]+)+ = ' src/cli/lib/marketplace-sc
 
 The spread is `...(cond ? { k: v } : {})` here rather than typescript-types-bible §4a's `...(v !== undefined && { k: v })` because these builders are answering "should this field be emitted at all", not "is this optional property absent" — same syntax, different question, and §4a governs the other one.
 
-**8.7 Two key families look alike and must stay apart.** `skillSlotKey` / `agentSlotKey` in `src/cli/lib/wizard/scope-diff.ts` build a SLOT key, `id:scope` — "is this the same row?" — so the Sources tab and the confirm step agree on what changed this session. `skillKey` / `agentKey` in `src/cli/lib/configuration/config-merger.ts` build a MERGE key, the same `id:scope` plus a `:excluded` suffix on deletion markers (tombstones) — "which config entry replaces which?". For a live entry the two produce an identical string; only tombstones tell them apart, which is why they read as duplicates.
+**8.7 Two key families look alike and must stay apart.** `skillSlotKey` / `agentSlotKey` in `src/cli/lib/configuration/scope-diff.ts` build a SLOT key, `id:scope` — "is this the same row?". `skillKey` / `agentKey` in `src/cli/lib/configuration/config-merger.ts` build a MERGE key, the same `id:scope` plus a `:excluded` suffix on deletion markers (tombstones) — "which config entry replaces which?". For a live entry the two produce an identical string; only tombstones tell them apart, which is why they read as duplicates.
 
 Never unify them, and never route one through the other's helper. Strip the suffix from the merge key and a tombstone collides with the live entry it exists to mask, so the merge treats them as one entry and one overwrites the other. Add the suffix to the slot key and a tombstone stops matching its live entry, so the diff surfaces render it as an extra row instead of a mask. Both fixes that introduced the slot keys — the skill key first, `agentSlotKey` after — examined the merge keys and deliberately left them alone.
 

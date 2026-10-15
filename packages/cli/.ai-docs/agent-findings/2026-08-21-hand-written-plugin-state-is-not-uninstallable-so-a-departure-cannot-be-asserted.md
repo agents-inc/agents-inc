@@ -4,7 +4,6 @@ severity: medium
 affected_files:
   - e2e/fixtures/project-builder.ts
   - e2e/fixtures/plugin-install-state.ts
-  - e2e/interactive/edit-wizard-plugin-migration.e2e.test.ts
   - src/cli/lib/installation/mode-migrator.ts
   - src/cli/utils/exec.ts
 standards_docs:

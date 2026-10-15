@@ -7,9 +7,7 @@ affected_files:
   - src/cli/lib/schemas.ts
   - src/cli/lib/loading/loader.ts
   - src/cli/lib/plugins/plugin-settings.ts
-  - src/cli/stores/wizard-store.ts
   - src/cli/lib/__tests__/commands/eject.test.ts
-  - e2e/interactive/edit-wizard-detection.e2e.test.ts
   - e2e/fixtures/project-builder.ts
 standards_docs:
   - .ai-docs/standards/clean-code-standards.md
@@ -22,7 +20,7 @@ root_cause: scope-discipline-deferred
 status: partial
 partial_note: >-
   Re-derived against source on 2026-08-19, every class detector re-run. Three of the five classes
-  are closed and two are live; both smaller residues are closed.
+  are closed, one is live and one is moot; both smaller residues are closed.
   Class 1 — closed. `bytewise` moved to `src/cli/utils/string.ts`, both emission sites call it,
   three specs pin the ordering red-first, and `clean-code-standards.md` § 17.3 carries the
   corrected rule. Its grep now returns one hit, and that hit is not a defect — it is the
@@ -36,8 +34,7 @@ partial_note: >-
   governs; `typescript-types-bible.md` § 4a's census returns zero across `src/cli/` and
   `packages/matrix/src/`. See the corrected paragraph below for what happened to each of the
   four `plugin-settings.ts` sites, and for the count error the original block carried.
-  Class 4 — LIVE. `resolveSkillForPopulation` in `src/cli/stores/wizard-store.ts` still names a
-  cause it cannot observe and still offers no remedy.
+  Class 4 — moot. Its subject was in `src/cli/stores/wizard-store.ts`, deleted with the wizard.
   Class 5 — CLOSED. Its grep returns nothing, and the fix was the one this finding named — the
   E2E spec reads `slug` and `category` off the `E2E_SKILL` fixture entry rather than splitting
   `skill.id`.
@@ -45,7 +42,7 @@ partial_note: >-
   `toStrictEqual(EJECTED_TEMPLATE_ENTRIES)` carrying the reason inline, and the
   `omitMarketplaceField` JSDoc names `marketplaceName` and `origin` correctly.
   The proposed standard above all five is still unwritten, which is what holds this finding open
-  alongside classes 2 and 4.
+  alongside class 2.
 ---
 
 ## What Was Wrong
