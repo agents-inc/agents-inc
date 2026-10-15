@@ -7,6 +7,16 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.169.0] - 2026-10-15
+
+**The terminal wizard is gone: `init` and `edit` open the editor, and 0.168.0 is the last release with the wizard**
+
+- CLI-923: a bare `init` opens agentsinc.sh/editor where nothing is installed, and shows the installation's dashboard where something is. The dashboard's first option is "Edit in the web editor". A bare `edit` does what `edit --ui` does: it mints an id for this installation and opens it in the editor. `init --marketplace <ref>` without `--from` opens the editor and says how to add the marketplace there. Beside `--from`, it still installs from that marketplace. A bare `init` or `edit` without a terminal, `init --ui --marketplace`, and `init --marketplace` over another marketplace's installation now exit 0. `zustand` is no longer a dependency. The wizard is still in 0.168.0: `npx agents-inc@0.168.0 init`.
+- CLI-924: the user-journeys page describes the wizard-free product, and every journey was run by hand on it: 52 PASS, 13 PARTIAL, 2 FAIL and 1 N/A.
+- The findings checks pass again after the 2026-10-14 prune. Older changelogs name pruned findings as text instead of linking them.
+
+See [changelogs/0.169.0.md](./changelogs/0.169.0.md) for full details.
+
 ## [0.168.0] - 2026-10-14
 
 **A sub-agent can pin a Codex model, share links are version 6 only, and the editor takes the v6 design with named saves**
