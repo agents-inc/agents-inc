@@ -201,32 +201,33 @@ export const ACTIVATION_DESCRIPTIONS: Readonly<Partial<Record<SkillId, string>>>
   "infra-platform-vercel":
     "Vercel deployment platform — project configuration, serverless/edge functions, Routing Middleware, cron jobs, environment variables, monorepo setup",
   "meta-config-stack-detect":
-    "Inspect a codebase, a stack the user describes, or a description of what they want to build; map what is there to agents-inc catalog skills — or intent to candidate built-in stacks the user picks from — and emit a SeedPayload plus a human-readable proposal report. Use when seeding a configuration for a project that has none.",
-  "meta-design-composable-components": "Composable component APIs — parts, state, polymorphism",
+    "Proposes an agents-inc configuration — a SeedPayload plus a report — from a repository, a stack the user describes, or a description of what they want to build. Load when seeding a configuration for a project that has none, or re-running one after its dependencies changed.",
+  "meta-design-composable-components":
+    "Composable component APIs — parts, state, polymorphism. Load when designing a reusable component's API, or aligning one that has grown boolean, renderX or style props.",
   "meta-design-expressive-typescript":
-    "Readable functional patterns — orchestrators, pure functions, named abstractions",
+    "Readable TypeScript functions — orchestrators over pure helpers, named predicates and transforms, guard clauses, exhaustive unions. Load when writing or refactoring a function that mixes validation, transformation and assembly, or when deciding whether an expression should be extracted.",
   "meta-methodology-research-methodology":
     "Investigation flow (Glob -> Grep -> Read), evidence-based research with file:line references, structured output format for AI consumption. Use for pattern discovery, implementation research, and codebase investigation.",
   "meta-planning-ai-planning":
-    "AI specification planning frameworks. Use when a spec touches model calls, prompts, retrieval, tool calling, agentic loops, or evals. Covers approach selection, model and provider choice, structured output contracts, loop guards, budgets, failure modes, and eval design.",
+    "Specification frameworks for features that call a model — approach tier, model pinning, output contracts, budgets, failure modes and eval design. Load when a spec touches model calls, prompts, retrieval, tool calling, agent loops or evals.",
   "meta-planning-api-planning":
-    "Backend specification planning frameworks. Use when a spec touches API endpoints, database schema, middleware, or auth. Covers endpoint contracts with request/response shapes, error catalogs, auth per endpoint, schema design with constraints and indexes, migration strategy, and middleware pipeline ordering.",
+    "Backend specification frameworks — endpoint contracts, error catalogs, auth per endpoint, schema with constraints and indexes, migration strategy, middleware order. Load when a spec adds or changes an API endpoint, a database table, or a request pipeline.",
   "meta-planning-cli-planning":
-    "CLI specification planning frameworks. Use when a spec touches a command surface, an interactive flow, config precedence, exit codes, or output modes. Covers flag contracts, prompt flow design, precedence tables, exit-code taxonomy, TTY/piped/JSON output, error text, signals, and cross-platform concerns.",
+    "CLI specification frameworks — flag contracts, prompt flows, config precedence, exit codes, output per context (TTY, piped, JSON), error and help text, signals and cross-platform behaviour. Use when a spec adds or changes a command surface, an interactive flow, a config key, an exit path or what a command prints.",
   "meta-planning-web-planning":
     "Frontend specification planning frameworks. Use when a spec touches UI components, forms, client state, or user-facing flows. Covers UI-state completeness (loading, error, empty, success), component boundaries, form validation contracts, state ownership, and measurable UI success criteria.",
   "meta-reviewing-ai-reviewing":
-    "AI integration review patterns. Use when reviewing model API calls, prompt construction, LLM output handling, RAG pipelines, and tool-calling code. Covers prompt-injection call-chain tracing, output validation, token budgets, retry/timeout handling, streaming, and key/PII exposure.",
+    "AI integration review patterns. Use when reviewing model API calls, prompt construction, LLM output handling, RAG pipelines, and tool-calling code. Covers prompt-injection call-chain tracing, output validation, stop reasons, token budgets, retry and timeout handling, streaming, and key/PII exposure.",
   "meta-reviewing-api-reviewing":
-    "Backend code review patterns. Use when reviewing API routes, database operations, auth middleware, and server utilities. Covers injection, boundary validation, authorization coverage, secret/PII exposure, error leakage, and query patterns.",
+    "Backend code review — injection and SSRF, boundary validation, object-level authorization, mass assignment and data exposure, error leakage, N+1 and unbounded queries. Use when a diff touches API routes or handlers, database access, auth middleware, or server code that reads files, starts processes or fetches URLs.",
   "meta-reviewing-cli-reviewing":
-    "CLI code review patterns. Use when reviewing CLI applications built with Commander.js, @clack/prompts, picocolors. Covers exit codes, signal handling, error messages, user experience, testing adequacy.",
+    "CLI code review — exit codes, cancellation and signals, non-TTY behaviour, the stdout/stderr split, error text, config precedence, subprocess safety and test adequacy. Load when reviewing a command-line tool's commands, entry point, prompts, output or tests, whichever parser or prompt library it uses.",
   "meta-reviewing-infra-reviewing":
-    "Infrastructure code review patterns. Use when reviewing CI/CD workflows, Dockerfiles, deployment configs, and IaC. Covers supply-chain pinning, secret exposure, container hygiene, least-privilege permissions, and deployment safety.",
+    "Infrastructure code review — supply-chain pinning, secret exposure, workflow triggers and untrusted input, container hygiene, deployment safety. Load when reviewing a diff that touches CI/CD workflows, Dockerfiles, deployment configs or IaC.",
   "meta-reviewing-reviewing":
-    "Code review patterns, feedback principles. Use when reviewing PRs, implementations, or making approval/rejection decisions. Covers self-correction, progress tracking, feedback principles, severity levels.",
+    "Code review process — reading order, findings, severity, scope and the approval decision. Load when reviewing a diff or PR, writing review comments, or deciding whether to approve or request changes.",
   "meta-reviewing-web-reviewing":
-    "UI component review patterns. Use when reviewing React components, hooks, props, state, styling, and accessibility. Covers rules of hooks, effect cleanup, render performance, list keys, keyboard and ARIA patterns.",
+    "React component review — hook rules, effect cleanup, derived state, keys, memoization evidence and keyboard access. Load when reviewing a diff that adds or changes React components or hooks.",
   "mobile-animation-gesture-handler":
     "React Native Gesture Handler - gesture types, GestureDetector, gesture composition, state machine, platform-specific gestures, swipeable rows, hover gestures",
   "mobile-animation-reanimated":
