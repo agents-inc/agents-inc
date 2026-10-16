@@ -15,9 +15,10 @@ started. See the root `CLAUDE.md`.
 
 ## Waiting on the owner — the wizard removal's loose ends (2026-10-15)
 
-CLI-923/924 (0.169.0) and CLI-926 to CLI-929 (0.170.0) are committed locally, not pushed or published.
-CLI-925 holds the journey run's unruled findings; the lane questions and the `kbyWBumg` delete are in
-`plans/2026-10-14-session-queue.md`.
+0.169.0 (CLI-923/924) and 0.170.0 (CLI-926 to CLI-929) are pushed; 0.170.1 (the built-in matrix regenerated from
+skills 4865dfd1) is the release to publish, and npm is at 0.168.0.
+CLI-925's findings and the lane questions are cards on the decisions page linked from
+`plans/2026-10-14-session-queue.md`; EDITOR-97 (the `stackId: null` ruling) waits on its R1.
 
 ## Next — REPO-44: tech debt and lint rules
 

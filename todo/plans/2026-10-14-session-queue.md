@@ -16,16 +16,19 @@ on the 4 HEAD failures (`check-finding-citations` ×2, `check-findings-frontmatt
 `wf_1e05e072-07d`. Record `plans/2026-10-15-manual-journey-run{.md,/}`.
 
 **Committed 2026-10-15:** `67ac2fc6`…`ab7023bb` (13 groups + `chore(release): 0.169.0`), plan
-`$SCRATCH/commit/plan.md`. Not pushed, not published (owner: neither yet); 23 commits ahead of `origin/main`.
+`$SCRATCH/commit/plan.md`. Pushed by 2026-10-17; npm still at 0.168.0.
 
 ## Next
 
-1. CLI-926 to CLI-929 committed 2026-10-17 as 0.170.0, not pushed or published. Root gates green.
+1. CLI-926 to CLI-929 committed and pushed 2026-10-17 as 0.170.0 (25 commits, commit hooks skipped by owner). 0.170.1
+   regenerates the built-in matrix from skills 4865dfd1 (committed there 01:10); publish 0.170.1, not 0.170.0.
    2026-10-16: every standards cut since 551c9164 audited (owner: remove deleted-code references only, keep intent);
    lost rules restored in 13 files, each passed by an independent checker (`wf_6bfadec4-1b5`, `wf_935117f1-043`,
    `wf_c87c2174-071`).
-2. Owner: run the `kbyWBumg` delete (needs Cloudflare auth; commands in the CLI-926 list below).
-3. Owner: the lane questions below; push/publish of the local 0.169.0 and 0.170.0 commits (owner: not yet).
+2. Owner: decide the cards on the decisions page, https://claude.ai/artifact/5gHqiMpZe4CzHWRo5dS4gQ — every open
+   question and CLI-925 finding, one card each (R1, F3a–F10, E1–E3, Q1–Q9, T1–T5, C1–C6), with a recommendation.
+   Read the answers from its `decisions` collection, then file or queue each one.
+3. Queued: EDITOR-97 (owner ruling 2026-10-17 on `stackId: null`), once R1 says which stacks count.
 
 ## CLI-926 — finishing the wizard removal (owner rulings 2026-10-15)
 
@@ -54,9 +57,6 @@ Fix:
   TO TEST" is pinned by `lifecycle/mixed-mode-skill-ref-format`; row 38's TO TEST.
 - **Leftover code**: remove if unused — `isDomain`, `skillSlotKey`/`agentSlotKey` (both CLAUDE.md files cite
   them), the six `TEST_ONLY_EXPORTS`. Rename `writeScopedFromWizard` / `WizardWriteArgs` if still used.
-- **Live-store id `kbyWBumg`**: unused (no repo, skills or cv-launch reference); `GET` 200. Owner runs, from apps/server:
-  `bunx wrangler d1 execute agents-inc-db --env production --remote --command "SELECT id FROM saved_stacks WHERE config_id = 'kbyWBumg'"`,
-  then if empty `bunx wrangler kv key delete kbyWBumg --binding CONFIGS --env production --remote`.
 
 - **Standards docs** (owner 2026-10-15): `.ai-docs/standards/e2e/{page-objects,patterns,README}.md`,
   `clean-code-standards.md` and user-journeys.md prose stop describing wizard page objects and symbols.
@@ -76,28 +76,22 @@ Accepted as is (owner 2026-10-15): the two deleted wizard-only specs; the re-rec
 and scope-aware-local-copy both kept.
 
 Not now (owner): the clicks to move a skill between scopes in the editor (owner's own UX pass);
-`ensureTerminalSize`.
+`ensureTerminalSize`; the live-store `kbyWBumg` delete (2026-10-17: "dont worry about this").
 
-Owner asked what it means: a CLI-minted payload (bare `edit`, the dashboard's Edit) carries `stackId: null`, so
-the editor opens on "start from scratch" rather than the stack the install came from. Awaiting a ruling.
+Owner ruling 2026-10-17 on `stackId: null` (a CLI-minted payload opens on "start from scratch"): "it can start on start
+from scratch unless its the same as a saved stack". EDITOR-97; decisions-page R1 asks which stacks count.
 
 Still unruled (CLI-925): confirms say less than the run does (group 3), doctor misses what no config declares (5),
 doctor throws in `isSourceRepo` over an unreadable config (6), doctor and dashboard report only Claude in a
 Claude+Codex scope (7), the editor preview is not the install (8), description handling (9, CLI-915),
-`metadata.yaml` key order (10, CLI-908).
+`metadata.yaml` key order (10, CLI-908). Each is a card on the decisions page (Next, item 2).
 
 ## Owner questions still open
 
-- Untested list Ink frame (tracker row?). `init --from` closing block omits the project config path when no project
-  sub-agent exists; row 40 lost its control half; handrun share chain broken since 2026-10-04.
-- From CLI-926 lanes: pin every stack sub-agent `on`, or only skill-less ones (done)? `init --from`'s confirm now uses
-  the new "Added to sub-agents in the global install" wording too — keep? Marketplace-repo remedy wording. Atomic
-  writes for `build marketplace`? An empty marketplace-repo `config.ts` builds silently. Plain `warn()` once per process?
-  The CLI's `share`/`edit --ui` on a 429 don't name the limit; Install re-POSTs an unchanged selection.
-- Docs: "Ways in" title. Row 13a PARTIAL; rename `init-from-greenfield`.
+All of them are cards on the decisions page (Next, item 2), which holds each one's explanation and recommendation:
+the lane questions (Q1–Q9), the editor-route costs (E1–E3), tests, journeys page and docs (T1–T5), code cleanup
+(C1–C6).
+
 - Done 2026-10-15 (owner rulings): the wizard gif is back as `assets/legacy-wizard.gif` under "Legacy Wizard" in
   packages/cli/README.md; the landing slot reads "Video coming soon". Share/Save need not name the rate limit; the
   Install dialog footer keeps `edit`.
-- Code: SummaryPanel kept (two rulings conflict); re-point or drop the deleted resolver's catalogue-rule specs;
-  validation warnings not sanitised for terminal escapes; `isSkillSlug`, `isCategoryPath`, `allSkills()` unused;
-  `normalizeConfigPreservingOrder` is now the identity; installed-file prettier settings defined twice.
