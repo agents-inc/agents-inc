@@ -1,23 +1,37 @@
 import path from "path";
-import { writeFile } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { CLI } from "../fixtures/cli.js";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { E2E_MARKETPLACE_PREFIX, EXIT_CODES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  E2E_MARKETPLACE_PREFIX,
+  EXIT_CODES,
+  FILES,
+  SOURCE_PATHS,
+  STEP_TEXT,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import {
   createTempDir,
   cleanupFixture,
   cleanupTempDir,
+  compactCliOutput,
   createE2ESource,
   fileExists,
+  flattenCliOutput,
   listFiles,
   readMarketplaceJson,
+  readTreeSnapshot,
+  renderConfigTs,
   writeTestPackageJson,
   writeTestPluginManifest,
   type E2ESource,
+  type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
 import { E2E_MARKETPLACE_NAME, E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
-import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+import { entryAt, firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
+import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
 /** The summary line `build plugins` prints for every skill the E2E source carries. */
 const SKILL_PLUGINS_COMPILED_LINE = `Compiled ${E2E_SKILL_IDS.length} skill plugins`;
@@ -355,6 +369,84 @@ describe("build commands", () => {
         expect(marketplace.plugins.map((plugin) => plugin.name).sort()).toStrictEqual(
           [...E2E_SKILL_IDS].sort(),
         );
+      });
+    });
+
+    describe("a marketplace repository whose own config cannot be read", () => {
+      // Its own directory rather than `tempDir`, which the outer `afterEach` deletes: the two specs
+      // below are one repository's history, a refused build and then a repaired one.
+      let marketplaceDir: string;
+      let manifestDir: string;
+      let sourceRepoConfigPath: string;
+      let previousBuild: Record<string, TreeSnapshotEntry>;
+
+      /** A release after the one the previous build published, so a write would change bytes. */
+      const NEXT_VERSION = "0.2.0";
+
+      beforeAll(async () => {
+        marketplaceDir = await createTempDir();
+        manifestDir = path.join(marketplaceDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR);
+        sourceRepoConfigPath = path.join(marketplaceDir, DIRS.SOURCE_ROOT, FILES.CONFIG_TS);
+        await writeTestPackageJson(marketplaceDir, { name: FIXTURE_MARKETPLACE_NAME });
+        await writeMarketplacePlugin(marketplaceDir);
+        const built = await CLI.run(["build", "marketplace"], { dir: marketplaceDir });
+        expect(built.exitCode, built.output).toBe(EXIT_CODES.SUCCESS);
+        previousBuild = await readTreeSnapshot(manifestDir);
+
+        await writeTestPackageJson(marketplaceDir, {
+          name: FIXTURE_MARKETPLACE_NAME,
+          version: NEXT_VERSION,
+        });
+        await mkdir(path.dirname(sourceRepoConfigPath), { recursive: true });
+        await writeFile(sourceRepoConfigPath, renderUnparseableConfigTs());
+      }, TIMEOUTS.SETUP);
+
+      afterAll(async () => {
+        await cleanupTempDir(marketplaceDir);
+      });
+
+      it("should refuse the build and leave the previous build's manifest and catalog as they were", async () => {
+        const { exitCode, output } = await CLI.run(["build", "marketplace"], {
+          dir: marketplaceDir,
+        });
+
+        expect(exitCode).toBe(EXIT_CODES.ERROR);
+        expect(flattenCliOutput(output)).toContain(STEP_TEXT.CONFIG_LOAD_REASON);
+        // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+        expect(
+          compactCliOutput(output),
+          "the refusal names the marketplace's own config",
+        ).toContain(compactCliOutput(sourceRepoConfigPath));
+        expect(
+          Object.keys(previousBuild).sort(),
+          "the previous build must have left both files, or an unchanged tree proves nothing",
+        ).toStrictEqual([FILES.CATALOG_JSON, FILES.MARKETPLACE_JSON]);
+        expect(
+          await readTreeSnapshot(manifestDir),
+          "a refused build writes nothing, so the manifest and the catalog still describe one build",
+        ).toStrictEqual(previousBuild);
+      });
+
+      it("should rebuild the manifest and the catalog once the config can be read", async () => {
+        await writeFile(
+          sourceRepoConfigPath,
+          renderConfigTs({ skillsDir: SOURCE_PATHS.SKILLS_DIR }),
+        );
+
+        const { exitCode, output } = await CLI.run(["build", "marketplace"], {
+          dir: marketplaceDir,
+        });
+
+        expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
+        const marketplace = await readMarketplaceJson(
+          path.join(manifestDir, FILES.MARKETPLACE_JSON),
+        );
+        expect(marketplace.version).toBe(NEXT_VERSION);
+        const rebuilt = await readTreeSnapshot(manifestDir);
+        expect(
+          entryAt(rebuilt, FILES.CATALOG_JSON).modifiedAtMs,
+          "the catalog's bytes do not depend on the version, so only its mtime shows the rewrite",
+        ).not.toBe(entryAt(previousBuild, FILES.CATALOG_JSON).modifiedAtMs);
       });
     });
 

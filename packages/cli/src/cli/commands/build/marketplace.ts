@@ -30,7 +30,7 @@ import {
   PLUGINS_DIST_PATH,
   STANDARD_FILES,
 } from "../../consts";
-import type { Marketplace } from "../../types/plugins";
+import type { Marketplace, MergedSkillsMatrix } from "../../types";
 import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 import { plural } from "../../utils/string.js";
 
@@ -125,13 +125,13 @@ export default class BuildMarketplace extends BaseCommand {
     this.printHeader(pluginsDir, outputPath);
 
     try {
-      const marketplace = await this.generateAndWrite(
-        pluginsDir,
-        outputPath,
-        flags["plugins-dir"],
-        identity,
-      );
-      await this.writeCatalog(projectRoot, outputPath);
+      // Everything is read and refused before the first write: a build that fails writes nothing,
+      // so the manifest and the catalogue on disk always describe the same build.
+      const marketplace = await this.scanPlugins(pluginsDir, flags["plugins-dir"], identity);
+      const catalog = await this.readCatalog(projectRoot);
+
+      await this.writeManifest(outputPath, marketplace);
+      await this.writeCatalog(outputPath, catalog);
       this.printStats(marketplace);
       this.printSample(marketplace);
 
@@ -247,9 +247,8 @@ export default class BuildMarketplace extends BaseCommand {
     this.log("");
   }
 
-  private async generateAndWrite(
+  private async scanPlugins(
     pluginsDir: string,
-    outputPath: string,
     pluginsDirFlag: string,
     identity: MarketplaceIdentity,
   ): Promise<Marketplace> {
@@ -276,15 +275,11 @@ export default class BuildMarketplace extends BaseCommand {
       this.error(namespaceError, { exit: EXIT_CODES.ERROR });
     }
 
-    this.log("Writing marketplace.json...");
-    await writeMarketplace(outputPath, marketplace);
-    this.log(`Wrote ${outputPath}`);
-
     return marketplace;
   }
 
   /**
-   * Writes the marketplace's catalogue beside its manifest.
+   * The catalogue published beside the manifest.
    *
    * Unconditional, and there is no flag to make it otherwise: a consumer
    * fetching a marketplace cannot tell an author who omitted a flag from a
@@ -293,12 +288,22 @@ export default class BuildMarketplace extends BaseCommand {
    * `generatedAt` is stamped rather than carried: see {@link GENERATED_AT_BUILD}
    * for why a published artefact records a build and not a moment.
    */
-  private async writeCatalog(projectRoot: string, outputPath: string): Promise<void> {
+  private async readCatalog(projectRoot: string): Promise<MergedSkillsMatrix> {
+    this.log(`Reading the skills for ${CATALOG_JSON}...`);
+    const matrix = await loadMarketplaceMatrix(projectRoot);
+    return { ...matrix, generatedAt: GENERATED_AT_BUILD };
+  }
+
+  private async writeManifest(outputPath: string, marketplace: Marketplace): Promise<void> {
+    this.log(`Writing ${MARKETPLACE_JSON}...`);
+    await writeMarketplace(outputPath, marketplace);
+    this.log(`Wrote ${outputPath}`);
+  }
+
+  private async writeCatalog(outputPath: string, catalog: MergedSkillsMatrix): Promise<void> {
     const catalogPath = path.join(path.dirname(outputPath), CATALOG_JSON);
 
     this.log(`Writing ${CATALOG_JSON}...`);
-    const matrix = await loadMarketplaceMatrix(projectRoot);
-    const catalog = { ...matrix, generatedAt: GENERATED_AT_BUILD };
     await writeFile(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
     this.log(`Wrote ${catalogPath}`);
   }

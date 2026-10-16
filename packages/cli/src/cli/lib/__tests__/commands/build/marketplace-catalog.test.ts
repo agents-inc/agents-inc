@@ -10,14 +10,19 @@ import {
   PLUGIN_MANIFEST_DIR,
   PLUGINS_DIST_PATH,
   SKILL_CATEGORIES_PATH,
+  SKILL_RULES_PATH,
   SKILLS_DIR_PATH,
+  SOURCE_ROOT_DIR,
   STACKS_FILE_PATH,
   STANDARD_FILES,
 } from "../../../../consts";
 import { defaultCategories } from "../../../configuration/default-categories";
+import { EXIT_CODES } from "../../../exit-codes";
 import { defaultStacks } from "../../../configuration/default-stacks";
 import { renderConfigTs } from "../../content-generators.js";
 import { createTestSkill } from "../../factories/skill-factories.js";
+import { renderUnparseableConfigTs } from "../../factories/unloadable-config-factories.js";
+import { fileExists } from "../../test-fs-utils";
 import { runCliCommand } from "../../helpers/cli-runner.js";
 import { readTestJson, writeTestPackageJson } from "../../helpers/config-io.js";
 import { writeSourceSkill, writeTestPluginManifest } from "../../helpers/disk-writers.js";
@@ -34,6 +39,20 @@ import type { SkillId } from "../../../../types";
  * and say nothing about the artefact anyone can actually fetch.
  */
 const CATALOG_JSON = "catalog.json";
+
+/** The manifest written beside it, spelled for the same reason. */
+const MARKETPLACE_JSON = "marketplace.json";
+
+/**
+ * Every config module the catalogue is read from. Each is read only to build the catalogue, so a
+ * build that wrote the manifest before reading them published a manifest for a build that failed.
+ */
+const CATALOGUE_CONFIG_MODULES = [
+  path.join(SOURCE_ROOT_DIR, STANDARD_FILES.CONFIG_TS),
+  SKILL_CATEGORIES_PATH,
+  SKILL_RULES_PATH,
+  STACKS_FILE_PATH,
+] as const;
 
 /** The marketplace every fixture here publishes under unless it says otherwise. */
 const MARKETPLACE_NAME = "acme";
@@ -159,9 +178,18 @@ async function writeConfigModule(
   relPath: string,
   data: Record<string, unknown>,
 ): Promise<void> {
+  await writeConfigModuleSource(marketplaceDir, relPath, renderConfigTs(data));
+}
+
+/** Writes one of a marketplace's config modules as the given text, loadable or not. */
+async function writeConfigModuleSource(
+  marketplaceDir: string,
+  relPath: string,
+  source: string,
+): Promise<void> {
   const filePath = path.join(marketplaceDir, relPath);
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, renderConfigTs(data));
+  await writeFile(filePath, source);
 }
 
 /** Gives the marketplace a category of its own, declared the way an author declares one. */
@@ -450,5 +478,30 @@ describe("build:marketplace catalog emission", () => {
         "the identity is the whole package name, so a prefix of it is somebody else",
       ).toStrictEqual([]);
     });
+  });
+
+  describe("a build refused while reading the catalogue", () => {
+    beforeEach(async () => {
+      await writeTestPackageJson(projectDir, { name: MARKETPLACE_NAME });
+      await writeMarketplaceCategories(projectDir);
+      await publishMarketplaceSkill(projectDir, marketplaceSkill());
+    });
+
+    it.each(CATALOGUE_CONFIG_MODULES)(
+      "writes neither file when %s does not load",
+      async (relPath) => {
+        await writeConfigModuleSource(projectDir, relPath, renderUnparseableConfigTs());
+
+        const { error } = await runCliCommand(["build:marketplace"]);
+
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        expect(error?.message).toContain(path.join(projectDir, relPath));
+        expect(
+          await fileExists(path.join(projectDir, PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON)),
+          "a refused build writes nothing, so no manifest goes out without the catalogue beside it",
+        ).toBe(false);
+        expect(await fileExists(catalogPath)).toBe(false);
+      },
+    );
   });
 });
