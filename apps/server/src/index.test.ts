@@ -1,5 +1,6 @@
 import { SELF, env } from "cloudflare:test"
 import {
+  COMPOSE_TOO_LONG_BODY,
   NO_CONFIG_BODY,
   UNREADABLE_CONFIG_BODY,
   seedPayload,
@@ -10,13 +11,14 @@ import { http, HttpResponse } from "msw"
 import { describe, expect, it, vi } from "vitest"
 
 import { upstreamMock } from "../vitest.setup"
+import { seedSession } from "./db/seed-session"
 
 import type { SeedPayload } from "@workspace/matrix/seed"
 import type { AppType } from "./index"
 
-// These run against the real worker in the real runtime with a simulated KV
-// binding, so they cover the whole contract a client sees: status codes,
-// idempotent ids, CORS, and the round trip.
+// These run against the real worker in the real runtime, so they cover the
+// whole contract a client sees: status codes, idempotent ids, CORS, and the
+// round trip.
 
 const BASE = "https://api.test"
 
@@ -243,13 +245,14 @@ describe("GET /configs/:id", () => {
   })
 })
 
-// The editor reaches these two routes through `packages/api`'s `hc<AppType>`
-// client rather than a hand-written fetch, which makes the exported type half of the contract and
-// not a convenience. Running the editor's own client against the real worker
-// here is what keeps the two halves honest about each other: a route that
-// stops being chained onto the exported app disappears from the client's
-// surface and this block stops compiling, and a body that drifts from what
-// the route declares fails an assertion that no cast is standing in front of.
+// The editor reaches every route this block calls through `packages/api`'s
+// `hc<AppType>` client rather than a hand-written fetch, which makes the
+// exported type half of the contract and not a convenience. Running that
+// client against the real worker here is what keeps the two halves honest
+// about each other: a route that stops being chained onto the exported app
+// disappears from the client's surface and this block stops compiling, and a
+// body that drifts from what the route declares fails an assertion that no
+// cast is standing in front of.
 describe("the typed client the editor uses", () => {
   const client = hc<AppType>(BASE, { fetch: SELF.fetch.bind(SELF) })
 
@@ -285,6 +288,77 @@ describe("the typed client the editor uses", () => {
     })
 
     expect(response.status).toBe(404)
+  })
+
+  const signedIn = async () => {
+    const { cookie } = await seedSession(env)
+    return hc<AppType>(BASE, {
+      fetch: SELF.fetch.bind(SELF),
+      headers: { cookie },
+    })
+  }
+
+  const STACK = { name: "mine", configId: "abcd1234" }
+
+  it("saves a stack and lists it back", async () => {
+    const { stacks } = await signedIn()
+
+    const saved = await stacks.$post({ json: STACK })
+    expect(saved.status).toBe(201)
+    if (!saved.ok) throw new Error("the worker refused a signed-in save")
+    const { id } = await saved.json()
+
+    const listed = await stacks.$get()
+    if (!listed.ok) throw new Error("the worker refused a signed-in list")
+    expect((await listed.json()).map((stack) => stack.id)).toEqual([id])
+  })
+
+  // The status `createStack` and `composeProposal` read as signed out rather
+  // than as a refusal.
+  it("answers a request with no session 401", async () => {
+    const save = await client.stacks.$post({ json: STACK })
+    const compose = await client.compose.$post({ json: { sentence: "a" } })
+
+    expect([save.status, compose.status]).toEqual([401, 401])
+  })
+
+  it("hands back the model's proposal", async () => {
+    const proposal = { skillIds: [], reason: "because" }
+    upstreamMock.use(
+      http.post("https://api.anthropic.com/v1/messages", () =>
+        HttpResponse.json({
+          id: "msg_test",
+          type: "message",
+          role: "assistant",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: JSON.stringify(proposal) }],
+          stop_reason: "end_turn",
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        })
+      )
+    )
+
+    const { compose } = await signedIn()
+
+    const response = await compose.$post({ json: { sentence: "a react app" } })
+
+    expect(response.status).toBe(200)
+    if (!response.ok) throw new Error("the worker refused a signed-in sentence")
+    expect(await response.json()).toEqual(proposal)
+  })
+
+  // `refusalFor` in apps/editor/src/lib/api/compose.ts tells this 400 from an
+  // empty sentence's by the body alone.
+  it("names the guard that refused an over-long sentence", async () => {
+    const { compose } = await signedIn()
+
+    const response = await compose.$post({
+      json: { sentence: "x".repeat(601) },
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toStrictEqual(COMPOSE_TOO_LONG_BODY)
   })
 })
 
@@ -394,13 +468,7 @@ describe("POST /monitoring", () => {
     expect(response.status).toBe(400)
   })
 
-  // The relay itself, which every case above stops short of — and the one test
-  // in this workspace that exercises a fetch the WORKER makes rather than one a
-  // test makes. That is what `vitest.config.ts` claims about `msw/node` in this
-  // pool, and a claim a comment makes and nothing runs is a claim that rots:
-  // without this, msw could stop patching the global the worker calls and every
-  // other file here would stay green, because every other outbound call in the
-  // suite is made by the test file itself.
+  // The relay itself, which every case above stops short of.
   it("relays an envelope addressed to this project", async () => {
     const sentry = vi.fn(() => new HttpResponse(null, { status: 200 }))
     upstreamMock.use(
