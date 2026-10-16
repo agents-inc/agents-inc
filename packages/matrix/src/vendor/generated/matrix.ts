@@ -3633,7 +3633,7 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
           skillIds: ["web-framework-react"],
           needsAny: false,
           reason:
-            "Composition patterns are React surface — base-ui useRender/mergeProps, forwardRef, JSX parts",
+            "Composition patterns are React surface — JSX parts sharing context, ref as a prop, asChild/render via cloneElement, useId",
         },
       ],
       alternatives: [],
