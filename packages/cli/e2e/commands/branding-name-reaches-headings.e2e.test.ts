@@ -70,9 +70,9 @@ const DASHBOARD_CONTENT: DeclaredContent = {
 };
 
 /**
- * The shared configuration `init --from` installs, ejected at global scope like every other
- * `--from` spec: an eject install keeps the Claude CLI out of it, and a project-scoped skill
- * assigned to a sub-agent resting at the shared default is a pair the decode refuses outright.
+ * The shared configuration `init --from` installs, ejected at global scope: an eject install
+ * keeps the Claude CLI out of it, and a project-scoped skill assigned to a sub-agent resting at
+ * the shared default is a pair the decode refuses outright.
  */
 const SEED_PAYLOAD = buildSeedPayload({
   skills: {
@@ -94,8 +94,7 @@ describe("the name a run prints itself under", () => {
   let store: SeedConfigStore;
 
   beforeAll(async () => {
-    // The `init --from` leg is the only one that needs either, and both are built once: the
-    // other four legs run against a config and an empty marketplace directory alone.
+    // The `init --from` leg is the only one that needs either, so both are built once.
     ({ sourceDir, tempDir: sourceTempDir } = await createE2ESource());
     store = await startSeedConfigStore();
   }, TIMEOUTS.SETUP);
@@ -285,7 +284,7 @@ describe("the name a run prints itself under", () => {
 
   /**
    * `init`'s closing line, which is the most prominent claim the CLI makes about itself. Driven
-   * through `--from` because it is the one non-interactive route to it.
+   * through `--from` because it is the only route to it.
    */
   it(
     "signs off init with the configured name, and with the shipped one when none is configured",

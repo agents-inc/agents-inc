@@ -4,8 +4,8 @@ import { TerminalScreen } from "../pages/terminal-screen.js";
 import { TIMEOUTS, INTERNAL_DELAYS } from "../pages/constants.js";
 
 /**
- * Page object for non-wizard interactive prompts (uninstall confirmation,
- * update confirmation, search UI).
+ * Page object for interactive prompts (the `uninstall` confirmation, the
+ * question `init --from` and `edit --from` ask before writing).
  *
  * Wraps TerminalSession + TerminalScreen so test files do NOT import
  * TerminalSession directly.

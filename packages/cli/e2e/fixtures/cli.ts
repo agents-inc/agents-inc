@@ -32,16 +32,15 @@ export class CLI {
    * no spec declares. The name is the variable the product reads — this line spent
    * its life spelling a variable nothing has ever set.
    *
-   * `XDG_CACHE_HOME` and `GIGET_AUTH` are the rest of that same class: every remaining
-   * variable `src/cli/` reads by name, each one a knob a developer's shell may legitimately
-   * carry for their own use. Cleared TOGETHER rather than one at a time as each is found to
-   * matter, because "nobody exports that" is a fact about this machine — a shared giget cache
-   * or a private-repo token reaching a spec is a run whose result belongs to the environment
-   * rather than to the code. `AGENTS_INC_API_URL` is the one not cleared but DEFAULTED, by
-   * {@link NO_LIVE_SEED_API}, because the product falls back to the live store when it is unset.
-   * Every one sits ahead of `options.env`, so a spec that needs a value still names its own.
-   * `src/cli/lib/__tests__/e2e-runner-environment.test.ts` is what keeps this list and the PTY
-   * harness's copy of it complete.
+   * `XDG_CACHE_HOME` and `GIGET_AUTH` are the rest of that same class, each one a knob a
+   * developer's shell may legitimately carry for their own use. Cleared TOGETHER rather than one
+   * at a time as each is found to matter, because "nobody exports that" is a fact about this
+   * machine — a shared giget cache or a private-repo token reaching a spec is a run whose result
+   * belongs to the environment rather than to the code. `AGENTS_INC_API_URL` is the one not
+   * cleared but DEFAULTED, by {@link NO_LIVE_SEED_API}, because the product falls back to the
+   * live store when it is unset. Every one sits ahead of `options.env`, so a spec that needs a
+   * value still names its own. `src/cli/lib/__tests__/e2e-runner-environment.test.ts` is what
+   * keeps this list and the other runners' copies of it complete.
    *
    * `VITEST` is cleared for the same class of reason, one layer up: it is the HARNESS's
    * variable, not the product's. A spawned `bin/run.js` is a user's binary and must see what a
@@ -96,7 +95,7 @@ export class CLI {
         // `CODEX_HOME` above is only half of what a Codex spec needs — see `codex-on-path.ts`.
         //
         // PREPENDED to whatever PATH is in effect, never replacing it, and that is the whole of
-        // the difference between this line and the three above. Those pin a value a spec must not
+        // the difference between this line and the two above. Those pin a value a spec must not
         // be able to override; a PATH is the opposite — `update`'s "the Claude CLI is missing"
         // cases hand over a PATH with no `claude` on it, and a pin would have handed the developer's
         // own back and made every one of them a test of this machine.

@@ -13,12 +13,11 @@ import {
 const hook: Hook<"init"> = async function (options) {
   sayTheRetiredSourceFolderIsUnsupported(process.cwd());
 
-  // When no command is given and project is already initialized, show dashboard
+  // No command: the dashboard, over the project's installation or else the global one
   if (options.id === undefined) {
     const projectDir = process.cwd();
-    // Refused as every command refuses it (`BaseCommand.ensureConfigReadable`). Left to the
-    // dashboard, the load error was swallowed by oclif's hook runner and the run printed the root
-    // help, as though nothing were installed.
+    // Left to the dashboard, the load error was swallowed by oclif's hook runner and the run
+    // printed the root help, as though nothing were installed.
     const unreadable = await findConfigLoadFailures(projectDir);
     if (unreadable.length > 0) {
       this.error(installationConfigsUnreadable(unreadable), { exit: EXIT_CODES.ERROR });

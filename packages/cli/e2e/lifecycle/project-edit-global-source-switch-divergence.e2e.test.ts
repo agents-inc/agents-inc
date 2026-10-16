@@ -27,15 +27,7 @@ import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.
 
 /**
  * A source switch driven from a PROJECT context, applied to skills that live at
- * GLOBAL scope.
- *
- * `edit --from` resolves migration paths per-skill from each skill's own scope, so a
- * plugin -> eject switch on a global-scoped skill copies the skill under $HOME and
- * uninstalls its user-scope plugin registration. The config write, however, runs
- * with project authority ("owned"), under which an inherited global-active entry is
- * out of scope and preserved verbatim. Whatever the product decides — refuse the
- * switch for global-scoped skills (matching the existing project-scope guard) or
- * record it — the recorded source and the on-disk install mode must not diverge. What keeps
+ * GLOBAL scope: the recorded source and the on-disk install mode must not diverge. What keeps
  * the check from being vacuous is hono — the project-owned half the run genuinely does switch,
  * asserted first, which proves the source-switch path fired at all.
  */

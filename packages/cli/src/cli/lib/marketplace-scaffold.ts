@@ -44,8 +44,7 @@ const EXAMPLE_CATEGORY = `${EXAMPLE_DOMAIN}-example`;
  * The slug the example skill answers to.
  *
  * Deliberately NOT namespaced: the marketplace-namespace rule governs skill ids,
- * and a marketplace's matrix is built from its own skills alone, so nothing in it
- * can collide with this. Prefixing it would settle a question nobody has ruled on.
+ * not slugs.
  */
 const EXAMPLE_SLUG = "example-skill";
 
@@ -64,7 +63,7 @@ const EXAMPLE_STACK_AGENT = "web-developer";
  * Every skill id a marketplace publishes begins with that marketplace's name, so an
  * author who edits the scaffold rather than starting from a blank directory falls
  * into the namespace instead of having to remember it — `build marketplace` refuses
- * an id that lacks the prefix, and so does the load side.
+ * an id that lacks the prefix.
  */
 export function exampleSkillId(marketplaceName: string): string {
   return `${marketplaceName}-${EXAMPLE_SKILL_SUFFIX}`;
@@ -74,7 +73,8 @@ export function exampleSkillId(marketplaceName: string): string {
  * Writes a complete marketplace into `marketplaceDir` and returns every path it
  * wrote, relative to that directory.
  *
- * What it writes is exactly what `docs/guides/creating-a-marketplace.md` promises a
+ * What it writes is exactly what
+ * `apps/www/src/content/docs/docs/guides/creating-a-marketplace.md` promises a
  * marketplace holds — no more. It deliberately writes no config pair: a
  * marketplace is a repository of skills, and a config manifest there would make
  * `doctor` diagnose an installation that does not exist.
@@ -112,8 +112,8 @@ function scaffoldFiles(marketplaceName: string): ScaffoldFile[] {
 /**
  * A `config/*.ts` module the CLI's loader can read.
  *
- * The loader unwraps a DEFAULT export and treats a module without one as no config
- * at all, so the export form here is load-bearing rather than stylistic.
+ * The loader reads only a DEFAULT export, so the export form here is load-bearing
+ * rather than stylistic.
  */
 function configModule(comment: string, data: unknown): string {
   return `${comment}\nexport default ${JSON.stringify(data, null, 2)};\n`;
@@ -121,14 +121,10 @@ function configModule(comment: string, data: unknown): string {
 
 /**
  * `build marketplace` reads a marketplace's whole identity out of package.json and
- * refuses a file missing any of name, version or description.
+ * refuses a file missing any of name, version, description or author.
  *
- * `author` is the field this command cannot know, and it is written anyway —
- * omitting it is not the neutral choice it looks like. The build turns an absent
- * author into `owner: { name: "" }`, and the schema the CLI parses a
- * `marketplace.json` back with requires a non-empty owner name, so a scaffold with
- * no author builds a marketplace that then loads as no marketplace at all. The
- * marketplace's own handle is the least-wrong default: it is derived from what the
+ * `author` is the field this command cannot know, so it is written as the
+ * marketplace's own handle — the least-wrong default: it is derived from what the
  * author typed rather than invented, and the next steps say to replace it.
  */
 function packageJson(marketplaceName: string): string {
@@ -179,8 +175,7 @@ function skillRulesModule(): string {
       "// Relationships between skills — conflicts, requires, alternatives.",
       "//",
       "// Rules may only name skills the public catalogue carries; this marketplace's own",
-      "// skills cannot be named here yet, and a rule that names one will not load. The",
-      "// file still has to exist, so it ships with a version and no relationships.",
+      "// skills cannot be named here yet, and a rule that names one will not load.",
     ].join("\n"),
     { version: DEFAULT_VERSION },
   );

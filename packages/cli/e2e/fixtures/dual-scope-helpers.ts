@@ -91,7 +91,6 @@ export async function createTestEnvironment(options?: {
   await mkdir(fakeHome, { recursive: true });
   await mkdir(projectDir, { recursive: true });
 
-  // Create permissions files to prevent permission prompt hang
   if (options?.permissions !== false) {
     await createPermissionsFile(fakeHome);
     await createPermissionsFile(projectDir);

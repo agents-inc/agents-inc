@@ -11,15 +11,9 @@ import { parseEnv } from "./src/env.schema"
 // One chunk per rate of change, so a deploy invalidates only what changed. The
 // whole app used to be a single 1.03 MB file — 302 KB gzipped — which meant a
 // one-line copy edit re-hashed React, the catalogue and every brand icon along
-// with it, and every returning visitor downloaded all of them again. Split, the
-// app's own code is 29 KB and an ordinary deploy leaves the other six alone. A
-// cold first paint pays 0.6 KB for the arrangement: 310.9 KB gzipped before
-// against 311.5 KB after, both measured 2026-08-21 UNDER NODE. The runtime is
-// part of the figure rather than a footnote to it: Node's and Bun's zlib
-// disagree by about 2% on the same bytes, and the same build reads 304.4 KB
-// under Bun, so a gzipped size here is comparable only to another taken under
-// the same runtime. `FIRST_PAINT_BUDGET_BYTES` in
-// ./scripts/first-paint-budget.ts records that fact for the budget it guards.
+// with it, and every returning visitor downloaded all of them again. A cold
+// first paint pays 0.6 KB for the arrangement: 310.9 KB gzipped before against
+// 311.5 KB after, both measured 2026-08-21 under Node.
 //
 // THE PRIORITIES ARE LOAD-BEARING, and not for the reason the order suggests. A
 // group captures its matches' dependencies as well as its matches, so unless
@@ -170,16 +164,11 @@ export default defineConfig(({ mode }) => {
       },
     },
     resolve: {
-      // The repository root holds react 18, because the CLI depends on ink and
-      // won the hoist slot; apps/editor and packages/ui each got their own nested
-      // react 19. Anything else hoisted to the root — @base-ui/react is the one
-      // that matters here — resolves `react` upwards and lands on 18, so a
-      // production build genuinely shipped both copies. Two Reacts means two
-      // hook dispatchers, and every Base UI component would have thrown
+      // One React for the whole graph, wherever the hoist puts a copy. Two
+      // Reacts means two hook dispatchers, and every Base UI component throws
       // "Invalid hook call" at runtime with nothing failing at build time.
-      // Deduping pins the whole graph to this app's copy. react-dom is listed
-      // for the same reason even though it happens to resolve correctly today:
-      // the two have to come from the same copy or React breaks anyway.
+      // react-dom is listed too: the two have to come from the same copy or
+      // React breaks anyway.
       dedupe: ["react", "react-dom"],
       alias: {
         "@": path.resolve(__dirname, "./src"),

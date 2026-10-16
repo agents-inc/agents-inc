@@ -19,11 +19,9 @@ const BASE_URL = `http://localhost:${PORT}`
 // trust either figure: `document.documentElement.scrollWidth` at the width in
 // question is the only answer that cannot go stale.
 //
-// The viewport is fixed above the app's one media query — the 1500px threshold
-// in `src/lib/viewport.ts` — which is why every spec here is written against the
-// WIDE drawing: four lattice tracks, and a domain tab carrying its count.
-// `viewport-threshold.spec.ts` overrides this to reach the other one, and
-// it is the only file that should.
+// The viewport is fixed above the app's one viewport threshold — the 1500px in
+// `src/lib/viewport.ts` — so a spec that sets no viewport of its own draws the
+// WIDE layout: four lattice tracks, and a domain tab carrying its count.
 const VIEWPORT = { width: 1600, height: 1000 }
 
 const CHROMIUM = { ...devices["Desktop Chrome"], viewport: VIEWPORT }
