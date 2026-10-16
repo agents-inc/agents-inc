@@ -13,11 +13,11 @@ started. See the root `CLAUDE.md`.
 
 ---
 
-## Now — finish the wizard removal (owner order, 2026-10-15)
+## Waiting on the owner — the wizard removal's loose ends (2026-10-15)
 
-CLI-923 (wizard removed) and CLI-924 (journeys rewritten and hand-run) landed 2026-10-15 in 0.169.0; CLI-926 finishes the
-removal.
-CLI-925 holds the run's unruled findings. Working list: `plans/2026-10-14-session-queue.md`.
+CLI-923/924 (0.169.0) and CLI-926 to CLI-929 (0.170.0) are committed locally, not pushed or published.
+CLI-925 holds the journey run's unruled findings; the lane questions and the `kbyWBumg` delete are in
+`plans/2026-10-14-session-queue.md`.
 
 ## Next — REPO-44: tech debt and lint rules
 

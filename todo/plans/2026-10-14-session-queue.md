@@ -15,9 +15,17 @@ on the 4 HEAD failures (`check-finding-citations` ×2, `check-findings-frontmatt
 **CLI-924 landed 2026-10-15** (row → CLI-925, archive line, ROADMAP). Runs `wf_9c84f547-84b` and
 `wf_1e05e072-07d`. Record `plans/2026-10-15-manual-journey-run{.md,/}`.
 
+**Committed 2026-10-15:** `67ac2fc6`…`ab7023bb` (13 groups + `chore(release): 0.169.0`), plan
+`$SCRATCH/commit/plan.md`. Not pushed, not published (owner: neither yet); 23 commits ahead of `origin/main`.
+
 ## Next
 
-1. Finish the wizard removal (CLI-926, below), tests first.
+1. CLI-926 to CLI-929 committed 2026-10-17 as 0.170.0, not pushed or published. Root gates green.
+   2026-10-16: every standards cut since 551c9164 audited (owner: remove deleted-code references only, keep intent);
+   lost rules restored in 13 files, each passed by an independent checker (`wf_6bfadec4-1b5`, `wf_935117f1-043`,
+   `wf_c87c2174-071`).
+2. Owner: run the `kbyWBumg` delete (needs Cloudflare auth; commands in the CLI-926 list below).
+3. Owner: the lane questions below; push/publish of the local 0.169.0 and 0.170.0 commits (owner: not yet).
 
 ## CLI-926 — finishing the wizard removal (owner rulings 2026-10-15)
 
@@ -46,7 +54,26 @@ Fix:
   TO TEST" is pinned by `lifecycle/mixed-mode-skill-ref-format`; row 38's TO TEST.
 - **Leftover code**: remove if unused — `isDomain`, `skillSlotKey`/`agentSlotKey` (both CLAUDE.md files cite
   them), the six `TEST_ONLY_EXPORTS`. Rename `writeScopedFromWizard` / `WizardWriteArgs` if still used.
-- **Live-store id `kbyWBumg`** (minted by a spec before the guard): delete it if nothing uses it.
+- **Live-store id `kbyWBumg`**: unused (no repo, skills or cv-launch reference); `GET` 200. Owner runs, from apps/server:
+  `bunx wrangler d1 execute agents-inc-db --env production --remote --command "SELECT id FROM saved_stacks WHERE config_id = 'kbyWBumg'"`,
+  then if empty `bunx wrangler kv key delete kbyWBumg --binding CONFIGS --env production --remote`.
+
+- **Standards docs** (owner 2026-10-15): `.ai-docs/standards/e2e/{page-objects,patterns,README}.md`,
+  `clean-code-standards.md` and user-journeys.md prose stop describing wizard page objects and symbols.
+- **Bare `edit` refuses unusable local metadata** before minting an id or opening the editor (owner 2026-10-15).
+
+- **Docs site sweep** (owner 2026-10-15): every page of `apps/www` in its existing writing style, with no mention of the
+  wizard. Many pages present two ways to make a change (wizard and editor); with the wizard gone, most have one.
+
+- **Dead project-context switch** (owner 2026-10-15): delete `recordGlobalSourceMigrations`, its gate variant and unit
+  tests, and the packages/cli/CLAUDE.md bullet; the e2e suite must stay green with the call removed. Since 2026-10-04 a
+  project run leaves global skills as installed, so the recorder can change nothing.
+- **Seven non-PTY specs leave `e2e/interactive/`** (owner 2026-10-15) for `commands/` or `lifecycle/`, with their citations
+  in spec-gates.test.ts and user-journeys.md; the e2e README's `interactive/` definition says PTY-driven specs.
+- **TMPDIR-length specs → CLI-927** (owner 2026-10-15).
+
+Accepted as is (owner 2026-10-15): the two deleted wizard-only specs; the re-recorded project-plugin golden; install-mode-bulk
+and scope-aware-local-copy both kept.
 
 Not now (owner): the clicks to move a skill between scopes in the editor (owner's own UX pass);
 `ensureTerminalSize`.
@@ -61,12 +88,16 @@ Claude+Codex scope (7), the editor preview is not the install (8), description h
 
 ## Owner questions still open
 
-- Untested list Ink frame (tracker row?); TMPDIR-length-sensitive specs (tracker row?).
-- `.ai-docs/standards/e2e/{page-objects,patterns,README}.md` and `clean-code-standards.md` still describe wizard
-  page objects and symbols (not gate-bound); user-journeys.md prose :39, :95-108, :119 too.
-- Bare `edit` no longer refuses unusable local metadata.
-- Deleted specs whose subject the CLI can't produce now: edit-project-source-migration-propagates, stack-per-agent-curation.
-- project-plugin golden re-recorded with a different pair (init --from refuses the old one); install-mode-bulk overlap.
-- Migrated non-PTY specs still under e2e/interactive; `init --from` closing block omits the project config path when no
-  project sub-agent exists; row 40 lost its control half; handrun share chain broken since 2026-10-04.
-- Can `edit` still record a project-context switch of a global skill (recordGlobalSourceMigrations, CLAUDE.md rule)?
+- Untested list Ink frame (tracker row?). `init --from` closing block omits the project config path when no project
+  sub-agent exists; row 40 lost its control half; handrun share chain broken since 2026-10-04.
+- From CLI-926 lanes: pin every stack sub-agent `on`, or only skill-less ones (done)? `init --from`'s confirm now uses
+  the new "Added to sub-agents in the global install" wording too — keep? Marketplace-repo remedy wording. Atomic
+  writes for `build marketplace`? An empty marketplace-repo `config.ts` builds silently. Plain `warn()` once per process?
+  The CLI's `share`/`edit --ui` on a 429 don't name the limit; Install re-POSTs an unchanged selection.
+- Docs: "Ways in" title. Row 13a PARTIAL; rename `init-from-greenfield`.
+- Done 2026-10-15 (owner rulings): the wizard gif is back as `assets/legacy-wizard.gif` under "Legacy Wizard" in
+  packages/cli/README.md; the landing slot reads "Video coming soon". Share/Save need not name the rate limit; the
+  Install dialog footer keeps `edit`.
+- Code: SummaryPanel kept (two rulings conflict); re-point or drop the deleted resolver's catalogue-rule specs;
+  validation warnings not sanitised for terminal escapes; `isSkillSlug`, `isCategoryPath`, `allSkills()` unused;
+  `normalizeConfigPreservingOrder` is now the identity; installed-file prettier settings defined twice.

@@ -29,7 +29,7 @@ blocks a commit. What blocks a _deploy_ is in [`repo.md`](./repo.md), not here.
 | WWW-13 (new, 2026-08-27)         | Nothing gates the search modal's styling, and it is the one surface a browser must open     | Ready for Dev    | test    | medium     |
 | WWW-02 (was editor-todo item 9)  | Landing page: the free-and-open-source block does not do its job, and two a11y defects      | Ready for Dev    | feature | easy       |
 | WWW-03 (was editor-todo item 10) | Apex path split — **the repository half has landed; what is left is the dashboard cutover** | Needs Assistance | feature | complex    |
-| WWW-06 (was editor-todo item 14) | Two video slots are empty and a third is missing; you supply the recordings                 | Needs Assistance | feature | easy       |
+| WWW-06 (was editor-todo item 14) | The landing page's video slot is empty; you supply the recording                            | Needs Assistance | feature | easy       |
 
 ---
 
@@ -649,29 +649,15 @@ Workers and the same Custom Domain, so taken together the apex moves once instea
 
 ---
 
-#### WWW-06: Two video slots are empty, and a third is missing
+#### WWW-06: The landing page's video slot is empty
 
-Both existing slots are marked in the code. Neither has a file. The caution still holds: a **terminal
-recording**, not an editor screenshot, which is what makes a page read as a web app.
+The landing page (`apps/www/src/pages/index.astro`) reserves a bordered box reading "Video coming soon" (owner,
+2026-10-15), with a comment above it giving the `<video>` element to paste and the directory the file goes in
+(`apps/www/public/`). The page will not jump when the file arrives. The terminal wizard's recording now sits in
+`packages/cli/README.md` as the Legacy Wizard (`assets/legacy-wizard.gif`).
 
-**The landing page**, in `apps/www/src/pages/index.astro`. This one is set up properly: a real
-bordered box reserving 634×356px labelled "terminal recording", with a comment above it giving the
-exact `<video>` element to paste, the directory the file goes in (`apps/www/public/`), and both
-recordings that already exist — `packages/cli/assets/demo.gif` is 1400×1200 and 2.4 MB, so the box
-needs `aspect-[7/6]` rather than `aspect-video`, and the README walkthrough sits on GitHub's CDN and
-has to be downloaded rather than linked. The page will not jump when the file arrives. It sits below
-the explanation rather than in the hero, moved there on 2026-08-03 because a slot that cannot do its
-job until somebody records a video must not stand between a visitor and the explanation.
-
-**The quickstart**, `apps/www/src/content/docs/docs/quickstart.md`, between the `init` command and
-the wizard steps. This one is only an HTML comment, and that has two consequences: it reserves no
-space, so the page **will** jump when a file arrives, and **Astro passes raw HTML straight through
-markdown, so the internal note is visible in the published page source.** It wants converting into a
-real reserved box like the landing page's, which fixes both.
-
-**A third slot is missing.** `cli-or-web.md` walks the web-to-CLI round trip in three numbered steps
-and is the obvious place for it — the third slot on the site, and the second inside the
-documentation, after the quickstart.
+The quickstart's comment-only slot went with the wizard. `cli-or-web.md` walks the web-to-CLI round trip and is the
+obvious place for a second slot.
 
 ---
 
