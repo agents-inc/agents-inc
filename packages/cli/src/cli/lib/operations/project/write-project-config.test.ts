@@ -43,7 +43,7 @@ vi.mock("../../installation/index.js", async () => {
 
 vi.mock("../../config-gate/index.js", () => ({
   ensureBlankPair: vi.fn(),
-  writeScopedFromWizard: vi.fn(),
+  writeConfigByScope: vi.fn(),
 }));
 
 vi.mock("./load-agent-defs.js", () => ({
@@ -57,11 +57,11 @@ vi.mock("../../../utils/fs.js", () => ({
 import { writeProjectConfig } from "./write-project-config";
 import { buildAndMergeConfig, resolveInstallPaths } from "../../installation/index.js";
 import { loadAgentDefs } from "./load-agent-defs.js";
-import { ensureBlankPair, writeScopedFromWizard } from "../../config-gate/index.js";
+import { ensureBlankPair, writeConfigByScope } from "../../config-gate/index.js";
 import { ensureDir } from "../../../utils/fs.js";
 
 const mockBuildAndMergeConfig = vi.mocked(buildAndMergeConfig);
-const mockWriteScopedFromWizard = vi.mocked(writeScopedFromWizard);
+const mockWriteConfigByScope = vi.mocked(writeConfigByScope);
 const mockResolveInstallPaths = vi.mocked(resolveInstallPaths);
 const mockLoadAgentDefs = vi.mocked(loadAgentDefs);
 const mockEnsureBlankPair = vi.mocked(ensureBlankPair);
@@ -95,7 +95,7 @@ describe("write-project-config", () => {
 
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}));
     mockEnsureBlankPair.mockResolvedValue(false);
-    mockWriteScopedFromWizard.mockResolvedValue(buildGateReport());
+    mockWriteConfigByScope.mockResolvedValue(buildGateReport());
     mockEnsureDir.mockResolvedValue(undefined);
 
     // Default: project context (different from homedir)
@@ -121,7 +121,7 @@ describe("write-project-config", () => {
       undefined,
     );
     expect(mockEnsureBlankPair).toHaveBeenCalledWith("claude");
-    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
+    expect(mockWriteConfigByScope).toHaveBeenCalledWith({
       finalConfig,
       matrix: sourceResult.matrix,
       agents: {},
@@ -151,7 +151,7 @@ describe("write-project-config", () => {
     });
 
     expect(mockEnsureBlankPair).not.toHaveBeenCalled();
-    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
+    expect(mockWriteConfigByScope).toHaveBeenCalledWith({
       finalConfig,
       matrix: sourceResult.matrix,
       agents: {},
@@ -187,7 +187,7 @@ describe("write-project-config", () => {
     });
 
     expect(mockLoadAgentDefs).not.toHaveBeenCalled();
-    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
+    expect(mockWriteConfigByScope).toHaveBeenCalledWith({
       finalConfig,
       matrix: sourceResult.matrix,
       agents: preloadedAgents,
@@ -219,7 +219,7 @@ describe("write-project-config", () => {
     });
 
     expect(mockLoadAgentDefs).toHaveBeenCalledWith();
-    expect(mockWriteScopedFromWizard).toHaveBeenCalledWith({
+    expect(mockWriteConfigByScope).toHaveBeenCalledWith({
       finalConfig,
       matrix: sourceResult.matrix,
       agents: cliAgents,
@@ -253,7 +253,7 @@ describe("write-project-config", () => {
   });
 
   it("surfaces the registered projects propagation rewrote", async () => {
-    mockWriteScopedFromWizard.mockResolvedValue(
+    mockWriteConfigByScope.mockResolvedValue(
       buildGateReport(["/other/project-a", "/other/project-b"]),
     );
 

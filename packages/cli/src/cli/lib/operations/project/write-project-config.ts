@@ -6,11 +6,7 @@ import {
 } from "../../installation/index.js";
 import type { SourceLoadResult } from "../../loading/index.js";
 import type { AuthoritativeScope } from "../../configuration/index.js";
-import {
-  ensureBlankPair,
-  writeScopedFromWizard,
-  type GateReport,
-} from "../../config-gate/index.js";
+import { ensureBlankPair, writeConfigByScope, type GateReport } from "../../config-gate/index.js";
 import { providerInUse } from "../../installation/install-layout.js";
 import { loadAgentDefs, type AgentDefs } from "./load-agent-defs.js";
 import { ensureDir } from "../../../utils/fs.js";
@@ -64,7 +60,7 @@ export type ConfigWriteResult = {
  * 1. buildAndMergeConfig() — generates config from the selection, merges with existing
  * 2. loadAgentDefs() — the CLI's own sub-agent definitions, for config-types generation
  * 3. ensureBlankPair() — ensures the global config pair exists (when in project context)
- * 4. writeScopedFromWizard() — writes config.ts and config-types.ts split by scope,
+ * 4. writeConfigByScope() — writes config.ts and config-types.ts split by scope,
  *    fans global changes out to registered projects and recompiles their agents
  */
 export async function writeProjectConfig(options: ConfigWriteOptions): Promise<ConfigWriteResult> {
@@ -99,7 +95,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     await ensureBlankPair(providerInUse(projectDir));
   }
 
-  const propagation = await writeScopedFromWizard({
+  const propagation = await writeConfigByScope({
     finalConfig,
     matrix: sourceResult.matrix,
     agents,

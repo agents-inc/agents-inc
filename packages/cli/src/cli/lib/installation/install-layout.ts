@@ -124,7 +124,7 @@ const PROVIDER_OF_A_NEW_INSTALLATION: Provider = "claude";
  * ```
  *
  * They sit in `config-gate/`, `configuration/`, `loading/`, `compiler.ts` and six commands, and
- * the ones that decide where a write LANDS are reached from inside `writeScopedFromWizard` and
+ * the ones that decide where a write LANDS are reached from inside `writeConfigByScope` and
  * `propagateGlobalChangesToProjects` rather than from a command. A parameter that stops at the
  * first module boundary is worse than none: it reads as threaded at every call site it reaches
  * and answers off the disk everywhere after it, which is the half-routed write this funnel exists

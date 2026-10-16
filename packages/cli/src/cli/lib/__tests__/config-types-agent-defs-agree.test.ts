@@ -206,7 +206,7 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
     {
       file: "src/cli/lib/operations/project/write-project-config.ts",
       posture: "derives from the one function",
-      why: "The `agents` it hands `writeScopedFromWizard` becomes the config-types roster for `init --from`. It loaded CLI ∪ marketplace until 2026-08-21, which is the half of the defect a user could actually reach.",
+      why: "The `agents` it hands `writeConfigByScope` becomes the config-types roster for `init --from`. It loaded CLI ∪ marketplace until 2026-08-21, which is the half of the defect a user could actually reach.",
     },
   ] as const satisfies readonly AgentDefReader[];
 

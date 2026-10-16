@@ -40,7 +40,7 @@ import { regenerateConfigTypes } from "../configuration/config-types-writer.js";
  * `installation/index.ts` used to re-export these. Every one of them writes, or
  * drives a write of, some part of the config pair — `writeConfigFile` writes it
  * directly; the propagation and prune functions write it into every registered
- * project; `writeScopedFromWizard` writes both halves from a wizard result and
+ * project; `writeConfigByScope` writes both halves of one run's final config and
  * `writeScopeConfigTypes` writes the types half alone. The gate is their only caller
  * and none of them is part of the barrel's public surface.
  *
@@ -48,13 +48,13 @@ import { regenerateConfigTypes } from "../configuration/config-types-writer.js";
  * makes a row mean anything. A row for a name nothing declares cannot fail: it
  * guards against a re-export that no file could write. Two such rows were removed
  * here, each replaced by the live entry point that took the old one's place —
- * `writeScopedConfigs` by `writeScopedFromWizard`, and `regenerateScopeConfigTypes`
+ * `writeScopedConfigs` by `writeConfigByScope`, and `regenerateScopeConfigTypes`
  * by `writeScopeConfigTypes`. Both survive as positional-argument shims inside
  * `local-installer.test.ts`, which is why the dead names still grep to something.
  */
 const INSTALLATION_RAW_WRITERS = [
   "writeConfigFile",
-  "writeScopedFromWizard",
+  "writeConfigByScope",
   "propagateGlobalChangesToProjects",
   "pruneGlobalEntriesFromRegisteredProjects",
   "writeScopeConfigTypes",
@@ -76,7 +76,7 @@ const CONFIGURATION_RAW_WRITERS = [
 
 /**
  * A name the guard lists carried until it was replaced by
- * `writeScopedFromWizard`. Held here rather than in a list because it is the
+ * `writeConfigByScope`. Held here rather than in a list because it is the
  * self-test for the check below — the shape it exists to catch — and because a
  * future export under this spelling should fail loudly rather than quietly
  * revive a row nobody re-derived.

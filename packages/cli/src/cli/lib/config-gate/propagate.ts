@@ -319,7 +319,7 @@ function maskCollidingGlobalAgents(
  *
  * Applied at BOTH sites that write a project `config.ts` with `globalConfig` inlined:
  * `propagateGlobalChangesToProjects` (a global change fanning out to registered
- * projects) and the project-scope save branch of `writeScopedFromWizard` (an ordinary
+ * projects) and the project-scope save branch of `writeConfigByScope` (an ordinary
  * project `init`/`edit` performed while the colliding skill is already active
  * globally). Either site alone can produce the malformed shape, so both must run it.
  *
@@ -452,7 +452,7 @@ export type PropagationOptions = {
 /**
  * The single writer for a project's config pair, used by BOTH sites that emit
  * one: the per-project propagation step below and the project branch of
- * `writeScopedFromWizard`.
+ * `writeConfigByScope`.
  *
  * `buildProjectTypesExtras` is fed the EFFECTIVE config — the project's own
  * reconciled rows plus the active global rows the writer is about to inline —

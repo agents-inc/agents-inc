@@ -715,7 +715,7 @@ describe("a frontmatter value naming a path this repository does not carry", () 
  * about code, and no scanner can evaluate the claim — but it CAN ask whether the names it pins the
  * claim to still exist. Deliberately weaker than re-deriving the claim, and mechanical.
  */
-const A_DECLARED_SYMBOL = "writeScopedFromWizard";
+const A_DECLARED_SYMBOL = "writeConfigByScope";
 const A_DELETED_SYMBOL = "writeScopedConfigs";
 
 async function writeSymbolFixture(files: Record<string, string>): Promise<string> {

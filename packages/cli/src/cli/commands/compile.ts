@@ -371,7 +371,7 @@ export default class Compile extends BaseCommand {
    * the type unions in config-types.ts are derived from config.ts — so a compile
    * pass that leaves them untouched strands stale unions after a hand-edit.
    * Regenerates them from the scope's persisted config exactly as
-   * `writeScopedFromWizard` would: standalone narrowed unions at global scope, import-and-
+   * `writeConfigByScope` would: standalone narrowed unions at global scope, import-and-
    * extend at project scope. A failed refresh downgrades to a warning — the
    * compiled agents are already written and remain valid; only the type unions
    * may still be stale.

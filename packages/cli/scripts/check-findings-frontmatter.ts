@@ -548,8 +548,8 @@ function resolvesUnder(reference: string, roots: string[]): boolean {
  * A `partial_note` is prose about code and no scanner can evaluate whether the work it calls
  * pending has landed — one sat four months claiming an observability fix was pending after it
  * shipped in two commands. What a scanner CAN do is ask whether the names survive, which catches
- * the rename half of the class: the same note called `writeScopedConfigs` a call site, and
- * `writeScopedFromWizard` had replaced it.
+ * the rename half of the class: the same note called `writeScopedConfigs` a call site, a name
+ * the code had already replaced.
  */
 function undeclaredSymbolsIn(findings: ParsedFinding[], declared: Set<string>): UndeclaredSymbol[] {
   return findings.flatMap(({ file, fields }) =>

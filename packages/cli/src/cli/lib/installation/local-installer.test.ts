@@ -19,7 +19,7 @@ import { withGateToken } from "../config-gate/gate-token.js";
 import {
   mutateGlobal,
   writeScopeConfigTypes,
-  writeScopedFromWizard,
+  writeConfigByScope,
   type GateDeps,
   type GateReport,
 } from "../config-gate/index.js";
@@ -130,7 +130,7 @@ function deregisterProjectPath(projectDir: string): Promise<GateReport> {
   );
 }
 
-/** Positional-argument shape of the gate's `writeScopedFromWizard`. */
+/** Positional-argument shape of the gate's `writeConfigByScope`. */
 async function writeScopedConfigs(
   finalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
@@ -139,7 +139,7 @@ async function writeScopedConfigs(
   projectConfigPath: string,
   projectInstallationExists: boolean,
 ): Promise<void> {
-  await writeScopedFromWizard({
+  await writeConfigByScope({
     finalConfig,
     matrix,
     agents,

@@ -1,7 +1,6 @@
 import os from "os";
 import path from "path";
-import type { ProjectConfig, SkillId } from "../../types";
-import type { SkillConfig } from "../../types/config";
+import type { ProjectConfig } from "../../types";
 import type { AuthoritativeScope } from "../configuration/config-merger";
 import { CLI_INVOKE_COMMAND } from "../../consts";
 import { ensureDir, writeFile } from "../../utils/fs";
@@ -12,7 +11,6 @@ import { getInstalledConfigPath, getProjectConfigPath } from "../installation/in
 import { providerInUse } from "../installation/install-layout";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
-import { isActiveAt } from "../configuration/scope-predicates";
 import { splitConfigByScope } from "../configuration/config-generator";
 // The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
 // startup, which is what `generateConfigSource` read directly before the renderers moved into
@@ -193,7 +191,7 @@ export function lazyGateDeps(projectDir: string): GateDeps {
   };
 }
 
-export type WizardWriteArgs = {
+export type WriteConfigByScopeArgs = {
   finalConfig: ProjectConfig;
   matrix: LoadedGateDeps["matrix"];
   agents: LoadedGateDeps["agents"];
@@ -217,7 +215,7 @@ export type WizardWriteArgs = {
  * - Project config/types go to the project's own (with import from global)
  * When installing from home directory, writes a single standalone config.
  */
-export async function writeScopedFromWizard(args: WizardWriteArgs): Promise<GateReport> {
+export async function writeConfigByScope(args: WriteConfigByScopeArgs): Promise<GateReport> {
   return withGateToken(async () => {
     const { finalConfig, matrix, agents, projectDir, projectConfigPath } = args;
     // os.homedir() at call time, so the path agrees with getGlobalConfigImportPath(),
@@ -243,7 +241,7 @@ export async function writeScopedFromWizard(args: WizardWriteArgs): Promise<Gate
 }
 
 async function writeFromProjectContext(
-  args: WizardWriteArgs,
+  args: WriteConfigByScopeArgs,
   homeDir: string,
   deps: LoadedGateDeps,
 ): Promise<GateReport> {
@@ -329,7 +327,10 @@ async function writeGlobalPairWhenChanged(
  * `{ ...globalConfig }` is pointless.
  */
 async function writeProjectPairWhenOwed(
-  project: Pick<WizardWriteArgs, "projectDir" | "projectConfigPath" | "projectInstallationExists">,
+  project: Pick<
+    WriteConfigByScopeArgs,
+    "projectDir" | "projectConfigPath" | "projectInstallationExists"
+  >,
   provider: Provider,
   reconciledProjectConfig: ProjectConfig,
   effectiveGlobalConfig: ProjectConfig,
@@ -361,7 +362,7 @@ function holdsAnythingOfItsOwn(projectConfig: ProjectConfig): boolean {
 
 /**
  * Regenerates a single scope's config-types.ts from its persisted config,
- * matching `writeScopedFromWizard`'s writer selection exactly:
+ * matching `writeConfigByScope`'s writer selection exactly:
  * - global scope (home dir): standalone unions narrowed to the config's entries
  * - project scope: import-and-extend form (falls back to standalone when no
  *   global config-types.ts exists)
@@ -444,33 +445,8 @@ export async function reconcileTypesFromDisk(
  * inside the only code allowed to write the pair.
  */
 export type GlobalMutation =
-  | { kind: "migrate-skill-sources"; sources: ReadonlyMap<SkillId, string> }
   | { kind: "deregister-project"; projectDir: string }
   | { kind: "set-source"; source: string; fallbackName: string };
-
-/** The migrated `origin` for an active-global entry, or the entry unchanged. */
-function withMigratedSource(
-  skill: SkillConfig,
-  migratedSources: ReadonlyMap<SkillId, string>,
-): SkillConfig {
-  if (!isActiveAt(skill, "global")) return skill;
-  const origin = migratedSources.get(skill.id);
-  if (origin === undefined || origin === skill.origin) return skill;
-  return { ...skill, origin };
-}
-
-/**
- * Rewrites `origin` on exactly the active-global entries listed in `migratedSources`,
- * returning every other entry — including global entries this session did not migrate —
- * identical by reference.
- */
-export function applyMigratedGlobalSources(
-  globalSkills: SkillConfig[],
-  migratedSources: ReadonlyMap<SkillId, string>,
-): { skills: SkillConfig[]; changed: boolean } {
-  const skills = globalSkills.map((skill) => withMigratedSource(skill, migratedSources));
-  return { skills, changed: skills.some((skill, index) => skill !== globalSkills[index]) };
-}
 
 /**
  * The config a partial write commits: the scalars and arrays already on disk,
@@ -496,13 +472,6 @@ function applyMutation(
   current: Partial<ProjectConfig>,
 ): Partial<ProjectConfig> | null {
   switch (mutation.kind) {
-    case "migrate-skill-sources": {
-      const { skills, changed } = applyMigratedGlobalSources(
-        current.skills ?? [],
-        mutation.sources,
-      );
-      return changed ? { ...current, skills } : null;
-    }
     case "deregister-project": {
       const projects = current.projects ?? [];
       if (projects.length === 0) return null;
