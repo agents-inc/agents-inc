@@ -1,11 +1,11 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-10-15
 ---
 
 # The Definitive Guide to Optimal Prompt Structure for Claude
 
 **Version:** 3.0
-**Target Model:** the Claude 5 family (Opus 5, Sonnet 5, Fable 5.1)
+**Target Model:** the Claude 5 family (Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1)
 **Paths and commands in this document are relative to `packages/cli`**, the workspace it documents
 and the directory it lives under — run them from there. A compiled sub-agent, by contrast, runs from
 whatever project invoked the CLI, so an agent's own prompt spells the same paths from that root.
@@ -75,16 +75,10 @@ iterates on them.
   self-review is not.
 - It costs no prompt bytes on any invocation, where a reminder costs its length on all of them.
 
-**The forms it replaces are still on disk, which is the trap.** Agents not yet migrated carry
-`**(You MUST ...)**` parentheticals, `→ STOP` checkpoints and `## CRITICAL` headings. They are not
-current practice: emphasis spent on every rule is emphasis on none, and an instruction the model is
-asked to restate costs its bytes on every invocation while no downstream step consumes the
-restatement. Copying an agent that carries them reintroduces them, so take the shape and the voice
-from an agent this roster does not name:
-
-```bash
-grep -rlE '\*\*\(You MUST|→ STOP|## CRITICAL|⚠️' src/agents --include='*.md'
-```
+**The forms it replaces** — `**(You MUST ...)**` parentheticals, `→ STOP` checkpoints and
+`## CRITICAL` headings — are retired: emphasis spent on every rule is emphasis on none, and an
+instruction the model is asked to restate costs its bytes on every invocation while no downstream
+step consumes the restatement.
 
 **Application:**
 
@@ -95,17 +89,17 @@ where there is no npm, no `package.json`, or no such script. **Declaring `hooks:
 merges with that gate rather than displacing it: declaring a stop hook of your own replaces the
 gate, and every other event is added beside it.** So an agent that writes and states a `PostToolUse`
 formatter keeps its gate, and an agent that means to own its completion checks says so by declaring
-`Stop` and nothing weaker. Where the project declares its own gates, the hook runs those; where it
-declares none, the hook exits 0 and stays out of the way. Keep the gate's command inert when it
+`Stop` and nothing weaker. Where the project declares a `typecheck` script, the hook runs it; where
+it declares none, the hook exits 0 and stays out of the way. Keep the gate's command inert when it
 cannot be correct — an agent installed into a project with no such checks must still be able to
 finish.
 
 The emitted key is `Stop`, which Claude Code rewrites to `SubagentStop` when it registers a
 sub-agent's frontmatter hooks; `Stop` also fires natively for an agent run as the main session
 through `--agent`, where `SubagentStop` never would. Both spellings therefore count as declaring
-your own gate. That contract, and the fact that a project-scope compiled agent's hooks are skipped
-altogether in a project whose trust dialog was never accepted, are owned by
-[`../reference/features/compilation-pipeline.md`](../reference/features/compilation-pipeline.md).
+your own gate. That contract is documented on `GATE_EVENT` in `../compile/src/agent-source.ts`. A
+project-scope compiled agent's hooks are skipped altogether in a project whose trust dialog was never
+accepted; `src/cli/lib/hosts/claude-project-trust.ts` documents that.
 
 ---
 
@@ -133,6 +127,10 @@ the partial is edited.
 - **80%+ reduction in hallucination issues**
 - Aider, SWE-agent, Cursor: all require file reading before action
 - Anthropic guidance: "Always ground responses in provided context"
+- Opus 5.5 tends to get to work quickly: on loosely specified multi-app tasks, one sentence telling
+  it to look through the relevant sources before acting — including ones the task does not mention
+  — got noticeably more of them right, for slightly more tool calls (Anthropic's Opus 5.5 prompting
+  guide)
 
 **Application:**
 
@@ -153,13 +151,10 @@ state. Restating the general discipline in an agent's own prompt duplicates a re
 **Register the agent in the installation's `config.ts`.** One with source files and no config entry
 compiles into nothing.
 
-**Read the wizard's own store before changing a step.** `stores/wizard-store.ts` holds the guards,
-and a step edited without them re-enables a transition the guards refuse.
-
 </critical_requirements>
 ```
 
-Both example rules name something only one role would reach for. **A rule that
+The example rule names something only one role would reach for. **A rule that
 `operating-principles.liquid` already renders belongs in no agent's own files** — check a candidate
 against that partial's principles before writing it, because a rule true of every agent is one the
 template states once for all eighteen.
@@ -253,10 +248,11 @@ Similar pattern from SettingsForm.tsx:
 
 **Best Practices:**
 
-- Use semantic tag names: `<thinking>`, `<investigation>`, `<output>` rather than generic `<section1>`
+- Use semantic tag names: `<investigation>`, `<output>` rather than generic `<section1>`. Leave reasoning to the model's thinking rather than a `<thinking>` section it fills in, which Opus 5.5 may decline as reasoning extraction (Anthropic's Opus 5.5 prompting guide)
 - Keep nesting ≤3 levels deep for best results
 - Choose names that clearly convey meaning
 - No canonical "best" set—adapt to your needs
+- Mark text pasted in from elsewhere, such as an email or a web page: wrap each block in an opening and a closing tag carrying the same short random id, each tag on its own line (`<pasted_content id="ab12">` … `</pasted_content id="ab12">`), and say in the system prompt that instructions inside it are followed only where the message's own text asks. The tags can be imitated, so this is one guardrail among other prompt-injection defences (Anthropic's Opus 5.5 prompting guide)
 
 **Application:**
 Wrap all major sections in semantic XML tags, and keep nesting to three levels or fewer.
@@ -572,8 +568,8 @@ Based on convergent evidence from Anthropic, production systems, and academic re
 
 ### The Canonical Structure
 
-This is what `src/agents/_templates/agent.liquid` renders. The six source files an agent is authored
-as map onto it: `metadata.yaml` becomes the frontmatter, `identity.md` becomes `<role>`,
+This is what `src/agents/_templates/agent.liquid` renders. The source files an agent is authored as
+map onto it: `metadata.yaml` becomes the frontmatter, `identity.md` becomes `<role>`,
 `critical-requirements.md` and `critical-reminders.md` are wrapped by the template, and `playbook.md`
 and `output.md` are inserted as written.
 
@@ -772,7 +768,7 @@ worked shape.
 
 **Good semantic names:**
 
-- `<thinking>`, `<planning>`, `<implementation>`
+- `<planning>`, `<implementation>`
 - `<must_fix>`, `<suggestions>`, `<positive_feedback>`
 - `<test_suite>`, `<coverage_analysis>`
 - `<output>` (for response), `<command>` (for bash commands)
@@ -834,9 +830,7 @@ it — a prompt written to compensate for an under-powered model is a prompt car
 should be doing.
 
 `ModelName` is `"opus" | "sonnet" | "haiku" | "fable" | "inherit"`, and `EffortLevel` is
-`"low" | "medium" | "high" | "xhigh" | "max"`. The axis is documented end to end in
-[`reference/features/model-and-effort.md`](../reference/features/model-and-effort.md); what follows
-is how to pick.
+`"low" | "medium" | "high" | "xhigh" | "max"`.
 
 **Model.** Match it to the hardest judgement the role makes, not to the volume of work it does. A
 role that decides — planning a change, reviewing a diff, designing an agent — earns the largest
@@ -852,8 +846,9 @@ justification to keep current. Do not "optimise" a shipped agent down a tier; th
 not an oversight. Census: `grep -c "^model: opus" src/agents/*/*/metadata.yaml`.
 
 **Effort.** This is the dial to reach for before reaching for a bigger model. A verification pass
-that has to be adversarial wants `xhigh`; a mechanical sweep over many files wants `low` and more
-of them. Omitting it inherits the session's level, which is usually correct.
+that has to be adversarial wants a level above the default, and `xhigh` only where it has measured
+better (Anthropic's Opus 5.5 prompting guide); a mechanical sweep over many files wants `low` and
+more of them. Omitting it inherits the session's level, which is usually correct.
 
 **Cache lifetime.** `experimental.cacheTtl` decides how long the compiled prompt's cache lives.
 Everything above the trailing `<system-reminder>` is byte-identical between invocations, so the TTL
@@ -875,10 +870,17 @@ each removes prompt text rather than adding it:
   Technique #6, and it is worth stating in proportion to the task rather than as blanket
   encouragement.
 
-**Extended thinking is enabled by default** in Claude Code. The `think` / `megathink` / `ultrathink`
-trigger keywords are deprecated and have no effect, and the advice that once sat here — to spell
-"think" as "consider" or "evaluate" in prompts — was written for a model generation that is no
-longer the target. Write the word you mean.
+**Thinking is always on** in Claude Code on the current models (Anthropic's Opus 5.5 migration
+guide; Claude Code's model configuration). Two words in a prompt act on the turn. `ultrathink`
+asks for deeper reasoning on that turn: Claude Code adds an in-context instruction and leaves the
+effort level as it was (Claude Code's model configuration). `ultracode` runs that task as a dynamic
+workflow — Claude writes a script that orchestrates sub-agents through the Workflow tool — but only
+from a prompt a person types, not one passed with `-p` or relayed in by a scheduled task or a
+webhook; `/effort ultracode` has Claude plan one for every substantive task in the session (Claude
+Code's dynamic workflows). No other word is a keyword: `think`, `think hard` and `megathink` reach
+the model as ordinary prompt text, and the advice that once sat here — to spell "think" as
+"consider" or "evaluate" in prompts — was written for a model generation that is no longer the
+target. Write the word you mean.
 
 ---
 
@@ -931,31 +933,17 @@ Check an agent against this before shipping it.
 The agents under `src/agents/` are the worked examples — this section used to carry two
 long before/after pairs, and both drifted into demonstrating a template that no longer exists.
 
-**Two of the eighteen are written in the voice this document now defines**, and they are the ones to
-copy the phrasing from:
-
 | To see                       | Read                              |
 | ---------------------------- | --------------------------------- |
 | An agent that authors agents | `src/agents/meta/agent-summoner/` |
 | An agent that authors skills | `src/agents/meta/skill-summoner/` |
 
-The other sixteen still carry the retired forms — `**(You MUST ...)**`, `→ STOP` checkpoints and
-`## CRITICAL` headings — mostly in their `critical-requirements.md` and `critical-reminders.md`.
-They are current about the product: their tools, their domain and their process are accurate, and
-they are still the place to read what a role is. It is the voice that is stale. The census, which
-shrinks as they are migrated:
-
-```
-grep -rlE '\*\*\(You MUST|→ STOP|## CRITICAL|⚠️' src/agents \
-  --include='*.md' --exclude-dir=agent-summoner --exclude-dir=skill-summoner
-```
-
-Read by role from any of them — `developer/web-developer/` for an implementation agent,
+Read by role from the rest — `developer/web-developer/` for an implementation agent,
 `researcher/cli-researcher/` for a read-only one, `reviewer/reviewer/` for a reviewing agent whose
-tools are narrowed — and take the phrasing from the two above.
+tools are narrowed.
 
-Each agent is six files. Read `metadata.yaml` and `identity.md` first, since between them they carry
-the whole of what the role is, then `playbook.md` for how the process is written down.
+Read an agent's `metadata.yaml` and `identity.md` first, since between them they carry the whole of
+what the role is, then `playbook.md` for how the process is written down.
 
 To see what any of them compiles into, run `npx agents-inc compile` and open the file it writes
 under `.claude/agents/`.
@@ -986,21 +974,19 @@ This section covers patterns specific to this repo's sub-agent roster and Ralph-
 
 ### 8.1 Agent Selection
 
-| Agent               | Use for                                                                                                                                                                                   | Leave to                                                                       |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `cli-developer`     | Implementation code in `src/cli/**` — new features, bug fixes, refactors, type tightening                                                                                                 | Test code (use `cli-tester`), docs (use `codex-keeper` or `convention-keeper`) |
-| `cli-tester`        | Test code — `**/*.test.ts(x)`, `e2e/**`, factories, fixtures, `__tests__/helpers/`                                                                                                        | Production code in `src/cli/**` (use `cli-developer`)                          |
-| `codex-keeper`      | Reference docs under `.ai-docs/reference/`, re-derived from source, and `DOCUMENTATION_MAP.md`                                                                                            | Standards (use `convention-keeper`), production or test code                   |
-| `convention-keeper` | Standards under `.ai-docs/standards/` — reviewing `agent-findings/` against them and applying the approved change that prevents a recurrence; auditing the code against one standards doc | Reference docs (use `codex-keeper`), production or test code                   |
-| `general-purpose`   | Read-only investigations spanning many files, cross-repo greps, "where does X live" research, tasks a specialist's conventions would not change                                           | Writing code or tests (delegate to specialist instead)                         |
+| Agent               | Use for                                                                                                                                                                                   | Leave to                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `cli-developer`     | Implementation code in `src/cli/**` — new features, bug fixes, refactors, type tightening                                                                                                 | Test code (use `cli-tester`), standards (use `convention-keeper`) |
+| `cli-tester`        | Test code — `**/*.test.ts(x)`, `e2e/**`, factories, fixtures, `__tests__/helpers/`                                                                                                        | Production code in `src/cli/**` (use `cli-developer`)             |
+| `convention-keeper` | Standards under `.ai-docs/standards/` — reviewing `agent-findings/` against them and applying the approved change that prevents a recurrence; auditing the code against one standards doc | Production or test code                                           |
+| `general-purpose`   | Read-only investigations spanning many files, cross-repo greps, "where does X live" research, tasks a specialist's conventions would not change                                           | Writing code or tests (delegate to specialist instead)            |
 
 **Tie-breakers:**
 
 - Mixed code + tests → two sequential delegations (developer first, tester second), not one merged prompt.
 - Auditing a standard for drift → a read-only lane that reports with quotes and the command it ran.
-  Repairing what the audit returned → the doc's owner, in a second dispatch: `convention-keeper`
-  for `.ai-docs/standards/`, `codex-keeper` for `.ai-docs/reference/`. The verifier is never the
-  fixer, so the two are never one lane.
+  Repairing what the audit returned → `convention-keeper`, in a second dispatch. The verifier is
+  never the fixer, so the two are never one lane.
 - Pure read-and-report → `general-purpose` is cheapest.
 
 ### 8.2 Required Boilerplate for Every Delegation
@@ -1014,8 +1000,8 @@ Scope: <explicit path fence — e.g. ".ai-docs/standards/** only" or "src/cli/li
 If you fix an anti-pattern, discover a missing standard, or notice convention drift,
 write a finding to `.ai-docs/agent-findings/` using `.ai-docs/agent-findings/TEMPLATE.md`.
 Run <the gate this lane can run — the project's gates for a writing lane, the §8.6 grep for an
-agent-partials lane, §6's census for a voice migration> and report what it returned. Where the lane
-has no runnable check, self-review your output against CLAUDE.md before reporting.
+agent-partials lane> and report what it returned. Where the lane has no runnable check,
+self-review your output against CLAUDE.md before reporting.
 Report format: <terse sections the parent expects — e.g. "(a) coverage (b) additions (c) findings (d) next-iter suggestion, under N words">.
 ```
 
@@ -1039,6 +1025,7 @@ Ralph-style audits (fixed N iterations, one focus area per iter) have distinct e
 - End each iter with a concrete next-iter suggestion, so the loop has momentum even when the parent is autonomous.
 - Write the finding whenever drift is detected; accretion is the point of the loop.
 - Name the previous iter's focus in this iter's report, so a silent re-audit is visible rather than a wasted turn.
+- Treat an iter that ends on text alone as a **report, not proof the iter is done**. On a long task Opus 5.5 ends some turns with a progress update instead of a tool call, and a loop or a delegating parent that reads one as completion stops there. Keep the iter's parts in a checklist the agent updates, and name in the prompt both the early stop to avoid — a summary that announces the next step instead of taking it — and the stop wanted, where nothing can move without the user. When a turn ends with items still open and no blocker stated, send them back, two or three times at most (Anthropic's Opus 5.5 prompting guide).
 
 ### 8.4 Anti-Patterns (Observed in This Repo)
 
@@ -1049,8 +1036,8 @@ Ralph-style audits (fixed N iterations, one focus area per iter) have distinct e
 
 **Vague scope → collateral edits.**
 
-- ❌ `"Tighten assertions in the wizard tests"` — `cli-tester` will "tighten" 12 adjacent files (iter 54).
-- ✅ `"Scope: src/cli/components/wizard/step-confirm.test.tsx — every other file stays as it is."`
+- ❌ `"Tighten assertions in the confirm tests"` — `cli-tester` will "tighten" every adjacent file it notices (iter 54).
+- ✅ `"Scope: src/cli/components/common/confirm.test.tsx — every other file stays as it is."`
 
 **Missing context → hallucinated patterns.**
 
@@ -1103,6 +1090,14 @@ because on a scoped task it is an instruction to exceed the scope and will be ob
 </report_format>
 ```
 
+**A team of agents finishes sooner against a time budget.** Opus 5.5 pays close attention to
+elapsed time, so where a lead agent delegates to sub-agents and the task's length can be estimated,
+have the harness end each message it sends the model with the elapsed time against a budget, in
+seconds (`elapsed 340s / 1200s`), set somewhat above the time actually wanted. Where no budget can
+be predicted, show the elapsed time alone and say in the prompt that time matters. The budget is
+advisory, so keep a timeout for a hard stop, and check quality: under time pressure the model may
+search and verify a little less (Anthropic's Opus 5.5 prompting guide).
+
 ### 8.6 Built-In Agent Partials Are Product Content
 
 Everything under `src/agents/**` compiles into whatever project runs the CLI. A partial is not a
@@ -1133,7 +1128,8 @@ prohibition as "per CLAUDE.md" — belongs in the delegating prompt of [Section 
 grep -rn "ai-docs\|CLAUDE\.md\|todo/" src/agents/ --exclude-dir=meta
 ```
 
-It must return nothing. Three ways to get a false clean from it:
+Its only hits may name the installing project's own `CLAUDE.md` as theirs — "Read the project's
+`CLAUDE.md` where it has one". Three ways to get a false clean from it:
 
 - **Exclude by `--exclude-dir`, never by a pipe.** `grep -rn` prints `path:line:text`, so
   `| grep -v meta` filters the **text** while looking like it filters the **path** — it drops any
