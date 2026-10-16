@@ -38,7 +38,7 @@ A React skill discusses components, hooks and composition; SCSS, Zustand and MSW
 Skills follow a directory-based structure with modular files:
 
 ```
-.claude/skills/{domain}-{group}-{technology}/
+src/skills/{domain}-{group}-{technology}/
 ├── SKILL.md              # Main skill file with TOC
 ├── metadata.yaml         # Skill metadata (category, author, slug, displayName, etc.)
 ├── reference.md          # Comparison tables, API lookup and migration notes

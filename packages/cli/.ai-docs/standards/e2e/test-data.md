@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-07-30
+last_validated: 2026-10-15
 ---
 
 # Test Data
@@ -10,7 +10,7 @@ How to set up the world before a test runs.
 
 ## ProjectBuilder Is the Only Way to Create Projects
 
-Never inline `mkdir` + `writeFile` to build a project directory in a test file. Use `ProjectBuilder` static methods. Each returns a `ProjectHandle` (`{ dir: string }`) that matchers, `CLI.run()`, and wizards all accept.
+Never inline `mkdir` + `writeFile` to build a project directory in a test file. Use `ProjectBuilder` static methods. The `ProjectHandle` (`{ dir: string }`) most of them return is what matchers and `CLI.run()` accept.
 
 ### When to Use Each Method
 
@@ -18,25 +18,23 @@ All 9 static factories:
 
 | Method                                                | Returns                  | Use When                                                                                                                                                                                                                                                                                                                                                                                    |
 | ----------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ProjectBuilder.minimal()`                            | `ProjectHandle`          | Compile tests. Creates config + 1 skill (`web-testing-vitest`).                                                                                                                                                                                                                                                                                                                             |
-| `ProjectBuilder.editable(options?)`                   | `ProjectHandle`          | Edit wizard tests. Creates config + skills + agents dir. `EditableOptions`, all 9: `marketplace`, `skills`, `agents`, `domains`, `stack`, `forkedFrom`, `globalSkills`, `globalSkillsSource`, `unresolvableSkills`.                                                                                                                                                                         |
+| `ProjectBuilder.minimal()`                            | `ProjectHandle`          | Compile tests. Creates config + 1 skill (`E2E_SKILL.vitest.id`).                                                                                                                                                                                                                                                                                                                            |
+| `ProjectBuilder.editable(options?)`                   | `ProjectHandle`          | Projects an installed-project command acts on — `edit`, `compile`, `doctor`, `list`, `uninstall`, `share`. Creates config + skills + agents dir. `EditableOptions`, all 9: `marketplace`, `skills`, `agents`, `domains`, `stack`, `forkedFrom`, `globalSkills`, `globalSkillsSource`, `unresolvableSkills`.                                                                                 |
 | `ProjectBuilder.dualScope(options?)`                  | `DualScopeHandle`        | Dual-scope non-interactive tests. Creates `globalHome` + `project` with separate configs. `DualScopeOptions`: `globalSkill`, `projectSkills`, `projectStack`, `projectSkill`.                                                                                                                                                                                                               |
-| `ProjectBuilder.dualScopeWithImport()`                | `DualScopeHandle`        | Dual-scope state for import/migration flows — the worked example of encapsulating complex setup in a factory rather than inlining it.                                                                                                                                                                                                                                                       |
+| `ProjectBuilder.dualScopeWithImport()`                | `DualScopeHandle`        | Dual-scope state whose project config imports the global one, for compile verification of cross-scope config resolution — the worked example of encapsulating complex setup in a factory rather than inlining it.                                                                                                                                                                           |
 | `ProjectBuilder.withCustomSkill()`                    | `ProjectHandle`          | Custom skill validation. Creates config + config-types.ts + custom skill with `custom: true`.                                                                                                                                                                                                                                                                                               |
 | `ProjectBuilder.pluginProject(options)`               | `ProjectHandle`          | Plugin mode tests. Creates config with marketplace source, skills, agent stubs, and each declared skill's plugin key enabled in `.claude/settings.json` — without which the one file `toHavePlugin` reads disagreed with the config's own claim and `not.toHavePlugin` held before any command ran. `omitMarketplaceField` simulates a legacy install that never persisted the marketplace. |
-| `ProjectBuilder.localProjectWithMarketplace(options)` | `ProjectHandle`          | Eject mode with marketplace field in config. Skills have `source: "eject"`.                                                                                                                                                                                                                                                                                                                 |
+| `ProjectBuilder.localProjectWithMarketplace(options)` | `ProjectHandle`          | Eject mode with marketplace field in config. Skills have `origin: "eject"`.                                                                                                                                                                                                                                                                                                                 |
 | `ProjectBuilder.globalWithSubproject()`               | `{ globalHome, subDir }` | Global installation tests. Creates global config + skill + empty subproject dir.                                                                                                                                                                                                                                                                                                            |
 | `ProjectBuilder.installation(dir)`                    | `void`                   | Minimal install detection. Writes config.ts into existing dir. Unlike others, does not create a temp dir.                                                                                                                                                                                                                                                                                   |
 
-**`editable({ globalSkills })` records extra `scope: "global"` entries in the PROJECT config** with no disk copy — they model skills inherited from the global install. In a project-scope edit they render as inherited, locked (readOnly) Sources rows.
+**`editable({ globalSkills })` records extra `scope: "global"` entries in the PROJECT config** with no disk copy — they model skills inherited from the global install.
 
-**`editable({ globalSkills })` records both halves of the pair under `origin: "eject"`, and one scenario is unreachable at that default.** A spec that presses `s` to collapse `[P][G]` back to `[G]` cannot use it: `wouldOverwriteGlobalEject` refuses the project→global press exactly when the live entry is a project eject, the snapshot holds an ACTIVE global eject and no tombstone exists — so the press returns a toast and changes nothing, and the spec fails on a swallowed keystroke while reading as the render bug it meant to test.
-
-**`editable({ globalSkillsSource })` is what makes the collapse reachable** — it sets the `origin` recorded for the global entries, so naming a marketplace for the global half puts the pair outside that guard. Do not hand-roll the shape with `writeProjectConfig` + `buildProjectConfig`: `e2e/interactive/edit-wizard-dual-scope-collapse-removal-row.e2e.test.ts` did exactly that until the option existed, and its fixture note records the swap. Every such spec still owes a scope-badge proof that the press landed — `getScopeBadgesForSkill` reading `["P"]` before and `["G"]` after — because without it the assertions downstream pass or fail vacuously. See [anti-patterns.md § Fixture Selection](./anti-patterns.md).
+**`editable({ globalSkillsSource })` sets the `origin` recorded for those global entries** — `eject` unless named, so a spec whose global half answers to a marketplace names one. Do not hand-roll the shape with `writeProjectConfig` + `buildProjectConfig`. See [anti-patterns.md § Fixture Selection](./anti-patterns.md).
 
 **`editable({ forkedFrom: true })`** writes `FORKED_FROM_METADATA` as each skill's `metadata.yaml`, marking them CLI-managed so `uninstall` removes them instead of skipping them as user-created.
 
-**`editable({ unresolvableSkills })` / `pluginProject({ unresolvableSkills })` record config entries with NO files on disk.** That is how a project genuinely reaches "the wizard cannot resolve this skill": the session's source does not carry it and the install has no copy. Installing it with a deliberately broken `metadata.yaml` does NOT produce that state and must not be used to fake it — a local skill whose `metadata.yaml` describes it is merged into the matrix and offered like any other, and `compile` hard-errors on one whose `metadata.yaml` does not.
+**`editable({ unresolvableSkills })` / `pluginProject({ unresolvableSkills })` record config entries with NO files on disk.** That is how a project genuinely reaches "cannot resolve this skill": the session's source does not carry it and the install has no copy. Installing it with a deliberately broken `metadata.yaml` does NOT produce that state and must not be used to fake it — a local skill whose `metadata.yaml` describes it is merged into the matrix like any other, and `compile` hard-errors on one whose `metadata.yaml` does not.
 
 **When 3+ tests share a setup pattern not covered by these methods, add a new `ProjectBuilder` method rather than duplicating setup logic across test files.**
 
@@ -55,7 +53,7 @@ A fixture that writes a file no product path produces cannot fail for a reason t
   ```
 
 - **A fixture writer that already holds a field must write it.** Two writers dropped `category`, `slug` and `displayName` that their own `TestSkill` carried.
-- **A fixture's `metadata.yaml` must satisfy the same schema the product enforces, and a skill's display name is not its id.** `doctor`'s content layer validates every installed `metadata.yaml` against `skillMetadataBaseSchema`, which bounds `displayName` at 30 characters because it is painted into a wizard grid column; an id is namespaced by its marketplace and is not bounded. Passing one as the other satisfies the type and violates the schema, and the failure lands in whichever spec happens to run `doctor` or `compile` rather than in the fixture. Write `E2E_SKILL.<slug>.display` — the title the fixture source publishes for that skill, which is what the grid paints and therefore also what `focusSkill` / `selectSkill` / `getScopeBadgesForSkill` address a row by.
+- **A fixture's `metadata.yaml` must satisfy the same schema the product enforces, and a skill's display name is not its id.** `doctor`'s content layer validates every installed `metadata.yaml` against `skillMetadataBaseSchema`, which bounds `displayName` at 30 characters; an id is namespaced by its marketplace and is not bounded. Passing one as the other satisfies the type and violates the schema, and the failure lands in whichever spec happens to run `doctor` or `compile` rather than in the fixture. Write `E2E_SKILL.<slug>.display` — the title the fixture source publishes for that skill.
 - **Shape a fixture to the WRITER it stands in for, never to the weakest reader that currently accepts it.** A fixture is coupled to whichever contract it was measured against, and a reader's tolerance is the one contract guaranteed to tighten. `writeAgentFile`'s docstring recorded the coupling in as many words — a bare `# <agentName>` heading with no frontmatter, "which is all `doctor` and `list` need to see an agent as present" — and it was true on the day it was written. Merging `validate` into `doctor` made it validate every installed `SKILL.md`, `metadata.yaml` and compiled agent `.md` against the strict schemas, and **nine fixtures failed at once**: agent files with no frontmatter and agent files carrying `name` without the `description` `agentFrontmatterValidationSchema` also requires; `FORKED_FROM_METADATA` carrying `author` + `contentHash` + `forkedFrom` and nothing descriptive, with a `contentHash` that was not the `/^[a-f0-9]{7}$/` the schema demands; five `renderMetadataYaml` call sites short of `cliDescription` / `usageGuidance`. None was a product defect and every one read as one. Two specs had gone further and **encoded the gap as an invariant** — a skill directory with no `metadata.yaml` producing no finding at all, commented as though doctor's silence were the contract — so the fixtures were pinning the reader's blind spot rather than the writer's output.
 
   So: an agent `.md` needs `name` **and** `description`; an installed skill needs `SKILL.md` **and** a `metadata.yaml` that passes the strict metadata schema, `contentHash` included and hex. `writeAgentFile` now defaults to the bare heading deliberately — "the shape of a hand-authored file the CLI never wrote", which is a fixture standing in for something else entirely — and `frontmatter: true` emits both fields, which is the shape a compile leaves behind. Choosing between them is a claim about which writer produced the file, and it is the whole question the fixture answers.
@@ -72,8 +70,6 @@ Currently empty. It cannot see the first line of a template literal, which share
 
 What a fixture that writes an incomplete `metadata.yaml` actually buys is a file the two compile passes disagree about: discovery reads it only far enough to know it parses, while the config-types pass validates it against `localRawMetadataSchema`, so one `compile` run printed `Loaded skill: …` and `Skipping local skill '…': invalid metadata.yaml` about the SAME file and still exited 0. Both refusals now come from one judgment in `readSkillMetadata`, and it names the missing fields in plain words rather than in Zod's.
 
-See `.ai-docs/agent-findings/2026-08-16-a-fixture-wrote-its-skill-id-as-a-display-name-and-the-namespace-broke-the-bound.md`.
-
 ## DRY for Setup
 
 If you find yourself writing the same `mkdir` + `writeFile` + `writeProjectConfig` sequence in multiple test files, it belongs in `ProjectBuilder` or a fixture helper.
@@ -85,16 +81,16 @@ Signs you need a new `ProjectBuilder` method:
 
 Signs you need a fixture helper (not `ProjectBuilder`):
 
-- The setup involves running wizard interactions to reach a state
+- The setup runs CLI commands to reach a state
 - The setup is lifecycle-specific (multi-phase with shared state)
 
 ---
 
 ## Source Fixtures
 
-The E2E source is an expensive fixture (creates 10 skills, 2 agents, 1 stack, templates on disk). Create it once per `describe` block and share across tests.
+**Reach for `E2E_SOURCE` and build nothing** — see [test-structure.md § `beforeAll`](./test-structure.md). It is frozen, so a spec that writes into it fails at the write.
 
-**`createE2ESource(options?)`** -- Creates a full skills source with:
+**`createE2ESource(options?)`** -- Creates a private source and runs `build plugins` then `build marketplace` over it (unless `unbuilt`), with:
 
 | Content   | Details                                                                                                                                                                                                              |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -102,31 +98,30 @@ The E2E source is an expensive fixture (creates 10 skills, 2 agents, 1 stack, te
 | 3 domains | web, api, meta                                                                                                                                                                                                       |
 | 2 agents  | web-developer, api-developer                                                                                                                                                                                         |
 | 1 stack   | "E2E Test Stack"                                                                                                                                                                                                     |
-| Templates | `agent.liquid` template                                                                                                                                                                                              |
 
 Returns `{ sourceDir, tempDir }`. The `tempDir` is the parent -- clean it up in `afterAll`.
 
-**`createE2EPluginSource(options?)`** -- Extends the above by building plugins and generating `marketplace.json`. Returns `{ sourceDir, tempDir, marketplaceName, pluginsDir }`.
+**`createE2EPluginSource(options?)`** -- The same built tree, described with its marketplace name and `dist/plugins/`, for a spec whose subject is plugin install. With no options it returns the shared frozen fixture and builds nothing; `owned: true` builds a private writable one. Returns `{ sourceDir, tempDir, marketplaceName, pluginsDir }`.
 
 ### A fixture source IS a custom marketplace, so its skill ids are namespaced
 
 **The bare ids in the table above are what the fixture publishes MINUS its namespace.** Every one is written to disk through `e2eSkillId(bare)` = `` `${E2E_MARKETPLACE_NAME}-${bare}` ``, and the load-side collision guard refuses any custom marketplace shipping an id the public catalogue owns. A fixture with bare public-catalogue ids does not load, and the refusal is correct — the fixture, not the guard, is what is wrong.
 
-| Rule                                                                                                                            | Why                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Compose every fixture skill id through `e2eSkillId` / `E2E_SKILL.<slug>.id`, never by hand                                      | The prefix must EQUAL the marketplace name `build marketplace` reads from `package.json`; two surfaces spelling it separately is how they diverge                       |
-| Assert on `E2E_SKILL.<slug>.id` rather than a literal — but only where the literal denotes content `createE2ESource` published  | A marketplace rename moves every id and no slug. The scope boundary is load-bearing: a spec that writes its OWN skill owns those ids and keeps them as literals (below) |
-| Choose the member by what the assertion reads — `.id`, `.slug` or `.display`                                                    | They are three different strings for one skill, and picking the wrong one is invisible until a rename moves only one of them (below)                                    |
-| Slugs, categories and display titles are **not** namespaced                                                                     | A slug names the skill inside its own source; a title is what the wizard paints                                                                                         |
-| Sub-agent names are **not** namespaced                                                                                          | The rule governs skill ids alone — marketplaces do not ship sub-agents                                                                                                  |
-| A fixture that deliberately MODELS the public catalogue declares itself with a `package.json` naming `PUBLIC_CATALOGUE_PACKAGE` | That is the only source entitled to ship bare catalogue ids, and package identity is the only signal the guard reads                                                    |
-| Installed / local skills stay bare                                                                                              | A local skill overriding a catalogue id is a supported path, not a marketplace claim, and the guard does not touch it                                                   |
+| Rule                                                                                                                            | Why                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compose every fixture skill id through `e2eSkillId` / `E2E_SKILL.<slug>.id`, never by hand                                      | The prefix must EQUAL the marketplace name `build marketplace` reads from `package.json`; two surfaces spelling it separately is how they diverge |
+| Assert on `E2E_SKILL.<slug>.id` rather than a literal — but only where the skill was written under that id                      | A marketplace rename moves every id and no slug. The scope boundary is load-bearing: a skill written under a bare id keeps its literal (below)    |
+| Choose the member by what the assertion reads — `.id`, `.slug` or `.display`                                                    | They are three different strings for one skill, and picking the wrong one is invisible until a rename moves only one of them (below)              |
+| Slugs, categories and display titles are **not** namespaced                                                                     | A slug names the skill inside its own source; a title is what command output prints                                                               |
+| Sub-agent names are **not** namespaced                                                                                          | The rule governs skill ids alone — marketplaces do not ship sub-agents                                                                            |
+| A fixture that deliberately MODELS the public catalogue declares itself with a `package.json` naming `PUBLIC_CATALOGUE_PACKAGE` | That is the only source entitled to ship bare catalogue ids, and package identity is the only signal the guard reads                              |
+| Installed / local skills stay bare                                                                                              | A local skill overriding a catalogue id is a supported path, not a marketplace claim, and the guard does not touch it                             |
 
 The unit layer has the same obligation through the same shape: `createTestSource()` writes a source directory that `loadSkillsMatrixFromSource()` then loads for real, and publishes its ids through `inTestMarketplace()` / `testMarketplaceSkillId()` in `src/cli/lib/__tests__/fixtures/create-test-source.ts`.
 
-**`E2E_SKILL` is the source of truth only for content `createE2ESource` / `createE2EPluginSource` published, and a spec that writes its own skill owns those ids.** A large share of the skill-id literals in `e2e/` name nothing that source publishes: `ProjectBuilder` writes `web-testing-cypress-e2e`, `web-testing-playwright-e2e`, `web-framework-react` and `web-testing-vitest` straight to disk through `createLocalSkill`, and those are local skills answering to no marketplace. Swapping one to `E2E_SKILL.react.id` asserts a relationship that does not exist — and since the namespace landed it is not even the same string, because `E2E_SKILL.react.id` is `e2e-test-fixture-web-framework-react`. Rule of thumb: a spec that does not call `createE2ESource` / `createE2EPluginSource` does not import `E2E_SKILL`.
+**A skill written under a bare id owns that id.** `dualScope`, `dualScopeWithImport` and `globalWithSubproject` write `web-testing-cypress-e2e`, `web-mocks-msw`, `web-framework-react` and `web-testing-vitest` straight to disk through `createLocalSkill`, as local skills answering to no marketplace. Swapping one to `E2E_SKILL.react.id` asserts a relationship that does not exist — and it is not even the same string, because `E2E_SKILL.react.id` is `e2e-test-fixture-web-framework-react`. `minimal()` and `editable()` write `E2E_SKILL` ids, so specs built on them assert through `E2E_SKILL` with or without a source.
 
-**Where it does apply, the member is chosen by what the assertion reads.** `.id` for config entries, file paths and compiled-agent content; **`.slug` for source paths and skill lookups**, because a slug names the skill inside its own source and is what the on-disk directory under a source is called; `.display` for anything matched against rendered wizard text (`selectSkill`, `focusSkill`, `toggleAgent`, `toContain` on frame output — see [assertions.md § Expected Value Constants](./assertions.md)). Never normalise across the three. Only `.id` carries the namespace, so a marketplace rename moves `.id` alone and leaves a site that reached for the wrong member green until something else breaks it.
+**Where `E2E_SKILL` applies, the member is chosen by what the assertion reads.** `.id` for config entries, file paths and compiled-agent content; **`.slug` for source paths and skill lookups**, because a slug names the skill inside its own source and is what the on-disk directory under a source is called; `.display` for anything matched against rendered text (`toContain` on frame output — see [assertions.md § Expected Value Constants](./assertions.md)). Never normalise across the three. Only `.id` carries the namespace, so a marketplace rename moves `.id` alone and leaves a site that reached for the wrong member green until something else breaks it.
 
 **The fixture marketplace name must spell neither "marketplace" nor "source",** because ids are printed in command output (`search`'s `ID` column, `Installed <skill>@<marketplace>`) and an assertion about the CLI's own prose then passes or fails on the fixture. `E2E_MARKETPLACE_NAME` is `e2e-test-fixture` and `TEST_MARKETPLACE_NAME` is `test-fixture` for exactly this reason — see [assertions.md § A negated word assertion must not run against text the harness contributed to](./assertions.md).
 
@@ -134,13 +129,7 @@ The unit layer has the same obligation through the same shape: `createTestSource
 
 **One stack and ten skills, against a real marketplace carrying a dozen stacks and many more skills.** For most specs this is irrelevant. For any spec about **overflow, clipping, scrolling, or column geometry** it is the central fact, because how far a size-dependent defect reaches scales with list length — and it is currently discoverable only by reading `e2e/helpers/create-e2e-source.ts`.
 
-Worked example. The stack step bled at the advertised minimum height: the six-row ASCII logo starved the list's viewport below `SCROLL_VIEWPORT.MIN_VIEWPORT_ROWS`, the shared scroll gate stopped clipping, and rows painted over whatever was below. Against the real marketplace at 100x20 the overpaint reaches the footer:
-
-```
-SPACE  selectSt ENTER  continuele ESC  backuth, Vitest
-```
-
-so "assert the footer renders as one unbroken line" is the obvious signature — a bleed leaves every hotkey word present but splices list content between them. Against the fixture, with one stack, the list is three rows in a one-row viewport, so the overflow is **two rows**: it destroys the stack row and stops well short of the footer. **The footer assertion was green against the unfixed binary.** The one that went red was an unrelated-looking positive, `toContain(E2E_STACK_NAME)`.
+Worked example: an overflow that, against the real marketplace, spliced list rows into the footer line reached two rows under the fixture and stopped short of the footer — so **the footer assertion was green against the unfixed binary**, and the one that went red was an unrelated-looking positive on the stack's name.
 
 Consequences for spec authors:
 
@@ -148,28 +137,26 @@ Consequences for spec authors:
 - Keep both assertions when both are genuine, and record inline which one carries the red here, so the next reader does not simplify the spec down to the one that does not fire.
 - Reaching for `--marketplace` against the real marketplace is not the fix: it trades a reproducibility problem for a network one. State the cardinality's effect instead.
 
-### What a default install takes, and what is left to add
+### What the stack installs, and what is left to add
 
-A default install (`completeWithDefaults` / `completeWithLocalSources`) takes the stack's roster —
-**seven** of the ten skills: react, vitest, zustand, hono, research-methodology, reviewing,
-cli-reviewing. Three are left, and only one of them can be ADDED by a later edit:
+Installing the stack takes its roster — **seven** of the ten skills: react, vitest, zustand, hono, research-methodology, reviewing, cli-reviewing. Three are left, and only one of them can be ADDED by a later edit:
 
-| Left behind                         | Addable by an edit?                                                           |
-| ----------------------------------- | ----------------------------------------------------------------------------- |
-| `web-testing-visual-regression`     | **Yes** — `web-testing` is not exclusive, and no agent's stack claims it      |
-| `web-state-pinia`                   | No — exclusive alternate of `web-state-zustand`; Space swaps, it does not add |
-| `web-framework-vue-composition-api` | No — exclusive alternate of `web-framework-react`; same                       |
+| Left behind                         | Addable by an edit?                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------ |
+| `web-testing-visual-regression`     | **Yes** — `web-testing` is not exclusive, and no agent's stack claims it |
+| `web-state-pinia`                   | No — exclusive alternate of `web-state-zustand`                          |
+| `web-framework-vue-composition-api` | No — exclusive alternate of `web-framework-react`                        |
 
-A spec whose subject is "an edit adds a skill" must use the spare. Pressing Space on an exclusive
-alternate is a swap whose net effect on a count is zero, which is how `init-then-edit-merge` spent
-its whole life passing over an edit that did nothing: it closed on
+A spec whose subject is "an edit adds a skill" must use the spare. Choosing an exclusive alternate is a swap
+whose net effect on a count is zero, which is how `init-then-edit-merge` spent its whole life
+passing over an edit that did nothing: it closed on
 `expect(editSkillIds.length).toBeGreaterThanOrEqual(initSkillIds.length)`, and a count floor is
 satisfied by an edit that changed nothing at all. Replacing the floor with the two set differences
 the merge contract actually names — no skill init wrote may disappear, exactly one new skill must
 appear — is what surfaced the rest, and the spare exists because that assertion had nothing
 reachable to name until it did. Before then the fixture could not produce the state its own spec
-asserted, and no amount of keystroke tuning would have changed that; the lesson generalises past
-this fixture, which is why the roster above is written down rather than left to be rediscovered.
+asserted; the lesson generalises past this fixture, which is why the roster above is written down
+rather than left to be rediscovered.
 
 ### Before Extending Fixtures
 
@@ -181,88 +168,55 @@ Before adding a new skill, agent, stack, or mapping to `createE2ESource` / `crea
 
 ### Source Sharing Convention
 
-```typescript
-let source: { sourceDir: string; tempDir: string };
+Import `E2E_SOURCE` from `e2e/helpers/create-e2e-source.ts` and pass `E2E_SOURCE.sourceDir` wherever the spec names its marketplace — `--marketplace` on the command line, or `marketplace` in a `ProjectBuilder` option.
 
-beforeAll(async () => {
-  source = await createE2ESource();
-}, TIMEOUTS.SETUP);
-
-afterAll(async () => {
-  await cleanupTempDir(source.tempDir);
-});
-
-it("test 1", async () => {
-  // Each test gets its own project dir but shares the source
-  const wizard = await InitWizard.launch({ source });
-  // ...
-});
-```
-
-Only create sources inline when the test requires a unique or modified source (e.g., custom relationships).
+Only create sources inline when the test requires a unique or modified source (e.g., custom relationships), built in a `beforeAll` per [test-structure.md § `beforeAll`](./test-structure.md); each test still gets its own project dir.
 
 ---
 
 ## Dual-Scope Setup
 
-**Non-interactive dual-scope tests:** Use `ProjectBuilder.dualScope()`, which returns `{ project, globalHome }`. Pass `HOME` via env to CLI commands.
+**A dual-scope install already on disk:** Use `ProjectBuilder.dualScope()`, which returns `{ project, globalHome }`. Pass `HOME` via env to CLI commands.
 
-**Interactive dual-scope lifecycle tests:** Use `dual-scope-helpers.ts`, which builds dual-scope state through actual wizard interactions:
+**An empty home and project the spec fills by running commands:** Use `dual-scope-helpers.ts`:
 
-Every one of them takes the source as a single `E2ESource` — reach for `E2E_SOURCE`, the shared
-plain tree, rather than building one. The two-argument `(sourceDir, sourceTempDir)` spelling this
-table carried until 2026-08-26 has not been the signature since c3c189c8.
+| Helper                            | Purpose                                                 |
+| --------------------------------- | ------------------------------------------------------- |
+| `createTestEnvironment(options?)` | Creates tempDir/fakeHome/project with permissions files |
 
-| Helper                                                    | Purpose                                                                       |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `createTestEnvironment(options?)`                         | Creates tempDir/fakeHome/project with permissions files                       |
-| `initGlobal(source, homeDir)`                             | Runs init wizard in HOME dir with defaults                                    |
-| `initGlobalWithEject(source, homeDir)`                    | Like initGlobal but sets all sources to eject mode                            |
-| `initProject(source, homeDir, projectDir, options?)`      | Runs init with scope toggling (API skill + agent to project)                  |
-| `initProjectAllGlobal(source, homeDir, projectDir)`       | Runs init with eject mode, all skills stay global (no scope toggling)         |
-| `setupDualScopeWithEject(source, fakeHome, projectDir)`   | Runs both phases and asserts success. **The only dual-scope setup helper**    |
-| `createDualScopeEnv(source)`                              | Creates env + runs dual-scope setup with eject, returns `DualScopeEnv`        |
-| `createGlobalOnlyEnv(source)`                             | Creates env with all-global skills (no project scope), returns `DualScopeEnv` |
-| `setupProjectOnlyMixedScope(source, homeDir, projectDir)` | Builds a project-only install with mixed per-skill scopes                     |
-| `finishWizard(result)`                                    | Shared tail of the init phases (sources -> agents -> confirm)                 |
+**Config readers** (load a scope's `config.ts` structurally rather than string-matching it): `readSkillEntries()`, `readAllSkillEntries()`, `readAgentEntries()`, `readActiveAgentNames()`, `readConfigSkillIds()`.
 
-**There is no plugin-mode dual-scope setup helper, and this table used to imply there was.** A
-`setupDualScope` sat beside `setupDualScopeWithEject` described as the non-eject one, with zero
-callers and — after 2026-08-26 — a byte-identical body, so an author choosing between the two was
-choosing between one behaviour and its own name. It was deleted. The reason no such helper exists is
-in the surviving one's docblock: the shared plain source ships no `.claude-plugin/marketplace.json`,
-so plugin install mode has no marketplace to resolve and `init` refuses the run, while Phase B sets
-every source local regardless. A flow that genuinely needs a PLUGIN global drives `initGlobal`
-against a plugin fixture directly — `lifecycle/dual-scope-edit-mixed-sources.e2e.test.ts` is the
-shape.
+**Dual-scope state built by real installs:** use `e2e/fixtures/e2e-stack-seed.ts`, which runs `init --from` against a `startSeedConfigStore()` store:
 
-**Config readers** (load a scope's `config.ts` structurally rather than string-matching it): `readSkillEntries()`, `readAllSkillEntries()`, `readAgentEntries()`, `readSelectedAgents()`, `readConfigSkillIds()`.
+| Helper                                    | Purpose                                                                                                        |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `installE2EStackGlobally(store, home)`    | Installs the E2E stack globally at `home`, every skill ejected                                                 |
+| `installE2EStackDualScope(store, env)`    | That global install, then a project install moving Hono + API Developer into the project; asserts both succeed |
+| `installDualScopeStack(store, sourceDir)` | Fresh env holding the same split from one project run, returns `TestEnvironment`                               |
+| `createDualScopeEnvFromSeed(store)`       | Fresh env + `installE2EStackDualScope`, returns `DualScopeEnv`                                                 |
+| `createGlobalOnlyEnvFromSeed(store)`      | Fresh env with every skill global (no project scope), returns `DualScopeEnv`                                   |
 
-**Edit probes** (drive a throwaway edit session to observe wizard state): `runEditWithFirstSkillAction()`, `readSkillBadgesViaEdit()`.
+**Convenience wrappers:** `createDualScopeEnvFromSeed` and `createGlobalOnlyEnvFromSeed` combine environment creation + install + cleanup into a single call. They return a `DualScopeEnv` with `{ fakeHome, projectDir, destroy() }` -- call `destroy()` in `afterEach`/`afterAll`.
 
-**Convenience wrappers:** `createDualScopeEnv` and `createGlobalOnlyEnv` combine environment creation + wizard setup + cleanup into a single call. They return a `DualScopeEnv` with `{ fakeHome, projectDir, destroy() }` -- call `destroy()` in `afterEach`/`afterAll` for automatic cleanup.
+Use `createTestEnvironment` + `installE2EStackDualScope` when you need fine-grained control. Use `createDualScopeEnvFromSeed`/`createGlobalOnlyEnvFromSeed` for simpler test setup. Use `ProjectBuilder.dualScope()` when you only need the file structure without running an install.
 
-Use `createTestEnvironment` + `setupDualScopeWithEject` when you need fine-grained control. Use `createDualScopeEnv`/`createGlobalOnlyEnv` for simpler test setup. Use `ProjectBuilder.dualScope()` when you only need the file structure without running the wizard.
+**There is no plugin-mode dual-scope setup helper** — every seed helper above installs eject. A flow that genuinely needs a PLUGIN global publishes `e2eStackPayload({ scope: "global", install: "plugin" })` and runs it with `runInitFrom` against `createE2EPluginSource()` directly — `lifecycle/dual-scope-edit-mixed-sources.e2e.test.ts` is the shape.
 
 ---
 
 ## Permissions File
 
-`createPermissionsFile(projectDir)` ensures `.claude/settings.json` grants `permissions.allow: ["Read(*)"]`. Without it, the Ink permission prompt blocks the PTY after install and the process never exits.
+`createPermissionsFile(projectDir)` ensures `.claude/settings.json` grants `permissions.allow: ["Read(*)"]`. Without it, `init` ends on its permission notice.
 
-**It MERGES rather than overwrites.** When the file already exists — e.g. a plugin install wrote `enabledPlugins` / `extraKnownMarketplaces` before an `EditWizard.launch` re-runs this helper — every existing field is preserved and only `permissions.allow` is ensured to contain `Read(*)`. A file that already grants it is left byte-identical, and invalid JSON is a hard error rather than a silent clobber. It previously replaced the whole file, which wiped plugin state mid-lifecycle and produced failures in the phase AFTER the one that ran it.
+**It MERGES rather than overwrites.** When the file already exists — e.g. a plugin install wrote `enabledPlugins` / `extraKnownMarketplaces` — every existing field is preserved and only `permissions.allow` is ensured to contain `Read(*)`. A file that already grants it is left byte-identical, and invalid JSON is a hard error rather than a silent clobber. It previously replaced the whole file, which wiped plugin state mid-lifecycle and produced failures in the phase AFTER the one that ran it.
 
-All the wizard launchers call this internally. You only need to call it directly when:
-
-- Using `InteractivePrompt` for non-wizard flows
-- Building project state manually with `ProjectBuilder` for an interactive test
-- Using the dual-scope helpers (`createTestEnvironment` handles it)
+`createTestEnvironment` writes it at both roots (unless `permissions: false`), and so does `ProjectBuilder.localProjectWithMarketplace`; nothing else does — not `runInitFrom`, not `InteractivePrompt`. Call it directly before `init` runs against any other directory a spec built.
 
 ---
 
 ## An In-Process Command Spec Owns Its `HOME`, Not Just Its `cwd`
 
-A spec that drives a command in-process — `runCliCommand`, or `Command.run` directly — chdirs into a temp project and calls it isolated. It is not. oclif runs the `init` hook before every command, that hook calls `resolveSource`, and the resolution ladder falls through a project's own config **to the home root**. So a spec that names no home reads the developer's own global `config.ts` on every run, `help` included. The local-skill merge is the second read: `loadSkillsMatrixFromSource` merges `~/.claude/skills` into the matrix whenever the project directory is not the home directory.
+A spec that drives a command in-process — `runCliCommand`, or `Command.run` directly — chdirs into a temp project and calls it isolated. It is not. `resolveSource`'s ladder falls through a project's own config **to the home root**, so a spec that names no home reads the developer's own global `config.ts`. The local-skill merge is the second read: `loadSkillsMatrixFromSource` merges `~/.claude/skills` into the matrix whenever the project directory is not the home directory.
 
 **Both reads are silent while the machine happens to agree with the fixture.** A developer whose global config names a fork instead of the public catalogue turns the default-source branch off, and specs that never mention a marketplace go red; a developer with a global install makes `eject` print a different screen. Measured on the tree this rule was written against: seeding an otherwise-isolated home with a global config naming another marketplace turned four `source-loader` specs and two `commands` specs red, none of which names a home or a marketplace anywhere in its body.
 
@@ -288,18 +242,19 @@ grep -rnP '^export const [A-Z_]+ = .*os\.homedir\(\)' src/cli
 
 ## Where Test Data Lives
 
-| What                         | Location                               | Examples                                                                     |
-| ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
-| Project directory factories  | `e2e/fixtures/project-builder.ts`      | `ProjectBuilder.minimal()`, `.editable()`                                    |
-| Source factories             | `e2e/helpers/create-e2e-source.ts`     | `createE2ESource()`, `createE2EPluginSource()`                               |
-| Utility helpers              | `e2e/helpers/test-utils.ts`            | `createTempDir()`, `writeProjectConfig()`, `createLocalSkill()`              |
-| UI text and paths            | `e2e/pages/constants.ts`               | `STEP_TEXT`, `DIRS`, `FILES`, `TIMEOUTS`                                     |
-| Dual-scope lifecycle helpers | `e2e/fixtures/dual-scope-helpers.ts`   | `setupDualScopeWithEject()`, `initGlobal()`                                  |
-| Expected value constants     | `e2e/fixtures/expected-values.ts`      | `E2E_AGENTS`, `E2E_SKILL_IDS`, `E2E_SKILL`, `E2E_AGENT`, `E2E_AGENT_DISPLAY` |
-| Assertion helpers            | `e2e/assertions/`                      | `expectPhaseSuccess()`, `expectCleanUninstall()`                             |
-| Agent matchers               | `e2e/matchers/agent-matchers.ts`       | `toHaveAgentFrontmatter`, `toHaveAgentDynamicSkills`                         |
-| Plugin-state fixture         | `e2e/fixtures/plugin-install-state.ts` | `createPluginInstalledProject()`, `uninstallProjectPlugins()`                |
-| Type-narrowing probe         | `e2e/helpers/type-check-probe.ts`      | `probeConfigTypesNarrowing()`                                                |
+| What                         | Location                               | Examples                                                        |
+| ---------------------------- | -------------------------------------- | --------------------------------------------------------------- |
+| Project directory factories  | `e2e/fixtures/project-builder.ts`      | `ProjectBuilder.minimal()`, `.editable()`                       |
+| Source factories             | `e2e/helpers/create-e2e-source.ts`     | `createE2ESource()`, `createE2EPluginSource()`                  |
+| Utility helpers              | `e2e/helpers/test-utils.ts`            | `createTempDir()`, `writeProjectConfig()`, `createLocalSkill()` |
+| UI text and paths            | `e2e/pages/constants.ts`               | `STEP_TEXT`, `DIRS`, `FILES`, `TIMEOUTS`                        |
+| Dual-scope helpers           | `e2e/fixtures/dual-scope-helpers.ts`   | `createTestEnvironment()`                                       |
+| Dual-scope lifecycle helpers | `e2e/fixtures/e2e-stack-seed.ts`       | `createDualScopeEnvFromSeed()`, `installE2EStackGlobally()`     |
+| Expected value constants     | `e2e/fixtures/expected-values.ts`      | `E2E_AGENTS`, `E2E_SKILL_IDS`, `E2E_SKILL`, `E2E_AGENT`         |
+| Assertion helpers            | `e2e/assertions/`                      | `expectPhaseSuccess()`, `expectCleanUninstall()`                |
+| Agent matchers               | `e2e/matchers/agent-matchers.ts`       | `toHaveAgentFrontmatter`, `toHaveAgentDynamicSkills`            |
+| Plugin-state fixture         | `e2e/fixtures/plugin-install-state.ts` | `createPluginInstalledProject()`, `uninstallProjectPlugins()`   |
+| Type-narrowing probe         | `e2e/helpers/type-check-probe.ts`      | `probeConfigTypesNarrowing()`                                   |
 
 `createPluginInstalledProject()` reproduces a completed `claude plugin install` **without** the Claude CLI binary — it writes `config.ts` (skills sourced to the marketplace), `settings.json` (`enabledPlugins`), and the fake-HOME `installed_plugins.json` registry directly. Plugin-state tests built on it run unconditionally, with no `describe.skipIf` gate.
 
@@ -311,13 +266,13 @@ grep -rnP '^export const [A-Z_]+ = .*os\.homedir\(\)' src/cli
 
 ## CLI.run() vs runCLI()
 
-**`CLI.run(args, project, options?)`** is the standard for new non-interactive tests. Takes a `ProjectHandle` (or `{ dir: string }`), returns `{ exitCode, stdout, stderr, output }`. Sets `HOME` to project dir automatically. All output is ANSI-stripped.
+**`CLI.run(args, project, options?)`** is the standard for new non-interactive tests. Takes a `ProjectHandle` (or `{ dir: string }`), returns `{ exitCode, stdout, stderr, output }`. Sets `HOME` automatically (see HOME resolution below). All output is ANSI-stripped.
 
 ```typescript
 const { exitCode, output } = await CLI.run(["compile"], project);
 ```
 
-**`runCLI(args, cwd, options?)`** still exists in `test-utils.ts` and returns `{ exitCode, stdout, stderr, combined }`. It takes a raw `cwd` string. New tests should prefer `CLI.run()`; `runCLI` remains in use where a test needs an explicit HOME split without a `ProjectHandle` (10 spec files plus `create-e2e-plugin-source.ts`).
+**`runCLI(args, cwd, options?)`** still exists in `test-utils.ts` and returns `{ exitCode, stdout, stderr, combined }`. It takes a raw `cwd` string. New tests should prefer `CLI.run()`; `runCLI` remains in use where a test needs an explicit HOME split without a `ProjectHandle`.
 
 Key differences:
 
@@ -328,15 +283,15 @@ Key differences:
 | Location                | `e2e/fixtures/cli.ts` | `e2e/helpers/test-utils.ts` |
 | Preferred for new tests | Yes                   | Legacy                      |
 
-**HOME resolution.** `CLI.run()`'s precedence is `options.env.HOME` > `project.globalHome` > `project.dir` — so a handle produced by `launchInProject` / `launchInGlobal` routes the follow-up command to the same global root the wizard wrote, and a plain-`launch()` handle falls back to `project.dir`. `runCLI()` defaults HOME to a freshly-created **sibling** temp dir (prefix `ai-e2e-home-`), distinct from `cwd`, removed in a `finally`; an explicit `options.env.HOME` wins and is never auto-removed. Neither sets `HOME=cwd` — that collapse was removed, because `os.homedir() === cwd` silently forces a project command into global scope.
+**HOME resolution.** `CLI.run()`'s precedence is `options.env.HOME` > `project.globalHome` > `project.dir` — so a handle naming `globalHome` routes the follow-up command to the same global root its setup wrote. `runCLI()` defaults HOME to a freshly-created **sibling** temp dir (prefix `ai-e2e-home-`), distinct from `cwd` because `os.homedir() === cwd` silently forces a project command into global scope, and removed in a `finally`; an explicit `options.env.HOME` wins and is never auto-removed.
 
-`CLI.run()` sets `AGENTSINC_SOURCE=undefined` by default; `runCLI()` does NOT -- callers must pass it via `options.env` if needed. Both strip ANSI from all output.
+Both clear the environment overrides [README § Critical Rules](./README.md) lists, and strip ANSI from all output.
 
 **Do NOT spread `process.env` into `env`.** `execa` inherits `process.env` automatically. Spreading it clobbers the `HOME` override that both `CLI.run()` and `runCLI()` set for isolation:
 
 ```typescript
 // BAD: HOME override is clobbered by process.env.HOME
-await CLI.run(["compile"], project, { env: { ...process.env, AGENTSINC_SOURCE: undefined } });
+await CLI.run(["compile"], project, { env: { ...process.env, CC_MARKETPLACE: undefined } });
 
 // GOOD: execa inherits process.env, only override what you need
 await CLI.run(["compile"], project);
@@ -362,18 +317,17 @@ These are still exported and used in some tests. Matchers are preferred for asse
 | `createLocalSkill(dir, id, opts?)`                                                                                               | Creates a skill directory with SKILL.md + optional metadata.yaml                                                                                                                                                              |
 | `writeProjectConfig(dir, config)`                                                                                                | Writes `config.ts` into the resolved source folder (used internally by ProjectBuilder). `writeProjectConfigIn` is the form that NAMES the folder, and is what a fixture whose subject is a layout uses. Emits ONLY config.ts. |
 | `writeConfigTypes(dir)`                                                                                                          | Writes a minimal `config-types.ts` stub — pair with `writeProjectConfig` when the test asserts on the companion file (e.g. uninstall manifest removal)                                                                        |
-| `writeAgentFile(dir, name, opts?)`                                                                                               | Writes `<dir>/.claude/agents/<name>.md`. Bare `# <name>` heading by default; `opts.frontmatter` prefixes a `name:` block.                                                                                                     |
+| `writeAgentFile(dir, name, opts?)`                                                                                               | Writes `<dir>/.claude/agents/<name>.md`. Bare `# <name>` heading by default; `opts.frontmatter` prefixes `name` + `description` frontmatter.                                                                                  |
 | `writeAgentStubs(dir, agents)`                                                                                                   | Writes minimal compiled-agent stubs, as a prior `compile` would leave behind                                                                                                                                                  |
 | `createPermissionsFile(dir)`                                                                                                     | Ensures `.claude/settings.json` grants `Read(*)`. **MERGES, never overwrites** — preserves `enabledPlugins` / `extraKnownMarketplaces`; hard-errors on invalid JSON.                                                          |
-| `addForkedFromMetadata(dir)`                                                                                                     | Writes forkedFrom metadata to the default web-framework-react skill                                                                                                                                                           |
+| `addForkedFromMetadata(dir, skillId)`                                                                                            | Writes `FORKED_FROM_METADATA` as the named installed skill's `metadata.yaml`                                                                                                                                                  |
 | `injectMarketplaceIntoConfig(dir, name)`                                                                                         | Patches a marketplace field into an existing config.ts                                                                                                                                                                        |
 | `loadConfigOrFail(dir)`                                                                                                          | Structurally loads a scope's `config.ts`; throws when absent or unparseable (no silent empty-config fallback)                                                                                                                 |
 | `readAgentEntriesFor(dir, agentName)`                                                                                            | Loads a scope's config and returns every `AgentScopeConfig` with that name                                                                                                                                                    |
-| `completeWithLocalSources(wizard)`                                                                                               | Drives init end-to-end with every source switched to local (`l` on the Sources step). Required by tests asserting on `.claude/skills/` contents.                                                                              |
 | `delay(ms)`                                                                                                                      | Framework-internal wait utility (not for use in test `it()` blocks)                                                                                                                                                           |
-| `pollUntil(isSatisfied, timeoutMs, buildError)`                                                                                  | Framework-internal poll skeleton behind every `TerminalScreen` wait (predicate evaluated before the first delay)                                                                                                              |
-| `BIN_RUN` / `CLI_ROOT`                                                                                                           | Absolute paths to the built binary and the repository root                                                                                                                                                                    |
-| `createE2ESource` / `E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` / type `E2ESource`                                                   | Re-exports from create-e2e-source.ts. The `*_TITLES` maps ARE the text the wizard renders — key label assertions off them.                                                                                                    |
+| `pollUntil(isSatisfied, timeoutMs, buildTimeoutError)`                                                                           | Framework-internal poll skeleton behind every `TerminalScreen` wait (predicate evaluated before the first delay)                                                                                                              |
+| `BIN_RUN` / `CLI_ROOT`                                                                                                           | Absolute paths to the built binary and the CLI package root                                                                                                                                                                   |
+| `createE2ESource` / `E2E_AGENT_TITLES` / type `E2ESource`                                                                        | Re-exports from create-e2e-source.ts.                                                                                                                                                                                         |
 | `renderSkillMd` / `renderConfigTs` / `renderAgentYaml` / `renderAgentMd` / `renderMetadataYaml` / `renderIncompleteMetadataYaml` | Re-exports from `content-generators.ts`. **Always use these** instead of inlining fixtures.                                                                                                                                   |
 | `normalizeGlobalConfig` / `normalizeConfigPreservingOrder` / `writeTestPackageJson`                                              | Re-exports from the unit-test helper tree (`helpers/config-comparison.ts`, `helpers/config-io.ts`). Both normalisers take this route; they differ only in sorting.                                                            |
 | `fileExists(path)` / `directoryExists(path)` / `cleanupTempDir(dir)`                                                             | Re-exports from `test-fs-utils.ts`                                                                                                                                                                                            |

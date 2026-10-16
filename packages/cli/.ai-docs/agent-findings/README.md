@@ -185,7 +185,7 @@ in a different module: `compile.ts` → `reportPropagation` and `uninstall.tsx` 
 `updateRegisteredProjects` each loop `report.propagated.skipped` and call
 `registeredProjectUpdateSkipped` from `utils/messages.ts`, which is not gated on `--verbose` — the
 whole substance of the gap. The same note pins its claim to `writeScopedConfigs`, which no production
-module declares: `writeScopedFromWizard` in `lib/config-gate/index.ts` replaced it, and the old name
+module declares: `writeConfigByScope` in `lib/config-gate/index.ts` replaced it, and the old name
 is so thoroughly gone that `lib/__tests__/config-gate-enforcement.test.ts` holds it as the constant
 `A_NAME_NOTHING_DECLARES`, the self-test for a guard whose job is catching list rows that name
 nothing. It read as an open observability gap for four months.

@@ -35,9 +35,6 @@ Key reminders for iteration:
 
 ### Defect classes to check first
 
-The classes the atomicity bible's §11 Full Audit Command most often returns, run across
-`src/skills/` in the marketplace repository:
-
 - **`NEXT_PUBLIC_*` env vars** — replace with generic names (`API_URL`, not `NEXT_PUBLIC_API_URL`)
 - **`@repo/*` workspace imports** — replace with generic relative imports
 - **Integration sections naming external tools** — remove or genericize

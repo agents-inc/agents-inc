@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-10-15
 ---
 
 # Commit Protocol for AI Agents
@@ -22,7 +22,6 @@ Quick reference for AI agents making commits to this repository.
 
 **Examples:**
 
-- `feat(wizard): add domain selection step`
 - `fix(compile): ensure output directory exists before dry-run`
 - `docs: update TODO with task progress`
 - `test: refactor tests to use shared helpers`
@@ -60,11 +59,10 @@ not by the publish itself. Run all four before a release rather than trusting th
 ### The one roster no gate covers
 
 **A change to `AGENT_NAMES` updates the "Subagents" table in `packages/cli/README.md` in the same
-commit.** Every other copy of that roster is bound to source by something: `check-enumeration-drift.ts`
-holds `AGENT_NAMES` against `reference/type-system.md`, `agent-roster.test.ts` owns the grid-row
-questions, and the type system reddens a stale constant that carries its `satisfies` clause. The
-README's table is bound by nothing — no script reads `packages/cli/README.md`, and it is the file a
-prospective user reads first, so a retired sub-agent survives there in public.
+commit.** Every other copy of that roster is bound to source by something — the type system reddens
+a stale constant that carries its `satisfies` clause. The README's table is bound by nothing — no
+script reads `packages/cli/README.md`, and it is the file a prospective user reads first, so a
+retired sub-agent survives there in public.
 
 The two sides agree today at eighteen names in both directions, which is what makes the check cheap
 to keep true:
@@ -90,7 +88,7 @@ Every release MUST complete all steps. No exceptions.
 - [ ] Prepend brief summary to `CHANGELOG.md` with link to detailed file
 - [ ] Release commit title uses em-dash (`—`, not `-`) separator: `chore(release): {version} — {summary}`
 - [ ] Summary references every task ID shipped in the release (e.g. `CLI-823`, `EDITOR-52`)
-- [ ] Every ticket with a `### D-xxx` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: `grep -oE '^### [A-Z]+-[0-9]+'` in the detailed file against the IDs inside that release's `CHANGELOG.md` block, diff the sets. **`D-` is no longer the only family** — `CLI-`, `EDITOR-`, `SERVER-`, `REPO-`, `WWW-` and `SKILLS-` all exist, so a grep written for `D-` alone reports parity over an empty set. Runnable from `packages/cli`; empty output passes:
+- [ ] Every ticket with a `### {ID}` subheading in the detailed `changelogs/{version}.md` MUST have at least one corresponding bullet in the `CHANGELOG.md` summary block for that release. Zero tolerance for "cleanup tickets" that get folded into prose without their own bullet — if a ticket earned a detailed subheading, it earned a summary bullet. Mechanically checkable: `grep -oE '^### [A-Z]+-[0-9]+'` in the detailed file against the IDs inside that release's `CHANGELOG.md` block, diff the sets. **`D-` is no longer the only family** — `CLI-`, `EDITOR-`, `SERVER-`, `REPO-`, `WWW-` and `SKILLS-` all exist, so a grep written for `D-` alone reports parity over an empty set. Runnable from `packages/cli`; empty output passes:
 
   ```sh
   V=X.Y.Z && comm -3 \
@@ -132,7 +130,7 @@ See [changelogs/{version}.md](./changelogs/{version}.md) for full details.
 
 ## Fixed
 
-- Bug fix descriptions (group under `### D-xxx — {title}` subheadings when a release bundles multiple tickets)
+- Bug fix descriptions (group under `### {ID} — {title}` subheadings when a release bundles multiple tickets)
 
 ## Removed
 
@@ -145,4 +143,4 @@ See [changelogs/{version}.md](./changelogs/{version}.md) for full details.
 - `## Findings` — bullet list of `.ai-docs/agent-findings/*.md` paths written during this release cycle
 - `## Proposed standards` — documentation/standards changes this release recommends but does not itself land
 
-Every `### D-xxx —` subheading must correspond to a task ID listed in the release commit summary, and vice versa — no silent bundling.
+Every `### {ID} —` subheading must correspond to a task ID listed in the release commit summary, and vice versa — no silent bundling.

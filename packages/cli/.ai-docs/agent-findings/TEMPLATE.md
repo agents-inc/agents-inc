@@ -19,7 +19,7 @@ category: dry | typescript | testing | complexity | performance | architecture
 domain: e2e | cli | web | api | shared | infra
 # domain guidance:
 #   e2e    → e2e/ tests, page objects, fixtures
-#   cli    → oclif commands, wizard flows, install/compile logic
+#   cli    → oclif commands, install/compile logic
 #   web    → UI/React/Ink components, terminal rendering
 #   api    → HTTP handlers, external service integration
 #   shared → utilities, types, schemas used across domains
@@ -36,15 +36,13 @@ status: open | partial | resolved | superseded # REQUIRED — see "Lifecycle fie
 
 <!--
 FRONTMATTER SCHEMA RULES (enforced by the convention-keeper / codex-keeper pre-processing scan
-described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
+described in `standards/documentation-bible.md` -> "Agent Findings")
 
 1. `status:` is REQUIRED on every finding. Write it explicitly even when it is `open`.
-   Do NOT rely on README.md's "defaults to open" — an omitted field makes every status rollup
-   an inference rather than a count. As of the 2026-07-30 backfill, every finding on disk
-   declares one; keep it that way (see "Known gap: status backfill — CLOSED" below).
-   Do not quote a count here: the status distribution is owned by
-   the tracker (`todo/cli.md`), per documentation-bible.md's
-   "A Count Lives in Exactly One Document".
+   Do NOT rely on README.md's "default when `status:` is absent" — an omitted field makes every
+   status rollup an inference rather than a count. As of the 2026-07-30 backfill, every finding on
+   disk declares one; keep it that way (see "Known gap: status backfill — CLOSED" below).
+   Do not quote a count here: documentation-bible.md -> "A Count Lives in Exactly One Document".
 
 2. `type:` and `root_cause:` are SEPARATE enums. They are not interchangeable.
      type:       WHAT KIND OF DOCUMENT this is / what was observed.
@@ -114,9 +112,8 @@ described in `standards/documentation-bible.md` -> "Agent Findings Frontmatter")
    across a line break in this very paragraph for as long as the claim did, so every grep for it
    returned nothing and the error was unfindable by the one check anybody would run.
 
-   Nothing else in this schema is read mechanically, so `type:`, `status:` and the lifecycle-field
-   pairings are still prose that a reader has to keep. Do not infer from "the enum is checked" that
-   the rest of the block is.
+   `type:`, `status:` and the lifecycle-field pairings are not read mechanically; they are prose a
+   reader has to keep. Do not infer from "the enum is checked" that the rest of the block is.
 
 5. **Any multi-sentence value is double-quoted or written as a `>-` block scalar.** A plain YAML
    scalar cannot contain a bare `: ` — the parser reads colon-space as a nested key and gives up on
@@ -184,27 +181,14 @@ KNOWN GAP: status backfill — CLOSED 2026-07-30
   and only the source tells you the defect is unreachable.
 
   ALSO FIXED 2026-07-30: one finding carried `type: enforcement-gap`, which rule 2 makes
-  invalid; it is now `type: standard-gap` — the value taken by every finding in that class, a
-  hygiene rule with no runnable checker, of which
-  `2026-07-30-eslint-precommit-gate-has-no-config-and-cannot-run.md` is the surviving example.
-  Its `root_cause: enforcement-gap` was correct and unchanged — the author's diagnosis was
-  right, it was just written into the WHAT field as well as the WHY field. No `type` value now
-  appears in both enums.
+  invalid; it is now `type: standard-gap`. Its `root_cause: enforcement-gap` was correct and
+  unchanged — the author's diagnosis was right, it was just written into the WHAT field as well
+  as the WHY field. No `type` value now appears in both enums.
 
   FIXED EARLIER 2026-07-30: 7 link defects — one rule-3 violation (a `superseded_by:` written
   with no paired `status: superseded`), two more unpaired `superseded_by:` links, three one-sided
   supersession pairs and two dangling `supersedes:` / `blocked_by:` targets — found by the
   directory's first link-integrity scan.
-
-  STILL OPEN — lifecycle-field pairing, a class nobody has scanned for. Seven files whose `status:`
-  was already present carry a mismatched or missing paired field: three `status: resolved` with no
-  `resolved_by:`, one `status: open` carrying a `resolved_by:`, and three `status: superseded`
-  carrying an extra `resolved_by:` (one also a `partial_note:`) beside a correct `superseded_by:`.
-  The last three may be legitimate — recording both the replacement and the underlying fix is
-  useful — and this template should decide whether to sanction it. The other four are defects.
-
-  Counts are owned by the tracker (`todo/cli.md`), which re-derives them from disk at each pass.
-  Do not restate them here.
 -->
 
 <!--

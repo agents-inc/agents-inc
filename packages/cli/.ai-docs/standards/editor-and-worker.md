@@ -88,13 +88,13 @@ emitted declaration types it, and `client.skills.index.$get()` even **compiles**
 type-level path and the runtime path are computed by different code. Only a request shows the
 mismatch, and only from the client half. The constraint travels between two workspaces with nothing
 in either one stating it: `apps/server` names `hono/cors` and `@hono/zod-openapi`, and `hc` lives in
-`apps/editor`.
+`packages/api`.
 
 ```
-grep -n 'path: "[^"]*/index"' apps/server/src/index.ts
+grep -rn 'path: "[^"]*/index"' apps/server/src
 ```
 
-Nothing today. The worker's routes — re-derive them with `grep -n 'app.openapi\|app.on(' apps/server/src/index.ts` rather than trusting a count here; they grew on 2026-08-29 and any list here would be the third one to rot. What is worth stating instead is the SHAPE: every route but one is in the single `.openapi()` chain, and the exception is Better Auth's `/api/auth/*`, mounted with `app.on` because describing somebody else's paths in `createRoute` would be transcribing their contract.
+Nothing today. The worker's routes — re-derive them with `grep -n '\.openapi([A-Za-z]*Route\|app\.on(' apps/server/src/index.ts` rather than trusting a count here; they grew on 2026-08-29 and any list here would be the third one to rot. What is worth stating instead is the SHAPE: every route but one is in the single `.openapi()` chain, and the exception is Better Auth's `/api/auth/*`, mounted with `app.on` because describing somebody else's paths in `createRoute` would be transcribing their contract.
 `/skills` is the near miss this rule is for: it was written as `/skills/index` first, and by the
 mechanism above `client.skills.index.$get()` would have requested `/skills` and 404ed while every
 `SELF.fetch` in the suite kept passing.
@@ -104,18 +104,18 @@ membership of the chain.** `SELF.fetch` and `hc` compute their URLs by different
 that only uses `SELF.fetch` is exercising a path the editor never requests.
 
 ```
-grep -rn 'hc<AppType>' apps/server/src apps/editor/src
+grep -rn 'hc<AppType>' apps/server/src --include='*.test.ts'
+grep -rn 'await api\.' apps/editor/src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
 ```
 
-Read the two sides as a pair. The editor holds exactly two clients —
-`apps/editor/src/lib/api/configs.ts` and `apps/editor/src/lib/api/skill-index.ts` — covering three of
-the four routes, and `apps/server` answers with a block for each: `the typed client the editor uses`
-in `src/index.test.ts`, and `is reachable through the typed client the editor uses` in
-`src/skill-index.test.ts`. `/monitoring` is the fourth and is deliberately not on the client's
-surface: Sentry's SDK is handed a literal URL through its `tunnel` option
-(`apps/editor/src/lib/observability/sentry.ts`), so nothing computes that path and nothing can strip
-a segment off it. **A route reached only by a literal URL is exempt from the test and not from the
-`/index` ban** — the caller can change, and the ban is what makes changing it free.
+Read the two sides as a pair. The editor's one client is `createApiClient` from `packages/api`,
+configured as `api` in `apps/editor/src/lib/api/client.ts`, so the second grep is every route it
+reaches. `apps/server` answers with `the typed client the editor uses` in `src/index.test.ts` and
+`is reachable through the typed client the editor uses` in `src/skill-index.test.ts`. `/monitoring`
+is deliberately not on the client's surface: Sentry's SDK is handed a literal URL through its
+`tunnel` option (`apps/editor/src/lib/observability/sentry.ts`), so nothing computes that path and
+nothing can strip a segment off it. **A route reached only by a literal URL is exempt from the test
+and not from the `/index` ban** — the caller can change, and the ban is what makes changing it free.
 
 § _A response header the editor reads must be named in `exposeHeaders`_ closes with the general
 clause both halves of this are instances of.
@@ -137,7 +137,7 @@ read it, for as long as `cors()` was registered with an origin and nothing else.
 
 <!-- prettier-ignore -->
 ```ts
-cors({ origin: ..., exposeHeaders: [SKILL_INDEX_FRESHNESS_HEADER] })
+cors({ origin: ..., credentials: true, exposeHeaders: [SKILL_INDEX_FRESHNESS_HEADER, RETRY_AFTER_HEADER] })
 ```
 
 Every custom header constant must appear at **two** sites in `apps/server/src/index.ts` — the
@@ -151,8 +151,8 @@ grep -rn '_HEADER' apps/server/src packages/matrix/src --include='*.ts' | grep -
 `SELF.fetch`, `hc<AppType>` and MSW all read the header regardless of the CORS config, so every
 test in both workspaces stays green. The guard is a single case in `apps/server/src/skill-index.test.ts`
 — `lets a browser read the freshness header it sets` — which observes the worker's own CORS
-configuration; the editor's Playwright stubs use `route.fulfill`, which answers **in place of** the
-worker and therefore cannot see its configuration no matter what it asserts. The editor's own guard
+configuration; the editor's Playwright stubs are msw handlers, which answer **in place of** the
+worker and therefore cannot see its configuration no matter what they assert. The editor's own guard
 is the mirror image and is worth keeping for a different reason: `stubSkillIndexHidingFreshness`
 reproduces a response with the header withheld, which a stripping proxy still produces with the
 worker configured correctly.
@@ -173,9 +173,9 @@ consumes, ask what the browser and the RPC client do to it, because nothing in e
 
 ## A route that fans out to N upstream calls must bound N by construction
 
-**A Cloudflare Worker may issue 50 subrequests while handling one request on the Workers Free plan**
-(1000 on Paid), and may hold six simultaneous outbound connections. **Nothing local models either
-limit.** Miniflare does not — `subrequest` appears nowhere in the pool or in miniflare's dist.
+**A Cloudflare Worker may issue 50 subrequests while handling one request on the Workers Free plan**,
+and may hold six simultaneous outbound connections. **Nothing local models either limit.** Miniflare
+does not — Cloudflare enforces its limits only on its own network.
 `wrangler dev` does not: a route that fans out sixty times against real GitHub fills its index there
 perfectly happily. The suites do not, because they stub `fetch`. So a worker that exceeds either
 limit is green in every environment a developer has and fails only at the edge, which is why this is
@@ -219,7 +219,7 @@ Every workspace here is consumed as source but one. `packages/matrix` and `packa
 **The reason that works is not that the sources name nothing ambient.** `packages/ui` names DOM
 globals freely — `KeyboardEvent<HTMLDivElement>`, `querySelectorAll<HTMLElement>` — and is consumed
 as source correctly, because `@workspace/typescript-config/react-library.json` gives it the same
-`lib` the consumer has. Same runtime, same ambient names, nothing to reconcile. The rule is about the
+DOM `lib` the consumer has. Same runtime, same ambient names, nothing to reconcile. The rule is about the
 **difference**: a workspace may be consumed as source only where every ambient name its source uses
 is one the consumer already declares.
 
@@ -245,7 +245,7 @@ declaration boundary cuts the graph. The live shape is three files:
 
 | File                              | What it carries                                                                                 |
 | --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `apps/server/tsconfig.build.json` | `emitDeclarationOnly`, `rootDir: src`, and an `include` naming the entry alone                  |
+| `apps/server/tsconfig.build.json` | `emitDeclarationOnly`, `rootDir: src`, and an `include` naming the entry rather than `src`      |
 | `apps/server/package.json`        | a `build` script, and an `exports` map whose `types` points at `dist/` while `default` does not |
 | `turbo.json`                      | `^build` on `lint` and `typecheck`, not only on `test`                                          |
 
@@ -358,8 +358,8 @@ The recovery destroys the configuration it exists to recover.
 have not been written yet — the marketplace dialog and the switcher reach this through the same
 action. `pruneToCatalog` in `apps/editor/src/stores/config-store.ts`:
 
-<!-- The three statements of `pruneToCatalog`, its interleaved comment elided. apps/editor source,
-     so the root config formats it without semicolons and this package's would add them. -->
+<!-- The last three statements of `pruneToCatalog`, its interleaved comment elided. apps/editor
+     source, so the root config formats it without semicolons and this package's would add them. -->
 <!-- prettier-ignore -->
 ```ts
 const pruned = pruneUnknownIds(get())
@@ -569,10 +569,10 @@ Two consequences to check at review:
    grep -rn 'tokenFor(' apps/editor/src --include='*.ts' --include='*.tsx'
    ```
 
-   One declaration, three imports and four calls — the catalogue-first opening, the switch dialog,
-   and the marketplace dialog twice (its initial box, and `nameMarketplace` below). Each holds the
-   marketplace before it asks. A call passing anything other than the marketplace being reached is
-   the regression.
+   One declaration, three imports and four calls — `seatMarketplace` in `seat-catalog.ts`, the
+   switch dialog, and the marketplace dialog twice (its initial box, and `nameMarketplace` below).
+   Each holds the marketplace before it asks. A call passing anything other than the marketplace
+   being reached is the regression.
 
 2. **The form that produces the write is bound too.** A field holding a credential is bound to the
    field naming its identity: change the identity and the credential is re-read, never carried.
@@ -619,11 +619,11 @@ shape change without a version bump produces.
 
 ### What a discard may report is decided by the SCHEMA, not by the reporting site
 
-`config-store`'s `merge` is the worked example of the door, and **two of its three parts are what a
-second store copies**: the absent-vs-unreadable **split** — an `undefined` slot is every first visit
-and reports nothing, a slot that fails `safeParse` is a loss and reports — and the rule that only
-paths and codes travel, never values. **The third part, `issue.path.join(".")`, is not copyable, and
-reading the split and the payload as one instruction is what makes this section necessary.**
+`config-store`'s `merge` is the worked example of the door, and **two of its parts are what a second
+store copies**: the absent-vs-unreadable **split** — an `undefined` slot is every first visit and
+reports nothing, a slot that fails `safeParse` is a loss and reports — and the rule that only paths
+and codes travel, never values. **How much of a path may travel is not copyable, and reading the
+split and the payload as one instruction is what makes this section necessary.**
 
 **A zod path is safe to report in full only when every segment is the schema's own vocabulary.** A
 `z.object` field name always is. A `z.record` key is whatever the writer of the data chose, so the
@@ -722,9 +722,9 @@ value not to send; it reports the boolean `droppedStack` now. So the second cens
 grep -rn 'reportIssue(' apps/editor/src --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
 ```
 
-read for what each context field CONTAINS rather than for how it was built. Eighteen sites when this
-was written — re-derive rather than trusting the number. Most carry an HTTP status or a version
-number and are safe by construction; the ones worth reading are every field derived from parsed data.
+read for what each context field CONTAINS rather than for how it was built. Most carry an HTTP
+status or a version number and are safe by construction; the ones worth reading are every field
+derived from parsed data.
 
 **One route neither grep can see, left open deliberately.** `error-boundary.tsx` hands the whole
 thrown error to `reportError`, which ends at `captureException` — and a `ZodError`'s message is its
@@ -756,7 +756,7 @@ person it happened to, and a reader auditing the file finds thorough handling of
 that went unmentioned.
 
 **What makes it a defect rather than a judgement call is that the same feature already does it the
-other way.** `seed.ts`'s `unknownPayloadIds` and `use-catalog-first.ts`'s `droppedNotice` have named
+other way.** `seed.ts`'s `unknownPayloadIds` and `seat-catalog.ts`'s `droppedNotice` have named
 every id a shared link lost, in a sentence written to be read by a person. One loss, two doors: one
 door told the visitor, the other told Sentry — and where the report goes is not open to judgement,
 since `initSentry` calls `setReportingSink` with a Sentry sink and tunnels through our own worker, as
@@ -785,10 +785,10 @@ through `webServer.stderr: "pipe"` and nothing reads them. The mechanical close 
 collects `console` events matching `[issue]` and fails a test that emitted one it did not declare,
 with an opt-in escape hatch so the specs that deliberately provoke a discard declare it rather than
 being exempted wholesale. **The seam exists and its sibling is the shape to copy**:
-`apps/editor/e2e/fixtures.ts` overrides the `page` fixture to route every third-party origin to
-`route.abort("blockedbyclient")`, collect what it caught, and assert in teardown that the collection
-is empty. Both halves of that pairing are load-bearing — the abort keeps the bytes out, and the
-teardown assertion is what makes an omission legible.
+`apps/editor/e2e/fixtures.ts` overrides the `page` fixture for every spec, and its `network` fixture
+refuses an unstubbed third-party request through msw's `onUnhandledRequest`
+(`refuseUnstubbedThirdParty`) — the bytes never leave, and the request is reported against the test
+by name, which is what makes an omission legible.
 
 ---
 
@@ -860,12 +860,13 @@ handing the grid back to it.
 ## The store holds the refusal; the surface owns the words
 
 **A refusal crosses a boundary as a CODE and is turned into a sentence by whatever is drawing.**
-Three seams in this repository run the same split, and it is one rule rather than three habits:
+The seams in this repository run the same split, and it is one rule rather than a habit per seam:
 
 | Refusal                | Held as                                                        | Worded by                             |
 | ---------------------- | -------------------------------------------------------------- | ------------------------------------- |
 | Share / install POST   | `ShareRefusal` in `apps/editor/src/lib/api/configs.ts`         | the button that was pressed           |
 | Compose                | `ComposeRefusal` in `apps/editor/src/lib/api/compose.ts`       | `REFUSAL_COPY` in `composer.tsx`      |
+| Sign in / sign out     | `AuthRefusal` in `apps/editor/src/lib/api/auth.ts`             | `REFUSAL_COPY` in `nav-rail.tsx`      |
 | First-sign-in adoption | `AdoptionRefusal` in `apps/editor/src/stores/account-store.ts` | `WHY_NOT_ADOPTED` in `stack-grid.tsx` |
 
 Two reasons, and the second is the one that gets forgotten.
@@ -933,25 +934,26 @@ never told.
 
 ### The corollary: a hook that reads a store outside React
 
-`catalog-store.ts` exports `activeCatalog`, `activeStacks`, `activeVersion`, `activeMarketplace`,
-`activeSkillById` and `activeExternalSkill` — each a `useCatalogStore.getState()` read, non-reactive
-by construction. **A `useMemo`, `useEffect` or `useCallback` whose callback reaches one of them has a
-dependency the array cannot see, and `exhaustive-deps` will never flag it: the rule flags such a
-value as UNNECESSARY once you add it, which is the opposite advice.** Removing it on the rule's word
-leaves a derivation stamped with whichever catalogue was seated when the selection was made.
+`catalog-store.ts` exports `activeCatalog`, `activeMatrix`, `activeStacks`, `activeVersion`,
+`activeMarketplace`, `activeSkillById` and `activeExternalSkill` — each a
+`useCatalogStore.getState()` read, non-reactive by construction. **A `useMemo`, `useEffect` or
+`useCallback` whose callback reaches one of them has a dependency the array cannot see, and
+`exhaustive-deps` will never flag it: the rule flags such a value as UNNECESSARY once you add it,
+which is the opposite advice.** Removing it on the rule's word leaves a derivation stamped with
+whichever catalogue was seated when the selection was made.
 
 The answer is settled and is to be copied rather than rediscovered: **subscribe with a selector purely
 to name the value in the dependency array, and disable the rule with a comment saying that is what
-the dependency is for.** Two sites carry it — `configure-screen.tsx`, where `catalog` is subscribed
-so `selectDomainViews` re-derives the grid when the catalogue underneath it is swapped; and
-`use-install-command.ts`, where `marketplace` and `version` are subscribed so the serialised payload
-is re-minted on the same event, since `toSeedPayload` takes both off the seat. It has been
-rediscovered twice, once per site, and the second site's comment says so.
+the dependency is for.** `configure-screen.tsx` subscribes `catalog` so `selectDomainViews`
+re-derives the grid when the catalogue underneath it is swapped; `use-install-command.ts` subscribes
+`marketplace` and `version` so the serialised payload is re-minted on the same event, since
+`toSeedPayload` takes both off the seat; and `output-preview-dialog.tsx` subscribes `matrix` so its
+payload, and the preview drawn from it, are re-minted too.
 
 The population to read is every `active*` call that sits inside a hook callback:
 
 ```
-grep -rnP 'active(Catalog|Stacks|Version|Marketplace|SkillById|ExternalSkill)\(' apps/editor/src --include='*.ts' --include='*.tsx'
+grep -rnP 'active(Catalog|Matrix|Stacks|Version|Marketplace|SkillById|ExternalSkill)\(' apps/editor/src --include='*.ts' --include='*.tsx'
 ```
 
 Most hits are in `derive.ts` and other plain functions, where reading the seat directly is correct
@@ -987,13 +989,14 @@ list of per-package assertions catches only the spellings someone thought of.
 
 ### The chunk groups are ordered by rate of change, and two of their settings are load-bearing
 
-`build.rolldownOptions.output.codeSplitting.groups` in `apps/editor/vite.config.ts` names five
-tiers — React, the brand icons, the observability SDK, a catch-all vendor group, and the generated
-catalogue from `packages/matrix`. The axis is how often each changes, because that is what decides
-whether a returning visitor re-downloads it. Before the split the whole app was one 1.03 MB file
-(302 KB gzipped) and a one-line copy edit re-hashed all of it; after, an app-source edit re-hashes
-only the 94 KB entry chunk and the other seven keep their file names — verified by building twice
-with a single line appended to one module and diffing the emitted names.
+`CHUNK_GROUPS` in `apps/editor/vite.config.ts` names the tiers — React, the brand icons, the
+observability SDK, a catch-all vendor group and the generated catalogue from `packages/matrix`, plus
+`activation-descriptions` and `compile`, which keep lazily-reached code off the first-paint path.
+The axis is how often each changes, because that is what decides whether a returning visitor
+re-downloads it. Before the split the whole app was one 1.03 MB file (302 KB gzipped) and a one-line
+copy edit re-hashed all of it; after, an app-source edit re-hashes only the entry chunk and the
+others keep their file names — verified by building twice with a single line appended to one module
+and diffing the emitted names.
 
 Two settings look like tuning and are not:
 
@@ -1012,9 +1015,7 @@ Two settings look like tuning and are not:
 It is gzip, at level 9, because nothing is served uncompressed and raw bytes describe a transfer
 that never happens. Cloudflare negotiates brotli with most browsers and brotli at quality 11
 measured ~15% smaller on this bundle, so the gate's figure is the conservative one — and the cheap
-one, at ~60ms against ~2s for brotli on every build. **The same bytes read about 2% smaller under
-Bun's zlib than under Node's**, so the budget clears the larger reading and a build run either way
-gives the same verdict.
+one, at ~60ms against ~2s for brotli on every build.
 
 **When the gate fires, the first question is whether the new weight can be loaded on demand**, not
 what the budget should be raised to. The number is a record of a measured cost; raising it is

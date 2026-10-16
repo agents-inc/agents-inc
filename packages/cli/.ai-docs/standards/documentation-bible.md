@@ -44,25 +44,13 @@ section or a validation history to give the clutter somewhere to live.
    Everywhere else — a "was" column, a superseded count, a renamed symbol nobody references — cut
    it.
 
-3. **No task IDs, live or dead.** An ID absent from `todo/repo.md` and `todo/cli.md` is dead and
-   means nothing to a reader; a live one is no safer, because it may already be unresolvable or
-   ambiguous. `D-266` is an open row whose ID appears in no file under `src/`, `e2e/` or `scripts/`,
-   so a reader has nothing to grep for, and `D-278` was renumbered after a collision, so one ID now
-   names two rows. Name the behaviour instead of the ticket that produced it. An ID may appear only
-   where it is the subject rather than the provenance — quoted as a specimen of this rule, or in
-   `agent-findings/` and `agent-suggestions/`, both of which are dated evidence by design: an entry
-   in either is referenced by filename, keeps its status in frontmatter, and is never moved once
-   written.
-
-   **The exemption reaches the two directories through different halves of an entry, so a clause
-   naming one of them exempts half the artefact.** In `agent-findings/` the IDs sit in filenames
-   and frontmatter, where they are the record's own identity. In `agent-suggestions/` they sit in
-   the BODY, where a proposal argues FROM them —
-   `agent-suggestions/2026-07-30-identity-key-helper-export-exception.md` makes its case for the
-   identity-key helper convention by naming the two defects that produced it, and substituting
-   behaviour for those IDs would leave the argument resting on nothing. The census command below
-   excludes both directories for that reason; widening one exclusion without the other enforces a
-   rule this clause does not state.
+3. **No task IDs, live or dead.** An ID absent from every tracker in `todo/` is dead and means
+   nothing to a reader; a live one is no safer, because it may already be unresolvable or
+   ambiguous: `D-278` was renumbered after a collision, so one ID now names two rows. Name the
+   behaviour instead of the ticket that produced it. An ID may appear only where it is the subject
+   rather than the provenance — quoted as a specimen of this rule, or in `agent-findings/`, which is
+   dated evidence by design: an entry there is referenced by filename, keeps its status in
+   frontmatter, and is never moved once written.
 
    **The tree does not pass this rule, and it fails on both halves — source files and documents
    alike.** Two greps are the inventory; read the scale off them rather than off this page, and use
@@ -73,15 +61,13 @@ section or a validation history to give the clutter somewhere to live.
    ```
    grep -rnP '\b[A-Z]{1,4}-[0-9]{2,4}\b' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx'
    grep -rnP '\b[A-Z]{1,4}-[0-9]{2,4}\b' .ai-docs/ --include='*.md' \
-     --exclude-dir=agent-findings --exclude-dir=agent-suggestions --exclude=documentation-bible.md
+     --exclude-dir=agent-findings --exclude=documentation-bible.md
    ```
 
-   `SHA-256` is the only non-ID token these match; every other hit is an offender. Neither returns
-   empty, and several of the document hits are section HEADINGS, whose replacement moves every
-   anchor pointing at them — so closing this class is a planned sweep, not a drive-by. **A sweep
-   scoped to whatever single site a sentence names** fixes that one, re-greps for that one ID, finds
-   it clean and reports the class closed. The greps are the worklist; no sentence here substitutes
-   for running them.
+   Standard names such as `SHA-256` match too. Neither returns empty. **A sweep scoped to whatever
+   single site a sentence names** fixes that one, re-greps for that one ID, finds it clean and
+   reports the class closed. The greps are the worklist; no sentence here substitutes for running
+   them.
 
 4. **Staleness is one line of frontmatter, and nothing else.** See below.
 
@@ -129,13 +115,11 @@ citation rots with them.
 **4. Re-read a file after editing it** and confirm the change is present before reporting the work
 done.
 
-Principles 1 and 4 are also rendered into every compiled agent by
-`src/agents/_templates/methodologies/operating-principles.liquid` — they are stated here because
-this document is read by people and by lanes that are not compiled agents. An agent's own files
-need not restate them; the census of agents that still do is
+Principle 1 is also rendered into every compiled agent by
+`src/agents/_templates/methodologies/operating-principles.liquid` — it is stated here because this
+document is read by people and by lanes that are not compiled agents. An agent's own files need not
+restate it; the census of agents that still do is
 `grep -rlE '\*\*\(You MUST|→ STOP|## CRITICAL' src/agents/*/*/*.md`.
-
-**5. Progressive Loading** — load `DOCUMENTATION_MAP.md` first, then only the documents you need.
 
 ---
 
@@ -171,32 +155,16 @@ Binding rules:
    skips them. If you touched some counts and not others, correct what you found and **leave the
    date**; the document is then honestly stale rather than falsely fresh. See
    [A Count Lives in Exactly One Document](#a-count-lives-in-exactly-one-document) for which counts
-   a document owns. The case that produced this rule: `built-in-catalogue.md` carried
-   `conflicts: 28` against 12 and `requires: 50` against 98 under a `last_validated` stamped that
-   same day. `alternatives: 42` was correct, and the wrong figures were exactly the ones an earlier
-   partial pass had moved — the pattern of which counts drifted names its own cause.
+   a document owns.
 
 Thresholds — how long a date may age before the document is due for a whole-file pass:
 
-| Document class                                                  | Threshold |
-| --------------------------------------------------------------- | --------- |
-| `reference/store-map.md` (tracks the highest-churn source file) | 7 days    |
-| Reference documents generally                                   | 14 days   |
-| Low-churn areas (architecture, packaging, monorepo, pointers)   | 30 days   |
-| `standards/`                                                    | Quarterly |
-
----
-
-## The Map
-
-`DOCUMENTATION_MAP.md` is an **index**: which documents exist and what each one covers. It is read
-before the documents it describes, so anything wrong in it is authoritative for every agent that
-never opens the owning doc.
-
-- It does **not** restate `last_validated` dates — frontmatter owns them, and a second copy can
-  only drift.
-- It does **not** record passes, closed gaps, completed work or its own audit history.
-- Adding a document means adding a row; deleting one means deleting the row.
+| Document class                                                | Threshold |
+| ------------------------------------------------------------- | --------- |
+| A reference document tracking the highest-churn source file   | 7 days    |
+| Reference documents generally                                 | 14 days   |
+| Low-churn areas (architecture, packaging, monorepo, pointers) | 30 days   |
+| `standards/`                                                  | Quarterly |
 
 ---
 
@@ -211,30 +179,21 @@ BAD:  zod-schemas.md   # All 39 Zod schemas (bridge, loader, structural, strict)
 ```
 
 A count belongs in **one** place: the document that re-verifies it against source. A second copy
-guarantees drift, because validation is organised per document — the agent assigned
-`zod-schemas.md` re-counts the schemas and nothing tells it that another file quotes the same
-number.
+guarantees drift, because validation is organised per document — the agent assigned the owning
+document re-counts and nothing tells it that another file quotes the same number.
 
-| Count                                                                     | Owning doc (the ONLY place the number is written)            |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Zod schema count                                                          | `reference/types/zod-schemas.md`                             |
-| `SkillId` / `SkillSlug` / `Category` / `Domain` / `AgentName` union sizes | `reference/type-system.md` ("Counts")                        |
-| `defaultCategories` size + `exclusive: true` count                        | `reference/features/skills-and-matrix.md` ("Current Counts") |
-| Factory / helper / assertion counts                                       | `reference/testing/factories.md`                             |
-| How many source files and E2E files there are                             | `DOCUMENTATION_MAP.md` ("Coverage")                          |
-| Packaging counts (tarball entries, entry globs)                           | `reference/build-and-packaging.md`                           |
-
-Everything else names the owning doc instead of restating the number. **When a pass changes a
+Every other document names the owning doc instead of restating the number. **When a pass changes a
 count, grep `.ai-docs/` for both the old and the new value before finishing.** If a stale copy is
 outside your ownership, record the mismatch in a file you do own and report it.
 
 **Ownership is decided by the SUBJECT, not by the granularity — a count the owning document
 expresses as an aggregate is still owned when another document expresses it per-directory,
-per-category or per-scope.** The row above said "totals" and was read as a rule about two specific
-numbers rather than about the quantity of files, so four per-directory annotations in one tree
-diagram sat outside it: a reader checking "is this restated anywhere?" compares 57 against 266,
-finds no collision, and concludes the annotation is that document's own. It is the same count
-sliced finer, and the bullet directly above forbids the shape independently.
+per-category or per-scope.** An ownership row that once said "totals" was read as a rule about two
+specific numbers rather than about the quantity of files, so four per-directory annotations in one
+tree diagram sat outside it: a reader checking "is this restated anywhere?" compares 57 against
+266, finds no collision, and concludes the annotation is that document's own. It is the same count
+sliced finer, and the scope-not-quantity rule that opens this section forbids the shape
+independently.
 
 **Three of those four were right on the day, and that is the part worth carrying.** A rule violated
 four times and visibly wrong once reads as a single stale figure to correct rather than as four
@@ -256,31 +215,25 @@ declared on its `DocumentClaim` type: `code-spans` takes every CONSTANT-shaped b
 the section, `table-rows` takes the first cell of every row, `table-pairs` takes two NAMED columns
 and answers `key = value` per row, and `partitioned-tables` takes every table in the section whose
 first column carries a named heading. A list written as a comma-separated prose bullet of camelCase
-names satisfies none of them, so it cannot be bound however exhaustive it claims to be — which is how `reference/testing/mock-data.md` carried a bullet naming
-`webReviewer` against a source key of `reviewer`, and how the same document's `SKILLS` list stood at
-ten of eleven with `authSecurity` missing. The decision is available while writing rather than at
-the next audit: if the list is worth introducing with "every", "all N" or "no other", give it a
-table keyed by the member so a row can bind it; if it is not worth a table, do not introduce it as
-exhaustive. Both outcomes are honest and only one of them rots.
+names satisfies none of them, so it cannot be bound however exhaustive it claims to be. The decision
+is available while writing rather than at the next audit: if the list is worth introducing with
+"every", "all N" or "no other", give it a table keyed by the member so a row can bind it; if it is
+not worth a table, do not introduce it as exhaustive. Both outcomes are honest and only one of them
+rots.
 
-**A table stating what each member HOLDS is bound with `table-pairs`, not `table-rows`.** A key-only
-binding covers the half that cannot break. `E2E_SKILL_TITLES` in
-`reference/testing/e2e-infrastructure.md` was registered, answered `agrees` over ten members and
-reported the run clean while five of its Display-title cells were wrong — the slugs were right, and
-the titles are what the E2E suite matches on. Name the two columns in the row; the checker refuses a
-heading it cannot find (`NO_COLUMN`) rather than reading an empty column, so renaming a heading
-reddens the run instead of quietly unbinding the table.
+**A table stating what each member HOLDS is bound with `table-pairs`, not `table-rows`.**
+`table-rows` reads the key cell alone, so a wrong value passes it. Name the two columns in the row;
+the checker refuses a heading it cannot find (`NO_COLUMN`) rather than reading an empty column, so
+renaming a heading reddens the run instead of quietly unbinding the table.
 
 **A row binds a document section to one symbol, so a second symbol enumerating the same members
-earns its own row whenever the type system does not hold the two equal.** `WIZARD_STEP_ORDER` in
-`src/cli/stores/wizard-store.ts` is `as const satisfies readonly WizardStep[]`, which constrains
-what the array may hold and not that it holds everything — a step added to the `WizardStep` union
-and to the document's table but never to the constant compiles, paints no tab, and passes the row
-bound to the union. That is why it carries a second row against a section that already had one.
-`WIZARD_STEP_LABELS` in `src/cli/components/wizard/wizard-tabs.tsx` is the third list of the same
-six and must NOT get a row: `as const satisfies Record<WizardStep, string>` is total over the union,
-so `tsc` already refuses a step with no label, and a row repeating a check the compiler makes is
-noise in a registry read as the list of things nothing else guards.
+earns its own row whenever the type system does not hold the two equal.** An array declared
+`as const satisfies readonly T[]` constrains what it may hold, not that it holds everything — a
+member added to the union and to the document's table but never to the array compiles and passes
+the row bound to the union, so the array earns a second row. A map declared
+`as const satisfies Record<T, V>` must NOT get one: it is total over the union, so `tsc` already
+refuses a missing member, and a row repeating a check the compiler makes is noise in a registry read
+as the list of things nothing else guards.
 
 **A generalisation over a set is a cardinality claim.** "All three checkers", "every one of these",
 "each of the four" — the sentence has an N in it, so it is checkable, and an unchecked one is a
@@ -292,7 +245,7 @@ escape route the third forecloses, which is worse than the silence it replaced. 
 discriminated unions costs less than writing the sentence that generalises over them.
 
 ```
-grep -rPn 'all (three|four|five|six|seven|eight) |every one of (them|these)' .ai-docs/reference/
+grep -rPn 'all (three|four|five|six|seven|eight) |every one of (them|these)' .ai-docs/standards/
 ```
 
 ---
@@ -418,10 +371,9 @@ stated cause is falsifiable by reading the cause.
 and an absence sits outside it by construction. So do the shapes that DO name things but that no
 reader can enumerate: a type alias to an object TYPE literal, a call expression (`new Set([...])`,
 `z.enum([...])`), an array of OBJECT literals, a `static` class member (`declarationOf` walks
-top-level statements only), and a listing of FILES rather than of exported names.
-`reference/testing/infrastructure.md` § `check-enumeration-drift.ts` carries that list with each
-one's reason. What matters when writing is knowing which side of the line a claim falls on — an
-unguarded claim needs the care a guarded one does not, and an absence is never guarded.
+top-level statements only), and a listing of FILES rather than of exported names. What matters
+when writing is knowing which side of the line a claim falls on — an unguarded claim needs the care
+a guarded one does not, and an absence is never guarded.
 
 **Do not decline to state something on the strength of a limit the checker no longer has.** Four
 shapes that this section named as unbindable are now bound: `unwrap` reads through `satisfies`;
@@ -448,11 +400,7 @@ never `./lib/compiler.ts`.
 A table whose rows encode a direction — `G→P`, `P→G`, `before→after`, `on/off`, `add/drop` — states
 in prose **immediately above it** what the notation means. Direction is the one column a reviewer
 pattern-matches rather than reads, so an inverted row is invisible without the stated convention and
-survives every pass that checks the row's other cells. `wizard/state-transitions.md`'s Tombstone
-Lifecycle table is the worked example: it used `G -> P` for global→project in one row and for the
-reverse in two others, inverting the tombstone lifecycle for anyone who read only that table, while
-`store-map.md` described the same action correctly — two documents in one repository stating
-opposite things about one store action, with nothing on either page making the disagreement visible.
+survives every pass that checks the row's other cells.
 
 Where two documents describe the same transition they use **one** notation. Different arrows for one
 mechanism is the condition under which neither page can be checked against the other.
@@ -461,7 +409,7 @@ The worklist is every document holding a directional row; read each one's conven
 where a table has none, write it from the source rather than from the table:
 
 ```
-grep -rlP '^\|.*[A-Za-z](→|->)[A-Za-z]' .ai-docs/reference/ .ai-docs/standards/ --include='*.md'
+grep -rlP '^\|.*[A-Za-z](→|->)[A-Za-z]' .ai-docs/standards/ --include='*.md'
 ```
 
 ### File-Path Conventions
@@ -478,8 +426,8 @@ A single document's prose must not mix `src/cli/utils/x.ts` and `utils/x.ts` for
 Tree diagrams and tables may use the bare form because their root is stated in the preceding
 heading or column. Reference tables may legitimately pair bare + canonical in two columns.
 
-`reference/monorepo-layout.md` is the one deliberate exception: its subject is the repository
-around `packages/cli`, so its paths are repository-root-relative. Do not "normalise" them.
+A document whose subject is the repository around `packages/cli` — `editor-and-worker.md` — uses
+repository-root-relative paths. Do not "normalise" them.
 
 ### Quoted Code From Another Workspace Is Protected From Prettier
 
@@ -510,7 +458,7 @@ abnormal.
 
 ### No Source Line Numbers — Cite by Symbol
 
-**Cite a path and a SYMBOL, never a line number.** Write ``  `classifyLocalSkill` in
+**Cite a path and a SYMBOL, never a line number.** Write ``  `readLocalSkillMetadata` in
 `skills/skill-metadata.ts` ``, not `` `skill-metadata.ts:240` ``. A symbol name survives every edit
 above it and is greppable; a line number rots on the next unrelated insertion, silently, while
 still reading as authoritative.
@@ -518,7 +466,8 @@ still reading as authoritative.
 Line ranges in an inventory TABLE whose whole purpose is to locate a declaration are the one
 tolerated exception, and they carry the same rot — prefer the symbol column.
 
-`grep -rPc '\.tsx?:[0-9]+' .ai-docs/reference/` returning zero is the check.
+`grep -rPl '\.tsx?:[0-9]+' .ai-docs/standards/ --exclude=documentation-bible.md` returning nothing
+is the check.
 
 **The ban covers `todo/plans/` on the same terms.** A plan is read under the same trust as a
 reference doc — an agent opens it and navigates to its citations — and a plan rots in its
@@ -528,7 +477,8 @@ not the one the plan meant, with no signal that anything moved. Run the check ov
 the repository root, excluding vendored third-party material:
 
 ```
-grep -rPl '\.tsx?:[0-9]+' packages/cli/.ai-docs/reference/ todo/plans/ --exclude-dir=contestants
+grep -rPl '\.tsx?:[0-9]+' packages/cli/.ai-docs/standards/ todo/plans/ --exclude-dir=contestants \
+  --exclude=documentation-bible.md
 ```
 
 A plan proposing a guard names the **value** the guard reads, not the rule in prose. A plan that
@@ -539,7 +489,7 @@ without saying so, it is wrong after the next edit anywhere in the file, and it 
 symbol name and the path do not.
 
 ```
-grep -rPn '\([0-9]+ lines?\)' .ai-docs/reference/ .ai-docs/standards/
+grep -rPn '\([0-9]+ lines?\)' .ai-docs/standards/
 ```
 
 ---
@@ -568,8 +518,8 @@ grep -rPn '\([0-9]+ lines?\)' .ai-docs/reference/ .ai-docs/standards/
 
 Re-validate a document in the current session, ignoring its threshold, when:
 
-- An `agent-findings/*.md` entry lists it in `affected_files:` / `standards_docs:` / `related:`, or
-  names a function it documents.
+- An `agent-findings/*.md` entry lists it in `affected_files:` / `standards_docs:`, or names a
+  function it documents.
 - A change lands in a file it references.
 - It covers a class of behaviour (tombstones, guards, state transitions) and a finding in the same
   session touches that class.
@@ -634,7 +584,7 @@ and not only in the documents that enumerate the symbol: a registry row binds a 
 binds a sentence.
 
 ```
-grep -rn 'globallyInstalledKept' src .ai-docs --exclude-dir=agent-findings
+grep -rn '<old name>' src .ai-docs --exclude-dir=agent-findings
 ```
 
 Exclude by directory, never by piping through `grep -v agent-findings` — a live hit whose line
@@ -659,17 +609,16 @@ grep -nP '^\s+(source|origin)\??: ' src/cli/types/config.ts src/cli/types/skills
 ```
 
 Where both twins appear on one page, name the surviving one in the sentence so the next grep is not
-ambiguous. And a rename that inverts a meaning is not a rename in the documents:
-`globallyInstalledKept` became `globallyInstalledRemoved`, so a page left on the old name described
-the opposite behaviour under a symbol nobody could look up. Rewrite those paragraphs rather than
-substituting the string.
+ambiguous. And a rename that inverts a meaning is not a rename in the documents: a page left on the
+old name describes the opposite behaviour under a symbol nobody can look up. Rewrite those
+paragraphs rather than substituting the string.
 
 **2. Every backticked identifier in prose resolves to source.** A path that does not exist fails
 loudly the first time it is opened; a name that does not exist fails silently forever. Per name,
 zero hits is a hard error — the same severity as a documented path that is not on disk:
 
 ```
-grep -rnw 'rowStatusMarker' src e2e scripts
+grep -rnw '<name>' src e2e scripts
 ```
 
 Over a whole document, extract the camelCase spans and test them together:
@@ -681,11 +630,10 @@ grep -rhoP '`[a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*`' <doc> | tr -d '`' | sort -u |
 
 The output is a worklist, not a verdict. Two benign classes sit in it: a symbol owned by another
 workspace or a dependency (`globalIgnores`, `sumBy`, `seedSkillSchema`), and a name a document
-deliberately states does NOT exist — `store-map.md`'s "`enabledSources` / `setEnabledSources` do not
-exist — do not look for them" is a live instruction, not drift. Everything else is drift. Two shapes
-inside it are easy to miss: a "Store access:" line is a **subscription** claim, verified against the
-component's selectors rather than against the store's field list, and a singular "Helper:" line
-reads as exhaustive whether or not it says so.
+deliberately states does NOT exist. Everything else is drift. Two shapes inside it are easy to miss:
+a "Store access:" line is a **subscription** claim, verified against the component's selectors
+rather than against the store's field list, and a singular "Helper:" line reads as exhaustive
+whether or not it says so.
 
 **Check 2 is a PASS-level gate, run last — it is not satisfied by checking each name as you write
 it.** The per-name form reads naturally as check-as-you-go and is worth doing, but it can only ever
@@ -693,13 +641,12 @@ prove the symbol existed at the moment it was typed. Run the extraction over eve
 edited as the LAST step before reporting, after the final gate run. A documentation pass read
 `src/cli/hooks/init.ts` in full, confirmed `extractSourceFlag` was declared there and wrote a
 corrected paragraph naming it; roughly ten minutes later, in the same session, a concurrent code
-sweep reduced the hook to the bare-`cc` dashboard and the symbol was gone. It resolves to nothing
-today, deliberately — it is named here as the specimen, and belongs to the benign class above
-alongside `enabledSources`. Nothing about the
-verification was careless — it was correct when it was performed and false when it was committed, and
-only the end-of-pass re-run can see the difference. Where a doc agent and a code agent work one
-session, this is systematic rather than incidental: two writers with no shared clock, and the doc
-agent's inputs are the code agent's outputs.
+sweep reduced the hook to the bare-`agents-inc` dashboard and the symbol was gone. It resolves to
+nothing today, deliberately — it is named here as the specimen, and belongs to the benign class
+above. Nothing about the verification was careless — it was correct when it was performed and false
+when it was committed, and only the end-of-pass re-run can see the difference. Where a doc agent and
+a code agent work one session, this is systematic rather than incidental: two writers with no shared
+clock, and the doc agent's inputs are the code agent's outputs.
 
 **And a name that has vanished makes the enclosing SECTION suspect, not just the sentence.** This is
 the worse half and it is silent. The dangling symbol fails loudly the first time a reader greps it;
@@ -707,9 +654,7 @@ the paragraph around it went stale at the same moment, with no path, no count an
 changing — so path verification and identifier resolution both pass over a section describing
 machinery that was deleted. Re-read the module before repairing the prose. Where the replacement is
 uncommitted, say the section is stale and name the re-derivation rather than describing a refactor
-still in flight: `boundary-map.md` § 1.2 is the worked example of that admission, opening with a
-warning that names what replaced the machinery and the grep that re-derives it. A confidently wrong
-description of new machinery is worse than an admitted gap.
+still in flight. A confidently wrong description of new machinery is worse than an admitted gap.
 
 **3. A symbol paired with a file is declared in that file.** Path verification and identifier
 resolution both pass on a symbol that MOVED, because the file exists and the name exists — just not
@@ -732,9 +677,9 @@ registrable, the diff is two extractions and a `comm`:
 
 ```
 comm -3 \
-  <(sed -n '/^### Message builder functions/,/^## /p' .ai-docs/reference/utilities.md \
+  <(sed -n '/^### <section>/,/^## /p' <doc> \
       | grep -oP '^\| `[a-zA-Z0-9_]+' | grep -oP '[a-zA-Z0-9_]+$' | sort -u) \
-  <(grep -oP '^export function [a-zA-Z0-9_]+' src/cli/utils/messages.ts | awk '{print $3}' | sort -u)
+  <(grep -oP '^export function [a-zA-Z0-9_]+' <module> | awk '{print $3}' | sort -u)
 ```
 
 Empty output is agreement; column one is named-but-absent, column two present-but-unnamed. A total
@@ -790,36 +735,32 @@ which governs every census in this document and distinguishes this loud failure 
 grep -rIoh -F '{@link' src e2e scripts --include='*.ts' --include='*.tsx' | wc -l
 ```
 
-**This is gated now, by `scripts/check-symbol-citations.ts`** (2026-08-22, owner ruling on
-). Neither `tsc` nor ESLint holds it: verified 2026-08-21 by injecting one unresolvable
-`{@link}` into an e2e spec, over which `bun run typecheck` and `bun run lint` both passed in silence.
-The check walks every `JSDocLink` node and asks `checker.getSymbolAtLocation`, once per tsconfig
-project, and its suite is how it runs — `reference/testing/infrastructure.md` carries its roster
-binding and its three stated limits.
+**This is gated now, by `scripts/check-symbol-citations.ts`** (2026-08-22, owner ruling). Neither
+`tsc` nor ESLint holds it: verified 2026-08-21 by injecting one unresolvable `{@link}` into an e2e
+spec, over which `bun run typecheck` and `bun run lint` both passed in silence. The check walks
+every `JSDocLink` node and asks `checker.getSymbolAtLocation`, once per tsconfig project, and its
+suite is how it runs; its docblock states what it does not reach, which is where a green run and the
+census above part company.
 
 **Why the compiler and not `eslint-plugin-jsdoc`.** `jsdoc/no-undefined-types` reads ESLint's scope
 rather than the type graph, so it reports the sibling-member form above — which `tsc` resolves and
 which is correct as written — and misses every `import(...)` namepath. TypeDoc's
 `--validation.invalidLink` resolves against the real program and catches both, and adds a warning for
-every citation to a symbol that resolves but is not exported. The finding
-`2026-08-21-the-link-citation-is-followed-almost-everywhere-and-checked-nowhere` carries the
-per-instrument comparison and the site list that preceded the gate.
+every citation to a symbol that resolves but is not exported.
 
 **Two notes on building the walk, both paid for once.** `ts.forEachChild` descends into none of a
 node's `jsDoc`, `comment` or `tags`, so a walk built on it reads every statement in the package,
 finds no citation at all and reports a clean tree; `node.getChildren(sourceFile)` reaches them.
 And prefer `ts.getParsedCommandLineOfConfigFile` for the config — not because
-`ts.parseJsonConfigFileContent` ignores `extends`, which was asserted here until 2026-08-22 and is
-false (measured against TypeScript 6.0.3: both resolve the two-level chain and both yield 414 root
-files for this package's `tsconfig.json`), but because it is the entry point that takes a diagnostics
-reporter, so a config TypeScript cannot read fails by name instead of yielding a `ParsedCommandLine`
-full of errors a caller has to remember to inspect.
+`ts.parseJsonConfigFileContent` ignores `extends` (it does not: under TypeScript 6.0.3 both resolve
+the two-level chain to the same root files for this package's `tsconfig.json`), but because it is
+the entry point that takes a diagnostics reporter, so a config TypeScript cannot read fails by name
+instead of yielding a `ParsedCommandLine` full of errors a caller has to remember to inspect.
 
 ### Doc-Touching Changes (Feature / Rename / Deletion Hooks)
 
 When shipping a change that touches these files, grep the listed docs and update them in the same
-session. **Every source directory under `src/cli/` must appear here** — a directory with no row
-produces no hook, and a change there ships undocumented no matter how diligent the agent is.
+session.
 
 Two limits of the table, both load-bearing. It routes by **directory**, so a rename or a deletion
 _inside_ an already-hooked directory changes no row and fires nothing; that class is caught by
@@ -827,49 +768,24 @@ _inside_ an already-hooked directory changes no row and fires nothing; that clas
 here. And a file whose owning docs differ from its directory's gets its **own** row above the
 directory's, because an agent scanning for its own change stops at the first match.
 
-| Change                                                                                                                                                           | Doc(s) to grep + update                                                                                                                                                                                                                                                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A change that RESTORES a previously-removed mechanism**, whatever directory it lands in                                                                        | The directory's own row below, **plus** every document asserting the removal — found with the absence vocabulary in [Filling a gap includes grepping the docs for the gap's own vocabulary](#filling-a-gap-includes-grepping-the-docs-for-the-gaps-own-vocabulary), not by grepping the symbol you just re-added |
-| Command or its public signature added / deleted / renamed (`src/cli/commands/**`) — includes `static flags`, `static baseFlags`, `static args`, `static aliases` | `commands/index.md`, `dependency-graph.md`, `boundary-map.md`                                                                                                                                                                                                                                                    |
-| Component added / deleted / renamed (`src/cli/components/**`, `src/cli/hooks/**`)                                                                                | `component-patterns.md`, `dependency-graph.md`                                                                                                                                                                                                                                                                   |
-| New trust-boundary op (read/write/exec), or a change to an existing one                                                                                          | `boundary-map.md`                                                                                                                                                                                                                                                                                                |
-| Change to `config-types-writer.ts`                                                                                                                               | `boundary-map.md`, `dependency-graph.md`                                                                                                                                                                                                                                                                         |
-| Any change under `src/cli/stores/**`, or a store refactor (prop-driven <-> hydration-before-render)                                                              | `store-map.md`, `wizard/state-transitions.md`, `features/wizard-flow.md`                                                                                                                                                                                                                                         |
-| Mock-data constants added / removed                                                                                                                              | `testing/mock-data.md`                                                                                                                                                                                                                                                                                           |
-| Any change under `src/cli/lib/installation/**`                                                                                                                   | `features/plugin-system.md`, `concepts/scope-system.md`, `concepts/tombstone-pattern.md`, `config/config-writer.md`, `concepts/source-folder-layout.md` (owns `sourceFolderInUse` in `install-layout.ts`)                                                                                                        |
-| Any change under `src/cli/lib/plugins/**` or to `permission-checker.tsx`                                                                                         | `features/plugin-system.md`, `boundary-map.md`                                                                                                                                                                                                                                                                   |
-| Any change under `src/cli/lib/hosts/**`                                                                                                                          | `concepts/plugin-hosts.md`, `features/plugin-system.md`, `boundary-map.md`                                                                                                                                                                                                                                       |
-| Matrix composition inputs (`default-categories.ts`, `default-rules.ts`, `lib/matrix/**`, `lib/loading/**`, regenerated `types/generated/**`)                     | `features/skills-and-matrix.md` (esp. Known Limitations + Current Counts), `type-system.md`, `types/core-types.md`                                                                                                                                                                                               |
-| Any change to `src/cli/lib/configuration/default-stacks.ts` — a stack, an assignment, a preload flag                                                             | `features/built-in-catalogue.md` (owns its structural invariants and their counts)                                                                                                                                                                                                                               |
-| Any change under `src/cli/lib/configuration/**`                                                                                                                  | `features/configuration.md`, `config/config-writer.md`, `config/config-merger.md`, `config/scope-split.md`                                                                                                                                                                                                       |
-| Any change under `src/cli/lib/operations/**`                                                                                                                     | `features/operations-layer.md`, `types/operations-types.md`, `dependency-graph.md`                                                                                                                                                                                                                               |
-| Any change under `src/cli/lib/agents/**`, or to `lib/compiler.ts`                                                                                                | `features/agent-system.md`, `features/compilation-pipeline.md`                                                                                                                                                                                                                                                   |
-| Any change under `src/cli/lib/skills/**` or `src/cli/lib/stacks/**`                                                                                              | `features/skills-and-matrix.md`, `features/compilation-pipeline.md`, `skills/skill-primitives.md`                                                                                                                                                                                                                |
-| Any change under `src/cli/lib/wizard/**`                                                                                                                         | `features/wizard-flow.md`, `wizard/state-transitions.md`, `concepts/guard-pattern.md`                                                                                                                                                                                                                            |
-| Any change under `src/cli/lib/seed/**`                                                                                                                           | `features/seed-contract.md`                                                                                                                                                                                                                                                                                      |
-| Any change under `src/cli/lib/config-gate/**`                                                                                                                    | `boundary-map.md`, `config/config-writer.md`                                                                                                                                                                                                                                                                     |
-| Any change to `lib/schemas.ts` or `lib/schema-validator.ts`                                                                                                      | `types/zod-schemas.md` (owns the schema count), `boundary-map.md`                                                                                                                                                                                                                                                |
-| Any change under `src/cli/utils/**`, or to `consts.ts` / `lib/exit-codes.ts`                                                                                     | `utilities.md`                                                                                                                                                                                                                                                                                                   |
-| Any change under `src/cli/types/**` — **a comment-only edit counts**, and also owes `bun run generate:matrix` (see below)                                        | `type-system.md`, `types/core-types.md`, `types/operations-types.md`                                                                                                                                                                                                                                             |
-| Test-infrastructure change (`__tests__/factories/`, `__tests__/helpers/`, `e2e/pages/`, `e2e/helpers/`)                                                          | `testing/factories.md`, `testing/e2e-infrastructure.md`, `standards/e2e/*`                                                                                                                                                                                                                                       |
-| Any change under `src/cli/lib/testing/**` (`dist-staleness.ts`)                                                                                                  | `testing/infrastructure.md`, `standards/clean-code-standards.md` (6.19), `standards/e2e/README.md`                                                                                                                                                                                                               |
-| `scripts/**` generators, `tsup.config.ts`, `package.json` scripts                                                                                                | `features/code-generation.md`, `build-and-packaging.md`, `monorepo-layout.md`                                                                                                                                                                                                                                    |
+| Change                                                                                                  | Doc(s) to grep + update                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A change that RESTORES a previously-removed mechanism**, whatever directory it lands in               | The directory's own row below, **plus** every document asserting the removal — found with the absence vocabulary in [Filling a gap includes grepping the docs for the gap's own vocabulary](#filling-a-gap-includes-grepping-the-docs-for-the-gaps-own-vocabulary), not by grepping the symbol you just re-added |
+| Test-infrastructure change (`__tests__/factories/`, `__tests__/helpers/`, `e2e/pages/`, `e2e/helpers/`) | `standards/e2e/*`                                                                                                                                                                                                                                                                                                |
+| Any change under `src/cli/lib/testing/**` (`dist-staleness.ts`)                                         | `standards/clean-code-standards.md` (6.19), `standards/e2e/README.md`                                                                                                                                                                                                                                            |
 
 **Grep the diff, not the release notes.** A release note describes user-visible behaviour; a hook
 row describes which document owns the code that produced it. The two do not overlap reliably.
 
-**Why restoration has its own row, above the directory rows.** Every other row keys on adding,
-deleting or renaming, and a restoration reads as an addition — so it routes the agent to update the
-owning document and stops there. That is the wrong action. The documents that go wrong are the ones
-asserting the mechanism is **gone**, and they are not necessarily the owning ones: three documents
-recorded `CategoryGrid`'s post-mount focus-seed effect as deleted, a later change re-added it, and
-all three sentences became false while a fourth became exactly backwards. A restoration is also the
-one change class the deletion hooks cannot cover in reverse, because the sentence it invalidates
-names no symbol to grep — which is why the row sends you to the absence vocabulary rather than to
-the name you just brought back.
+**Why restoration has its own row, above the directory rows.** A restoration reads as an addition —
+so it routes the agent to update the owning document and stops there. That is the wrong action. The
+documents that go wrong are the ones asserting the mechanism is **gone**, and they are not
+necessarily the owning ones. A restoration is also the one change class the deletion hooks cannot
+cover in reverse, because the sentence it invalidates names no symbol to grep — which is why the row
+sends you to the absence vocabulary rather than to the name you just brought back.
 
-**Why `src/cli/types/**` owes a regeneration, and why the word "comments" is load-bearing.**
-`scripts/generate-matrix-package.ts` copies the seven files in `VENDORED_TYPE_FILES` into
+**A change under `src/cli/types/**` owes `bun run generate:matrix`, a comment-only edit included.**
+`scripts/generate-matrix-package.ts` copies the files in `VENDORED_TYPE_FILES` into
 `packages/matrix/src/vendor/` **byte for byte**, and byte for byte includes comments. Correcting a
 stale JSDoc line in `src/cli/types/skills.ts` — a change with no type, no value and no behaviour in
 it — drifts the vendored copies and turns `scripts/generate-matrix-package.test.ts` red. Every agent
@@ -910,35 +826,33 @@ a **Known Limitations** section with file and function anchors.
   Where a limitation asserts an observable artifact (an `order: 999` entry, a file that should not
   exist, an absent field), **grep the artifact during validation**.
 
-### Wizard and component docs
+### Component docs
 
-- **Hydration vs props:** if state flows through a `hydrateXStore(options)` call before render
-  rather than through props, name that function, show the `HydrateOptions` type, and keep the
-  `XxxProps` shape minimal.
+- **Hydration vs props:** where a component's state arrives through a store hydrated outside it
+  rather than through its props, name the function that hydrates the store and keep the documented
+  props shape minimal — `readSavedConfig` in `apps/editor/src/stores/config-store.ts` is the live
+  case.
 - **Hook table:** every entry MUST be confirmed to exist via `Glob` before re-validation.
-- **Hotkey registry:** enumerate only constants that exist in `hotkeys.ts`, and include an explicit
-  "No other `HOTKEY_*` constants exist" sentinel.
 
 ### Store map
 
 - Every non-exported helper at module scope MUST appear under Internal Helpers.
 - State fields that are (a) set once and never modified, or (b) act as decision probes read by
   multiple actions, MUST enumerate their consumers — not just their authoring action.
-- The hydration entry point (the imperative `setState` batch before first render) gets its own
-  section, separate from the action table.
+- The hydration entry point gets its own section, separate from the action table.
 
 ### Guard and side-effect inventories
 
 1. **Enumerate every user-visible outcome** the inventoried code produces. Where a guard is split
-   between a dispatcher layer (the `wizard.tsx` hotkey handler) and a store action layer, document
-   BOTH and state which path wins for which caller class (hotkey vs direct action vs test).
+   between a dispatcher layer and a store action layer, document BOTH and state which path wins for
+   which caller class (hotkey vs direct action vs test).
 2. Include a **Silent Guards table** annotated with race risk: whether the silence is intentional
    contract-violation defence, intentional shaping, or a race surface needing an E2E wait or
    synchronous seeding.
 
 ### Exhaustive enumeration over glob shorthand
 
-Listing constants or exports (mock data, skills registry, hotkeys, Zod schemas) uses **exhaustive
+Listing constants or exports (mock data, skills registry, Zod schemas) uses **exhaustive
 name lists**, never `*_MATRIX - pre-built constants` or `etc.`. Glob descriptions let a phantom
 export survive indefinitely, because nothing in the doc claims it should not be there.
 
@@ -951,80 +865,16 @@ A pointer contains: a "where content lives now" table mapping topics to child pa
 path is kept (inbound links), and no other content.
 
 **Direction is not implied by path depth.** A pointer may be the root file or the subdirectory
-file. Two current pairs are root-pointer/subdirectory-canonical (`commands.md` ->
-`commands/index.md`, `state-transitions.md` -> `wizard/state-transitions.md`). Determine direction
-by **reading both files**: the canonical one holds the body, the pointer holds a redirect table and
-nothing else. Getting it backwards excludes a canonical doc from staleness tracking entirely.
-
----
-
-## Progressive Loading
-
-| Tier    | What to load             | When                                         |
-| ------- | ------------------------ | -------------------------------------------- |
-| **1st** | `DOCUMENTATION_MAP.md`   | Always first — shows what exists             |
-| **2nd** | The area's reference doc | When working on that area                    |
-| **3rd** | The subsystem's doc      | When working inside that subsystem           |
-| **4th** | `documentation-bible.md` | Only when creating or updating documentation |
-
-### Cross-Reference Instead of Duplicate
-
-| Belongs in `.ai-docs/`     | Belongs in a skill                    |
-| -------------------------- | ------------------------------------- |
-| File locations and paths   | Coding patterns and conventions       |
-| State shape and actions    | Best practices (React, Zustand, etc.) |
-| Data flow through codebase | Anti-patterns to avoid                |
-| Component relationships    | Testing patterns                      |
+file. Determine direction by **reading both files**: the canonical one holds the body, the pointer
+holds a redirect table and nothing else. Getting it backwards excludes a canonical doc from
+staleness tracking entirely.
 
 ---
 
 ## Creating New Documentation
 
-**Create when:** a new subsystem is added, an existing one is significantly restructured, or a
-validation pass finds an undocumented area.
-
 **Do not create when:** the information is derivable by reading the code, duplicates a skill, is
 general knowledge, or is small enough for a line in CLAUDE.md.
-
-**Template:**
-
-```markdown
----
-last_validated: YYYY-MM-DD
----
-
-# [Area]
-
-## Overview
-
-**Purpose:** [one sentence]
-**Entry point:** `src/cli/[path]`
-
-## File Structure
-
-| File                    | Purpose     |
-| ----------------------- | ----------- |
-| `src/cli/lib/[file].ts` | Description |
-
-## Data Flow
-
-1. `file.ts` does X
-2. `other-file.ts` does Y
-
-## Key Types
-
-| Type       | File            | Purpose     |
-| ---------- | --------------- | ----------- |
-| `TypeName` | `types/file.ts` | Description |
-
-## Key Functions
-
-| Function       | File          | Signature                     |
-| -------------- | ------------- | ----------------------------- |
-| `functionName` | `lib/file.ts` | `(param: Type) => ReturnType` |
-```
-
-Then add a row to `DOCUMENTATION_MAP.md`.
 
 ---
 
@@ -1034,18 +884,18 @@ Good AI documentation is **specific** (every claim has a path and a symbol), **v
 **structured** (tables and code blocks), **current** (the date is recent and the cited symbols
 still exist), and **minimal** (WHERE things are and WHAT they do).
 
-| Anti-pattern               | Example                                               | Fix                                                                                         |
-| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Vague claims               | "The codebase uses Zustand"                           | "Wizard state: `src/cli/stores/wizard-store.ts`, accessed via `useWizardStore()` selectors" |
-| Tutorial content           | "Zustand is a lightweight state library..."           | Remove — agents already know what Zustand is                                                |
-| Missing paths              | "Exit codes are defined as constants"                 | "`EXIT_CODES` in `src/cli/lib/exit-codes.ts`"                                               |
-| Invented examples          | Code not from actual source                           | Quote the actual code, cited by symbol                                                      |
-| General knowledge          | "oclif is a framework for building CLIs..."           | Document THIS project's oclif patterns only                                                 |
-| Duplicating skills         | Repeating Zustand patterns from a skill               | Cross-reference the skill                                                                   |
-| Pass narration             | "Corrected 2026-08-06; previously said Ink v5"        | State the current fact and nothing else                                                     |
-| Task IDs                   | "the D-279 masking layer"                             | Name the behaviour: "the cross-scope masking layer"                                         |
-| Symbol in a module it left | "`maskCollidingGlobalSkills` in `local-installer.ts`" | Grep the declaration; pair a symbol with the file that declares it                          |
-| Line-count annotation      | "`skill-copier.ts` (213 lines)"                       | Name the symbol — a count dates the document silently                                       |
+| Anti-pattern               | Example                                               | Fix                                                                                                               |
+| -------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Vague claims               | "The codebase uses Zustand"                           | "Editor configuration state: `apps/editor/src/stores/config-store.ts`, accessed via `useConfigStore()` selectors" |
+| Tutorial content           | "Zustand is a lightweight state library..."           | Remove — agents already know what Zustand is                                                                      |
+| Missing paths              | "Exit codes are defined as constants"                 | "`EXIT_CODES` in `src/cli/lib/exit-codes.ts`"                                                                     |
+| Invented examples          | Code not from actual source                           | Quote the actual code, cited by symbol                                                                            |
+| General knowledge          | "oclif is a framework for building CLIs..."           | Document THIS project's oclif patterns only                                                                       |
+| Duplicating skills         | Repeating Zustand patterns from a skill               | Cross-reference the skill                                                                                         |
+| Pass narration             | "Corrected 2026-08-06; previously said Ink v5"        | State the current fact and nothing else                                                                           |
+| Task IDs                   | "the D-279 masking layer"                             | Name the behaviour: "the cross-scope masking layer"                                                               |
+| Symbol in a module it left | "`maskCollidingGlobalSkills` in `local-installer.ts`" | Grep the declaration; pair a symbol with the file that declares it                                                |
+| Line-count annotation      | "`skill-copier.ts` (213 lines)"                       | Name the symbol — a count dates the document silently                                                             |
 
 ### Self-Correction Triggers
 
@@ -1092,25 +942,22 @@ reconciled.
 
 Two measured instances, both from one grading pass. A finding proposing `lastFrame()` for an Ink
 error-boundary assertion was correct against Ink 5 and produces a failing test against Ink 7, which
-is what ships — the live spec `summary-panel.test.tsx` asserts over `frames.join("\n")` and says
-why. A finding prescribing a fixture that states `SkillConfig.source` was written before the field
-was renamed `origin`, so its rule named a property no type carries and `buildSkillConfig` does not
-default. Adopting either verbatim puts a false instruction in a standards document, and the next
-author reads the red as a product regression rather than as bad advice — the same shape as the
+is what ships. A finding prescribing a fixture that states `SkillConfig.source` was written before
+the field was renamed `origin`, so its rule named a property no type carries and `buildSkillConfig`
+does not default. Adopting either verbatim puts a false instruction in a standards document, and the
+next author reads the red as a product regression rather than as bad advice — the same shape as the
 defect the original finding was about.
 
 This is narrower than `agent-findings/README.md`'s "a Proposed Standard is a proposal, cross-check
 it against the NEVER list": that guards a proposal which was always wrong, this guards one that
 stopped being right.
 
-Every file there (other than `README.md` and `TEMPLATE.md`) MUST:
+Every file there (other than `README.md`, `TEMPLATE.md` and `INDEX.md`) MUST:
 
 1. **Open with a YAML frontmatter block matching `TEMPLATE.md`.** Files without frontmatter are not
    processed by convention-keeper or codex-keeper sweeps.
-2. **Use a `root_cause` from the allowed enum** (`missing-rule | rule-not-visible |
-rule-not-specific-enough | convention-undocumented | enforcement-gap |
-scope-discipline-deferred`). When an authentic root cause does not fit, widen the enum in
-   `TEMPLATE.md` rather than inventing an ad-hoc value.
+2. **Use a `root_cause` from the enum in `TEMPLATE.md`.** When an authentic root cause does not
+   fit, widen the enum there rather than inventing an ad-hoc value.
 3. **Declare `status:`.** Reading an absent status as `open` mis-classifies resolved work as
    outstanding and invents work that was already done.
 4. **Cross-link** via `supersedes:` / `superseded_by:` when a discovery finding is replaced by a

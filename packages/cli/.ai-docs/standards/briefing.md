@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-08-21
+last_validated: 2026-10-15
 ---
 
 # The Briefing Contract
@@ -33,19 +33,16 @@ re-deriving from source instead of trusting the sentence they were handed.
 
 **That rate is not re-derivable and must not be quoted as measured.** Briefs and agent reports are
 prompt text; they were never written to the tree, so nothing on disk can confirm or refute the
-number, and it is second-hand sourcing of exactly the kind these rules exist to distrust. What IS on
-disk, and what the rules rest on instead:
+number, and it is second-hand sourcing of exactly the kind these rules exist to distrust. What the
+rules rest on instead are two findings, since pruned and recorded in `agent-findings/INDEX.md`:
 
-- `todo/cli.md` — a census of dispatched rows whose subject had already changed, each
-  named with the commit that changed it. Dispatching from those rows cost the work outright.
-- `2026-08-21-a-bug-row-naming-a-deleted-symbol-reads-exactly-like-a-live-one` — the same class
-  filed with its evidence: a withdrawn subject's row still reads as verified, because it was, against
-  a tree that no longer exists.
+- `2026-08-21-a-bug-row-naming-a-deleted-symbol-reads-exactly-like-a-live-one` — a withdrawn
+  subject's row still reads as verified, because it was, against a tree that no longer exists.
 - `2026-08-19-a-doc-pass-verified-a-symbol-that-was-deleted-before-the-pass-finished` — a claim that
   was correct when it was performed and false when it was committed, ten minutes apart, in one
   session.
 
-Treat the twenty as an anecdote that motivated a standard, and the three above as its evidence.
+Treat the twenty as an anecdote that motivated a standard, and the two above as its evidence.
 
 ---
 
@@ -88,9 +85,8 @@ reading, and both were live in this repository's own evidence tables on 2026-08-
   the needs are taken whole or not at all. The other rule kinds still resolve slug-by-slug through
   the same helper. Grepping the NAME would have "refuted" a correct correction.
 - **A name that resolves to nothing is not automatically drift.** This codebase's house style
-  explains what was REMOVED, so its best prose names symbols nothing declares —
-  `reference/testing/factories.md` names `outdatedForkMetadata` precisely to say the carve-out went.
-  `todo/cli.md` carries the ruling: `{@link}` means "resolve this", a backtick does not.
+  explains what was REMOVED, so its best prose names symbols nothing declares.
+  `documentation-bible.md` carries the ruling: `{@link}` means "resolve this", a backtick does not.
 
 So the check is the call site, not the identifier. And **never judge an absence from a truncated
 listing** — `grep -rIl … | head` was what nearly turned the first bullet above into a confident wrong
@@ -252,12 +248,10 @@ linked from both `CLAUDE.md` files rather than from a script.
 **The in-tree surrogates**, which cover the same error classes where they land in a tracked file —
 each owned elsewhere, listed so a brief-side rule is not re-implemented:
 
-| Class                                     | What already covers it                                                        |
-| ----------------------------------------- | ----------------------------------------------------------------------------- |
-| An enumeration in a document goes stale   | `scripts/check-enumeration-drift.ts` — membership in both directions, per row |
-| A tracker cites a finding that is gone    | `scripts/check-finding-citations.ts` — `todo/`, `changelogs/`, `e2e/`         |
-| A tracker row names a symbol that is gone | `todo/cli.md` — proposed, not built; the useful signal is "used to exist"     |
-| A document names a symbol that never was  | `todo/cli.md` — two documents asserting opposite things                       |
+| Class                                   | What already covers it                                                        |
+| --------------------------------------- | ----------------------------------------------------------------------------- |
+| An enumeration in a document goes stale | `scripts/check-enumeration-drift.ts` — membership in both directions, per row |
+| A tracker cites a finding that is gone  | `scripts/check-finding-citations.ts` — `todo/`, `changelogs/`, `e2e/`         |
 
 **What the gate beside this file does hold** is one class and only one: that these rules stay
 reachable. `scripts/check-briefing-contract.ts` refuses a tree where either `CLAUDE.md` has stopped

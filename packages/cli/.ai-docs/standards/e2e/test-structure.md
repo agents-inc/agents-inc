@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-07-30
+last_validated: 2026-10-15
 ---
 
 # Test Structure
@@ -26,7 +26,7 @@ File operations belong in exactly two places:
 Every E2E test follows three phases:
 
 1. **Setup** -- Create project state through fixtures
-2. **Interaction** -- Launch a wizard or run a CLI command
+2. **Interaction** -- Run a CLI command
 3. **Assertion** -- Verify outcomes through matchers or output checks
 
 ```typescript
@@ -38,29 +38,16 @@ const { exitCode, output } = await CLI.run(["compile"], project);
 
 // Phase 3: Assertion
 expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-await expect(project).toHaveCompiledAgents();
+await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
+  contains: ["name: web-developer"],
+});
 ```
 
-For wizard tests:
-
-```typescript
-// Phase 1: Setup (implicit -- launchInProject creates temp dir, source, and a global HOME)
-const wizard = await InitWizard.launchInProject();
-
-// Phase 2: Interaction
-const result = await wizard.completeWithDefaults();
-
-// Phase 3: Assertion -- config is project-side, installed content is scope-side
-expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-await expect(result.project).toHaveConfig({ skillIds: ["web-framework-react"] });
-await expect({ dir: wizard.globalHome }).toHaveCompiledAgent("web-developer");
-```
-
-Skills and agents default to GLOBAL scope, so a project install's `.claude/` content lands under `wizard.globalHome`, not `projectDir`. Choose the launcher by what the test does — see [anti-patterns.md § Choosing the Wizard Launcher by Scope](./anti-patterns.md#choosing-the-wizard-launcher-by-scope).
+Skills and agents default to GLOBAL scope, so a project install's `.claude/` content lands under the global HOME, not `projectDir` — see [anti-patterns.md § Never check the wrong scope directory](./anti-patterns.md#never-check-the-wrong-scope-directory). The example reads `project` because `ProjectBuilder.minimal()` scopes its agents there.
 
 The three phases should be visually distinct. Mixing setup, interaction, and assertion within a single block makes tests harder to read and maintain.
 
-**Phase 3 must cover both sides.** Any test that completes a wizard flow, or runs a command that creates, modifies, or removes files or config entries, MUST assert the resulting state of config AND filesystem. If the operation should NOT change something, snapshot it before and assert it is identical after. Never check only one side — a config write with no corresponding install, or an install with no config entry, are both real failure modes that a one-sided assertion passes.
+**Phase 3 must cover both sides.** Any test that runs a command that creates, modifies, or removes files or config entries, MUST assert the resulting state of config AND filesystem. If the operation should NOT change something, snapshot it before and assert it is identical after. Never check only one side — a config write with no corresponding install, or an install with no config entry, are both real failure modes that a one-sided assertion passes.
 
 ---
 
@@ -73,13 +60,13 @@ Use for:
 - Expensive fixtures a spec builds for ITSELF — a source that differs in what it ships
   (`createE2ESource(options)`), or one the spec writes into (`createE2EPluginSource({ owned: true })`)
 
-**Most spec files need no `beforeAll` at all.** `e2e/setup.ts` registers the dist door once, in a `beforeAll`, so it runs before every spec file in the suite. It was `ensureBinaryExists()` called from each file's own `beforeAll` until 2026-08-24 — 248 files of per-file discipline with no checker over it, where forgetting the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted it correctly from one that forgot. `spec-gates.test.ts` now asserts the ABSENCE of the per-spec call, so the discipline cannot grow back.
+**Most spec files need no `beforeAll` at all.** `e2e/setup.ts` registers the dist door once, in a `beforeAll`, so it runs before every spec file in the suite. It was `ensureBinaryExists()` called from each file's own `beforeAll` until 2026-08-24 — per-file discipline with no checker over it, where forgetting the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted it correctly from one that forgot. `spec-gates.test.ts` now asserts the ABSENCE of the per-spec call, so the discipline cannot grow back.
 
 **Do NOT build a plain source here.** `E2E_SOURCE` is that tree, written once per run by `globalSetup`
-and frozen, and `InitWizard` defaults to it — so a spec wanting the ordinary source names nothing and
-builds nothing. About seventy files carried a `beforeAll` calling `createE2ESource()` into two
-suite-level `let`s plus an `afterAll` cleaning them up; every one of them was building the same tree,
-at ~10ms each, so the sharing bought nothing and the ceremony cost ten lines a file.
+and frozen — so a spec wanting the ordinary source names `E2E_SOURCE` and builds nothing. About
+seventy files carried a `beforeAll` calling `createE2ESource()` into two suite-level `let`s plus an
+`afterAll` cleaning them up; every one of them was building the same tree, at ~10ms each, so the
+sharing bought nothing and the ceremony cost ten lines a file.
 
 ### `beforeEach`
 
@@ -92,14 +79,14 @@ Use for:
 
 Use for:
 
-- `wizard.destroy()` -- cleans up PTY session and temp dirs
+- `destroy()` -- kills the PTY session, and removes HOME only when the spec passed none
 - Temp dir cleanup: `cleanupTempDir(tempDir)`
 - Resetting variables: `tempDir = undefined!`
 
 ```typescript
 afterEach(async () => {
-  await wizard?.destroy();
-  wizard = undefined;
+  await prompt?.destroy();
+  prompt = undefined;
 });
 ```
 
@@ -122,18 +109,16 @@ afterAll(async () => {
 
 **Do not use `try/finally` for cleanup in test bodies.** `afterEach` runs even when tests throw. This is sufficient for cleanup.
 
-**Exception:** Extracted lifecycle helpers (like `initGlobal()` in `dual-scope-helpers.ts`) may use `try/catch` internally because they manage sessions within a single function scope and need to destroy on error before re-throwing.
-
 ### Session ownership
 
-The `afterEach` above is the convention where the TEST owns the session. A shared helper that launches its own wizard is the other convention, and the two cannot be mixed silently — adopting a helper-owned session at a test-owned call site leaves the outer `let wizard` pointing at an already-destroyed session, and the `afterEach` then double-destroys. Five near-identical "open a wizard, read rendered state, abort without saving" blocks sat one extraction apart from each other, byte-similar enough that consolidating them reads as pure copy-paste dedup, which is exactly why it is easy to get wrong.
+The `afterEach` above is the convention where the TEST owns the session. A shared helper that launches its own session is the other convention, and the two cannot be mixed silently — adopting a helper-owned session at a test-owned call site leaves the outer `let` pointing at an already-destroyed session, and the `afterEach` then double-destroys. Near-identical session blocks sit one extraction apart, byte-similar enough that consolidating them reads as pure copy-paste dedup, which is exactly why it is easy to get wrong.
 
-Four rules, and `e2e/fixtures/dual-scope-helpers.ts` carries all four on its two shared helpers:
+Four rules:
 
-1. **A shared helper in `e2e/fixtures/` or `e2e/helpers/` that launches a wizard fully owns that session** — `destroy()` in a `finally` — **and states the ownership contract in its doc comment.** `readSkillBadgesViaEdit` says it: _"Owns the whole session — it launches, aborts, waits for exit and destroys, so callers must NOT also track the wizard for afterEach cleanup."_ A contract nobody can read at the call site is not a contract.
-2. **A call site adopting such a helper drops its own `let wizard` tracking and the matching `afterEach` destroy for that session.** Never leave both. `dual-scope-collapse-and-restore-via-s.e2e.test.ts` and `edit-wizard-dual-scope-indicator.e2e.test.ts` are the adopted sites.
-3. **A helper returning wizard output names which accessor it read.** `rawOutput` and `output` are different surfaces — raw PTY output is append-only, the processed buffer overwrites in place — and the choice is invisible at the call site. Neither is the suite's default: `e2e/` currently holds roughly as many `result.output` reads as `result.rawOutput` ones, so a shared extractor returning one of them is a drop-in at only about half the sites it looks interchangeable with. `finishWizard` says which it reads and tells callers needing the sanitized form to take it **before** destroying; `edit-global-source-toggle-propagation-compiled-ref.e2e.test.ts` does exactly that, and says so at the call.
-4. **A shared finalize helper does not assert the exit code.** Failure-path flows return non-success codes and must be able to use the same helper, so the assertion stays at the call site. `finishWizard` returns the code and states that it deliberately does not judge it.
+1. **A shared helper in `e2e/fixtures/` or `e2e/helpers/` that launches a session fully owns that session** — `destroy()` in a `finally` — **and states the ownership contract in its doc comment.** A contract nobody can read at the call site is not a contract.
+2. **A call site adopting such a helper drops its own `let` tracking and the matching `afterEach` destroy for that session.** Never leave both.
+3. **A helper returning session output names which accessor it read.** `getRawOutput()` and `getOutput()` are different surfaces — raw PTY output is append-only, the processed buffer overwrites in place — and the choice is invisible at the call site.
+4. **A shared finalize helper does not assert the exit code.** Failure-path flows return non-success codes and must be able to use the same helper, so the assertion stays at the call site.
 
 **The `tempDir = undefined!` pattern:** Variables are declared as `let tempDir: string` (not `string | undefined`) and assigned in setup before use. After cleanup, they are reset with `tempDir = undefined!`. The non-null assertion is intentional -- TypeScript sees it as `string`, which is correct during test execution. The `undefined!` in cleanup prevents stale references.
 
@@ -156,10 +141,8 @@ afterEach(async () => {
 
 All delays are encapsulated inside the framework:
 
-- `BaseStep.pressEnter()` includes an internal `STEP_TRANSITION` delay (500ms)
-- `BaseStep.pressSpace()` includes an internal `KEYSTROKE` delay (150ms)
+- `InteractivePrompt` / `DashboardSession` key methods wait `KEYSTROKE` (150ms) after a key; Enter in `InteractivePrompt`'s `pressEnter()`, `confirm()` and `deny()` waits `STEP_TRANSITION` (500ms) instead
 - `TerminalScreen.waitForText()` polls with auto-retry
-- `TerminalScreen.waitForWizardFooter()` waits for the wizard footer to render (wizard screens only)
 
 The only timing concern in tests is per-test timeouts for tests that take longer than the default 30 seconds:
 
@@ -169,9 +152,9 @@ it("full lifecycle", { timeout: TIMEOUTS.LIFECYCLE }, async () => {
 });
 ```
 
-**Timeout contract:** `TerminalScreen.waitForText()` uses whatever `timeoutMs` is passed -- there is no built-in default or CI multiplier at that layer. `BaseStep`'s waits DO have a default: `BaseStep.defaultTimeout` is `TIMEOUTS.WIZARD_LOAD`, raised from 15s to **45s**, so every unqualified step wait is now a 45s upper bound. That also raises the cost of misapplying `waitForWizardFooter` to a footer-less screen: the call burns 45s before giving up, rather than 15s.
+**Timeout contract:** `TerminalScreen.waitForText()` uses whatever `timeoutMs` is passed -- there is no built-in default or CI multiplier at that layer. `InteractivePrompt`'s text waits DO have a default: `TIMEOUTS.WIZARD_LOAD`, **45s**.
 
-**Parallelism is capped at `maxWorkers: Math.min(16, os.availableParallelism())`.** PTY-driven wizard tests are load-sensitive — at one worker per core (21+ on dev machines) keystrokes get dropped and installs slow enough to produce failures that never reproduce solo. Taking the **lower** of the two bounds both ends: a 4-core CI runner gets 4, where a flat 16 would put four PTY workers on every core. The cap is also the reason the page-object keypress rule exists at all: the PTY-write-vs-React-commit race is invisible in isolation and only surfaces under contention.
+**Parallelism is capped at `maxWorkers: Math.min(16, os.availableParallelism())`.** PTY-driven tests are load-sensitive — at one worker per core (21+ on dev machines) keystrokes get dropped and installs slow enough to produce failures that never reproduce solo. Taking the **lower** of the two bounds both ends: a 4-core CI runner gets 4, where a flat 16 would put four PTY workers on every core. The cap is also the reason the page-object keypress rule exists at all ([page-objects.md § InteractivePrompt](./page-objects.md#interactiveprompt): wait for a sentinel before the first key on a screen): the PTY-write-vs-React-commit race is invisible in isolation and only surfaces under contention.
 
 **Why:** Timing scattered across test files is the primary cause of flaky tests. Centralizing it in the framework means timing changes require editing one file, not dozens.
 
@@ -197,21 +180,23 @@ Tests should read like user stories. A developer who doesn't know the codebase s
 
 ```typescript
 // Good: reads as a user story
-it("should complete init with defaults and produce config", async () => {
-  const wizard = await InitWizard.launch();
-  const result = await wizard.completeWithDefaults();
+it("should produce valid compiled agent files with frontmatter", async () => {
+  const project = await ProjectBuilder.minimal();
+  const { exitCode } = await CLI.run(["compile"], project);
 
-  expect(await result.exitCode).toBe(EXIT_CODES.SUCCESS);
-  await expect(result.project).toHaveConfig();
+  expect(exitCode).toBe(EXIT_CODES.SUCCESS);
+  await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
+    contains: ["name: web-developer", "description:", "tools:", "model:"],
+  });
 });
 
 // Bad: implementation details obscure the intent
 it("should work", async () => {
-  session = new TerminalSession(["init", "--marketplace", dir], tempDir, {});
-  await session.waitForText("Choose a stack", 10000);
+  session = new TerminalSession(["init", "--from", id, "--marketplace", dir], tempDir, {});
+  await session.waitForText("Install this configuration?", 10000);
   await delay(500);
+  session.write("y");
   session.enter();
-  // ... 20 more lines of keystrokes
   const configPath = path.join(tempDir, ".agents-inc", "claude", "config.ts");
   expect(await fileExists(configPath)).toBe(true);
 });
@@ -223,8 +208,8 @@ it("should work", async () => {
 
 A test belongs in `e2e/` if it:
 
-1. **Spawns the CLI binary** — via `CLI.run()` for non-interactive or `InitWizard.launch()` / `EditWizard.launch()` for interactive
-2. **Sends input the way a user would** — command-line args or wizard step methods
+1. **Spawns the CLI binary** — via `CLI.run()` or `runCLI()`, or `InteractivePrompt` / `DashboardSession` where a terminal is needed
+2. **Sends input the way a user would** — command-line args, and keys at a prompt
 3. **Asserts on what the user sees** — terminal output, exit codes, file-system state through matchers
 4. **Never calls a production function to PERFORM the work under test** — no `recompileAgents()` standing in for a `compile` run, no `writeProjectConfig()` standing in for an install, no `splitConfigByScope()` standing in for the gate
 
@@ -274,7 +259,7 @@ of it.
 
 #### The one deliberate implementation test, and why it is allowed
 
-`lifecycle/preview-matches-install` runs a real `init` through a PTY, then re-renders the same
+`lifecycle/preview-matches-install` runs a real `init --from` install, then re-renders the same
 configuration through `@workspace/compile` and compares against what landed on disk. It imports
 `generateConfigSource`, `generateConfigTypesSource` and `splitConfigByScope` to do it, and **it would
 redden if those were refactored away with behaviour unchanged. That is deliberate.**
@@ -296,27 +281,20 @@ preview a lie.
 The bar for adding another: name the requirement the import pins, and say why a user-visible
 assertion cannot reach it. "It was easier" is not that.
 
-#### Four specs in `e2e/` that spawn nothing
+#### Specs in `e2e/` that spawn nothing
 
-Re-judged under the layer split above, and the split moves three of them. They are recorded rather
-than exempted, but only ONE is refused by the principle.
+Re-judged under the layer split above. They are recorded rather than exempted, but only ONE is
+refused by the principle.
 
-| Spec                                     | What it really is                                                     | Verdict                                                                                                                                                  |
-| ---------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pages/retry-space`                      | a unit test of the harness's Space retry loop, driven through fakes   | **Sound, misfiled.** `world.pressed === 2` binds to the loop, and the loop IS its subject — legitimate at the unit layer                                 |
-| `pages/list-row-toggle`                  | a unit test of the page object's row reader                           | **Sound, misfiled**, same reasoning                                                                                                                      |
-| `matchers/project-matchers`              | a unit test of an assertion matcher                                   | **Sound, misfiled.** Refactoring the product cannot redden it                                                                                            |
-| `integration/fixture-configs-round-trip` | an integration spec — it sits in `integration/` and claims that layer | **Refused.** The principle governs this layer, and the spec imports `generateConfigSource` and `loadProjectConfigFromDir` by name while spawning nothing |
+| Spec                                     | What it really is                                                     | Verdict                                                                                                                                             |
+| ---------------------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `matchers/project-matchers`              | a unit test of an assertion matcher                                   | **Sound, misfiled.** Refactoring the product cannot redden it                                                                                       |
+| `integration/fixture-configs-round-trip` | an integration spec — it sits in `integration/` and claims that layer | **Refused.** The principle governs this layer, and the spec imports `generateConfigSource` and `loadInstalledConfig` by name while spawning nothing |
 
-**The first three are a NAMING defect, not a testing defect**, and the distinction matters because
-the fixes are unrelated: three files claim a layer they do not belong to, and one file belongs to its
-layer and breaks that layer's rule.
-
-`pages/retry-space` is worth reading before touching any of this. It says outright that the race it
-covers is **not reproducible on a real PTY** — Ink registers a remounted `CategoryGrid`'s `useInput`
-handler in an effect, and a keystroke arriving between the commit and the flush is discarded with no
-trace on any surface. A spec that can only exist as a unit test is not a spec that failed to become
-an e2e test.
+**The first is a NAMING defect, not a testing defect**, and the distinction matters because the
+fixes are unrelated: one file claims a layer it does not belong to, and the other belongs to its
+layer and breaks that layer's rule. A spec that can only exist as a unit test is not a spec that
+failed to become an e2e test.
 
 **Do not start by renaming.** `vitest.config.ts`'s unit project reads `src/**` and `scripts/**`; the
 e2e project reads `e2e/**/*.e2e.test.ts`. A spec renamed off that suffix while still under `e2e/` is

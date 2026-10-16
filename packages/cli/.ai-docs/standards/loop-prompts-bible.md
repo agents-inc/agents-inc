@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-10-15
 ---
 
 # The Loop Prompts Bible
@@ -26,7 +26,6 @@ A loop agent orchestrates: select the right sub-agent, provide clear context, ve
 | `pm`                | Feature planning, specs, architecture decisions                       |
 | `reviewer`          | Post-implementation code review                                       |
 | `api-developer`     | API routes, database, server logic                                    |
-| `codex-keeper`      | Reference docs under `.ai-docs/reference/`, re-derived from source    |
 | `convention-keeper` | Standards under `.ai-docs/standards/`, from agent-findings and audits |
 | `agent-summoner`    | Creating new agent definitions                                        |
 | `skill-summoner`    | Creating new skill definitions                                        |
@@ -43,7 +42,6 @@ What needs to happen?
 |- Write/modify tests? -> cli-tester
 |- Review code? -> reviewer
 |- Plan a feature? -> pm
-|- Reference docs? -> codex-keeper
 |- Standards docs? -> convention-keeper
 |- Research/investigate? -> Spawn a Task agent
 ```
@@ -75,7 +73,7 @@ Uncertainty detected
 |- Can a sub-agent investigate? -> Spawn Task agent with specific questions
 |- Requires prototyping? -> cli-developer builds minimal prototype
 |- Requires user input? -> Ask a specific, well-framed question
-|- Is it a blocker? -> Add to Blockers section immediately
+|- Is it a blocker? -> Stop dependent work, tell the user
 ```
 
 ### Research Sub-Agents
@@ -112,25 +110,13 @@ C) Key-value pairs (simplest)
 
 ### Well-Scoped Tasks
 
-Every task needs: **Title** (action + target + status tag), **Context** (why), **Acceptance criteria** (checkboxes), **File list**, **Constraints**, **Dependencies**.
+Every task needs: **Title** (action + target), **Context** (why), **Acceptance criteria** (checkboxes), **File list**, **Constraints**, **Dependencies**.
 
 **Split if:** touches 5+ files, needs 2+ agent types, scope is unclear, or 500+ lines of change.
 
 ### Blockers
 
-**Blockers go to the top of the task file immediately.**
-
-```markdown
-## Blockers
-
-**BLOCKER: Config loader does not support nested keys**
-
-- Discovered while implementing H13
-- Blocks: H13, H6
-- Needs: Decision on extending config loader vs flat keys
-```
-
-Rules:
+**Blockers go into the tracker immediately**, naming what they block and what decision they need.
 
 - Never continue work depending on a blocked item
 - Never silently work around a blocker
@@ -139,11 +125,11 @@ Rules:
 ### Task Lifecycle
 
 ```
-todo/cli.md row -> Status column -> lands -> row deleted, one line appended to todo/archive.md
+todo/<workspace>.md row -> Status column -> lands -> row deleted, one line appended to todo/archive.md, todo/ROADMAP.md updated if a phase moved
 ```
 
-- Update status IMMEDIATELY when starting and completing
-- Never leave `[IN PROGRESS]` when work has stopped
+- Update status IMMEDIATELY when starting; retire the row in the turn the work lands
+- Never leave `In Progress` when work has stopped
 
 ---
 
@@ -169,7 +155,7 @@ After a sub-agent completes, capture: what changed (files + lines), key decision
 
 ### Context Window Management
 
-- **Compact at 70% usage** -- do not wait
+- **Compact at 500k context used** -- do not wait for a hard limit
 - **Preserve:** current task, active file paths, recent decisions, blocker status
 - **Discard:** completed task details, incorporated research, verbose sub-agent outputs
 - **After compacting:** re-read task files to reorient
@@ -230,8 +216,8 @@ on every completion attempt.
 - **Leave committing to the user**, who curates staging deliberately.
 - **Delegate production code to a specialist**, and tests to `cli-tester`.
 - **Take an architecture decision to the user or to `pm`** rather than settling it in the loop.
-- **Edit task files, docs and memory files** — `TODO.md`, `todo-loop.md` and their neighbours. Code
-  files belong to the specialist the work was delegated to.
+- **Edit task files, docs and memory files.** Code files belong to the specialist the work was
+  delegated to.
 
 ### Tool Usage
 
@@ -264,11 +250,10 @@ May coordinate across this repository (the CLI) and the skills marketplace repos
 **Be concise.** What happened, not how you reasoned.
 
 ```
-Completed U15 (Help Overlay):
-- help-modal.tsx: context-sensitive help (+45 lines)
-- wizard.tsx: wired help to current step (+3 lines)
-- 12 tests passing, 0 type errors
-Next: U16 (Overlay Dismissal) -- ready to start?
+Completed <ID> (<title>):
+- <file>: <what changed> (+N lines)
+- N tests passing, 0 type errors
+Next: <ID> (<title>) -- ready to start?
 ```
 
 ### Asking Questions
@@ -290,10 +275,6 @@ Next: U16 (Overlay Dismissal) -- ready to start?
 
 **Recommendation:** Option A because [rationale]. Proceed?
 ```
-
-### Status Updates
-
-Update immediately: `### H21: Task Name [IN PROGRESS]` / `[DONE]`
 
 ---
 
@@ -319,7 +300,7 @@ Update immediately: `### H21: Task Name [IN PROGRESS]` / `[DONE]`
 
 ## 8. Ralph-Loop Iteration Pattern
 
-Ralph-loop runs the same prompt back to the agent N times (default up to `--max-iterations`). Each iter sees prior iters' artifacts via git/filesystem but **not** in the conversation. This section codifies the discipline that keeps the loop productive.
+Ralph-loop runs the same prompt back to the agent until `--max-iterations` (unlimited by default) or the completion promise. Each iter sees prior iters' artifacts via git/filesystem. This section codifies the discipline that keeps the loop productive.
 
 ### 8.1 The completion promise
 
@@ -391,11 +372,11 @@ End every iter report with a concrete next-iter suggestion naming (a) the target
 
 ## Quick Reference Checklist
 
-**Before starting:** Read task fully, identify sub-agents needed, check blockers, update status to `[IN PROGRESS]`.
+**Before starting:** Read task fully, identify sub-agents needed, check blockers, set status to `In Progress`.
 
-**During:** Delegate all code changes, provide clear context + file paths, track progress with checkboxes, document decisions, compact at 70% context.
+**During:** Delegate all code changes, provide clear context + file paths, track progress with checkboxes, document decisions, compact at 500k context.
 
-**After:** Verify acceptance criteria, confirm tests pass, confirm no type errors, update to `[DONE]`, archive task, report concisely to user.
+**After:** Verify acceptance criteria, confirm tests pass, confirm no type errors, retire the row (Task Lifecycle), report concisely to user.
 
 ### Ralph-loop addenda
 

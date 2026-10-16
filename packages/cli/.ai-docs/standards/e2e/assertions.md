@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-07-30
+last_validated: 2026-10-15
 ---
 
 # Assertions
@@ -36,7 +36,7 @@ All matchers accept a `ProjectHandle` (`{ dir: string }`) as the first argument 
 
 Checks that `config.ts` exists under whichever source folder the install is on, and optionally validates its content.
 
-**The folder is RESOLVED, never named**: the matcher takes its path from `configTsPath` in `e2e/helpers/test-utils.ts`, which goes through `sourceFolderInUse`, so one call describes an install this release created and one made before the rename alike. A fixture whose SUBJECT is a layout names the folder itself instead — that is the rule `sourceFolderIn`'s own docblock states, and a resolver-routed matcher cannot seed or pin a layout.
+**The folder is RESOLVED, never named**: the matcher takes its path from `configTsPath` in `e2e/helpers/test-utils.ts`, which goes through `sourceFolderInUse`, so one call describes a Claude install and a Codex install alike. A fixture whose SUBJECT is a layout names the folder itself instead — that is the rule `sourceFolderIn`'s own docblock states, and a resolver-routed matcher cannot seed or pin a layout.
 
 ```typescript
 // DISCOURAGED: bare call only checks file exists, not content
@@ -57,6 +57,8 @@ Checks that `.claude/agents/` contains at least one `.md` file.
 ```typescript
 await expect(project).toHaveCompiledAgents();
 ```
+
+It takes no arguments, so it proves presence and nothing more — an install alone satisfies it. Where the roster is the subject, compare `Object.keys(await readCompiledAgents(dir))` against a named constant with `toStrictEqual`, or use `toHaveCompiledAgent(name)`. It stays right for "an install reached this directory" and for `.not.`; the matcher's docblock in `e2e/matchers/project-matchers.ts` says so.
 
 ### `toHaveCompiledAgent(name)`
 
@@ -90,7 +92,7 @@ await expect(result.project).toHaveSkillCopied("web-framework-react");
 Checks that `.claude/skills/` exists and optionally contains specific skill directories.
 
 ```typescript
-// Any skills directory with entries
+// The skills directory exists
 await expect(project).toHaveLocalSkills();
 
 // Specific skill IDs present
@@ -161,7 +163,7 @@ Composite assertion helpers that combine multiple matchers. These are regular fu
 
 ### `expectPhaseSuccess(result, expectations)`
 
-Verifies a wizard phase completed successfully: exit code, config content, compiled agents, copied skills.
+Verifies a phase completed successfully: exit code, config content, compiled agents, copied skills.
 
 ```typescript
 import { expectPhaseSuccess } from "../assertions/phase-assertions.js";
@@ -178,7 +180,6 @@ Use when a test has `EXIT_CODES.SUCCESS` + `toHaveConfig` + `toHaveCompiledAgent
 
 - Output assertions exist between exit code and config checks
 - The config check targets `{ dir: fakeHome }` instead of `result.project`
-- `CLI.run` results are used (already-resolved exitCode)
 
 ### `expectCleanUninstall(dir, options?)`
 
@@ -188,7 +189,7 @@ Verifies complete cleanup after uninstall.
 import { expectCleanUninstall } from "../assertions/uninstall-assertions.js";
 
 await expectCleanUninstall(projectDir);
-await expectCleanUninstall(projectDir, { removeConfig: true }); // --all flag
+await expectCleanUninstall(projectDir, { removeConfig: true });
 await expectCleanUninstall(projectDir, { preservedSkills: ["my-custom-skill"] });
 ```
 
@@ -211,7 +212,7 @@ In `e2e/assertions/source-folder-assertions.ts`. "No source folder here" asked o
 
 **Use these rather than a hand-written absence, because hand-written shapes in this suite stopped being able to fail and none of them changed:** `expect(await listFiles(dir)).not.toContain(DIRS.SOURCE_CLAUDE)` cannot see a two-segment name at all, since `listFiles` is a top-level `readdir`; and a single-name absence after an uninstall stays green over an emptied `.agents-inc/` sitting where the install was.
 
-`expectOnlySourceFolder` is the counterpart for a directory that is MEANT to hold one: it pins WHICH names are there and refuses every other, so an install that grew a second folder beside its first fails here instead of satisfying two separate assertions — one for the name that should be present, one for the name that should not — neither of which can see a THIRD name appear. The parent counts as one of the names: a new-layout install holds `DIRS.SOURCE_ROOT` and `DIRS.SOURCE_CLAUDE` both, and a scope uninstalled from under a kept parent holds `DIRS.SOURCE_ROOT` alone — which is `commands/uninstall-manifest-removal`'s live call. `reason` is the caller's own sentence about the promise being tested, and it is what the failure leads with.
+`expectOnlySourceFolder` is the counterpart for a directory that is MEANT to hold one: it pins WHICH names are there and refuses every other, so an install that grew a second folder beside its first fails here instead of satisfying two separate assertions — one for the name that should be present, one for the name that should not — neither of which can see a THIRD name appear. The parent counts as one of the names: a Claude install holds `DIRS.SOURCE_ROOT` and `DIRS.SOURCE_CLAUDE` both, and a scope uninstalled from under a kept parent holds `DIRS.SOURCE_ROOT` alone — which is `commands/uninstall-manifest-removal`'s live call. `reason` is the caller's own sentence about the promise being tested, and it is what the failure leads with.
 
 ```typescript
 import {
@@ -236,9 +237,9 @@ In `e2e/assertions/config-assertions.ts`, which holds this and nothing else. Ass
 
 ### `normalizeConfigPreservingOrder(config)` and `normalizeGlobalConfig(config)`
 
-**Not in `e2e/assertions/`.** Both live in `src/cli/lib/__tests__/helpers/config-comparison.ts` — one module, one implementation — and both reach specs through `e2e/helpers/test-utils.ts`. Each takes a serialized `config.ts`, drops the machine-specific `"projects"` line that holds absolute project paths, and returns a string to hand a `toStrictEqual`.
+**Not in `e2e/assertions/`.** Both live in `src/cli/lib/__tests__/helpers/config-comparison.ts` — one module, one implementation — and both reach specs through `e2e/helpers/test-utils.ts`. Each takes a serialized `config.ts` and returns a string to hand a `toStrictEqual`.
 
-They differ in exactly one property, and it is load-bearing. `normalizeGlobalConfig` sorts the surviving lines, so a re-serialization that reorders entries compares equal and the assertion means "the same entries are present"; it is what the dual-scope integrity specs use to claim a project-scope edit left global MEMBERSHIP untouched. `normalizeConfigPreservingOrder` leaves every surviving line in place, so reordering still fails and the assertion means "byte for byte" — which is the regression class `e2e/lifecycle/scope-toggle-roundtrip.e2e.test.ts` exists to guard.
+They differ in exactly one property, and it is load-bearing. `normalizeGlobalConfig` sorts the lines, so a re-serialization that reorders entries compares equal and the assertion means "the same entries are present"; it is what the dual-scope integrity specs use to claim a project-scope edit left global MEMBERSHIP untouched. `normalizeConfigPreservingOrder` leaves every line in place, so reordering still fails and the assertion means "byte for byte" — which is the regression class `e2e/lifecycle/scope-toggle-roundtrip.e2e.test.ts` exists to guard.
 
 **Swapping one for the other under an existing assertion is an assertion change, not a refactor.** The two are one substitution apart and read identically at the call site, so deleting one and importing the other compiles, passes, and looks like a dedup while silently weakening "the passthrough edit rewrote the config byte for byte" into "it kept the same set of lines in any order". The strength is carried in the name rather than in a boolean a reader has to go and look up.
 
@@ -260,7 +261,7 @@ skill nobody named. The live population is the expectation types on `toHaveConfi
 (`ConfigExpectations` in `e2e/matchers/project-matchers.ts`), `expectPhaseSuccess`
 (`e2e/assertions/phase-assertions.ts`), `expectDualScopeInstallation`
 (`e2e/assertions/scope-assertions.ts`) and `toHaveAgentDynamicSkills`
-(`e2e/matchers/agent-matchers.ts`) — the four with call sites, in the hundreds between them.
+(`e2e/matchers/agent-matchers.ts`) — the four with call sites.
 
 ```
 grep -rnP 'skillIds\??: (readonly )?string\[\]' e2e src --include='*.ts' --include='*.tsx'
@@ -296,17 +297,13 @@ So this rule is **largely unmet across its subject**, not satisfied. The
 exemplar and the defect it illustrated were deleted in one stroke, which is the failure to guard
 against: a rule whose worked example is gone reads as discharged and quietly stops being applied.
 
-**The mechanism is the one the name implies.** `toHaveConfig` checks `marketplace` and `origin` by
-loading the config through `loadConfigOrFail` and reading the fields, and each of those two carries a
-doc comment saying why — an unkeyed `includes` was answered by whichever occurrence came first,
-because a marketplace name is also every plugin-installed skill's `origin` and frequently a path
-segment besides. Its `skillIds` check, in the same matcher and a few statements above the structural
-load, is `expectations.skillIds?.find((id) => !content.includes(id))`: a substring scan of the file's
-text, satisfied by an id appearing in a comment, in a tombstone the expectation never mentioned, or
-inside a longer id that contains it. Sixty-odd specs reach it and it proves considerably less than
-its name. **Where a matcher already loads the artefact structurally for one field, every other field
-it claims is checked structurally too** — the load is already paid for, and a mixed matcher is the
-worst of the two, because the fields that are rigorous make the ones that are not look rigorous.
+**The mechanism is the one the name implies.** `toHaveConfig` judges `skillIds`, `marketplace`,
+`origin` and `agents` on the config loaded through `loadConfigOrFail`, never on the file's text, and
+its comments say why: an unkeyed `includes` is answered by whichever occurrence comes first — an id
+inside a comment, inside a longer id that contains it, or inside a tombstone recording its removal.
+**Where a matcher already loads the artefact structurally for one field, every other field it claims
+is checked structurally too** — the load is already paid for, and a mixed matcher is the worst of
+the two, because the fields that are rigorous make the ones that are not look rigorous.
 
 **The option NAME is the field it reads or writes**, which `clean-code-standards.md` 15.11 already
 covers as a case of a name being a claim about contents. Not restated here; the point of listing it
@@ -317,9 +314,9 @@ checks only names leaves the type and the mechanism exactly as wrong as it found
 
 ## Agent Matchers
 
-Two matchers for compiled agent content, reading two different halves of the file. A compiled agent puts a **preloaded** skill's id in the YAML frontmatter `skills:` list and nowhere else, and a **dynamic** skill's id in the body under `<skill_activation_protocol>` → `## Available Skills (Require Loading)`. The split is made in `buildAgentTemplateContext` (`src/cli/lib/compiler.ts`), which partitions the agent's skills into `preloadedSkills` and `dynamicSkills` for `src/agents/_templates/agent.liquid` to render.
+Two matchers for compiled agent content, reading two different halves of the file. A compiled agent puts a **preloaded** skill's id in the YAML frontmatter `skills:` list and nowhere else, and a **dynamic** skill's id in the body under `<skill_activation_protocol>`, one `### <id>` entry each. The split is made in `buildAgentTemplateContext` (`packages/compile/src/agent-source.ts`), which partitions the agent's skills into `preloadedSkills` and `dynamicSkills` for `src/agents/_templates/agent.liquid` and the `agent-body.liquid` it includes to render.
 
-### `toHaveAgentFrontmatter(name, expectations?)`
+### `toHaveAgentFrontmatter(name, expectations)`
 
 Parses the frontmatter with the real YAML parser and checks the named fields.
 
@@ -332,7 +329,7 @@ await expect(project).toHaveAgentFrontmatter("web-developer", {
 
 **`skills` is a subset check and `exactSkills` is the list.** `skills: [x]` passes on an agent that preloads x plus everything else it holds — which is the failure a preload-fidelity spec exists to catch, so it is the wrong field for that spec. Reach for `exactSkills` whenever the claim is "preloads these and nothing else", and for `noSkills: true` when the claim is "preloads nothing". The full expectation set is in `AgentFrontmatterExpectations` (`e2e/matchers/agent-matchers.ts`).
 
-### `toHaveAgentDynamicSkills(name, expectations?)`
+### `toHaveAgentDynamicSkills(name, expectations)`
 
 **Reads the parsed sections, not the raw body.** It runs `parseCompiledAgentSections` (`src/cli/lib/__tests__/helpers/compiled-agent-sections.ts`) over the compiled file and compares against the two lists that come back — `preloadedRefs` from the frontmatter and `dynamicEntries` from the activation protocol.
 
@@ -353,7 +350,7 @@ await expect(project).toHaveAgentDynamicSkills("web-developer", {
 
 **A `skillIds` hit is a claim about the protocol alone, so a laziness claim still needs the preload side named.** `skillIds` says an id IS activated dynamically and says nothing about what the frontmatter preloads, so put `toHaveAgentFrontmatter({ exactSkills })` or `{ noSkills: true }` beside it to pin the surface Claude Code actually reads. Reading off the parsed section is what closed the older hazard: a bare `body.includes(id)` was satisfied by an id sitting inside a longer id, inside a preload's `id:id` ref, and inside the agent's own prose — and every compiled body in this tree carries prose naming skills.
 
-**Preloaded vs dynamic in the fixture:** the stack decides. `createMockSkillAssignment(id, true)` in `e2e/helpers/create-e2e-source.ts` means preloaded, `createMockSkillAssignment(id)` means dynamic. Note that the `AGENT_TEMPLATE` in that same file is NOT what fixture agents compile from — `createLiquidEngine` (`src/cli/lib/compiler.ts`) resolves `agent.liquid` from the project's own source folder — `sourceFolderInUse(projectDir, providerInUse(projectDir)).dir` + `agents/_templates` — then `.claude/templates`, then the CLI's `src/agents/_templates`, and a marketplace source's template directory is never one of those roots.
+**Preloaded vs dynamic in the fixture:** the stack decides. `createMockSkillAssignment(id, true)` in `e2e/helpers/create-e2e-source.ts` means preloaded, `createMockSkillAssignment(id)` means dynamic. `createLiquidEngine` (`src/cli/lib/compiler.ts`) resolves `agent.liquid` from the project's own source folder — `sourceFolderInUse(projectDir, providerInUse(projectDir)).dir` + `agents/_templates` — then `.claude/templates`, then the CLI's `src/agents/_templates`, and a marketplace source's template directory is never one of those roots.
 
 ---
 
@@ -377,17 +374,16 @@ Available constants:
 - `E2E_MARKETPLACE_NAME` / `e2eSkillId(bare)` — the fixture marketplace's name and the builder that composes an id inside its namespace. Never spell either by hand
 - `E2E_SKILL` — per-skill `id` <-> `slug` <-> `display` map
 - `E2E_AGENT` — per-agent `name` <-> `display` map
-- `E2E_AGENT_DISPLAY` — re-export of `E2E_AGENT_TITLES` from `create-e2e-source.ts`
 
-`E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` are written into each fixture's `metadata.yaml`, so they ARE the text the wizard renders. **Any assertion matching rendered skill or agent text must key off these rather than re-typing the string** — that includes the exact labels `BuildStep.focusSkill` / `selectSkill` take, which are matched with `===` after decoration stripping.
+`E2E_SKILL_TITLES` / `E2E_AGENT_TITLES` are written into each fixture's `metadata.yaml`, so they ARE the text the CLI renders. **Any assertion matching rendered skill or agent text must key off these rather than re-typing the string.**
 
 ### An identity constant exposes every form the specs address it by, and call sites pick — they never normalise one form into another
 
-A skill is addressed three ways and an agent two, and the forms are different strings: `E2E_SKILL.<slug>` carries `.id` (what `config.ts` records), `.slug` (what the source path uses) and `.display` (what the grid paints); `E2E_AGENT["web-developer"]` carries `.name` (what a compiled `<name>.md` is called and what `config.ts` records) and `.display` (the title `toggleAgent` / `navigateCursorToAgent` match).
+A skill is addressed three ways and an agent two, and the forms are different strings: `E2E_SKILL.<slug>` carries `.id` (what `config.ts` records), `.slug` (what the source path uses) and `.display` (what the CLI renders); `E2E_AGENT["web-developer"]` carries `.name` (what a compiled `<name>.md` is called and what `config.ts` records) and `.display` (the title).
 
 **A constant that exposes only one of them does not get adopted — it gets worked around, and the workaround is invisible.** Agents shipped half-built for exactly that reason: `E2E_AGENT_DISPLAY` gave the title and `E2E_AGENTS.WEB` gave a `readonly` list, so the bare name had no home and four spec files re-declared it locally (`const WEB_DEVELOPER_AGENT_NAME = "web-developer"`, `const WEB_DEVELOPER: AgentName = "web-developer"`, and bare literals passed to `toHaveCompiledAgent` / `toContain`) in breach of the ban on file-local text constants. The two available dodges each made it worse: `E2E_AGENTS.WEB[0]` is less readable than the literal it replaces, and `E2E_AGENTS.WEB` cannot be passed to a builder option typed `agents?: AgentName[]` at all, because a `readonly` tuple is not assignable to a mutable array. **The measurable cost is that a sweep adopting `E2E_SKILL` everywhere it applies leaves every agent-name literal untouched, and the next sweep re-proposes the same adoption and reaches the same dead end.**
 
-So: when a fixture's identity gains a second form, add it to the same object rather than beside it, read it from the one place that already owns it (`E2E_AGENT.display` reads `E2E_AGENT_TITLES` rather than re-typing the title, so a title change there cannot silently desync), and keep the object's `satisfies` on the object only while it has no accessor — `E2E_AGENTS.WEB_AND_API` is a getter and takes its clause on the member arrays instead, for the reason `typescript-types-bible.md` § 10 gives. Then let each call site choose: `.name` for config text, matcher arguments and factory inputs, `.display` for anything matched against rendered wizard text. Never convert one into the other at a call site, and never point a `.display` site at `.name`: no fixture title is a skill id, so a `.name` handed to a rendered-text site addresses a cell that is not painted.
+So: when a fixture's identity gains a second form, add it to the same object rather than beside it, read it from the one place that already owns it (`E2E_AGENT.display` reads `E2E_AGENT_TITLES` rather than re-typing the title, so a title change there cannot silently desync), and keep the object's `satisfies` on the object only while it has no accessor — `E2E_AGENTS.WEB_AND_API` is a getter and takes its clause on the member arrays instead, for the reason `typescript-types-bible.md` § 10 gives. Then let each call site choose: `.name` for config text, matcher arguments and factory inputs, `.display` for anything matched against rendered text. Never convert one into the other at a call site, and never point a `.display` site at `.name`: no fixture title is a skill id, so a `.name` handed to a rendered-text site searches for a string that site does not render.
 
 ---
 
@@ -456,19 +452,17 @@ grep -rn -P 'expect\([^)]*(\?\?|\?\.)' src e2e --include='*.ts' --include='*.tsx
 
 When adding `toStrictEqual` assertions for config objects, verify these common pitfalls:
 
-1. **Agent scope:** `preselectAgentsFromDomains` creates agents with `scope: "global"`, not `"project"`. Only scope-toggled agents get `"project"`.
+1. **Skill ordering:** Skills are not stored sorted. Use sorted comparisons or `expectConfigSkills`.
 
-2. **Skill ordering:** Skills are stored in domain iteration order (web → api → meta), NOT alphabetical. Use sorted comparisons or `expectConfigSkills`.
+2. **Stack compaction:** When reading a config from disk, `{ id: "web-framework-react", preloaded: false }` is compacted to `"web-framework-react"` (bare string). Only entries carrying `preloaded: true`, `local` or `path` keep the object form.
 
-3. **Stack compaction:** When reading a config from disk, `{ id: "web-framework-react", preloaded: false }` is compacted to `"web-framework-react"` (bare string). Only `preloaded: true` entries keep the object form.
+3. **undefined vs missing:** `toStrictEqual` distinguishes `{ excluded: undefined }` from `{}`. Production code omits `excluded` entirely for non-excluded entries — never include `excluded: undefined` in expected values.
 
-4. **undefined vs missing:** `toStrictEqual` distinguishes `{ excluded: undefined }` from `{}`. Production code omits `excluded` entirely for non-excluded entries — never include `excluded: undefined` in expected values.
-
-5. **Preloaded vs dynamic skills:** In compiled agents, preloaded skills appear in YAML frontmatter `skills:` array. Dynamic skills appear in `<skill_activation_protocol>` body section. Check `createMockSkillAssignment(id, true)` to determine which is which.
+4. **Preloaded vs dynamic skills:** In compiled agents, preloaded skills appear in YAML frontmatter `skills:` array. Dynamic skills appear in `<skill_activation_protocol>` body section. Check `createMockSkillAssignment(id, true)` to determine which is which.
 
 **An expected value is derived, never observed.** Every expected value comes from a ruling, a definition file, or the test's own input fixture. If you cannot name where a value came from, you read it off the output — and the assertion then pins whatever the product happened to do that day, the defect included. Two `compile` specs are the worked example: one pinned a `Compiling global agents` banner over a config whose every entry is `scope: "project"`, the other matched `/Discovered \d+ local skills/`, a count that is green whichever way the question it exists to answer is settled. Neither expectation had a ruling behind it; both were read off a run. Where no ruling exists and one is needed, the spec is a question for the owner: record it as a finding and leave the spec alone rather than inventing an answer in an assertion. Derivation is also what a repair looks like — `contains: ["#"]` over a compiled agent became `toHaveAgentDynamicSkills` plus a body-after-terminator regex, and a whole-file `contains` became `toHaveAgentFrontmatter({ exactSkills })` in `compile.e2e.test.ts`, each expectation now coming from the writer that emits it.
 
-**A spec whose name and whose body comment disagree is a defect report, not a test.** One of them is wrong, and until that is settled the spec cannot fail for the reason it claims. The first `compile` spec above is named for SKIPPING a skill with malformed `metadata.yaml`, over a comment saying the skill is still loaded from its `SKILL.md` frontmatter.
+**A spec whose name and whose body comment disagree is a defect report, not a test.** One of them is wrong, and until that is settled the spec cannot fail for the reason it claims.
 
 **A spec that pins a scope, ownership or propagation boundary cites where the boundary came from** — the decision that made the behaviour correct, in the file-level JSDoc. Not the ticket that added the spec: the ruling, the finding, or the standards section. Six E2E files and two unit cases once went red on a single change, and not one of them was testing a defect; each had been written FROM the behaviour and read as a deliberate contract, so the fix looked like the regression and the regression looked intentional. A boundary assertion with no provenance is indistinguishable from an accident of the implementation. `source-flag-is-init-only.e2e.test.ts` opens by naming its decision and its date ("Naming a marketplace is an INSTALL-time decision, so `--marketplace` is `init`'s flag and nobody else's (owner ruling 2026-08-09)"), and `compile-project-scope-containment.e2e.test.ts` names the containment ruling it pins in its first sentence. One sentence per file is the whole cost.
 
@@ -476,7 +470,7 @@ When adding `toStrictEqual` assertions for config objects, verify these common p
 
 ## Diff-Shape Assertions
 
-For assertions over diff-shape collections (info-panel rows, config section diffs, scope-per-skill prefix maps), use `toStrictEqual` on a scope-anchored slice of the output — NEVER `expect.arrayContaining([<expected>])`. `arrayContaining` passes as long as the expected entries exist, so it silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React`).
+For assertions over diff-shape collections (config section diffs, scope-per-skill prefix maps), use `toStrictEqual` on a scope-anchored slice of the output — NEVER `expect.arrayContaining([<expected>])`. `arrayContaining` passes as long as the expected entries exist, so it silently tolerates extra wrong entries (e.g. a spurious `- React` row alongside the expected `• React`).
 
 ```typescript
 // Bad -- passes even if a bogus "- React" row is also rendered
@@ -506,16 +500,16 @@ This is strictly stronger than `toStrictEqual({ project: "•", global: "•" })
 **Use `toContain` for substrings.** UI text evolves, so assert on distinctive fragments rather than exact strings:
 
 ```typescript
-expect(output).toContain("Discovered 1 local skills");
+expect(output).toContain("Compiling global agents");
 ```
 
 **Use `toMatch` with regex for dynamic content:**
 
 ```typescript
-expect(output).toMatch(/Recompiled \d+ global agents/);
+expect(stdout).toMatch(/agents-inc\/\d+\.\d+\.\d+/);
 ```
 
-**Use `STEP_TEXT` constants** for wizard step text, not raw strings:
+**Use `STEP_TEXT` constants**, not raw strings:
 
 ```typescript
 expect(output).toContain(STEP_TEXT.COMPILE_SUCCESS);
@@ -533,22 +527,7 @@ Distinctive is not the same as unique. `toContain` searches the whole capture, a
 
 When the captured stream carries more than one sentence about the same subject — a `warn()` on the way in and a summary row on the way out are the common pair — anchor the assertion to something only the intended line can carry: its marker, its scope tag, the punctuation the value sits inside.
 
-`edit` prints both of these about one skill in one run, and `rawOutput` is append-only, so both are matchable:
-
-```
-Warning: Installed skill 'web-styling-tailwind' is not present in the loaded source — …
-- web-styling-tailwind [P] (skill files no longer exist at /…)
-```
-
-`edit-wizard-local.e2e.test.ts` asserted `toContain("not present in")` for the removal REASON. It matched the store warning six steps earlier, and it stayed green when the reason on the removal row was changed outright — the exact string the assertion existed to pin. The anchored form is what ships now:
-
-```typescript
-expect(rawOutput, "the removal of an unresolvable skill must say why it went").toContain(
-  `${REMOVED_MARKER} web-styling-tailwind [P] (${STEP_TEXT.REMOVED_REASON_FILES_GONE}`,
-);
-```
-
-`- <id> [P] (` cannot appear in a `warn()` line, so only the Changes block can satisfy it. Every removal reason is a `STEP_TEXT` member (`grep -n 'REMOVED_REASON' e2e/pages/constants.ts`) so no spec can spell one its own way, and `edit-unresolvable-entry-removal-reasons.e2e.test.ts` anchors the NEGATIVE half the same way, by prefixing the forbidden reason with the row's own `[P] (`. An unanchored negative there would be answered by the warning too, and answered wrongly.
+An unanchored fragment once pinned a removal REASON, matched a `warn()` printed earlier about the same skill, and stayed green when the reason on the removal row was changed outright — the exact string it existed to pin. Anchor the NEGATIVE half the same way: an unanchored negative is answered by the other line too, and answered wrongly. `e2e/interactive/edit-from.e2e.test.ts` pins that a skill the run could not place is never reported removed as ``not.toContain(`${REMOVED_MARKER} ${UNPLACEABLE_SKILL}`)``, in a run whose plan names that same id.
 
 ### A `toContain` over an enumerated refusal is answered by one line of it
 
@@ -556,7 +535,7 @@ A refusal that names every item it could not handle is a multi-line string, and 
 
 **Where a refusal enumerates per-item failures, assert the COUNT line as well as the item.** `copyFailureMessage` (`src/cli/lib/skills/skill-copier.ts`) opens with `Could not copy <failures> of <attempted> skills:` and follows it with one indented `  <id>: <problem>` per failure, so those two operands are the whole difference between the fault a spec names and a fixture that produced the rest of them.
 
-Measured on `e2e/commands/eject-default-source-skill-absent.e2e.test.ts`, whose subject is one catalogue skill missing from a fetched checkout. The refusal that spec means to pin reads `Could not copy 1 of <catalogue size> skills` — `reference/type-system.md` owns that figure, and nothing here restates it. Its first fixture wrote each carried skill's `SKILL.md` and no `metadata.yaml`; `injectForkedFromMetadata` reads that file to stamp provenance into the copy, so every other skill failed at the destination too and the refusal ran to a line per skill in the catalogue. The spec was **green** throughout, because the one line it asserts — `<id>: ENOENT` — was in there, surrounded by a line of noise per remaining catalogue skill, none of which it could distinguish itself from. `seedDefaultSourceCache` (`e2e/fixtures/default-source-cache.ts`) writes both files now and states the reason at the writer.
+Measured on `e2e/commands/eject-default-source-skill-absent.e2e.test.ts`, whose subject is one catalogue skill missing from a fetched checkout. The refusal that spec means to pin reads `Could not copy 1 of <catalogue size> skills`. Its first fixture wrote each carried skill's `SKILL.md` and no `metadata.yaml`; `injectForkedFromMetadata` reads that file to stamp provenance into the copy, so every other skill failed at the destination too and the refusal ran to a line per skill in the catalogue. The spec was **green** throughout, because the one line it asserts — `<id>: ENOENT` — was in there, surrounded by a line of noise per remaining catalogue skill, none of which it could distinguish itself from. `seedDefaultSourceCache` (`e2e/fixtures/default-source-cache.ts`) writes both files now and states the reason at the writer.
 
 The count line is the only assertable form of "and nothing else went wrong", because the failure lines have no fixed cardinality to pin and no order to slice:
 
@@ -580,11 +559,11 @@ A `STEP_TEXT` member is the whole of what every spec using it holds the CLI to. 
 
 `DOCTOR_TIP_UNOWNED_INSTALL` is the worked example. The `orphans-unowned` tip in `src/cli/commands/doctor.ts` has two halves — a lead-in that names the situation, and a remedy that makes a claim about what another command does:
 
-> Tip: Nothing declares the files above — `... init` writes a configuration that can own them again, or `... uninstall` **removes them, the compiled agents included**: each file listed carries this CLI's own provenance …
+> Tip: Nothing declares the files above — `... init --from <id>` writes a configuration that can own them again, or `... uninstall` **removes them, the compiled agents included**: each file listed carries this CLI's own provenance …
 
 The sentinel used to be `"Nothing declares the files above"`. That is true of any wording of the remedy, so the two `doctor` specs and the lifecycle spec asserting it were all green while the remedy said the opposite of what `uninstall` does — the tip claimed identifying compiled agents needs the configuration that is gone, which `identifiableAgents`' fallback to the marker-carrying files had already made untrue. The constant is now `"removes them, the compiled agents included"`, and a remedy that changes takes it red.
 
-**The test: name the wording that would have to change if the behaviour changed.** A row label, a step heading and a section title are legitimately short and legitimately invariant — they identify a screen rather than assert anything, and `DOCTOR_ROW_NO_ORPHANS` or `SCOPE_GLOBAL` are correct as they stand. The rule bites where a message makes a claim: a tip, a refusal, a reason line, a count's explanation. There, the sentinel goes in the clause a reader would dispute.
+**The test: name the wording that would have to change if the behaviour changed.** A row label and a section title are legitimately short and legitimately invariant — they identify a screen rather than assert anything, and `DOCTOR_ROW_NO_ORPHANS` is correct as it stands. The rule bites where a message makes a claim: a tip, a refusal, a reason line, a count's explanation. There, the sentinel goes in the clause a reader would dispute.
 
 **A Zod-rendered refusal carries a prefix its author never wrote, so the identifiers in it are lead-in.** `formatZodIssue` (`src/cli/lib/schema-validator.ts`) renders a path-bearing issue as `<path>: <message>`, and a custom refinement chooses that path — `installableSeedPayloadSchema` in `packages/matrix/src/seed.ts` raises at `["skills", skillId, "assignments", agent]`, so a skill id and a sub-agent name are both in the output before the sentence starts. **The prefix is invisible where the message is written**, which is how an author applying the test above faithfully still picks a fragment the schema supplies for free: the refinement's author sees a sentence and nothing about the path a renderer in another workspace will put in front of it. `share-stdin.e2e.test.ts` asserted `toContain("web-developer")` under a comment saying the message must name the pair, and re-rendering each issue as its path plus `Invalid input` — the whole explanation deleted — left it green. **A path is the honest carrier of WHICH FIELD**, and a spec claiming only that is correct on it: the bucket-routing specs in `schemas.test.ts` and `plugin-validator.test.ts`'s `toContain("name")` and `toContain("version")` are the live examples, each pinned by a `toStrictEqual` or an arity on the other side. Where the claim is that the refusal EXPLAINS, pin a fragment of the sentence, and flatten with `flattenCliOutput` first — oclif hard-wraps at the terminal width, so a fragment longer than a word straddles a line break in captured output. Two arms of the renderer bypass the path and cannot be reasoned about this way: `unrecognized_keys` names the keys instead, and an empty path renders the bare message.
 
@@ -593,7 +572,7 @@ The sentinel used to be `"Nothing declares the files above"`. That is true of an
 | Candidate check                                                       | Why it does not work                                                                                                                                                                                                                                                                                                                                                                     |
 | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Locate each sentinel's message in `src/cli/`, flag lead-in positions  | A whole class of members is carried as no literal the check could find, because the product COMPOSES them — `UNINSTALL_AGENTS_KEPT_ONE` (`"Kept 1 agent in"`), `PROPAGATED_RECOMPILE_ONE` and `DOCTOR_SKILLS_VALIDATED` are assembled around counts. A check that cannot find its subject at all for a class of members either declines to judge them silently or condemns them wrongly. |
-| Flag a sentinel followed by a clause break in the message carrying it | Fires on most of what it can locate — `DOCTOR_ROW_SKILLS_RESOLVED` ("Skills Resolved"), `DOCTOR_CONFIG_CHECK` ("Config Valid") and `SCOPE_GLOBAL` ("Global") among them. Every one of those is a label doing its job, and a check that condemns the good sentinels is worse than no check — it teaches the reader to suppress it.                                                        |
+| Flag a sentinel followed by a clause break in the message carrying it | Fires on most of what it can locate — `DOCTOR_ROW_SKILLS_RESOLVED` ("Skills Resolved") and `DOCTOR_CONFIG_CHECK` ("Config Valid") among them. Every one of those is a label doing its job, and a check that condemns the good sentinels is worse than no check — it teaches the reader to suppress it.                                                                                   |
 
 A sentinel is therefore chosen by judgement and defended by a comment at its definition in `e2e/pages/constants.ts` saying **which** half of the message it is and why. `DOCTOR_TIP_UNOWNED_INSTALL` carries that comment; copy its shape.
 
@@ -601,17 +580,15 @@ Two further constraints follow from the same fact — a sentinel is a duplicate 
 
 ### A sentinel a page object WAITS on drifts by timing out, not by failing
 
-A constant in `e2e/pages/constants.ts` that a step page object waits on is half a pair whose other half is product source, and **the two halves do not fail alike**. An assertion that drifts fails, naming the string. A wait has no assertion to fail — only a budget to exhaust — so it reports that the wizard did not load, which is not what happened.
+A constant in `e2e/pages/constants.ts` that a page object waits on is half a pair whose other half is product source, and **the two halves do not fail alike**. An assertion that drifts fails, naming the string. A wait has no assertion to fail — only a budget to exhaust — so it reports that the screen did not load, which is not what happened.
 
-The measurement: `STEP_TEXT.SOURCES` sat at `"Customize skill origins"` against a product rendering `"Customize skill sources"`. The unit suite stayed green throughout, because `wizard-layout.test.tsx` compares the product to a literal it carries itself and nothing in the unit suite reads `e2e/pages/constants.ts` at all — it is outside the unit `include` and behind its own tsconfig. Roughly a dozen wizard specs each burned the 45-second `TIMEOUTS.WIZARD_LOAD` budget before failing, and none of them said which string was wrong.
+**The literal duplication is right and stays** — a spec importing the very constant under test would move both sides at once.
 
-**The literal duplication is right and stays** — a spec importing the very constant under test would move both sides at once. What was missing is a third party comparing them, and `scripts/check-screen-sentinels.ts` is it: it reads both halves as SOURCE, so it crosses no tsconfig boundary and needs no build, and it names the pair and both spellings when they differ.
-
-Four pairs are registered — `STEP_TEXT.STACK`, `.DOMAINS`, `.SOURCES` and `.AGENTS` against `STEP_DROPDOWN_LABEL` in `src/cli/components/wizard/wizard-layout.tsx`. **A pair is registerable when both halves are a literal string a symbol holds under a key**, which is what the other waited-on constants are not: `STEP_TEXT.BUILD` is a category label the fixture matrix supplies, and `CONFIRM`, `INIT_SUCCESS`, `BUILD_FOOTER` and `RESIZE_PROMPT` are fragments of messages the product composes at runtime — comparing a fragment against a template literal would be a false green. Adding a wait on a new screen means adding its pair, or accepting that its drift will arrive as a timeout.
+A third party has to compare them, and `scripts/check-mirrored-constants.ts` is it: it reads both halves as SOURCE, so it crosses no tsconfig boundary and needs no build, and it names the pair and both spellings when they differ. **A pair is registerable when both halves are a literal string a symbol holds under a key**; a fragment of a message the product composes at runtime is not — comparing a fragment against a template literal would be a false green. Adding a wait on a new screen means registering its pair there, or accepting that its drift will arrive as a timeout.
 
 ### A message that hands the reader an invocation is checked by RUNNING it
 
-Where the substantive claim IS a command, matching the wording cannot reach it. `compile`'s no-skills refusal named `agents-inc add <skill>` for as long as the message existed, and there has never been an `add` command. The specs asserting that wording were right about it, and `reference/commands/index.md` quoted it faithfully; the one instruction a stuck user was given still exited 127, because a quotation is a claim about the past and the command roster is a fact about the present. Only the binary can be asked for it.
+Where the substantive claim IS a command, matching the wording cannot reach it. `compile`'s no-skills refusal once named `agents-inc add <skill>`, and there has never been an `add` command. The specs asserting that wording were right about it, and the command reference quoted it faithfully; the one instruction a stuck user was given still exited 127, because a quotation is a claim about the past and the command roster is a fact about the present. Only the binary can be asked for it.
 
 So the sentinel goes on the **command**, not on the lead-in that introduces it, and the same constant is then both matched and invoked. `e2e/commands/compile-no-skills-refusal.e2e.test.ts` is the shape: `COMPILE_NO_SKILLS_ERROR` is `"No skills found. Run"` and `COMPILE_NO_SKILLS_REMEDY` is `"init"`, and the spec matches the refusal for `` `${CLI_INVOKE_COMMAND} ${STEP_TEXT.COMPILE_NO_SKILLS_REMEDY}` `` and then runs `CLI.run([STEP_TEXT.COMPILE_NO_SKILLS_REMEDY, "--help"])`. A probe of a hardcoded command name would prove nothing about what the user was told.
 
@@ -635,12 +612,12 @@ The vocabulary of a passing suite is arrival-shaped — `toContain`, `toHaveConf
 | The stored selection    | After any change to the catalogue a selection is expressed in, assert the selection agrees with the new catalogue                  |
 | The payload it produces | After any catalogue change, produce one payload and assert its catalogue reference and its contents name the same catalogue        |
 
-Worked examples, all four found by hand against suites that were green:
+Worked examples, all four found by hand against suites that were green, and since fixed:
 
-- **A notice outlives its address.** The spec clicks the Configure nav item, asserts the URL and asserts the visitor's own selection is restored. It never asserts the notice, and the restore path has no clear-the-notice call — only two other paths do. "A shared configuration, not your own" stands on the visitor's own address until a full page load.
-- **A configuration outlives its address.** Same walk, for a visitor whose slot has never been written. The store's `merge` answers an absent persisted value by returning the current one, which is right at startup where current is empty and wrong on a reattach where current is somebody else's configuration. **Only the populated branch was ever driven** — an empty-slot case is a different branch through the same merge and needs its own leg.
-- **A selection outlives its catalogue.** One of the two doors that loads a marketplace prunes the selection to the new catalogue and the other does not, so the next payload names ids from two catalogues under one catalogue reference. No spec mints a payload after a catalogue change at all — every mint sits in a spec whose catalogue never moves, so the only surface the defect is visible on is never produced.
-- **A name outlives its catalogue.** The marketplace specs assert the grid, the rail and the categories all swap. Nothing asserts that the catalogue's NAME and its REPOSITORY swapped with them, and both are hardcoded to the public marketplace — so a custom marketplace gets the public one's name in a dialog and 404 source links throughout.
+- **A notice outlives its address.** The spec navigated back to the visitor's own configuration and asserted the URL and the restored selection, never the notice — and the restore path did not clear it, so "A shared configuration, not your own" stood on the visitor's own address until a full page load.
+- **A configuration outlives its address.** Same walk, for a visitor whose slot had never been written. The store's `merge` answered an absent persisted value by returning the current one — right at startup where current is empty, wrong on a reattach where it is somebody else's configuration. **Only the populated branch had ever been driven** — an empty-slot case is a different branch through the same merge and needs its own leg.
+- **A selection outlives its catalogue.** One door that loads a marketplace pruned the selection to the new catalogue and the others did not, so the next payload named ids from two catalogues under one catalogue reference. No spec minted a payload after a catalogue change, so the only surface the defect was visible on was never produced.
+- **A name outlives its catalogue.** The marketplace specs asserted that the grid, the rail and the categories swapped, and nothing asserted that the catalogue's NAME and REPOSITORY swapped with them; both were hardcoded to the public marketplace, so a custom marketplace got the public one's name in a dialog and 404 source links.
 
 **The rule is prose, not a checker, and deliberately.** "Drives a transition" has no syntactic signature: every mechanical proxy for it is a hand-maintained list of page-object methods, and a spec using a method nobody added to the list reads as having no transition to answer for. That silent decline is the same defect one level up. What IS mechanically detectable is the narrowest form — a spec file that changes a catalogue and never mints — and it is worth building only in the suite where those two calls have stable names.
 
@@ -654,12 +631,12 @@ The CLI half of this rule already exists as [README.md § State-change verificat
 
 **Split the two claims and assert them separately: that the run REACHED its decision, and that the decision was ACTED ON.** Only the first is the proof of execution, and for a no-op it can only be an observable the run emits on the way — a report, a heading, a count line.
 
-`e2e/lifecycle/edit-noop-leaves-compiled-agents-untouched.e2e.test.ts` is the worked case. The edit wizard is walked end to end with no key that selects, deselects or rescopes anything, over an installation a real `init` wrote:
+`e2e/lifecycle/edit-noop-leaves-compiled-agents-untouched.e2e.test.ts` is the worked case. `edit --from` re-applies the very configuration a real `init --from` installed, so nothing changes:
 
 - **Reached the decision:** `STEP_TEXT.EDIT_UNCHANGED` in the run's output. Without it, a run that crashed before writing satisfies every unchanged-state assertion below for free.
 - **Acted on it:** `readTreeSnapshot` equality over `.claude/agents/` and over the scope's source folder, against snapshots taken after the install. **The mtime half is what separates "not rewritten" from "rewritten identically"** — a recompile of an unchanged config produces the same bytes, so content alone cannot see it, and the write is invisible in a diff while being plainly a write.
 
-The counter-example is why the rule exists. Five specs used to assert `toHaveCompiledAgents()` and a substring of the emitted config after a passthrough edit, and all five held only because `edit` had a phantom write: it hydrated its agent roster from a field most configs did not carry, fell back to the wizard's default roster, and `detectConfigChanges` (`src/cli/commands/edit.tsx`) then found a diff nobody had made. `toHaveCompiledAgents()` is wrong here twice over — it reads presence (`readdir` for any `.md`), so the install alone satisfies it and it says nothing at all about the run; and read as a proof of execution it claims the run recompiled, which a correct passthrough must not do. Retargeting those five at their real subjects removed the last assertion touching this behaviour and left it stated nowhere, which is what the named spec now holds.
+The counter-example is why the rule exists. Five specs used to assert `toHaveCompiledAgents()` and a substring of the emitted config after a passthrough edit, and all five held only because `edit` had a phantom write: it hydrated its agent roster from a field most configs did not carry, and `detectConfigChanges` (`src/cli/commands/edit.tsx`) then found a diff nobody had made. `toHaveCompiledAgents()` is wrong here twice over — it reads presence (`readdir` for any `.md`), so the install alone satisfies it and it says nothing at all about the run; and read as a proof of execution it claims the run recompiled, which a correct passthrough must not do. Retargeting those five at their real subjects removed the last assertion touching this behaviour and left it stated nowhere, which is what the named spec now holds.
 
 ---
 
@@ -667,19 +644,17 @@ The counter-example is why the rule exists. Five specs used to assert `toHaveCom
 
 Three output surfaces exist, and they do not hold the same thing.
 
-| Surface                                                                | What it holds                                                                           | Assert on it when                                        |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `getScreen()`                                                          | **Scrollback + viewport** — NOT viewport-only, despite its name (see the warning below) | Asserting POSITIVELY on current content                  |
-| `getOutput()` / `getFullOutput()`                                      | xterm's PROCESSED buffer: current screen + whatever genuinely scrolled off              | The value is on screen at capture time                   |
-| `getRawOutput()` / `waitForRawText` / `waitForTextAfter` / `*Awaiting` | Every byte the process wrote — append-only                                              | The value may already have been overwritten by a repaint |
+| Surface                             | What it holds                                                                           | Assert on it when                                        |
+| ----------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `getScreen()`                       | **Scrollback + viewport** — NOT viewport-only, despite its name (see the warning below) | Asserting POSITIVELY on current content                  |
+| `getOutput()` / `getFullOutput()`   | xterm's PROCESSED buffer: current screen + whatever genuinely scrolled off              | The value is on screen at capture time                   |
+| `getRawOutput()` / `waitForRawText` | Every byte the process wrote — append-only                                              | The value may already have been overwritten by a repaint |
 
 **`getOutput()` is not a frame log.** Ink redraws in place, so when a frame fits the viewport each repaint overwrites the previous one and nothing enters scrollback. A value that was rendered and then re-rendered differently is unrecoverable from it. Never assert "an earlier frame contained X" via `getOutput()`.
 
-**`getScreen()` is not viewport-only, so NO surface here is safe for an absence assertion.** It reads absolute buffer lines `0 .. viewportY + rows` — scrollback plus viewport. The name is the only thing that suggests otherwise; the method's own JSDoc states the range. Consequence: see [§ Negative Assertions](#negative-assertions) below — none of the three surfaces can carry a `not.toContain` about text the session once legitimately drew. Mechanics: [reference/testing/e2e-infrastructure.md § `getScreen()` is not viewport-only](../../reference/testing/e2e-infrastructure.md).
+**`getScreen()` is not viewport-only, so NO surface here is safe for an absence assertion.** It reads absolute buffer lines `0 .. viewportY + rows` — scrollback plus viewport. The name is the only thing that suggests otherwise; the method's own JSDoc states the range. Consequence: see [§ Negative Assertions](#negative-assertions) below — none of the three surfaces can carry a `not.toContain` about text the session once legitimately drew.
 
-**Toasts are always a raw-output assertion.** They render in an absolutely-positioned row Ink rewrites in place. Use the `*Awaiting` step methods (`toggleFocusedSkillAwaiting`, `selectSkillAwaiting`, `toggleFocusedAgentAwaiting`, `confirmAwaiting`), which snapshot a raw cursor before the press and wait on raw output after it. A non-anchored raw match would be satisfied by an earlier frame's residue.
-
-**Colour is never assertable in E2E.** The harness runs with `NO_COLOR`, so every E2E spec asserts the marker (`+`, `-`, `~`, `•`), not the colour. In-grid selected state is likewise colour-only in the build grid — read it via `getExclusiveCategorySelectedCount(category)`, the sole text-observable signal. A "these two surfaces use the same colour" contract needs a component test with a forced chalk level; see [reference/testing/infrastructure.md § Asserting Colour in Ink Component Tests](../../reference/testing/infrastructure.md).
+**Colour is never assertable in E2E.** The harness runs with `NO_COLOR`, so every E2E spec asserts the marker (`+`, `-`, `~`, `•`), not the colour. A "these two surfaces use the same colour" contract needs a component test with a forced chalk level.
 
 ---
 
@@ -720,7 +695,7 @@ The product now carries the same distinction structurally, which is what a spec 
 
 Run the failing case once and copy what the tool actually prints. A negative built from a paraphrase — "unknown flag", "not found", "invalid" — is satisfied by every outcome, the one it was written to exclude included.
 
-**oclif never prints "unknown flag".** Its parser refuses an undeclared flag with `Nonexistent flag: --refresh`, so `expect(output.toLowerCase()).not.toContain("unknown flag")` holds whether the flag was accepted, rejected, crashed on for an unrelated reason, or produced no error object at all. A spec named for accepting a flag its command has never declared was green on that assertion for as long as anyone can tell. That spelling is gone from the tree; three siblings of it are not — see the sweep-scoping rule below.
+**oclif never prints "unknown flag".** Its parser refuses an undeclared flag with `Nonexistent flag: --refresh`, so `expect(output.toLowerCase()).not.toContain("unknown flag")` holds whether the flag was accepted, rejected, crashed on for an unrelated reason, or produced no error object at all. A spec named for accepting a flag its command has never declared was green on that assertion for as long as anyone can tell. That spelling is gone from the tree.
 
 The refusal is the assertion that can fail, and it is what ships beside the withdrawn flags:
 
@@ -787,44 +762,24 @@ Three further constraints apply to any negative assertion about **rendered outpu
 
 Every terminal surface includes scrollback (see the corrected table above), so the assertion tests the emulator's memory rather than the process's current output. Text drawn on any earlier frame is still matchable.
 
-The resize guard is the sharpest case: shrinking the terminal pushes the entire pre-shrink frame into scrollback, so `not.toContain(STEP_TEXT.BUILD)` fails against residue **whether or not the guard works**. A cursor-anchored raw wait does not rescue it either — a resize paints twice (Ink's own `resized()` re-render, then the app's reaction to the new dimensions), so the post-cursor slice holds both frames.
-
-Prove the negative by **order** or by **behaviour**:
-
-```typescript
-// Bad: scrollback-sensitive; fails either way
-expect(step.getScreen()).not.toContain(STEP_TEXT.BUILD);
-
-// Good (order): the prompt is the LAST thing painted, so nothing was drawn after it.
-// Discriminating — with the guard reverted the buffer ends with the wizard footer.
-expect(step.getScreen()).toMatch(/Please resize\.$/);
-
-// Good (behaviour): drive the session and assert the outcome the absent element would have changed.
-```
+Prove the negative by **order** — `toMatch(/…$/)`, the expected text as the LAST thing painted, so nothing was drawn after it — or by **behaviour**: drive the session and assert the outcome the absent element would have changed.
 
 ### 2. Pair every negative rendering assertion with a positive subject guard
 
-A `not.toContain("<bug shape>")` on a clipped viewport passes for free when the captured frame paints none of the rows the bug shape is made of. Assert, in the very frame you captured, that the subject IS on screen:
+A `not.toContain("<bug shape>")` on a clipped viewport passes for free when the captured frame paints none of the rows the bug shape is made of. Assert, in the very frame you captured, that the subject IS on screen.
 
-```typescript
-await confirm.scrollSummaryToBottom();
-const screen = confirm.getScreen();
-expect(screen).toContain("+ web-developer"); // positive guard: the subject is painted
-expect(screen).not.toContain("─+ "); // now a real claim about it
-```
-
-Clearing the minimum-size gate is not evidence the content is visible — at `TERMINAL_SIZE.SHORT` the confirm panel's five rows are entirely filled by its header, and the first summary row appears six presses into the scroll range.
+Clearing the minimum-size gate is not evidence the content is visible.
 
 ### 3. A counter is not its content
 
 Asserting that a scroll affordance's "N more above / below" numbers moved does not establish that anything scrolled. Assert a row the movement revealed. Disabling the scroll outright left both counter assertions green while the frame showed the unscrolled header.
 
-**Where a message reports a PARTITION, a spec asking "how many did this reach" asserts every operand.** The fan-out line is the second worked example, and the trap here is not a counter standing in for content but a counter whose subject is **narrower than the question**. `propagatedRecompileSummary` (`src/cli/utils/messages.ts`) prints `Recompiled agents in <rewritten> registered projects, <unchanged> unchanged` plus ` (<failed> failed)` when any failed, and the leading number counts projects this pass actually **rewrote** — a project the fan-out visited and left byte-identical is in `unchanged`. Projects reached is the SUM, and no single operand answers it. Two rows a reach assertion has to separate are ordered backwards by the leading number:
+**Where a message reports a PARTITION, a spec asking "how many did this reach" asserts every operand.** The fan-out line is the second worked example, and the trap here is not a counter standing in for content but a counter whose subject is **narrower than the question**. `propagatedRecompileSummary` (`src/cli/utils/messages.ts`) prints `Recompiled agents in <rewritten> registered project(s), <unchanged> unchanged` plus ` (<failed> failed)` when any failed, and the leading number counts projects this pass actually **rewrote** — a project the fan-out visited and left byte-identical is in `unchanged`. Projects reached is the SUM, and no single operand answers it. Two rows a reach assertion has to separate are ordered backwards by the leading number:
 
 | The run                               | The line                                     |
 | ------------------------------------- | -------------------------------------------- |
 | reached two projects, rewrote neither | `... in 0 registered projects, 2 unchanged`  |
-| reached ONE project, rewrote it       | `... in 1 registered projects, 0 unchanged`  |
+| reached ONE project, rewrote it       | `... in 1 registered project, 0 unchanged`   |
 | reached no project at all             | nothing printed — the reporter returns early |
 
 Measured: a first draft asserting `` `${STEP_TEXT.PROPAGATED_RECOMPILE} 2 registered projects` `` as proof that a global edit reached both registered projects went **red against a correct binary** — the run had reached both, and the real line read `0 registered projects, 2 unchanged`, because the removed global sub-agent shared no skill with either project's own one. The dangerous direction is the other one: a spec asserting the leading count alone is green on the day it is written, because the author picks whichever arm their fixture happens to produce, and only becomes misleading when a later change moves the population into the other arm.

@@ -1,5 +1,5 @@
 ---
-last_validated: 2026-04-21
+last_validated: 2026-10-15
 ---
 
 # TypeScript Types Bible
@@ -89,7 +89,7 @@ This applies universally:
 
 - `Partial<Record<SkillId, ResolvedSkill>>` — not all skills present
 - `Partial<Record<SkillAlias, SkillId>>` — not all aliases mapped
-- `Partial<Record<Domain, SubcategorySelections>>` — not all domains selected
+- `Partial<Record<AgentName, StackAgentConfig>>` — not every agent in a stack
 
 **TypeScript forces you to handle `undefined` access, which is correct.**
 
@@ -131,15 +131,15 @@ slug?: string | undefined;
 
 Widening `T`'s optional properties to satisfy the annotation is the reflex this section already warns about: it moves the lie into the domain type, where every consumer inherits it. Fifteen annotated schemas in `src/cli/lib/schemas.ts` were false, and the honest-looking fix would have touched roughly fifty properties across `types/matrix.ts` and `types/config.ts`. Two things to check before adopting it on an existing schema: the emitted JSON Schema should be unchanged (JSON Schema cannot express "present and undefined"), and no caller should `.parse()` an object literal built from a maybe-value — the compiler catches the second for you, because `.exactOptional()` narrows the INPUT type too. It is a tightening, not a weakening: it rejects an input the old schema accepted and accepts nothing new. The one reachable behavioural edge is a hand-written `config.ts` carrying `description: undefined`, which now fails to load; the CLI's own generator never emits such a key, and JSON and YAML cannot represent `undefined` at all.
 
-`schemas.ts` is fully migrated — 137 `.exactOptional()` calls and no `.optional()`. The remainder is the check, over both trees this section governs:
+`schemas.ts` is fully migrated — no `.optional()` remains. The remainder is the check, over both trees this section governs:
 
 ```
 grep -rn '\.optional()' src/cli/ ../matrix/src/ --include='*.ts' --include='*.tsx' | grep -v '\.test\.'
 ```
 
-**The hit count is deliberately not written beside it.** This is a worklist rather than a total: its correct end state is zero, so a number stored here is wrong the moment anyone acts on the rule, and wrong in the direction that reads as work still owed. The passage that stood here carried two counts and a scope claim, and re-deriving them found all three false — one had gone to zero, one had never been right on the day it was written, and the scope claim had been overruled. Naming the file did the sharper damage: a reader who trusts "all in `plugin-settings.ts`" stops looking anywhere else, which is the scoping failure this branch exists to prevent. `agent-findings/INDEX.md` declines to write its own count for the same reason. `DOCUMENTATION_MAP.md`'s "Coverage" keeps both a number and its invocation, and the difference is that Coverage claims sole ownership of its totals — an ownership claim needs a value for a competing copy to collide against. Nothing owns this census, so the invocation is the whole of it.
+**The hit count is deliberately not written beside it.** This is a worklist rather than a total: its correct end state is zero, so a number stored here is wrong the moment anyone acts on the rule, and wrong in the direction that reads as work still owed. The passage that stood here carried two counts and a scope claim, and re-deriving them found all three false — one had gone to zero, one had never been right on the day it was written, and the scope claim had been overruled. Naming the file did the sharper damage: a reader who trusts "all in `plugin-settings.ts`" stops looking anywhere else, which is the scoping failure this branch exists to prevent. `agent-findings/INDEX.md` declines to write its own count for the same reason.
 
-**`packages/matrix` is governed by this document** — owner ruling, 2026-08-19 — and the reason is the vendoring rather than the workspace boundary, so check the reason before relying on the conclusion. `scripts/generate-matrix-package.ts` writes `packages/matrix/src/vendor/` by reading the files named in its own `VENDORED_TYPE_FILES` out of `src/cli/types/` and copying them verbatim; its `check` entry point compares every committed copy against a fresh read for byte equality and reports any difference as drift, which `generate:matrix:check` fails on, so the copy cannot diverge quietly. `packages/matrix/src/built-in-matrix.ts` then types itself from that copy, importing `./vendor/generated/source-types` and `./vendor/matrix`, and the traffic runs the other way as well — the CLI's own generator imports `matrixSchema` from `@workspace/matrix/matrix-schema` to validate what it is about to emit. A rule about the CLI's types is therefore a rule about a package assembled out of them. **What would retire this: `generate-matrix-package.ts` ceasing to vendor `src/cli/types/`.** Nothing else about the workspace boundary is load-bearing, and "it is a different workspace" was never the question the ruling turned on.
+**`packages/matrix` is governed by this document** — owner ruling, 2026-08-19 — and the reason is the vendoring rather than the workspace boundary, so check the reason before relying on the conclusion. `scripts/generate-matrix-package.ts` writes `packages/matrix/src/vendor/` by reading the files named in its own `VENDORED_TYPE_FILES` out of `src/cli/types/` and copying them verbatim; its `check` entry point compares every committed copy against a fresh read for byte equality and reports any difference as drift, which `generate:matrix:check` fails on, so the copy cannot diverge quietly. `packages/matrix/src/built-in-matrix.ts` then types itself from that copy, importing `./vendor/generated/source-types`, and the traffic runs the other way as well — the CLI's own generator imports `matrixSchema` from `@workspace/matrix/matrix-schema` to validate what it is about to emit. A rule about the CLI's types is therefore a rule about a package assembled out of them. **What would retire this: `generate-matrix-package.ts` ceasing to vendor `src/cli/types/`.** Nothing else about the workspace boundary is load-bearing, and "it is a different workspace" was never the question the ruling turned on.
 
 **Never `?? fallback` to dodge the flag.** Inventing `null`, `""` or `{}` where the caller had nothing is the silent-fallback failure `packages/cli/CLAUDE.md` already bans under Data Integrity, and this flag makes it newly tempting.
 
@@ -153,7 +153,7 @@ Applying (b) by reflex is the failure mode to watch for: a type that admits `und
 
 §4 narrows a record's KEYS. This narrows the ids inside the parsed VALUES, which is a different question and the one that goes unasked. A schema at a parse boundary is the only place a renamed or dropped id can be caught; `z.string()` there does not merely skip the check, it forces every consumer downstream to cast the union back — and those casts are §6's "mid-pipeline workaround" row, which this same document says to fix at the source.
 
-`SKILL_IDS`, `SKILL_SLUGS`, `CATEGORIES`, `AGENT_NAMES` and `MODEL_NAMES` are emitted as `as const satisfies readonly …[]` precisely so `z.enum` can take them — `z.enum` requires a readonly tuple. `packages/matrix/src/built-in-matrix.ts` (then `schema.ts`) opened with the claim that a regenerated catalog dropping something we depend on "fails here, loudly, instead of rendering a blank table", and for ids that claim was false: every id was `z.string()`, so a renamed skill parsed cleanly and surfaced later as a lookup returning nothing. Thirteen casts existed downstream for no other reason, none of them commented.
+`SKILL_IDS`, `SKILL_SLUGS`, `CATEGORIES`, `AGENT_NAMES` and `MODEL_NAMES` are `as const` tuples precisely so `z.enum` can take them — `z.enum` requires a readonly tuple. `packages/matrix/src/built-in-matrix.ts` (then `schema.ts`) opened with the claim that a regenerated catalog dropping something we depend on "fails here, loudly, instead of rendering a blank table", and for ids that claim was false: every id was `z.string()`, so a renamed skill parsed cleanly and surfaced later as a lookup returning nothing. Thirteen casts existed downstream for no other reason, none of them commented.
 
 **Corollary for review: a cast to a generated union in a read model is evidence its schema is loose.** Look upstream before accepting one.
 
@@ -163,7 +163,7 @@ grep -rnP '\bas (SkillId|SkillSlug|Category|Domain|AgentName|ModelName)\b' ../ma
 
 Two boundaries the rule does not cross, and both matter more than the rule:
 
-**Where the vocabulary is authored downstream of the schema, validating at the boundary is an import cycle.** Narrow at the module that owns the list, with an asserting lookup, and say so in a comment at the boundary. `SubAgent.flavor` is the live case: `ROLE_FLAVORS` lives in `read-model/preload-defaults.ts`, which reads `schema.ts`, so importing it back throws at import time rather than at review time.
+**Where the vocabulary is authored downstream of the schema, do not import it back into the boundary.** Narrow at the module that owns the list, with an asserting lookup, and say so in a comment at the boundary. `SubAgent.flavor` is the live case: `ROLE_FLAVORS` lives in `read-model/preload-defaults.ts`, so `built-in-agents.ts` keeps `flavor: z.string()` and `flavorOf` narrows it.
 
 **Where the vocabulary is genuinely open, keep `z.string()` and an open field type — but never `z.string() as z.ZodType<SkillId>`.** That form is worse than either honest option: it asserts a membership nothing checked, and it hands every consumer a union the data may not belong to. This is a live shape in `src/cli/lib/schemas.ts`, which reads third-party marketplaces and so legitimately meets ids outside the built-in tuple (a custom marketplace namespaces its skill ids; users define custom agents):
 
@@ -171,7 +171,7 @@ Two boundaries the rule does not cross, and both matter more than the rule:
 grep -nP '^\s+[a-zA-Z]*[Ii][dD]s?: z\.(string|array\(z\.string)' src/cli/lib/schemas.ts
 ```
 
-The same file already writes `z.enum(SKILL_SLUGS)` and `z.enum(CATEGORIES)`, so the pattern is not unknown to it; the open positions are `skillAssignmentSchema.id`, `agentYamlConfigSchema.id` and `categoryDefinitionSchema.id` / `.domain`, and `loadAgentsFromDir` in `src/cli/lib/loading/loader.ts` carries a boundary cast whose stated justification is the annotation on the second of those. Whether each id is open or closed is a product judgement, not a mechanical one — but the annotation must state the answer honestly either way. §12a is the read side of the open case: a `Partial<Record<Union, V>>` plus a lookup taking `string`, never eleven casts at the call sites.
+The same file already writes `z.enum(SKILL_SLUGS)` and `z.enum(CATEGORIES)`, so the pattern is not unknown to it; the open positions are `skillAssignmentSchema.id`, `agentYamlConfigSchema.id` and `categoryDefinitionSchema.id` / `.domain`, and `loadAgentsFromDir` in `src/cli/lib/loading/loader.ts` carries a boundary cast whose stated justification is the annotation on the second of those. Whether each id is open or closed is a product judgement, not a mechanical one — but the annotation must state the answer honestly either way. §12a is the read side of the open case: a `Partial<Record<Union, V>>` plus a lookup taking `string`, never a cast at each call site.
 
 ---
 
@@ -179,7 +179,7 @@ The same file already writes `z.enum(SKILL_SLUGS)` and `z.enum(CATEGORIES)`, so 
 
 §4b's two boundaries both END in an asserting lookup, and both say "say so in a comment". This states what the comment has to contain, because a comment naming the fact and not its guarantor is unfalsifiable: **name the function that enforces the invariant and what it does to the bad case.** A reader of the asserting module alone cannot discover either, and a test author building the data by hand has nothing enforcing it at all (see `clean-code-standards.md` 6.23 for that half).
 
-`validateRequirements` in `src/cli/lib/matrix/matrix-resolver.ts` renders every unmet requirement through `getLabel(getSkillById(id))`, and `getSkillById` throws `Skill not found`. It is safe two modules away: `resolveEveryNeed` in `src/cli/lib/matrix/skill-resolution.ts` takes a requirement's needs **whole or not at all** — `null` unless every slug resolves, because keeping the survivors would apply a requirement nobody wrote — so no loaded catalog can carry a requirement naming a skill it does not have. Neither file says this. `labelOf` in the same resolver does carry a boundary-cast comment ("every id inside a cause was read out of the matrix's own relationship tables"), which is the right instinct and still stops one step short: it states where the ids came from, not which function would have dropped a bad one.
+`validateRequirements` in `packages/compile/src/selection.ts` renders every unmet requirement through `labelOf`, whose `skillOrThrow` throws `Skill not found`. It is safe a package away: `resolveEveryNeed` in `src/cli/lib/matrix/skill-resolution.ts` takes a requirement's needs **whole or not at all** — `null` unless every slug resolves, because keeping the survivors would apply a requirement nobody wrote — so no loaded catalog can carry a requirement naming a skill it does not have. Neither file says this. The boundary cast in `validateRequirements` does carry a comment ("requirement ids come out of the catalogue's own tables"), which is the right instinct and still stops one step short: it states where the ids came from, not which function would have dropped a bad one.
 
 The failure mode is not a crash — the invariant holds — it is that a later change to the loader has no way to know what depends on it, and the assertion is where the cost lands.
 
@@ -228,15 +228,15 @@ For the full boundary cast taxonomy with real codebase examples (6 categories, a
 unacceptable patterns, post-safeParse conventions), see
 [`clean-code-standards.md` Section 7.2](clean-code-standards.md).
 
-**Double cast through `unknown` for branded Record keys.** When constructing a Record whose keys and values are both branded template literal types (e.g., `SkillDisplayName`, `SkillId`), a single `as` cast fails because object literal string keys are not assignable to branded types. Use `as unknown as Record<BrandedKey, BrandedValue>` with a comment:
+**Double cast through `unknown` for branded Record keys.** When constructing a Record whose keys and values are both branded template literal types, a single `as` cast fails because object literal string keys are not assignable to branded types. Use `as unknown as Record<BrandedKey, BrandedValue>` with a comment:
 
 ```typescript
 // Double cast needed: object literal's string keys are not assignable to branded
-// SkillDisplayName/SkillId types without going through `unknown` first (boundary cast)
+// key/value types without going through `unknown` first (boundary cast)
 const displayNameToId = {
   react: "web-framework-react",
   zustand: "web-state-zustand",
-} as unknown as Record<SkillDisplayName, SkillId>;
+} as unknown as Record<BrandedKey, BrandedValue>;
 ```
 
 Prefer typed helper functions over raw casts for recurring patterns. These live in `src/cli/utils/typed-object.ts` — import from there, do not re-implement:
@@ -252,17 +252,17 @@ export function typedKeys<K extends string>(obj: Partial<Record<K, unknown>>): K
 }
 ```
 
-**Runtime narrowing uses type guards, not casts.** For string-to-union narrowing at runtime, use the guards in `src/cli/utils/type-guards.ts` — `isCategory()`, `isDomain()`, `isAgentName()`, `isCategoryPath()`. They check membership against the generated `CATEGORIES` / `DOMAINS` / `AGENT_NAMES` arrays from `src/cli/types/generated/source-types.ts`, so adding a new value to the source automatically widens the guard.
+**Runtime narrowing uses type guards, not casts.** For string-to-union narrowing at runtime, use the guards in `src/cli/utils/type-guards.ts` — `isCategory()`, `isAgentName()`, `isCategoryPath()`. They check membership against the generated `CATEGORIES` / `AGENT_NAMES` arrays from `src/cli/types/generated/source-types.ts`, so adding a new value to the source automatically widens the guard.
 
 ```typescript
 // BAD — cast asserts membership without checking
-const domain = flags.domain as Domain;
+const agent = flags.agent as AgentName;
 
 // GOOD — guard narrows, fall-through handles invalid input
-if (!isDomain(flags.domain)) {
-  throw new Error(`Invalid domain: ${flags.domain}`);
+if (!isAgentName(flags.agent)) {
+  throw new Error(`Invalid agent: ${flags.agent}`);
 }
-// flags.domain is now Domain
+// flags.agent is now AgentName
 ```
 
 ---
@@ -371,8 +371,7 @@ grep -rn 'no-unnecessary-condition -- typedEntries/Object.entries launders' src 
   --include='*.ts' --include='*.tsx' | wc -l
 ```
 
-Thirty-two, across thirteen files. Deleting them is a separate and arguable call; the disables are
-the inventory for whoever makes it.
+Deleting them is a separate and arguable call; the disables are the inventory for whoever makes it.
 
 **3. A `??` or `?.` on a Node or DOM global is exempt from an "unnecessary" verdict by default.**
 DefinitelyTyped is not a contract. `process.stdout.columns` is declared `number` and is `undefined`
@@ -435,7 +434,7 @@ grep -rn 'as ProjectConfig\b' src/cli --include='*.ts' --include='*.tsx' | grep 
 `(x ?? []) as T[]` and `(x as T[]) ?? []` differ only in whether the guard still runs, and the second
 reads as the more natural of the two while being dead: the checker sees a non-nullish value and
 `no-unnecessary-condition` agrees with it. `extractConfigArrays` in
-`lib/configuration/config-writer.ts` carries the correct order with a comment saying the order is
+`packages/compile/src/config-source.ts` carries the correct order with a comment saying the order is
 deliberate, and its reason is a property of the boundary rather than a style preference —
 `JSON.parse(JSON.stringify(x))` drops every key whose value was `undefined`, so the `Record<string,
 unknown>` it produces really can be missing `skills`, whatever a cast asserts about it.
@@ -486,11 +485,11 @@ Give names to recurring composite types:
 
 ```typescript
 // Instead of repeating this everywhere:
-Record<Domain, Record<Category, SkillAlias[]>>;
+Partial<Record<AgentName, Partial<Record<Category, SkillAssignment[]>>>>;
 
-// Extract a named alias:
-type SubcategorySelections = Record<Category, (SkillAlias | SkillId)[]>;
-type DomainSelections = Partial<Record<Domain, Partial<SubcategorySelections>>>;
+// Extract a named alias (src/cli/types/stacks.ts):
+type StackAgentConfig = Partial<Record<Category, SkillAssignment[]>>;
+agents: Partial<Record<AgentName, StackAgentConfig>>;
 ```
 
 Benefits: easier to read, single point of change, self-documenting.
@@ -554,7 +553,7 @@ export const E2E_AGENTS = {
 } as const;
 ```
 
-Nothing fails to compile either way — the widened type is still assignable everywhere the constant is used — so the loss surfaces much later, as a missed type error in some future spec that assigns the member to a narrower parameter. This has bitten twice on the same shape (`E2E_AGENTS` in `e2e/fixtures/expected-values.ts`, `EXPECTED_AGENTS` in `src/cli/lib/__tests__/expected-values.ts`), so both carry an on-site comment saying why the clauses sit where they do; do not "tidy" them back onto the object. When a constant mixes data and accessors, verify the accessor's type is unchanged with a two-line type-probe assignment before and after adding any clause. An object with no accessor takes the clause on the object — `E2E_AGENT` and `EXPECTED_SKILLS` both do, and `E2E_AGENT` says so in a comment beside its neighbour.
+Nothing fails to compile either way — the widened type is still assignable everywhere the constant is used — so the loss surfaces much later, as a missed type error in some future spec that assigns the member to a narrower parameter. This has bitten twice on the same shape, so `E2E_AGENTS` in `e2e/fixtures/expected-values.ts` carries an on-site comment saying why the clauses sit where they do; do not "tidy" them back onto the object. When a constant mixes data and accessors, verify the accessor's type is unchanged with a two-line type-probe assignment before and after adding any clause. An object with no accessor takes the clause on the object — `E2E_AGENT` and `EXPECTED_SKILLS` both do, and `E2E_AGENT` says so in a comment beside its neighbour.
 
 ```
 grep -rn -B12 'as const satisfies' src/ e2e/ scripts/ --include='*.ts' --include='*.tsx' | grep -P '^[^ ]+[-:][0-9]+[-:] *get [a-zA-Z_]+\(\)'
@@ -569,11 +568,11 @@ Prefer `Record` or `Partial<Record>` over index signatures:
 ```typescript
 // AVOID — index signature allows any string key
 type StackAgentConfig = {
-  [subcategoryId: string]: string;
+  [category: string]: SkillAssignment[];
 };
 
 // PREFER — explicit key type
-type StackAgentConfig = Partial<Record<Category, SkillAlias>>;
+type StackAgentConfig = Partial<Record<Category, SkillAssignment[]>>;
 ```
 
 Index signatures always widen to `string` keys. `Record` with union keys preserves type information.
@@ -604,23 +603,23 @@ Note the `Partial` in the narrowed example: this section is about narrowing the 
 
 §12 decides who may ADD a key. This section decides who may ASK about one, and the answers differ.
 
-A map whose keys come from a generated union but which is _asked about_ ids from outside it — ids a user minted this session, ids a saved configuration recorded before a later catalogue dropped them — keeps `Partial<Record<Union, V>>` and gains a lookup function taking `string`:
+A map whose keys come from a generated union but which is _asked about_ ids from outside it — an id a saved configuration recorded before a later release retired it — keeps `Partial<Record<Union, V>>` and gains a lookup function taking `string`. `subAgentById` in `packages/matrix/src/read-model/sub-agents.ts` is the live shape:
 
 ```typescript
-const CATALOGUED_IDS = new Set<string>(SKILL_IDS);
-const isSkillId = (skillId: string): skillId is SkillId => CATALOGUED_IDS.has(skillId);
+const ROSTER_IDS = new Set<string>(AGENT_NAMES);
+const isAgentName = (agentId: string): agentId is AgentName => ROSTER_IDS.has(agentId);
 
-export const skillById = (skillId: string): CatalogSkill | undefined =>
-  isSkillId(skillId) ? CATALOG.skillsById[skillId] : undefined;
+export const subAgentById = (agentId: string): SubAgent | undefined =>
+  isAgentName(agentId) ? SUB_AGENTS_BY_ID[agentId] : undefined;
 ```
 
-**Do not widen the declared key back to `string`** — §12's "keep `string`" answer is about who can add keys, and reading it as an answer here throws away the union the narrowing existed to recover. **Do not cast at the call sites** either: `skillsById[id as SkillId]` repeated eleven times is one wrong type laundered eleven ways.
+**Do not widen the declared key back to `string`** — §12's "keep `string`" answer is about who can add keys, and reading it as an answer here throws away the union the narrowing existed to recover. **Do not cast at the call sites** either: that is one wrong type laundered at every site.
 
-The lookup is one narrowing in one place. Call sites change by a single token (`CATALOG.skillsById[id]?.displayName` → `skillById(id)?.displayName`), they keep the `?.` guards they already had, and those guards start doing real work — the old total type is what made them look redundant.
+The lookup is one narrowing in one place. Call sites keep the `?.` guards they already had, and those guards start doing real work — the old total type is what made them look redundant.
 
 **Build the guard's membership set from the generated tuple**, never from `Object.keys` of the map and never as a bare `key in map`. An object index inherits `Object.prototype`, so `"toString" in map` is `true` and a lookup built on it hands back `Function.prototype.toString` typed as your value type.
 
-**A factual note that belongs with §4, because assuming otherwise is what makes this migration look expensive:** `Object.values` and `Object.entries` over a `Partial<Record<K, V>>` infer `V[]` and `[string, V][]` — the optional `undefined` is dropped from the implicit index signature. Only _indexed_ reads become `V | undefined`. Verified with `tsc` against this repo's config; five iteration sites across three workspaces needed no change at all when `Catalog.skillsById` was narrowed.
+**A factual note that belongs with §4, because assuming otherwise is what makes this migration look expensive:** `Object.values` and `Object.entries` over a `Partial<Record<K, V>>` infer `V[]` and `[string, V][]` — the optional `undefined` is dropped from the implicit index signature. Only _indexed_ reads become `V | undefined`. Verified with `tsc` against this repo's config.
 
 ---
 
@@ -630,8 +629,8 @@ The lookup is one narrowing in one place. Call sites change by a single token (`
 `src/cli/lib/schemas.ts` — camelCase name, `Schema` suffix. A schema is a value, and this repository
 capitalises types rather than values.
 
-The older PascalCase form survives in one shape, an exception rather than a second convention: the
-three `scripts/check-shared-*.ts` checkers declare module-private ones (`ManifestSchema`,
+The older PascalCase form survives in one shape, an exception rather than a second convention:
+some `scripts/check-*.ts` checkers declare module-private ones (`ManifestSchema`,
 `TsconfigSchema`) that no importer can see, so they name nothing a caller has to guess about. No
 **exported** PascalCase schema is left — `packages/matrix/src/schema.ts` held the last of them and
 was renamed `built-in-matrix.ts` on 2026-08-19, camelCasing every schema in it.
@@ -677,8 +676,7 @@ The two moves, in order:
 grep -rn '@ts-expect-error' packages/ apps/ --include='*.ts' --include='*.tsx'
 ```
 
-Four sites today, three of them in `packages/matrix/src/read-model/preload-defaults.test.ts`. Each
-is an assertion about the type system that no other mechanism in the repository makes.
+Each hit is an assertion about the type system that no other mechanism in the repository makes.
 
 When narrowing types across a codebase:
 
@@ -696,7 +694,7 @@ When narrowing types across a codebase:
 
 **A sweep that replaces an inline union with a named type is TYPE-position only, and the canonical
 false positive is a template string that EMITS generated code.** `PROJECT_CONFIG_TYPES_BEFORE` in
-`lib/configuration/config-types-writer.ts` holds `scope: "project" | "global";` inside the text
+`packages/compile/src/config-types-source.ts` holds `scope: 'project' | 'global'` inside the text
 written to disk as the generated `config-types.ts`. It is value-position source, not an annotation:
 substituting `SkillScope` there emits a reference to a type the generated file does not declare, and
 nothing in the sweeping package goes red — the failure lands in a consumer's generated file. Any
@@ -715,10 +713,8 @@ worth re-measuring rather than copying:
 - **A ternary of string literals.** Under TypeScript 6, `const x = cond ? "global" : "project"` does
   **not** widen — it infers the union and assigns to `SkillScope` cleanly. `let x = …` under the same
   ternary widens to `string` and does not. Measured on a two-line probe against this repository's own
-  compiler; the per-branch `as const` form in `stores/wizard-store.ts` is on `const` bindings, so what
-  it buys today is not what it bought when it was written. **Re-run the probe before either adding or
-  removing an `as const` on this shape** — the answer is a compiler-version fact, and the two-line
-  probe is cheaper than either edit.
+  compiler. **Re-run the probe before either adding or removing an `as const` on this shape** — the
+  answer is a compiler-version fact, and the two-line probe is cheaper than either edit.
 
 ---
 
