@@ -20,6 +20,7 @@ import {
   type ExternalSkill,
 } from "@/stores/catalog-store"
 import type { RosterGroupBy, SkillEntry } from "@/stores/persisted-schema"
+import { stackAgentPins } from "./default-assignments"
 import {
   SCOPE_ERROR,
   catalogueSkillCount,
@@ -70,7 +71,7 @@ const EXPANSION = expandStack(STACK.id)!
 
 const asApplied = (): ConfigSelection => ({
   stackId: STACK.id,
-  agents: {},
+  agents: stackAgentPins(EXPANSION),
   skills: Object.fromEntries(
     EXPANSION.skillIds.map((skillId) => [
       skillId,
@@ -193,17 +194,21 @@ describe("isStackCustom", () => {
     ).toBe(true)
   })
 
-  // `applyStack` writes no agent records at all, so any entry in that map is an
-  // edit — a pin in either direction, and equally a model or an effort, which
-  // are now decisions the same map holds.
+  // `applyStack` writes its pins and no other agent record, so any other entry
+  // in that map is an edit — a pin in either direction, and equally a model or
+  // an effort, which are now decisions the same map holds.
   it.each([
     ["pinned off", { on: false }],
     ["pinned on", { on: true }],
     ["given a model", { model: "haiku" }],
     ["given an effort", { effort: "max" }],
   ] as const)("is true once an agent is %s", (_label, choice) => {
+    const applied = asApplied()
     expect(
-      isStackCustom({ ...asApplied(), agents: { "web-tester": choice } })
+      isStackCustom({
+        ...applied,
+        agents: { ...applied.agents, "web-tester": choice },
+      })
     ).toBe(true)
     expect(isStackCustom(scratch({}, { "web-tester": choice }))).toBe(true)
   })

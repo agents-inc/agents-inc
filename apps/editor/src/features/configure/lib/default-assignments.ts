@@ -1,8 +1,8 @@
-import { resolveAssignment } from "@workspace/matrix"
+import { resolveAssignment, type StackExpansion } from "@workspace/matrix"
 
 import { activeSkillById } from "@/stores/catalog-store"
 
-import type { Assignment } from "@/stores/persisted-schema"
+import type { AgentEntry, Assignment } from "@/stores/persisted-schema"
 
 // Which sub-agents a freshly picked skill reaches, and how each of them loads
 // it. The rule is the shared resolver's — the same one the CLI's config
@@ -41,3 +41,14 @@ export const defaultAssignmentsFor = (
     ])
   )
 }
+
+/**
+ * The agent records a stack starts with: each sub-agent it declares with no
+ * skills, pinned on. No assignment names one, so nothing else would.
+ */
+export const stackAgentPins = ({
+  skillLessAgentIds,
+}: StackExpansion): Record<string, AgentEntry> =>
+  Object.fromEntries(
+    skillLessAgentIds.map((agentId) => [agentId, { on: true }])
+  )

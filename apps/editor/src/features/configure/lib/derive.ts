@@ -30,12 +30,14 @@ import {
   isAgentOn,
   reachesAgent,
   resolveAgentOptions,
+  type AgentEntry,
   type AgentScope,
   type LoadState,
   type PersistedConfig,
   type RosterGroupBy,
   type SkillEntry,
 } from "@/stores/persisted-schema"
+import { stackAgentPins } from "./default-assignments"
 import { compilesAgent, offersPlacement } from "./provider"
 
 // The selection and nothing else. Narrower than `PersistedConfig` on purpose:
@@ -753,17 +755,46 @@ const isSkillEdited = (
   expected: readonly AssignmentTarget[]
 ) => !hasDefaultOptions(entry) || !sameAssignments(entry.assignments, expected)
 
+// An agent record holds primitives only, so comparing field by field is whole.
+const sameAgentEntry = (
+  entry: AgentEntry | undefined,
+  expected: AgentEntry
+) => {
+  if (!entry) return false
+
+  const fields = new Map(Object.entries(entry))
+  const expectedFields = Object.entries(expected)
+  return (
+    fields.size === expectedFields.length &&
+    expectedFields.every(([field, value]) => fields.get(field) === value)
+  )
+}
+
+const sameAgentRecords = (
+  agents: ConfigSelection["agents"],
+  expected: ConfigSelection["agents"]
+) =>
+  sameSet(Object.keys(agents), Object.keys(expected)) &&
+  Object.entries(expected).every(([agentId, entry]) =>
+    sameAgentEntry(agents[agentId], entry)
+  )
+
 // The design's "Custom" label, where any edit counts — so options, assignments
 // and every agent decision are compared, not just which skills are selected.
 export const isStackCustom = (config: ConfigSelection): boolean => {
-  // `applyStack` writes no agent records at all, so any entry in that map is
-  // an edit — a pin in either direction, and equally a model or an effort.
-  if (Object.keys(config.agents).length > 0) return true
-
-  if (config.stackId === null) return Object.keys(config.skills).length > 0
+  if (config.stackId === null) {
+    return (
+      Object.keys(config.agents).length > 0 ||
+      Object.keys(config.skills).length > 0
+    )
+  }
 
   const expansion = expandActiveStack(config.stackId)
   if (!expansion) return true
+
+  // `applyStack` writes its pins and no other agent record, so any other is an
+  // edit — a pin in either direction, and equally a model or an effort.
+  if (!sameAgentRecords(config.agents, stackAgentPins(expansion))) return true
 
   const selectedIds = Object.keys(config.skills)
   if (!sameSet(selectedIds, expansion.skillIds)) return true

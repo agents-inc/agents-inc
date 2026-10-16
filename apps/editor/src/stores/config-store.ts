@@ -10,7 +10,10 @@ import {
   type PersistStorage,
 } from "zustand/middleware"
 
-import { defaultAssignmentsFor } from "@/features/configure/lib/default-assignments"
+import {
+  defaultAssignmentsFor,
+  stackAgentPins,
+} from "@/features/configure/lib/default-assignments"
 import { track } from "@/lib/analytics/track"
 import { reportIssue } from "@/lib/observability/report"
 import {
@@ -429,7 +432,7 @@ export const useConfigStore = create<ConfigState>()(
           stackId,
           skills: toStackSkills(expansion),
           remembered: {},
-          agents: {},
+          agents: stackAgentPins(expansion),
         })
       },
 

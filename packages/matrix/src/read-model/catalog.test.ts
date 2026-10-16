@@ -3,12 +3,29 @@ import { describe, expect, it } from "vitest"
 import { resolveAssignment } from "./assignment-defaults"
 import { CATALOG, skillById } from "./catalog"
 import { DOMAIN_LABELS } from "./domains"
-import { STACKS, expandStack } from "./stacks"
+import { MATRIX } from "./source"
+import { STACKS, createStackExpander, expandStack } from "./stacks"
 import { SUB_AGENTS_BY_ID, SUB_AGENT_GROUPS, subAgentById } from "./sub-agents"
 
 // The id the editor mints for a skill added from GitHub during a session. The
 // catalogue never had it and never will, which is exactly why asking is legal.
 const ADDED_SKILL_ID = "github:software-mansion/react-native-reanimated"
+
+// A stack declaring `cli-tester: {}`, and one whose every sub-agent carries a
+// skill. Each premise is asserted where it is used.
+const SKILL_LESS_STACK = "nextjs-fullstack"
+const FULLY_STAFFED_STACK = "cli-ink-oclif"
+const SKILL_LESS_AGENT = "cli-tester"
+
+const matrixStack = (stackId: string) =>
+  MATRIX.suggestedStacks.find((stack) => stack.id === stackId)!
+
+// The roster as the catalogue declares it, less the sub-agents this build
+// has never heard of.
+const declaredRoster = (stackId: string) =>
+  Object.keys(matrixStack(stackId).skills)
+    .filter((agentId) => subAgentById(agentId) !== undefined)
+    .sort()
 
 // The catalogue is regenerated from the agents-inc CLI, so these are
 // invariants about the *shape* the read model guarantees rather than about
@@ -205,5 +222,56 @@ describe("expandStack", () => {
       const { skillIds } = expandStack(stack.id)!
       expect(new Set(skillIds).size).toBe(skillIds.length)
     }
+  })
+
+  // Picking a stack installs every sub-agent it declares. One declared with no
+  // skills is named by no assignment, so the expansion has to name it itself.
+  it("names every sub-agent the stack declares, skill-less ones included", () => {
+    for (const stack of STACKS) {
+      const { assignmentsBySkill, skillLessAgentIds } = expandStack(stack.id)!
+      const named = new Set<string>([
+        ...Object.values(assignmentsBySkill)
+          .flat()
+          .map(({ agentId }) => agentId),
+        ...skillLessAgentIds,
+      ])
+
+      expect([...named].sort(), stack.id).toStrictEqual(
+        declaredRoster(stack.id)
+      )
+    }
+  })
+
+  it("names a sub-agent the stack declares with no skills", () => {
+    expect(
+      matrixStack(SKILL_LESS_STACK).skills[SKILL_LESS_AGENT]
+    ).toStrictEqual({})
+
+    expect(expandStack(SKILL_LESS_STACK)!.skillLessAgentIds).toStrictEqual([
+      SKILL_LESS_AGENT,
+    ])
+  })
+
+  it("names no sub-agent skill-less when every one carries a skill", () => {
+    const declared = matrixStack(FULLY_STAFFED_STACK).skills[SKILL_LESS_AGENT]
+    expect(Object.values(declared ?? {}).flat()).not.toStrictEqual([])
+
+    expect(expandStack(FULLY_STAFFED_STACK)!.skillLessAgentIds).toStrictEqual(
+      []
+    )
+  })
+
+  it("staffs nobody with a skill-less sub-agent this build has never heard of", () => {
+    const stack = matrixStack(SKILL_LESS_STACK)
+    const expand = createStackExpander({
+      ...MATRIX,
+      suggestedStacks: [
+        { ...stack, skills: { ...stack.skills, "retired-agent": {} } },
+      ],
+    })
+
+    expect(expand(SKILL_LESS_STACK)!.skillLessAgentIds).toStrictEqual([
+      SKILL_LESS_AGENT,
+    ])
   })
 })

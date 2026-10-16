@@ -21,6 +21,9 @@ export type StackExpansion = {
   skillIds: string[]
   // Which sub-agents each skill is assigned to, and how each of them loads it.
   assignmentsBySkill: Record<string, AssignmentTarget[]>
+  // The sub-agents the stack declares with no skills. No assignment names
+  // them, so applying the stack has to switch them on itself.
+  skillLessAgentIds: AgentName[]
 }
 
 const toCatalogStack = (stack: MatrixStack): CatalogStack => ({
@@ -54,11 +57,19 @@ const rosteredAgents = (stack: MatrixStack) =>
     .filter((agent) => agent !== undefined)
     .map((agent) => agent.id)
 
+const skillsOf = (stack: MatrixStack, agentId: AgentName) =>
+  Object.values(stack.skills[agentId] ?? {}).flat()
+
+const toSkillLessAgentIds = (stack: MatrixStack): AgentName[] =>
+  rosteredAgents(stack).filter(
+    (agentId) => skillsOf(stack, agentId).length === 0
+  )
+
 // Inverts the stack's agent → category → skills nesting into skill → agents.
 const toAgentsBySkill = (stack: MatrixStack): Record<string, AgentName[]> => {
   const agentsBySkill: Record<string, AgentName[]> = {}
   for (const agentId of rosteredAgents(stack)) {
-    for (const skillId of Object.values(stack.skills[agentId] ?? {}).flat()) {
+    for (const skillId of skillsOf(stack, agentId)) {
       const agents = (agentsBySkill[skillId] ??= [])
       if (!agents.includes(agentId)) agents.push(agentId)
     }
@@ -109,6 +120,7 @@ export const createStackExpander =
     return {
       skillIds: stack.allSkillIds,
       assignmentsBySkill: toAssignmentsBySkill(stack),
+      skillLessAgentIds: toSkillLessAgentIds(stack),
     }
   }
 
