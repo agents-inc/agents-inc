@@ -35,7 +35,6 @@ affected_files:
   - src/cli/lib/hosts/claude-host.test.ts
   - src/cli/lib/loading/source-fetcher.test.ts
   - src/cli/lib/loading/source-loader.test.ts
-  - src/cli/lib/matrix/matrix-resolver.test.ts
   - src/cli/utils/messages.test.ts
 standards_docs:
   - .ai-docs/standards/e2e/README.md

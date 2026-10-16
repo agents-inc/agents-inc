@@ -1,7 +1,6 @@
-// The selection semantics, implemented once. Both surfaces delegate here —
-// the editor's `derive.ts` and the CLI's `matrix-resolver.ts` — so a verdict is
-// the same verdict wherever it is rendered; `contract/selection-scenarios.ts`
-// is the specification this module answers to.
+// The selection semantics, implemented once. The editor's `derive.ts`
+// delegates here; `contract/selection-scenarios.ts` is the specification this
+// module answers to.
 //
 // Verdicts are structured rather than worded: this module decides *that* a
 // skill is out of reach and *why*, and each surface renders the why in its own

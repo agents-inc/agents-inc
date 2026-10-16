@@ -86,13 +86,6 @@ const TEST_ONLY_EXPORTS = [
     posture: "unjudged",
   },
   {
-    file: "src/cli/lib/configuration/config.ts",
-    name: "isSameMarketplace",
-    // Its production reader was `init`'s refusal of a marketplace other than the installed one,
-    // which went when `init --marketplace` without `--from` became the editor route.
-    posture: "unjudged",
-  },
-  {
     file: "src/cli/lib/hosts/claude-host.ts",
     name: "claudePluginMarketplaceRemove",
     // The second decision. `Add` is reached from the marketplace operation, `Update` from
@@ -136,31 +129,6 @@ const TEST_ONLY_EXPORTS = [
     // A host role, for its siblings' reason. `getInstalledPluginsRegistryPath` in
     // `lib/plugins/plugin-settings.ts` is the reader that takes it, and already shares this
     // module's `INSTALLED_PLUGINS_FILE` so the two cannot name different files.
-    posture: "unjudged",
-  },
-  {
-    file: "src/cli/lib/matrix/matrix-provider.ts",
-    name: "findStack",
-    // Its production readers were the wizard's stack step, deleted with the wizard.
-    posture: "unjudged",
-  },
-  {
-    file: "src/cli/lib/matrix/matrix-resolver.ts",
-    name: "getAvailableSkills",
-    // Its production reader was the wizard's build-step grid, deleted with the wizard.
-    posture: "unjudged",
-  },
-  {
-    file: "src/cli/lib/matrix/matrix-resolver.ts",
-    name: "getCellState",
-    // Its production reader was the wizard's build-step grid, deleted with the wizard.
-    posture: "unjudged",
-  },
-  {
-    file: "src/cli/lib/matrix/matrix-resolver.ts",
-    name: "validateSelection",
-    // Its production reader was the wizard's completion check, deleted with the wizard; `init`
-    // and `edit` validate through `@workspace/compile`'s own `validateSelection`.
     posture: "unjudged",
   },
   {

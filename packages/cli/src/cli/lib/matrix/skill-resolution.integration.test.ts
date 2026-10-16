@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { validateSelection } from "@workspace/compile";
 
 import {
   createTestSource,
@@ -7,13 +8,6 @@ import {
 } from "../__tests__/fixtures/create-test-source";
 import { installThroughOperations } from "../__tests__/helpers/install-through-operations.js";
 import { writeProjectConfig } from "../operations/project/write-project-config.js";
-import {
-  validateSelection,
-  getAvailableSkills,
-  getCellState,
-  hasUnmetRequirements,
-  getUnmetRequirementsReason,
-} from ".";
 import { createMockSkill } from "../__tests__/factories/skill-factories.js";
 import { createMatrixFromTestSkills } from "../__tests__/factories/matrix-factories.js";
 import {
@@ -30,7 +24,7 @@ import {
   RESOLUTION_PIPELINE_SKILLS,
 } from "../__tests__/mock-data/mock-skills.js";
 import { buildMultiSourceMatrix } from "../__tests__/mock-data/mock-matrices.js";
-import type { MergedSkillsMatrix, ProjectConfig, SkillId, SkillSlug, Category } from "../../types";
+import type { MergedSkillsMatrix, ProjectConfig, SkillId, SkillSlug } from "../../types";
 import { initializeMatrix, getSkillById } from "./matrix-provider";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 
@@ -160,7 +154,7 @@ describe("Integration: Multi-Source Skill Resolution", () => {
 
       expect(selectedSkills).toHaveLength(10);
 
-      const validation = validateSelection(selectedSkills);
+      const validation = validateSelection(selectedSkills, matrix);
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
 
@@ -179,8 +173,8 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       // Select a skill that doesn't exist in any source
       const selections: SkillId[] = ["web-framework-react", "web-nonexistent-skill" as SkillId];
 
-      // getSkillById throws for unknown skill IDs — invalid input is a bug
-      expect(() => validateSelection(selections)).toThrow("Skill not found");
+      // The validator throws for an id the catalogue does not hold — invalid input is a bug
+      expect(() => validateSelection(selections, matrix)).toThrow("Skill not found");
     });
 
     it("should throw for unknown skill ID lookup", () => {
@@ -188,19 +182,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       initializeMatrix(matrix);
 
       expect(() => getSkillById("web-nonexistent-skill" as SkillId)).toThrow("Skill not found");
-    });
-
-    it("should not include missing skill in getAvailableSkills for any category", () => {
-      const matrix = buildMultiSourceMatrix();
-      initializeMatrix(matrix);
-
-      // Check all categories -- missing skill should not appear
-      const allCategories = Object.keys(matrix.categories) as Category[];
-      for (const category of allCategories) {
-        const available = getAvailableSkills(category, []);
-        const ids = available.map((o) => o.id);
-        expect(ids).not.toContain("web-nonexistent-skill" as SkillId);
-      }
     });
 
     it("should detect missing requirement when dependency is not in matrix", () => {
@@ -224,7 +205,7 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         },
       );
 
-      expect(() => validateSelection(["web-feature-advanced" as SkillId])).toThrow();
+      expect(() => validateSelection(["web-feature-advanced" as SkillId], matrix)).toThrow();
     });
   });
 
@@ -244,7 +225,7 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       ];
 
       // Both selected -- should be valid
-      const validation = validateSelection(["api-database-drizzle", "api-framework-hono"]);
+      const validation = validateSelection(["api-database-drizzle", "api-framework-hono"], matrix);
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
     });
@@ -264,54 +245,10 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       ];
 
       // Only drizzle selected, hono missing
-      const validation = validateSelection(["api-database-drizzle"]);
+      const validation = validateSelection(["api-database-drizzle"], matrix);
       expect(validation.valid).toBe(false);
       expect(firstElement(validation.errors).type).toBe("missingRequirement");
       expect(firstElement(validation.errors).message).toContain("Hono");
-    });
-
-    it("should mark dependent skill as having unmet requirements when requirement is not selected", () => {
-      const matrix = buildMultiSourceMatrix();
-      initializeMatrix(matrix);
-
-      // auth-patterns requires hono
-      const authSkill = matrix.skills["api-security-auth-patterns" as SkillId]!;
-      authSkill.requires = [
-        {
-          skillIds: ["api-framework-hono"],
-          needsAny: false,
-          reason: "Auth patterns need a backend framework",
-        },
-      ];
-
-      // Nothing selected, auth should have unmet requirements
-      const unmet = hasUnmetRequirements("api-security-auth-patterns" as SkillId, []);
-      expect(unmet).toBe(true);
-
-      const reason = getUnmetRequirementsReason("api-security-auth-patterns" as SkillId, []);
-      expect(reason).toContain("requires");
-      expect(reason).toContain("Hono");
-    });
-
-    it("should not mark dependent skill as having unmet requirements when requirement is selected", () => {
-      const matrix = buildMultiSourceMatrix();
-      initializeMatrix(matrix);
-
-      // auth-patterns requires hono
-      const authSkill = matrix.skills["api-security-auth-patterns" as SkillId]!;
-      authSkill.requires = [
-        {
-          skillIds: ["api-framework-hono"],
-          needsAny: false,
-          reason: "Auth patterns need a backend framework",
-        },
-      ];
-
-      // hono selected, auth should not have unmet requirements
-      const unmet = hasUnmetRequirements("api-security-auth-patterns" as SkillId, [
-        "api-framework-hono",
-      ]);
-      expect(unmet).toBe(false);
     });
 
     it("should handle OR dependency across sources", () => {
@@ -329,15 +266,15 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       ];
 
       // Select react (from public), sentry should be valid
-      const validation = validateSelection([
-        "api-monitoring-sentry" as SkillId,
-        "web-framework-react",
-      ]);
+      const validation = validateSelection(
+        ["api-monitoring-sentry" as SkillId, "web-framework-react"],
+        matrix,
+      );
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
 
       // Without any framework, sentry should fail with missing requirement
-      const failValidation = validateSelection(["api-monitoring-sentry" as SkillId]);
+      const failValidation = validateSelection(["api-monitoring-sentry" as SkillId], matrix);
       expect(failValidation.valid).toBe(false);
       expect(failValidation.errors).toHaveLength(1);
       expect(firstElement(failValidation.errors).type).toBe("missingRequirement");
@@ -359,10 +296,10 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         },
       ];
 
-      const validation = validateSelection([
-        "web-framework-react",
-        "web-framework-vue-composition-api",
-      ]);
+      const validation = validateSelection(
+        ["web-framework-react", "web-framework-vue-composition-api"],
+        matrix,
+      );
       expect(validation.valid).toBe(false);
       expect(firstElement(validation.errors).type).toBe("conflict");
       expect(firstElement(validation.errors).message).toContain("Choose one frontend framework");
@@ -373,10 +310,10 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       initializeMatrix(matrix);
 
       // framework category is exclusive -- selecting both react and vue violates it
-      const validation = validateSelection([
-        "web-framework-react",
-        "web-framework-vue-composition-api",
-      ]);
+      const validation = validateSelection(
+        ["web-framework-react", "web-framework-vue-composition-api"],
+        matrix,
+      );
       expect(validation.valid).toBe(false);
       expect(validation.errors.some((e) => e.type === "categoryExclusive")).toBe(true);
     });
@@ -387,35 +324,12 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      const validation = validateSelection([
-        "web-state-zustand",
-        "api-framework-hono",
-        "api-database-drizzle",
-      ]);
+      const validation = validateSelection(
+        ["web-state-zustand", "api-framework-hono", "api-database-drizzle"],
+        matrix,
+      );
       expect(validation.valid).toBe(true);
       expect(validation.errors).toStrictEqual([]);
-    });
-
-    it("should handle getAvailableSkills with multi-source skills correctly", () => {
-      const matrix = buildMultiSourceMatrix();
-      initializeMatrix(matrix);
-
-      // Get available framework skills
-      const available = getAvailableSkills("web-framework", []);
-
-      // Should have exactly react and vue (only framework skills)
-      const ids = available.map((o) => o.id);
-      expect(ids).toHaveLength(2);
-      expect(ids).toContain("web-framework-react");
-      expect(ids).toContain("web-framework-vue-composition-api");
-
-      // Non-framework skills should NOT appear
-      expect(ids).not.toContain("web-state-zustand");
-      expect(ids).not.toContain("api-framework-hono");
-
-      // None should be discouraged or selected initially
-      expect(available.every((o) => getCellState(o.id, []).status === "normal")).toBe(true);
-      expect(available.every((o) => !o.selected)).toBe(true);
     });
   });
 });
@@ -529,7 +443,7 @@ describe("Integration: Skill ID Resolution in Multi-Source Context", () => {
     const matrix = buildMultiSourceMatrix();
     initializeMatrix(matrix);
 
-    const validation = validateSelection(["web-framework-react", "api-framework-hono"]);
+    const validation = validateSelection(["web-framework-react", "api-framework-hono"], matrix);
     expect(validation.valid).toBe(true);
   });
 });

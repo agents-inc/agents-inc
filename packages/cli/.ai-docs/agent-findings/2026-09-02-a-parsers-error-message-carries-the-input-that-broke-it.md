@@ -8,7 +8,6 @@ affected_files:
   - src/cli/lib/seed/read-piped-payload.ts
   - src/cli/lib/seed/publish-seed.ts
   - src/cli/lib/seed/fetch-seed.ts
-  - src/cli/lib/matrix/matrix-resolver.ts
   - src/cli/commands/search.ts
   - src/cli/lib/plugins/plugin-validator.ts
   - src/cli/lib/skills/skill-metadata.ts
@@ -26,7 +25,7 @@ root_cause: missing-rule
 status: partial
 partial_note: >-
   The sanitiser exists and the renderers that funnel foreign text are closed — truncateText,
-  formatZodIssue, getErrorMessage, and the seed, search and matrix-resolver sites. What is NOT
+  formatZodIssue, getErrorMessage, and the seed and search sites. What is NOT
   closed is the wizard's own Ink rendering of catalogue metadata: source-grid.tsx, category-grid.tsx,
   checkbox-grid.tsx, step-agents.tsx, stack-selection.tsx and edit.tsx all interpolate a marketplace
   author's displayName or description straight into a Text node. Those need one decision this lane

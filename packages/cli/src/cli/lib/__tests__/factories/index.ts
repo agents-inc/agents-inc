@@ -43,7 +43,6 @@ export {
 } from "./unloadable-config-factories.js";
 
 export {
-  createMockResolvedStack,
   createMockStack,
   createMockRawStacksConfig,
   createMockRawStacksConfigWithArrays,

@@ -1,14 +1,7 @@
 import { seatCatalog } from "@workspace/compile";
 
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
-import type {
-  Category,
-  Domain,
-  MergedSkillsMatrix,
-  ResolvedSkill,
-  ResolvedStack,
-  SkillId,
-} from "../../types";
+import type { Category, Domain, MergedSkillsMatrix, ResolvedSkill, SkillId } from "../../types";
 import { typedValues } from "../../utils/typed-object";
 
 /** The current matrix — starts as BUILT_IN_MATRIX, replaced after local skill merge on startup */
@@ -53,9 +46,4 @@ export function allSkills(): ResolvedSkill[] {
 export function getCategoryDomain(category: string): Domain | undefined {
   // Boundary cast: matrix categories include auto-synthesized entries for custom skills
   return matrix.categories[category as Category]?.domain;
-}
-
-/** Optional stack lookup by ID. */
-export function findStack(stackId: string): ResolvedStack | undefined {
-  return matrix.suggestedStacks.find((s) => s.id === stackId);
 }

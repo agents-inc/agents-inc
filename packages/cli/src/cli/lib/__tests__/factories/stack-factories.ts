@@ -1,20 +1,4 @@
-import type { ResolvedStack, Stack, StackAgentConfig } from "../../../types";
-
-export function createMockResolvedStack(
-  id: string,
-  name: string,
-  overrides?: Partial<ResolvedStack>,
-): ResolvedStack {
-  return {
-    id,
-    name,
-    description: `${name} stack`,
-    skills: {},
-    allSkillIds: [],
-    philosophy: "",
-    ...overrides,
-  };
-}
+import type { Stack, StackAgentConfig } from "../../../types";
 
 export function createMockStack(
   id: string,

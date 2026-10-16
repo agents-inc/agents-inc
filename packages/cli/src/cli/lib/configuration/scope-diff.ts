@@ -174,21 +174,13 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   return { projectSkillRows, globalSkillRows, projectAgentRows, globalAgentRows, hasContent };
 }
 
-/**
- * The `(id, scope)` SLOT key this module diffs on. Exported so every surface that computes its own
- * session diff keys on the same slot rather than on the id alone, which is what let one skill read
- * as added on one surface and unchanged on the other.
- */
-export function skillSlotKey(id: SkillId, scope: SkillScope | undefined): string {
+/** The `(id, scope)` SLOT key this module diffs on, rather than the id alone. */
+function skillSlotKey(id: SkillId, scope: SkillScope | undefined): string {
   return `${id}:${scope}`;
 }
 
-/**
- * The `(name, scope)` SLOT key for an agent — the agent-side counterpart of {@link skillSlotKey},
- * exported for the same reason: a second surface routes through it from the start rather than
- * re-deriving the key on `name` alone.
- */
-export function agentSlotKey(name: AgentName, scope: SkillScope | undefined): string {
+/** The `(name, scope)` SLOT key for an agent — the agent-side counterpart of {@link skillSlotKey}. */
+function agentSlotKey(name: AgentName, scope: SkillScope | undefined): string {
   return `${name}:${scope}`;
 }
 

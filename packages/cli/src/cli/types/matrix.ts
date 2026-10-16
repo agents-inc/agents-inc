@@ -207,19 +207,6 @@ export type SkillSource = {
   primary?: boolean;
 };
 
-export type OptionState =
-  | { status: "normal" }
-  | { status: "discouraged"; reason: string }
-  | { status: "incompatible"; reason: string };
-
-/** Recomputed by matrix-resolver on every selection change. */
-export type SkillOption = {
-  id: SkillId;
-  selected: boolean;
-  hasUnmetRequirements: boolean;
-  unmetRequirementsReason?: string;
-};
-
 export type SelectionValidation = {
   valid: boolean;
   errors: ValidationError[];

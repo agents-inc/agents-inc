@@ -7,15 +7,6 @@ export {
   synthesizeCategory,
 } from "./skill-resolution";
 
-export {
-  getCellState,
-  hasUnmetRequirements,
-  getUnmetRequirementsReason,
-  validateSelection,
-  getAvailableSkills,
-  getSkillsByCategory,
-} from "./matrix-resolver";
-
 export { type MatrixHealthIssue, checkMatrixHealth } from "./matrix-health-check";
 
-export { matrix, initializeMatrix, getSkillById, findStack } from "./matrix-provider";
+export { matrix, initializeMatrix, getSkillById } from "./matrix-provider";

@@ -1,17 +1,5 @@
-import {
-  CATEGORIES,
-  DOMAINS,
-  AGENT_NAMES,
-  SKILL_IDS,
-  SKILL_SLUGS,
-} from "../types/generated/source-types";
-import type {
-  Category,
-  Domain,
-  AgentName,
-  SkillId,
-  SkillSlug,
-} from "../types/generated/source-types";
+import { CATEGORIES, AGENT_NAMES, SKILL_IDS, SKILL_SLUGS } from "../types/generated/source-types";
+import type { Category, AgentName, SkillId, SkillSlug } from "../types/generated/source-types";
 import type { CategoryPath, SkillAssignment } from "../types/skills";
 import { LOCAL_PSEUDO_CATEGORY } from "../consts";
 
@@ -23,11 +11,6 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 /** Runtime check that a string is a valid Category value from the generated union */
 export function isCategory(value: string): value is Category {
   return (CATEGORIES as readonly string[]).includes(value);
-}
-
-/** Runtime check that a string is a valid Domain value from the generated union */
-export function isDomain(value: string): value is Domain {
-  return (DOMAINS as readonly string[]).includes(value);
 }
 
 /** Runtime check that a string is a valid AgentName value from the generated union */

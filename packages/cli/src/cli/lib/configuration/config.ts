@@ -720,17 +720,3 @@ export function isLocalSource(source: string): boolean {
   }
   return true;
 }
-
-/**
- * Whether two marketplace refs name one marketplace.
- *
- * A folder on disk is one marketplace however its path is spelled, so two local paths are compared
- * resolved against `fromDir` — the directory a relative one is read from — and `path.resolve`
- * drops a trailing slash on the way. A remote ref names one repository only as written.
- */
-export function isSameMarketplace(a: string, b: string, fromDir: string): boolean {
-  if (isLocalSource(a) && isLocalSource(b)) {
-    return path.resolve(fromDir, a) === path.resolve(fromDir, b);
-  }
-  return a === b;
-}

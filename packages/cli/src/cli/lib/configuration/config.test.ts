@@ -21,7 +21,6 @@ import {
   getProjectConfigPath,
   isLocalSource,
   isPublicCatalogueCheckout,
-  isSameMarketplace,
   loadProjectSourceConfig,
   resolveBranding,
   resolvePrimarySourceEntry,
@@ -92,7 +91,7 @@ const UNEVALUATABLE_CONFIG = "invalid typescript content {{";
 const UNEVALUATABLE_CONFIG_CAUSE = "Missing semicolon";
 
 /**
- * The clause of `configUnreadableError` naming the route that actually clears an unreadable
+ * The clause of `installationConfigsUnreadable` naming the route that actually clears an unreadable
  * config. Mirrored as a LITERAL for the same reason as the env var above — and the same fragment
  * `e2e/pages/constants.ts` mirrors as `DOCTOR_TIP_RECREATE_CONFIG`, because `doctor` reports this
  * same file with this same way out.
@@ -193,32 +192,6 @@ describe("config", () => {
       // Paths starting with . are recognized as relative and allowed
       expect(isLocalSource("../../../other-project/skills")).toBe(true);
       expect(isLocalSource("../skills")).toBe(true);
-    });
-  });
-
-  describe("isSameMarketplace", () => {
-    const FROM = "/home/user/project";
-
-    it("takes a folder on disk for one marketplace however its path is spelled", () => {
-      expect(isSameMarketplace("/home/user/skills", "/home/user/skills", FROM)).toBe(true);
-      expect(isSameMarketplace("/home/user/skills/", "/home/user/skills", FROM)).toBe(true);
-      expect(isSameMarketplace("../skills", "/home/user/skills", FROM)).toBe(true);
-      expect(isSameMarketplace("./../skills/", "../skills", FROM)).toBe(true);
-    });
-
-    it("tells two folders apart", () => {
-      expect(isSameMarketplace("/home/user/skills", "/home/user/other-skills", FROM)).toBe(false);
-      expect(isSameMarketplace("./skills", "/home/user/skills", FROM)).toBe(false);
-    });
-
-    it("compares remote marketplaces as written", () => {
-      expect(isSameMarketplace("github:acme/skills", "github:acme/skills", FROM)).toBe(true);
-      expect(isSameMarketplace("github:acme/skills", "gh:acme/skills", FROM)).toBe(false);
-      expect(isSameMarketplace("github:acme/skills/", "github:acme/skills", FROM)).toBe(false);
-    });
-
-    it("never takes a remote marketplace for a folder", () => {
-      expect(isSameMarketplace("github:acme/skills", "/home/user/skills", FROM)).toBe(false);
     });
   });
 

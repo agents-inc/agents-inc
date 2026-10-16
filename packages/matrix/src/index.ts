@@ -40,7 +40,6 @@ export {
   DOMAIN_LABELS,
   DOMAIN_DESCRIPTIONS,
   compareDomains,
-  isDomain,
 } from "./read-model/domains"
 
 export {

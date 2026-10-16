@@ -204,7 +204,6 @@ const CLI_BACKLOG: readonly string[] = [
   path.join("src", "cli", "lib", "configuration", "__tests__", "default-categories.test.ts"),
   path.join("src", "cli", "lib", "configuration", "config-merger.test.ts"),
   path.join("src", "cli", "lib", "matrix", "matrix-provider.ts"),
-  path.join("src", "cli", "lib", "matrix", "matrix-resolver.ts"),
   path.join("src", "cli", "lib", "matrix", "skill-resolution.integration.test.ts"),
   path.join("src", "cli", "lib", "skills", "skill-copier.test.ts"),
   path.join("src", "cli", "lib", "stacks", "stacks-loader.ts"),

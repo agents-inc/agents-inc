@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { validateSelection } from "@workspace/compile";
 import { defaultRules } from "../default-rules";
 import { BUILT_IN_MATRIX } from "../../../types/generated/matrix";
-import { initializeMatrix } from "../../matrix/matrix-provider";
-import { validateSelection } from "../../matrix/matrix-resolver";
 import { typedKeys } from "../../../utils/typed-object";
 import type { RelationshipDefinitions, SkillId, SkillSlug } from "../../../types";
 
@@ -107,7 +106,6 @@ describe("defaultRules", () => {
   // category held all three, satisfying both rules at once was impossible and the
   // wizard offered no way through.
   it("lets a selection satisfy an auth rule and a queue rule at the same time", () => {
-    initializeMatrix(BUILT_IN_MATRIX);
     const selection: SkillId[] = [
       "api-auth-better-auth-drizzle-hono",
       "api-queue-bullmq",
@@ -116,7 +114,7 @@ describe("defaultRules", () => {
       "api-framework-hono",
     ];
 
-    expect(validateSelection(selection).errors).toStrictEqual([]);
+    expect(validateSelection(selection, BUILT_IN_MATRIX).errors).toStrictEqual([]);
   });
 
   it("has require rules", () => {

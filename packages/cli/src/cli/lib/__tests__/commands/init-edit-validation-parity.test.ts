@@ -6,6 +6,7 @@ import type { ReactElement } from "react";
 
 import { storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
+import { validateSelection } from "@workspace/compile";
 
 import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
@@ -30,7 +31,6 @@ import {
 } from "../factories/operation-result-factories.js";
 import { BUILD_STEP_REQUIRES_MATRIX } from "../mock-data/mock-matrices";
 import { initializeMatrix } from "../../matrix/matrix-provider";
-import { validateSelection } from "../../matrix/index.js";
 import { CLAUDE_DIR, STANDARD_FILES } from "../../../consts";
 import type { SkillId } from "../../../types";
 import type {
@@ -105,15 +105,11 @@ const REQUIRING_SKILL_ID = "web-framework-react" satisfies SkillId;
 /** What it requires, and what the clean selection adds to satisfy it. */
 const REQUIRED_SKILL_ID = "web-state-zustand" satisfies SkillId;
 
-// Registered here as well as in beforeEach: the expected wording is derived at module scope by
-// running the production validator, which reads the active matrix.
-initializeMatrix(BUILD_STEP_REQUIRES_MATRIX);
-
 /**
  * The rejected fixture: React selected, the Zustand it requires left out. Run through the
  * production validator rather than hand-written, so the expected text IS the product's text.
  */
-const REJECTED_VALIDATION = validateSelection([REQUIRING_SKILL_ID]);
+const REJECTED_VALIDATION = validateSelection([REQUIRING_SKILL_ID], BUILD_STEP_REQUIRES_MATRIX);
 
 /** What either command owes the user for {@link REJECTED_VALIDATION}. */
 const EXPECTED_WARNINGS = REJECTED_VALIDATION.errors.map((error) => error.message);

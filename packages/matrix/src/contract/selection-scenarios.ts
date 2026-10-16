@@ -3,7 +3,7 @@
 // These scenarios were pinned while two implementations answered the same
 // questions — the CLI's `matrix-resolver.ts` plus `build-step-logic.ts`, and
 // the editor's `derive.ts` — and did not always agree. The expectations are
-// the CLI's, which the owner ruled authoritative. Both sides now delegate to
+// the CLI's, which the owner ruled authoritative. The editor now delegates to
 // `read-model/selection-semantics.ts`, and the scenarios hold that module to
 // one contract.
 //

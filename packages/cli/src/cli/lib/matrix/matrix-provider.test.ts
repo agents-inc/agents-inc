@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { matrix, initializeMatrix, getSkillById, findStack } from "./matrix-provider";
+import { matrix, initializeMatrix, getSkillById } from "./matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
-import { createMockResolvedStack } from "../__tests__/factories/stack-factories.js";
 import type { SkillId } from "../../types";
 
 describe("matrix-provider", () => {
@@ -46,21 +45,6 @@ describe("matrix-provider", () => {
       expect(() => getSkillById("web-framework-nonexistent" as SkillId)).toThrow(
         "Skill not found: web-framework-nonexistent",
       );
-    });
-  });
-
-  describe("findStack", () => {
-    it("should return a matching stack", () => {
-      const stack = createMockResolvedStack("test-stack", "Test Stack");
-      const custom = createMockMatrix(SKILLS.react, { suggestedStacks: [stack] });
-      initializeMatrix(custom);
-
-      expect(findStack("test-stack")).toBe(stack);
-    });
-
-    it("should return undefined for a nonexistent stack", () => {
-      initializeMatrix(createMockMatrix(SKILLS.react, { suggestedStacks: [] }));
-      expect(findStack("nonexistent")).toBeUndefined();
     });
   });
 });
