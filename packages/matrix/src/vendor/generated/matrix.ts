@@ -3645,7 +3645,7 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       displayName: "Expressive TypeScript",
       description: "Readable functional patterns and named abstractions",
       usageGuidance:
-        "Use when writing or refactoring TypeScript functions, data transformations, store actions, or any code that mixes logic levels. Apply the orchestrator pattern and extract until the code reads like prose.",
+        "Use when writing or refactoring TypeScript functions, data transformations, store actions, or any code that mixes logic levels; when deciding whether an expression should be extracted and named; or when modelling a fixed set of states for exhaustive handling. Apply the orchestrator pattern and extract until the code reads like prose.",
       category: "meta-design",
       author: "@vince",
       conflictsWith: [],
@@ -3750,7 +3750,7 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       displayName: "API Reviewing",
       description: "Injection, boundary validation, authorization, data exposure",
       usageGuidance:
-        "Use when reviewing diffs that touch API routes, database queries, auth middleware, or server utilities. Covers injection, input validation at boundaries, authn/authz coverage, secret and PII exposure, error leakage, and query patterns.",
+        "Use when reviewing a diff that adds or changes API routes or handlers, database queries, authentication or authorization middleware, or server code that reads files, starts processes or fetches URLs using request data.",
       category: "meta-reviewing",
       author: "@vince",
       conflictsWith: [],
@@ -3763,9 +3763,9 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       id: "meta-reviewing-cli-reviewing",
       slug: "cli-reviewing",
       displayName: "CLI Reviewing",
-      description: "CLI code review patterns for Commander.js and @clack/prompts",
+      description: "Review exit codes, signals, streams and prompts in CLIs",
       usageGuidance:
-        "Use when reviewing CLI applications built with Commander.js, @clack/prompts, or similar tools. Covers exit codes, signal handling, cancellation, error messages, spinners, and testing adequacy.",
+        "Use when reviewing a command-line tool's commands, entry point, prompts, output or tests, whichever parser or prompt library it uses. Covers exit codes, cancellation and signals, non-TTY behaviour, the stdout/stderr split, error text, config precedence, subprocess safety and test adequacy.",
       category: "meta-reviewing",
       author: "@vince",
       conflictsWith: [],
@@ -3780,7 +3780,7 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       displayName: "Infra Reviewing",
       description: "Supply-chain pinning, secret exposure, container hygiene",
       usageGuidance:
-        "Use when reviewing diffs that touch CI/CD workflows, Dockerfiles, deployment configs, or IaC. Covers action and base-image pinning, secret handling, non-root containers, layer caching, least-privilege permissions, and deployment safety.",
+        "Use when reviewing diffs that touch CI/CD workflows, Dockerfiles, deployment configs, or IaC. Covers action and base-image pinning, secret handling, privileged workflow triggers and script injection, least-privilege permissions, non-root containers, layer caching, and deployment safety.",
       category: "meta-reviewing",
       author: "@vince",
       conflictsWith: [],
@@ -3794,7 +3794,8 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       slug: "reviewing",
       displayName: "Code Review",
       description: "Code review guidance",
-      usageGuidance: "Use when reviewing code, PRs, or making approval/rejection decisions.",
+      usageGuidance:
+        "Use when reviewing a diff or PR, writing review findings, or deciding whether to approve or request changes.",
       category: "meta-reviewing",
       author: "@vince",
       conflictsWith: [],
@@ -3809,7 +3810,7 @@ export const BUILT_IN_MATRIX: MergedSkillsMatrix = {
       displayName: "Web Reviewing",
       description: "React hooks, accessibility, and render performance",
       usageGuidance:
-        "Use when reviewing diffs that touch UI components - React/JSX files, hooks, props and state, styling, or accessibility. Covers rules of hooks, effect cleanup, render performance, list keys, and ARIA/keyboard patterns.",
+        "Use when reviewing a diff that adds or changes React components or custom hooks — hook order and dependency arrays, effect and ref cleanup, derived state, list keys and component identity, controlled inputs, memoization claims, and keyboard and screen-reader access for the elements the diff adds.",
       category: "meta-reviewing",
       author: "@vince",
       conflictsWith: [],
