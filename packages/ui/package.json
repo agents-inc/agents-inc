@@ -35,7 +35,7 @@
     "@tailwindcss/vite": "^4",
     "@terrazzo/cli": "^2.7.1",
     "@terrazzo/plugin-css": "^2.7.1",
-    "@types/node": "^24",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/browser": "^4",

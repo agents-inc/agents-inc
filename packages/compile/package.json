@@ -19,7 +19,7 @@
   },
   "//smol-toml": "A devDependency and not a dependency: `src/providers/codex/agent-role-toml.ts` WRITES TOML by hand — four scalars and one table — and nothing in this package's shipped surface parses any. Its spec parses every rendered role file back with a real parser, so the encoding is held against TOML rather than against the renderer's own idea of it. Declared here on 2026-09-22 after being imported and declared in no package.json in this repository: it resolved only because `knip`, a root devDependency, hoists smol-toml@1.7.1 into the root node_modules, so the import would have broken the day that tool changed or went.",
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "^26",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
