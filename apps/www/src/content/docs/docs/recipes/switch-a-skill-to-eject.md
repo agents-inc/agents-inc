@@ -14,11 +14,11 @@ Every skill's cell in the editor carries a `plugin | eject` pair. Click `eject`,
 For a skill that's already installed, the editor is a round trip, and the two commands aren't the same one:
 
 ```bash
-npx agents-inc edit --ui         # publishes this installation and opens it at agentsinc.sh/editor
+npx agents-inc edit              # publishes this installation and opens it at agentsinc.sh/editor
 npx agents-inc edit --from <id>  # applies what you changed there
 ```
 
-`edit --ui` prints `init --from <id>` beside the link, but that command is greenfield-only and refuses a directory that already carries an installation. `edit --from <id>` is the one that comes back.
+`edit` prints `init --from <id>` beside the link, but that command is greenfield-only and refuses a directory that already carries an installation. `edit --from <id>` is the one that comes back.
 
 The files land at `.claude/skills/<skill-id>/` — `SKILL.md` and `metadata.yaml`, plus whatever else that skill ships. Edit them and run `npx agents-inc compile`.
 
@@ -55,4 +55,4 @@ Going the other way — `plugin` in the cell's pair — installs the plugin firs
 
 ## A global install can't be switched from a project
 
-A skill installed at global scope is inherited inside a project. Run `npx agents-inc edit` from your home directory to switch it for every project. [Global-first setup](/docs/guides/global-first-setup) explains why the lock exists.
+A skill installed at global scope is inherited inside a project. Make the round trip from your home directory — `npx agents-inc edit`, then `npx agents-inc edit --from <id>` — to switch it for every project. [Global-first setup](/docs/guides/global-first-setup) explains why the lock exists.

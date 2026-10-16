@@ -25,7 +25,7 @@ Global scope means one installation to maintain. Project scope is only for when 
 
 ## Setting up your global stack
 
-Pick your primary technologies, sub-agents and install modes, and leave every scope word alone. `global` is where a fresh pick rests in both front doors — it's one default, read by the editor's grid, by the editor's roster and by the CLI's own decode of a shared id, so an untouched selection means the same thing wherever you made it.
+Pick your primary technologies, sub-agents and install modes, and leave every scope word alone — a fresh pick rests at `global`.
 
 Your global config lives at `~/.agents-inc/claude/config.ts`. Agents are compiled to `~/.claude/agents/`.
 
@@ -33,7 +33,7 @@ Your global config lives at `~/.agents-inc/claude/config.ts`. Agents are compile
 
 Use project scope when a project needs something different from your global defaults. For example, your global stack uses React but one project uses Vue — that project gets its own project-scoped config.
 
-Two words carry that decision, and a project-scoped setup needs both. On a skill's cell in the grid, click `project` in its `project | global` pair. On a sub-agent's row in the roster, the `global` word opens a panel where `project` is one more click. Pick only what this project adds and move every one of those words — your global install stays exactly where it is, and this project sees it as well as its own, because a project inherits global and not the other way round.
+Two words carry that decision, and a project-scoped setup needs both. On a skill's cell in the grid, click `project` in its `project | global` pair. On a sub-agent's card in step 03, click `project` in the same pair. Pick only what this project adds and move every one of those words — your global install stays exactly where it is, and this project sees it as well as its own, because a project inherits global and not the other way round.
 
 Then install from the project it's for:
 
@@ -42,7 +42,7 @@ cd ~/projects/vue-app
 npx agents-inc init --from Ab3xY9_Q
 ```
 
-Leave anything in that selection at global scope and the install is refused rather than merged, because it would be writing into a `~/.claude` that's already installed — [Editing](#editing) below is the route for a change that reaches the global side.
+A project install only adds to the global one: anything left at global that isn't installed there yet arrives, and what's already there stays as it is — [Editing](#editing) below is the route for changing it.
 
 Project config lives at `.agents-inc/claude/config.ts` in the project directory. Project-scoped agents are compiled to `.claude/agents/` in the project. [Scopes and paths](/docs/configuration/scopes-and-paths) lists every directory each scope writes to.
 
@@ -63,14 +63,14 @@ Both front doors enforce that from the same rule. Hand a project skill to a sub-
 `edit` is the command that accepts a setup already in place, in either direction:
 
 ```bash
-npx agents-inc edit --ui              # publishes what's installed and opens it at agentsinc.sh/editor
+npx agents-inc edit                   # publishes what's installed and opens it at agentsinc.sh/editor
 npx agents-inc edit --from Ab3xY9_Q   # applies what you changed there
 ```
 
-`edit --ui` prints `init --from <id>` beside the link, and that is not the command to come back with. [Switch a skill to eject](/docs/recipes/switch-a-skill-to-eject) walks the round trip once, start to finish.
+`edit` prints `init --from <id>` beside the link, and that is not the command to come back with. [Switch a skill to eject](/docs/recipes/switch-a-skill-to-eject) walks the round trip once, start to finish.
 
 Global items **cannot be removed from a project**. The global install is shared by every project, so one project must not uninstall it for the others.
 
-To change a global item, edit at global scope: run `npx agents-inc edit` from `~/` (or from any directory without a project-scoped installation).
+To change a global item, edit at global scope: run `npx agents-inc edit --from <id>` from `~/` (or from any directory without a project-scoped installation).
 
 **Don't want a global skill in this project?** Don't deselect it — just don't hand it to this project's agents. Remove it from the agent's entry in the project's `stack` (see [Editing Your Config](/docs/guides/editing-config)) and run `npx agents-inc compile`. The skill stays installed globally; it simply isn't part of any prompt here.

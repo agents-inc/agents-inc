@@ -5,13 +5,9 @@ sidebar:
   order: 6
 ---
 
-:::note[Codex is not in a release yet]
-0.164.0 installs onto Claude Code only, and has no `--provider` flag. Everything on this page about Codex describes the next release.
-:::
-
 An installation belongs to one **provider** — the coding agent it is for. There are two: **Claude Code** and **OpenAI Codex**.
 
-You pick it in the [web app](/docs/editor). The choice changes one visible thing: the command the app hands you to paste.
+You pick it in the [web app](/docs/editor), and the command it hands you to paste carries it:
 
 ```bash
 npx agents-inc init --from Ab3xY9_Q                    # Claude Code
@@ -29,7 +25,7 @@ One installation is exactly one provider, and the folder name says which:
 | Claude Code | `~/.agents-inc/claude/` | `<repo>/.agents-inc/claude/` |
 | Codex       | `~/.agents-inc/codex/`  | `<repo>/.agents-inc/codex/`  |
 
-**Nothing inside `config.ts` records the provider.** There is no `provider` field and there will not be one — that is what lets one saved configuration install onto either provider, and what keeps every share id ever minted working. A configuration is a list of skills and sub-agents; which agent runs them is a fact about the machine you install on.
+**Nothing inside `config.ts` records the provider.** There is no `provider` field and there will not be one — that is what lets one saved configuration install onto either provider. A configuration is a list of skills and sub-agents; which agent runs them is a fact about the machine you install on.
 
 **The two sit side by side.** A machine can hold a Claude installation and a Codex one, and so can a single repository. One project can be on Codex while another is on Claude. Each family inherits and propagates only within itself: a Claude global never reaches a Codex project.
 
@@ -43,12 +39,12 @@ When one scope holds **both**, the commands that change something — `edit`, `u
 
 A skill is the same content on both: the same marketplace, the same `SKILL.md`. What differs is where it can be put — the **install mode** (plugin or eject) crossed with the **scope** (global or project).
 
-| Placement        | Claude Code                   | Codex                                                            |
-| ---------------- | ----------------------------- | ---------------------------------------------------------------- |
-| plugin + global  | `~/.claude/plugins/`          | `$CODEX_HOME/plugins/`, switched on in `$CODEX_HOME/config.toml` |
-| eject + global   | `~/.claude/skills/<id>/`      | `$CODEX_HOME/skills/<id>/`                                       |
-| eject + project  | `<repo>/.claude/skills/<id>/` | `<repo>/.agents/skills/<id>/` — a file you commit                |
-| plugin + project | `<repo>/.claude/plugins/`     | **not offered**                                                  |
+| Placement        | Claude Code                                                         | Codex                                                            |
+| ---------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| plugin + global  | `~/.claude/plugins/`                                                | `$CODEX_HOME/plugins/`, switched on in `$CODEX_HOME/config.toml` |
+| eject + global   | `~/.claude/skills/<id>/`                                            | `$CODEX_HOME/skills/<id>/`                                       |
+| eject + project  | `<repo>/.claude/skills/<id>/`                                       | `<repo>/.agents/skills/<id>/` — a file you commit                |
+| plugin + project | `~/.claude/plugins/`, switched on in `<repo>/.claude/settings.json` | **not offered**                                                  |
 
 **Codex offers three of the four cells.** Codex installs a plugin for a machine, not for a repository: no `plugin` subcommand takes a scope, and running `codex plugin add` inside a project writes the switch to the global configuration anyway. So a configuration asking for `plugin + project` on Codex is refused — before anything is written, naming the skill and the three cells that are offered. It is never quietly turned into an ejected copy.
 
@@ -64,13 +60,13 @@ A skill is the same content on both: the same marketplace, the same `SKILL.md`. 
 | File written        | `<scope>/.claude/agents/<name>.md` | `$CODEX_HOME/agents/<name>.toml`, or `<repo>/.codex/agents/<name>.toml` |
 | Format              | Markdown with frontmatter          | an agent role definition in TOML                                        |
 
-**Two sub-agents are absent from every Codex install: `agent-summoner` and `skill-summoner`.** They are left out for v1 because their roster mechanics on Codex are not proven. Every shipped stack lists both, so every Codex install says so — once per run, in one line naming both.
+**Two sub-agents are absent from every Codex install: `agent-summoner` and `skill-summoner`.** They are left out for v1 because their roster mechanics on Codex are not proven. Every Codex install says so — once per run, in one line naming both.
 
 **Six settings have no Codex expression**, and the compile says so once rather than per sub-agent:
 
 | Setting          | Why not                                                                                                                           |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Claude models    | every model a sub-agent can name is Claude's, and Codex refuses to start a role naming one. The role runs on your Codex model     |
+| Claude models    | Codex refuses to start a role naming one. The role runs on its pinned Codex model, or your session's                              |
 | tool allowlists  | Codex's `tools` is a configuration struct, not a list of permitted tools. The read-only sub-agents can still edit files on Codex  |
 | `permissionMode` | rejected by the parser; one unlisted key drops the whole role file                                                                |
 | `isolation`      | same                                                                                                                              |
@@ -79,7 +75,7 @@ A skill is the same content on both: the same marketplace, the same `SKILL.md`. 
 
 **A sub-agent's `disallowedTools` is dropped too, and the compile does not say so.** No bundled sub-agent declares one, so this reaches only a sub-agent you wrote yourself.
 
-A sub-agent's **effort** does carry across, written as Codex's own `model_reasoning_effort` key. Its **model** does not: a role file carries none, so every sub-agent runs on the model your Codex session uses.
+A sub-agent's **effort** does carry across, written as Codex's own `model_reasoning_effort` key. Its Claude **model** does not; a role runs on its `codexModel`, or on your Codex session's model.
 
 ### A Codex project's sub-agents need the project trusted
 
@@ -92,9 +88,9 @@ trust_level = "trusted"
 
 **Four ways this fails, and every one of them is silent** — no warning from Codex, anywhere: no entry at all; `trust_level = "untrusted"`, which beats any permissive sandbox flag; a trailing slash on the path; and the entry written inside the project's own `.codex/config.toml`, which Codex refuses as self-authorisation.
 
-So `init` and `compile` **write it for you** — not in a release yet — and print exactly what they wrote: your project, the file and the line. The rest of your configuration is left as it was. If you have already set `trust_level` for that directory to anything else, `"untrusted"` included, it is left as you set it and the install says so.
+So `init`, `edit` and `compile` **write it for you** and print exactly what they wrote: your project, the file and the line. The rest of your configuration is left as it was. If you have already set `trust_level` for that directory to anything else, `"untrusted"` included, it is left as you set it and the install says so.
 
-**An untrusted Codex project install is half live, which is worse than dead.** Skills at `.agents/skills` reach the model with no trust entry and no configuration file at all, while sub-agents, plugin enablement and hooks are ignored in silence. `doctor` does not check project trust — the line `init` and `compile` print is the only notice.
+**An untrusted Codex project install is half live, which is worse than dead.** Skills at `.agents/skills` reach the model with no trust entry and no configuration file at all, while sub-agents, plugin enablement and hooks are ignored in silence. `doctor` does not check project trust — the line `init`, `edit` and `compile` print is the only notice.
 
 ## What each provider cannot do
 
@@ -102,10 +98,10 @@ Plainly, because these are the limits most likely to be met the hard way.
 
 ### Claude Code
 
-| Cannot                                                                | What it means                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run the completion gate of a project sub-agent in an untrusted folder | Claude Code registers a project sub-agent's hooks only after you accept the trust dialog in that folder, and the completion gate — the `Stop` hook that runs your project's typecheck — is one of them. A headless run — `claude -p`, CI, a fresh checkout nobody has opened — skips it at project scope, and looks exactly like a typecheck that passed. Opening the folder once interactively is the fix; `init` and `compile` say so while it applies |
-| Have a skill that is only a committed file                            | Codex reads `<repo>/.agents/skills/` with no install of any kind. Claude Code's project skills are an install into `<repo>/.claude/`, which `init`, `edit` or `eject` performs                                                                                                                                                                                                                                                                           |
+| Cannot                                                                | What it means                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run the completion gate of a project sub-agent in an untrusted folder | Claude Code registers a project sub-agent's hooks only after you accept the trust dialog in that folder, and the completion gate — the `Stop` hook that runs your project's typecheck — is one of them. A headless run — `claude -p`, CI, a fresh checkout nobody has opened — skips it at project scope, and looks exactly like a typecheck that passed. Opening the folder once interactively is the fix; `init`, `edit` and `compile` say so while it applies |
+| Have a skill that is only a committed file                            | Codex reads `<repo>/.agents/skills/` with no install of any kind. Claude Code's project skills are an install into `<repo>/.claude/`, which `init`, `edit` or `eject` performs                                                                                                                                                                                                                                                                                   |
 
 ### Codex
 

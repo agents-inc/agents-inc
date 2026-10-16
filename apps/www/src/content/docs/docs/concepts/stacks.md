@@ -35,7 +35,7 @@ The mapping is the interesting part of a setup, and it is the part worth sharing
 
 Two routes, same outcome:
 
-- `npx agents-inc edit --ui` — reads this installation, mints an id for it and opens the editor on that id. Change what you like in the grid, then apply it with `npx agents-inc edit --from <id>`. That is the command to use, not the `init --from` the editor's install dialog hands you: `init` refuses a directory that already holds an installation, because installing a shared configuration is a fresh setup rather than a merge.
-- Edit `.agents-inc/claude/config.ts` by hand, then `npx agents-inc compile`. The generated `config-types.ts` gives you type checking while you do, so a mistyped skill ID is a compile error rather than a silent no-op.
+- `npx agents-inc edit` — reads this installation, mints an id for it and opens the editor on that id. Change what you like in the grid, then apply it with `npx agents-inc edit --from <id>`. Use it rather than the `init --from` the editor's install dialog hands you: `init --from` refuses a directory that already holds an installation, because installing a shared configuration is a fresh setup rather than a merge.
+- Edit `.agents-inc/claude/config.ts` by hand, then `npx agents-inc compile`. The generated `config-types.ts` gives you type checking while you do, so a mistyped skill ID is a TypeScript error in your editor before `compile` ever sees it.
 
 See [Editing your config](/docs/guides/editing-config) for the full config shape, and the [config reference](/docs/configuration/config-reference) for every field the file accepts.

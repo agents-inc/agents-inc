@@ -1,11 +1,11 @@
 ---
 title: Models and effort
-description: The per-sub-agent model and effort overrides — their permitted values, where the default comes from, how config beats metadata, how to set them from the editor's roster, and what branding changes.
+description: The per-sub-agent model and effort overrides — their permitted values, where the default comes from, how config beats metadata, how to set them from the editor, and what branding changes.
 sidebar:
   order: 4
 ---
 
-Two optional fields on a sub-agent's entry decide which model it runs on and how much reasoning effort it's given. Both are pure overrides — leave them out and the sub-agent keeps whatever its own definition names. `branding` is the third tuning knob on this page, and it changes what the CLI calls itself.
+Two optional fields on a sub-agent's entry decide which Claude model it runs on and how much reasoning effort it's given. Both are pure overrides — leave them out and the sub-agent keeps whatever its own definition names. `branding` is the third tuning knob on this page, and it changes what the CLI calls itself.
 
 ## Quick start
 
@@ -28,7 +28,7 @@ npx agents-inc compile
 `.claude/agents/api-developer.md` now opens with `model: opus` and `effort: high` in its frontmatter, and `web-developer.md` is unchanged. Neither field touches skills, so nothing is installed or removed and no other agent is rewritten.
 
 :::note[Doing this from the editor]
-Both are words on the sub-agent's row in the roster, and clicking one cycles it. That's where you set them if you haven't installed yet — there's no `config.ts` to edit until the install runs, and the command the editor hands you carries both. [Setting it from the editor](#setting-it-from-the-editor) below has the two differences worth knowing.
+Both are on the sub-agent's card, every value on screen. That's where you set them if you haven't installed yet — there's no `config.ts` to edit until the install runs, and the command the editor hands you carries both. [Setting it from the editor](#setting-it-from-the-editor) below has the two differences worth knowing.
 :::
 
 ## The permitted values
@@ -65,7 +65,7 @@ The override lives on the sub-agent, not on its skills — so a sub-agent with n
 
 ## Setting it from the editor
 
-The editor's roster shows each sub-agent's model and effort as words on its row. Click either one to cycle to the next value; there's no menu, because at four and five values a second click costs less than one. An effort you've moved off its resting value is drawn in the accent color, so a customized row is visible at a glance.
+Each sub-agent's card in the editor carries its model as a row of buttons and its effort as a track, every value on screen. Click one to pick it. See [The editor](/docs/editor#sub-agents).
 
 Two differences from hand-editing are worth knowing:
 
@@ -74,9 +74,9 @@ Two differences from hand-editing are worth knowing:
 
 Install what you built with `npx agents-inc init --from <id>`, and the model and effort you set land on the matching `AgentScopeConfig` entries. See [Install and share](/docs/editor/install-and-share).
 
-**On a directory that's already installed the command is `edit --from`, not `init --from`.** `init --from` refuses one and names the path — installing a shared configuration is a fresh setup rather than a merge. So the round trip for a setup you already have is `npx agents-inc edit --ui` out to the browser, which publishes this installation and opens it there, and `npx agents-inc edit --from <id>` back. The Install dialog only ever hands you the `init` form, because nothing in the browser knows whether you've installed.
+**On a directory that's already installed the command is `edit --from`, not `init --from`.** `init --from` refuses one and names the path — installing a shared configuration is a fresh setup rather than a merge. So the round trip for a setup you already have is `npx agents-inc edit` out to the browser, which publishes this installation and opens it there, and `npx agents-inc edit --from <id>` back. The Install dialog only ever hands you the `init` form, because nothing in the browser knows whether you've installed.
 
-**A config pinning `model: 'inherit'` can't be shared.** Both `npx agents-inc share` and `edit --ui` mint an id from the same reader, and both refuse it, naming the sub-agent: the shared format has no `inherit`, and dropping the field would say "keep the sub-agent's own metadata", which is a different instruction. Change the value or leave the field out.
+**A config pinning `model: 'inherit'` can't be shared.** Both `npx agents-inc share` and `edit` mint an id from the same reader, and both refuse it, naming the sub-agent: the shared format has no `inherit`, and dropping the field would say "keep the sub-agent's own metadata", which is a different instruction. Change the value or leave the field out.
 
 ## Branding
 
@@ -96,10 +96,8 @@ The default is `Agents Inc.`
 
 **What it visibly changes**: the header `eject`, `doctor` and `uninstall` print; `uninstall`'s "not installed here" and "has been uninstalled" lines; and `init`'s success line and dashboard title.
 
-**What it deliberately doesn't change**: the ASCII logo, and the first line of `--help`. The mark is the product's rather than the installation's, so it isn't brandable. That's a decision, not an omission.
+**What it deliberately doesn't change**: the first line of `--help`. It's the product's rather than the installation's, so it isn't brandable. That's a decision, not an omission.
 
 **Branding resolves per field, not per file.** Every other setting — `marketplace`, `author` — resolves per file: if a project config exists at all, its values win and the global one isn't consulted. Branding doesn't work that way. A project that says nothing about branding inherits the global name, and only falls through to `Agents Inc.` when neither file names one. Read per file, a name you set globally would vanish the moment any project config existed, which is every installed project.
 
 An unreadable config doesn't fail a command over branding — the name falls back to the default and the command's own config reader reports the fault where you can act on it.
-
-**One catch worth knowing before you write it.** The `ProjectConfig` interface in the generated `config-types.ts` doesn't declare `branding`, so `satisfies ProjectConfig` reports it as an unexpected property even though the CLI reads and honors it. The error is the generated type file being narrower than the loader, not a refusal. The same applies to the five path overrides — see [Scopes and paths](/docs/configuration/scopes-and-paths#the-five-path-overrides).

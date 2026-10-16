@@ -1,5 +1,5 @@
 ---
-title: Three ways in
+title: Ways in
 description: Describe your project to the composer, let the stack-detection skill read it, or click through the editor's grid — the three routes to a selection, and which one suits where you are starting from.
 ---
 
@@ -36,7 +36,7 @@ Then ask it to read the project. It walks manifests, lockfiles and framework
 configs — one pass per workspace, so a monorepo is read as the several projects
 it is — maps what it finds onto catalogue skill ids, and hands back a
 configuration plus a written report of everything the configuration could not
-carry. It writes nothing and installs nothing, by construction.
+carry. It writes nothing and installs nothing.
 
 [Adding to an existing project](/docs/guides/adding-to-an-existing-project)
 walks the whole route, including the two commands that turn its proposal into an
@@ -63,13 +63,12 @@ configuration you could not have clicked to by hand.
 **The grid** is the editor with no shortcut — the whole catalogue on screen,
 grouped by domain, and you click what you want. Reach for it when you know the
 answer, when you are correcting what one of the two routes above proposed, or
-when you want something neither of them offers: a sub-agent's model and
-reasoning effort, which sub-agents carry which skill, or a skill from outside
-the catalogue. [Selecting skills](/docs/editor/selecting-skills) is that page.
+when you want a skill from outside the catalogue, which neither of them offers.
+[Selecting skills](/docs/editor/selecting-skills) is that page.
 
 ## They all end in the same place
 
-None of the three installs anything. All three hand you a short id and the
+None of the three installs anything. All three end at a short id and the
 command that installs it.
 
 ```bash
@@ -78,17 +77,9 @@ npx agents-inc init --from Ab3xY9_Q
 
 That is not three pipelines with a shared ending — it is one pipeline with three
 intakes. The catalogue is the same catalogue, the payload is the same payload,
-and an id minted by the detection skill is the same kind of id the editor's
-install dialog mints. So the routes mix: detect a stack, open the result in the
-editor to correct it, and install from there.
-
-:::note[Nothing is decided by a model that the tool can decide itself]
-Both AI routes return **skill ids and nothing else**. Scope, install mode, which
-sub-agents carry what and whether each copy is preloaded are all derived from
-the same rules the CLI generates from — so a proposal cannot produce a
-configuration the CLI would then contradict. What you are reviewing is a list of
-skills, not a configuration somebody's model invented.
-:::
+and the id `share --stdin` mints from a detection proposal is the same kind of id
+the editor's install dialog mints. So the routes mix: detect a stack, open the
+result in the editor to correct it, and install from there.
 
 ## Where to go next
 

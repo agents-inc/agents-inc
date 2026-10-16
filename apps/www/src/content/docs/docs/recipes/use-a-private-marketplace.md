@@ -31,11 +31,11 @@ Two things the editor needs that the CLI doesn't:
 npx agents-inc init --from <id> --marketplace github:acme/skills
 ```
 
-For a private repository, give giget a token first:
+For a private repository, give giget a token first — the editor's never leaves your browser:
 
 ```bash
 export GIGET_AUTH=<your github token>
-npx agents-inc init --from <id> --marketplace github:acme/skills
+npx agents-inc init --from <id>
 ```
 
 The token needs the `repo` scope for a private repository, or `public_repo` for a public one.
@@ -47,16 +47,16 @@ The first rung that names one wins:
 
 | Rung                                                           | Reachable by                       |
 | -------------------------------------------------------------- | ---------------------------------- |
-| `--marketplace/-m`                                             | `init` alone                       |
+| `--marketplace/-m`                                             | `init --from` alone                |
 | the ref a shared configuration carries                         | `init --from` alone                |
-| `CC_MARKETPLACE`                                               | `init` alone                       |
+| `CC_MARKETPLACE`                                               | `init --from` alone                |
 | `marketplace` in this project's `.agents-inc/claude/config.ts` | every command                      |
 | `marketplace` in `~/.agents-inc/claude/config.ts`              | every command                      |
 | `github:agents-inc/skills`                                     | the default when nothing names one |
 
 Naming one on the command line outranks the ref a `--from` id carries: the flag is an instruction about this install, while the payload's ref is a record of where the sharer's came from. A value passed to `--marketplace` beside `--from` that can't be a marketplace stops the run — somebody named it, so falling through would install from a place they didn't name. A bad `CC_MARKETPLACE` warns and falls through to the next rung instead, because it was already in the environment rather than typed at this command.
 
-**Choosing a marketplace happens at `init`.** `edit` changes what you have installed, not where it comes from.
+**Choosing a marketplace happens at `init`.** `edit`, `--from` included, changes what you have installed, not where it comes from.
 
 ## What counts as a marketplace ref
 

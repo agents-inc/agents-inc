@@ -1,9 +1,9 @@
 ---
 title: Install modes
-description: Plugin versus eject — the per-skill choice that decides whether a skill's files are registered with Claude Code or copied into your project for you to own.
+description: Plugin versus eject — the per-skill choice that decides whether a skill's files are registered with Claude Code or copied in as files you own.
 ---
 
-A skill installs one of two ways: as a Claude Code **plugin**, or **ejected** — copied into your project as files you own. It's a per-skill choice, so a mixed installation is normal, and it's independent of the skill's [scope](/docs/concepts/scopes). Set it wherever you pick your skills — the [editor](/docs/editor)'s grid.
+A skill installs one of two ways: as a Claude Code **plugin**, or **ejected** — copied into `.claude/skills/` as files you own. It's a per-skill choice, so a mixed installation is normal, and it's independent of the skill's [scope](/docs/concepts/scopes). Set it on the [editor](/docs/editor)'s grid.
 
 ## Quick start
 
@@ -11,7 +11,7 @@ Plugin is the default and needs no action — every skill installs as a Claude C
 
 In the editor, click `eject` in the `plugin | eject` pair on the skill's cell. The same choice sits behind the cell's `•••` control as an **Install mode** control, and the two stay in step because they write the same field. A skill added from outside the catalogue has no plugin form, so its cell states `eject` rather than offering the pair.
 
-The choice travels in the id the Install dialog mints, so install with the command that dialog hands you and not a bare `init`:
+The choice travels in the id the Install dialog mints, so install with the command that dialog hands you:
 
 ```bash
 npx agents-inc init --from Ab3xY9_Q
@@ -21,23 +21,23 @@ npx agents-inc init --from Ab3xY9_Q
 
 ## Install Modes
 
-**Plugin** (default) — Skills are installed as Claude Code plugins, registered in Claude's own plugin store (`~/.claude/plugins/` for global scope, your project's `.claude/plugins/` for project scope). No files are copied into your project source. Updates are pulled directly from the source.
+**Plugin** (default) — Skills are installed as Claude Code plugins, registered in Claude's own plugin store, `~/.claude/plugins/`, at either scope. A project-scope plugin is switched on in the project's `.claude/settings.json`; no files are copied into your project source. Updates are pulled directly from the source.
 
-**Eject** — Skills are copied into `.claude/skills/` in your project directory. Use this when you want full ownership of the skill files or need to modify them.
+**Eject** — Skills are copied into `.claude/skills/` under the skill's scope: the project's, or `~/.claude/skills/` at global scope. Use this when you want full ownership of the skill files or need to modify them.
 
-You can switch modes after initial install using `npx agents-inc edit`.
+You can switch modes after initial install with `npx agents-inc edit --from <id>`.
 
 ## Scope is the other choice, and it's separate
 
 Install mode decides how a skill's files get there. Scope decides who can see them — this project, or every project on the machine. The two are set independently, so a skill can be an ejected copy at global scope, a plugin at project scope, or either of the other two combinations.
 
-In the editor, scope is the second pair on a skill's cell, `project | global`; a sub-agent carries the same word on its roster row.
+In the editor, scope is the second pair on a skill's cell, `project | global`; a sub-agent's card carries the same pair.
 
 [Scopes](/docs/concepts/scopes) covers what each one means, why global is the default, and the one pairing the CLI refuses to write.
 
 ## On Codex, one of the four cells is not offered
 
-Everything above describes a Claude Code installation, which offers all four combinations of mode and scope. A **Codex** installation, which is not in a release yet, offers three: `plugin + global`, `eject + global` and `eject + project`.
+Everything above describes a Claude Code installation, which offers all four combinations of mode and scope. A **Codex** installation offers three: `plugin + global`, `eject + global` and `eject + project`.
 
 `plugin + project` has no Codex form — Codex installs a plugin for a machine rather than for a repository, and no `plugin` subcommand takes a scope. A configuration asking for that cell is refused before anything is written, naming the skill and the three cells that are offered. It is never quietly turned into an ejected copy.
 

@@ -22,21 +22,22 @@ The dialog says the same two steps, with the id filled in.
 
 Its subtitle names what you're installing _from_: `marketplace <ref> · stack <name>`.
 
-**Two panes.** On the left, **Skills** — grouped `Project` and `Global` by each skill's own scope, each row the skill's name plus `plugin` or `eject`. A skill you added yourself has its name as a button, so you can read its files from inside the list of what's about to be written to your disk. On the right, **Agents** — the same project/global split, each row reading `web · developer`, with `no skills — base agent` on one you pinned on without assigning anything.
+**Two panes.** On the left, **Skills** — grouped `Project` and `Global` by each skill's own scope, each row the skill's name plus `plugin` or `eject`. A skill you added yourself has its name as a button, so you can read its files from inside the list of what's about to be written to your disk. On the right, **Agents** — the same project/global split, each row reading `web · developer`, with `no skills — base agent` on one that carries no skills.
 
-**Two steps.** The first is `cd` to your project root, explained as the folder holding `package.json` because project-scoped skills are written relative to it. The second names what the installer writes — `.agents-inc/claude/config.ts` and sub-agent front-matter, the ejected skills into `.claude/skills/`, the rest linked as plugins, and global skills into `~/.claude` — and then gives you the command. With the [provider](#the-provider-step-and-what-moves-with-it) on Codex the same sentence names `.agents-inc/codex/config.ts`, sub-agent role files, `.agents/skills/` and `~/.codex`.
+**Two steps.** The first is `cd` to your project root, explained as the folder holding `package.json` because project-scoped skills are written relative to it. The second names what the installer writes — `.agents-inc/claude/config.ts` and sub-agent front-matter, each ejected skill into its scope's folder (`.claude/skills/` or `~/.claude/skills/`), the rest linked as plugins, and global skills into `~/.claude` — and then gives you the command. With the [provider](#the-provider-step-and-what-moves-with-it) on Codex the same sentence names `.agents-inc/codex/config.ts`, sub-agent role files, `.agents/skills/` or `~/.codex/skills/`, and `~/.codex`.
 
 **Click the command block to copy it.** The line beneath it says what just happened, one phrase per ending:
 
-| Line                                                              | Means                                                                                                             |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `preparing your id`                                               | The id is still being minted.                                                                                     |
-| `click to copy`                                                   | Ready.                                                                                                            |
-| `copied`                                                          | On your clipboard.                                                                                                |
-| `out of date — reload the page for an id`                         | This tab is running a build older than the service. Reload; re-opening the dialog won't help.                     |
-| `id unavailable — this command starts over in the editor`         | The id couldn't be stored. The command is still valid — it just starts over in the editor.                        |
-| `offline — this command starts over in the editor`                | Same, with the network as the cause.                                                                              |
-| `a sub-agent needs project scope — close and fix the marked rows` | A project skill is assigned to a sub-agent resting at global. Re-opening won't help; the marked rows are the fix. |
+| Line                                                              | Means                                                                                                                    |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `preparing your id`                                               | The id is still being minted.                                                                                            |
+| `click to copy`                                                   | Ready.                                                                                                                   |
+| `copied`                                                          | On your clipboard.                                                                                                       |
+| `out of date — reload the page for an id`                         | This tab is running a build older than the service. Reload; re-opening the dialog won't help.                            |
+| `id unavailable — this command starts over in the editor`         | The id couldn't be stored. The command is still valid — it just starts over in the editor.                               |
+| `offline — this command starts over in the editor`                | Same, with the network as the cause.                                                                                     |
+| `rate limit reached — try again in …`                             | Too many writes from your network address — every open of this dialog is one, unchanged or not. Wait as long as it says. |
+| `a sub-agent needs project scope — close and fix the marked rows` | A project skill is assigned to a sub-agent resting at global. Re-opening won't help; the marked rows are the fix.        |
 
 Where no id could be minted the command degrades to a bare `npx agents-inc init` rather than a broken one. On Codex it stays bare too, because `--provider` needs `--from`, and the line says so: `· a provider needs --from`.
 
@@ -46,16 +47,16 @@ Where no id could be minted the command degrades to a bare `npx agents-inc init`
 
 An id is the configuration's own content address: a SHA-256 of the serialized payload, base64url, first eight characters. Four things follow from that, and they're worth knowing if you're relying on ids.
 
-- **The same configuration always mints the same id.** Opening the install dialog twice on an unchanged selection returns what it returned the first time, and costs a read rather than a write.
+- **The same configuration always mints the same id.** Opening the install dialog twice on an unchanged selection returns what it returned the first time.
 - **A stored configuration can never change underneath its id.** The id _is_ the bytes, so there's nothing for anyone to edit in place.
 - **The id is minted when the dialog opens**, because it has to be on screen to be read. Copying it is a separate act that can fail on its own.
-- **It's the same id either way round.** `share` and `edit --ui` in the CLI mint through the same reader, so one installation has one id.
+- **It's the same id either way round.** `share` and `edit` in the CLI mint through the same reader, so one installation has one id.
 
 [CLI or web](/docs/cli-or-web) carries the rest of the contract — how `--from` behaves headless, what happens to ids the catalogue no longer knows, and why an older payload version fails loudly.
 
 ## The provider step, and what moves with it
 
-Step **01 choose your provider** holds two cards, **Claude Code** and **Codex**, resting on Claude. It says which coding agent this configuration is for. The CLI's Codex support, `--provider` included, is not in a release yet — see [Claude or Codex](/docs/configuration/providers).
+Step **01 choose your provider** holds two cards, **Claude Code** and **Codex**, resting on Claude. It says which coding agent this configuration is for — see [Claude or Codex](/docs/configuration/providers).
 
 **It changes nothing in the configuration.** Set it to Codex and the install dialog hands you `npx agents-inc init --from <id> --provider codex`; the id itself is byte-identical either way.
 
@@ -85,7 +86,7 @@ Move a sub-agent to the other scope in the roster and reopen the preview: its `.
 
 **On the right, the file's actual bytes**, syntax-highlighted. Every one of them comes out of the same renderers the CLI's write path calls, so this isn't a mock-up of the output — it's the output. A skill you added from somebody else's repository is rendered as plain text with no grammar run over it and no markdown renderer anywhere on the path.
 
-**The footer says what the sheet is a preview of**, and it's specific on purpose: `N files · M ejected · agents-inc v<version>`, then _"what installing this configuration on a machine with no existing agents-inc installation writes. The project directory's name, and its relative import to the global config, are computed on that machine — named here rather than guessed. Drawn against the catalogue on screen, which a machine carrying its own local skills does not have."_
+**The footer says what the sheet is a preview of**, and it's specific on purpose: `N files · M ejected · agents-inc v<version>`, then _"what installing this configuration on a machine with no existing agents-inc installation writes, when it is run from a project directory. The project directory's name, and its relative import to the global config, are computed on that machine — named here rather than guessed. Drawn against the catalogue on screen, which a machine carrying its own local skills does not have."_
 
 The preview is of a clean machine, and it says so. On a machine that already has an installation in the way, `init --from` refuses rather than writing any of this, and [`edit --from`](#coming-back-the-other-way) is the command that applies a configuration to one.
 
@@ -115,12 +116,12 @@ Share is disabled with nothing selected, and disabled while any sub-agent scope 
 The id flow runs both directions.
 
 ```bash
-npx agents-inc share      # print the id for what is installed here
-npx agents-inc edit --ui  # the same mint, opened in the editor instead of printed
-npx agents-inc edit --from <id>   # bring a configuration from the editor back to disk
+npx agents-inc share            # print the id for what is installed here
+npx agents-inc edit             # the same mint, then opened in the editor
+npx agents-inc edit --from <id> # bring a configuration from the editor back to disk
 ```
 
-`share` and `edit --ui` read the installation in the current directory and touch nothing. `edit --from` is the destructive direction and confirms first: a shared configuration states a whole roster, so whatever it leaves out is removed, and every removal is named before anything is written. [CLI or web](/docs/cli-or-web) covers the two things it refuses to drop quietly.
+`share` and `edit` read the installation in the current directory and touch nothing. `edit --from` is the destructive direction and confirms first: a shared configuration states a whole roster, so whatever it leaves out is removed (from a project, only the project's own entries), and every removal is named before anything is written. [CLI or web](/docs/cli-or-web) covers the two things it refuses to drop quietly.
 
 ## Related
 

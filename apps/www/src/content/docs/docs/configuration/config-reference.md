@@ -9,7 +9,7 @@ This is the exhaustive list. Each type gets a table, and the fields whose behavi
 
 ## Quick start
 
-The smallest config the CLI will load names itself and declares two empty arrays:
+The smallest config that type-checks names itself and declares two empty arrays:
 
 <!-- prettier-ignore -->
 ```typescript
@@ -22,7 +22,7 @@ export default {
 } satisfies ProjectConfig
 ```
 
-That's a valid installation with nothing in it. Everything below is what you add to it.
+It declares nothing, so the CLI doesn't count it as an installation yet. Everything below is what you add to it.
 
 ## `ProjectConfig`
 
@@ -52,7 +52,7 @@ The default export. Seventeen fields, three of them required.
 
 **Two renamed keys are refused rather than migrated.** A top-level `source` (now `marketplace`) or a skill entry's `source` (now `origin`) fails the load with the new name in the message. There's no fallback, and the CLI doesn't read the old key.
 
-**There is no `provider` field, and there will not be one.** Which coding agent an installation is for is recorded by the folder this file sits in — `.agents-inc/claude/` or `.agents-inc/codex/` — and nowhere else. That is what lets one configuration, and one share id, install onto either provider. Copying a folder does not convert an installation, and a copied configuration that asks for a placement Codex does not offer is refused by name by `compile`, `edit`, `update` and `share`. Codex is not in a release yet; see [Claude or Codex](/docs/configuration/providers).
+**There is no `provider` field, and there will not be one.** Which coding agent an installation is for is recorded by the folder this file sits in — `.agents-inc/claude/` or `.agents-inc/codex/` — and nowhere else. That is what lets one configuration, and one share id, install onto either provider. Copying a folder does not convert an installation, and a copied configuration that asks for a placement Codex does not offer is refused by name by `compile`, `edit`, `update` and `share`. See [Claude or Codex](/docs/configuration/providers).
 
 ## `SkillConfig`
 
@@ -67,15 +67,16 @@ One entry per installed skill. Emitted in the order `id, scope, origin, excluded
 
 ## `AgentScopeConfig`
 
-One entry per sub-agent in the roster. Emitted in the order `name, scope, model, effort, excluded`.
+One entry per sub-agent in the roster. Emitted in the order `name, scope, model, codexModel, effort, excluded`.
 
-| Field      | Type                                                    | Required | What it does                                                                                                         |
-| ---------- | ------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `name`     | `AgentName`                                             | Yes      | Which sub-agent, e.g. `'web-developer'`. Also the compiled file's name.                                              |
-| `scope`    | `'project' \| 'global'`                                 | Yes      | Which `.claude/agents/` directory the compiled Markdown lands in.                                                    |
-| `model`    | `'sonnet' \| 'opus' \| 'haiku' \| 'fable' \| 'inherit'` | No       | Overrides the model in the sub-agent's own metadata. See [Models and effort](/docs/configuration/models-and-effort). |
-| `effort`   | `'low' \| 'medium' \| 'high' \| 'xhigh' \| 'max'`       | No       | Overrides the reasoning effort in the sub-agent's own metadata.                                                      |
-| `excluded` | `boolean`                                               | No       | A tombstone, exactly as on a skill. An excluded agent is filtered out before compilation.                            |
+| Field        | Type                                                                  | Required | What it does                                                                                                         |
+| ------------ | --------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `name`       | `AgentName`                                                           | Yes      | Which sub-agent, e.g. `'web-developer'`. Also the compiled file's name.                                              |
+| `scope`      | `'project' \| 'global'`                                               | Yes      | Which `.claude/agents/` directory the compiled Markdown lands in.                                                    |
+| `model`      | `'sonnet' \| 'opus' \| 'haiku' \| 'fable' \| 'inherit'`               | No       | Overrides the model in the sub-agent's own metadata. See [Models and effort](/docs/configuration/models-and-effort). |
+| `codexModel` | `'gpt-6-astra' \| 'gpt-5.6-sol' \| 'gpt-5.6-terra' \| 'gpt-5.6-luna'` | No       | The model a Codex role runs on; absent, the session's. Claude ignores it.                                            |
+| `effort`     | `'low' \| 'medium' \| 'high' \| 'xhigh' \| 'max'`                     | No       | Overrides the reasoning effort in the sub-agent's own metadata.                                                      |
+| `excluded`   | `boolean`                                                             | No       | A tombstone, exactly as on a skill. An excluded agent is filtered out before compilation.                            |
 
 ## `StackAgentConfig`
 
@@ -141,7 +142,7 @@ Write whichever reads best. What comes back out is normalized: an assignment car
 
 **The category key doesn't reach the compiled agent.** Each assignment becomes a line in the sub-agent's skill activation protocol, and the sentence on that line is the skill's own `usageGuidance` from its `metadata.yaml` — the words its author wrote about when to reach for it, not the key you filed it under. A locally written skill counts here too — its `metadata.yaml` is merged into the catalog on load, so the sentence you put in that field is the sentence the sub-agent reads. The key is read only where there's nothing to read: a skill that states no `usageGuidance` falls back to `Use when working with <category>.`
 
-**Categories are re-keyed on load, and the id is what survives.** If a release moves a skill into a different category, your saved entry is moved with it rather than being orphaned — the id is identity, the category is storage. Run with `--verbose` and the move is named: `Re-keyed stack entries to their live category`. A skill the catalog doesn't carry keeps whatever key you spelled.
+**Categories are re-keyed on load, and the id is what survives.** If a release moves a skill into a different category, your saved entry is moved with it rather than being orphaned — the id is identity, the category is storage. `compile --verbose` names the move: `Re-keyed stack entries to their live category`. A skill the catalog doesn't carry keeps whatever key you spelled.
 
 ## `origin`, and what it decides
 
@@ -154,7 +155,7 @@ Write whichever reads best. What comes back out is normalized: an assignment car
 
 The mode of the whole installation is derived from the set: all-eject is `eject`, all-plugin is `plugin`, a mix is `mixed`, and an empty `skills` array is `eject`. That derived mode is the one `npx agents-inc list` prints. Per skill, `origin` also decides how the compiled agent refers to it — a plugin skill is written as `<id>:<id>`, an ejected one as the bare id.
 
-**Changing `origin` by hand doesn't move any files.** It relabels the manifest. Use `npx agents-inc edit --from <id>` to switch a skill between plugin and eject, which runs the install and removal. See [Install modes](/docs/concepts/install-modes).
+**Changing `origin` by hand doesn't move any files.** It relabels the manifest. Switch a skill between plugin and eject in the editor — `npx agents-inc edit` opens this installation there — and apply it with `npx agents-inc edit --from <id>`, which runs the install and removal. See [Install modes](/docs/concepts/install-modes).
 
 ## `excluded`, and what a tombstone is
 
@@ -176,7 +177,7 @@ Three fields sound alike and do different things:
 
 They can't be folded together: the name is only knowable once the marketplace has been fetched and its manifest read, so it's recorded separately after the fact. `marketplaceName` is what the plugin registry key is built from — `<skill-id>@<marketplace-name>` — which is why an install that never fetched a manifest doesn't have one.
 
-**`marketplace` is resolved by precedence, not by this field alone**: the `--marketplace` flag on `init`, then the `CC_MARKETPLACE` environment variable, then the project config, then the global config, then `github:agents-inc/skills`. A flag naming something that can't be a marketplace fails the run; a bad environment variable warns and falls through to the next rung.
+**`marketplace` is resolved by precedence, not by this field alone**: `init --from` reads the `--marketplace` flag, then the marketplace the configuration names, then the `CC_MARKETPLACE` environment variable; every command then falls to the project config, the global config, and `github:agents-inc/skills`. A flag naming something that can't be a marketplace fails the run; a bad environment variable warns and falls through to the next rung.
 
 **Accepted forms**: `github:`, `gh:`, `gitlab:`, `bitbucket:` and `sourcehut:` prefixes, `https://` and `http://` URLs, or a local directory path. Values are capped at 512 characters, and `..` traversal and private or reserved IP addresses are refused.
 
@@ -194,7 +195,3 @@ These load, validate and survive a rewrite, and change nothing. They're listed h
 | `local` and `path` on an assignment | Round-trip only.                                                                                  |
 
 `description` is a near miss rather than a member: it has no effect on anything compiled, but it does travel with a configuration you `share`.
-
-## What the generated types will and won't accept
-
-`config-types.ts` declares its own `ProjectConfig` interface, and it's deliberately narrower than the one the CLI loads with — it declares eleven fields and omits `branding`, `skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile` and `rulesFile`. Writing one of those into `config.ts` therefore draws a TypeScript error from `satisfies ProjectConfig` even though the CLI reads and preserves the value. The error is the type file's, not a refusal by the CLI.

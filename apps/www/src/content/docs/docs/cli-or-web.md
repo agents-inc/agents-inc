@@ -13,10 +13,7 @@ directions.
 ## Same catalogue
 
 The web app does not maintain its own list of skills. It vendors the CLI's
-generated catalogue, and because both now live in one repository, the
-catalogue and the code it is generated from move in the same commit — CI
-regenerates and fails if the checked-in copy has drifted. There is no window in
-which the grid can offer a skill the CLI does not have.
+generated catalogue.
 
 ## Web to CLI
 
@@ -38,9 +35,10 @@ Some details that matter if you are relying on this:
   the payload's SHA-256. The same selection always mints the same id, so
   re-opening the dialog is idempotent and a stored configuration can never
   change underneath its id.
-- **`--from` runs headless.** It does not need a terminal, so it works over a
-  pipe and in CI.
-- **`--from` refuses an existing installation.** Installing a shared
+- **`init --from` runs headless.** It does not need a terminal, so it works
+  over a pipe and in CI. `edit --from` does need one, because it confirms
+  before removing anything.
+- **`init --from` refuses an existing installation.** Installing a shared
   configuration is a fresh setup rather than a merge, so `init --from` in an
   already-installed directory stops and names the config it found rather than
   writing over it. To bring an id into a setup that already exists, the command
@@ -80,12 +78,12 @@ current directory, publishes them as one configuration, and prints the id with
 both things you can do with it — `init --from <id>` on another machine, or
 `agentsinc.sh/editor/?fromId=<id>` in a browser.
 
-If you want the browser rather than the id, `edit --ui` is the same mint with a
-different ending — instead of printing the id it opens it, so the installation
-you are standing in becomes the selection loaded in the editor:
+To go straight to the browser, `edit` does the same mint and prints the same
+id and destinations, then, at a terminal, opens the editor on the id, so the
+installation you are standing in becomes the selection loaded there:
 
 ```bash
-npx agents-inc edit --ui
+npx agents-inc edit
 ```
 
 Nothing on disk is touched by either. A configuration is read, not rewritten.
@@ -99,41 +97,37 @@ an instruction to delete it.
 
 To bring the browser's changes back, `edit --from <id>`. That direction is
 destructive by design and confirms first: a shared configuration states a whole
-roster, so whatever it leaves out is removed, and every removal is named before
-anything is written. Two things it refuses to drop quietly — a skill you
-authored in this installation, and a skill this catalogue cannot place — are
-kept and reported instead.
+roster, so whatever it leaves out is removed (from a project, only the
+project's own entries), and every removal is named before anything is written.
+Two things it refuses to drop quietly — a skill you authored in this
+installation, and a skill this catalogue cannot place — are kept and reported
+instead.
 
-**The same id, either way round.** `share` and `edit --ui` mint through one
+**The same id, either way round.** `share` and `edit` mint through one
 reader, so one directory has one id, and the id is still the configuration's
 own hash. Sharing an unchanged installation twice returns what it returned the
 first time.
 
-## Which one to select in
-
-**Start in the editor.** It lays the whole catalogue out at once, it is what
-you hand to somebody else when you want them to look before anyone installs
-anything, and several choices exist nowhere else: a sub-agent's model and
-reasoning effort, which sub-agents carry which skill and whether each copy is
-preloaded, and a skill from outside the catalogue.
+## Where to start
 
 **Don't reach for the grid first if the project already exists.** A repository has
 already made these decisions, and transcribing them into a grid is the slowest
 route to a selection you could have had read off the code — see [Adding to an
 existing project](/docs/guides/adding-to-an-existing-project). If it does not
-exist yet, describe it to [the composer](/docs/editor/composer) instead. Both
-land you in the editor with a selection to correct rather than one to build.
+exist yet, describe it to [the composer](/docs/editor/composer) instead.
 
 The choice does not change the install. Every route ends at
-`npx agents-inc init --from <id>`, and the next page you want is
+`npx agents-inc init --from <id>` (with `--provider codex` for Codex), and the
+next page you want is
 [Quickstart](/docs/quickstart), which covers what lands on disk once it runs.
 
 After that install, the CLI does things the editor has no answer for at all:
-`compile`, `doctor`, `update`, `eject`, `uninstall`, `search`, and any hand
+`compile`, `doctor`, `update`, `eject`, `uninstall`, and any hand
 edit of `.agents-inc/claude/config.ts`. None of it has a browser equivalent — the
 editor never touches a filesystem and never runs a command.
 
 For the whole picture rather than the headline,
-[Capabilities](/docs/reference/capabilities) lists what each front door can do,
-area by area, and the last section on it explains why a few things live in only
-one of them.
+[Capabilities](/docs/reference/capabilities) lists what the editor and the CLI
+each do, area by area, and
+[Where the CLI stops on purpose](/docs/reference/capabilities#where-the-cli-stops-on-purpose)
+explains why a few things live in only one of them.

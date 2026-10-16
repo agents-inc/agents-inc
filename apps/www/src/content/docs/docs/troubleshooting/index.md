@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: What to run first when something is wrong, how to read what doctor reports, how to tell a configuration fault from a marketplace fault from a compile fault, and what to gather before opening an issue.
+description: What to run first when something is wrong, how to read what doctor reports, how to tell configuration, marketplace, compile and install faults apart, and what to gather before opening an issue.
 sidebar:
   order: 1
 ---
@@ -34,7 +34,7 @@ Agents Inc. Doctor
     Agents                  ✓  13 agents validated
 
   Operational checks
-    Config Valid            ✓  .agents-inc/claude/config.ts is valid
+    Config Valid            ✓  This project: no config.ts, using the global installation's (~/.agents-inc/claude/config.ts), which is valid
     Layout                  ✓  The global installation is on .agents-inc/claude/
     Placements Offered      ✓  Every configured skill is placeable
     Skills Resolved         ✓  44/44 skills found
@@ -48,8 +48,6 @@ Agents Inc. Doctor
 
   Summary: 14 passed, 0 warnings, 0 errors
 ```
-
-`Layout` and `Placements Offered` are not in a release yet.
 
 Four glyphs, and they aren't interchangeable: `✓` passed, `✗` failed, `!` warned, `–` stood down without answering. Rows that stood down are **not** counted in the summary, so a report with twelve rows can end on a total of eleven — if the arithmetic doesn't add up, a row skipped.
 
@@ -74,18 +72,18 @@ The order is the point. A file that won't parse is one finding, and every row th
 
 Only two findings stand the whole layer down: a config nobody can read, and a marketplace repository with nothing installed. Every other content error is scoped to the rows that read what it's about, and the rest print real verdicts — a broken plugin registry stands down `Plugins Installed` and nothing else.
 
-## Configuration, source, or compile
+## Configuration, source, compile, or install
 
 These faults look alike from the outside and have nothing in common as remedies. The row that failed tells you which kind you have.
 
 | Row                                     | What it reads                                                             | A failure here is      |
 | --------------------------------------- | ------------------------------------------------------------------------- | ---------------------- |
-| `Config`, `Config Valid`                | `.agents-inc/claude/config.ts`                                            | configuration          |
+| `Config`, `Config Valid`                | `config.ts`                                                               | configuration          |
 | `Layout`, `Placements Offered`          | which folder each scope is on; what the config asks the provider to place | configuration, usually |
 | `Marketplaces`, `Marketplace Reachable` | registered local marketplaces; the one this run reads                     | source                 |
 | `Skills Resolved`                       | the config's skill ids, against the loaded catalogue                      | source, usually        |
-| `Agents Compiled`, `No Orphans`         | `.claude/agents/`                                                         | compile                |
-| `Skills Installed`, `Plugins Installed` | `.claude/skills/` and the Claude plugin registry                          | install                |
+| `Agents Compiled`, `No Orphans`         | the compiled sub-agent files                                              | compile                |
+| `Skills Installed`, `Plugins Installed` | the ejected skill folders; the provider's plugin registry                 | install                |
 
 **Configuration faults block everything.** Nothing downstream is trustworthy until `config.ts` loads, and there's no automatic repair — see [a config that will not parse](/docs/troubleshooting/common-problems#a-config-that-will-not-parse).
 
@@ -93,7 +91,7 @@ These faults look alike from the outside and have nothing in common as remedies.
 
 **Compile faults mean the config and the catalogue agree and the disk hasn't caught up.** `npx agents-inc compile` is the remedy, and `doctor` says so in a tip.
 
-**Install faults are the third thing again** — the config declares a skill, and the files or the plugin registration that back it aren't there. A plugin-mode skill has no files under `.claude/skills/` at all, so `Plugins Installed` and `Skills Installed` answer about different halves of a mixed install. See [Install modes](/docs/concepts/install-modes).
+**Install faults are a fourth kind** — the config declares a skill, and the files or the plugin registration that back it aren't there. `Skills Installed` reads only ejected skills and `Plugins Installed` only plugin-mode ones, so they answer about different halves of a mixed install. See [Install modes](/docs/concepts/install-modes).
 
 ## What `list` tells you that `doctor` does not
 
@@ -114,7 +112,7 @@ Three things here that `doctor` never prints. **`Mode`** is `Plugin`, `Mixed` or
 
 The two numbers are counted from different places, which is what makes them useful together: `Skills` is what the config declares, deduplicated by id and excluding anything switched off; `Agents` is what's on disk. A `Skills` count that looks right beside an `Agents` count of 0 is a compile that never ran.
 
-With a terminal and a config that loads, `list` renders a scope-grouped roster of skills and sub-agents instead. Piping it gives the plain block above. Full command detail is in the [command reference](/docs/reference/commands).
+When stdin is a terminal and the config loads, `list` renders a scope-grouped roster of skills and sub-agents instead; `npx agents-inc list < /dev/null` gives the plain block above. Full command detail is in the [command reference](/docs/reference/commands).
 
 ## Before you open an issue
 
@@ -129,7 +127,7 @@ npx agents-inc doctor      # the whole report, not the row that failed
 
 Then the command you actually ran, verbatim including flags, and **its exit code** — `echo $?` straight after. The exit code isn't cosmetic here: `1` means the command refused and nothing landed, `4` means it was cancelled, and `5` means it ran to the end and part of it didn't happen. Those three ask for different things from whoever reads the report, and re-running is the wrong response to the third.
 
-Last, whether the installation is global or project — `list`'s `Config` line answers it — and whether the skills are plugin or eject mode. Issues go to [github.com/agents-inc/agents-inc](https://github.com/agents-inc/agents-inc/issues).
+Last, whether the installation is global or project and whether the skills are plugin or eject mode. Issues go to [github.com/agents-inc/agents-inc](https://github.com/agents-inc/agents-inc/issues).
 
 ## Known rough edges
 
@@ -138,6 +136,4 @@ Reported here rather than left to be rediscovered.
 - **`doctor` exits 1 in a directory with nothing installed.** `config.ts not found` is a failed row like any other. If "not installed yet" is an acceptable state for your script, match the message rather than the exit code.
 - **`Skipped (config invalid)` also prints when the config is merely absent.** Read the `Config Valid` row above it, which distinguishes the two.
 - **`Fetched … over the network` prints for a cache hit too.** The line reports whether the marketplace is local or remote, not whether this run actually downloaded anything.
-- **A multi-line detail breaks the column layout.** Marketplace and loader errors carry newlines; only the first line is indented and the rest sit at the left margin. The text is intact — the alignment isn't.
 - **The summary omits skipped rows,** so its total can be lower than the number of rows printed.
-- **`Config Valid` prints a project-relative path for a file that may be global.** In a project with no config of its own it reports `.agents-inc/claude/config.ts is valid` about `~/.agents-inc/claude/config.ts`. The `Marketplace Reachable` detail line — `named by the global configuration` — is what tells the two apart, and `npx agents-inc list` prints the absolute path.

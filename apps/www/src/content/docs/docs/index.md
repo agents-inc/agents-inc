@@ -3,8 +3,8 @@ title: Agents Inc
 description: Documentation for Agents Inc, an agent composition framework for Claude Code that compiles atomic skills into sub-agents.
 ---
 
-Agents Inc composes sub-agents for Claude Code — and for Codex, which is
-not in a release yet — out of atomic, reusable skills. You pick the skills
+Agents Inc composes sub-agents for Claude Code and Codex out of atomic,
+reusable skills. You pick the skills
 matching the stack you actually work in, and they are compiled into sub-agent
 files. Change a skill, recompile, and every sub-agent that uses it is updated.
 
@@ -30,7 +30,7 @@ it leaves on disk.
 
 ## Start here
 
-- [Three ways in](/docs/ways-in) — the three routes to a selection, and which one
+- [Ways in](/docs/ways-in) — the three routes to a selection, and which one
   suits where you are starting from. **Adding this to a codebase that already
   exists** and **starting from nothing** have a different answer each, and
   neither of them is the grid.
@@ -64,7 +64,7 @@ the [field reference](/docs/configuration/config-reference),
 [scopes and paths](/docs/configuration/scopes-and-paths),
 [models and effort](/docs/configuration/models-and-effort), and
 [Claude or Codex](/docs/configuration/providers) for the provider an
-installation is for — not in a release yet.
+installation is for.
 
 **[The editor](/docs/editor)** is the browser front door:
 [selecting skills](/docs/editor/selecting-skills),

@@ -39,7 +39,7 @@ The id is the configuration's own hash. Sharing an unchanged installation return
 | Curation                          | every skill-to-sub-agent assignment, with its preloaded or lazy state                                                    |
 | `description`                     | the sentence itself                                                                                                      |
 
-A link minted in the editor carries the same fields, and a skill you added there from outside the catalogue travels as its files for the same reason — the receiver's catalogue has no id to resolve.
+`share` run against an installation carries plugins only, so ejected catalogue skills and skills from outside the catalogue travel in an id minted by the editor's **Share**, or by a bare `edit`, which mints one from the same directory and opens it in the editor.
 
 ## What stays behind
 
@@ -52,7 +52,7 @@ Kept — written here rather than installed, so a shared configuration never car
 
 The `projects` registry, `author` and `branding` stay behind too. They describe your machine rather than the configuration, and the payload has no field for any of them.
 
-**The provider stays behind as well, and that is the point of it.** An id carries no record of whether it was minted from a Claude installation or a Codex one, so your teammate installs the same id with `init --from <id>` or `init --from <id> --provider codex` as their own machine requires. Codex is not in a release yet — see [Claude or Codex](/docs/configuration/providers). Two consequences to expect:
+**The provider stays behind as well, and that is the point of it.** An id carries no record of whether it was minted from a Claude installation or a Codex one, so your teammate installs the same id with `init --from <id>` or `init --from <id> --provider codex` as their own machine requires — see [Claude or Codex](/docs/configuration/providers). Two consequences to expect:
 
 - A configuration minted on Claude can name a skill as `plugin` at **project** scope, which a Codex install does not offer. The recipient's install refuses it by name, before anything is written, and names the three placements Codex does offer.
 - A payload keeps `agent-summoner` and `skill-summoner` wherever the configuration names them — every shipped stack does — even one minted from a Codex installation, which never compiled them. A Codex install drops both and says so once, which is what lets a later release restore them without anyone re-minting an id.
@@ -74,6 +74,8 @@ The causes:
 - **A project-scoped skill assigned to a global-scoped sub-agent.** Every offending pair is named, so one re-share fixes them all.
 - **A copied skill whose files can't travel** — one this CLI installed from outside the catalogue, where the installation doesn't record the repository it came from or its files no longer make a skill.
 
+The same block stops a bare `edit`, which mints through the same path. Once nothing in it stands, `share` still refuses ejected skills, each named under `This installation holds ejected skills, and ejected skills cannot be shared:`.
+
 ## On the receiving end
 
 `init --from <id>` is greenfield-only. In a directory that already carries an installation it refuses before it even fetches the configuration:
@@ -84,7 +86,7 @@ An installation already exists at <path>. Run 'npx agents-inc uninstall' first �
 
 Skills or sub-agents the current catalogue no longer knows are named and skipped, and the install proceeds without them.
 
-`edit --from <id>` applies a configuration to an installation you already have, and it removes whatever the configuration leaves out. It needs a terminal, because that has to be confirmed.
+`edit --from <id>` applies a configuration to an installation you already have, and it removes whatever the configuration leaves out — from a project, only the project's own entries. It needs a terminal, because that has to be confirmed.
 
 Opening `https://agentsinc.sh/editor/?fromId=<id>` writes nothing anywhere. The id stays in the address, so a reload reopens the same configuration, and the nav rail's **Editor** link clears it and hands you back your own.
 

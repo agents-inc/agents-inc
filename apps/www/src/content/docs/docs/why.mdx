@@ -83,10 +83,12 @@ you has run:
   and sub-agents you actually installed, so a typo in a skill id is a type
   error rather than a silent no-op.
 - **The skills themselves**, installed one of two ways. In **plugin** mode
-  (the default) they are Claude Code plugins under `.claude/plugins/` and
+  (the default) they are Claude Code plugins under `~/.claude/plugins/` and
   nothing is copied into your project. In **eject** mode they are copied into
   `.claude/skills/` and you own the files outright. This is per skill, not a
-  global switch, and you can change it later with `npx agents-inc edit`. See
+  global switch, and you can change it later: `npx agents-inc edit` opens this
+  installation in the editor, and `npx agents-inc edit --from <id>` applies
+  what you changed there. See
   [Install modes](/docs/concepts/install-modes).
 
 Skills and sub-agents can be installed at **global** scope
@@ -98,7 +100,7 @@ Everything is ejectable. If you decide the compiler's `reviewer` is wrong
 for you, `npx agents-inc eject agent-partials` (or `templates`, or `skills`, or
 `all`) hands you the source material to modify. You are not locked into
 anyone's prompt. See
-[Customizing subagents](/docs/guides/customizing-subagents).
+[Customizing sub-agents](/docs/guides/customizing-subagents).
 
 ## Who this is not for
 
@@ -125,8 +127,8 @@ page is asking you to make.
 
 **You use neither Claude Code nor Codex.** An installation is for one of those
 two, and nothing here targets any other agent runtime. Everything above
-describes Claude Code. Codex is not in a release yet; on it the same selection
-compiles all but two of the sub-agents into Codex's own files — see
+describes Claude Code. On Codex the same selection compiles all but two of the
+sub-agents into Codex's own files — see
 [Claude or Codex](/docs/configuration/providers).
 
 ## Next

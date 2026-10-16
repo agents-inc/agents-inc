@@ -269,8 +269,7 @@ export default defineConfig({
 
         // The four groups below join the three above them in ascending
         // commitment: a reader arrives at Guides with a task, at Configuration
-        // once the editor's choices stop being enough, at The editor if they
-        // would rather see the catalogue than type at it, and at Recipes and
+        // once the editor's choices stop being enough, and at Recipes and
         // Troubleshooting with something specific already in mind.
         //
         // `autogenerate` rather than a hand-listed `items` for all four, so a

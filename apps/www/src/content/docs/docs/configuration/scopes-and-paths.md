@@ -17,25 +17,21 @@ npx agents-inc list
 
 Skills and sub-agents are printed under `Project` and `Global` headings, so the scope of each is on screen. The roots those headings stand for:
 
-| Scope     | Config                           | Compiled agents     | Ejected skills      | Plugin skills        |
-| --------- | -------------------------------- | ------------------- | ------------------- | -------------------- |
-| `global`  | `~/.agents-inc/claude/config.ts` | `~/.claude/agents/` | `~/.claude/skills/` | `~/.claude/plugins/` |
-| `project` | `.agents-inc/claude/config.ts`   | `.claude/agents/`   | `.claude/skills/`   | `.claude/plugins/`   |
+| Scope     | Config                           | Compiled agents     | Ejected skills      | Plugin skills                                                |
+| --------- | -------------------------------- | ------------------- | ------------------- | ------------------------------------------------------------ |
+| `global`  | `~/.agents-inc/claude/config.ts` | `~/.claude/agents/` | `~/.claude/skills/` | `~/.claude/plugins/`                                         |
+| `project` | `.agents-inc/claude/config.ts`   | `.claude/agents/`   | `.claude/skills/`   | `~/.claude/plugins/`, switched on in `.claude/settings.json` |
 
-Those are a **Claude Code** installation's roots. A [Codex](/docs/configuration/providers) installation, which is not in a release yet, reads scope the same way and writes somewhere else entirely:
+Those are a **Claude Code** installation's roots. A [Codex](/docs/configuration/providers) installation reads scope the same way and writes somewhere else entirely:
 
 | Scope     | Config                          | Compiled agents            | Ejected skills        | Plugin skills          |
 | --------- | ------------------------------- | -------------------------- | --------------------- | ---------------------- |
 | `global`  | `~/.agents-inc/codex/config.ts` | `$CODEX_HOME/agents/`      | `$CODEX_HOME/skills/` | `$CODEX_HOME/plugins/` |
 | `project` | `.agents-inc/codex/config.ts`   | `.codex/agents/` _(trust)_ | `.agents/skills/`     | — not offered          |
 
-`$CODEX_HOME` is Codex's own state root, `~/.codex` unless that variable relocates it. _(trust)_ marks the one root whose contents are read only while your global `$CODEX_HOME/config.toml` trusts that exact project directory — the install says so when it is missing.
+`$CODEX_HOME` is Codex's own state root, `~/.codex` unless that variable relocates it. _(trust)_ marks the one root whose contents are read only while your global `$CODEX_HOME/config.toml` trusts that exact project directory — the install writes that entry when it is missing, and says so.
 
-**Changing a `scope` value by hand doesn't move anything.** It edits the manifest, not the disk.
-
-:::note[Doing this from the editor]
-Both halves are controls there, and nothing has to move because nothing has landed yet. A skill's `project`/`global` badge sits on its cell in the grid, repeated as **Install scope** in the panel behind its `•••` button; a sub-agent's scope is the word on its roster row. `npx agents-inc init --from <id>` writes what you picked straight into `config.ts`.
-:::
+**Changing a `scope` value by hand doesn't move anything.** It edits the manifest, not the disk. Change it in the editor instead: a skill's scope is the `project | global` pair on its cell, repeated as **Install scope** in the panel behind its `•••` button, and a sub-agent's is the same pair on its card. `npx agents-inc edit` opens this installation there, and `edit --from <id>` installs the result at its new scopes.
 
 ## Why global is the default
 
@@ -68,7 +64,7 @@ A skill or sub-agent installed at global scope belongs to the global config, and
 You have two ways forward, and only the second actually uninstalls anything:
 
 - **Don't hand it to this project's sub-agents.** Leave the skill out of the relevant entry in `stack`. It stays installed and no prompt here mentions it.
-- **Actually remove it.** Run `npx agents-inc edit` from your home directory, where the global config is the one being edited.
+- **Actually remove it.** From your home directory, where the global config is the one being edited, `npx agents-inc edit` opens it in the editor and `edit --from <id>` applies what you change there.
 
 ## The scope rule compile enforces
 

@@ -15,7 +15,7 @@ Distributing one is the other way round, and that section is at the foot of this
 ```bash
 npx agents-inc new marketplace acme   # scaffold a marketplace the CLI already accepts
 cd acme                               # replace the placeholder author, then the example skill
-npx agents-inc build plugins          # package each skill and agent
+npx agents-inc build plugins          # package each skill as a plugin
 npx agents-inc build marketplace      # write marketplace.json, the index an install reads
 ```
 
@@ -45,21 +45,12 @@ src/skills/{skill-name}/      # at least one skill — SKILL.md + metadata.yaml
 
 **A note on `config/skill-rules.ts`.** Relationship rules — conflicts, requires, alternatives —
 currently name skills from the **public catalogue only**. Your own skills cannot be named there yet,
-and a rule that names one will fail to load. The file itself is still required, so ship it with a
-version and no relationships:
+and a rule that names one will fail to load. Your marketplace works fully without them, or without
+the file: skills install, reach their sub-agents and compile. What you lose is the incompatibility
+hints between your own skills.
 
-```typescript
-export default { version: "1.0.0" }
-```
-
-Your marketplace works fully without them: skills install, reach their sub-agents and compile. What
-you lose is the incompatibility hints between your own skills. Generating those
-automatically is planned.
-
-Copy the shapes of those files from the public marketplace at
-[agents-inc/skills](https://github.com/agents-inc/skills), which is the reference implementation of
-every one of them. `npx agents-inc doctor` reads a marketplace and reports what is missing or
-malformed, so run it against your directory before pointing a project at it.
+`npx agents-inc doctor` reads a marketplace and reports what is missing or malformed, so run it
+against your directory before pointing a project at it.
 
 ## Name your skills for your marketplace
 
@@ -108,13 +99,15 @@ gets published in the first place.
 
 1. Start with existing skills from the public marketplace or write your own
 2. Iterate on skills using the `skill-summoner` subagent to align them with your project conventions
-3. Build the marketplace index:
+3. Package the skills, then build the marketplace index:
 
 ```bash
+npx agents-inc build plugins
 npx agents-inc build marketplace
 ```
 
-This generates `marketplace.json`, the index that the CLI reads when installing from your marketplace.
+This writes `marketplace.json`, the index the CLI reads when installing from your marketplace, and
+`catalog.json` beside it, which the editor loads.
 
 4. Point a project at your marketplace when you install it:
 
@@ -141,9 +134,3 @@ of it.
 whatever a `--from` payload carries — naming one is an instruction about this install, where the
 payload's ref is only a record of where the sharer's came from.
 :::
-
-Skills and stacks can also be packaged as Claude Code plugins:
-
-```bash
-npx agents-inc build plugins    # Package individual skills and agents
-```

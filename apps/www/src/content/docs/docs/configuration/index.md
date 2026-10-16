@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Your installation is described by one file: `.agents-inc/claude/config.ts`. It's plain TypeScript, it's meant to be hand-edited, and it's the source of truth `npx agents-inc compile` reads every time it rebuilds your sub-agents. Whichever front door you came through writes it on first run — the editor hands you an `npx agents-inc init --from <id>` command that does it. Nothing in it is off-limits afterwards.
+Your installation is described by one file: `.agents-inc/claude/config.ts`. It's plain TypeScript, it's meant to be hand-edited, and it's the source of truth `npx agents-inc compile` reads every time it rebuilds your sub-agents. The `npx agents-inc init --from <id>` command the editor hands you writes it on first run. Nothing in it is off-limits afterwards.
 
 ## Quick start
 
@@ -28,7 +28,7 @@ npx agents-inc compile
 Open `.claude/agents/api-developer.md`. Its frontmatter now reads `model: opus` and `effort: high`. That's the whole loop — edit `config.ts`, compile, read the compiled agent.
 
 :::note[Doing this from the editor]
-`model`, `effort` and a sub-agent's `scope` each have a control in the editor: they're words on the sub-agent's row in the roster, and clicking one cycles it to the next value. [Models and effort](/docs/configuration/models-and-effort) has the values it offers, and the round trip that gets an installation you already have onto that roster and back.
+`model`, `effort` and a sub-agent's `scope` each have a control on that sub-agent's card in the editor. [Models and effort](/docs/configuration/models-and-effort) has the values it offers, and the round trip that gets an installation you already have into the editor and back.
 :::
 
 ## The two files in `.agents-inc/claude/`
@@ -68,11 +68,9 @@ Four fields carry the installation: `skills` is the install manifest, `agents` i
 
 Key order is the writer's, not the order you selected things in — top-level fields, the keys inside `stack`, and the keys inside each entry are all placed in a fixed order. Two configs holding the same values are therefore the same file, which is what keeps an edit that changed one skill from rewriting the lines about the others.
 
-**A field the loader accepts is not always a field the generated types declare.** `branding` and the five path overrides are read and preserved by the CLI, but the `ProjectConfig` interface in `config-types.ts` doesn't declare them — so writing one into `config.ts` draws a TypeScript error from `satisfies ProjectConfig` even though the CLI honors it. See [Models and effort](/docs/configuration/models-and-effort) for `branding` and [Scopes and paths](/docs/configuration/scopes-and-paths) for the path overrides.
-
 ## Editing by hand or the editor
 
-**Go back to the editor** when you're reconsidering the selection rather than adjusting a line of it — the whole catalog is on screen there, and a hand-edit only shows you what you already have. It's a round trip, because the browser can't read your disk: `npx agents-inc edit --ui` publishes this installation and opens it at agentsinc.sh/editor, and `npx agents-inc edit --from <id>` applies what you changed back. Reach for `edit --from` and not `init --from` — the second refuses a directory that's already installed, since installing a shared configuration is a fresh setup rather than a merge.
+**Go back to the editor** when you're reconsidering the selection rather than adjusting a line of it — the whole catalog is on screen there, and a hand-edit only shows you what you already have. It's a round trip, because the browser can't read your disk: `npx agents-inc edit` publishes this installation and opens it at agentsinc.sh/editor, and `npx agents-inc edit --from <id>` applies what you changed back. Reach for `edit --from` and not `init --from` — the second refuses a directory that's already installed, since installing a shared configuration is a fresh setup rather than a merge.
 
 **Edit by hand** when you're rearranging what's already installed: moving a skill from one agent to another, marking one preloaded, pinning a model, dropping an agent's entry in `stack`. None of that installs or removes anything, so `compile` is all it needs.
 
@@ -93,5 +91,5 @@ Two things it reports rather than fixes, both of which a hand-edit can create. A
 - [Config reference](/docs/configuration/config-reference) — every field of every type, in tables.
 - [Scopes and paths](/docs/configuration/scopes-and-paths) — project versus global, and the five path overrides.
 - [Models and effort](/docs/configuration/models-and-effort) — per-agent tuning, and `branding`.
-- [Claude or Codex](/docs/configuration/providers) — which coding agent an installation is for, and what each can do. Codex is not in a release yet.
+- [Claude or Codex](/docs/configuration/providers) — which coding agent an installation is for, and what each can do.
 - [Editing your config](/docs/guides/editing-config) — the task-shaped walkthrough of skills, agents and `stack`.

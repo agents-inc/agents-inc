@@ -27,7 +27,7 @@ The dialog reads the target catalogue before it seats it, so it can name what a 
 
 > Switching to github:acme/skills will drop 3 of your 7 skills: Prisma, Drizzle, Hono. Nothing has changed yet — press Load again to switch.
 
-The second press performs it. **A load that costs your selection nothing does both at once** — that's every first load of a session, and every load onto a catalogue that carries what you already picked, where a second press would stand in front of nothing.
+The second press performs it. **A load that costs your selection nothing does both at once** — that's every load onto a catalogue that carries what you already picked, where a second press would stand in front of nothing.
 
 Clearing the field is how you go back to the public catalogue. It's read and described exactly like naming a repository, because it costs the selection exactly as much.
 
@@ -57,7 +57,7 @@ There's deliberately no control anywhere that forgets a token. A GitHub personal
 
 ## Switching between saved marketplaces
 
-Every marketplace a load has succeeded against is remembered, along with the token that reached it. Once this browser holds more than one, the others are listed by their refs under **Marketplace** in the nav rail, one press each — with one saved there's nowhere to switch to, and the rail already names it.
+Every marketplace loaded from the Marketplace dialog is remembered, along with the token that reached it. Once this browser holds more than one, the others are listed by their refs under **Marketplace** in the nav rail, one press each — with one saved there's nowhere to switch to, and the rail already names it.
 
 Pressing one opens **Switch marketplace**, which fetches the target in order to describe it in the same words the Load flow uses, and offers **Cancel** or **Switch marketplace**. Reading is not switching: nothing is seated, stored or dropped until you press the CTA, so canceling costs you nothing but the fetch.
 
@@ -69,7 +69,7 @@ A payload is stamped with the marketplace it was minted against, so opening some
 
 The Marketplace dialog then opens pre-filled with the repository that failed and the answer that explains why, so you start where the attempt got to. Loading it finishes the import that was waiting.
 
-**A marketplace a link brought is never saved.** Only one you typed into the field yourself reaches the saved list, so the switcher only ever offers catalogues you chose.
+**A marketplace a link loads on its own isn't saved.** Only a load from the Marketplace dialog reaches the saved list, so the switcher offers only catalogues you loaded there.
 
 ## Related
 

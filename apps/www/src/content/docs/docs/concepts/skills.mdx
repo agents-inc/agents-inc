@@ -23,7 +23,7 @@ Open the [editor](/editor) and type into the **search skills** field above the g
 npx agents-inc search zustand
 ```
 
-`search` matches a query against every skill's id, display name, slug, description and category, and prints what hits. It reads the marketplace this installation points at plus the local skills already on disk, and it selects nothing.
+`search` matches a query against every skill's id, display name, slug, description and category, and prints what hits. It reads the marketplace this installation points at plus the local skills already on disk.
 :::
 
 ## What a skill is on disk
@@ -31,7 +31,7 @@ npx agents-inc search zustand
 ```
 skills/{skill-name}/
   SKILL.md         # The skill content
-  metadata.yaml    # Name, domain, category, relationships
+  metadata.yaml    # Name, domain, category
 ```
 
 Both files are required — the CLI's loader validates the pair, and `npx agents-inc doctor` reports any skill missing either one.
@@ -40,13 +40,13 @@ Both files are required — the CLI's loader validates the pair, and `npx agents
 
 Each skill belongs to one of {DOMAIN_COUNT} **domains** — {DOMAIN_IDS} — and to a **category** within it (`web-framework`, `web-client-state`, `api-api`, and so on). A category can be marked exclusive: the editor heads it `one of` and a click swaps your pick rather than adding to it. You get one framework, not three.
 
-Skills also declare relationships to each other (`requires`, `conflictsWith`). Those relationships drive the compatibility filtering you see while selecting.
+Relationships between skills (`requires`, `conflicts`) decide which cells the editor dims while you select.
 
 ## Where skills come from
 
 The official marketplace at [agents-inc/skills](https://github.com/agents-inc/skills) is the default source and currently ships {SKILL_COUNT} skills. You are not limited to it:
 
-- **Add one straight from GitHub.** `＋ Add skill` on the editor's filter bar searches skills outside the catalogue and stages them into a category you choose. An added skill always installs by ejecting — a plugin serves somebody else's repository as-is, and the metadata a skill needs can't be written into it.
+- **Add one straight from GitHub.** **＋ Add skill** on the editor's filter bar searches skills outside the catalogue and stages them into a category you choose. An added skill always installs by ejecting — a plugin serves somebody else's repository as-is, and the metadata a skill needs can't be written into it.
 - [Write your own](/docs/guides/writing-custom-skills) for project-specific knowledge.
 - [Run your own marketplace](/docs/guides/creating-a-marketplace) curated for your team's conventions.
 
@@ -54,7 +54,7 @@ The official marketplace at [agents-inc/skills](https://github.com/agents-inc/sk
 
 Two separate decisions:
 
-- **Install mode** — whether the skill's files live in a Claude Code plugin or are copied into your project. See [Install modes](/docs/concepts/install-modes).
-- **Load behaviour** — whether the skill is named in the compiled agent's frontmatter `skills:` list, which is the key Claude Code loads from when the agent starts (`preloaded: true`), or left for the agent to pull in through Claude Code's Skill tool when the work calls for it. Dynamic is the default and keeps prompts lean. It's set per sub-agent rather than per skill, so one skill can be preloaded on one sub-agent and dynamic on another: in the editor it's the `pre` / `lazy` word on the skill's row under that sub-agent in the roster, and in your config it's the `preloaded` flag on that one assignment. A Codex role file has no way to carry the preloaded form, so on Codex — which is not in a release yet — a skill marked preloaded is not preloaded, and the compile says so. See [Editing your config](/docs/guides/editing-config).
+- **Install mode** — whether the skill's files live in a Claude Code plugin or are copied in as files you own. See [Install modes](/docs/concepts/install-modes).
+- **Load behaviour** — whether the skill is named in the compiled agent's frontmatter `skills:` list, which is the key Claude Code loads from when the agent starts (`preloaded: true`), or left for the agent to pull in through Claude Code's Skill tool when the work calls for it. Dynamic is the default and keeps prompts lean. It's set per sub-agent rather than per skill, so one skill can be preloaded on one sub-agent and dynamic on another: in the editor it's the `pre` / `lazy` word on the skill's row under that sub-agent in the roster, and in your config it's the `preloaded` flag on that one assignment. A Codex role file has no way to carry the preloaded form, so on Codex a skill marked preloaded is not preloaded, and the compile says so. See [Editing your config](/docs/guides/editing-config).
 
 Both decisions show up in the compiled file itself, and [Anatomy of a sub-agent](/docs/reference/sub-agent-anatomy) reads one line by line.

@@ -7,9 +7,9 @@ Every skill and every sub-agent is installed at one of two scopes: **global**, s
 
 ## Quick start
 
-Global is the default on both front doors, and most of the time it's the one you want. Your React + Hono setup is the same in every project, so installing it once at global scope means one thing to maintain instead of one copy per repository.
+Global is the default, and most of the time it's the one you want. Your React + Hono setup is the same in every project, so installing it once at global scope means one thing to maintain instead of one copy per repository.
 
-In the editor, scope is the `project | global` pair on a skill's cell — click the one you want — and a word on a sub-agent's roster row, which opens the panel you pick it in. Reach for project scope only where a project genuinely differs from your defaults.
+In the editor, scope is the `project | global` pair on a skill's cell and on a sub-agent's card — click the one you want. Reach for project scope only where a project genuinely differs from your defaults.
 
 ## What each scope means
 
@@ -20,7 +20,7 @@ In the editor, scope is the `project | global` pair on a skill's cell — click 
 | Who sees it         | every project on the machine       | this directory only            |
 | Good for            | the stack you reach for by default | the one project that deviates  |
 
-Those are a Claude Code installation's paths. A Codex installation, not in a release yet, has its paths in [Claude or Codex](/docs/configuration/providers).
+Those are a Claude Code installation's paths. A Codex installation has its paths in [Claude or Codex](/docs/configuration/providers).
 
 You can mix freely. A common shape is a global base with a project overriding the one thing it does differently — global React everywhere, plus project-scoped Vue in the one app that uses it.
 
@@ -49,13 +49,11 @@ Sub-agent 'web-developer' cannot carry project-scoped skill 'web-testing-vitest'
 
 Two ways out: move the skill to global scope, or pin the sub-agent to the project. The editor marks the offending row and blocks Install and Share until you pick one, so this is a warning you can only hit from a hand edit or a shared configuration.
 
-**One definition, read by both front doors.** The rule lives in `packages/matrix/src/seed.ts` and the CLI, the editor and the shared-configuration format all read it from there rather than restating it — it used to exist as three verbatim copies in three workspaces, which is exactly the drift a shared contract prevents.
-
 ## Global entries are read-only inside a project
 
 One project must not uninstall something every other project is using.
 
-To change a global item, edit at global scope — run `edit` from your home directory, or from any directory that has no project installation of its own.
+To change a global item, edit at global scope. From your home directory, or from any directory that has no project installation of its own, `npx agents-inc edit` opens the global installation in the editor and `edit --from <id>` applies what you change there.
 
 **Don't want a global skill in this project?** Don't try to deselect it. Leave it out of the relevant sub-agent's `stack` entry instead: the skill stays installed and available, and no sub-agent here receives it. [Give one sub-agent a skill](/docs/recipes/give-one-agent-a-skill) does exactly that.
 

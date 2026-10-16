@@ -3,8 +3,6 @@ title: Quickstart
 description: Pick your skills at agentsinc.sh/editor, run the command it hands you, and see exactly which files land on disk.
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components"
-
 Setting up is two moves: choose your skills at
 [agentsinc.sh/editor](/editor), then run the command it hands you. The
 editor is where you choose; the CLI is what writes to disk. Nothing reaches
@@ -21,14 +19,14 @@ skill](/docs/guides/adding-to-an-existing-project) reads your dependencies
 instead of asking you to retype them. **Starting from nothing?**
 [The composer](/docs/editor/composer) takes a sentence describing the project.
 Both end at the same command this page explains, so nothing below is wasted
-either way — [Three ways in](/docs/ways-in) compares all three.
+either way — [Ways in](/docs/ways-in) compares all three.
 :::
 
 ## Before you start
 
 You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-installed. Codex is not in a release yet, and this page does not walk it —
-[Claude or Codex](/docs/configuration/providers) covers what differs.
+installed. This page walks Claude Code, the default provider;
+[Claude or Codex](/docs/configuration/providers) covers what differs on Codex.
 
 Nothing needs to be installed globally. `npx` fetches the CLI for you.
 
@@ -57,34 +55,29 @@ see [Global-first setup](/docs/guides/global-first-setup).
 
 ## What you're choosing
 
-<Tabs syncKey="tool">
-  <TabItem label="Editor">
-
-Three columns. The middle one holds the stack grid under **choose your
-stack**, and below it every skill in the catalogue, laid out in cells under
-its domain. The right-hand column is the roster: every sub-agent there is,
-with the skills each one carries listed underneath.
+Three columns. The middle one runs in numbered steps — **choose your
+provider**, **then your stack**, **then your sub-agents** — and below them
+every skill in the catalogue, laid out in cells under its domain. The
+right-hand column is the roster: every sub-agent there is, with the skills each
+one carries listed underneath.
 
 1. **Click a stack.** Its skills are selected and handed to the sub-agents
    that want them, so you are adjusting a starting point rather than filling a
    blank grid. The first cell is **Start from scratch** if you would rather
    not. See [Stacks](/docs/concepts/stacks).
-2. **Click skill cells** to add or drop them. The search field above the grid
+2. **Click skill cells** to add or drop them. The search field above the skills
    narrows what is on screen, and the domain strip jumps to a domain's section;
    neither changes what is selected.
 3. **Set the two words on a cell** if the defaults are wrong: its install mode,
    `plugin` or `eject`, and its scope, `project` or `global`. The `•••` button
    opens both as a panel, along with which sub-agents carry the skill. See
    [Install modes](/docs/concepts/install-modes).
-4. **Turn sub-agents on and off** in the roster, and set each one's model and
-   reasoning effort by clicking the words on its row.
+4. **Turn sub-agents on and off** by pressing their cards, and set each one's
+   model, reasoning effort and scope on the card.
 5. **Press Install** and copy the command.
 
 [The editor](/docs/editor) covers the whole screen, including the things it
 deliberately cannot do.
-
-  </TabItem>
-</Tabs>
 
 ## What exists afterwards
 
@@ -109,8 +102,8 @@ sub-agent for real, see
 **Your skills**, in one of two places depending on install mode:
 
 - **Plugin** (the default) — registered as Claude Code plugins, under
-  `~/.claude/plugins/` at global scope and `.claude/plugins/` at project scope.
-  Nothing is copied into your project source.
+  `~/.claude/plugins/` at either scope. Nothing is copied into your project
+  source.
 - **Eject** — copied into `.claude/skills/`, or `~/.claude/skills/` at global
   scope. Yours to modify.
 
@@ -160,8 +153,8 @@ The editor cannot read what is on your disk, so going back to it is a round
 trip through two commands:
 
 ```bash
-npx agents-inc edit --ui          # publishes this installation and opens it
-npx agents-inc edit --from <id>   # applies what you changed there
+npx agents-inc edit              # opens this installation in the editor
+npx agents-inc edit --from <id>  # applies what you changed there
 ```
 
 The second command is the one to get right. The install dialog hands out

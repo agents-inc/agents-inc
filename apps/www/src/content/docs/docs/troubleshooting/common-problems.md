@@ -11,7 +11,7 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 
 | Message or symptom                                                         | Likely cause                                                  | Fix                                                                        |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `Config at '…' could not be loaded`                                        | `config.ts` doesn't parse                                     | [Recreate it](#a-config-that-will-not-parse) — there's no repair           |
+| `Config at '…' could not be loaded`                                        | `config.ts` doesn't parse                                     | [Recreate it](#a-config-that-will-not-parse)                               |
 | `Repository not found:` / `Network error fetching:`                        | the marketplace can't be reached                              | [Check the ref, the token, the proxy](#a-marketplace-that-will-not-load)   |
 | `Could not reach … — using the cached copy, which may be out of date.`     | offline, and a cached copy was used                           | Nothing — the run succeeded                                                |
 | `0/1 skills found` / `- <id> (not found)`                                  | the catalogue doesn't carry that id                           | [Refresh, then fix the id](#a-skill-id-the-catalogue-no-longer-has)        |
@@ -40,8 +40,7 @@ Every message below is quoted as the CLI prints it, because that's how most peop
 ```
 Error: This project's config at '/home/me/project/.agents-inc/claude/config.ts' could not be loaded: Failed to load config from '/home/me/project/.agents-inc/claude/config.ts': ParseError: Unexpected token
  /home/me/project/.agents-inc/claude/config.ts:1:26
-There is no automatic repair for this — recreate the configuration by running 'npx agents-inc uninstall', which still works on a config it cannot read, then 'npx agents-inc init', from '/home/me/project'.
-Or build one at https://agentsinc.sh/editor and install it with 'npx agents-inc init --from <id>'.
+There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me/project', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor.
 'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.
 ```
 
@@ -109,15 +108,16 @@ Applying a shared configuration reports it as a skip instead — `Skipped 2 skil
 The remedy depends on why the id is missing. If the marketplace has moved on, refresh it and re-pick:
 
 ```bash
-npx agents-inc update   # refreshes each configured marketplace through the provider's own CLI
-npx agents-inc edit     # re-select against what the catalogue carries now
+npx agents-inc update            # refreshes each configured marketplace through the provider's own CLI
+npx agents-inc edit              # re-select against what the catalogue carries now
+npx agents-inc edit --from <id>  # applies the new selection
 ```
 
 If the id is a typo, fix it in `config.ts` and run `npx agents-inc compile`. If the skill is one you wrote, it belongs under `.claude/skills/` — see [Writing custom skills](/docs/guides/writing-custom-skills).
 
 ## A shared id that will not install
 
-Ids minted by `share` or by the editor are content-addressed and are never migrated. The refusals name which mistake it is:
+Ids minted by `share`, `edit` or the editor are content-addressed and are never migrated. The refusals name which mistake it is:
 
 - `No configuration found for id '<id>'.` — the store returned 404. Check the id against the link you were sent.
 - `Could not reach https://api.agentsinc.sh — check your connection.`
@@ -219,7 +219,8 @@ This is deliberate: one global install serves every project on the machine, so o
 
 ```bash
 cd ~
-npx agents-inc edit
+npx agents-inc edit              # opens the global installation in the editor
+npx agents-inc edit --from <id>  # applies what you changed there
 ```
 
 [Global-first setup](/docs/guides/global-first-setup) explains why the default is global in the first place.
@@ -235,7 +236,7 @@ Verify the skill id matches the marketplace, run 'npx agents-inc update' to refr
 or switch affected skills to eject mode.
 ```
 
-Work through those three in order. `npx agents-inc update` shells out to the Claude CLI once per configured marketplace, so it needs Claude Code on your path — without it you get `Claude CLI not found — 'npx agents-inc update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`. On a Codex installation, which is not in a release yet, it needs `codex` instead, and the same line names the Codex CLI.
+Work through those three in order. `npx agents-inc update` shells out to the Claude CLI once per configured marketplace, so it needs Claude Code on your path — without it you get `Claude CLI not found — 'npx agents-inc update' refreshes marketplaces through it. Install Claude Code first: https://claude.ai/code`. On a Codex installation it needs `codex` instead, and the same line names the Codex CLI.
 
 **A skill no marketplace carries is refused earlier and differently**, because refreshing a marketplace is impossible advice for a skill you wrote yourself:
 

@@ -8,7 +8,7 @@ sidebar:
 Other pages here describe compiling a sub-agent. This one shows the result. A compiled sub-agent is one markdown file — YAML frontmatter that Claude Code reads, then a body assembled from a shared Liquid template and the agent's own markdown partials. None of it is hand-written, and `npx agents-inc compile` replaces the whole file each time it runs.
 
 :::note[This page is the Claude Code file]
-A **Codex** installation, which is not in a release yet, compiles the same body into a different container: an agent role definition in TOML, at `$CODEX_HOME/agents/<name>.toml` or `<repo>/.codex/agents/<name>.toml`, where the body becomes the file's `developer_instructions` key. Sixteen of the eighteen sub-agents compile there, and five of the settings below have no Codex expression at all — tool allowlists, `permissionMode`, `isolation`, `experimental` and preloaded skills. [Claude or Codex](/docs/configuration/providers) is the account of both.
+A **Codex** installation compiles the same body into a different container: an agent role definition in TOML, at `$CODEX_HOME/agents/<name>.toml` or `<repo>/.codex/agents/<name>.toml`, where the body becomes the file's `developer_instructions` key. Sixteen of the eighteen sub-agents compile there, and the compile names six settings Codex cannot express — Claude models, tool allowlists, `permissionMode`, `isolation`, `experimental` and preloaded skills. [Claude or Codex](/docs/configuration/providers) is the account of both.
 :::
 
 ## Quick start
@@ -36,11 +36,15 @@ skills:
 # Web Developer Agent
 
 <role>
-You are an expert frontend developer implementing UI features based on detailed specifications while strictly following existing codebase conventions.
+You are an expert frontend developer implementing UI features from detailed specifications, holding
+to the conventions the codebase already carries.
 
-**When implementing features, be thorough on what the spec needs and silent on the rest. Cover the edge cases, error states, and accessibility affordances the feature actually has. An implementation's size follows the spec's size, not the template's.**
+**Be thorough on what the spec needs and silent on the rest.** Cover the edge cases, error states
+and accessibility affordances the feature actually has. An implementation's size follows the spec's
+size, not the template's.
 
-Your job is **surgical implementation**: read the spec, examine the patterns, implement exactly what's requested, test it, verify success criteria. Nothing more, nothing less.
+Your job is surgical implementation: read the spec, examine the patterns, build what it asks for,
+run the tests, and verify each success criterion against evidence.
 
 <domain_scope>
 
@@ -155,7 +159,7 @@ The block ends in one of three ways, depending on how the agent's skills load:
 
 Three kinds of input produce the file: the shared templates, one shared partial, and five markdown files belonging to the agent itself.
 
-**The templates** are `agent.liquid` and the `agent-body.liquid` it pulls in. `agent.liquid` emits the frontmatter shape, the completion gate included; `agent-body.liquid` lays out the body, the rules between sections and the trailing block, and decides where everything else lands. The split is not in a release yet — 0.164.0 has both halves in one `agent.liquid` — and it is what lets a Codex role file carry the body without the frontmatter.
+**The templates** are `agent.liquid` and the `agent-body.liquid` it pulls in. `agent.liquid` emits the frontmatter shape, the completion gate included; `agent-body.liquid` lays out the body, the rules between sections and the trailing block, and decides where everything else lands. The split is what lets a Codex role file carry the body without the frontmatter.
 
 **The shared partial** is `methodologies/operating-principles.liquid`, which emits `<operating_principles>`. It's the one block every agent carries identically, so a working principle written once applies to all of them.
 

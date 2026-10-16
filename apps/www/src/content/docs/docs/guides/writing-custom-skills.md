@@ -5,10 +5,10 @@ sidebar:
   order: 5
 ---
 
-Create your own skills and subagents to extend the framework with project-specific knowledge.
+Create your own skills and sub-agents to extend the framework with project-specific knowledge.
 
 **If somebody has already written it, import it rather than writing it again.** The
-[editor](/editor)'s **Add skill** dialog searches GitHub for skills that already
+[editor](/editor)'s **Add skill** dialog searches an index of external skills that already
 exist, carries the chosen one's contents inline in the configuration it hands you, and
 `init --from <id>` installs it alongside the catalogue's own. A skill from outside the catalogue
 always installs by ejecting, so it arrives as a copy you own rather than a pointer at somebody
@@ -25,12 +25,12 @@ scaffold would have written.
 ## Quick start
 
 ```bash
-npx agents-inc eject skills           # working copies of the catalogue's skills, under .claude/skills/
+npx agents-inc eject skills           # working copies of the catalogue's skills
 npx agents-inc eject agent-partials   # the partials each built-in sub-agent is composed from
 npx agents-inc compile                # rebuild your sub-agents around whatever you changed
 ```
 
-Each of those copies a working example onto disk — the shape the loader is going to hold you to.
+The two `eject` commands copy working examples onto disk — the shape the loader is going to hold you to.
 The two sections below say what lands where, and what has to be true of it.
 
 ## Skills
@@ -47,25 +47,22 @@ example of the shape a skill has to take. A skill is two files in a directory:
 ```
 skills/{skill-name}/
   SKILL.md         # Skill content
-  metadata.yaml    # Name, domain, category, relationships
+  metadata.yaml    # slug, category, author, displayName, cliDescription, usageGuidance
 ```
 
 Both files are required — the loader validates the pair and `npx agents-inc doctor` reports either
-one missing. The `skill-summoner` subagent can help you author and refine skills.
+one missing. On Claude, the `skill-summoner` sub-agent can help you author and refine skills;
+Codex installations leave it out.
 
-## Subagents
+## Sub-agents
 
 ```bash
 npx agents-inc eject agent-partials
 ```
 
-A sub-agent is composed from five partials — `identity.md`, `playbook.md`,
+A sub-agent is composed from up to five partials — `identity.md` and `playbook.md`, plus optional
 `critical-requirements.md`, `critical-reminders.md` and `output.md` — so ejecting the built-in ones
 gives you a set to edit or to copy into a new directory of your own. See
 [Customizing sub-agents](/docs/guides/customizing-subagents) for what each one carries, and
 [Anatomy of a sub-agent](/docs/reference/sub-agent-anatomy) for where each ends up in the compiled
 file.
-
-## After creating
-
-Run `npx agents-inc compile` to rebuild your subagents with the new skills or agents included.

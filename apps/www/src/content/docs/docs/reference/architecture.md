@@ -11,7 +11,7 @@ A rough overview of the Agents Inc. CLI codebase.
 
 ## Overview
 
-Agents Inc. CLI (`agents-inc`) is a TypeScript CLI that manages AI agent configurations for Claude Code — and for OpenAI Codex, which is not in a release yet. It loads skill definitions from a marketplace, compiles agent prompts from Liquid templates with selected skills injected, and installs the results as Claude plugins or local files.
+Agents Inc. CLI (`agents-inc`) is a TypeScript CLI that manages AI agent configurations for Claude Code and OpenAI Codex. It loads skill definitions from a marketplace, compiles agent prompts from Liquid templates with selected skills injected, and installs the results as plugins or local files.
 
 ## Technology Stack
 
@@ -40,18 +40,18 @@ src/
       common/            #   Shared UI (confirm, spinner, select-list)
       hooks/             #   React hooks
     hooks/
-      init.ts            #   oclif init hook (the dashboard, when no command is given)
-    lib/                 # Core business logic (no UI)
+      init.ts            #   oclif init hook (the dashboard, on a bare run over an installation)
+    lib/                 # Core business logic
       agents/            #   Agent fetching, compilation, recompilation
       config-gate/       #   Writes config by scope, fans a global change out to registered projects
       configuration/     #   Config loading, merging, generation
-      hosts/             #   Claude Code and Codex behind one plugin-host contract (not in a release yet)
-      installation/      #   Install mode detection, local installer, scope-aware config splitting
+      hosts/             #   Claude Code and Codex behind one plugin-host contract
+      installation/      #   Installation and install-mode detection, local installer, mode migration
       loading/           #   Source fetching, matrix loading, install-mode tagging
       matrix/            #   Matrix provider (skill lookups), relationship resolution
       plugins/           #   Plugin discovery, validation, manifest, versioning
       skills/            #   Skill fetching, copying, metadata, local-copy moves
-      stacks/            #   Stack loading, resolution, compilation
+      stacks/            #   Stack loading and resolution
       compiler.ts        #   Liquid template engine for agent compilation
       schemas.ts         #   The Zod schemas every parse boundary uses
       exit-codes.ts      #   Named exit code constants
@@ -65,7 +65,8 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 ```
 1. User runs command (e.g., `agents-inc init --from <id>`)
-   -> the oclif init hook acts only when no command is given: it shows the dashboard
+   -> with no command, the oclif init hook shows the dashboard over an installation,
+      and the run prints the root help where there is none
 
 2. Command loads skills matrix
    -> loadSkillsMatrixFromSource() first calls resolveSource(), which picks the marketplace
@@ -76,7 +77,7 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 3. Installation
    -> Installs plugin skills, copies ejected ones
    -> writeProjectConfig() generates the TypeScript config
-   -> config-gate's writeScopedFromWizard() splits it into global + project scopes,
+   -> config-gate's writeConfigByScope() splits it into global + project scopes,
       fans the global change out to registered projects and recompiles their agents
 
 4. Compilation
@@ -84,24 +85,24 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
    -> Builds template context from selected skills
    -> Sanitizes to prevent Liquid injection
    -> LiquidJS renders agent.liquid template
-   -> Output: .claude/agents/{name}.md
+   -> Output: .claude/agents/{name}.md on Claude Code, .codex/agents/{name}.toml on Codex
 ```
 
 ## Key Architectural Patterns
 
 - **BaseCommand**: All commands extend `BaseCommand`, which provides the terminal-size gate (`ensureTerminalSize`), error handling with named `EXIT_CODES` (`handleError`) and the reporting helpers commands share. It declares no flags — `--marketplace` belongs to `init` alone.
 
-- **Init hook**: Runs before every command and does one thing: when no command is given and a project is already initialized, it shows a dashboard. Each command resolves its own marketplace when it loads skills.
+- **Init hook**: Runs before every command. When no command is given and an installation exists — the project's, or else the global one — it shows a dashboard. Each command resolves its own marketplace when it loads skills.
 
 - **Marketplace resolution precedence**: `--marketplace` flag > `CC_MARKETPLACE` env var > the project's `config.ts` > the global `config.ts` > the default marketplace. The first two rungs are install-time only: `init` declares the flag and is the only caller `CC_MARKETPLACE` is read for, so every later command starts at the project config.
 
-- **Install modes**: Skills can be installed as **Claude plugins** (managed by Claude's plugin system) or **locally** (copied to `.claude/skills/`). On Claude Code, agents are written to `.claude/agents/`. Config is at `.agents-inc/claude/config.ts`.
+- **Install modes**: Skills can be installed as **plugins** (managed by the provider's plugin system) or **ejected** (copied as local files). Config is at `.agents-inc/<provider>/config.ts`. [Claude or Codex](/docs/configuration/providers) has where each provider puts them, and the one placement Codex does not offer.
 
 - **Liquid template compilation**: Agent prompts are compiled from partials using LiquidJS. Template root resolution checks project-level overrides first, then built-in templates.
 
 - **Zod at boundaries**: YAML and JSON are parsed through Zod schemas — the CLI's in `schemas.ts`, the share payload's in `@workspace/matrix`. Lenient schemas (`.passthrough()`) at loading boundaries, strict schemas for validation. Bridge pattern (`z.ZodType<ExistingType>`) ensures runtime matches compile-time types.
 
-- **One marketplace per installation**: An installation reads the one marketplace its config names, public or private, and the local skills already on disk are merged into that catalogue when it loads.
+- **One marketplace per installation**: An installation's config names one marketplace, public or private. A load reads it and merges in the local skills already on disk; it reads the global installation's marketplace too, but only for global plugin skills the first does not carry.
 
 - **Generated types**: Union types (`SkillId`, `Domain`, `Category`, `AgentName`, etc.) are auto-generated from the skills source into `types/generated/`. Runtime type guards validate strings against these unions.
 
@@ -109,9 +110,11 @@ e2e/                     # End-to-end tests (commands, interactive, lifecycle, i
 
 Source resolution follows a 5-tier precedence (flag > env > project > global > default). Project config is TypeScript loaded via jiti; [The shape of `config.ts`](/docs/configuration#the-shape-of-configts) shows the file the CLI writes. Its one import is type-only, from the generated `./config-types` beside it, so it disappears at load time and the config resolves without this package being reachable at all.
 
+A Claude Code project installation lays out as below; [Scopes and paths](/docs/configuration/scopes-and-paths) has the global and Codex layouts.
+
 | Install Mode | Skills Location     | Agents Location   | Config                         |
 | ------------ | ------------------- | ----------------- | ------------------------------ |
-| local        | `.claude/skills/`   | `.claude/agents/` | `.agents-inc/claude/config.ts` |
+| eject        | `.claude/skills/`   | `.claude/agents/` | `.agents-inc/claude/config.ts` |
 | plugin       | Claude plugin cache | `.claude/agents/` | `.agents-inc/claude/config.ts` |
 
 ## Agent Compilation
@@ -126,7 +129,7 @@ The same pass writes each agent's completion gate into that frontmatter: the pro
 | ----------- | ---------------------- | ----------------------------------------------- |
 | Unit        | `unit`                 | Pure functions, isolated logic with mocked deps |
 | Integration | `integration`          | Cross-module interactions, real file system     |
-| Commands    | `commands`             | oclif command execution via `runCommand()`      |
+| Commands    | `commands`             | oclif command execution via `runCliCommand()`   |
 | E2E         | `e2e/vitest.config.ts` | Full CLI flows with real terminal interaction   |
 
 E2E tests cover 5 categories: commands, interactive prompts, lifecycle flows, integration scenarios, and smoke tests. Test data uses factories from `__tests__/factories/` and `__tests__/helpers/` and canonical fixtures from `__tests__/mock-data/`.
@@ -134,10 +137,10 @@ E2E tests cover 5 categories: commands, interactive prompts, lifecycle flows, in
 ## Conventions
 
 - **Strict TypeScript** with zero-`any` policy. No `@ts-ignore` without justification.
-- **Named exports only** (no default exports). `.js` extensions on relative imports.
+- **Named exports only**, except the default exports oclif commands, hooks and tool configs are loaded by. `.js` extensions on relative imports in new files.
 - **kebab-case** for all files and directories.
 - **Zod at parse boundaries** for all external data (YAML, JSON, CLI args).
 - **Remeda over imperative loops** for data transformations.
 - **Domain-driven modules** in `lib/` with barrel `index.ts` exports.
 - **Named constants** for exit codes, paths, colors, symbols, file size limits (no magic numbers).
-- **Type guards** (`isCategory()`, `isDomain()`, etc.) instead of `as` casts for runtime narrowing.
+- **Type guards** (`isCategory()`, `isAgentName()`, etc.) instead of `as` casts for runtime narrowing.

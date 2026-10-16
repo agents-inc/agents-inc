@@ -19,7 +19,7 @@ Open `.agents-inc/claude/config.ts`, change the `stack` entry for the sub-agent 
 npx agents-inc compile
 ```
 
-`stack` maps a sub-agent to a category to the skills it receives, and it's the field worth editing by hand — the rest of the file is written for you. The generated `config-types.ts` beside it narrows every id to what you actually installed, so a mistyped skill id is a TypeScript error in your editor before `compile` ever sees it. Every field the file accepts is listed in the [config reference](/docs/configuration/config-reference).
+`stack` maps a sub-agent to a category to the skills it receives, and it's the field worth editing by hand — the rest of the file is written for you. The generated `config-types.ts` beside it narrows every id to what you actually installed, so a mistyped skill id is a TypeScript error in your IDE before `compile` ever sees it. Every field the file accepts is listed in the [config reference](/docs/configuration/config-reference).
 
 ## Structure
 
@@ -37,14 +37,16 @@ import type {
 } from './config-types'
 
 const skills: SkillConfig[] = [
+  // project
   { id: 'web-framework-react', scope: 'project', origin: 'agents-inc' },
   { id: 'web-state-zustand', scope: 'project', origin: 'agents-inc' },
   { id: 'api-framework-hono', scope: 'project', origin: 'agents-inc' },
 ]
 
 const agents: AgentScopeConfig[] = [
-  { name: 'web-developer', scope: 'project' },
+  // project
   { name: 'api-developer', scope: 'project' },
+  { name: 'web-developer', scope: 'project' },
 ]
 
 const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
@@ -59,11 +61,12 @@ const selectedDomains: Domain[] = ['web', 'api']
 
 export default {
   name: 'my-project',
-  agents,
-  skills,
-  selectedDomains,
-  stack,
   marketplace: 'github:agents-inc/skills',
+  marketplaceName: 'agents-inc',
+  skills,
+  agents,
+  stack,
+  selectedDomains,
 } satisfies ProjectConfig
 ```
 
@@ -77,24 +80,25 @@ Each skill entry carries three required fields and one optional one:
 
 - **`id`** — The skill identifier (e.g., `'web-framework-react'`)
 - **`scope`** — `'project'` or `'global'`
-- **`origin`** — `'eject'` when the skill was copied into the project's own `.claude/skills/`, or the marketplace name (e.g., `'agents-inc'`) when it is installed as a plugin
-- **`excluded`** — Optional. A tombstone rather than a deletion: the entry stays on record and the skill is treated as not installed. This is how a project masks a global install without removing it for every other project.
+- **`origin`** — `'eject'` when the skill was copied into `.claude/skills/`, or the marketplace name (e.g., `'agents-inc'`) when it is installed as a plugin
+- **`excluded`** — Optional. A tombstone rather than a deletion: the entry stays on record and the skill is treated as not installed. The CLI writes one where a project's own entry collides with a global install, and drops it once the collision is gone.
 
 The field is `origin`, not `source`. A config that still spells a skill entry's provenance `source`, or that carries a top-level `source` instead of `marketplace`, is refused at load with the rename named — the CLI does not read the old key and does not fall back to it.
 
 ## Agents
 
-Each agent entry carries two required fields and three optional ones:
+Each agent entry carries two required fields and four optional ones:
 
 - **`name`** — The agent name (e.g., `'web-developer'`)
 - **`scope`** — `'project'` or `'global'`
 - **`model`** — Optional. Overrides the model the agent's own metadata names.
+- **`codexModel`** — Optional. The model the agent runs on under Codex; Claude ignores it.
 - **`effort`** — Optional. Overrides the reasoning effort the agent's own metadata names.
 - **`excluded`** — Optional. The same tombstone the skill entries use.
 
 Which values `model` and `effort` accept, and what each does, is in [Models and effort](/docs/configuration/models-and-effort).
 
-## Globally Installed Items Are Read-Only in a Project
+## Globally installed items are read-only in a project
 
 A skill or agent installed at global scope belongs to the global config, and a project may not remove it. This is deliberate: the global install is shared by every project, so one project must not be able to uninstall it for the others.
 
@@ -113,9 +117,9 @@ const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
 
 The skill stays installed and available; it just isn't part of any agent's prompt in this project. Run `npx agents-inc compile` after editing.
 
-To actually uninstall a global skill or agent, edit at global scope: run `npx agents-inc edit` from your home directory (`cd ~`).
+To actually uninstall a global skill or agent, edit at global scope from your home directory (`cd ~`): `npx agents-inc edit` opens the global installation in the editor, and `npx agents-inc edit --from <id>` applies what you removed there.
 
-## Stack: Mapping Skills to Agents
+## Stack: mapping skills to agents
 
 The `stack` field controls which skills each agent receives, organized by category:
 
@@ -135,23 +139,23 @@ The `stack` field controls which skills each agent receives, organized by catego
 Two surfaces write it. A skill's `•••` panel opens a matrix of implementation domains against roles, and each cell cycles blank → `lazy` → `pre` — which is this field's three states, including the object form below. The roster's skill rows do the same one pairing at a time: click a row to switch that copy off without removing the skill anywhere else, or click its `pre` / `lazy` word to change how that one sub-agent loads it.
 :::
 
-## Preloaded vs Dynamic
+## Preloaded vs dynamic
 
 Skills can be loaded in two ways:
 
 - **Dynamic** (default) — Loaded on-demand via Claude Code's Skill tool at runtime. Keeps the agent prompt lean. Written as a bare skill id in the stack — the config never contains `preloaded: false`.
 - **Preloaded** (`preloaded: true`) — Named in the compiled agent's frontmatter `skills:` list, which is the key Claude Code reads when it starts the agent. The skill is there from the first turn without the agent having to ask for it, which is what you want for the one or two skills the agent always needs. The object form (`{ id, preloaded: true }`) is what marks it; a dynamic skill is listed in the agent's skill-activation protocol instead.
 
-## Config Types
+## Config types
 
 Alongside `config.ts`, a `config-types.ts` file is auto-generated. It contains narrowed type unions for only the skills, agents, and categories you have installed. This gives you type checking when editing the config — typos in skill IDs or agent names are caught by TypeScript.
 
 Project-level `config-types.ts` imports and extends the global types when a global installation exists.
 
-## After Editing
+## After editing
 
-Run `npx agents-inc compile` to rebuild your subagents with the updated configuration.
+Run `npx agents-inc compile` to rebuild your sub-agents with the updated configuration.
 
-Compile also regenerates `config-types.ts` from your edited config at every scope it compiles (global, project, or both), so the type unions always match the skills and agents currently listed in `config.ts` — a skill you added by hand becomes a valid `SkillId`, and a removed one becomes a type error.
+Compile also regenerates `config-types.ts` from your edited config at the scope it compiles, so the type unions always match the skills and agents currently listed in `config.ts` — a skill you added by hand becomes a valid `SkillId`, and a removed one becomes a type error.
 
 For the same edit walked start to finish, see [Give one agent a skill](/docs/recipes/give-one-agent-a-skill).

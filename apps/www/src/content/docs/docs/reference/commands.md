@@ -7,7 +7,7 @@ sidebar:
 
 Every command available in the `agents-inc` CLI. Run `agents-inc <command> --help` for flag help; this doc is the fuller picture: purpose, invocation model, flag semantics, and current gaps.
 
-> **`--provider <claude|codex>` names an installation, and only where the disk cannot.** Not in a release yet: 0.164.0 installs onto Claude Code only and has no `--provider` flag. An installation belongs to one provider and the folder is what records it — `.agents-inc/claude/` or `.agents-inc/codex/` — so no command needs the flag to find out. Two cases survive that, and both are the absence of a folder rather than a doubt about one. `init --from <id> --provider codex` creates a folder that does not exist yet, which is the flag's whole purpose and why it is meaningless without `--from`: pass it alone and `init` exits `INVALID_ARGS`, naming `--from` and the editor. And when one scope holds an installation of **each** provider, `edit`, `uninstall`, `share`, `eject`, `compile` and `update` refuse rather than pick, naming both and asking for the flag. `doctor` reports the same state instead of refusing, because that is the state you most need to be able to look at, and `list` names both installations above the one it is showing. See [Claude or Codex](/docs/configuration/providers).
+> **`--provider <claude|codex>` names an installation, and only where the disk cannot.** An installation belongs to one provider and the folder is what records it — `.agents-inc/claude/` or `.agents-inc/codex/` — so no command needs the flag to find out. Two cases survive that, and both are the absence of a folder rather than a doubt about one. `init --from <id> --provider codex` creates a folder that does not exist yet, which is the flag's whole purpose and why it is meaningless without `--from`: pass it alone and `init` exits `INVALID_ARGS`, naming `--from` and the editor. And when one scope holds an installation of **each** provider, `edit`, `uninstall`, `share`, `eject`, `compile` and `update` refuse rather than pick, naming both and asking for the flag. `doctor` reports the same state instead of refusing, because that is the state you most need to be able to look at, and `list` names both installations above the one it is showing. See [Claude or Codex](/docs/configuration/providers).
 
 > **`--marketplace, -m <path|url>` belongs to `init` alone.** Naming a marketplace is an install-time decision, so `init` declares the flag and no other command accepts it — passing it elsewhere is a parse error. Every later command resolves the marketplace that install recorded: the project's `config.ts`, then the global one, then the default. `CC_MARKETPLACE` is the same choice made without typing it, and is read at install time only.
 
@@ -41,17 +41,17 @@ Interactive = renders an Ink UI.
 
 **File:** [`src/cli/commands/init.tsx`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/init.tsx)
 
-Greenfield setup. Detects if already installed (shows dashboard), otherwise opens agentsinc.sh/editor.
+A bare `init` opens agentsinc.sh/editor where nothing is installed, and over an installation shows its dashboard: Edit in the web editor, Compile, Doctor, List.
 
-**Flags:** `--marketplace/-m` (the marketplace this installation is made from, and the only command that takes it), `--from <id>` (install a configuration shared from the web editor), `--ui` (build this project's configuration in the browser instead), `--provider <claude|codex>` (which provider this run installs for — only meaningful beside `--from`, and the default is Claude).
+**Flags:** `--marketplace/-m` (beside `--from`, install from this marketplace instead of the one the configuration names; alone, open the editor and say how to add it there), `--from <id>` (install a configuration shared from the web editor), `--ui` (open the editor on the catalogue, or on the id `--from` names), `--provider <claude|codex>` (which provider this run installs for — only meaningful beside `--from`, and the default is Claude).
 
 **`--provider` names a location, not a feature.** It decides one thing: which folder this run creates, and therefore which host's directories the install writes into, which renderer compiles the sub-agents, and which placements are offered. It writes nothing down — after the install, the folder is the record. `--provider claude` is the control that proves it: naming the default out loud installs byte-for-byte what no flag installs. `--provider codex` over an existing Claude installation creates a second installation beside it rather than being refused; from then on the commands that change something ask which one you mean. [Claude or Codex](/docs/configuration/providers) is what each provider can and cannot do.
 
 **When to use:** First run on a machine, or first run inside a project that needs a project-scoped config.
 
-**`--from <id>` is the web editor's other half.** The editor cannot write to your `.claude/`, so it hands you a short id and this flag does the install: the CLI fetches that configuration, maps it onto the current catalogue, and runs the install pipeline. It is headless — no Ink UI and no TTY required, so it works over a pipe and in CI — and it is greenfield-only: in an already-installed directory it does not divert to the dashboard, it refuses to run and tells you to `uninstall` first, because a shared configuration replaces a stack wholesale — installing one is a fresh setup, not a merge. Three situations draw that refusal: the directory already carries an installation (refused before the configuration is even fetched); the directory is clean but the payload carries global-scoped entries and your home directory is already installed (run `uninstall` there first); and a payload that assigns a project-scoped skill to a sub-agent resting at global scope — an assignment the config has nowhere to write — which is refused with every such pair named, so a single re-share (each named agent pinned to the project, or each named skill moved to global scope) can fix them all. Skills or sub-agents this catalogue no longer knows are named and skipped rather than failing the run. Shipped in 0.149.0; see [CLI or web](/docs/cli-or-web).
+**`--from <id>` is the web editor's other half.** The editor cannot write to your `.claude/`, so it hands you a short id and this flag does the install: the CLI fetches that configuration, maps it onto the current catalogue, lists what goes into the project and what into the global install, and asks before writing. It needs no terminal, so it works over a pipe and in CI, where it prints the same lists and carries on. It is greenfield-only: in an already-installed directory it does not divert to the dashboard, it refuses before fetching anything and tells you to `uninstall` first or apply the id with `edit --from`, because a shared configuration replaces a stack wholesale — installing one is a fresh setup, not a merge. A global installation above the project is not in the way: the run adds what it lacks and leaves what it holds. A payload that assigns a project-scoped skill to a sub-agent resting at global scope — an assignment the config has nowhere to write — is refused with every such pair named, so a single re-share (each named agent pinned to the project, or each named skill moved to global scope) can fix them all. Skills or sub-agents this catalogue no longer knows are named and skipped rather than failing the run. Shipped in 0.149.0; see [CLI or web](/docs/cli-or-web).
 
-**`--ui` opens the editor instead, and it opens on nothing.** `edit --ui` carries the installation in this directory across, because there is one; here there is not, so this is the bare address and the browser starts from the catalogue. The way back is the way back from anywhere — build a configuration, share it, and install the id with `init --from <id>`. It reads no installation at all, so a config too broken to load cannot stop you reaching the editor. The address is printed before any browser is opened, which is what keeps the flag usable over a pipe, in CI and on a machine with no desktop session; a browser that will not launch is a warning beside a link that still works. Passing `--ui` with `--from` opens **that id** rather than the catalogue — the same rule `edit` follows, and what turns a shared id into something you can look at before you install it. Nothing is minted and nothing is fetched on that path: the id already is a stored configuration, so this is only a link.
+**`--ui` opens the editor on nothing** — what a bare `init` does where nothing is installed, without the dashboard where something is. `edit --ui` carries the installation in this directory across; this is the bare address, and the browser starts from the catalogue. The way back is the line printed under the link: `init --from <id>` installs what you build, or, where this directory already holds an installation, `edit --from <id>` applies it. A config too broken to load cannot stop you reaching the editor. The address is printed before any browser is opened, which is what keeps the flag usable over a pipe, in CI and on a machine with no desktop session; a browser that will not launch is a warning beside a link that still works. Passing `--ui` with `--from` opens **that id** rather than the catalogue — the same rule `edit` follows, and what turns a shared id into something you can look at before you install it. Nothing is minted and nothing is fetched on that path: the id already is a stored configuration, so this is only a link.
 
 ---
 
@@ -63,16 +63,16 @@ A bare `edit` does what `edit --ui` does.
 
 **Flags:** `--ui`, `--from <id>`, `--provider` (which installation to edit, where this scope holds one of each — it selects, it never converts). **`--ui` opens whatever `--from` names** — so `edit --ui` opens the installation in this directory, and `edit --ui --from <id>` opens that shared id instead. They were mutually exclusive until 2026-08-24, on the reading that they were opposite directions of one round trip; opening an id is neither direction, and the pairing is what lets someone LOOK at a configuration before applying it. The paired form needs no installation here at all, because opening an id in a browser reads nothing local. There is no marketplace flag: `edit` cannot be pointed somewhere else, because a roster edited against one marketplace and recorded against another is the mixed-source state the config has no way to describe.
 
-**`--ui` hands this installation to the browser.** It reads the installed skills, sub-agents and per-agent curation, mints them as a configuration the store holds — the same mint `share` performs, from the same reader, so the two commands give one directory one id — prints the id with both destinations, and then opens `agentsinc.sh/editor/?fromId=<id>` if there is a terminal to have a browser. Nothing on disk is touched: a run that changed anything here would be editing the project on the way to offering to edit it. Over a pipe or in CI the link is printed and nothing is opened, which is why the print comes first.
+**`--ui` hands this installation to the browser.** It reads the installed skills, sub-agents and per-agent curation, mints them as a configuration the store holds — the same mint `share` performs, from the same reader, so the two commands give one directory one id — prints the id with both destinations, and then opens `agentsinc.sh/editor/?fromId=<id>` if there is a terminal to have a browser. It refuses before minting if an installed skill's `metadata.yaml` is unusable, because the editor opens on what those files describe. Nothing on disk is touched: a run that changed anything here would be editing the project on the way to offering to edit it. Over a pipe or in CI the link is printed and nothing is opened, which is why the print comes first.
 
-**`--from <id>` applies one back, and is destructive.** Unlike `init --from`, this runs against an existing installation, and a shared configuration states a whole roster — so whatever it leaves out is removed. That is why it confirms before writing, with every removal named. Two things it will not silently drop are disclosed instead of acted on: a skill authored in this installation, which no configuration ever carried, and a skill this catalogue cannot place. Both are kept and reported, because an apply that quietly left them behind is how somebody ends up with a skill they never picked and no way to tell why.
+**`--from <id>` applies one back, and is destructive.** Unlike `init --from`, this runs against an existing installation, and a shared configuration states a whole roster — so whatever it leaves out is removed. That is why it confirms before writing, with every removal named, and refuses where there is no terminal to confirm at. Two things it will not silently drop are disclosed instead of acted on: a skill authored in this installation, which no configuration ever carried, and a skill this catalogue cannot place. Both are kept and reported, because an apply that quietly left them behind is how somebody ends up with a skill they never picked and no way to tell why.
 
 **When to use:** Change skills, agents, scope, or mode after `init`.
 
 **Global entries are read-only from a project.** Editing inside a project cannot remove a globally installed skill or agent. The global install is shared, so one project may not uninstall it for the others. Your options:
 
 - **Don't hand the skill to this project's agents** — curate `stack` in `.agents-inc/claude/config.ts`. See [Editing Your Config](/docs/guides/editing-config).
-- **Really uninstall it** — run `npx agents-inc edit` from your home directory (`cd ~`), where the global config is the one being edited.
+- **Really uninstall it** — from your home directory (`cd ~`), where the global config is the one being edited: `npx agents-inc edit` opens it in the editor, and `npx agents-inc edit --from <id>` applies what you removed there.
 
 ---
 
@@ -94,7 +94,7 @@ Re-runs the agent compiler using the persisted config. Non-interactive — safe 
 
 **File:** [`src/cli/commands/update.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/update.ts)
 
-Wraps the provider's own marketplace refresh. It reads the marketplaces this installation's config actually names — the distinct non-`eject` `origin` values on its active skill entries — and runs `claude plugin marketplace update` for each, in sequence. On a Codex installation, which is not in a release yet, a git marketplace gets `codex plugin marketplace upgrade`, and a local one — which `upgrade` refuses — gets `codex plugin add` again over each plugin installed from it. Nothing else happens: no source is loaded, no content is compared, nothing in the installation is rewritten, and no agent is recompiled, because a sub-agent references a plugin skill by pointer rather than by inlining it.
+Wraps the provider's own marketplace refresh. It reads the marketplaces this installation's config actually names — the distinct non-`eject` `origin` values on its active skill entries — and runs `claude plugin marketplace update` for each, in sequence. On a Codex installation a git marketplace gets `codex plugin marketplace upgrade`, and a local one — which `upgrade` refuses — gets `codex plugin add` again over each plugin installed from it. Nothing else happens: no source is loaded, no content is compared, nothing in the installation is rewritten, and no agent is recompiled, because a sub-agent references a plugin skill by pointer rather than by inlining it.
 
 **Ejected skills are never touched.** Eject means you own the copy and may have edited it, so overwriting it from the source would discard your work. The command says so in one line and moves on. An eject-only installation therefore succeeds, printing that line and a note that no plugin marketplaces are configured — it does not need the provider's CLI at all, and does not fail without it.
 
@@ -136,9 +136,9 @@ The other direction of the round trip [CLI or web](/docs/cli-or-web) describes. 
 
 **Args:** none.
 
-Everything that can fail locally fails before the write: an installation that cannot be read, or a selection the payload contract cannot express, stops the run without spending a write on a configuration nobody could install.
+Everything that can fail locally fails before the write: an installation that cannot be read, one holding ejected skills — a share carries plugins only — or a selection the payload contract cannot express, stops the run without spending a write on a configuration nobody could install.
 
-**When to use:** You configured in the terminal and want to hand the result to someone else, to another machine, or to the editor.
+**When to use:** You want to hand this installation to someone else, to another machine, or to the editor.
 
 ---
 
@@ -150,7 +150,7 @@ Everything that can fail locally fails before the write: an installation that ca
 
 Exports source material for user modification. Types: `agent-partials`, `templates`, `skills`, `all`.
 
-**Flags:** `--force/-f`, `--output/-o`, `--provider` (which installation to eject from, where this scope holds one of each). Each type has its own destination — partials to `agents/` in the source folder the installation is on, templates to `agents/_templates/` under that, skills to `.claude/skills/`. The source folder is `.agents-inc/claude/` or `.agents-inc/codex/`. `--output` has no default: it writes all of them into the one directory it names instead. It copies out of whatever source the installation reads and records that source in the config it may invent.
+**Flags:** `--force/-f`, `--output/-o`, `--provider` (which installation to eject from, where this scope holds one of each). Each type has its own destination — partials to `agents/` in the source folder the installation is on, templates to `agents/_templates/` under that, skills to the host's skills folder (`.claude/skills/`, or on Codex `.agents/skills/` in a project and `$CODEX_HOME/skills/` globally). The source folder is `.agents-inc/claude/` or `.agents-inc/codex/`. `--output` has no default: it writes all of them into the one directory it names instead. It copies out of whatever source the installation reads and records that source in the config it may invent.
 
 ---
 
@@ -184,13 +184,12 @@ Compiles skills (and optionally agents) from a source tree into standalone Claud
 
 **File:** [`src/cli/commands/build/marketplace.ts`](https://github.com/agents-inc/agents-inc/blob/main/packages/cli/src/cli/commands/build/marketplace.ts)
 
-Walks `--plugins-dir` and writes a `marketplace.json` describing every plugin. **Reads marketplace identity from `package.json` at cwd** — `name`, `version`, `description` are required fields; `author` is optional (warns when missing but continues).
+Walks `--plugins-dir` and writes a `marketplace.json` describing every plugin. **Reads marketplace identity from `package.json` at cwd** — `name`, `version`, `description` and an `author` with a name are required.
 
 The `author` field is parsed flexibly:
 
 - String form `"Name <email>"` → `{ name, email }`
 - String form `"Name <email> (url)"` (npm's official format, URL discarded) → `{ name, email }`
-- String form `"<email>"` (email only, warns) → `{ name: "", email }`
 - String form `"Name"` (no brackets, warns) → `{ name }`
 - Object form `{ name, email?, url? }` (URL discarded) → passed through
 
@@ -199,8 +198,6 @@ The `MarketplaceIdentity` type is derived from `z.infer<typeof packageJsonSchema
 **Flags:** `--name`, `--plugins-dir/-p`, `--output/-o`, `--verbose/-v`. No `--marketplace`.
 
 `--name` overrides the marketplace name that would otherwise come from `package.json`'s `name`, and exists for one case: an npm scoped name like `@scope/pkg` is not a valid marketplace name. The override is checked for kebab-case and a bad value exits `INVALID_ARGS`. `version`, `description` and `author` still come from `package.json` either way.
-
-**Exit codes:** non-zero when `package.json` is missing at cwd, required fields fail schema validation, `--name` is not kebab-case, or any plugin fails to manifest.
 
 ---
 
@@ -220,7 +217,7 @@ The single "is everything OK?" command. It answers in two layers, and the order 
 - **Skills** — every directory under `~/.claude/skills/` and `<project>/.claude/skills/` that this CLI installed or a config names. Any other directory there is listed as `not installed by this CLI and named by no configuration here: not validated`. Each validated one needs `SKILL.md` plus a `metadata.yaml` that satisfies the strict schema. An over-length `cliDescription` is a warning, not an error.
 - **Agents** — `~/.claude/agents/*.md` and `<project>/.claude/agents/*.md`: frontmatter parses, required fields present, `name` kebab-case.
 
-**Layer 2 — operational checks**, printed in this order: `Config Valid`, `Layout` (one row per scope in play), `Placements Offered`, `Skills Resolved`, `Agents Compiled`, `No Orphans`, `Skills Installed`, `Plugins Installed`, `Marketplace Reachable`. `Layout` and `Placements Offered` are not in a release yet.
+**Layer 2 — operational checks**, printed in this order: `Config Valid`, `Layout` (one row per scope in play), `Placements Offered`, `Skills Resolved`, `Agents Compiled`, `No Orphans`, `Skills Installed`, `Plugins Installed`, `Marketplace Reachable`.
 
 **A content error stands down only the rows that read what it is about.** A broken skill `metadata.yaml` skips `Skills Resolved` with `Skipped — this row would only restate the skill errors above`, and every other row still answers: an unresolved skill on top of a broken `metadata.yaml` is that error's cascade, not a second finding. The whole layer stands down in two cases alone — a `config.ts` that cannot be read, which prints `Skipped — fix the content errors above first`, and a marketplace repository with nothing installed, below.
 

@@ -78,16 +78,16 @@ configuration until you apply them.
 
 ## When it refuses
 
-Five endings. Signing in and shortening the sentence are the two you can act
-on.
+Signing in and shortening the sentence are the only endings you can act on.
 
-| What it says                                          | What happened                                                 |
-| ----------------------------------------------------- | ------------------------------------------------------------- |
-| `Sign in to use the composer — nothing was sent.`     | You are signed out. Nothing left the browser.                 |
-| `Too many requests in a minute. Try again shortly.`   | Ten calls a minute, per person. Wait.                         |
-| `That is too long to send. Shorten it and try again.` | Over **600 characters**. Refused before the model was called. |
-| `The model did not answer. Nothing changed.`          | The call failed upstream.                                     |
-| `Could not reach the composer. Nothing changed.`      | The network did.                                              |
+| What it says                                           | What happened                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| `Sign in to use the composer — nothing was sent.`      | You are signed out. Nothing left the browser.                 |
+| `Your session ended. Sign in again — nothing changed.` | Your session ended while the page was open.                   |
+| `Too many requests in a minute. Try again shortly.`    | Ten calls a minute, per person. Wait.                         |
+| `That is too long to send. Shorten it and try again.`  | Over **600 characters**. Refused before the model was called. |
+| `The model did not answer. Nothing changed.`           | The call failed upstream.                                     |
+| `Could not reach the composer. Nothing changed.`       | The network did.                                              |
 
 The 600-character cap is a real limit rather than a nicety — input tokens are
 billed, so an unbounded prompt is an unbounded bill.
@@ -102,9 +102,9 @@ of reach while the field is empty or holds only spaces, and
 sentence, one proposal, and the proposal is a changeset rather than a reply.
 
 **It is not the only way to change a selection.** Anything the composer can do
-you can do in the grid, and several things only the grid can do — routing a
-skill to one sub-agent, pinning a model, adding a skill from outside the
-catalogue. [Selecting skills](/docs/editor/selecting-skills) covers those.
+you can do in the grid, and some things only the grid can do — routing a skill
+to one sub-agent, adding a skill from outside the catalogue.
+[Selecting skills](/docs/editor/selecting-skills) covers those.
 
 **It does not install.** Like everything else in the editor it ends at the
 install dialog and a command you run —
@@ -112,7 +112,7 @@ install dialog and a command you run —
 
 ## Where to go next
 
-- [Three ways in](/docs/ways-in) — the composer beside the other two routes.
+- [Ways in](/docs/ways-in) — the composer beside the other two routes.
 - [Selecting skills](/docs/editor/selecting-skills) — the grid the composer
   writes into.
 - [Adding to an existing project](/docs/guides/adding-to-an-existing-project) —

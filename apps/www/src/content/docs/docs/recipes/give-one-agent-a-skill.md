@@ -11,13 +11,13 @@ The `stack` mapping decides which sub-agent receives which skill. Each sub-agent
 
 The editor writes this mapping for you, and there are two ways at it.
 
-In the roster on the right, every sub-agent lists the skills it carries. Click a skill's row under one sub-agent to switch that copy off — the skill stays selected and every other sub-agent keeps it. A row carried by more than one sub-agent gains a count; hover it to see which ones. The word next to it, `pre` or `lazy`, is that copy's load behaviour and flips on click.
+In the roster on the right, every sub-agent lists the skills it carries. Click a skill's row under one sub-agent to switch that copy off — the skill stays selected and every other sub-agent keeps it. Hover a row to list every sub-agent carrying it. The word next to it, `pre` or `lazy`, is that copy's load behaviour and flips on click.
 
 In the skill's `•••` options panel, the **Sub-agents** matrix is domain rows against role columns. Click a cell to cycle that one pairing through unassigned, `lazy` and `pre` — which is how you reach a sub-agent the skill's own domain would never have handed it to. A **Meta** fold at the foot of the matrix holds the meta agents.
 
 Both write the same thing, and the install command carries it. [Selecting skills](/docs/editor/selecting-skills) covers the panel in full.
 
-## The terminal route is a hand edit
+## By hand
 
 Open `.agents-inc/claude/config.ts`, add the skill under the sub-agent that should have it, and recompile.
 
@@ -37,11 +37,11 @@ const stack: Partial<Record<ProjectAgentName, StackAgentConfig>> = {
 npx agents-inc compile
 ```
 
-`compile` rewrites the sub-agents that changed, regenerates `config-types.ts` from what it just read, and never rewrites `config.ts` — the file you edited survives.
+`compile` rewrites the sub-agents that changed and regenerates `config-types.ts` from what it just read.
 
 ## The stack routes skills, it doesn't install them
 
-The skill has to already be installed — a plugin from a marketplace, or a directory under `.claude/skills/`. `compile` checks what it finds on disk rather than the config's `skills` array, so a skill you wrote by hand routes fine with no entry there. Name an id that isn't installed and `compile` warns and carries on:
+The skill has to already be installed — a plugin from a marketplace, or a directory under `.claude/skills/`. Name an id that isn't installed and `compile` warns and carries on:
 
 ```
 Skill 'web-testing-vitest' is configured but was not found — agents will be compiled without it.

@@ -9,11 +9,11 @@ Every sub-agent runs on a model, and every shipped one names `opus`. Choosing di
 
 ## Quick start
 
-In step 03, each sub-agent's card carries its model as a row — `opus`, `fable`, `sonnet` and `haiku` — and its effort as a track from `low` through `medium`, `high` and `xhigh` to `max`. A click sets either.
+In step 03, each sub-agent's card carries its model as a row and its effort as a track from `low` through `medium`, `high` and `xhigh` to `max`. A click sets either.
 
-On Claude Code the editor offers those four models and no more, so `inherit` isn't reachable there. Effort rests at `medium` for every sub-agent, since the shipped metadata carries none to read, and a sub-agent whose metadata names a model outside the four rests on `sonnet`. See [The editor](/docs/editor).
+On Claude Code that row is `opus`, `fable`, `sonnet` and `haiku` and no more, so `inherit` isn't reachable there. Effort rests at `medium` for every sub-agent, since the shipped metadata carries none to read, and a sub-agent whose metadata names a model outside the four rests on `sonnet`. See [The editor](/docs/editor).
 
-## The terminal route is a hand edit
+## By hand
 
 Add `model`, `effort`, or both to the agent's entry, then recompile.
 
@@ -43,7 +43,7 @@ No shipped sub-agent names an `effort`, so effort is absent from a compiled agen
 
 ## `inherit` doesn't travel
 
-A shared configuration has four model words and `inherit` isn't one of them. Leaving it out would say "keep the sub-agent's own default", which is a different instruction, so `share` refuses instead and names the sub-agent:
+A shared configuration has four model words and `inherit` isn't one of them. Leaving it out would say "keep the sub-agent's own default", which is a different instruction, so `share` and `edit` both refuse instead and name the sub-agent:
 
 ```
 This installation cannot be shared as it stands — a shared configuration has no way to carry:
@@ -51,7 +51,7 @@ This installation cannot be shared as it stands — a shared configuration has n
 Sharing it anyway would mint an id that installs something else.
 ```
 
-Drop the field to get the same behaviour back — an entry with no `model` is exactly what "use the sub-agent's own default" means — then share again. [Share a setup with a teammate](/docs/recipes/share-with-a-teammate) covers the other refusals.
+Drop the field — an entry with no `model` is exactly what "use the sub-agent's own default" means — then run the command again. [Share a setup with a teammate](/docs/recipes/share-with-a-teammate) covers the other refusals.
 
 ## Deeper customization
 

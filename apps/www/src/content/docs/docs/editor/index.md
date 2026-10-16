@@ -7,7 +7,7 @@ sidebar:
 
 The editor is the browser front door onto the same catalogue the CLI reads. Pick a stack, click the skills you want, decide which sub-agents carry them, and it hands you a command to run.
 
-**You do not have to build the selection yourself.** [The composer](/docs/editor/composer), docked at the foot of the skills column, takes a sentence describing your project and proposes the skills for it; for a project that already exists, the [stack-detection skill](/docs/guides/adding-to-an-existing-project) reads the repository and proposes one from the code. Both leave you here, in the grid, with something to correct rather than something to assemble.
+**You do not have to build the selection yourself.** [The composer](/docs/editor/composer), docked at the foot of the skills column, takes a sentence describing your project and proposes the skills for it. It leaves you here, in the grid, with something to correct rather than something to assemble.
 
 ## Quick start
 
@@ -22,11 +22,11 @@ npx agents-inc init --from Ab3xY9_Q
 
 That's the loop. Everything below refines step 2 and step 3.
 
-**Opening it from a terminal.** `npx agents-inc init --ui` prints the address and then tries to open a browser at it, which is worth knowing over SSH or on a machine with no desktop session — the link still works when the browser doesn't. On its own it opens the bare catalogue and carries nothing across, so it's a shortcut to the address rather than a separate path. `npx agents-inc init --ui --from <id>` opens a shared id instead, which is how you look at somebody's configuration before installing it.
+**Opening it from a terminal.** `npx agents-inc init` where nothing is installed, in the project or globally, prints the address and then tries to open a browser at it, which is worth knowing over SSH or on a machine with no desktop session — the link still works when the browser doesn't. `npx agents-inc init --ui --from <id>` opens a shared id instead, which is how you look at somebody's configuration before installing it.
 
 ## The screen
 
-Three columns. Both outer ones are pinned to the viewport and only the middle one scrolls.
+Three columns. Both outer ones are pinned to the viewport.
 
 | Column | What it holds                                                                                                                                                                                                                                                                                                                 |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -62,7 +62,7 @@ On Codex the model row offers Codex's own models instead.
 
 ## The roster
 
-The right column groups every sub-agent under sticky bands. A **group by** pair in its header, `domain | scope`, switches between the two bandings: by domain, or by where each agent's file is written — `~/.claude · global` and `./.claude · project`, global first. Clicking a band collapses it.
+The right column groups every sub-agent under sticky bands. A **group by** pair in its header, `domain | scope`, switches between the two bandings: by domain, or by where each agent's file is written, global first. Clicking a band collapses it.
 
 **Every sub-agent is listed whether it's on or off.** An agent is on when it holds at least one enabled skill; clicking its name pins it to the opposite of whatever it works out to. So you can switch on an agent that carries nothing — it reads `no skills — base agent`, and installs as front-matter alone — or switch off one that carries plenty.
 
@@ -93,9 +93,9 @@ The configuration slot is versioned and has no migrations. A blob written agains
 
 **It can't write to your disk.** A browser has no access to `.claude/` or `~/.agents-inc/claude/`, and that is the whole reason an id exists: the editor publishes your configuration, hands you eight characters, and the CLI does the install. There's deliberately no Install button inside the install dialog — installing is a CLI action, so the only control there is Close.
 
-**It doesn't read an installation you already have.** Everything on screen starts from nothing, from a stack, or from an id. To bring an existing installation into the grid, mint it first with `npx agents-inc share` or `npx agents-inc edit --ui` — see [CLI or web](/docs/cli-or-web).
+**It doesn't read an installation you already have.** Everything on screen starts from nothing, from a stack, or from an id. To bring an existing installation into the grid, run `npx agents-inc edit` in it, which mints an id and opens it here — see [CLI or web](/docs/cli-or-web).
 
-**You can use all of this without an account**, and the CLI resolves a shared link without one too. Signing in with GitHub is what makes saved stacks outlive the browser and what unlocks [the composer](/docs/editor/composer), which calls a model and so needs somebody to attribute the cost to. Your configuration lives in this browser, and so does any marketplace token — a private catalogue is fetched straight from GitHub, so a token never leaves the browser at all. The one thing stored elsewhere is the payload behind an id, and that's written only when you open the install dialog or press Share.
+**You can use all of this without an account**, and the CLI resolves a shared link without one too. Signing in with GitHub is what makes saved stacks outlive the browser and what unlocks [the composer](/docs/editor/composer), which calls a model and so needs somebody to attribute the cost to. Your configuration lives in this browser, and so does any marketplace token — a private catalogue is fetched straight from GitHub, so a token never leaves the browser at all. Signed out, the one thing stored elsewhere is the payload behind an id, and that's written only when you open the install dialog or press Share.
 
 ## Related
 

@@ -22,7 +22,7 @@ confirm.
 /plugin install meta-config-stack-detect
 ```
 
-Ask it to propose a configuration for the project. It writes a `SeedPayload`
+Ask it to propose a configuration for the project. It returns a `SeedPayload`
 — save it as `proposal.json` — and a report alongside it. Then:
 
 ```bash
@@ -165,15 +165,14 @@ something went wrong.
 that is not a defect to engineer away. Detection is judgment-shaped — a
 deterministic detector would accumulate an unbounded matrix of monorepo
 flavours and directory conventions, and each new architecture would become
-something to test. Determinism is recovered at the boundary instead: a proposal
-is only accepted if it survives the validation that already exists — schema
-decoding, skill-existence checks, `requires` and conflict relations, and
-one-selection-per-exclusive-category. A wrong guess is a checkbox you untick.
-An invalid configuration cannot get through at all.
+something to test. Determinism is recovered at the boundary instead: a payload
+the schema will not accept never gets an id, and the install skips any id the
+catalogue does not know and warns about each broken `requires`, conflict or
+exclusive-category rule. A wrong guess is a checkbox you untick.
 
 ## Where to go next
 
-- [Three ways in](/docs/ways-in) — the other two routes to a selection, and
+- [Ways in](/docs/ways-in) — the other two routes to a selection, and
   when each one is the right one.
 - [Quickstart](/docs/quickstart) — what `init --from` actually writes to disk.
 - [The composer](/docs/editor/composer) — the same job for a project that does

@@ -9,34 +9,33 @@ Most of the CLI runs headless. Two commands need a terminal, and off one they ex
 
 ## Quick start
 
-Install a shared configuration into a clean checkout, then compile:
+Install a shared configuration into a clean checkout — it compiles as it installs:
 
 ```bash
 npx agents-inc init --from <id>
-npx agents-inc compile
 ```
 
 The id comes from the editor's install dialog, or from `npx agents-inc share` run against an installation you already have. `init --from <id>` needs no terminal — that is most of why the flag exists. It's greenfield-only: in a directory that already carries an installation it refuses rather than merging.
 
 ## What runs headless
 
-| Command                                                 | Headless | Worth knowing                                                                                                  |
-| ------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| `init --from <id>`                                      | yes      | greenfield-only; every refusal fires with nothing written                                                      |
-| `init --ui`, `edit --ui`                                | yes      | prints the link first; only tries a browser when stdin is a terminal                                           |
-| `compile`                                               | yes      | exits 0 even when a configured skill couldn't be found                                                         |
-| `doctor`                                                | yes      | exits 1 on any failed check; skips the operational ones in a marketplace repository with nothing installed     |
-| `list` / `ls`                                           | yes      | falls back to plain text off a TTY                                                                             |
-| `search <query>`                                        | yes      | reaches the marketplace; exits 0 on no matches                                                                 |
-| `update`                                                | yes      | needs `claude` only when a plugin skill names a marketplace — `codex` on a Codex install, not in a release yet |
-| `share`, `share --stdin`                                | yes      | `--stdin` refuses if standard input is a terminal                                                              |
-| `eject <type>`                                          | yes      | exits 0 even when the whole copy was skipped                                                                   |
-| `uninstall --yes`                                       | yes      | prints the plan instead of prompting                                                                           |
-| `new marketplace`, `build plugins`, `build marketplace` | yes      |                                                                                                                |
-| `edit --from <id>`                                      | **no**   | exits **1**, not 4 — match on the message, not the code                                                        |
-| `uninstall` without `--yes`                             | **no**   | exits **1** with nothing changed                                                                               |
+| Command                                                 | Headless | Worth knowing                                                                                                            |
+| ------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `init --from <id>`                                      | yes      | greenfield-only; every refusal fires with nothing written                                                                |
+| `init`, `edit`, bare or with `--ui`                     | yes      | prints the link (a bare `init` over an installation prints its dashboard); opens a browser only when stdin is a terminal |
+| `compile`                                               | yes      | exits 0 even when a configured skill couldn't be found                                                                   |
+| `doctor`                                                | yes      | exits 1 on any failed check; skips the operational ones in a marketplace repository with nothing installed               |
+| `list` / `ls`                                           | yes      | falls back to plain text off a TTY                                                                                       |
+| `search <query>`                                        | yes      | reaches the marketplace; exits 0 on no matches                                                                           |
+| `update`                                                | yes      | needs `claude` only when a plugin skill names a marketplace — `codex` on a Codex install                                 |
+| `share`, `share --stdin`                                | yes      | `--stdin` refuses if standard input is a terminal                                                                        |
+| `eject <type>`                                          | yes      | exits 0 even when the whole copy was skipped                                                                             |
+| `uninstall --yes`                                       | yes      | prints the plan instead of prompting                                                                                     |
+| `new marketplace`, `build plugins`, `build marketplace` | yes      |                                                                                                                          |
+| `edit --from <id>`                                      | **no**   | exits **1**, not 4 — match on the message, not the code                                                                  |
+| `uninstall` without `--yes`                             | **no**   | exits **1** with nothing changed                                                                                         |
 
-The terminal-size gate never bites in CI. It reads `process.stdout.columns`, which is undefined when standard output isn't a terminal, so a piped run always clears the minimum.
+The terminal-size gate never bites in CI. It reads `process.stdout.columns` and `rows`, which are undefined when standard output isn't a terminal, so a piped run always clears the minimum.
 
 ## Exit codes
 
@@ -65,12 +64,12 @@ Completed with 1 failure(s) — the changes above landed, these did not:
 
 ## Environment
 
-| Variable                               | Read by                                                           |
-| -------------------------------------- | ----------------------------------------------------------------- |
-| `CC_MARKETPLACE`                       | `init` alone — the marketplace to install from                    |
-| `GIGET_AUTH`                           | any command that fetches a private marketplace                    |
-| `HTTPS_PROXY`, `FORCE_NODE_FETCH=true` | fetching from behind a corporate proxy                            |
-| `AGENTS_INC_API_URL`                   | `share` and `--from`, to point at a different configuration store |
+| Variable                               | Read by                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| `CC_MARKETPLACE`                       | `init --from` alone, when neither `--marketplace` nor the id names one    |
+| `GIGET_AUTH`                           | any command that fetches a private marketplace                            |
+| `HTTPS_PROXY`, `FORCE_NODE_FETCH=true` | fetching from behind a corporate proxy                                    |
+| `AGENTS_INC_API_URL`                   | `share`, `edit` and `--from`, to point at a different configuration store |
 
 There's no refresh flag and no offline flag. Every load revalidates its cached copy of the marketplace against the remote with a five-second budget, and on failure uses the cache and warns:
 
