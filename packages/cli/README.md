@@ -9,16 +9,23 @@
 
 An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compose specialized subagents from atomic skills:
 
-1. Select a pre-built stack to customise or start from scratch
-2. Select your skills from an interactive grid, organized by domain with compatibility filtering and global/local customising
+1. Select a pre-built stack to customise or start from scratch in the [editor](https://agentsinc.sh/editor)
+2. Select your skills from its grid, organized by domain with compatibility filtering and global/project scope
 3. Choose to eject these skills or install them as plugins ([install modes guide](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/concepts/install-modes.md))
 4. Select your subagents to compile with these skills
-5. Further customise skills and subagents in the generated `config.ts` ([editing config guide](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/editing-config.md))
-6. Compile subagents with `npx agents-inc compile` after changes
+5. Install with the `npx agents-inc init --from <id>` command the editor hands you
+6. Further customise skills and subagents in the generated `config.ts` ([editing config guide](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/editing-config.md))
+7. Compile subagents with `npx agents-inc compile` after changes
 
 See the [Guides](#guides) section below for more.
 
 <br />
+
+### Legacy Wizard
+
+The terminal wizard, last shipped in 0.168.0: `npx agents-inc@0.168.0 init`.
+
+<img src="./assets/legacy-wizard.gif" alt="Legacy Wizard">
 
 ## Getting Started
 
@@ -51,7 +58,7 @@ npx agents-inc init
 | Guide                                                                                                                                                    | Description                                                          |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | [Global-first setup](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/global-first-setup.md)                     | Why global scope is the right default and when to use project scope  |
-| [Install modes](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/concepts/install-modes.md)                             | Plugin vs local install, global vs project scope                     |
+| [Install modes](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/concepts/install-modes.md)                             | Plugin vs eject, global vs project scope                             |
 | [Editing your config](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/editing-config.md)                        | Skill mappings, preloaded vs dynamic loading, and config structure   |
 | [Customizing subagents](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/customizing-subagents.md)               | Eject and modify partials, templates, and skills                     |
 | [Writing custom skills and subagents](https://github.com/agents-inc/agents-inc/blob/main/apps/www/src/content/docs/docs/guides/writing-custom-skills.md) | Author skills and subagents from scratch or iterate on existing ones |
@@ -101,6 +108,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | `compile` | Recompile subagents after changes                                                                 |
 | `update`  | Refresh the marketplaces this installation uses (ejected skills are yours)                        |
 | `search`  | Search this installation's marketplace and your local skills                                      |
+| `share`   | Share this installation as an id anyone can install                                               |
 
 ### Customization
 
@@ -114,6 +122,7 @@ Each subagent is composed from modular partials (role, workflow, output format) 
 | ------------------- | ---------------------------------------------- |
 | `build marketplace` | Generate `marketplace.json` from built plugins |
 | `build plugins`     | Build skill and agent plugins for distribution |
+| `new marketplace`   | Scaffold a marketplace of your own             |
 
 ### Diagnostics
 
