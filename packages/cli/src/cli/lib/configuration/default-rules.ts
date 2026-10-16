@@ -585,7 +585,7 @@ export const defaultRules: SkillRulesConfig = {
         skill: "composable-components",
         needs: ["react"],
         reason:
-          "Composition patterns are React surface — base-ui useRender/mergeProps, forwardRef, JSX parts",
+          "Composition patterns are React surface — JSX parts sharing context, ref as a prop, asChild/render via cloneElement, useId",
       },
       {
         skill: "web-reviewing",

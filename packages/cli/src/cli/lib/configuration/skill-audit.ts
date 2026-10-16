@@ -1636,7 +1636,7 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     batch: "shared-meta",
     classification: { class: "B", frameworks: ["react"] },
     sources: [
-      'skill body self-scope (description "Use when reviewing React components"; When-to-use ".tsx/.jsx with JSX"; "React PR review" auto-detection) plus a React-keyed majority (4 of 5 MUSTs, 6 of 7 patterns)',
+      'skill body self-scope (description "Load when reviewing a diff that adds or changes React components or hooks"; Applies-to "Diffs that add or change React components or custom hooks"; "React PR review" auto-detection) plus a React-keyed majority (4 of 5 critical requirements, 6 of 7 patterns)',
     ],
   },
   "meta-reviewing-api-reviewing": {
