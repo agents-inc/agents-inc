@@ -7,6 +7,14 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.170.1] - 2026-10-17
+
+**The built-in catalogue carries the skills repository's rewritten meta skills, and replaces the unpublished 0.170.0**
+
+- The built-in matrix is regenerated from skills `4865dfd1`, so the rewritten reviewing and design skills show their new descriptions. Everything in 0.170.0 ships here.
+
+See [changelogs/0.170.1.md](./changelogs/0.170.1.md) for full details.
+
 ## [0.170.0] - 2026-10-17
 
 **The wizard's removal is finished: a stack installs every sub-agent it declares, `edit --from` names what it adds to the global install, and a global run says each warning once**
