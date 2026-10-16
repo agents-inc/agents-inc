@@ -4,8 +4,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   cleanupTempDir,
   configTsPath,
+  fileExists,
   listFiles,
   readTestFile,
+  readTreeSnapshot,
   skillsPath,
 } from "../helpers/test-utils.js";
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
@@ -13,12 +15,14 @@ import { CUSTOM_PROJECT_SKILL_ID, ProjectBuilder } from "../fixtures/project-bui
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { stubBrowserOpener, type BrowserOpenerStub } from "../fixtures/browser-opener.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
  * A saved skill entry whose local files ARE on disk, and whose metadata.yaml describes no
@@ -29,7 +33,12 @@ import {
  * blamed the marketplace for a YAML typo in the user's own working copy, and cost them the
  * config record of an install whose files were sitting right there.
  *
- * `edit --from` asks before it applies, so it runs in a terminal.
+ * A bare `edit` refuses over the same file before it mints the id the editor opens: the
+ * configuration it hands over is read off these files, and one that describes nothing read as
+ * a skill the user wrote, so the skill was quietly left out of what the editor showed.
+ *
+ * Both run in a terminal: `edit --from` asks before it applies, and a bare `edit` opens the
+ * browser only where someone is sitting at one.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -192,6 +201,107 @@ describe("edit --from with a saved entry whose installed metadata.yaml describes
         await readTestFile(configTsPath(fixture.projectDir)),
         "a declined apply writes nothing",
       ).toBe(configBefore);
+    },
+  );
+});
+
+describe("bare edit with a saved entry whose installed metadata.yaml describes no skill", () => {
+  let tempDir: string;
+  let source: E2ESource;
+  let store: SeedConfigStore;
+  let prompt: InteractivePrompt | undefined;
+
+  beforeAll(async () => {
+    source = await createE2ESource();
+    store = await startSeedConfigStore();
+  }, TIMEOUTS.SETUP);
+
+  afterAll(async () => {
+    await store.close();
+    await cleanupTempDir(source.tempDir);
+  });
+
+  afterEach(async () => {
+    store.reset();
+    await prompt?.destroy();
+    prompt = undefined;
+    if (tempDir) {
+      await cleanupTempDir(tempDir);
+      tempDir = undefined!;
+    }
+  });
+
+  /** A bare `edit` in a terminal over the project, with the browser it would open stubbed. */
+  function launchBareEdit(projectDir: string, opener: BrowserOpenerStub): InteractivePrompt {
+    prompt = new InteractivePrompt(["edit"], projectDir, {
+      env: { AGENTS_INC_API_URL: store.url, PATH: opener.path },
+    });
+    return prompt;
+  }
+
+  it(
+    "refuses naming the skill, the file and the reason, before it mints an id or opens the editor",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      const fixture = await seedBrokenCustomSkillMetadata(source.sourceDir);
+      tempDir = fixture.tempDir;
+      const opener = await stubBrowserOpener(fixture.tempDir);
+      const treeBefore = await readTreeSnapshot(fixture.projectDir);
+
+      const edit = launchBareEdit(fixture.projectDir, opener);
+      const exitCode = await edit.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const output = edit.getRawOutput();
+
+      expect(exitCode, `edit must refuse an unusable metadata.yaml:\n${output}`).toBe(
+        EXIT_CODES.ERROR,
+      );
+      expect(output, "the offending skill must be named").toContain(CUSTOM_PROJECT_SKILL_ID);
+      expect(output, "the offending file must be named").toContain(fixture.metadataPath);
+      expect(output, "the parser's own reason must reach the user").toContain(PARSE_REASON_TOKEN);
+      // Reading the file for its provenance already WARNS with its path and reason, so only the
+      // refusal's closing line tells a run that stopped from one that minted around the skill.
+      expect(
+        flattenCliOutput(output),
+        "the refusal must offer the two ways out and point at doctor",
+      ).toContain(STEP_TEXT.METADATA_UNUSABLE_WAY_OUT);
+
+      expect(store.requests, "a refused run must not post the installation").toStrictEqual([]);
+      expect(await fileExists(opener.logPath), "a refused run must not open the browser").toBe(
+        false,
+      );
+      expect(
+        await readTreeSnapshot(fixture.projectDir),
+        "opening the editor reads the installation and rewrites nothing",
+      ).toStrictEqual(treeBefore);
+    },
+  );
+
+  it(
+    "mints an id and opens the editor on it once the metadata.yaml describes its skill",
+    { timeout: TIMEOUTS.INSTALL },
+    async () => {
+      const fixture = await seedBrokenCustomSkillMetadata(source.sourceDir);
+      tempDir = fixture.tempDir;
+      await writeFile(fixture.metadataPath, fixture.healthyMetadata);
+      const opener = await stubBrowserOpener(fixture.tempDir);
+      const treeBefore = await readTreeSnapshot(fixture.projectDir);
+
+      // The guard is keyed to the unusable FILE, not to custom skills or to every edit, so the
+      // same installation with the file repaired is handed to the editor.
+      const edit = launchBareEdit(fixture.projectDir, opener);
+      const exitCode = await edit.waitForExit(TIMEOUTS.EXIT_WAIT);
+      const output = edit.getRawOutput();
+
+      expect(exitCode, `a readable metadata.yaml must not be refused:\n${output}`).toBe(
+        EXIT_CODES.SUCCESS,
+      );
+      expect(store.minted).toHaveLength(1);
+      const mintedId = firstElement(store.minted);
+      expect(output).toContain(`Shared as ${mintedId}`);
+      const opened = await readTestFile(opener.logPath);
+      expect(opened, "the browser must be handed the editor").toContain(STEP_TEXT.EDITOR_URL);
+      expect(opened, "the browser must be handed the id just minted").toContain(mintedId);
+      expect(await readTreeSnapshot(fixture.projectDir)).toStrictEqual(treeBefore);
     },
   );
 });

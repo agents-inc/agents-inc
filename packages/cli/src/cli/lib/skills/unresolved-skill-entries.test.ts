@@ -1,9 +1,10 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdir, rm, writeFile } from "fs/promises";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { findUnusableSavedSkillMetadata } from "./unresolved-skill-entries";
 import { CLAUDE_DIR, STANDARD_DIRS, STANDARD_FILES } from "../../consts";
+import { resolveInstallPaths } from "../installation/install-base-dir";
 import { renderMetadataYaml } from "../__tests__/content-generators";
 import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils";
@@ -58,7 +59,7 @@ describe("unresolved-skill-entries", () => {
       const skillDir = await installLocalSkill(projectDir, EJECTED_SKILL, UNPARSEABLE_YAML);
       const saved = buildSkillConfigs([EJECTED_SKILL]);
 
-      const unusable = await findUnusableSavedSkillMetadata([EJECTED_SKILL], saved, projectDir);
+      const unusable = await findUnusableSavedSkillMetadata(saved, projectDir);
 
       expect(unusable).toHaveLength(1);
       expect(unusable[0]?.skillDirName).toBe(EJECTED_SKILL);
@@ -70,16 +71,37 @@ describe("unresolved-skill-entries", () => {
       await installLocalSkill(projectDir, EJECTED_SKILL, "author: nobody\n");
       const saved = buildSkillConfigs([EJECTED_SKILL]);
 
-      const unusable = await findUnusableSavedSkillMetadata([EJECTED_SKILL], saved, projectDir);
+      const unusable = await findUnusableSavedSkillMetadata(saved, projectDir);
 
       expect(unusable).toHaveLength(1);
       expect(unusable[0]?.reason).toContain("missing required field");
     });
 
+    it("reads each half of a [P][G] pair at its own scope", async () => {
+      await installLocalSkill(projectDir, EJECTED_SKILL, healthyMetadata());
+      const globalSkillDir = path.join(
+        resolveInstallPaths(projectDir, "global").skillsDir,
+        EJECTED_SKILL,
+      );
+      onTestFinished(() => rm(globalSkillDir, { recursive: true, force: true }));
+      await mkdir(globalSkillDir, { recursive: true });
+      await writeFile(path.join(globalSkillDir, STANDARD_FILES.METADATA_YAML), UNPARSEABLE_YAML);
+      const saved = [
+        ...buildSkillConfigs([EJECTED_SKILL], { scope: "project" }),
+        ...buildSkillConfigs([EJECTED_SKILL], { scope: "global" }),
+      ];
+
+      const unusable = await findUnusableSavedSkillMetadata(saved, projectDir);
+
+      expect(unusable.map(({ metadataPath }) => metadataPath)).toStrictEqual([
+        path.join(globalSkillDir, STANDARD_FILES.METADATA_YAML),
+      ]);
+    });
+
     it("names nothing for an entry whose skill files are gone", async () => {
       const saved = buildSkillConfigs([EJECTED_SKILL]);
 
-      const unusable = await findUnusableSavedSkillMetadata([EJECTED_SKILL], saved, projectDir);
+      const unusable = await findUnusableSavedSkillMetadata(saved, projectDir);
 
       expect(unusable).toStrictEqual([]);
     });
@@ -88,7 +110,16 @@ describe("unresolved-skill-entries", () => {
       await installLocalSkill(projectDir, EJECTED_SKILL, UNPARSEABLE_YAML);
       const saved = buildSkillConfigs([EJECTED_SKILL], { origin: MARKETPLACE });
 
-      const unusable = await findUnusableSavedSkillMetadata([EJECTED_SKILL], saved, projectDir);
+      const unusable = await findUnusableSavedSkillMetadata(saved, projectDir);
+
+      expect(unusable).toStrictEqual([]);
+    });
+
+    it("names nothing for an excluded entry, whatever is on disk under its id", async () => {
+      await installLocalSkill(projectDir, EJECTED_SKILL, UNPARSEABLE_YAML);
+      const saved = buildSkillConfigs([EJECTED_SKILL], { excluded: true });
+
+      const unusable = await findUnusableSavedSkillMetadata(saved, projectDir);
 
       expect(unusable).toStrictEqual([]);
     });
@@ -97,7 +128,7 @@ describe("unresolved-skill-entries", () => {
       await installLocalSkill(projectDir, EJECTED_SKILL, healthyMetadata());
       const saved = buildSkillConfigs([EJECTED_SKILL]);
 
-      const unusable = await findUnusableSavedSkillMetadata([EJECTED_SKILL], saved, projectDir);
+      const unusable = await findUnusableSavedSkillMetadata(saved, projectDir);
 
       expect(unusable).toStrictEqual([]);
     });

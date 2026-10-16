@@ -74,8 +74,9 @@ describe("help command", () => {
     it("should show edit command summary", async () => {
       const { stdout } = await runCliCommand(["help", "edit"]);
 
-      // Edit command summary contains "Edit skills"
-      expect(stdout).toContain("Edit skills");
+      expect(stdout).toContain(
+        "Open this installation in the editor, or apply a configuration with --from",
+      );
     });
   });
 

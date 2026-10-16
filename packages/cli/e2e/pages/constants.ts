@@ -72,9 +72,10 @@ export const STEP_TEXT = {
   CONFIG_UNREADABLE_PROJECT: "This project's config at",
   // Composed with ` '<folder>'`: from a project over a broken global config, a remedy naming no
   // folder would send the user to uninstall the wrong installation.
-  CONFIG_UNREADABLE_RECREATE_FROM: "then 'npx agents-inc init', from",
+  CONFIG_UNREADABLE_RECREATE_FROM: "'npx agents-inc uninstall' from",
+  // The install a recreate ends on: a bare `init` only prints the editor's address.
+  CONFIG_UNREADABLE_INSTALL_BY_ID: "'npx agents-inc init --from <id>'",
   EJECT_SUCCESS: "Eject complete!",
-  IMPORT_SUCCESS: "Import complete:",
   UNINSTALL_SUCCESS: "Uninstall complete!",
 
   LOADING_SKILLS: "Loading skills",
@@ -99,7 +100,7 @@ export const STEP_TEXT = {
   // assertable here.
   STACK_SKILL_ABSENT_FROM_MATRIX: "not found in matrix",
   // `withdrawnSkillsWarning` in `lib/loading/source-loader.ts`, anchored on the decision rather
-  // than the diagnosis, and cut before the point the startup band wraps at `TERMINAL_SIZE.SHORT`.
+  // than the diagnosis.
   STACK_SKILL_LEFT_OUT: "Left out of the stack — selecting it",
   // `extractLocalSkill` on a metadata.yaml stating the `local` pseudo-category.
   LOCAL_SKILL_PLACEHOLDER_CATEGORY: "is a placeholder, not a real category",
@@ -117,6 +118,9 @@ export const STEP_TEXT = {
   // Once per reference. Built-in rules are narrowed to the source's slugs first, so a fixture
   // shipping ten skills produces none.
   UNRESOLVED_SLUG: "Unresolved slug",
+  // `checkMatrixHealth` prefixes what a load SAYS with this; doctor's Marketplaces row files the
+  // same finding without it, so it is what tells the warning from the row.
+  MATRIX_HEALTH_SAID: "[matrix]",
   // `claimSlug`: the loser of a slug clash becomes unreachable by slug, and this is its only trace.
   DUPLICATE_SLUG: "Duplicate slug",
   // Short of the four words it shares with COMPILE_PASS_NO_SKILLS; a longer fragment straddles
@@ -128,6 +132,8 @@ export const STEP_TEXT = {
   // `flattenCliOutput`: it opens an oclif error box.
   COMPILE_METADATA_UNUSABLE: "does not describe",
   COMPILE_METADATA_MISSING_FIELD: "missing required field",
+  // `judgeSkillMetadata` on an installed skill directory holding a SKILL.md and no metadata.yaml.
+  INSTALLED_SKILL_METADATA_MISSING: "is missing metadata.yaml — skipped",
   // Shared by `compile` and `init`/`edit`. Asserted through `flattenCliOutput`.
   METADATA_UNUSABLE_WAY_OUT: "Fix the file, or delete the skill directory",
   // Counts projects rewritten, not reached, so a fan-out that changes nothing never prints it.
@@ -141,6 +147,7 @@ export const STEP_TEXT = {
   // `update`. The warn/error sentinels are short: oclif wraps that text and prefixes each
   // continuation with ` ›  `.
   UPDATE_HELP_SUMMARY: "Refresh the marketplaces this installation uses",
+  EDIT_HELP_SUMMARY: "Open this installation in the editor, or apply a configuration with --from",
   UPDATE_EJECTED_OWNED: "Ejected skills are yours to own",
   UPDATE_NO_MARKETPLACES: "No plugin marketplaces are configured",
   UPDATE_MARKETPLACE_REFRESHED: "Updated marketplace",
@@ -150,7 +157,6 @@ export const STEP_TEXT = {
   UPDATE_NO_CLAUDE_CLI: "Claude CLI not found",
 
   CONFIRM_UNINSTALL: "Are you sure you want to uninstall",
-  SEARCH: "Search Skills",
   UNINSTALL_PREVIEW: "The following will be removed", // Loose form for waitForText
   UNINSTALL_PREVIEW_HEADING: "The following will be removed:", // Exact rendered heading
   UNINSTALL_CONFIG_SECTION: "Config:", // Removal-plan section header for the config manifest
@@ -295,7 +301,6 @@ export const STEP_TEXT = {
   // `init --from` is greenfield-only: it refuses anything it would install over, and a payload
   // the config model cannot write.
   SHARED_CONFIG_EXISTING_INSTALL: "An installation already exists at",
-  SHARED_CONFIG_GLOBAL_INSTALL: "a global installation already exists at",
   SHARED_CONFIG_UNINSTALL_HINT: "Run 'npx agents-inc uninstall'",
   SHARED_CONFIG_UNWRITABLE_PAIR: "these assignments have nowhere to be written",
 
@@ -349,6 +354,10 @@ export const STEP_TEXT = {
   SHARED_CONFIG_INSTALL_CONFIRM: "Install this configuration?",
   // A project run only adds to the global install; differences are named, not applied.
   SHARED_CONFIG_KEPT_AS_INSTALLED: "Kept as installed in the global install",
+  // Held global sub-agents a new skill joins: "  sub-agent <name>: + <skill id>" follows.
+  SHARED_CONFIG_ADDED_TO_GLOBAL: "Added to sub-agents in the global install",
+  // `edit`'s Changes line for one of them, composed after "~ <name> ".
+  EDIT_GLOBAL_SUB_AGENT_SKILLS_ADDED: "[G] (agent: skills added)",
 
   VALIDATION_REQUIRES: "requires:",
 
@@ -369,8 +378,7 @@ export const STEP_TEXT = {
   // `█` is painted only in ASCII_LOGO.
   LOGO_BANNER: "█████╗",
 
-  // formatSourceDisplayName("agents-inc"). A fixture run names E2E_MARKETPLACE_NAME instead, and
-  // an all-ejected run says "All skills ejected".
+  // formatSourceDisplayName("agents-inc").
   SOURCE_DISPLAY_DEFAULT: "Agents Inc",
   // formatSourceDisplayName("eject").
   SOURCE_DISPLAY_EJECT: "Eject",
@@ -429,7 +437,7 @@ export const BRANDING = {
 export const TIMEOUTS = {
   /** Spawn → first frame. Full-suite parallel load can exceed 15s. */
   WIZARD_LOAD: 45_000,
-  /** Enter → the next view's first frame, sized for full-suite load. Not for intra-step waits. */
+  /** Enter → the next view's first frame, sized for full-suite load. */
   WIZARD_TRANSITION: 45_000,
   INSTALL: 30_000,
   PLUGIN_INSTALL: 60_000,

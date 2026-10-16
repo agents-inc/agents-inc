@@ -211,7 +211,6 @@ type FailureSite = {
 };
 
 const EDIT_FAILURE_SITES = [
-  { recovery: "INSPECT_INSTALLATION", forWhat: "the global origin change that was not recorded" },
   { recovery: "INSPECT_INSTALLATION", forWhat: "a plugin scope migration that did not install" },
   { recovery: "RECOMPILE", forWhat: "the sub-agents a recompile pass refused to write" },
   { recovery: "RECOMPILE", forWhat: "a recompile pass that threw before reporting on any" },

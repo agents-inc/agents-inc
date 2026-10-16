@@ -43,14 +43,9 @@ import {
   resolveInstallPaths,
   INSTALL_MODE_DESCRIPTIONS,
 } from "../lib/installation/index.js";
-import {
-  applyMigratedGlobalSources,
-  movedGlobalAgentInputs,
-  mutateGlobal,
-  type GateReport,
-} from "../lib/config-gate/index.js";
+import { movedGlobalAgentInputs, type GateReport } from "../lib/config-gate/index.js";
 import { getSkillById, getSkillDisplayName } from "../lib/matrix/matrix-provider";
-import { type AuthoritativeScope } from "../lib/configuration/index.js";
+import { type AuthoritativeScope, loadProjectConfig } from "../lib/configuration/index.js";
 import {
   activeAgentScopeMap,
   isActiveAt,
@@ -84,6 +79,7 @@ import { seedToInstallSelection, type SeedMapping } from "../lib/seed/seed-to-se
 import {
   arrivalLines,
   arrivalsByScope,
+  joinedStatement,
   notInstalledGlobally,
   readInstalledGlobal,
   reconcileSharedConfig,
@@ -123,6 +119,7 @@ import {
   applySharedConfigHere,
   authoredHereKept,
   carriedSkillsWritten,
+  editorSkillMetadataUnusableError,
   keptAsInstalledGlobally,
   keptUnassigned,
   localSkillsCopied,
@@ -200,9 +197,6 @@ function formatValueChangeLine(subject: string, change: ValueChange, kind: strin
   );
 }
 
-/** @internal Re-exported for testing — the transform itself lives inside the gate. */
-export { applyMigratedGlobalSources };
-
 type EditContext = {
   installation: Installation;
   projectConfig: ProjectConfig | null;
@@ -233,10 +227,15 @@ function resolveEditRoot(installation: Installation): EditRoot {
  */
 type EditSelection = {
   result: InstallSelection;
-  /** Statements naming what this run may not remove — rendered in the confirm. */
+  /**
+   * Statements naming what this run may not remove, and the held global sub-agents it adds to —
+   * rendered in the confirm.
+   */
   kept: string[];
   /** Skills the configuration carries rather than names, written once it is approved. */
   carried: ExternalSkillInstall[];
+  /** From a project, the held global sub-agents an arriving skill's row joins. */
+  joinedGlobalAgents: AgentName[];
 };
 
 type SharedConfigPlan = {
@@ -308,21 +307,25 @@ function compilesGlobalScope(editRoot: EditRoot, written: GateReport): boolean {
  * Adds sub-agents whose skill rows change while the roster does not, which
  * {@link detectConfigChanges} cannot see.
  */
-type PlannedChanges = ConfigChanges & { reassignedAgents: AgentName[] };
+type ReassignedChanges = ConfigChanges & { reassignedAgents: AgentName[] };
+
+/** Adds the held global sub-agents a project run adds rows to (`HeldGlobal.joined`). */
+type PlannedChanges = ReassignedChanges & { joinedGlobalAgents: AgentName[] };
 
 /** Adds carried skills already installed here whose files the apply rewrote. */
 type AppliedChanges = PlannedChanges & { rewrittenSkills: SkillId[] };
 
 /**
- * In a project only the project's own sub-agents count; a global one keeps its installed rows
- * (`restoreInstalledGlobal`). A sub-agent already counted as added is not counted twice.
+ * In a project only the project's own sub-agents count; a global one keeps its installed rows and
+ * gains only an arriving skill's (`restoreInstalledGlobal`), which `HeldGlobal.joined` names. A
+ * sub-agent already counted as added is not counted twice.
  */
 function withReassignments(
   changes: ConfigChanges,
   result: InstallSelection,
   installedStack: ProjectConfig["stack"],
   editRoot: EditRoot,
-): PlannedChanges {
+): ReassignedChanges {
   const { assignedStack } = result;
 
   const ownedHere = (agent: AgentScopeConfig): boolean =>
@@ -340,7 +343,8 @@ function withReassignments(
 
 /**
  * What the apply adds or changes, by landing scope. Excludes what is already installed as stated,
- * and the global copy a dropped project half leaves, which the plan lists as a removal.
+ * the global copy a dropped project half leaves, which the plan lists as a removal, and the held
+ * global sub-agents a row joins, which {@link joinedStatement} names.
  */
 function applyArrivals(changes: PlannedChanges, result: InstallSelection): Arrivals {
   const changedSkills = new Set<SkillId>([
@@ -407,7 +411,7 @@ function applyAuthority(editRoot: EditRoot): AuthoritativeScope {
 }
 
 export default class Edit extends BaseCommand {
-  static summary = "Edit skills in the plugin";
+  static summary = "Open this installation in the editor, or apply a configuration with --from";
   static description =
     "Open this installation in agentsinc.sh/editor, or apply a configuration built there with --from";
 
@@ -499,17 +503,20 @@ export default class Edit extends BaseCommand {
       ? { ...context.projectConfig, skills: activeOldSkills, agents: activeOldAgents }
       : null;
 
-    const planned = withReassignments(
-      detectConfigChanges(filteredOldConfig, filteredResult, {
-        newSkills: result.skills,
-        oldSkills: context.projectConfig?.skills ?? [],
-        newAgents: result.agentConfigs,
-        oldAgents: context.projectConfig?.agents ?? [],
-      }),
-      filteredResult,
-      context.projectConfig?.stack,
-      editRoot,
-    );
+    const planned: PlannedChanges = {
+      ...withReassignments(
+        detectConfigChanges(filteredOldConfig, filteredResult, {
+          newSkills: result.skills,
+          oldSkills: context.projectConfig?.skills ?? [],
+          newAgents: result.agentConfigs,
+          oldAgents: context.projectConfig?.agents ?? [],
+        }),
+        filteredResult,
+        context.projectConfig?.stack,
+        editRoot,
+      ),
+      joinedGlobalAgents: selection.joinedGlobalAgents,
+    };
     // After the diff, above every mutation and the no-change return: carried skills may still have
     // bytes to land when the roster is unchanged.
     const rewritten = await this.confirmAndWriteCarried(selection, planned, filteredResult);
@@ -533,12 +540,6 @@ export default class Edit extends BaseCommand {
       activeOldSkills,
       context,
       editRoot,
-    );
-    await this.recordGlobalSourceMigrations(
-      migratedSkillIds,
-      filteredResult.skills,
-      editRoot,
-      context,
     );
     await this.applyScopeChanges(changes, filteredResult, context, editRoot);
     await this.applyCollapsedPairs(changes, context, editRoot);
@@ -610,9 +611,11 @@ export default class Edit extends BaseCommand {
       kept: [
         ...keptStatements(reconciled.kept),
         ...unassignedStatement(reconciled.unassigned),
+        ...joinedStatement(held),
         ...keptAsInstalledStatement(held, revisedGlobally),
       ],
       carried: arrivingCarried,
+      joinedGlobalAgents: held.joined.map(({ agentName }) => agentName),
     };
   }
 
@@ -727,6 +730,8 @@ export default class Edit extends BaseCommand {
    * nothing on disk.
    */
   private async openInEditor(projectDir: string): Promise<void> {
+    await this.ensureInstalledSkillsReadable(projectDir);
+
     const prepared = await seedPayloadForInstallation(projectDir);
     if (!prepared.ok) {
       this.error(prepared.error, { exit: EXIT_CODES.ERROR });
@@ -740,6 +745,23 @@ export default class Edit extends BaseCommand {
     }
 
     await this.handToBrowser(published.id);
+  }
+
+  /**
+   * The payload reads every ejected skill's metadata.yaml for its provenance, and no catalogue is
+   * loaded here to resolve a skill around it, so every installed entry is asked about — not only
+   * those a catalogue lacks, as `edit --from` asks. The config read is the one the payload reads.
+   */
+  private async ensureInstalledSkillsReadable(projectDir: string): Promise<void> {
+    const loaded = await loadProjectConfig(projectDir);
+    // Nothing installed is `seedPayloadForInstallation`'s to report.
+    if (!loaded) return;
+
+    await this.refuseUnusableSavedSkillMetadata(
+      loaded.config.skills,
+      projectDir,
+      editorSkillMetadataUnusableError,
+    );
   }
 
   /** Opens an id rather than applying it; `--from` without `--ui` is the destructive apply. */
@@ -792,48 +814,6 @@ export default class Edit extends BaseCommand {
     }
   }
 
-  /**
-   * Records in the GLOBAL config the install-mode migrations this run already performed under
-   * `$HOME`, and only their `origin`: `executeMigration` resolves paths from each skill's own
-   * scope, so leaving the record alone would contradict the disk and the plugin registry. Runs
-   * before `writeConfigAndCompile`, through the gate so every other project is refreshed.
-   */
-  private async recordGlobalSourceMigrations(
-    migratedSkillIds: Set<SkillId>,
-    newSkills: SkillConfig[],
-    editRoot: EditRoot,
-    context: EditContext,
-  ): Promise<void> {
-    // At the home root the config write itself is the global config.
-    if (editRoot.isGlobal) return;
-
-    const migratedSources = new Map(
-      newSkills
-        .filter((s) => migratedSkillIds.has(s.id) && isActiveAt(s, "global"))
-        .map((s) => [s.id, s.origin] as const),
-    );
-    if (migratedSources.size === 0) return;
-
-    try {
-      const report = await mutateGlobal(
-        { kind: "migrate-skill-sources", sources: migratedSources },
-        {
-          // config-gate/deps.ts declares `loadMatrix` async; the matrix is already in hand.
-          // eslint-disable-next-line @typescript-eslint/require-await -- deps contract
-          loadMatrix: async () => context.sourceResult.matrix,
-          loadAgents: async () => (await loadAgentDefs()).agents,
-        },
-      );
-      this.reportFanOut(report);
-    } catch (error) {
-      // The migration happened; only its record failed, so disk and global config now disagree.
-      this.reportIncompleteWork(
-        `Could not record global origin change: ${getErrorMessage(error)}`,
-        INCOMPLETE_WORK_RECOVERY.INSPECT_INSTALLATION,
-      );
-    }
-  }
-
   private logChangeSummary(
     changes: AppliedChanges,
     newSkills: SkillConfig[],
@@ -851,6 +831,7 @@ export default class Edit extends BaseCommand {
       dualScopeAgentTransitions,
       tuningChanges,
       reassignedAgents,
+      joinedGlobalAgents,
       rewrittenSkills,
     } = changes;
 
@@ -902,6 +883,13 @@ export default class Edit extends BaseCommand {
       this.log(
         chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
           chalk.hex(CLI_COLORS.NEUTRAL)(" (agent: skills reassigned)"),
+      );
+    }
+    // Nor rows joining a held global sub-agent, which keeps everything else.
+    for (const agentName of joinedGlobalAgents) {
+      this.log(
+        chalk.hex(CLI_COLORS.WARNING)(`  ~ ${agentName}`) +
+          chalk.hex(CLI_COLORS.NEUTRAL)(` ${formatScopeTag("global")} (agent: skills added)`),
       );
     }
     for (const skillId of rewrittenSkills) {
@@ -1584,6 +1572,7 @@ function planStaleAgentRemovals(
 function hasAnyChanges(changes: AppliedChanges): boolean {
   return (
     changes.reassignedAgents.length > 0 ||
+    changes.joinedGlobalAgents.length > 0 ||
     changes.rewrittenSkills.length > 0 ||
     changes.addedSkills.length > 0 ||
     changes.removedSkills.length > 0 ||

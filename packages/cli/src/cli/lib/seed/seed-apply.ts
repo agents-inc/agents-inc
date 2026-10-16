@@ -7,7 +7,11 @@ import { isActiveAt } from "../configuration/scope-predicates.js";
 import { providerInUse } from "../installation/install-layout.js";
 import { getCategoryDomain, getSkillDisplayName, matrix } from "../matrix/matrix-provider.js";
 import { orderDomains } from "@workspace/compile";
-import { SHARED_CONFIG_APPLY, SHARED_CONFIG_ARRIVALS } from "../../utils/messages.js";
+import {
+  SHARED_CONFIG_APPLY,
+  SHARED_CONFIG_ARRIVALS,
+  addedToGlobalSubAgents,
+} from "../../utils/messages.js";
 import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object.js";
 
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
@@ -261,6 +265,9 @@ export async function readInstalledGlobal(projectDir: string): Promise<Installed
 
 type GlobalEntries = { skillIds: SkillId[]; agentNames: AgentName[] };
 
+/** A held global sub-agent an arriving skill's row joins, and the skills those rows bring. */
+export type JoinedAgent = { agentName: AgentName; skillIds: SkillId[] };
+
 export type HeldGlobal = {
   result: InstallSelection;
   /**
@@ -268,10 +275,12 @@ export type HeldGlobal = {
    */
   installed: GlobalEntries;
   /**
-   * Of those, the ones stated otherwise, plus (from {@link restoreInstalledGlobal}) every omitted
-   * one.
+   * Of those, the ones stated otherwise that no arriving row joins, plus (from
+   * {@link restoreInstalledGlobal}) every omitted one.
    */
   keptAsInstalled: GlobalEntries;
+  /** Held sub-agents that gain rows, each keeping everything it already has. */
+  joined: JoinedAgent[];
 };
 
 const NO_GLOBAL_ENTRIES: GlobalEntries = { skillIds: [], agentNames: [] };
@@ -287,7 +296,12 @@ export function holdInstalledGlobal(
   installed: InstalledGlobal | null,
 ): HeldGlobal {
   if (!installed) {
-    return { result: decoded, installed: NO_GLOBAL_ENTRIES, keptAsInstalled: NO_GLOBAL_ENTRIES };
+    return {
+      result: decoded,
+      installed: NO_GLOBAL_ENTRIES,
+      keptAsInstalled: NO_GLOBAL_ENTRIES,
+      joined: [],
+    };
   }
 
   const heldSkills = activeGlobalById(installed.skills, (skill) => skill.id);
@@ -296,10 +310,11 @@ export function holdInstalledGlobal(
   const agents = pairWithHeld(decoded.agentConfigs, heldAgents, (agent) => agent.name);
   const namedSkillIds = skills.map(({ named }) => named.id);
   const namedAgentNames = agents.map(({ named }) => named.name);
-  const assignedStack = withHeldRows(decoded.assignedStack, installed.stack, {
+  const { assignedStack, joined } = withHeldRows(decoded.assignedStack, installed.stack, {
     agentNames: namedAgentNames,
     skippedSkillIds: new Set(namedSkillIds),
   });
+  const joinedNames = new Set(joined.map(({ agentName }) => agentName));
 
   const restatesSkill = ({ named, held }: Held<SkillConfig>): boolean =>
     named.origin === held.origin;
@@ -308,6 +323,9 @@ export function holdInstalledGlobal(
     named.codexModel === held.codexModel &&
     named.effort === held.effort &&
     sameAssignments(decoded.assignedStack[named.name], assignedStack[named.name]);
+  // A sub-agent a row joins is changed, so it is named as added to rather than as kept.
+  const keptAsIs = (pair: Held<AgentScopeConfig>): boolean =>
+    !restatesAgent(pair) && !joinedNames.has(pair.named.name);
 
   return {
     result: {
@@ -319,8 +337,9 @@ export function holdInstalledGlobal(
     installed: { skillIds: namedSkillIds, agentNames: namedAgentNames },
     keptAsInstalled: {
       skillIds: skills.filter((pair) => !restatesSkill(pair)).map(({ named }) => named.id),
-      agentNames: agents.filter((pair) => !restatesAgent(pair)).map(({ named }) => named.name),
+      agentNames: agents.filter(keptAsIs).map(({ named }) => named.name),
     },
+    joined,
   };
 }
 
@@ -399,25 +418,37 @@ function withInstalledRows(
   return { ...omit(assigned, agentNames), ...pick(installedStack ?? {}, agentNames) };
 }
 
-type HeldRows = { agentNames: AgentName[]; skippedSkillIds: ReadonlySet<SkillId> };
+type HeldAgents = { agentNames: AgentName[]; skippedSkillIds: ReadonlySet<SkillId> };
+
+type HeldStack = Pick<HeldGlobal, "joined"> & {
+  assignedStack: Partial<Record<AgentName, StackAgentConfig>>;
+};
+
+type AgentArrival = { agentName: AgentName; rows: [Category, SkillAssignment][] };
 
 /** Existing rows stay first and unchanged; arriving skills bring their rows after them. */
 function withHeldRows(
   assigned: Partial<Record<AgentName, StackAgentConfig>>,
   installedStack: InstalledGlobal["stack"],
-  held: HeldRows,
-): Partial<Record<AgentName, StackAgentConfig>> {
+  held: HeldAgents,
+): HeldStack {
   const asInstalled = withInstalledRows(assigned, installedStack, held.agentNames);
+  const arrivals = held.agentNames.map((agentName): AgentArrival => ({
+    agentName,
+    rows: arrivingRows(assigned[agentName], asInstalled[agentName], held.skippedSkillIds),
+  }));
 
-  return held.agentNames.reduce(
-    (stack, agentName) =>
-      withAppendedRows(
-        stack,
-        agentName,
-        arrivingRows(assigned[agentName], stack[agentName], held.skippedSkillIds),
-      ),
-    asInstalled,
-  );
+  return {
+    assignedStack: arrivals.reduce(
+      (stack, { agentName, rows }) => withAppendedRows(stack, agentName, rows),
+      asInstalled,
+    ),
+    joined: arrivals.filter(({ rows }) => rows.length > 0).map(asJoined),
+  };
+}
+
+function asJoined({ agentName, rows }: AgentArrival): JoinedAgent {
+  return { agentName, skillIds: rows.map(([, row]) => row.id) };
 }
 
 /**
@@ -558,7 +589,13 @@ export function installPlanLines(held: HeldGlobal): string[] {
       skillIds: held.installed.skillIds,
       agentNames: [],
     }),
+    ...joinedStatement(held),
   ];
+}
+
+/** Held sub-agents are not arrivals, so the ones a row joins are named on their own. */
+export function joinedStatement(held: HeldGlobal): string[] {
+  return held.joined.length === 0 ? [] : [addedToGlobalSubAgents(held.joined)];
 }
 
 export function skillLabel(skillId: SkillId): string {

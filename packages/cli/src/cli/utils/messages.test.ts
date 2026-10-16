@@ -4,9 +4,11 @@ import {
   SUCCESS_MESSAGES,
   STATUS_MESSAGES,
   INFO_MESSAGES,
+  configUnreadableError,
   globalScopedAgentsHint,
   hostCliNotFound,
   initSucceeded,
+  installationConfigsUnreadable,
   localSkillsRemoval,
   notInstalledHere,
   pluginsInstalled,
@@ -239,6 +241,45 @@ describe("the count lines an install and a recompile end on", () => {
     );
     expect(globalScopedAgentsHint(2)).toBe(
       "2 agents are global-scoped — run 'npx agents-inc compile' from your home directory to recompile them.",
+    );
+  });
+});
+
+/**
+ * The way out of a config that will not load, worded for the file it is printed about. A bare
+ * `init` only prints the editor's address now, and `init --from` refuses while the broken file is
+ * there, so an installation's remedy runs `uninstall` before it. A marketplace repository's own
+ * config belongs to no installation, so neither command reaches it.
+ */
+describe("the way out of a config that will not load", () => {
+  it("sends an installation's config to a fix, or to uninstall then an install by id", () => {
+    expect(
+      installationConfigsUnreadable([
+        {
+          configPath: "/home/me/project/.agents-inc/claude/config.ts",
+          reason: "ParseError: Missing semicolon",
+          scope: "project",
+          scopeRoot: "/home/me/project",
+        },
+      ]),
+    ).toBe(
+      [
+        "This project's config at '/home/me/project/.agents-inc/claude/config.ts' could not be loaded: ParseError: Missing semicolon",
+        "There is no automatic repair for this — fix the file, or recreate the configuration by running 'npx agents-inc uninstall' from '/home/me/project', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor.",
+        "'npx agents-inc doctor' reports the same file, alongside whatever else is wrong here.",
+      ].join("\n"),
+    );
+  });
+
+  it("names neither uninstall nor init for a marketplace repository's own config", () => {
+    const failure =
+      "Failed to load config from '/home/me/mk/.agents-inc/config.ts': ParseError: Missing semicolon";
+
+    expect(configUnreadableError(failure)).toBe(
+      [
+        failure,
+        "This is the marketplace's own config rather than an installation's, so it is fixed in the marketplace repository it comes from.",
+      ].join("\n"),
     );
   });
 });

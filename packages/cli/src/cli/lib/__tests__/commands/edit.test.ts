@@ -46,11 +46,7 @@ import { firstElement } from "../helpers/element-at.js";
 import { stubInkInstance } from "../helpers/stub-ink-instance.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
-import Edit, {
-  applyMigratedGlobalSources,
-  migratePluginSkillScopes,
-  detectConfigChanges,
-} from "../../../commands/edit.js";
+import Edit, { migratePluginSkillScopes, detectConfigChanges } from "../../../commands/edit.js";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 const {
@@ -540,87 +536,6 @@ describe("edit command removes deselected local skills", () => {
     await runEditFrom().catch(() => {});
 
     expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
-  });
-});
-
-// A project-context edit's migrations of global-scoped skills happen under $HOME, so the global
-// config records exactly those, and nothing else.
-
-const GLOBAL_PLUGIN_REACT = buildSkillConfigs(["web-framework-react"], {
-  scope: "global",
-  origin: "agents-inc",
-});
-const GLOBAL_EJECT_REACT = buildSkillConfigs(["web-framework-react"], {
-  scope: "global",
-  origin: "eject",
-});
-const REACT_MIGRATED_TO_EJECT = new Map<SkillId, string>([["web-framework-react", "eject"]]);
-
-describe("applyMigratedGlobalSources", () => {
-  it("rewrites the source of an active-global skill whose migration ran this session", () => {
-    const result = applyMigratedGlobalSources(GLOBAL_PLUGIN_REACT, REACT_MIGRATED_TO_EJECT);
-
-    expect(result.skills).toStrictEqual(GLOBAL_EJECT_REACT);
-    expect(result.changed).toBe(true);
-  });
-
-  it("leaves a global skill absent from the migration set untouched", () => {
-    const otherGlobal = buildSkillConfigs(["web-state-zustand"], {
-      scope: "global",
-      origin: "agents-inc",
-    });
-
-    const result = applyMigratedGlobalSources(otherGlobal, REACT_MIGRATED_TO_EJECT);
-
-    expect(result.skills).toStrictEqual(otherGlobal);
-    expect(result.changed).toBe(false);
-  });
-
-  it("leaves a global tombstone untouched even when its id migrated", () => {
-    const tombstone = buildSkillConfigs(["web-framework-react"], {
-      scope: "global",
-      origin: "agents-inc",
-      excluded: true,
-    });
-
-    const result = applyMigratedGlobalSources(tombstone, REACT_MIGRATED_TO_EJECT);
-
-    expect(result.skills).toStrictEqual(tombstone);
-    expect(result.changed).toBe(false);
-  });
-
-  it("leaves a project-scoped entry untouched even when its id migrated", () => {
-    const projectReact = buildSkillConfigs(["web-framework-react"], {
-      scope: "project",
-      origin: "agents-inc",
-    });
-
-    const result = applyMigratedGlobalSources(projectReact, REACT_MIGRATED_TO_EJECT);
-
-    expect(result.skills).toStrictEqual(projectReact);
-    expect(result.changed).toBe(false);
-  });
-
-  it("reports no change when the recorded source already matches the migration", () => {
-    const result = applyMigratedGlobalSources(GLOBAL_EJECT_REACT, REACT_MIGRATED_TO_EJECT);
-
-    expect(result.skills).toStrictEqual(GLOBAL_EJECT_REACT);
-    expect(result.changed).toBe(false);
-  });
-
-  it("rewrites only the migrated entry in a mixed global config", () => {
-    const otherGlobal = buildSkillConfigs(["web-state-zustand"], {
-      scope: "global",
-      origin: "agents-inc",
-    });
-
-    const result = applyMigratedGlobalSources(
-      [...GLOBAL_PLUGIN_REACT, ...otherGlobal],
-      REACT_MIGRATED_TO_EJECT,
-    );
-
-    expect(result.skills).toStrictEqual([...GLOBAL_EJECT_REACT, ...otherGlobal]);
-    expect(result.changed).toBe(true);
   });
 });
 

@@ -13,6 +13,7 @@ import {
 import type { UnusableSkillMetadata } from "../lib/loading/index.js";
 import type { ScopeKind } from "../lib/installation/source-scopes.js";
 import type { ConfigLoadError } from "../lib/configuration/project-config.js";
+import type { JoinedAgent } from "../lib/seed/seed-apply.js";
 import { RETIRED_SOURCE_FOLDER } from "../lib/installation/install-layout.js";
 import { charactersOutsideKebabCase } from "../lib/validate-kebab-name.js";
 import { plural } from "./string.js";
@@ -523,7 +524,7 @@ export function skillMetadataUnusableError(entries: UnusableSkillMetadata[]): st
 }
 
 /**
- * The same refusal raised by `edit`, where what the file costs is different: a
+ * The same refusal raised by `edit --from`, where what the file costs is different: a
  * skill nothing can be loaded for is dropped from `config.ts`.
  *
  * That is the right answer for a skill the marketplace no longer carries and the wrong one
@@ -536,6 +537,19 @@ export function savedSkillMetadataUnusableError(entries: UnusableSkillMetadata[]
   return [
     metadataUnusableOpening(entries),
     `A config entry naming a skill this file cannot describe is dropped as one this marketplace does not carry — and a file that can be repaired must not cost an install its record.`,
+    METADATA_UNUSABLE_WAY_OUT,
+  ].join("\n");
+}
+
+/**
+ * The same refusal raised by a bare `edit`, before it mints the id the editor opens. What the
+ * file costs there is the configuration itself, which is read off these files: one nothing can be
+ * parsed out of carries no provenance, so its skill is left out as one the user wrote.
+ */
+export function editorSkillMetadataUnusableError(entries: UnusableSkillMetadata[]): string {
+  return [
+    metadataUnusableOpening(entries),
+    `The editor opens on what these files describe, so no link is made until each one describes its skill.`,
     METADATA_UNUSABLE_WAY_OUT,
   ].join("\n");
 }
@@ -753,7 +767,8 @@ export function addMarketplaceInTheEditor(ref: string, isFolder: boolean): strin
  * install, so only the second list can have anything in it.
  *
  * In a project, `init --from` lists a third thing under those two: the global skills it skips
- * because the global install above the project already holds them, each left as installed.
+ * because the global install above the project already holds them, each left as installed. Then
+ * the held global sub-agents an arriving skill's row joins ({@link addedToGlobalSubAgents}).
  */
 export const SHARED_CONFIG_ARRIVALS = {
   PROJECT_HEADING: "Into this project:",
@@ -772,7 +787,8 @@ export const SHARED_CONFIG_ARRIVALS = {
  * differently stays as installed — and is named here, because a difference nobody is told about is
  * a configuration that silently did not arrive. So is a global skill or sub-agent `edit --from`
  * keeps though the configuration leaves it out, and a carried skill whose global copy reads
- * otherwise than the configuration's.
+ * otherwise than the configuration's. A sub-agent an arriving skill's row joins is not kept as
+ * installed — it changes — so {@link addedToGlobalSubAgents} names it instead.
  */
 export function keptAsInstalledGlobally(
   skillIds: readonly SkillId[],
@@ -783,6 +799,19 @@ export function keptAsInstalledGlobally(
     ...skillIds.map((id) => `  skill ${id}`),
     ...agentNames.map((name) => `  sub-agent ${name}`),
     `Change them with '${CLI_INVOKE_COMMAND} edit' from your home directory.`,
+  ].join("\n");
+}
+
+/**
+ * The statement for held global sub-agents a project run adds a skill's row to: what each gains,
+ * and that it keeps the rest — including rows and tuning the configuration states otherwise.
+ */
+export function addedToGlobalSubAgents(joined: readonly JoinedAgent[]): string {
+  return [
+    "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
+    ...joined.map(
+      ({ agentName, skillIds }) => `  sub-agent ${agentName}: + ${skillIds.join(", ")}`,
+    ),
   ].join("\n");
 }
 
@@ -832,17 +861,12 @@ export function keptUnassigned(skillId: SkillId, agentName: AgentName, category:
 }
 
 /**
- * What every refusal over an unreadable config offers besides recreating it: the editor builds a
- * configuration the CLI installs by id, and `doctor` reports the same files as its own findings.
- *
- * `doctor` could not be named until it did — it used to call a config that exists but cannot be
- * read "not found" and send the reader to `init`, contradicting both lines.
+ * `doctor` reports an installation's unreadable configs as its own findings. It could not be named
+ * until it did — it used to call a config that exists but cannot be read "not found" and send the
+ * reader to `init`.
  */
-function otherWaysPastUnreadableConfigs(count: number): string[] {
-  return [
-    `Or build one at ${EDITOR_URL} and install it with '${CLI_INVOKE_COMMAND} init --from <id>'.`,
-    `'${CLI_INVOKE_COMMAND} doctor' reports the same ${count === 1 ? "file" : "files"}, alongside whatever else is wrong here.`,
-  ];
+function doctorReportsTheSame(count: number): string {
+  return `'${CLI_INVOKE_COMMAND} doctor' reports the same ${count === 1 ? "file" : "files"}, alongside whatever else is wrong here.`;
 }
 
 /** One config that could not be loaded, as the refusal names it. */
@@ -850,9 +874,9 @@ type UnreadableConfig = Pick<ConfigLoadError, "configPath" | "reason" | "scope" 
 
 /**
  * Refusal printed when a command that must read an installation's configuration meets configs it
- * cannot load. There are no versioned migrations, so an unreadable configuration is recreated
- * rather than repaired — and `uninstall` deliberately keeps working on one, which is what makes
- * the first instruction a real way out rather than a suggestion to delete directories by hand.
+ * cannot load. There are no versioned migrations, so the way out is fixing the file by hand or
+ * recreating the configuration — and `uninstall` deliberately keeps working on one, which is what
+ * makes recreating a real way out rather than a suggestion to delete directories by hand.
  *
  * It says WHOSE config each is and where its way out is taken from. A project reads two configs,
  * its own and the global one it inherits, so a refusal printed in a project can be about either
@@ -861,17 +885,16 @@ type UnreadableConfig = Pick<ConfigLoadError, "configPath" | "reason" | "scope" 
  * two broken ones sends them round twice.
  */
 export function installationConfigsUnreadable(failures: readonly UnreadableConfig[]): string {
-  return [
-    ...failures.flatMap(whoseConfigAndItsWayOut),
-    ...otherWaysPastUnreadableConfigs(failures.length),
-  ].join("\n");
+  return [...failures.flatMap(whoseConfigAndItsWayOut), doctorReportsTheSame(failures.length)].join(
+    "\n",
+  );
 }
 
 /** One unreadable config: whose it is, why, and the folder its way out is run from. */
 function whoseConfigAndItsWayOut(failure: UnreadableConfig): string[] {
   return [
     `${scopeLabel(failure.scope)}'s config at '${failure.configPath}' could not be loaded: ${failure.reason}`,
-    `There is no automatic repair for this — recreate the configuration by running ${recreateConfigFrom(failure.scopeRoot)}.`,
+    `There is no automatic repair for this — fix the file, or recreate the configuration by running ${recreateConfigFrom(failure.scopeRoot)}.`,
   ];
 }
 
@@ -887,25 +910,26 @@ export function uninstallConfigUnreadable(
 }
 
 /**
- * The way out of a config nobody can read, run from the folder that holds it: the project, or the
- * home directory for the global config. Shared with `doctor`'s tip, so the report and the refusal
- * send a user to the same place.
+ * Recreating a config nobody can read, from the folder that holds it: the project, or the home
+ * directory for the global config. `init --from` refuses while the file is there, so `uninstall`
+ * goes first, and a bare `init` only prints the editor's address, so the install names the id.
+ * Shared with `doctor`'s tip, so the report and the refusal send a user to the same place.
  */
 export function recreateConfigFrom(scopeRoot: string): string {
-  return `'${CLI_INVOKE_COMMAND} uninstall', which still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init', from '${scopeRoot}'`;
+  return `'${CLI_INVOKE_COMMAND} uninstall' from '${scopeRoot}', which still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init --from <id>' with an id from ${EDITOR_URL}`;
 }
 
 /**
  * The same refusal for a config file that belongs to no installation — a marketplace repository's
- * own `config.ts`, which `loadSourceRepoConfig` reads — so there is no scope to name and no folder
- * to send anyone to. `configLoadFailure` is the loader's own message, which already names the file
- * and the reason.
+ * own `config.ts`, which `loadSourceRepoConfig` reads — so no installation command clears it and no
+ * folder is named. A consumer may be reading a fetched copy, so the fix is placed in the repository
+ * rather than in the file. `configLoadFailure` is the loader's own message, which already names the
+ * file and the reason.
  */
 export function configUnreadableError(configLoadFailure: string): string {
   return [
     configLoadFailure,
-    `There is no automatic repair for this — recreate the configuration: '${CLI_INVOKE_COMMAND} uninstall' still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init'.`,
-    ...otherWaysPastUnreadableConfigs(1),
+    "This is the marketplace's own config rather than an installation's, so it is fixed in the marketplace repository it comes from.",
   ].join("\n");
 }
 

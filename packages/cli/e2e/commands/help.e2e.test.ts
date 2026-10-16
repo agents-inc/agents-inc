@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createTempDir, cleanupTempDir, flattenCliOutput } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
-import { EXIT_CODES } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
  * Why every help screen is asserted NOT to advertise the old spelling. Pre-1.0 ships no
@@ -180,7 +180,7 @@ describe("help and version", () => {
     const result = await CLI.run(["edit", "--help"], { dir: tempDir });
 
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(result.stdout).toContain("Edit skills");
+    expect(result.stdout).toContain(STEP_TEXT.EDIT_HELP_SUMMARY);
     expect(result.stdout).toContain("USAGE");
     expect(
       result.stdout,

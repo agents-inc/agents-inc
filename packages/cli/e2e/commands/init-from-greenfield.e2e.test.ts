@@ -42,8 +42,8 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
  * skills the global install lacks, each together with its assignment — a row on the global
  * sub-agent the configuration gives it to, even one the global install already holds — and every
  * entry the global install already holds stays exactly as installed: its skill files, its
- * sub-agent and the rows that sub-agent already has, with the configuration's differing sub-agent
- * named as kept. A payload with nothing global leaves the global install's content alone entirely,
+ * sub-agent and the rows that sub-agent already has, with the sub-agent the new skill joins named
+ * as added to. A payload with nothing global leaves the global install's content alone entirely,
  * and only registers the project in it.
  *
  * The last spec is a payload the config model cannot express at all: a project-pinned skill
@@ -82,7 +82,7 @@ describe("init --from <id> into a clean project", () => {
 
     // Both sub-agents rest global, so each configuration states the same global web-developer —
     // with a different skill row. The first one installed it, so the second one adds its row to it
-    // and is told the sub-agent keeps the row it already had.
+    // and says so: the sub-agent gains a skill, so it is not called kept as installed.
     store.publish(
       "GlobalA01",
       buildSeedPayload({ skills: { [E2E_SKILL.react.id]: ejectedGlobalSkill() } }),
@@ -131,7 +131,12 @@ describe("init --from <id> into a clean project", () => {
       new RegExp(`${STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL}[\\s\\S]*${E2E_SKILL.hono.id}`),
     );
     expect(said).toMatch(
-      new RegExp(`${STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED}[\\s\\S]*${WEB_DEV}`),
+      new RegExp(
+        `${STEP_TEXT.SHARED_CONFIG_ADDED_TO_GLOBAL}[\\s\\S]*sub-agent ${WEB_DEV}: \\+ ${E2E_SKILL.hono.id}`,
+      ),
+    );
+    expect(said, "a sub-agent the run adds a skill to is not kept as installed").not.toContain(
+      STEP_TEXT.SHARED_CONFIG_KEPT_AS_INSTALLED,
     );
 
     // The skill the global install lacked arrives, on both surfaces...

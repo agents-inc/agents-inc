@@ -656,6 +656,7 @@ describe("holding the global install as installed", () => {
     expect(held.result).toStrictEqual(decoded);
     expect(held.installed).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [API_DEV] });
     expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [] });
+    expect(held.joined).toStrictEqual([]);
   });
 
   it("keeps a held sub-agent's rows and tuning as installed, and names it", () => {
@@ -737,8 +738,8 @@ describe("holding the global install as installed", () => {
 
     const held = holdInstalledGlobal(decoded, installedGlobal);
 
-    // api-developer keeps its row and gains Hono's, as the configuration states, so it is not
-    // named.
+    // api-developer keeps its row and gains Hono's, as the configuration states: named as added
+    // to, not as kept.
     expect(held.result.skills).toContainEqual(buildSkillConfig(HONO, { scope: "global" }));
     expect(held.installed.skillIds).toStrictEqual([ZUSTAND]);
     expect(held.result.assignedStack[API_DEV]).toStrictEqual({
@@ -746,10 +747,12 @@ describe("holding the global install as installed", () => {
       "api-api": [sa(HONO)],
     });
     expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [] });
+    expect(held.joined).toStrictEqual([{ agentName: API_DEV, skillIds: [HONO] }]);
   });
 
-  it("keeps a held sub-agent's own rows beside a new skill's, and names it", () => {
-    // The Zustand row the configuration omits stays, so the sub-agent is named.
+  it("names a held sub-agent a new skill joins as added to, never as kept as installed", () => {
+    // The Zustand row the configuration omits stays and Hono's arrives: the sub-agent changes, so
+    // calling it kept as installed would contradict the write.
     const decoded = decodedWithGlobal({ [HONO]: onApiDeveloper() });
 
     const held = holdInstalledGlobal(decoded, installedGlobal);
@@ -758,7 +761,8 @@ describe("holding the global install as installed", () => {
       "web-client-state": [sa(ZUSTAND)],
       "api-api": [sa(HONO)],
     });
-    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [API_DEV] });
+    expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [] });
+    expect(held.joined).toStrictEqual([{ agentName: API_DEV, skillIds: [HONO] }]);
   });
 
   it("adds no row a held sub-agent's exclusive category has no room for, and names it", () => {
@@ -779,6 +783,9 @@ describe("holding the global install as installed", () => {
       "web-client-state": [sa(ZUSTAND)],
     });
     expect(held.keptAsInstalled).toStrictEqual({ skillIds: [], agentNames: [API_DEV] });
+    expect(held.joined, "nothing reached api-developer, so nothing was added to it").toStrictEqual(
+      [],
+    );
   });
 
   it("leaves a project-scoped entry alone where it names a global one", () => {
@@ -822,12 +829,28 @@ describe("holding the global install as installed", () => {
   });
 
   it("names every global entry it puts back as kept, sub-agents as well as skills", () => {
-    const { keptAsInstalled } = restoreInstalledGlobal(decodedFor(REACT), installedGlobal);
+    const { keptAsInstalled, joined } = restoreInstalledGlobal(decodedFor(REACT), installedGlobal);
 
     expect(
       keptAsInstalled,
       "a global sub-agent the configuration leaves out is kept, so the plan must name it",
     ).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [API_DEV] });
+    expect(joined).toStrictEqual([]);
+  });
+
+  it("keeps the skill a configuration drops, and names the sub-agent its new skill joins as added to", () => {
+    // From a project: the configuration drops Zustand and gives api-developer Hono instead.
+    const { result, keptAsInstalled, joined } = restoreInstalledGlobal(
+      decodedWithGlobal({ [HONO]: onApiDeveloper() }),
+      installedGlobal,
+    );
+
+    expect(result.assignedStack[API_DEV]).toStrictEqual({
+      "web-client-state": [sa(ZUSTAND)],
+      "api-api": [sa(HONO)],
+    });
+    expect(keptAsInstalled).toStrictEqual({ skillIds: [ZUSTAND], agentNames: [] });
+    expect(joined).toStrictEqual([{ agentName: API_DEV, skillIds: [HONO] }]);
   });
 
   it("writes no carried bytes over a skill the global install holds", () => {
@@ -859,6 +882,10 @@ describe("holding the global install as installed", () => {
       "Skipped, already in the global install:",
       "  Skills:",
       `    ${SKILLS.zustand.displayName} (${ZUSTAND})`,
+      [
+        "Added to sub-agents in the global install — each keeps everything it already has, since a project run only adds to the global install:",
+        `  sub-agent ${API_DEV}: + ${HONO}`,
+      ].join("\n"),
     ]);
   });
 });

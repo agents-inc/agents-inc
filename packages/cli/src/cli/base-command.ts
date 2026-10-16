@@ -61,6 +61,7 @@ import {
 } from "./lib/operations/skills/install-plugin-skills.js";
 import type { GateReport } from "./lib/config-gate/index.js";
 import type { SourceLoadResult } from "./lib/loading/source-loader.js";
+import type { UnusableSkillMetadata } from "./lib/loading/index.js";
 
 /**
  * How often the size gate re-reads the terminal while it is blocked. `resize` is what normally
@@ -275,7 +276,7 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
-   * Reports every constraint a completed selection breaks — a conflicting pair, an unmet
+   * Reports every constraint a selection breaks — a conflicting pair, an unmet
    * requirement, an exclusive category with two picks.
    *
    * Shared by `init` and `edit` so one selection cannot be reported two ways. Both commands ask
@@ -285,7 +286,7 @@ export abstract class BaseCommand extends Command {
    *
    * These are advisory (`ValidationError` in types/matrix.ts): the selection is installed either
    * way and neither command's exit code turns on them, so they are warnings and not errors. The
-   * loop is its own guard — an accepted selection carries no errors and says nothing.
+   * loop is its own guard — a selection that breaks none says nothing.
    */
   protected reportValidationErrors(validation: SelectionValidation): void {
     for (const error of validation.errors) {
@@ -302,7 +303,7 @@ export abstract class BaseCommand extends Command {
    * was indistinguishable in the output from nothing having happened.
    *
    * The skills nothing carries are refused FIRST, by name: an install no marketplace
-   * could serve is knowable before the Claude CLI is asked, and the generic
+   * could serve is knowable before the host's CLI is asked, and the generic
    * install-failure advice is unfollowable for a skill the user wrote themselves.
    */
   protected async installPluginSkillsReported(
@@ -455,8 +456,8 @@ export abstract class BaseCommand extends Command {
    * One layer below {@link ensureConfigReadable} and for the same reason: the config parses,
    * and a file it points at does not.
    *
-   * Only entries the catalogue does not carry are looked at, so a healthy install pays a
-   * filesystem read for nothing. An entry whose files are simply GONE is not refused — there
+   * Only entries the catalogue does not carry are looked at, so a healthy install costs no
+   * filesystem read. An entry whose files are simply GONE is not refused — there
    * is no file to repair.
    *
    * Runs before anything is asked or written, which is the whole point: past that, everything
@@ -467,12 +468,24 @@ export abstract class BaseCommand extends Command {
     matrix: MergedSkillsMatrix,
     projectDir: string,
   ): Promise<void> {
-    const unresolved = savedSkills
-      .filter((saved) => !saved.excluded && !matrix.skills[saved.id])
-      .map((saved) => saved.id);
-    if (unresolved.length === 0) return;
+    const unresolved = savedSkills.filter((saved) => !matrix.skills[saved.id]);
+    await this.refuseUnusableSavedSkillMetadata(
+      unresolved,
+      projectDir,
+      savedSkillMetadataUnusableError,
+    );
+  }
 
-    const unusable = await findUnusableSavedSkillMetadata(unresolved, savedSkills, projectDir);
+  /**
+   * Refuses to run when an installed entry of `savedSkills` has a metadata.yaml that describes no
+   * skill, with `refusal` saying what the file would cost the command that met it.
+   */
+  protected async refuseUnusableSavedSkillMetadata(
+    savedSkills: readonly SkillConfig[],
+    projectDir: string,
+    refusal: (unusable: UnusableSkillMetadata[]) => string,
+  ): Promise<void> {
+    const unusable = await findUnusableSavedSkillMetadata(savedSkills, projectDir);
     if (unusable.length === 0) return;
 
     // The detail is LOGGED and only the refusal is raised — oclif hard-wraps error text at the
@@ -481,7 +494,7 @@ export abstract class BaseCommand extends Command {
     for (const entry of unusable) {
       this.log(skillMetadataUnusableDetail(entry));
     }
-    this.error(savedSkillMetadataUnusableError(unusable), { exit: EXIT_CODES.ERROR });
+    this.error(refusal(unusable), { exit: EXIT_CODES.ERROR });
   }
 
   /**
@@ -521,9 +534,9 @@ export abstract class BaseCommand extends Command {
    * selection and the skills the configuration carries — asked before it lists any of it or asks
    * whether to install it.
    *
-   * A run that lists, asks, and is told yes has promised that a yes installs what was listed (the
-   * u01 ruling: "On yes, it installs what is listed"), so a refusal still to come after the
-   * question would ask a person to confirm an install that was never going to happen. Every other
+   * A run that lists, asks, and is told yes has promised that a yes installs what was listed, so a
+   * refusal still to come after the question would ask a person to confirm an install that was
+   * never going to happen. Every other
    * `--from` refusal is already decided above the lists — a carried skill asked for as a plugin or
    * under a catalogue's id, project content at the home directory, an installation already here —
    * and these four are the ones that need the decoded selection to be asked of:
@@ -582,8 +595,7 @@ export abstract class BaseCommand extends Command {
    * The same function the read path calls (`refuseUnofferedPlacements`, off the same host
    * roster), so `init`'s sentence and `compile`'s are one sentence rather than two that agree
    * today. The per-call guard stays where it is: it is the backstop for a caller that did not
-   * come through here, and for the one host this release ships every cell is offered, so a
-   * backstop that never fires is what a deleted one would look like.
+   * come through here.
    */
   protected refuseUnofferablePlacementsBeforeWriting(
     skills: readonly SkillConfig[],

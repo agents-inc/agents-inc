@@ -37,8 +37,8 @@ export type LoadedProjectConfig = {
  * resurrecting every built-in agent).
  *
  * It carries whose installation the file is, because a refusal read from a project can be about
- * either config the project uses, and the way out — `uninstall`, then `init` — is run from the
- * folder holding the broken one: the home directory for the global config.
+ * either config the project uses, and recreating it — `uninstall`, then `init --from <id>` — is run
+ * from the folder holding the broken one: the home directory for the global config.
  */
 export class ConfigLoadError extends Error {
   readonly scope: ScopeKind;

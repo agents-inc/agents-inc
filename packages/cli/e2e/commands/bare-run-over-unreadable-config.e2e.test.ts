@@ -51,6 +51,9 @@ function expectConfigRefusal(
   expect(compacted, "and the folder uninstall, then init, are run from").toContain(
     compactCliOutput(`${STEP_TEXT.CONFIG_UNREADABLE_RECREATE_FROM} '${recreateFrom}'`),
   );
+  expect(compacted, "a bare init only prints the editor's address, so the id is named").toContain(
+    compactCliOutput(STEP_TEXT.CONFIG_UNREADABLE_INSTALL_BY_ID),
+  );
   expect(exitCode, output).toBe(EXIT_CODES.ERROR);
   expect(output, "a refusal is not a request for the help").not.toContain(
     STEP_TEXT.ROOT_HELP_USAGE,

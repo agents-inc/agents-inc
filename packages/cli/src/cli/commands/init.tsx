@@ -606,8 +606,8 @@ export default class Init extends BaseCommand {
 
   /**
    * The two lists — what goes into this project, and what into the global install — then the
-   * global skills skipped as already installed, and the global entries the configuration states
-   * otherwise than they are installed, which stay.
+   * global skills skipped as already installed, the held sub-agents a new skill joins, and the
+   * global entries the configuration states otherwise than they are installed, which stay.
    */
   private logWhatGoesWhere(held: HeldGlobal): void {
     for (const line of installPlanLines(held)) {

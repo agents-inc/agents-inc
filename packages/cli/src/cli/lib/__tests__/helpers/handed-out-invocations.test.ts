@@ -44,7 +44,7 @@ describe("reading the invocations a message hands out", () => {
   it("reads both commands out of a message that hands out two", () => {
     expect(
       invocationsIn(
-        "'${CLI_INVOKE_COMMAND} uninstall' still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init'",
+        "'${CLI_INVOKE_COMMAND} uninstall' from '${scopeRoot}', which still works on a config it cannot read, then '${CLI_INVOKE_COMMAND} init --from <id>'",
       ),
     ).toStrictEqual([["init"], ["uninstall"]]);
   });
