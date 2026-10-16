@@ -79,11 +79,13 @@ const CLAUDE_SESSION_STATE = [
 /**
  * Every command a Codex installation reaches after the install, in the order a user meets them.
  *
- * Named as a list rather than written out four times because the claim is one claim per command
- * and a command missing from it is the half-routed path that ships: `compile` writes the agents,
- * `doctor` reads every scope it can find, `edit --from` applies a shared configuration, and
- * `uninstall` removes one. Members rather than a count, and `uninstall` last because it takes the
- * subject away.
+ * Named as a list rather than written out once per command because the claim is one claim per
+ * command and a command missing from it is the half-routed path that ships: `compile` writes the
+ * agents, `doctor` reads every scope it can find, `edit --from` applies a shared configuration,
+ * `eject skills` copies the catalogue into the installation's skills folder, and `uninstall`
+ * removes one. Members rather than a count, and `uninstall` last because it takes the subject away.
+ * `eject` passes `--force` because the install's own project copy already holds that folder, and a
+ * refusal would write nothing on either provider.
  *
  * **`edit --from` refuses here and that is stated rather than hidden.** It applies a shared
  * configuration destructively, so with no terminal to confirm the removals in it stops — which
@@ -94,6 +96,7 @@ const LATER_COMMANDS = [
   { label: "compile", argv: ["compile"] },
   { label: "doctor", argv: ["doctor"] },
   { label: "edit --from", argv: ["edit", "--from", "CdxSwp02"] },
+  { label: "eject skills", argv: ["eject", "skills", "--force"] },
   { label: "uninstall", argv: ["uninstall", "--yes"] },
 ] as const;
 
@@ -293,8 +296,8 @@ describe("a Codex install and the Claude side of the machine", () => {
       }
 
       // Subject guard for the whole loop: the sweep really did reach a command that acts. Without
-      // it every assertion above is satisfied by four commands that each refused at their first
-      // line, which is the same green as four commands that behaved.
+      // it every assertion above is satisfied by commands that each refused at their first
+      // line, which is the same green as commands that behaved.
       expect(
         await directoryExists(path.join(env.projectDir, CODEX_SOURCE_REL)),
         "the uninstall at the end of the sweep left the Codex pair behind",

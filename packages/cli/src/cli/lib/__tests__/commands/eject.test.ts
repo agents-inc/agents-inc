@@ -197,9 +197,6 @@ describe("eject command", () => {
     });
 
     it("names no destination, because the three eject types have three", () => {
-      // Every destination this command writes to without `--output` — the source folder's
-      // `agents/` and `agents/_templates`, and `.claude/skills` — starts with this directory
-      // name, so a description that spells one of them out spells this out first.
       expect(Eject.flags.output.description).not.toContain(CLAUDE_DIR);
     });
   });

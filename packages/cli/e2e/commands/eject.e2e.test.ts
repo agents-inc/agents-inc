@@ -2,10 +2,12 @@ import path from "path";
 import { chmod, mkdir, writeFile } from "fs/promises";
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import {
+  DIRS,
   EXIT_CODES,
   FILES,
   MANIFEST_REFUSAL_BUILDS_IN_ORDER,
   STEP_TEXT,
+  TIMEOUTS,
 } from "../pages/constants.js";
 import {
   cleanupFixture,
@@ -25,10 +27,24 @@ import {
 import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js";
 import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
 import { CLI } from "../fixtures/cli.js";
+import {
+  codexGlobalSkillsDir,
+  codexProjectSkillsDir,
+  PROVIDER_CLAUDE,
+  PROVIDER_CODEX,
+  runInitFromOnClaude,
+  runInitFromOnCodex,
+} from "../fixtures/codex-install.js";
+import { createTestEnvironment, type TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
-import { E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
+import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
+import { E2E_AGENT, E2E_SKILL, E2E_SKILL_IDS } from "../fixtures/expected-values.js";
 import "../matchers/setup.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
+import {
+  buildSeedPayload,
+  buildSeedSkill,
+} from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
@@ -575,5 +591,200 @@ describe("eject command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.INVALID_ARGS);
     expect(output).toContain("exists as a file");
+  });
+
+  /**
+   * `eject skills` copies into the skills folder of the installation it is run against, which on
+   * Codex is not `.claude/skills` at either scope: `<repo>/.agents/skills` at project scope and
+   * `$CODEX_HOME/skills` at global.
+   *
+   * Observed red before the fix at all three: each run wrote `.claude/skills` — creating `.claude/`
+   * in a Codex-only project, and adding every catalogue skill to the CLAUDE installation's folder
+   * when `--provider codex` picked the Codex one out of a scope holding both.
+   *
+   * The first three install sub-agents with no skill, so nothing is already a copy and every
+   * catalogue skill is ejected on either provider. The last pair is about the copies.
+   */
+  describe("on a Codex installation", () => {
+    const WEB_DEV = E2E_AGENT["web-developer"].name;
+    const EVERY_SKILL = [...E2E_SKILL_IDS].sort();
+    const ALL_BUT_THE_INSTALLED_COPY = E2E_SKILL_IDS.filter(
+      (id) => id !== E2E_SKILL.react.id,
+    ).sort();
+
+    let store: SeedConfigStore;
+
+    beforeAll(async () => {
+      store = await startSeedConfigStore();
+    });
+
+    afterAll(async () => {
+      await store.close();
+    });
+
+    afterEach(() => {
+      store.reset();
+    });
+
+    function skillLess(agentScope: "global" | "project") {
+      return buildSeedPayload({ agents: { [WEB_DEV]: { on: true, scope: agentScope } } });
+    }
+
+    function reactEjectedGlobally() {
+      return buildSeedPayload({
+        skills: {
+          [E2E_SKILL.react.id]: buildSeedSkill({
+            install: "eject",
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy" },
+          }),
+        },
+        agents: { [WEB_DEV]: { scope: "project" } },
+      });
+    }
+
+    async function freshEnvironment(): Promise<TestEnvironment> {
+      const env = await createTestEnvironment({ permissions: false });
+      tempDir = env.tempDir;
+      return env;
+    }
+
+    it(
+      "copies a project's skills into <repo>/.agents/skills and creates no .claude/",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        const env = await freshEnvironment();
+        const project = { dir: env.projectDir, globalHome: env.fakeHome };
+        store.publish("CdxEjPr1", skillLess("project"));
+        const installed = await runInitFromOnCodex(store, "CdxEjPr1", project, sourceDir);
+        expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
+
+        const { exitCode, stdout, output } = await CLI.run(["eject", "skills"], project);
+
+        expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+        expect(stdout).toContain(`ejected to ${codexProjectSkillsDir(env.projectDir)}`);
+        expect((await listFiles(codexProjectSkillsDir(env.projectDir))).sort()).toStrictEqual(
+          EVERY_SKILL,
+        );
+        expect(await directoryExists(path.join(env.projectDir, DIRS.CLAUDE))).toBe(false);
+      },
+    );
+
+    it(
+      "copies a global's skills into $CODEX_HOME/skills and creates no ~/.claude/",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        const env = await freshEnvironment();
+        const home = { dir: env.fakeHome, globalHome: env.fakeHome };
+        store.publish("CdxEjGl1", skillLess("global"));
+        const installed = await runInitFromOnCodex(store, "CdxEjGl1", home, sourceDir);
+        expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
+
+        const { exitCode, stdout, output } = await CLI.run(["eject", "skills"], home);
+
+        expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+        expect(stdout).toContain(`ejected to ${codexGlobalSkillsDir(env.fakeHome)}`);
+        expect((await listFiles(codexGlobalSkillsDir(env.fakeHome))).sort()).toStrictEqual(
+          EVERY_SKILL,
+        );
+        expect(await directoryExists(path.join(env.fakeHome, DIRS.CLAUDE))).toBe(false);
+      },
+    );
+
+    it(
+      "copies into the folder of the installation --provider names, in a project holding both",
+      { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
+      async () => {
+        const env = await freshEnvironment();
+        const project = { dir: env.projectDir, globalHome: env.fakeHome };
+        store.publish("BthEjCl1", skillLess("project"));
+        store.publish("BthEjCd1", skillLess("project"));
+        const claude = await runInitFromOnClaude(store, "BthEjCl1", project, sourceDir);
+        expect(claude.exitCode, flattenCliOutput(claude.output)).toBe(EXIT_CODES.SUCCESS);
+        const codex = await runInitFromOnCodex(store, "BthEjCd1", project, sourceDir);
+        expect(codex.exitCode, flattenCliOutput(codex.output)).toBe(EXIT_CODES.SUCCESS);
+
+        const claudeSide = () =>
+          Promise.all([
+            readTreeSnapshot(path.join(env.projectDir, DIRS.CLAUDE)),
+            readTreeSnapshot(path.join(env.projectDir, DIRS.SOURCE_CLAUDE)),
+            readTreeSnapshot(path.join(env.fakeHome, DIRS.CLAUDE)),
+          ]);
+        const codexSide = () =>
+          Promise.all([
+            readTreeSnapshot(codexProjectSkillsDir(env.projectDir)),
+            readTreeSnapshot(path.join(env.projectDir, DIRS.SOURCE_CODEX)),
+            readTreeSnapshot(path.join(env.fakeHome, DIRS.CODEX)),
+          ]);
+        const claudeBefore = await claudeSide();
+        // Subject guard: the Claude installation compiled its sub-agent into the project, so an
+        // unchanged snapshot below is a folder left alone rather than two empty reads.
+        expect(Object.keys(claudeBefore[0]).length).toBeGreaterThan(0);
+
+        const toCodex = await CLI.run(["eject", "skills", ...PROVIDER_CODEX], project);
+
+        expect(toCodex.exitCode, flattenCliOutput(toCodex.output)).toBe(EXIT_CODES.SUCCESS);
+        expect((await listFiles(codexProjectSkillsDir(env.projectDir))).sort()).toStrictEqual(
+          EVERY_SKILL,
+        );
+        expect(await claudeSide(), "the Codex eject moved the Claude installation").toStrictEqual(
+          claudeBefore,
+        );
+
+        // The control: the same scope, the other provider named, and Claude's own folder fills.
+        const codexBefore = await codexSide();
+        const toClaude = await CLI.run(["eject", "skills", ...PROVIDER_CLAUDE], project);
+
+        expect(toClaude.exitCode, flattenCliOutput(toClaude.output)).toBe(EXIT_CODES.SUCCESS);
+        expect((await listFiles(skillsPath(env.projectDir))).sort()).toStrictEqual(EVERY_SKILL);
+        expect(await codexSide(), "the Claude eject moved the Codex installation").toStrictEqual(
+          codexBefore,
+        );
+      },
+    );
+
+    it(
+      "leaves out the skill a Claude global already holds as its own copy",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        const env = await freshEnvironment();
+        const project = { dir: env.projectDir, globalHome: env.fakeHome };
+        store.publish("ClaEjCp1", reactEjectedGlobally());
+        const installed = await runInitFromOnClaude(store, "ClaEjCp1", project, sourceDir);
+        expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
+
+        const { exitCode, output } = await CLI.run(["eject", "skills"], project);
+
+        expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+        expect((await listFiles(skillsPath(env.projectDir))).sort()).toStrictEqual(
+          ALL_BUT_THE_INSTALLED_COPY,
+        );
+      },
+    );
+
+    /**
+     * KNOWN GAP: the source load marks a skill local only when it finds it under
+     * `<root>/.claude/skills` (`discoverLocalSkills` in `lib/skills/local-skill-loader.ts`), so a
+     * Codex installation's copy in `$CODEX_HOME/skills` is never seen as one and React is copied
+     * into the project beside it. The Claude case above is the behaviour this pins.
+     */
+    it.fails(
+      "leaves out the skill a Codex global already holds as its own copy",
+      { timeout: TIMEOUTS.LIFECYCLE },
+      async () => {
+        const env = await freshEnvironment();
+        const project = { dir: env.projectDir, globalHome: env.fakeHome };
+        store.publish("CdxEjCp1", reactEjectedGlobally());
+        const installed = await runInitFromOnCodex(store, "CdxEjCp1", project, sourceDir);
+        expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
+
+        const { exitCode, output } = await CLI.run(["eject", "skills"], project);
+
+        expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
+        expect((await listFiles(codexProjectSkillsDir(env.projectDir))).sort()).toStrictEqual(
+          ALL_BUT_THE_INSTALLED_COPY,
+        );
+      },
+    );
   });
 });

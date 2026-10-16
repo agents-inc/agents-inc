@@ -3,7 +3,7 @@ import path from "path";
 import os from "os";
 import { BaseCommand } from "../base-command.js";
 import { copy, ensureDir, directoryExists, fileExists, listDirectories } from "../utils/fs.js";
-import { DIRS, LOCAL_SKILLS_PATH, PROJECT_ROOT } from "../consts.js";
+import { DIRS, PROJECT_ROOT } from "../consts.js";
 import {
   providerInUse,
   relativeConfigPath,
@@ -24,7 +24,7 @@ import {
   mutateGlobal,
   writeProjectPartial,
 } from "../lib/config-gate/index.js";
-import { isHomeDirectory } from "../lib/installation/index.js";
+import { isHomeDirectory, resolveInstallPaths } from "../lib/installation/index.js";
 import {
   providerFlag,
   providerNamedBy,
@@ -321,14 +321,8 @@ export default class Eject extends BaseCommand {
     directOutput: boolean,
     outputBase: string,
   ): Promise<void> {
-    const result = await ejectSkills({
-      projectDir,
-      force,
-      sourceResult,
-      matrix,
-      directOutput,
-      ...(directOutput && { customOutputBase: outputBase }),
-    });
+    const destDir = directOutput ? outputBase : installedSkillsDir(projectDir);
+    const result = await ejectSkills({ destDir, force, sourceResult, matrix });
 
     if (result.skipped) {
       this.warn(result.skipReason);
@@ -336,7 +330,7 @@ export default class Eject extends BaseCommand {
     }
 
     this.logSuccess(
-      `${plural(result.copiedSkills.length, "skill")} ejected to ${result.destDir} from ${result.sourceLabel}`,
+      `${plural(result.copiedSkills.length, "skill")} ejected to ${destDir} from ${result.sourceLabel}`,
     );
     this.log("You can now customize skill content locally.");
   }
@@ -449,13 +443,10 @@ async function ejectAgentPartials(
 }
 
 type EjectSkillsOptions = {
-  projectDir: string;
+  destDir: string;
   force: boolean;
   sourceResult: SourceLoadResult;
   matrix: MergedSkillsMatrix;
-  /** When true, uses customOutputBase as destination instead of LOCAL_SKILLS_PATH. */
-  directOutput?: boolean;
-  customOutputBase?: string;
 };
 
 type EjectSkillsResult =
@@ -468,8 +459,6 @@ type EjectSkillsResult =
       skipped: false;
       /** Array of skills that were copied. */
       copiedSkills: CopiedSkill[];
-      /** Destination directory that was written to. */
-      destDir: string;
       /** Label describing the source that skills were copied from. */
       sourceLabel: string;
     };
@@ -485,17 +474,7 @@ type EjectSkillsResult =
  * Returns structured data — the command decides what to log.
  */
 async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResult> {
-  const {
-    projectDir,
-    force,
-    sourceResult,
-    matrix,
-    directOutput = false,
-    customOutputBase,
-  } = options;
-
-  const destDir =
-    directOutput && customOutputBase ? customOutputBase : path.join(projectDir, LOCAL_SKILLS_PATH);
+  const { destDir, force, sourceResult, matrix } = options;
 
   if ((await directoryExists(destDir)) && !force) {
     return {
@@ -528,9 +507,19 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
   return {
     skipped: false,
     copiedSkills,
-    destDir,
     sourceLabel,
   };
+}
+
+/**
+ * The skills folder the install copies into for the installation `projectDir` roots — at the
+ * scope that directory is, on the provider this run is about — so an eject lands where that
+ * installation's host reads skills: `.claude/skills`, `<repo>/.agents/skills` or
+ * `$CODEX_HOME/skills`.
+ */
+function installedSkillsDir(projectDir: string): string {
+  const scope = isHomeDirectory(projectDir) ? "global" : "project";
+  return resolveInstallPaths(projectDir, scope).skillsDir;
 }
 
 type EnsureMinimalConfigOptions = {
