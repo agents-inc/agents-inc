@@ -15,7 +15,7 @@
   },
   "//dependencies": "The two fontsource packages are imported by src/components/font-preloads.astro for their FILE URLS rather than for their CSS — the @font-face rules arrive through @workspace/ui's globals.css, which depends on both already. They are declared here anyway rather than reached through hoisting: a preload whose specifier resolves by accident is one that breaks the day the tree is flattened differently, and it breaks silently, because a preload naming a file that is not served still renders the page. The note sits at the top level and not inside `dependencies` — bun tries to resolve a `//` key there as a package name and the install fails.",
   "dependencies": {
-    "@astrojs/starlight": "^0.41.6",
+    "@astrojs/starlight": "^0.42.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@workspace/matrix": "workspace:*",
@@ -29,7 +29,7 @@
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
-    "playwright": "1.56.1",
+    "playwright": "1.63.0",
     "tailwindcss": "^4",
     "typescript": "~6",
     "wrangler": "^4"
