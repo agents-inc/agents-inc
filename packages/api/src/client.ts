@@ -123,3 +123,19 @@ export const createApiClient = ({
 
 /** The configured client, for consumers that pass one around. */
 export type ApiClient = ReturnType<typeof createApiClient>
+
+/** Whole seconds, and more than none: a window that has already passed is no limit. */
+const WHOLE_SECONDS = /^[1-9]\d*$/
+
+/**
+ * When a refusal says to try again, in seconds — the worker's write limiter sends this on its 429 —
+ * or `null` when it does not say.
+ *
+ * Delta-seconds only. RFC 9110 also allows an HTTP-date, which nothing this worker serves sends,
+ * and reading one would mean trusting two clocks to agree.
+ */
+export const retryAfterSeconds = ({ headers }: { headers: Headers }) => {
+  const stated = headers.get("retry-after")
+
+  return stated !== null && WHOLE_SECONDS.test(stated) ? Number(stated) : null
+}

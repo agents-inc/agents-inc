@@ -1,3 +1,4 @@
+import { retryAfterSeconds } from "@workspace/api"
 import {
   installableSeedPayloadSchema,
   seedPayloadSchema,
@@ -37,13 +38,43 @@ const createdSchema = z.object({ id: z.string().min(1) })
 export type ShareRefusal =
   "out-of-date" | "refused" | "unreachable" | "unwritable"
 
+/**
+ * The worker's write limiter, which every Install-dialog open spends. A `refused` by the list
+ * above — a quota, nothing to do but try later — so a surface reading only `refusal` reads it as
+ * one; the window rides beside it for the surface that says when to try again.
+ */
+export type RateLimited = {
+  ok: false
+  refusal: "refused"
+  retryAfterSeconds: number
+}
+
 export type ShareResult =
-  { ok: true; id: string } | { ok: false; refusal: ShareRefusal }
+  { ok: true; id: string } | { ok: false; refusal: ShareRefusal } | RateLimited
+
+export const isRateLimited = (result: ShareResult): result is RateLimited =>
+  "retryAfterSeconds" in result
 
 // The status the worker spends on "your payload names a seed version I do not
 // serve". Its own code rather than a 400, because a 400 is a bug nobody reading
 // it can fix and this one is a hard reload — see `apps/server/src/index.ts`.
 const OUT_OF_DATE = 409
+
+const TOO_MANY = 429
+
+// The limiter's refusal, when it says when it ends. A 429 naming no window is
+// not this worker's limiter, so it is left to read as the refusal it looks like.
+const rateLimitOf = (response: {
+  status: number
+  headers: Headers
+}): RateLimited | null => {
+  if (response.status !== TOO_MANY) return null
+
+  const seconds = retryAfterSeconds(response)
+  return seconds === null
+    ? null
+    : { ok: false, refusal: "refused", retryAfterSeconds: seconds }
+}
 
 export type SharedConfigResult =
   { ok: true; payload: SeedPayload } | { ok: false; error: string }
@@ -118,6 +149,17 @@ export const createSharedConfig = async (
     if (response.status === OUT_OF_DATE) {
       reportIssue("Share POST refused a stale page", { status: OUT_OF_DATE })
       return { ok: false, refusal: "out-of-date" }
+    }
+
+    // Under its own name for the reason the stale page is: not a bug and not
+    // an outage, but how often people open Install faster than the limit
+    // allows — which is the number that says whether the limit is sized right.
+    const limited = rateLimitOf(response)
+    if (limited) {
+      reportIssue("Share POST hit the rate limit", {
+        retryAfterSeconds: limited.retryAfterSeconds,
+      })
+      return limited
     }
 
     if (!response.ok) {

@@ -1,4 +1,9 @@
 import { SELF, env } from "cloudflare:test"
+import {
+  CONFIG_WRITE_WINDOW_SECONDS,
+  RATE_LIMITED_BODY,
+  WORKER_EXPOSED_HEADERS,
+} from "@workspace/api-mocks/fixtures"
 import { SEED_VERSION } from "@workspace/matrix/seed"
 import { describe, expect, it } from "vitest"
 
@@ -158,6 +163,29 @@ describe("the write rate limit on POST /configs", () => {
     // The claim that makes this a rate limit rather than a kill switch: one
     // client exhausting its allowance must not lock everyone else out.
     expect((await post("203.0.113.21")).status).not.toBe(429)
+  })
+
+  // A refusal that cannot say when it ends reads as "id unavailable" in the
+  // editor's Install dialog. The window and the exposure are asserted together
+  // because the editor is cross-origin: a `retry-after` the browser is not
+  // allowed to read is the same as none. Pinned against packages/api-mocks'
+  // mirror, so the doubles the editor's suites stand in front of cannot drift
+  // from this answer.
+  it("tells the refused caller when to try again, in a header a browser may read", async () => {
+    const ip = "203.0.113.30"
+    for (let attempt = 0; attempt < LIMIT; attempt++) await post(ip)
+
+    const refused = await post(ip)
+
+    expect(refused.status).toBe(429)
+    expect(await refused.text()).toBe(RATE_LIMITED_BODY)
+    expect(refused.headers.get("retry-after")).toBe(
+      String(CONFIG_WRITE_WINDOW_SECONDS)
+    )
+    expect(refused.headers.get("access-control-allow-origin")).toBe(WEB_ORIGIN)
+    expect(refused.headers.get("access-control-expose-headers")).toBe(
+      WORKER_EXPOSED_HEADERS
+    )
   })
 })
 

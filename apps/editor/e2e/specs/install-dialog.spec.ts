@@ -1,3 +1,4 @@
+import { TOO_MANY } from "@workspace/api-mocks"
 import {
   MARKETPLACE_CANONICAL_REF,
   MARKETPLACE_REF,
@@ -198,6 +199,25 @@ test.describe("install dialog when the id cannot be minted", () => {
       "id unavailable — this command starts over in the editor"
     )
     await expect(configure.installDialog.root).not.toContainText("out of date")
+  })
+
+  // Every open mints, so opening this dialog 21 times in a minute reaches the
+  // worker's write limit. That refusal passes on its own, so the note says it
+  // was the limit and when it ends rather than calling the id unavailable.
+  test("a rate-limited mint says when to try again", async ({
+    configure,
+    page,
+  }) => {
+    stubCreateConfigRefusal(page, TOO_MANY)
+
+    await configure.roster.installButton.click()
+
+    await expect(configure.installDialog.root).toContainText(
+      "rate limit reached — try again in 1 minute"
+    )
+    await expect(configure.installDialog.root).not.toContainText(
+      "id unavailable"
+    )
   })
 })
 

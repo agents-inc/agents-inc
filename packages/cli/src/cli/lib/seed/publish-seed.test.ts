@@ -75,9 +75,8 @@ const UNWRITABLE_PAYLOAD = buildSeedPayload({
  *
  * The body is produced by running the store's own schema rather than transcribed, because that
  * envelope is the one thing this spec is about and a transcription of it would be a second claim
- * about the worker. `@workspace/api-mocks` carries no handler for it — `configRefusedHandlerFor`
- * answers a body only for 503 — so it is declared here beside the other answer that package
- * deliberately does not describe.
+ * about the worker. `@workspace/api-mocks` carries no handler for it, so it is declared here
+ * beside the other answer that package deliberately does not describe.
  *
  * `error` is `undefined` if `UNWRITABLE_PAYLOAD` ever stops being one the store refuses, which
  * leaves the envelope carrying no message at all and reddens the spec below: the fixture guards

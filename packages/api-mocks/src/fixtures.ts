@@ -1,7 +1,10 @@
 import { CATALOG } from "@workspace/matrix"
 import { matrixSchema } from "@workspace/matrix/matrix-schema"
 import { SEED_VERSION, seedPayloadSchema } from "@workspace/matrix/seed"
-import { skillIndexSchema } from "@workspace/matrix/skill-index"
+import {
+  SKILL_INDEX_FRESHNESS_HEADER,
+  skillIndexSchema,
+} from "@workspace/matrix/skill-index"
 
 import type { SeedPayload } from "@workspace/matrix/seed"
 
@@ -43,6 +46,19 @@ export const UNREADABLE_CONFIG_ID = "corrupt0"
 export const NO_CONFIG_BODY = "No config under this id"
 export const UNREADABLE_CONFIG_BODY = "Stored config is unreadable"
 export const STORE_REFUSED_BODY = "Could not store this config"
+export const RATE_LIMITED_BODY = "Too many requests"
+
+// The `retry-after` the worker's write limiter sends: the binding's whole
+// `period`, because the binding never says when a window ends.
+export const CONFIG_WRITE_WINDOW_SECONDS = 60
+
+// What the worker's `cors()` lets a browser read (`exposeHeaders` in
+// apps/server/src/index.ts), joined as hono joins it. A header missing here is
+// one Chromium hides from the editor, whatever the worker sent.
+export const WORKER_EXPOSED_HEADERS = [
+  SKILL_INDEX_FRESHNESS_HEADER,
+  "retry-after",
+].join(",")
 
 // A payload as the worker would return it: real catalog ids, since the app
 // prunes anything its catalog does not know.

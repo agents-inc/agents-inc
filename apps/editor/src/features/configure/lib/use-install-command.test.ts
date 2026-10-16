@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { COMMAND_NOTES } from "./use-install-command"
+import { COMMAND_NOTES, limitReachedNote } from "./use-install-command"
 
 // The install dialog is the SECOND door on `createSharedConfig`, and the line
 // under the command is the only thing it has to say anything with. It had the
@@ -14,8 +14,8 @@ import { COMMAND_NOTES } from "./use-install-command"
 const notes = Object.values(COMMAND_NOTES)
 
 describe("what the install command's note says", () => {
-  // The class gate, and the same one that holds the Share button. A seventh
-  // ending added without words of its own fails here rather than silently
+  // The class gate, and the same one that holds the Share button. An ending
+  // added without words of its own fails here rather than silently
   // borrowing somebody else's sentence.
   it("gives every ending words of its own", () => {
     expect(new Set(notes).size).toBe(notes.length)
@@ -40,5 +40,42 @@ describe("what the install command's note says", () => {
   it("tells a reader with no id that the command starts over in the editor", () => {
     expect(COMMAND_NOTES.refused).toContain("starts over in the editor")
     expect(COMMAND_NOTES.unreachable).toContain("starts over in the editor")
+  })
+})
+
+// Every open of the dialog mints, and the worker takes 20 mints a minute from
+// one address, so the 21st open used to read "id unavailable" with nothing to
+// say it would pass. The owner's ruling: say the limit was reached, and when
+// to try again.
+describe("what the note says when the rate limit refused the id", () => {
+  it("says the limit was reached and when to try again", () => {
+    expect(limitReachedNote(60)).toBe(
+      "rate limit reached — try again in 1 minute"
+    )
+  })
+
+  it("counts a window under a minute in seconds", () => {
+    expect(limitReachedNote(30)).toBe(
+      "rate limit reached — try again in 30 seconds"
+    )
+  })
+
+  // Rounded up, so nobody is sent back before the window has ended.
+  it("rounds a longer window up to whole minutes", () => {
+    expect(limitReachedNote(61)).toBe(
+      "rate limit reached — try again in 2 minutes"
+    )
+  })
+
+  // A limit passes on its own, so it must not read like the refusal that
+  // does not.
+  it("is told apart from a refusal that names no window", () => {
+    expect(limitReachedNote(60)).not.toContain("unavailable")
+  })
+
+  // The class gate above holds only what is in the vocabulary, so the limit's
+  // words live there too and only the worker's window is appended.
+  it("speaks from the vocabulary the class gate holds", () => {
+    expect(limitReachedNote(60)).toBe(`${COMMAND_NOTES.limited} 1 minute`)
   })
 })

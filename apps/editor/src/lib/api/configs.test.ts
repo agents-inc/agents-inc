@@ -1,10 +1,13 @@
 import {
   CONFIGS_URL,
+  CONFIG_WRITE_WINDOW_SECONDS,
   DEAD_LINK_ID,
   OUT_OF_SCOPE_PAYLOAD,
+  TOO_MANY,
   STORED_ID,
   STORED_PAYLOAD,
   UNREADABLE_CONFIG_ID,
+  configRateLimitedHandler,
   configUnreachableHandler,
   storeRefusedHandler,
 } from "@workspace/api-mocks"
@@ -89,6 +92,39 @@ describe("createSharedConfig", () => {
     expect(result).toStrictEqual({ ok: false, refusal: "refused" })
     expect(sink.issue).toHaveBeenCalledWith("Share POST rejected", {
       status: 503,
+    })
+  })
+
+  // The worker's write limiter, which every Install-dialog open spends. Still a
+  // refusal nothing on the page can fix, so the Share button and Save read it
+  // as one — but the only one that says WHEN it ends, and that is carried.
+  it("reads the rate limit as a refusal that says when to try again", async () => {
+    configMockServer.use(configRateLimitedHandler)
+
+    const result = await createSharedConfig(STORED_PAYLOAD)
+
+    expect(result).toStrictEqual({
+      ok: false,
+      refusal: "refused",
+      retryAfterSeconds: CONFIG_WRITE_WINDOW_SECONDS,
+    })
+    expect(sink.issue).toHaveBeenCalledWith("Share POST hit the rate limit", {
+      retryAfterSeconds: CONFIG_WRITE_WINDOW_SECONDS,
+    })
+  })
+
+  // A 429 naming no window is not this worker's limiter, so there is no "when"
+  // to pass on and it is the anonymous refusal it looks like.
+  it("reads a 429 that names no window as a plain refusal", async () => {
+    configMockServer.use(
+      http.post(CONFIGS_URL, () => new HttpResponse(null, { status: TOO_MANY }))
+    )
+
+    const result = await createSharedConfig(STORED_PAYLOAD)
+
+    expect(result).toStrictEqual({ ok: false, refusal: "refused" })
+    expect(sink.issue).toHaveBeenCalledWith("Share POST rejected", {
+      status: TOO_MANY,
     })
   })
 

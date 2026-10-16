@@ -55,6 +55,16 @@ const ID_LENGTH = 8
 
 const YEAR_SECONDS = 31_536_000
 
+// When a refused write may try again. It is `CONFIG_WRITES`' whole `period` in
+// wrangler.jsonc, restated, because `limit()` answers `success` and nothing
+// else: the binding never says when the current window ends, so the period is
+// the one bound this worker can state without guessing.
+const CONFIG_WRITE_WINDOW_SECONDS = 60
+
+// Standard, and still named once: the limiter sets it, `cors()` has to expose
+// it, and a browser hides it from the editor if the two ever disagree.
+const RETRY_AFTER_HEADER = "retry-after"
+
 // The id is the payload's own hash: the same config always mints the same id,
 // a retry can never double-store, and a stored payload can never change under
 // its id — which is what lets the GET declare itself immutable.
@@ -108,6 +118,13 @@ const createConfigRoute = createRoute({
       description: "Body names a seed version this worker does not serve",
     },
     413: { description: "Body exceeds the size cap" },
+    // Declared although middleware answers it, because `AppType` is read off
+    // this list: a status missing here is one the typed client cannot compare
+    // against, so the editor could only read the limit as an anonymous refusal.
+    429: {
+      description: "This address has spent its writes for the window",
+      headers: z.object({ [RETRY_AFTER_HEADER]: z.string() }),
+    },
     503: { description: "The store refused the write" },
   },
 })
@@ -177,7 +194,7 @@ const allowOnlyWebOrigin = cors({
   origin: (origin, c: Context<WorkerEnv>) =>
     origin === c.env.WEB_ORIGIN ? origin : null,
   credentials: true,
-  exposeHeaders: [SKILL_INDEX_FRESHNESS_HEADER],
+  exposeHeaders: [SKILL_INDEX_FRESHNESS_HEADER, RETRY_AFTER_HEADER],
 })
 
 app.use("/configs/*", allowOnlyWebOrigin)
@@ -217,8 +234,9 @@ app.on(["GET", "POST"], "/api/auth/*", (c) =>
 // CLI calls to resolve a share link, and it neither writes nor costs a quota.
 //
 // A missing address is let through rather than refused. It means the request
-// did not arrive through Cloudflare's edge — `wrangler dev`, or a test — and
-// failing closed there would fail every local run rather than any attacker.
+// did not arrive through Cloudflare's edge — a test that sends none — and
+// failing closed there would fail those runs rather than any attacker.
+// `wrangler dev` does send one, so the limit is live locally too.
 app.use("/configs", async (c, next) => {
   if (c.req.method !== "POST") return next()
 
@@ -226,7 +244,11 @@ app.use("/configs", async (c, next) => {
   if (address === undefined) return next()
 
   const { success } = await c.env.CONFIG_WRITES.limit({ key: address })
-  return success ? next() : c.text("Too many requests", 429)
+  return success
+    ? next()
+    : c.text("Too many requests", 429, {
+        [RETRY_AFTER_HEADER]: String(CONFIG_WRITE_WINDOW_SECONDS),
+      })
 })
 
 // Refused on the declared length alone — bodies without one parse as usual and

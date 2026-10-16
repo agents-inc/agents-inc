@@ -1,7 +1,6 @@
-import { SKILL_INDEX_FRESHNESS_HEADER } from "@workspace/matrix/skill-index"
 import { getResponse } from "msw"
 
-import { WORKER_ORIGIN } from "./fixtures"
+import { WORKER_EXPOSED_HEADERS, WORKER_ORIGIN } from "./fixtures"
 
 import type { RequestHandler } from "msw"
 
@@ -57,7 +56,7 @@ const throughCors = (request: Request, headers: Record<string, string>) => {
   const isWorker = new URL(request.url).origin === WORKER_ORIGIN
   if (!isWorker || EXPOSE_HEADERS_HEADER in headers) return headers
 
-  return { ...headers, [EXPOSE_HEADERS_HEADER]: SKILL_INDEX_FRESHNESS_HEADER }
+  return { ...headers, [EXPOSE_HEADERS_HEADER]: WORKER_EXPOSED_HEADERS }
 }
 
 /**

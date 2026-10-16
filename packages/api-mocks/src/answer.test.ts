@@ -13,6 +13,7 @@ import {
   STORED_ID,
   STORED_PAYLOAD,
   UNAUTHORIZED_BODY,
+  WORKER_EXPOSED_HEADERS,
   WORKER_ORIGIN,
 } from "./fixtures"
 import {
@@ -156,7 +157,7 @@ describe("what the handlers answer", () => {
 // header silently missing — which is a different answer from either of the two
 // the route has.
 describe("what a browser is allowed to read", () => {
-  it("exposes the worker's own response header", async () => {
+  it("exposes the worker's own response headers", async () => {
     const answer = await answerFor(
       skillIndexHandlers,
       get(`${WORKER_ORIGIN}/skills`)
@@ -164,7 +165,7 @@ describe("what a browser is allowed to read", () => {
 
     expect(answer.served && answer.headers).toMatchObject({
       [SKILL_INDEX_FRESHNESS_HEADER]: "fresh",
-      [EXPOSE_HEADERS_HEADER]: SKILL_INDEX_FRESHNESS_HEADER,
+      [EXPOSE_HEADERS_HEADER]: WORKER_EXPOSED_HEADERS,
     })
   })
 

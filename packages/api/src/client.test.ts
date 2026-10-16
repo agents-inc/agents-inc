@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 
-import { apiRequestInit, createApiClient } from "./client"
+import { apiRequestInit, createApiClient, retryAfterSeconds } from "./client"
+
+import type { ApiClient } from "./client"
 
 const BASE = "https://api.example.test"
 
@@ -118,5 +120,44 @@ describe("apiRequestInit", () => {
 
     expect(merged.credentials).toBe("include")
     expect(merged.method).toBe("POST")
+  })
+})
+
+/** What `POST /configs` can answer, as the typed client sees it. */
+type CreateConfigStatus = Awaited<
+  ReturnType<ApiClient["configs"]["$post"]>
+>["status"]
+
+/** A refusal as the worker's write limiter sends it, window and all. */
+const rateLimited = (retryAfter?: string) =>
+  new Response("Too many requests", {
+    status: 429,
+    headers: retryAfter === undefined ? {} : { "retry-after": retryAfter },
+  })
+
+describe("retryAfterSeconds", () => {
+  // A status the route does not declare is one the typed client cannot be
+  // asked about: `response.status === 429` fails to compile against it, so a
+  // consumer could only ever read the limit as an anonymous refusal.
+  it("reads a status the typed client knows POST /configs can answer", () => {
+    expectTypeOf<429>().toExtend<CreateConfigStatus>()
+  })
+
+  it("reads the window a rate-limited write was refused for", () => {
+    expect(retryAfterSeconds(rateLimited("60"))).toBe(60)
+  })
+
+  it("says nothing when the refusal says nothing", () => {
+    expect(retryAfterSeconds(rateLimited())).toBeNull()
+  })
+
+  // RFC 9110 also allows an HTTP-date. No route of this worker sends one, and
+  // guessing a clock difference would be a second opinion on when to retry.
+  it("says nothing for a window it cannot read as whole seconds", () => {
+    const unreadable = ["Wed, 21 Oct 2026 07:28:00 GMT", "", "-5", "0", "1.5"]
+
+    expect(
+      unreadable.map((value) => retryAfterSeconds(rateLimited(value)))
+    ).toStrictEqual(unreadable.map(() => null))
   })
 })

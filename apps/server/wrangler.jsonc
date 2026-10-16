@@ -64,7 +64,8 @@
   // which one unthrottled client reaches in under a minute.
   //
   // `namespace_id` is an arbitrary label scoped to this worker, not something
-  // Cloudflare issues. `period` accepts only 10 or 60.
+  // Cloudflare issues. `period` accepts only 10 or 60, and
+  // `CONFIG_WRITE_WINDOW_SECONDS` in src/index.ts restates it as Retry-After.
   //
   // NOT a replacement for a quota. This bounds the rate one address can write
   // at; it does nothing about a thousand addresses, and nothing about cost. It

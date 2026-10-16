@@ -5,12 +5,14 @@ import {
 import { SKILL_INDEX_FRESHNESS_HEADER } from "@workspace/matrix/skill-index"
 import { http, HttpResponse } from "msw"
 
+import { EXPOSE_HEADERS_HEADER } from "./answer"
 import {
   BINARY_FILE_BYTES,
   COMPOSED_PROPOSAL,
   COMPOSE_FAILED_BODY,
   COMPOSE_TOO_LONG_BODY,
   COMPOSE_TOO_MANY_BODY,
+  CONFIG_WRITE_WINDOW_SECONDS,
   EXTERNAL_SKILL,
   GITHUB_AUTHORIZE_URL,
   GITHUB_API_ORIGIN,
@@ -25,6 +27,7 @@ import {
   NO_SESSION,
   NO_STACK_BODY,
   PRIVATE_MARKETPLACE_REF,
+  RATE_LIMITED_BODY,
   SAVED_STACK,
   SAVED_STACKS,
   SIGNED_IN_SESSION,
@@ -38,6 +41,7 @@ import {
   UNAUTHORIZED_BODY,
   UNREADABLE_CONFIG_BODY,
   UNREADABLE_CONFIG_ID,
+  WORKER_EXPOSED_HEADERS,
   WORKER_ORIGIN,
   savedStack,
 } from "./fixtures"
@@ -90,9 +94,9 @@ const workerText = (body: string, status: number) =>
   })
 
 /**
- * The status `POST /configs` refuses a body its own write schema does not take — one of FOUR
+ * The status `POST /configs` refuses a body its own write schema does not take — one of the
  * refusals the worker declares for this route (`apps/server/src/index.ts`'s `createConfigRoute`
- * also answers 409, 413 and 503), and the only one this file used to leave unmodelled: the route
+ * also answers 409, 413, 429 and 503), and the only one this file used to leave unmodelled: the route
  * had no way to be refused at all before `createConfig` below started asking
  * `installableSeedPayloadSchema` (CLI-849). Named apart from the two below because it is what the
  * validating default answers, where those two are answered only by an opt-in handler.
@@ -185,11 +189,42 @@ export const missingConfigHandlerFor = (id: string) =>
   http.get(`${CONFIGS_URL}/${id}`, () => workerText(NO_CONFIG_BODY, NOT_FOUND))
 
 /**
- * The mint refusing, named by the status it refuses with — a NULL body for every status but 503,
- * standing for a refusal that carries no explanation at all.
+ * What the worker's limiters refuse with: `CONFIG_WRITES` on this route (per address, sized in
+ * apps/server/wrangler.jsonc), `COMPOSE_CALLS` and better-auth's own on theirs. Every
+ * Install-dialog open mints, so the first is reachable by hand.
+ */
+export const TOO_MANY = 429
+
+/**
+ * The limiter's answer, window and all. It names the exposure the worker's `cors()` adds rather
+ * than leaving it to `answerFor`, because `@msw/playwright` fulfils a handler's response verbatim:
+ * without it Chromium hides `retry-after` from the editor, which then cannot say when to retry.
+ */
+const rateLimited = () =>
+  HttpResponse.text(RATE_LIMITED_BODY, {
+    status: TOO_MANY,
+    headers: {
+      "content-type": HONO_TEXT_PLAIN,
+      "retry-after": String(CONFIG_WRITE_WINDOW_SECONDS),
+      [EXPOSE_HEADERS_HEADER]: WORKER_EXPOSED_HEADERS,
+    },
+  })
+
+const configRefusalOf = (status: number) => {
+  if (status === STORE_UNAVAILABLE)
+    return workerText(STORE_REFUSED_BODY, status)
+  if (status === TOO_MANY) return rateLimited()
+
+  return new HttpResponse(null, { status })
+}
+
+/**
+ * The mint refusing, named by the status it refuses with — the worker's own answer for 503 and
+ * 429, and a NULL body for every other status, standing for a refusal that carries no
+ * explanation at all.
  *
- * That silence used to be justified for every caller: the editor's `createSharedConfig` branches
- * on the status alone and never reads a refusal's body, so a body invented for the rest would have
+ * That silence used to be justified for every caller: the editor's `createSharedConfig` never
+ * reads a refusal's body, so a body invented for the rest would have
  * been a claim about the worker nothing checked. It is no longer true of every caller — the CLI's
  * `publishSeedConfig` now reads the body for every status but 409 — which is why a spec exercising
  * that envelope for 400 builds its own body (`publish-seed.test.ts`'s `contractRefusalHandler`, and
@@ -197,11 +232,10 @@ export const missingConfigHandlerFor = (id: string) =>
  * for this function: `configRefusedHandlerFor(400)` still means "refused with nothing said."
  */
 export const configRefusedHandlerFor = (status: number) =>
-  http.post(CONFIGS_URL, () =>
-    status === STORE_UNAVAILABLE
-      ? workerText(STORE_REFUSED_BODY, status)
-      : new HttpResponse(null, { status })
-  )
+  http.post(CONFIGS_URL, () => configRefusalOf(status))
+
+/** The limiter doing its job, as `stacks.test.ts` in apps/server pins it. */
+export const configRateLimitedHandler = configRefusedHandlerFor(TOO_MANY)
 
 /**
  * KV refusing the write — now that `createConfig` above validates for real, the one refusal on
@@ -490,7 +524,6 @@ export const COMPOSE_URL = `${WORKER_ORIGIN}/compose`
 const STACK_URL = `${STACKS_URL}/:id`
 
 const NO_CONTENT = 204
-const TOO_MANY = 429
 const SERVER_ERROR = 500
 const MODEL_SILENT = 502
 

@@ -1,11 +1,21 @@
 import { installableSeedPayloadSchema } from "@workspace/matrix/seed"
+import { getResponse } from "msw"
 import { describe, expect, it } from "vitest"
 
-import { answerFor } from "./answer"
-import { OUT_OF_SCOPE_PAYLOAD, STORED_ID, STORED_PAYLOAD } from "./fixtures"
+import { EXPOSE_HEADERS_HEADER, answerFor } from "./answer"
+import {
+  CONFIG_WRITE_WINDOW_SECONDS,
+  OUT_OF_SCOPE_PAYLOAD,
+  RATE_LIMITED_BODY,
+  STORED_ID,
+  STORED_PAYLOAD,
+  WORKER_EXPOSED_HEADERS,
+} from "./fixtures"
 import {
   CONFIGS_URL,
+  TOO_MANY,
   configHandlers,
+  configRateLimitedHandler,
   configRefusedHandlerFor,
   storeRefusedHandler,
 } from "./handlers"
@@ -85,5 +95,41 @@ describe("createConfig", () => {
     )
 
     expect(answer.served && answer.status).toBe(413)
+  })
+})
+
+// The worker's limiter, which `apps/server/src/stacks.test.ts` pins this double against. Resolved
+// with msw's own `getResponse` rather than `answerFor`, because the claim is about the HANDLER:
+// `@msw/playwright` fulfils what a handler returns verbatim, so an exposure only `answerFor` adds
+// never reaches the browser, and the editor's Install dialog would read no window at all.
+describe("a rate-limited mint", () => {
+  it("answers as the worker's limiter does, with a window a browser may read", async () => {
+    const response = await getResponse(
+      [configRateLimitedHandler, ...configHandlers],
+      post(STORED_PAYLOAD)
+    )
+    if (!response) throw new Error("no handler answered the mint")
+
+    expect(response.status).toBe(TOO_MANY)
+    expect(await response.text()).toBe(RATE_LIMITED_BODY)
+    expect(response.headers.get("retry-after")).toBe(
+      String(CONFIG_WRITE_WINDOW_SECONDS)
+    )
+    expect(response.headers.get(EXPOSE_HEADERS_HEADER)).toBe(
+      WORKER_EXPOSED_HEADERS
+    )
+  })
+
+  // Named by its status like every other refusal here, so a spec asking for a 429 by number gets
+  // the worker's whole answer rather than a bare status the worker never sends.
+  it("is what a refusal named by the 429 status answers", async () => {
+    const response = await getResponse(
+      [configRefusedHandlerFor(TOO_MANY)],
+      post(STORED_PAYLOAD)
+    )
+
+    expect(response?.headers.get("retry-after")).toBe(
+      String(CONFIG_WRITE_WINDOW_SECONDS)
+    )
   })
 })

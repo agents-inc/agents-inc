@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { seedPayloadSchema } from "@workspace/matrix"
 
-import { createSharedConfig } from "@/lib/api/configs"
+import { createSharedConfig, isRateLimited } from "@/lib/api/configs"
 import { useCatalogStore } from "@/stores/catalog-store"
 import { useUiStore } from "@/stores/ui-store"
 import { toSeedPayload } from "./seed"
@@ -49,10 +49,13 @@ export type InstallCommand =
   | { status: "minting" }
   | { status: "ready"; id: string }
   // The refusal travels rather than collapsing into a bare "failed", for the
-  // reason the Share button's narrations exist (SERVER-04): one of the three
-  // has a remedy and the other two do not, and a surface that cannot tell them
-  // apart cannot mention it.
+  // reason the Share button's narrations exist (SERVER-04): only some of them
+  // have a remedy, and a surface that cannot tell them apart cannot mention it.
   | { status: "failed"; refusal: ShareRefusal }
+  // The worker's write limit, which this dialog spends on every open. Apart
+  // from `failed` because it is the one refusal that ends on its own, and the
+  // note says when.
+  | { status: "limited"; retryAfterSeconds: number }
 
 /**
  * Every ending the line under the command has to speak for.
@@ -61,7 +64,7 @@ export type InstallCommand =
  * outcome of minting — the command is on screen and copyable whether or not an
  * id ever arrived.
  */
-type InstallNote = "minting" | "ready" | "copied" | ShareRefusal
+type InstallNote = "minting" | "ready" | "copied" | "limited" | ShareRefusal
 
 /**
  * The whole vocabulary, keyed by ending, so a new one cannot reach the dialog
@@ -77,16 +80,34 @@ export const COMMAND_NOTES = {
   minting: "preparing your id",
   ready: "click to copy",
   copied: "copied",
-  // The only ending that names an action. Re-opening the dialog mints again
-  // and is refused again, so without the reload no id ever arrives.
+  // Re-opening the dialog mints again and is refused again, so without the
+  // reload no id ever arrives.
   "out-of-date": "out of date — reload the page for an id",
   refused: "id unavailable — this command starts over in the editor",
   unreachable: "offline — this command starts over in the editor",
-  // The other ending with a remedy, and the only one whose remedy is behind
-  // this dialog rather than in front of it. Re-opening mints again and is
-  // refused again, so the sentence has to send the reader back to the rows.
+  // The only ending whose remedy is behind this dialog rather than in front of
+  // it. Re-opening mints again and is refused again, so the sentence has to
+  // send the reader back to the rows.
   unwritable: "a sub-agent needs project scope — close and fix the marked rows",
+  // The only ending the worker finishes: `limitReachedNote` appends the window
+  // it names.
+  limited: "rate limit reached — try again in",
 } as const satisfies Record<InstallNote, string>
+
+const SECONDS_PER_MINUTE = 60
+
+/** `1 second`, `30 seconds`. */
+const counted = (count: number, unit: string) =>
+  `${count} ${unit}${count === 1 ? "" : "s"}`
+
+/** Seconds under a minute, whole minutes from there — rounded up, so nobody is sent back early. */
+const waitOf = (seconds: number) =>
+  seconds < SECONDS_PER_MINUTE
+    ? counted(seconds, "second")
+    : counted(Math.ceil(seconds / SECONDS_PER_MINUTE), "minute")
+
+export const limitReachedNote = (retryAfterSeconds: number) =>
+  `${COMMAND_NOTES.limited} ${waitOf(retryAfterSeconds)}`
 
 // What was minted, and for which configuration. Storing the key alongside the
 // result is what lets both `command` and `copied` be *derived* rather than
@@ -98,12 +119,21 @@ type Minted = { key: string; result: ShareResult }
 // still in flight, including a result for a selection that has since moved.
 const toCommand = (minted: Minted | null, key: string): InstallCommand => {
   if (minted?.key !== key) return { status: "minting" }
-  if (!minted.result.ok) {
-    return { status: "failed", refusal: minted.result.refusal }
+
+  const { result } = minted
+  if (result.ok) return { status: "ready", id: result.id }
+  if (isRateLimited(result)) {
+    return { status: "limited", retryAfterSeconds: result.retryAfterSeconds }
   }
 
-  return { status: "ready", id: minted.result.id }
+  return { status: "failed", refusal: result.refusal }
 }
+
+// The refusal's own words first, because what went wrong is the same either
+// way — and then, on a provider the bare command does not install, what the
+// command consequently cannot carry.
+const withoutAnId = (why: string, provider: Provider) =>
+  provider === "claude" ? why : `${why} · ${PROVIDER_NEEDS_AN_ID}`
 
 const noteFor = (
   command: InstallCommand,
@@ -111,15 +141,20 @@ const noteFor = (
   provider: Provider
 ): string => {
   if (copied) return COMMAND_NOTES.copied
-  if (command.status !== "failed") return COMMAND_NOTES[command.status]
 
-  // The refusal's own words first, because what went wrong is the same either
-  // way — and then, on a provider the bare command does not install, what the
-  // command consequently cannot carry.
-  const refusal = COMMAND_NOTES[command.refusal]
-  return provider === "claude"
-    ? refusal
-    : `${refusal} · ${PROVIDER_NEEDS_AN_ID}`
+  switch (command.status) {
+    case "minting":
+    case "ready":
+      return COMMAND_NOTES[command.status]
+    case "failed":
+      return withoutAnId(COMMAND_NOTES[command.refusal], provider)
+    case "limited":
+      return withoutAnId(limitReachedNote(command.retryAfterSeconds), provider)
+    default: {
+      const _exhaustive: never = command
+      return _exhaustive
+    }
+  }
 }
 
 /** The whole line the block hands over, which is what the clipboard gets. */
