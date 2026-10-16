@@ -7,6 +7,17 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.170.0] - 2026-10-17
+
+**The wizard's removal is finished: a stack installs every sub-agent it declares, `edit --from` names what it adds to the global install, and a global run says each warning once**
+
+- CLI-926: a stack picked in the editor installs its skill-less sub-agents too. From a project, `edit --from` and `init --from` list the global sub-agents a new skill joins as "Added to sub-agents in the global install". A bare `edit` refuses unusable skill metadata before minting an id. `eject skills` writes the provider's own skills folder, so Codex gets `.agents/skills`. A failed `build marketplace` writes nothing. A global run says each warning once. The Install dialog says when a rate-limited id can be retried. `edit`'s summary, the unreadable-config remedy, `search`'s help and the docs no longer describe the wizard, and the wizard's leftover code is gone.
+- CLI-927: the six e2e specs that failed under a long `TMPDIR` pass at any temp-folder length.
+- CLI-928: the prompt bible is re-validated for Opus 5.5.
+- CLI-929: the `composable-components` rule and the web-reviewing audit quote describe the current skills, and the built-in matrix is regenerated from the published skills commit.
+
+See [changelogs/0.170.0.md](./changelogs/0.170.0.md) for full details.
+
 ## [0.169.0] - 2026-10-15
 
 **The terminal wizard is gone: `init` and `edit` open the editor, and 0.168.0 is the last release with the wizard**
