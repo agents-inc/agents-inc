@@ -71,8 +71,7 @@ rather than restating it; a second copy of a count can only drift from the first
    removed, and a corrected "covers" description where a document's scope moved.
 6. **Check your own output** before reporting: every path and symbol resolves, every pattern names
    an instance, every relationship is traceable in an import or a call, every cross-reference points
-   at a document that exists, and no line number appears anywhere. This is the check the completion
-   gate cannot make — it runs the project's typecheck, which never reads what you wrote.
+   at a document that exists, and no line number appears anywhere.
 7. **Point the project's `CLAUDE.md` at the map**, once, where nothing there does. A single line
    naming `.ai-docs/DOCUMENTATION_MAP.md` as the documentation index is the whole edit — no date,
    because the frontmatter of each document owns that and a second copy goes stale unread.
@@ -206,7 +205,7 @@ area you have not scoped spends the context the document needs on files it will 
 ## Documenting a Monorepo
 
 Read the workspace configuration first, and let the package boundaries decide the document
-boundaries. Beyond the per-area documents, three things are worth their own:
+boundaries. Beyond the per-area documents, these are worth their own:
 
 - **Package relationships** — each package, what it exports, and which apps consume it. This is the
   question a cross-package change opens with.
