@@ -35,7 +35,7 @@ import type {
 } from "../../types";
 import { getErrorMessage } from "../../utils/errors";
 import { fileExists } from "../../utils/fs";
-import { verbose, warn } from "../../utils/logger";
+import { sayingEachWarningOnce, verbose, warn } from "../../utils/logger";
 import { marketplaceManifestMissing, marketplaceManifestUnreadable } from "../../utils/messages";
 import { isAgentName } from "../../utils/type-guards";
 import { typedEntries, typedFromEntries, typedKeys, typedValues } from "../../utils/typed-object";
@@ -126,9 +126,23 @@ export type SourceLoadResult = {
 /** A marketplace's catalogue as read, before anything on this machine joins its matrix. */
 type CatalogueRead = Omit<SourceLoadResult, "marketplaceSkillIds">;
 
-export async function loadSkillsMatrixFromSource(
+/**
+ * Loads the catalogue a run installs and compiles against, saying each warning the load raises
+ * once per run.
+ *
+ * Once rather than once per load, because one run loads the same files many times: a global
+ * change loads the marketplace for itself and then, for each registered project, once to rewrite
+ * that project's config and once to recompile its agents. Each of those loads is needed — a
+ * project's catalogue is its own marketplace and its own local skills, and its recompile follows
+ * its rewrite — so what is held to once is the saying, not the loading.
+ */
+export function loadSkillsMatrixFromSource(
   options: SourceLoadOptions = {},
 ): Promise<SourceLoadResult> {
+  return sayingEachWarningOnce(() => loadCatalogue(options));
+}
+
+async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResult> {
   const {
     purpose = "fetch",
     caller = "stored",

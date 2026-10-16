@@ -25,7 +25,8 @@ import {
 } from "./schemas";
 import { parseFrontmatter } from "./loading/loader";
 import { ConfigDefaultExportError, loadConfig, loadSourceRepoConfig } from "./configuration";
-import { checkMatrixHealth, type MatrixHealthIssue } from "./matrix";
+import type { MatrixHealthIssue } from "./matrix";
+import { matrixHealthIssues } from "./matrix/matrix-health-check";
 import {
   loadSkillsMatrixFromSource,
   MarketplaceManifestRequiredError,
@@ -195,7 +196,7 @@ export function validateSkillFilePairs(
  * 1. Every metadata.yaml against the strict validation schema
  *    (over-length cliDescription is downgraded to a warning)
  * 2. Directory name equals the skill's machine id (SKILL.md frontmatter name)
- * 3. Cross-references resolve to existing skill IDs (via checkMatrixHealth)
+ * 3. Cross-references resolve to existing skill IDs (via matrixHealthIssues)
  * 4. camelCase key convention (no snake_case)
  * 5. Every skill directory has both SKILL.md and metadata.yaml
  *
@@ -350,6 +351,9 @@ const MANIFEST_REQUIRED_SEVERITY = {
  * Whether every relationship the source declares resolves to a skill it actually holds.
  * A load that did not complete is reported by {@link matrixLoadFailure}, which decides
  * whether the failure is this marketplace's fault or merely this pass's.
+ *
+ * The load has already said each health finding; this pass only files them, so it reads them
+ * without saying them again.
  */
 async function checkCrossReferences(
   resolvedPath: string,
@@ -357,7 +361,7 @@ async function checkCrossReferences(
 ): Promise<SourceValidationIssue[]> {
   try {
     await loadSkillsMatrixFromSource({ sourceFlag: resolvedPath, skipExtraSources: true });
-    return checkMatrixHealth(matrix).map((healthIssue) =>
+    return matrixHealthIssues(matrix).map((healthIssue) =>
       toSourceIssue(healthIssue, resolvedPath, reader),
     );
   } catch (error) {

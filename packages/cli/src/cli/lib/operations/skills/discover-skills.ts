@@ -3,7 +3,7 @@ import { isHomeDirectory } from "../../installation/is-home-directory.js";
 // loadSkillsFromDir lives in loading/ (a leaf) so both this module and
 // plugins/plugin-discovery can share it without an operations↔plugins cycle.
 import { loadSkillsFromDir, type LoadedSkills } from "../../loading/index.js";
-import { verbose } from "../../../utils/logger.js";
+import { sayingEachWarningOnce, verbose } from "../../../utils/logger.js";
 import { globalInstallRoot } from "../../../consts.js";
 import {
   installBaseDir,
@@ -52,17 +52,25 @@ const NO_LOCAL_SKILLS: LoadedSkills = { skills: {}, unusableMetadata: [] };
  * different things by it. The provider is READ off the scope root the same way
  * `resolveInstallPaths` reads it, from one probe, so the directory and the prefix cannot name two
  * different installations.
+ *
+ * What a GLOBAL scan finds wrong is said once per run: that scope is one directory whichever
+ * project asks, and a global change's fan-out asks once per registered project. Only the saying is
+ * held — each scan still reads the directory, which the run may have written to since. A project
+ * scan is not held: its lines name a skill relative to its project, so two projects' copies read
+ * alike while being two files to fix.
  */
 export async function discoverLocalProjectSkills(
   projectDir: string,
   scope: SkillScope,
 ): Promise<LoadedSkills> {
   const provider = providerInUse(installBaseDir(projectDir, scope));
+  const scan = () =>
+    loadSkillsFromDir(skillsDir(provider, scope, projectDir), {
+      pathPrefix: skillsPathPrefix(provider, scope, projectDir),
+      requireMetadata: true,
+    });
 
-  return loadSkillsFromDir(skillsDir(provider, scope, projectDir), {
-    pathPrefix: skillsPathPrefix(provider, scope, projectDir),
-    requireMetadata: true,
-  });
+  return scope === "global" ? sayingEachWarningOnce(scan) : scan();
 }
 
 /** Where the global scope's copied-in skills are, for the diagnostic line that names them. */

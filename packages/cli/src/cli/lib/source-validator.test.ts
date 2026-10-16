@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
@@ -895,6 +895,55 @@ describe("source-validator", () => {
           result.issues.filter((i) => i.file === MARKETPLACE_MANIFEST_PATH).map((i) => i.severity),
           "an author's unbuilt repository is one build from fixed, which is a warning",
         ).toStrictEqual(["warning"]);
+      });
+    });
+
+    /**
+     * Validating a marketplace loads it, and the load says what the health check finds. The
+     * validation then read the same findings again to file them as rows, and that read said each
+     * one a second time: `doctor` printed every `[matrix]` warning twice, back to back.
+     *
+     * A warning is said once per process, so the category is this file's alone — one an earlier
+     * spec here had already said would hold this whether or not the defect does.
+     */
+    describe("a health finding", () => {
+      const SAID_ONCE_CATEGORY = "web-styling";
+      const FINDING = `Category '${SAID_ONCE_CATEGORY}' has no domain`;
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it("is said once, and still filed as a finding", async () => {
+        const { domain: _domain, ...categoryWithNoDomain } =
+          VALID_SKILL_CATEGORIES_FILE.categories["web-framework"];
+        await mkdir(path.join(sourceDir, "config"), { recursive: true });
+        await writeFile(
+          path.join(sourceDir, SKILL_CATEGORIES_PATH),
+          renderConfigTs({
+            ...VALID_SKILL_CATEGORIES_FILE,
+            categories: {
+              ...VALID_SKILL_CATEGORIES_FILE.categories,
+              [SAID_ONCE_CATEGORY]: { ...categoryWithNoDomain, id: SAID_ONCE_CATEGORY },
+            },
+          }),
+        );
+        await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_ACCEPTED);
+        const said = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        const result = await validateSource(sourceDir);
+
+        expect(said.mock.calls).toStrictEqual([[expect.stringContaining(`[matrix] ${FINDING}`)]]);
+        expect(
+          result.issues.filter((issue) => issue.message.includes(FINDING)),
+          "said once is not filed never: the row still carries it",
+        ).toStrictEqual([
+          {
+            severity: "warning",
+            file: SKILL_CATEGORIES_PATH,
+            message: expect.stringContaining(FINDING),
+          },
+        ]);
       });
     });
   });

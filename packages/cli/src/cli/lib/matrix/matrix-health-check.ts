@@ -33,8 +33,9 @@ export type MatrixHealthIssue = {
   details: string;
 };
 
-export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
-  const issues = [
+/** What the health check finds in `matrix`, said to nobody. */
+export function matrixHealthIssues(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
+  return [
     ...checkCategoryDomains(matrix),
     ...checkSkillCategories(matrix),
     ...checkSkillRelationRefs(matrix),
@@ -42,6 +43,14 @@ export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue
     ...checkAuditVerdictContradictions(matrix),
     ...checkUnauditedSkills(matrix),
   ];
+}
+
+/**
+ * What the health check finds in `matrix`, each one said as a warning. The catalogue load says
+ * them; a caller that only files them reads {@link matrixHealthIssues}, or a run says each twice.
+ */
+export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
+  const issues = matrixHealthIssues(matrix);
 
   for (const issue of issues) {
     warn(`[matrix] ${issue.details}`);
