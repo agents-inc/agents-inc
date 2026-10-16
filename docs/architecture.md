@@ -36,7 +36,7 @@ route left out of it is missing from every client.
 
 | Route                     | Where                        | What                                                                                                                                                                            |
 | ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /configs`           | `index.ts` `createConfig`    | Validates `seedPayloadSchema`, content-addresses the body, and stores it in KV `CONFIGS`. A different `v` gets `409` (`refuseAnotherSeedVersion`)                               |
+| `POST /configs`           | `index.ts` `createConfig`    | Validates `installableSeedPayloadSchema`, content-addresses the body, and stores it in KV `CONFIGS`. A different `v` gets `409` (`refuseAnotherSeedVersion`)                               |
 | `GET /configs/{id}`       | `index.ts` `getConfig`       | Serves the payload. The CLI identifies itself with `user-agent: agents-inc-cli` (`SEED_USER_AGENT`)                                                                             |
 | `GET /skills`             | `index.ts`, `skill-index.ts` | The external-skill search index, stored under `SKILL_INDEX_KEY` and carrying an `x-skill-index: fresh\|stale` header. `.github/workflows/build-skill-index.yml` builds it daily |
 | `/stacks`, `/stacks/{id}` | `stacks.ts`                  | A signed-in user's saved stacks (D1). Each one points at a `configId`                                                                                                           |
@@ -52,7 +52,7 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
   features/configure/lib/seed.ts                                fetchSeedConfig ◀─GET /configs/{id}
   lib/api/configs.ts                                            seedToInstallSelection (@workspace/compile)
                                                                 install: plugin or eject, per skill
-                                                                writeScopedFromWizard → config.ts pair
+                                                                writeConfigByScope → config.ts pair
                                                                 compileAgentForHost → sub-agent files
 ```
 
@@ -66,11 +66,11 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
 3. **CLI.** `init --from` (`selectionFromSharedConfig` in `commands/init.tsx`) fetches the payload
    through `@workspace/api` against `SEED_API_URL` (`AGENTS_INC_API_URL` overrides it), maps it
    with `seedToInstallSelection`. `edit --from` applies a payload to an existing
-   installation. `share` and `edit --ui` go the other way: `seedPayloadForInstallation` then
-   `publishSeedConfig`.
+   installation. `share` and a bare `edit` (`edit --ui`) go the other way:
+   `seedPayloadForInstallation` then `publishSeedConfig`.
 4. **Install and write.** Skills are installed per skill (see below), and skills the editor added
    from GitHub travel inline in the payload's `external` map (`writeExternalSkills`). The config is
-   written only through `lib/config-gate/`, by `writeScopedFromWizard`. That call splits it by
+   written only through `lib/config-gate/`, by `writeConfigByScope`. That call splits it by
    scope, propagates global changes to registered projects and recompiles them.
 5. **Compile.** `compileAgentForHost` in `lib/compiler.ts` renders the partials under
    `packages/cli/src/agents/<group>/<agent>/` through `_templates/agent.liquid`. Claude gets
@@ -81,8 +81,8 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
 worker, the CLI and the api-mocks fixtures. Changing the payload's shape means bumping
 `SEED_VERSION`. The schema accepts exactly one version, with no migration, so old ids and saves
 stop installing and must be re-shared. Then update `toSeedPayload` and `fromSeedPayload` in the
-editor, `configToSeedPayload` and `seedToInstallSelection` on the CLI side, and the fixtures in
-`packages/api-mocks/src/fixtures.ts`.
+editor, `configToSeedPayload` on the CLI side, `seedToInstallSelection` in `@workspace/compile`,
+and the fixtures in `packages/api-mocks/src/fixtures.ts`.
 
 **The preview and the install share their renderers.** The editor's output preview renders with
 `@workspace/compile` and the vendored corpus, so it draws the bytes `init --from` writes.

@@ -1,8 +1,8 @@
 # Agents Inc — repository root
 
 An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
-Compose specialized subagents from atomic skills: pick a stack, choose your skills from an
-interactive grid, and compile subagents that carry exactly the skills you selected. This was a single
+Compose specialized subagents from atomic skills: pick a stack, choose your skills in the editor,
+and compile subagents that carry exactly the skills you selected. This was a single
 CLI package until 2026-08-04 and is now a monorepo; `packages/cli` is still the only workspace that
 publishes to npm.
 

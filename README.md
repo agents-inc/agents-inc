@@ -8,8 +8,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 An agent composition framework for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
-Compose specialized subagents from atomic skills: pick a stack, choose your skills from an
-interactive grid, and compile subagents that carry exactly the skills you selected.
+Compose specialized subagents from atomic skills: pick a stack and your skills in the
+[editor](https://agentsinc.sh/editor), and compile subagents that carry exactly the skills you
+selected.
 
 ```bash
 npx agents-inc init

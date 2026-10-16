@@ -29,12 +29,11 @@ fails the spec.
 - **Accessibility:** `specs/a11y.spec.ts` runs axe over the assembled page. Every state
   `visual.spec.ts` captures needs an audit there. The held-out rules are listed in that spec.
   `color-contrast` is a permanent ruling; the others are tracked defects.
-- **Appearance:** `specs/visual.spec.ts` asserts nothing and hands states to Argos. It builds with
+- **Appearance:** `specs/visual.spec.ts` hands states to Argos. It builds with
   `--mode test` and serves the result statically through `playwright.visual.config.ts`; captures
   failed against the dev server. To add a screen, add a `test` to that file. Captures are
   viewport-sized. A local run uploads nothing; `CI=true` with `ARGOS_TOKEN` does.
-- **The viewport is 1600×1000**, above the 1500px threshold in `src/lib/viewport.ts`. Only
-  `viewport-threshold.spec.ts` overrides it.
+- **The viewport is 1600×1000**, above the 1500px threshold in `src/lib/viewport.ts`.
 - **`catalog.spec.ts` guards the fixtures.** The catalogue is regenerated from the CLI, so it
   asserts that every skill and stack the specs pin to still exists. `SINGLE_AGENT_SKILL` in
   `support/catalog.ts` is the stack skill that reaches one sub-agent. Use it when a spec needs an
@@ -51,8 +50,7 @@ fails the spec.
   anchoring moves it.
 - **One behaviour per test.**
 - **Hold a live defect with `test.fail()` and a comment, never with `.skip`.** A skip runs nowhere
-  and reads as coverage. The ruling is
-  `packages/cli/.ai-docs/agent-findings/2026-08-21-a-skipped-spec-is-indistinguishable-from-a-passing-one.md`.
+  and reads as coverage.
 - **Only the topmost modal is in the accessibility tree.** To check that a dialog is still open
   behind another, use a CSS locator (`InstallDialog.sheet`), then re-assert by role after the top
   dialog closes. `filter({ hasText })` matches substrings, so it can claim the wrong dialog.

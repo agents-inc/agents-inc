@@ -8,8 +8,8 @@ a second description of a route anywhere else.
 | Import                          | Holds                                                                                 | Read by                                                                                        |
 | ------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `@workspace/api-mocks`          | the handlers, `defaultHandlers`, `signedInHandlers`, `answerFor`, `workerRequestFrom` | editor suites; CLI unit specs and `packages/cli/e2e/fixtures/seed-config-store.ts`             |
-| `@workspace/api-mocks/fixtures` | payloads and bodies only, with no msw import                                          | anything that wants a value; the only entry `apps/server` can load (workerd has no `msw/node`) |
-| `@workspace/api-mocks/node`     | `configMockServer`, an `msw/node` server over `defaultHandlers`                       | `apps/editor/vitest.setup.ts` and editor specs                                                 |
+| `@workspace/api-mocks/fixtures` | payloads and bodies only, with no msw import                                          | anything that wants a value                                                                    |
+| `@workspace/api-mocks/node`     | `configMockServer`, an `msw/node` server over `defaultHandlers`                       | `apps/editor/vitest.setup.ts`, editor specs and CLI unit specs                                 |
 
 `src/entry-points.test.ts` holds those import boundaries.
 
@@ -24,11 +24,12 @@ a second description of a route anywhere else.
   `apps/server/src/auth.ts`).
 - **`use()` matches in argument order**, so put a signed-in-only refusal first:
   `use(stackNotFoundHandler, ...signedInHandlers)`.
-- **Playwright and a real `node:http` server** go through `answerFor(handlers, request)`, which
-  returns a status, headers and bytes, or "unhandled", or a dead connection. It also applies the
-  worker's CORS `exposeHeaders`, which an in-process mock never needs. Turn an `IncomingMessage` into a
-  request with `workerRequestFrom`, because every handler is anchored on `WORKER_ORIGIN` and not on
-  a loopback port. The caller decides what "unhandled" means (`apps/editor/e2e/support/stub.ts`).
+- **A real `node:http` server** goes through `answerFor(handlers, request)`, which returns a
+  status, headers and bytes, or "unhandled", or a dead connection. It also applies the worker's
+  CORS `exposeHeaders`, which an in-process mock never needs. Turn an `IncomingMessage` into a
+  request with `workerRequestFrom`, because the worker's handlers are anchored on `WORKER_ORIGIN`
+  and not on a loopback port. The caller decides what "unhandled" means
+  (`apps/editor/e2e/support/install.ts`).
 - **The skill index has three answers:** `fresh`, `stale` (`staleSkillIndexHandler`, the daily
   build stopped landing) and `503` (`skillIndexUnavailableHandler`, never published).
 

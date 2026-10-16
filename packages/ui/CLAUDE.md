@@ -15,9 +15,9 @@ re-add a component.
 
 ## Gates
 
-- **Stories are the tests.** There is no unit suite, so a component with no story has no
-  coverage. Use one claim per story, asserted through the accessibility tree (a role, a name, an
-  attribute, or a handler being reached), with no helpers or loops. Two claims make two stories.
+- **Stories are the tests.** A component with no story has no coverage. Use one claim per story,
+  asserted through the accessibility tree (a role, a name, an attribute, or a handler being
+  reached), with no helpers or loops. Two claims make two stories.
 - **Axe gates every story** (`.storybook/preview.ts`, `a11y.test: "error"`). `color-contrast` is
   held out permanently by owner ruling. Do not re-enable it expecting a token fix.
 - **Chromatic diffs every story in light and dark** (`parameters.chromatic.modes`). A story with no
@@ -41,9 +41,9 @@ re-add a component.
   holds controls uses a sibling `LatticeCellButton` instead (`skill-cell.tsx`), because a control
   cannot contain controls.
 - **`h-`/`w-` on a `flex-1` child does nothing.** Use `min-`/`max-` sizes. `DialogPanes`,
-  `DialogPane`, `DialogBody` under `scroll`, and `Input`'s inner field all ship `flex-1`. A class in
-  the DOM is not proof it takes effect: measure it in a browser (`clientHeight`,
-  `getComputedStyle`).
+  `DialogPane` (`left`, `content`), `DialogBody` under `scroll`, and `Input`'s inner field all ship
+  `flex-1`. A class in the DOM is not proof it takes effect: measure it in a browser
+  (`clientHeight`, `getComputedStyle`).
 - **Put `data-slot` on every root**, named for the part (`dialog-footer`, `lattice-row`). It is the
   only hook a class rename cannot break.
 - **Export cva variants beside the component** (`chipVariants`) for call sites that need the look
