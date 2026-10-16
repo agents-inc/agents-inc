@@ -33,7 +33,7 @@ export default class Search extends BaseCommand {
   static description =
     "Read-only catalog browse. Searches the marketplace this installation reads from, " +
     "plus the local skills already on disk, by id, displayName, slug, description, or " +
-    "category. Use `edit` to install what it finds.";
+    "category. To install one, add it in agentsinc.sh/editor.";
 
   static examples = [
     {
@@ -116,8 +116,7 @@ async function loadSearchableSkills(): Promise<ResolvedSkill[]> {
 }
 
 /**
- * The machine id and the display name are different answers and get a column each — `edit`
- * takes the id, a human reads the name.
+ * The machine id and the display name are different answers and get a column each.
  *
  * Every one of the five is a string a catalogue author wrote, and this is where they stop being
  * that and become cells. `--marketplace` is a supported input, so a stranger's repository reaches
