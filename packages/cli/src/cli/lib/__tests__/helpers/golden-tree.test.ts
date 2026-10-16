@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { renderAgentMd, renderSkillMd } from "../content-generators.js";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils.js";
-import { normalizeInstallTree, readInstallTree, type InstallTree } from "./golden-tree.js";
+import {
+  formatInstalledConfigs,
+  normalizeInstallTree,
+  readInstallTree,
+  type InstallTree,
+} from "./golden-tree.js";
 
 const HOME = "/tmp/ai-e2e-AbC123/fake-home";
 const PROJECT = "/tmp/ai-e2e-AbC123/fake-home/project";
@@ -128,6 +133,51 @@ describe("normalizeInstallTree", () => {
 
     expect(Object.keys(normalized.files)).toStrictEqual(["a/a.txt", "a/z.txt", "b.txt"]);
     expect(normalized.emptyDirectories).toStrictEqual(["a-empty", "z-empty"]);
+  });
+});
+
+describe("formatInstalledConfigs", () => {
+  /** Roots long enough that the writer broke every line naming one, as under a long `TMPDIR`. */
+  const LONG_HOME = `/tmp/${"a-long-temp-dir-".repeat(6)}/fake-home`;
+  const LONG_SOURCE = `/tmp/${"a-long-temp-dir-".repeat(6)}/fixture`;
+  const CONFIG_TS = ".agents-inc/claude/config.ts";
+  const FORMATTED = "export default {\n  marketplace: '<source>',\n  projects: ['<home>'],\n}\n";
+
+  it("folds the lines a long root broke back onto one, once the roots are placeholders", async () => {
+    const written = `export default {\n  marketplace:\n    '${LONG_SOURCE}',\n  projects: [\n    '${LONG_HOME}',\n  ],\n}\n`;
+    const normalized = normalizeInstallTree(treeOf(CONFIG_TS, written), {
+      roots: { home: [LONG_HOME], source: [LONG_SOURCE] },
+      cliVersion: CLI_VERSION,
+    });
+
+    expect(await formatInstalledConfigs(normalized)).toStrictEqual(treeOf(CONFIG_TS, FORMATTED));
+  });
+
+  it("leaves a config.ts already in the installed format byte-identical", async () => {
+    expect(await formatInstalledConfigs(treeOf(CONFIG_TS, FORMATTED))).toStrictEqual(
+      treeOf(CONFIG_TS, FORMATTED),
+    );
+  });
+
+  it("re-formats a config.ts written in another style, so a writer that stops formatting still differs", async () => {
+    const doubleQuoted =
+      'export default {\n  marketplace: "<source>",\n  projects: ["<home>"],\n}\n';
+
+    expect(await formatInstalledConfigs(treeOf(CONFIG_TS, doubleQuoted))).not.toStrictEqual(
+      treeOf(CONFIG_TS, doubleQuoted),
+    );
+  });
+
+  it("leaves every file but config.ts as it was", async () => {
+    const tree = {
+      files: {
+        ".claude/plugins/known_marketplaces.json": '{\n  "path":\n    "<source>"\n}\n',
+        ".agents-inc/claude/config-types.ts": "export type SkillId =\n  | 'web-framework-react'\n",
+      },
+      emptyDirectories: [".claude/plugins/marketplaces"],
+    };
+
+    expect(await formatInstalledConfigs(tree)).toStrictEqual(tree);
   });
 });
 

@@ -6,6 +6,7 @@ import { CLI } from "../fixtures/cli.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 import {
   cleanupTempDir,
+  compactCliOutput,
   createTempDir,
   fileExists,
   flattenCliOutput,
@@ -159,7 +160,10 @@ describe("new marketplace — refusals", () => {
     });
 
     expect(exitCode, output).toBe(EXIT_CODES.ERROR);
-    expect(output, "the refusal must name the directory it is about").toContain(occupied);
+    // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+    expect(compactCliOutput(output), "the refusal must name the directory it is about").toContain(
+      compactCliOutput(occupied),
+    );
     expect(
       await listFiles(occupied),
       "what the directory already held is the reason for the refusal, so it stays",

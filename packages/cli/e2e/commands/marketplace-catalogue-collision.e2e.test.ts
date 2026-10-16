@@ -17,7 +17,7 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { flattenCliOutput } from "../helpers/test-utils.js";
+import { compactCliOutput, flattenCliOutput } from "../helpers/test-utils.js";
 import { EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js";
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
 
@@ -110,8 +110,9 @@ describe("a marketplace colliding with the public catalogue", () => {
     );
     const output = flattenCliOutput(combined);
     expect(output, "the colliding id must be named").toContain(CATALOGUE_OWNED_ID);
-    expect(output, "the marketplace that shipped it must be named").toContain(
-      collidingSource.sourceDir,
+    // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+    expect(compactCliOutput(combined), "the marketplace that shipped it must be named").toContain(
+      compactCliOutput(collidingSource.sourceDir),
     );
     expect(output, "the refusal must name the fix, not just the fault").toContain(NAMESPACE_REMEDY);
 

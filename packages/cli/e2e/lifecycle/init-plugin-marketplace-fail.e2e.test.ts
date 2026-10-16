@@ -5,6 +5,7 @@ import { createE2ESource, type E2ESource } from "../helpers/create-e2e-source.js
 import {
   cleanupFixture,
   cleanupTempDir,
+  compactCliOutput,
   createTempDir,
   flattenCliOutput,
 } from "../helpers/test-utils.js";
@@ -86,7 +87,8 @@ describe("init over a marketplace that cannot serve it: filesystem integrity", (
         "a marketplace with no marketplace.json must be refused, naming the builds that write one",
       ).toMatch(MANIFEST_REFUSAL_BUILDS_IN_ORDER);
       expect(exitCode).toBe(EXIT_CODES.ERROR);
-      expect(output).toContain(unbuilt.sourceDir);
+      // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+      expect(compactCliOutput(combined)).toContain(compactCliOutput(unbuilt.sourceDir));
 
       // Partial-state prevention: no skill directories may exist under `.claude/skills/` — at
       // either root — after the refusal.

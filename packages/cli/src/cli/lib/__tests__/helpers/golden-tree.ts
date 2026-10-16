@@ -15,7 +15,9 @@
  *   `injectForkedFromMetadata` (`lib/skills/skill-metadata.ts`) stamps every ejected skill;
  * - **machine timestamps** — full ISO-8601 instants, which is what the Claude CLI's own plugin
  *   registry records each install at;
- * - **mtimes** — never read at all. A golden tree compares what was written, not when.
+ * - **mtimes** — never read at all. A golden tree compares what was written, not when;
+ * - **where a long temp path broke a `config.ts` line** — by {@link formatInstalledConfigs}, a
+ *   separate step because prettier formats asynchronously.
  *
  * Nothing is inferred beyond that list. A value this does not know about is left in the tree, so a
  * NEW volatile field reddens the golden by name rather than being absorbed by a pattern that
@@ -23,7 +25,9 @@
  */
 import { lstat, readdir, readFile } from "fs/promises";
 import path from "path";
+import { format, type Options } from "prettier";
 
+import { STANDARD_FILES } from "../../../consts.js";
 import { bytewise } from "../../../utils/string.js";
 import { typedEntries } from "../../../utils/typed-object.js";
 
@@ -72,6 +76,19 @@ const TIMESTAMP_PLACEHOLDER = "<timestamp>";
 /** A YAML `date:` field whose whole value is a bare date — the shape an install stamps. */
 const STAMPED_DATE_FIELD = /^(\s*date: )\d{4}-\d{2}-\d{2}$/gm;
 const DATE_PLACEHOLDER = "<date>";
+
+/**
+ * The style an install writes `config.ts` in — the owner-ruled settings `installed-format.ts` in
+ * `packages/compile` reproduces. Written out for the reason `contract/emission-scenarios.test.ts`
+ * there gives: no prettier config this tree resolves is that style.
+ */
+const INSTALLED_CONFIG_FORMAT = {
+  parser: "typescript",
+  semi: false,
+  singleQuote: true,
+  printWidth: 100,
+  trailingComma: "all",
+} as const satisfies Options;
 
 /**
  * Reads every file under `root` as text, and names every directory holding nothing.
@@ -199,4 +216,30 @@ function writeRootsAsPlaceholders(
 
 function compiledByLine(version: string): string {
   return `${COMPILED_BY_PREFIX}${version}${COMPILED_BY_SUFFIX}`;
+}
+
+/**
+ * The same tree with each `config.ts` formatted the way an install formats one; every other file is
+ * left as it was.
+ *
+ * The writer breaks a line that passes 100 columns counting the temp path it holds, so where it
+ * breaks depends on the length of `TMPDIR`. Formatting AFTER {@link normalizeInstallTree} puts each
+ * break where a placeholder-length root puts it, whatever the machine. Over the tree as READ it is
+ * the identity for an install that wrote its config in the ruled style, so comparing the two keeps
+ * that style pinned while the golden stops pinning where a temp path broke.
+ */
+export async function formatInstalledConfigs(tree: InstallTree): Promise<InstallTree> {
+  const files = await Promise.all(typedEntries(tree.files).map(withConfigFormatted));
+
+  return { files: Object.fromEntries(files), emptyDirectories: tree.emptyDirectories };
+}
+
+async function withConfigFormatted([file, text]: [string, string]): Promise<[string, string]> {
+  if (!isInstalledConfig(file)) return [file, text];
+
+  return [file, await format(text, INSTALLED_CONFIG_FORMAT)];
+}
+
+function isInstalledConfig(file: string): boolean {
+  return path.posix.basename(file) === STANDARD_FILES.CONFIG_TS;
 }

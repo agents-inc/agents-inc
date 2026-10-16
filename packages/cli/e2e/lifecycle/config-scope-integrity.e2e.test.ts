@@ -260,24 +260,16 @@ describe.skipIf(!claudeAvailable)(
         // Phase C: Verify global config includes the source field.
         // Before the fix, splitConfigByScope did not spread ...config,
         // so source (and marketplace) were lost in the global partition.
-        const globalConfigPath = configTsPath(fakeHome);
-        const globalConfig = await readTestFile(globalConfigPath);
-
-        // The top-level "marketplace" field in the export default block should reference
-        // the E2E source directory. The config writer formats it as:
-        //   marketplace: '/path/to/source',
-        expect(globalConfig, "Global config must contain a top-level marketplace field").toContain(
-          `marketplace: '${pluginSource.sourceDir}'`,
-        );
+        expect(
+          (await loadConfigOrFail(fakeHome)).marketplace,
+          "Global config must record the marketplace",
+        ).toBe(pluginSource.sourceDir);
 
         // Phase D: Verify project config also includes the source field
-        const projectConfigPath = configTsPath(projectDir);
-        const projectConfig = await readTestFile(projectConfigPath);
-
         expect(
-          projectConfig,
-          "Project config must contain a top-level marketplace field",
-        ).toContain(`marketplace: '${pluginSource.sourceDir}'`);
+          (await loadConfigOrFail(projectDir)).marketplace,
+          "Project config must record the marketplace",
+        ).toBe(pluginSource.sourceDir);
       },
     );
   },

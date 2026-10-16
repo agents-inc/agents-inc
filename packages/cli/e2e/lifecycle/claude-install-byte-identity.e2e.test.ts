@@ -22,6 +22,7 @@ import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { createE2EPluginSource } from "../helpers/create-e2e-plugin-source.js";
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 import { buildSeedSkill } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
+import { formatInstalledConfigs } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 import {
   CLI_ROOT,
   cleanupTempDir,
@@ -51,10 +52,12 @@ import {
  * re-recorded on purpose with `-u` over the existing file — see {@link expectGoldenTree}.
  *
  * **What is normalised, and nothing else:** the temp roots, the CLI version inside a compiled
- * agent's `Compiled by` line, the date `eject` stamps into each copied skill's `forkedFrom`, and
- * the ISO instants the Claude CLI's own plugin registry records. `readInstallTree` never reads an
- * mtime. `src/cli/lib/__tests__/helpers/golden-tree.test.ts` pins each rule, and the golden file
- * names the paths it leaves unpinned under `notPinned`.
+ * agent's `Compiled by` line, the date `eject` stamps into each copied skill's `forkedFrom`, the
+ * ISO instants the Claude CLI's own plugin registry records, and where a long temp root broke a
+ * `config.ts` line — each `config.ts` is formatted again once its roots are placeholders, after the
+ * file as read is held to that same format. `readInstallTree` never reads an mtime.
+ * `src/cli/lib/__tests__/helpers/golden-tree.test.ts` pins each rule, and the golden file names the
+ * paths it leaves unpinned under `notPinned`.
  *
  * **Watched failing once**, per the mutation rule: in a scratch copy of this package, one byte of
  * `src/agents/_templates/agent.liquid` changed (`Skill tool` to `skill tool` in the
@@ -113,6 +116,10 @@ const DUAL_SCOPE_PLUS_SPARE_PAYLOAD = {
  *
  * `roots` names every machine-specific directory the run was handed; each is written as its
  * placeholder in both of its spellings, because a symlinked temp dir reaches the CLI resolved.
+ *
+ * Each `config.ts` is formatted after the swap, so a line a long `TMPDIR` broke compares equal to
+ * the golden's one line. The file as read is held to that format first, which is what keeps its
+ * formatting pinned once the golden no longer pins it byte for byte.
  */
 async function installTreeUnder(
   root: string,
@@ -123,10 +130,18 @@ async function installTreeUnder(
     typedEntries(roots).map(async ([name, dir]) => [name, await everySpellingOf(dir)] as const),
   );
 
-  return normalizeInstallTree(await readInstallTree(root, { skip: notPinned }), {
-    roots: Object.fromEntries(spellings),
-    cliVersion: await cliVersion(),
-  });
+  const tree = await readInstallTree(root, { skip: notPinned });
+  expect(
+    await formatInstalledConfigs(tree),
+    "an install writes config.ts already formatted, however long the paths it holds",
+  ).toStrictEqual(tree);
+
+  return formatInstalledConfigs(
+    normalizeInstallTree(tree, {
+      roots: Object.fromEntries(spellings),
+      cliVersion: await cliVersion(),
+    }),
+  );
 }
 
 /** A directory as it was handed out and as the filesystem resolves it — one entry when they agree. */

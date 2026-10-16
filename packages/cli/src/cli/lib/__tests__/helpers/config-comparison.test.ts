@@ -1,23 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { normalizeConfigPreservingOrder, normalizeGlobalConfig } from "./config-comparison.js";
 
-const PROJECTS_LINE = '  "projects": ["/home/alice/app", "/tmp/xyz-123"],';
-const SKILL_REACT = '  { "id": "web-framework-react", "scope": "global" },';
-const SKILL_VITEST = '  { "id": "web-testing-vitest", "scope": "global" },';
+/** Lines in the shape the `config.ts` writer emits them: bare keys, single-quoted values. */
+const PROJECTS_LINE = "  projects: ['/home/alice/app', '/tmp/xyz-123'],";
+const OTHER_PROJECTS_LINE = "  projects: ['/home/bob/other'],";
+const SKILL_REACT = "  { id: 'web-framework-react', scope: 'global', origin: 'eject' },";
+const SKILL_VITEST = "  { id: 'web-testing-vitest', scope: 'global', origin: 'eject' },";
 
 describe("normalizeGlobalConfig", () => {
-  it("removes the machine-specific projects-tracking line", () => {
-    const withProjects = [SKILL_REACT, PROJECTS_LINE, SKILL_VITEST].join("\n");
-
-    expect(normalizeGlobalConfig(withProjects)).not.toContain('"projects"');
-  });
-
-  it("treats configs that differ only in the projects line as equal", () => {
-    const otherProjectsLine = '  "projects": ["/home/bob/other"],';
+  it("does not mask a change to the projects list", () => {
     const before = [SKILL_REACT, PROJECTS_LINE, SKILL_VITEST].join("\n");
-    const after = [SKILL_REACT, otherProjectsLine, SKILL_VITEST].join("\n");
+    const after = [SKILL_REACT, OTHER_PROJECTS_LINE, SKILL_VITEST].join("\n");
 
-    expect(normalizeGlobalConfig(after)).toStrictEqual(normalizeGlobalConfig(before));
+    expect(normalizeGlobalConfig(after)).not.toStrictEqual(normalizeGlobalConfig(before));
   });
 
   it("treats configs that differ only in line ordering as equal", () => {
@@ -53,18 +48,11 @@ describe("normalizeGlobalConfig", () => {
  * anything without the other.
  */
 describe("normalizeConfigPreservingOrder", () => {
-  it("removes the machine-specific projects-tracking line", () => {
-    const withProjects = [SKILL_REACT, PROJECTS_LINE, SKILL_VITEST].join("\n");
-
-    expect(normalizeConfigPreservingOrder(withProjects)).not.toContain('"projects"');
-  });
-
-  it("treats configs that differ only in the projects line as equal", () => {
-    const otherProjectsLine = '  "projects": ["/home/bob/other"],';
+  it("does not mask a change to the projects list", () => {
     const before = [SKILL_REACT, PROJECTS_LINE, SKILL_VITEST].join("\n");
-    const after = [SKILL_REACT, otherProjectsLine, SKILL_VITEST].join("\n");
+    const after = [SKILL_REACT, OTHER_PROJECTS_LINE, SKILL_VITEST].join("\n");
 
-    expect(normalizeConfigPreservingOrder(after)).toStrictEqual(
+    expect(normalizeConfigPreservingOrder(after)).not.toStrictEqual(
       normalizeConfigPreservingOrder(before),
     );
   });
@@ -92,11 +80,9 @@ describe("normalizeConfigPreservingOrder", () => {
     );
   });
 
-  it("leaves every surviving line in its original position", () => {
+  it("leaves every line, the projects list included, in its original position", () => {
     const config = [SKILL_VITEST, PROJECTS_LINE, SKILL_REACT].join("\n");
 
-    expect(normalizeConfigPreservingOrder(config)).toStrictEqual(
-      [SKILL_VITEST, SKILL_REACT].join("\n"),
-    );
+    expect(normalizeConfigPreservingOrder(config)).toStrictEqual(config);
   });
 });
