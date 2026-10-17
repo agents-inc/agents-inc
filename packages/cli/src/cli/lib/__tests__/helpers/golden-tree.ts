@@ -1,27 +1,7 @@
 /**
- * A directory tree read into a comparable value, and the normaliser that makes one run's tree
- * comparable with another's.
- *
- * Built for the Claude golden trees in `e2e/lifecycle/claude-install-byte-identity.e2e.test.ts`,
- * which pin every file a Claude install leaves behind so that a refactor claiming "no behaviour
- * change for Claude users" can be checked rather than asserted. A golden tree is only as strict as
- * its normaliser is narrow, so this names each thing it removes and leaves every other byte alone:
- *
- * - **temp paths** — each machine-specific root a run is handed, written `<name>` for the name the
- *   caller files it under, longest root first so a project nested in its HOME keeps its own;
- * - **the CLI version** — only inside the one line that carries it, `Compiled by <version>.` in a
- *   compiled agent's trailing volatile block, and only when it names THIS run's version;
- * - **the install date** — a YAML `date:` field holding a bare date, which is how
- *   `injectForkedFromMetadata` (`lib/skills/skill-metadata.ts`) stamps every ejected skill;
- * - **machine timestamps** — full ISO-8601 instants, which is what the Claude CLI's own plugin
- *   registry records each install at;
- * - **mtimes** — never read at all. A golden tree compares what was written, not when;
- * - **where a long temp path broke a `config.ts` line** — by {@link formatInstalledConfigs}, a
- *   separate step because prettier formats asynchronously.
- *
- * Nothing is inferred beyond that list. A value this does not know about is left in the tree, so a
- * NEW volatile field reddens the golden by name rather than being absorbed by a pattern that
- * happened to fit it.
+ * Reads a directory tree into a comparable value and normalises its volatile parts — temp roots,
+ * this run's CLI version, install dates, ISO timestamps — so two runs compare byte for byte.
+ * Nothing else is normalised, so a new volatile field reddens the golden by name.
  */
 import { lstat, readdir, readFile } from "fs/promises";
 import path from "path";
@@ -31,57 +11,43 @@ import { STANDARD_FILES } from "../../../consts.js";
 import { bytewise } from "../../../utils/string.js";
 import { typedEntries } from "../../../utils/typed-object.js";
 
-/** One directory tree as it stands on disk: every file's text, and every directory holding nothing. */
 export type InstallTree = {
-  /** Each file's text, keyed by its path relative to the tree's root in POSIX form. */
+  /** Keyed by POSIX path relative to the root. */
   files: Record<string, string>;
-  /** Each directory with nothing in it, in the same form. A directory holding files is implied by them. */
+  /** A populated directory is implied by its files. */
   emptyDirectories: string[];
 };
 
-/** One phase of a recorded journey, in the shape `readInstallTree` serialises. */
 export type RecordedPhase = {
   files: Record<string, string>;
   emptyDirectories: string[];
 };
 
-/** One journey's recorded trees: each phase by name, and the paths the journey does not pin. */
 export type RecordedGolden = {
   notPinned: string[];
   phases: Record<string, RecordedPhase>;
 };
 
-/** What one run's tree is normalised against. */
 export type GoldenTreeContext = {
-  /**
-   * Each machine-specific root the run was handed, by the name its placeholder is written with —
-   * `home` is written `<home>`. Every spelling of one root is listed under its name, because a temp
-   * directory reached through a symlink arrives at the CLI resolved, and the two spellings are one
-   * directory.
-   */
+  /** Placeholder name to every spelling of that root; a symlinked temp dir arrives resolved. */
   roots: Record<string, readonly string[]>;
-  /** The CLI version the run's agents were compiled by. */
   cliVersion: string;
 };
 
-/** Where the compiled-agent template renders the CLI version — `agent.liquid`'s volatile block. */
+// `agent.liquid`'s "Compiled by <version>." line.
 const COMPILED_BY_PREFIX = "Compiled by ";
 const COMPILED_BY_SUFFIX = ".";
 const CLI_VERSION_PLACEHOLDER = "<cli-version>";
 
-/** A full ISO-8601 instant, as `Date.prototype.toISOString` writes one. */
+/** An ISO-8601 instant, as `toISOString` writes one. */
 const MACHINE_TIMESTAMP = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g;
 const TIMESTAMP_PLACEHOLDER = "<timestamp>";
 
-/** A YAML `date:` field whose whole value is a bare date — the shape an install stamps. */
+/** A YAML `date:` holding a bare date, as an install stamps. */
 const STAMPED_DATE_FIELD = /^(\s*date: )\d{4}-\d{2}-\d{2}$/gm;
 const DATE_PLACEHOLDER = "<date>";
 
-/**
- * The style an install writes `config.ts` in — the owner-ruled settings `installed-format.ts` in
- * `packages/compile` reproduces. Written out for the reason `contract/emission-scenarios.test.ts`
- * there gives: no prettier config this tree resolves is that style.
- */
+/** The style an install writes `config.ts` in; no prettier config this tree resolves matches it. */
 const INSTALLED_CONFIG_FORMAT = {
   parser: "typescript",
   semi: false,
@@ -91,15 +57,8 @@ const INSTALLED_CONFIG_FORMAT = {
 } as const satisfies Options;
 
 /**
- * Reads every file under `root` as text, and names every directory holding nothing.
- *
- * `skip` names paths relative to `root` — a file, or a directory with everything under it — that
- * the tree leaves out whole. It exists for state another program keeps beside the install, whose
- * content no change here can move; the caller names each one, so what a golden does not pin is
- * written down where the golden is.
- *
- * A symbolic link is refused rather than followed or dropped: following one reads a tree the
- * install does not own, and dropping one hides that the install made it.
+ * `skip` leaves paths out whole. A symlink throws: following one reads a tree the install does not
+ * own, and dropping one hides that the install made it.
  */
 export async function readInstallTree(
   root: string,
@@ -115,7 +74,6 @@ export async function readInstallTree(
   return { files: filesAmong(read), emptyDirectories: emptyDirectoriesAmong(read) };
 }
 
-/** One entry of the walk, read for the only two things a tree records. */
 type ReadEntry =
   | { kind: "file"; pair: [string, string] }
   | { kind: "empty-directory"; path: string }
@@ -150,16 +108,11 @@ function isSkipped(relative: string, skip: readonly string[]): boolean {
   return skip.some((skipped) => relative === skipped || relative.startsWith(`${skipped}/`));
 }
 
-/** A path under `root`, relative to it and in POSIX form — the key a tree records it under. */
 function relativeTo(root: string, absolute: string): string {
   return path.relative(root, absolute).split(path.sep).join("/");
 }
 
-/**
- * The same tree with every volatile value written as a placeholder, and its files and empty
- * directories in path order — so two runs of one journey serialise to the same bytes, and a
- * difference between them is a difference in what the install wrote.
- */
+/** Volatile values as placeholders and paths sorted, so two runs serialise to the same bytes. */
 export function normalizeInstallTree(tree: InstallTree, context: GoldenTreeContext): InstallTree {
   const normalizeText = textNormalizer(context);
 
@@ -173,7 +126,6 @@ export function normalizeInstallTree(tree: InstallTree, context: GoldenTreeConte
   };
 }
 
-/** A file the tree names. Only ever asked for a key taken from the same tree. */
 function fileText(tree: InstallTree, file: string): string {
   const text = tree.files[file];
   if (text === undefined) throw new Error(`${file} is not a file in this tree`);
@@ -193,11 +145,7 @@ function textNormalizer(context: GoldenTreeContext): (text: string) => string {
       .replace(STAMPED_DATE_FIELD, `$1${DATE_PLACEHOLDER}`);
 }
 
-/**
- * Every spelling of every root, paired with its placeholder, longest first: a project nested in its
- * HOME must be replaced before the HOME it sits under, or it is written as `<home>/project` and a
- * HOME that moved relative to it reads as a change.
- */
+// Longest first, so a project nested in HOME is not written as `<home>/project`.
 function longestRootFirst(roots: GoldenTreeContext["roots"]): (readonly [string, string])[] {
   return typedEntries(roots)
     .flatMap(([name, spellings]) => spellings.map((root) => [root, `<${name}>`] as const))
@@ -219,14 +167,8 @@ function compiledByLine(version: string): string {
 }
 
 /**
- * The same tree with each `config.ts` formatted the way an install formats one; every other file is
- * left as it was.
- *
- * The writer breaks a line that passes 100 columns counting the temp path it holds, so where it
- * breaks depends on the length of `TMPDIR`. Formatting AFTER {@link normalizeInstallTree} puts each
- * break where a placeholder-length root puts it, whatever the machine. Over the tree as READ it is
- * the identity for an install that wrote its config in the ruled style, so comparing the two keeps
- * that style pinned while the golden stops pinning where a temp path broke.
+ * Reformats each `config.ts` as an install does. Run after normalising, so where a line breaks no
+ * longer depends on the length of `TMPDIR`.
  */
 export async function formatInstalledConfigs(tree: InstallTree): Promise<InstallTree> {
   const files = await Promise.all(typedEntries(tree.files).map(withConfigFormatted));

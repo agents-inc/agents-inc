@@ -1,48 +1,9 @@
 /**
- * The source folder's name may be written in one place, and the linter is what holds that.
- *
- * The source folder is `.agents-inc/<provider>/`, resolved by one funnel. The failure that costs the whole step is
- * a HALF-ROUTED path: fourteen sites join a directory from a root and seven print one at the
- * user, and any single one of them left on a literal brings back a project that writes into a
- * folder the CLI is no longer reading, with every test green. A census grep finds today's
- * sites; only a rule stops tomorrow's from being added.
- *
- * So `eslint.config.js` grows a `no-restricted-syntax` pair — one selector for a string literal
- * and one for a template element — and this spec is its mutation proof, kept rather than
- * performed once: it feeds the config a banned spelling and requires a report, and feeds it the
- * strings that merely LOOK like one and requires silence. The second half is not decoration.
- * The names this repository is full of are one character apart from the banned ones:
- * `github:agents-inc/skills` is the default marketplace, `.claude-plugin/plugin.json` is a
- * plugin manifest, `.claude/skills` is where ejected skills are installed, and a rule that
- * condemned any of them would be reverted within the hour.
- *
- * Every zone is linted, because `no-restricted-syntax` options do NOT merge across config
- * blocks: the last block naming the rule for a file owns all of its selectors, so a zone that
- * declares the rule for a reason of its own silently drops every selector it does not restate.
- *
- * **Both rosters below are DERIVED from the config rather than hand-listed beside it**, through
- * `lintZonesIn` in `helpers/lint-zones.ts`. The hand-written form is what let the roster in
- * `spec-gates.test.ts` stand short through three waves — it records the blocks somebody
- * remembered — and this file carried the same shape plus a sentence stating a cardinality ("the
- * four zones below are the four blocks"), which is a count in a comment and goes stale the same
- * way. What is hand-written now is only the EXEMPTIONS: the zones where the ban is deliberately
- * lifted, each named by the patterns its block selects and each with the reason it is one. A
- * block added to the config that is not one of those must report, so a new zone is measured by
- * arriving rather than by being remembered.
- *
- * The funnel module's own exemption was NOT covered here while the module did not yet exist —
- * `lintText` needs a path the TypeScript project service can resolve. `lib/installation/
- * install-layout.ts` exists now and is exempt below, beside the e2e mirror at
- * `e2e/pages/constants.ts`. `packages/compile/src/source-layout.ts` is the other exempt module and
- * stays outside this file: it belongs to a different package, with a different flat config, and
- * this ESLint instance resolves against `packages/cli`'s.
- *
- * **And the ban has a second half these selectors cannot see.** A path is composed as often as it
- * is written — `path.join(root, SOURCE_ROOT_DIR, provider)` spells neither banned name, and
- * `sourceDirName("claude")` spells a bare provider name — so `eslint.config.js` pairs them with a
- * `no-restricted-imports` group on the SYMBOLS. Its
- * zones are not these zones: `no-restricted-imports` is declared in a different set of blocks and
- * reaches no spec at all, so it gets its own roster below.
+ * The source folder's name may be written only in the funnel; one half-routed literal writes where
+ * the CLI no longer reads. A mutation proof of the `no-restricted-syntax` pair: banned spellings
+ * must report, near misses must stay silent. Options don't merge across blocks, so every zone is
+ * linted, derived via `lintZonesIn`. Composition (`path.join(root, SOURCE_ROOT_DIR)`) is held by a
+ * `no-restricted-imports` group with its own zones. `packages/compile` has its own config.
  */
 
 import path from "path";
@@ -52,78 +13,47 @@ import { describe, expect, it } from "vitest";
 import { CLI_ROOT } from "./helpers/cli-runner.js";
 import { type LintZone, flatConfigAt, lintZonesIn } from "./helpers/lint-zones.js";
 
-/** The rule the selectors are written under. */
 const RESTRICTED_SYNTAX = "no-restricted-syntax";
 
 /**
- * Enough of this ban's own message to tell it from the OTHER ban written under the same rule.
- *
- * `host-path-literals-are-funnelled.test.ts` beside this file guards the HOSTS' directories —
- * `.claude/`, `.codex`, `.agents/skills` — and two of the allowed spellings below are banned there
- * by design. The rule id cannot separate them, so the silence this file asserts is now asserted
- * about the message, which is strictly the stronger claim: a fixture reported by some unrelated
- * selector no longer reads as this ban over-reaching, and one reported by THIS ban still does.
- *
- * Written out rather than imported from `eslint.config.js`: an assertion bound to the text the
- * linter renders moves with it and could never fail.
+ * Tells this ban from the host-path ban under the same rule id, so silence is asserted about the
+ * message. Written out, not imported.
  */
 const SOURCE_FOLDER_REPORT = "The source folder's name is resolved, not written";
 
-/** The rule the symbol half is written under — a different rule, and a different set of zones. */
+/** A different rule, with a different set of zones. */
 const RESTRICTED_IMPORTS = "no-restricted-imports";
 
 const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
 const ESLINT_CONFIG = await flatConfigAt(ESLINT_CONFIG_PATH);
 
-/**
- * The zones the literal ban is deliberately LIFTED in, each by the patterns its block selects.
- *
- * Written out because each is a decision, and the derivation cannot tell a zone that dropped the
- * selectors on purpose from one that dropped them by restating the rule and forgetting. What the
- * derivation gives is the other half: a block added to the config arrives in the roster below,
- * is not one of these, and is therefore required to report.
- */
+/** Hand-written: the derivation cannot tell a deliberate exemption from a forgotten restatement. */
 const LITERAL_EXEMPT_PATTERNS = [
-  // A SPEC may write the folder names: they are text already on people's disks, and an assertion
-  // importing the constant the product writes would move with it and could never fail.
+  // Specs may write the folder names: they are text already on people's disks.
   "**/*.test.ts, **/*.test.tsx",
   // The funnel: where the two names are declared against each other.
   "src/cli/lib/installation/install-layout.ts",
-  // The e2e tree's one mirror of the product's path vocabulary, for the reason the spec zone has.
+  // The e2e mirror of the product's path vocabulary.
   "e2e/pages/constants.ts",
 ];
 
-/**
- * The zones the SYMBOL ban is deliberately lifted in — not the same set, and not the same rule.
- *
- * Four modules own one of these names plus the choke point whose rule is off entirely, which is
- * why this roster and the one above cannot be shared: each rule is declared in blocks the other
- * is not, so a list reused between them would leave one unmeasured wherever it does not reach.
- */
+/** The symbol ban's exemptions: a different rule declared in different blocks, so not shared. */
 const IMPORT_EXEMPT_PATTERNS = [
-  // The single write choke point, whose global-pair tripwire must know every folder a write could
-  // land in. Its block turns the rule off outright.
+  // The write choke point, whose tripwire must know every folder; its block turns the rule off.
   "src/cli/utils/fs.ts",
-  // Resolves every path under a source folder: the funnel the message points callers at.
+  // The funnel the message points callers at.
   "src/cli/lib/installation/install-layout.ts",
-  // Re-exports the path vocabulary from `@workspace/compile`, which is how it is reachable here.
+  // Re-exports the path vocabulary from `@workspace/compile`.
   "src/cli/consts.ts",
   // The SOURCE-REPO door: a marketplace repo declares its layout in either folder, always.
   "src/cli/lib/configuration/config.ts",
 ];
 
-/** A zone with a file to lint. One without is a config defect, reported by its own gate below. */
 function isMeasurable(zone: LintZone): zone is LintZone & { subject: string } {
   return zone.subject !== null;
 }
 
-/**
- * Every zone the config splits `rule` into, split again by whether the ban is meant to reach it.
- *
- * The partition is by the block's own `files` patterns rather than by a subject path, because the
- * subject is whichever file the block happens to own today and the patterns are what the config
- * actually says.
- */
+/** Partitioned by the block's own `files` patterns, which are what the config actually says. */
 function zonesFor(rule: string, exemptPatterns: readonly string[]) {
   const zones = lintZonesIn(ESLINT_CONFIG, rule, CLI_ROOT);
 
@@ -138,14 +68,8 @@ const LITERAL_ZONES = zonesFor(RESTRICTED_SYNTAX, LITERAL_EXEMPT_PATTERNS);
 const IMPORT_ZONES = zonesFor(RESTRICTED_IMPORTS, IMPORT_EXEMPT_PATTERNS);
 
 /**
- * What the mirror still owes after that exemption, and the half a wholesale exemption loses.
- *
- * `no-restricted-syntax` takes options, so the last block naming the rule for a file owns ALL of
- * them: a zone that drops one selector by restating the rest drops everything it forgets to
- * restate. `e2e/pages/constants.ts` is in the SPEC zone, whose set is the task-ID shapes and the
- * vacuous comparisons — and the exemption restated only the second, so the first was silently
- * gone. Nothing could see it: the roster in `spec-gates.test.ts` measures this zone against the
- * vacuous shapes alone.
+ * The last block naming the rule owns all its options, so an exemption restating only some
+ * selectors silently drops the rest; these must still report in the mirror.
  */
 const STILL_REFUSED_IN_THE_MIRROR = [
   {
@@ -158,7 +82,6 @@ const STILL_REFUSED_IN_THE_MIRROR = [
   },
 ] as const;
 
-/** Every spelling of a source folder that must be refused outside the funnel. */
 const BANNED_SPELLINGS = [
   {
     name: "the new root as a bare literal",
@@ -170,14 +93,7 @@ const BANNED_SPELLINGS = [
   },
 ] as const;
 
-/**
- * Names that share a prefix with a banned one and must be left alone. Each is live in this
- * repository, which is what makes this half a measurement rather than a guess.
- *
- * The last two are ALSO the host-path ban's subject, and are kept here for exactly that reason:
- * `.claude/skills` is the nearest miss this regex has, so dropping it because a different selector now reports it would delete the measurement that proves
- * this one has not over-reached.
- */
+/** Near misses that must stay silent; the last two are also the host-path ban's subject. */
 const ALLOWED_SPELLINGS = [
   {
     name: "the default marketplace ref",
@@ -201,18 +117,13 @@ const ALLOWED_SPELLINGS = [
   },
 ] as const;
 
-/** What one in-process, type-aware ESLint pass over one fixture is allowed to take. */
 const LINT_PASS_BUDGET_MS = 2_500;
 
 const BANNED_TIMEOUT_MS = LITERAL_ZONES.all.length * BANNED_SPELLINGS.length * LINT_PASS_BUDGET_MS;
 const ALLOWED_TIMEOUT_MS =
   LITERAL_ZONES.all.length * ALLOWED_SPELLINGS.length * LINT_PASS_BUDGET_MS;
 
-/**
- * The rules the repository's own ESLint config reports against `source` when it is read as
- * `zone`. The config is LOADED rather than restated — a second copy of the selectors here could
- * not tell a rule that stopped matching from one that was never configured.
- */
+/** The repository's own config, loaded rather than restated. */
 async function rulesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -225,7 +136,7 @@ async function rulesReportedAgainst(
     .filter((ruleId): ruleId is string => ruleId !== null);
 }
 
-/** Whether THIS ban named itself against `source` in `zone` — see {@link SOURCE_FOLDER_REPORT}. */
+/** Whether this ban named itself, per {@link SOURCE_FOLDER_REPORT}. */
 async function sourceFolderReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -236,7 +147,6 @@ async function sourceFolderReportedAgainst(
   return reported.some((message) => message.message.startsWith(SOURCE_FOLDER_REPORT));
 }
 
-/** One lint pass, with the two answers that mean the fixture asked nothing turned into throws. */
 async function reportsAgainst(
   eslint: ESLint,
   source: string,
@@ -255,12 +165,7 @@ async function reportsAgainst(
 }
 
 describe("a source folder written outside the funnel", () => {
-  /**
-   * The precondition both loops rest on, and the half a derivation can get wrong that a roster
-   * could not: a block declaring the rule for files that are not there, or for files a later
-   * block has already taken, leaves nothing to lint as that zone — which reads exactly like a
-   * zone that passed.
-   */
+  /** A zone with no file to lint reads exactly like a zone that passed. */
   it("finds a file to lint in every zone the config declares the rule for", () => {
     expect(
       LITERAL_ZONES.all.filter((zone) => !isMeasurable(zone)).map((zone) => zone.patterns),
@@ -268,10 +173,7 @@ describe("a source folder written outside the funnel", () => {
     ).toStrictEqual([]);
   });
 
-  /**
-   * An exemption that stopped existing leaves the loop below with nothing to check and no red to
-   * say so — the derivation would simply hand every zone to the reported half, which passes.
-   */
+  /** A vanished exemption would hand every zone to the reported half, which passes. */
   it("still finds each zone the ban is deliberately lifted in", () => {
     expect(
       LITERAL_ZONES.exempt.map((zone) => zone.patterns),
@@ -313,14 +215,7 @@ describe("a source folder written outside the funnel", () => {
     BANNED_TIMEOUT_MS,
   );
 
-  /**
-   * The other half of an exemption, and the one nothing held.
-   *
-   * An exemption written as "the rule, minus this selector" is written as a fresh option list, so
-   * what it keeps is whatever it remembered to restate. The assertion above cannot see the
-   * difference — a zone that dropped EVERY selector satisfies it exactly as one that dropped the
-   * right one does.
-   */
+  /** A zone that dropped every selector passes the assertion above; this checks what it kept. */
   it(
     "leaves the mirror everything else its own zone refuses",
     async () => {
@@ -357,12 +252,7 @@ describe("a name that merely shares a prefix with the source folder", () => {
   );
 });
 
-/**
- * The shape this guard must fail on: any `path.join(..., SOURCE_ROOT_DIR)` outside the funnel.
- *
- * The composition is what makes the symbol ban necessary rather than redundant — the fixture
- * writes no banned spelling, so the literal selectors above are silent on it.
- */
+/** Writes no banned spelling, so only the symbol ban can catch it. */
 const COMPOSED_SOURCE_PATHS = [
   {
     name: "a path joined from the new root",
@@ -377,7 +267,6 @@ const COMPOSED_SOURCE_PATHS = [
   },
 ] as const;
 
-/** A sibling of the banned names, imported from the same module, which must be left alone. */
 const NEIGHBOURING_IMPORT = [
   `import path from "path";`,
   `import { STANDARD_FILES } from "../../consts.js";`,
@@ -422,8 +311,7 @@ describe("a source folder COMPOSED from its root name outside the funnel", () =>
     IMPORT_TIMEOUT_MS,
   );
 
-  // The subject guard for the assertion above: a group that banned the whole module would satisfy
-  // it without naming a single symbol, and would condemn every path this package builds.
+  // Subject guard: a ban on the whole module would pass above while condemning every path.
   it(
     "leaves a neighbouring constant from the same module alone",
     async () => {

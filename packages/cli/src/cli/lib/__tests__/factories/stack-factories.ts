@@ -13,7 +13,6 @@ export function createMockStack(
     id,
     name: config.name,
     description: config.description ?? "",
-    // Boundary cast: test callers may pass arbitrary agent names (e.g., "nonexistent-agent")
     agents: config.agents,
     ...(config.philosophy !== undefined && { philosophy: config.philosophy }),
   };

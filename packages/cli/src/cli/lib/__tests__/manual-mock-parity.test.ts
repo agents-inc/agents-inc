@@ -6,41 +6,20 @@ import { describe, expect, it } from "vitest";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/** Where vitest looks for a manual mock: a directory of this name beside the module it stands in for. */
 const MOCKS_DIR = "__mocks__";
 const MANUAL_MOCK_GLOB = `src/cli/**/${MOCKS_DIR}/*.ts`;
 
-/**
- * Every manual mock the tree holds, named rather than counted so a new one arrives here
- * deliberately and is measured from its first day.
- *
- * A mock is not simply smaller than its module when it is partial — it TEACHES. A spec that
- * needed an export the mock lacked wrote its own inline `vi.mock` factory, and the next one
- * copied that, because from inside a spec that works there is nothing to explain. The absence
- * survived in the one place nobody greps.
- */
+/** Named, not counted, so a new manual mock arrives here deliberately. */
 const MANUAL_MOCKS = ["src/cli/utils/__mocks__/fs.ts", "src/cli/utils/__mocks__/logger.ts"];
 
-/**
- * Exports a manual mock leaves out on purpose, keyed by the mock's path, each entry standing as
- * the reason it is missing rather than an oversight.
- *
- * Empty, and that is the state to keep it in: an omission means every spec taking the mock gets
- * `undefined` where it expected a function, and the TypeError is raised inside the code under
- * test where it reads as a product defect. An entry here has to be worth that.
- */
+/** Keep empty: an omitted export is `undefined` in code under test and reads as a product bug. */
 const DELIBERATELY_ABSENT: Record<string, readonly string[]> = {};
 
-/** The module a manual mock stands in for: the same filename, one directory up. */
 function realModuleFor(mockPath: string): string {
   return mockPath.replace(`/${MOCKS_DIR}/`, "/");
 }
 
-/**
- * The value exports a module has at runtime, read off the module itself rather than off a list
- * restated here — a second copy of either side would agree with itself whichever way the module
- * moved. Types are absent by construction: they are erased before there is a namespace to read.
- */
+/** Read off the module itself, so no restated list can drift. Types are erased at runtime. */
 async function exportsOf(modulePath: string): Promise<string[]> {
   // Parse boundary: a dynamic import of a computed specifier carries no static type.
   const module = (await import(pathToFileURL(path.join(CLI_ROOT, modulePath)).href)) as Record<

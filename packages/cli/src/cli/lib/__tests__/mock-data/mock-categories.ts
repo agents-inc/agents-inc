@@ -1,22 +1,11 @@
-// Shared category definitions with domain overrides for test files.
-// Spreads from TEST_CATEGORIES in test-fixtures.ts.
-
 import { TEST_CATEGORIES } from "../test-fixtures.js";
 import { buildCategoryMap } from "../factories/matrix-factories.js";
-
-// ---------------------------------------------------------------------------
-// Categories from matrix-loader.test.ts (basic, no domain override)
-// ---------------------------------------------------------------------------
 
 export const FRAMEWORK_CATEGORY = {
   ...TEST_CATEGORIES.framework,
   description: "Web frameworks",
   order: 1,
 };
-
-// ---------------------------------------------------------------------------
-// Categories from skill-resolution.integration.test.ts (multi-source)
-// ---------------------------------------------------------------------------
 
 export const MULTI_SOURCE_CATEGORIES = buildCategoryMap({
   "web-framework": { ...TEST_CATEGORIES.framework, exclusive: true },

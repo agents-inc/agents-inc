@@ -13,29 +13,14 @@ export type IsolatedHome = {
 };
 
 /**
- * oclif's update-check door, closed for the life of every isolated home.
- *
- * `@oclif/plugin-warn-if-update-available`'s init hook spawns a DETACHED, `unref`ed
- * child that `mkdir -p`s and writes `<home>/.cache/agents-inc/version` before it makes
- * its network call. The child outlives the test that started it, so it recreates a fake
- * home `cleanup` has already removed — and its `mkdir` landing inside a running
- * recursive remove is the other side of the `ENOTEMPTY: rmdir` this suite sees. Measured
- * on `commands/eject.test.ts`: 26 resurrected `/tmp/cc-eject-test-*` directories in one
- * run of that one file, and 0 with this set.
- *
- * The key is oclif's own — `Config.scopedEnvVarKey` upper-cases the bin name and joins
- * it to the flag — and only `"1"` and `"true"` count, which is what
- * `isolated-home.test.ts` asserts through `Config` rather than by spelling.
+ * oclif's update check spawns a detached child that writes into `<home>/.cache` after the test,
+ * resurrecting a removed fake home. The key is oclif's own; only `"1"` and `"true"` count.
  */
 const OCLIF_SKIP_VERSION_CHECK = { name: "AGENTS_INC_SKIP_NEW_VERSION_CHECK", value: "1" };
 
-/** Restores one environment variable to the state it was found in — absent included. */
+/** Restores one variable as it was found, absent included. */
 type RestoreEnv = () => void;
 
-/**
- * Remembers a variable without touching it, for the caller that sets its own value and
- * still wants the original put back.
- */
 function captureEnv(name: string): RestoreEnv {
   const original = process.env[name];
 
@@ -51,11 +36,8 @@ function overrideEnv(name: string, value: string): RestoreEnv {
   return restore;
 }
 
-/**
- * Takes away `CLAUDE_CONFIG_DIR` for the life of a fake home. Claude Code's state file follows that
- * variable before HOME, and so does `claudeStateFile()`, so while a developer's shell exports it a
- * spec recording a trust answer under a fake home would write it into their real state file.
- */
+// Claude Code's state file follows `CLAUDE_CONFIG_DIR` before HOME, so an exported one would
+// send a spec's writes to the developer's real state file.
 function clearClaudeConfigDir(): RestoreEnv {
   const restore = captureEnv(CLAUDE_CONFIG_DIR_VAR);
   delete process.env[CLAUDE_CONFIG_DIR_VAR];
@@ -63,35 +45,9 @@ function clearClaudeConfigDir(): RestoreEnv {
 }
 
 /**
- * Creates a temp directory with an isolated `projectDir` and `fakeHome`,
- * chdirs into `projectDir`, and points `process.env.HOME` at `fakeHome`.
- *
- * The returned `cleanup` restores the original cwd, HOME, update-check setting and
- * `CLAUDE_CONFIG_DIR` (or unsets each when it was originally undefined) and removes the temp
- * directory.
- *
- * Call in `beforeEach` and invoke `cleanup` in `afterEach`.
- *
- * ONE thing in the fake home is not private to the test: `.cache` is a symlink to the shared
- * marketplace checkout, so a command falling through to the default source finds it already
- * downloaded instead of fetching it from GitHub again. That is deliberate and it is what stopped
- * this project failing on machine speed — `helpers/shared-marketplace-checkout.ts` carries why
- * sharing it costs no isolation, and `cleanup` leaves it standing because `fs.rm` unlinks a
- * symlink rather than following it.
- *
- * Isolation mechanism. `vitest.setup.ts` installs a process-wide `vi.spyOn(os, "homedir")`
- * that answers with `process.env.HOME` whenever that differs from the real home, so setting
- * the variable does reach `os.homedir()` — under bun, which resolves it once at startup, as
- * well as under node, which re-reads it per call.
- *
- * Two things used to escape it, and both are closed. The spy was installed in a `beforeAll`,
- * so a `vi.restoreAllMocks()` ANYWHERE in a file removed it for every later test in that
- * file — it is installed per TEST now. And no mechanism here reaches a constant a module
- * computed from `os.homedir()` at IMPORT time, which `CACHE_DIR` and `GLOBAL_INSTALL_ROOT`
- * in `src/cli/consts.ts` both were — they are `cacheRoot()` and `globalInstallRoot()` now,
- * read at call time. `src/cli/lib/__tests__/home-dir-read-at-call-time.test.ts` holds both,
- * the second as a declaration-shape gate over the whole of `src/cli`, since the frozen form
- * is a hazard for any constant somebody adds rather than for those two.
+ * Call in `beforeEach`; `cleanup` in `afterEach` restores cwd and env and removes the temp dir.
+ * The fake home's `.cache` symlinks the shared marketplace checkout, so the default source is
+ * already downloaded; `fs.rm` unlinks rather than follows it.
  */
 export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
   const tempDir = await createTempDir(prefix);
@@ -119,19 +75,8 @@ export async function setupIsolatedHome(prefix: string): Promise<IsolatedHome> {
 }
 
 /**
- * Hook-registering sibling of {@link setupIsolatedHome}: registers a `beforeEach`
- * that points `process.env.HOME` at `<tempDir>/fake-home` (created fresh per test)
- * and an `afterEach` that restores the original HOME. Pass `setHome: false` when
- * the test itself decides when to point HOME at the fake home. Returns a live
- * view of the fake home dir.
- *
- * `setHome: false` withholds the HOME override and nothing else: the update-check door
- * is closed either way, because a detached writer is a hazard to the temp tree whatever
- * HOME says at the moment the command runs. The shared-checkout link is made either way too,
- * for the same reason — see {@link setupIsolatedHome}, which carries it in full.
- *
- * Isolation mechanism, and its two gaps: see {@link setupIsolatedHome}, which carries
- * both in full.
+ * Hook-registering form of {@link setupIsolatedHome}. `setHome: false` withholds only the HOME
+ * override; the update check is still disabled and the shared checkout still linked.
  */
 export function useFakeHome(
   getTempDir: () => string,

@@ -1,5 +1,3 @@
-// Shared skill entries and TestSkill arrays for test files.
-
 import type { Category, ResolvedSkill, SkillId, SkillSlug, SkillSource } from "../../../types";
 import type { TestSkill } from "../fixtures/create-test-source";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE, LOCAL_PSEUDO_CATEGORY } from "../../../consts";
@@ -18,8 +16,6 @@ const METHODOLOGY_TEST_SKILLS: TestSkill[] = [
     domain: "meta",
   },
 ];
-
-// Individual TestSkill constants — each skill defined exactly once
 
 const reactSkill = createTestSkill(
   "web-framework-react",
@@ -45,12 +41,10 @@ const scssSkill = createTestSkill("web-styling-scss-modules", "CSS Modules with 
 
 const drizzleSkill = createTestSkill("api-database-drizzle", "TypeScript ORM for SQL databases");
 
-// Composed TestSkill arrays
-
 export const EXTRA_DOMAIN_TEST_SKILLS: TestSkill[] = [vueSkill, scssSkill, drizzleSkill];
 
 export const COMPILE_LOCAL_SKILL: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for testing local skill compilation
+  // Fictional id and slug, outside the generated unions
   "web-tooling-local-skill" as SkillId,
   "A local project skill",
   { slug: "tooling" as SkillSlug, displayName: "Local Skill" },
@@ -58,10 +52,8 @@ export const COMPILE_LOCAL_SKILL: TestSkill = createTestSkill(
 
 export const DEFAULT_TEST_SKILLS: TestSkill[] = [reactSkill, zustandSkill, vitestSkill, honoSkill];
 
-// TestSkill constants from consumer-stacks-matrix.integration.test.ts
-
 export const DOCKER_TOOLING_SKILL: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for testing infra tooling
+  // Fictional id and slug, outside the generated unions
   "infra-tooling-docker" as SkillId,
   "Docker containerization patterns",
   {
@@ -72,16 +64,15 @@ export const DOCKER_TOOLING_SKILL: TestSkill = createTestSkill(
 );
 
 export const CI_CD_SKILLS: TestSkill[] = [
-  // Boundary cast: fictional skill ID for testing CI/CD skills
   createTestSkill("infra-ci-cd-github-actions", "github-actions CI/CD pipeline", {
     slug: "github-actions",
     displayName: "GitHub Actions",
     category: "infra-ci-cd",
     domain: "infra",
   }),
-  // Boundary cast: fictional skill ID for testing CI/CD skills
+  // Fictional id, outside the generated union
   createTestSkill("infra-ci-cd-gitlab-ci" as SkillId, "gitlab-ci CI/CD pipeline", {
-    // Boundary cast: fictional slug for test isolation
+    // Fictional slug
     slug: "gitlab-ci" as SkillSlug,
     displayName: "GitLab CI",
     category: "infra-ci-cd",
@@ -92,7 +83,7 @@ export const CI_CD_SKILLS: TestSkill[] = [
 export const DISCOURAGES_RELATIONSHIP_SKILLS: TestSkill[] = [reactSkill, scssSkill, vueSkill];
 
 export const DATADOG_OBSERVABILITY_SKILL: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for testing observability skills
+  // Fictional id, outside the generated union
   "api-observability-datadog" as SkillId,
   "Datadog APM integration",
   {},
@@ -100,9 +91,6 @@ export const DATADOG_OBSERVABILITY_SKILL: TestSkill = createTestSkill(
 
 export const REQUIRES_RELATIONSHIP_SKILLS: TestSkill[] = [reactSkill, vitestSkill];
 
-// Install-mode TestSkill arrays (with rendered SKILL.md content)
-
-/** Creates a TestSkill with rendered SKILL.md content for install-mode tests */
 function contentSkill(id: SkillId, description: string, body: string, author?: string): TestSkill {
   return createTestSkill(id, description, {
     ...(author ? { author } : {}),
@@ -153,7 +141,7 @@ export const RESOLUTION_PIPELINE_SKILLS: TestSkill[] = [
   createTestSkill("api-framework-hono", "Hono framework (acme source)", {
     author: "@acme",
   }),
-  // Boundary cast: fictional skill ID for testing multi-source resolution
+  // Fictional id, outside the generated union
   createTestSkill("web-animation-framer" as SkillId, "Framer Motion (internal source)", {
     slug: "framer-motion",
     displayName: "Framer Motion",
@@ -164,8 +152,6 @@ export const RESOLUTION_PIPELINE_SKILLS: TestSkill[] = [
   }),
   createTestSkill("web-testing-vitest", "Vitest testing (public source)"),
 ];
-
-// Composed skill ID collections
 
 export const ALL_TEST_SKILLS = [
   ...DEFAULT_TEST_SKILLS,
@@ -183,10 +169,6 @@ export const INIT_TEST_SKILLS = DEFAULT_TEST_SKILLS.filter((s) =>
   INIT_SKILL_IDS.includes(s.id as SkillId),
 );
 
-// ---------------------------------------------------------------------------
-// Health-check skill variants (matrix-health-check.test.ts)
-// ---------------------------------------------------------------------------
-
 export const HEALTH_ORPHAN_SKILL = {
   ...SKILLS.react,
   category: "nonexistent-category" as Category,
@@ -194,7 +176,7 @@ export const HEALTH_ORPHAN_SKILL = {
 
 export const HEALTH_UNRESOLVED_CONFLICTS_WITH_SKILL = {
   ...SKILLS.react,
-  // Boundary cast: fake SkillId for unresolved-ref testing
+  // Unresolvable on purpose
   conflictsWith: [{ skillId: "web-framework-ghost" as SkillId, reason: "Conflicts" }],
 };
 
@@ -210,7 +192,7 @@ export const HEALTH_UNRESOLVED_REQUIRES_SKILL = createMockSkill("web-testing-cyp
 
 export const HEALTH_MULTIPLE_UNRESOLVED_REFS_SKILL = {
   ...SKILLS.zustand,
-  // Boundary casts: fake SkillIds for unresolved-ref testing
+  // Unresolvable on purpose
   requires: [
     {
       skillIds: ["web-framework-missing" as SkillId],
@@ -243,8 +225,7 @@ export const HEALTH_PARTIAL_UNRESOLVED_REQUIRES_SKILL = createMockSkill("web-tes
   ],
 });
 
-// Audit cross-check fixtures. tailwind's manifest verdict is `universal`, so any matrix
-// that fences it contradicts the audit — the shape B2 pinned for zod-validation.
+// tailwind's manifest verdict is `universal`, so a matrix fencing it contradicts the audit.
 
 export const HEALTH_AUDIT_UNIVERSAL_WITH_REQUIRES_SKILL = createMockSkill("web-styling-tailwind", {
   requires: [
@@ -261,10 +242,6 @@ export const HEALTH_AUDIT_APPLIED_DISPOSITION_SKILL = createMockSkill("web-realt
   category: "web-streaming",
   slug: "sse",
 });
-
-// ---------------------------------------------------------------------------
-// Multi-source integration test skill entries (skill-resolution.integration.test.ts)
-// ---------------------------------------------------------------------------
 
 type MultiSourceSkillEntry = { id: string; category: string; description: string };
 
@@ -310,37 +287,29 @@ export const MULTI_SOURCE_INTERNAL_SKILLS: MultiSourceSkillEntry[] = [
 
 export type { MultiSourceSkillEntry };
 
-// ---------------------------------------------------------------------------
-// Local/compile skill constants (from create-test-source.ts)
-// ---------------------------------------------------------------------------
-
-/** Valid local skill with SKILL.md and metadata.yaml */
 export const VALID_LOCAL_SKILL: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for test isolation
+  // Fictional id, outside the generated union
   "web-tooling-valid" as SkillId,
   "A valid skill",
   { slug: "tooling" as SkillSlug, displayName: "Valid" },
 );
 
-/** Skill created WITHOUT metadata.yaml (for testing missing-metadata warnings) */
 export const SKILL_WITHOUT_METADATA: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for test isolation
+  // Fictional id, outside the generated union
   "web-tooling-incomplete" as SkillId,
   "Missing metadata",
   { slug: "storybook", displayName: "Incomplete", skipMetadata: true },
 );
 
-/** Another skill without metadata.yaml (for path warning tests) */
 export const SKILL_WITHOUT_METADATA_CUSTOM: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for test isolation
+  // Fictional id, outside the generated union
   "web-tooling-custom" as SkillId,
   "No metadata",
   { slug: "security" as SkillSlug, displayName: "Custom", skipMetadata: true },
 );
 
-/** A basic local-only skill (no forkedFrom) with SKILL.md and metadata.yaml */
 export const LOCAL_SKILL_BASIC: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for test isolation
+  // Fictional id, outside the generated union
   "web-tooling-my-skill" as SkillId,
   "A test skill",
   {
@@ -359,9 +328,8 @@ Test content here.
   },
 );
 
-/** A forked local skill with forkedFrom metadata for update commands */
 export const LOCAL_SKILL_FORKED: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for test isolation
+  // Fictional id, outside the generated union
   "web-tooling-forked-skill" as SkillId,
   "A forked skill",
   {
@@ -385,9 +353,8 @@ Local modifications here.
   },
 );
 
-/** A minimal local skill for error handling tests (with forkedFrom) */
 export const LOCAL_SKILL_FORKED_MINIMAL: TestSkill = createTestSkill(
-  // Boundary cast: fictional skill ID for test isolation
+  // Fictional id, outside the generated union
   "web-tooling-test-minimal" as SkillId,
   "Test skill",
   {
@@ -405,41 +372,29 @@ name: test
   },
 );
 
-// ---------------------------------------------------------------------------
-// Skill variants
-// ---------------------------------------------------------------------------
-
-/** React that requires Zustand (for requiredBy badge tests) */
 export const REACT_REQUIRES_ZUSTAND = createMockSkill("web-framework-react", {
   requires: [{ skillIds: ["web-state-zustand"], needsAny: false, reason: "Needs Zustand" }],
 });
 
-// Boundary cast: a local skill's id is outside the generated union by definition —
-// it names a directory the user wrote, which no built-in relationship rule can reach.
+// A local skill's id names a user-written directory, outside the generated union.
 export const LOCAL_HOUSE_STYLE_ID = "local-house-style" as SkillId;
 
-/** A local skill the shipped catalogue has never heard of — merged in as source-loader does. */
 export const LOCAL_HOUSE_STYLE_SKILL = createMockSkill(LOCAL_HOUSE_STYLE_ID, {
   category: LOCAL_PSEUDO_CATEGORY,
-  // Boundary cast: a local skill's slug is outside the generated union, as its id is
+  // Outside the generated union, as the id is
   slug: "house-style" as SkillSlug,
   local: true,
   custom: true,
 });
 
-// Boundary cast: a custom skill's id names a directory the user wrote, so it is outside
-// the generated union by construction. The `external-` prefix is the namespace a skill
-// answering to no marketplace takes.
+// A custom skill's id names a user-written directory, outside the generated union; `external-`
+// is the namespace of a skill with no marketplace.
 export const CUSTOM_HOUSE_TOOLING_ID = "external-web-tooling-house" as SkillId;
 
-/**
- * A skill the user wrote themselves, carrying a REAL domain and category rather than the
- * `local` pseudo-category — the shape every custom skill is meant to take. As the loader
- * sees it before the install-mode tagging pass runs: no `availableSources` yet.
- */
+/** A custom skill with a real category, as loaded before the tagging pass adds sources. */
 export const CUSTOM_HOUSE_TOOLING_SKILL = createMockSkill(CUSTOM_HOUSE_TOOLING_ID, {
   category: "web-tooling",
-  // Boundary cast: a custom skill's slug is outside the generated union, as its id is
+  // Outside the generated union, as the id is
   slug: "house-tooling" as SkillSlug,
   displayName: "House Tooling",
   local: true,
@@ -462,61 +417,19 @@ export const PUBLIC_MARKETPLACE_SOURCE: SkillSource = {
   primary: true,
 };
 
-/**
- * The trigger sentence a skill states for itself in its own `metadata.yaml`.
- *
- * Held once so the fixture below and every expectation over it cannot be edited apart.
- * Written in the shape the shipped catalogue actually uses — a sentence opening with
- * "Use when", which every `usageGuidance` in `types/generated/matrix.ts` does — so a
- * fixture cannot make the rendered line read better than the real one does.
- */
+/** Phrased like the shipped catalogue's "Use when ..." guidance, so it reads no better. */
 export const STATED_USAGE_GUIDANCE =
   "Use when a component owns state that no route and no server reply is responsible for.";
 
-/**
- * A skill that states when an agent should reach for it.
- *
- * Its pair is `SKILLS.scss`, which states nothing: `usageGuidance` is optional on
- * `SkillCore` and on `matrixRawMetadataSchema`, and is required only of a marketplace's
- * own skills (`skillMetadataBaseSchema`, `z.string().min(10)`). So a skill reaching the
- * matrix without one — local, custom, or from a source that predates the field — is the
- * ordinary case rather than a malformed entry.
- */
+/** Its unguided pair is `SKILLS.scss`; `usageGuidance` is optional in the matrix. */
 export const GUIDED_SKILL = createMockSkill("web-state-zustand", {
   usageGuidance: STATED_USAGE_GUIDANCE,
 });
 
 /**
- * The sentence a reference carries when there is no stated guidance to read — the category arm of
- * `statedUsageFor`, MIRRORED from the product rather than imported from it or rebuilt out of its
- * template.
- *
- * Mirrored, because an assertion that imports the very string the product emits moves with it and
- * can never fail — `e2e/pages/constants.ts` is the same trade, and its header states the reason in
- * full. Written out per category rather than interpolated, because a helper reproducing
- * `Use when working with ${category}.` would absorb a change to the template itself — the
- * punctuation, the word order, the position of the category — in silence, and leave one edit
- * standing in for a decision nobody re-read.
- *
- * The half of that precedent NOT copied is its registration requirement: a mirrored value there
- * owes a comparator in `scripts/`, because nothing else holds it against the source. This one is
- * read by every assertion over `SkillReference.usage` in two spec files, so drift from the product
- * reddens them on the next run and the comparator is the suite itself.
- *
- * One entry serves both polarities: it is what a skill stating NO guidance must get, and what a
- * skill that states guidance must NOT get. Holding the two on one definition is what stops a
- * negative assertion going vacuous while the positives are updated, which is exactly what happened
- * when the wording moved. Only the positives reddened, and the two negatives diverged from each
- * other in a way neither spec could show: the `.not.toBe` in `stacks-loader.test.ts` went wholly
- * vacuous, naming a string the product can no longer emit, while the `.not.toContain` in the render
- * spec kept its teeth purely because the new sentence contains the old one as a substring. Both are
- * now bound here and both were re-checked by removing this fixture's guidance and watching them
- * fail.
- *
- * The trailing period is the product's, and it is NOT universal: `externalSkillMetadata` in
- * `lib/seed/external-skills.ts` writes `Use when working with ${displayName}` with none, and that
- * value becomes a skill's stated guidance on the next load — so one protocol list can carry both
- * spellings. Pinned here so the divergence is visible rather than absorbed.
+ * `statedUsageFor`'s category fallback, mirrored rather than imported so a wording change reddens
+ * the specs, and spelled per category so a template change cannot be absorbed. One entry serves the
+ * positive and the negative assertions. `externalSkillMetadata` omits the trailing period.
  */
 export const FALLBACK_USAGE = {
   "api-orm": "Use when working with api-orm.",

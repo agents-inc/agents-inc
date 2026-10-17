@@ -17,19 +17,13 @@ import { createTempDir, cleanupTempDir, directoryExists } from "../test-fs-utils
 import { silenceConsole } from "../helpers/silence-console.js";
 import { COMPILATION_TEST_STACK } from "../mock-data/mock-stacks.js";
 
-/** Standard marketplace-generation options shared across pipeline tests. */
 const TEST_MARKETPLACE_OPTIONS = {
   name: "test-marketplace",
   ownerName: "Test Owner",
   pluginRoot: "./plugins",
 };
 
-/**
- * The category of every skill `createTestSource()` writes, counted the way
- * `getMarketplaceStats` groups them. Written out rather than derived from
- * `DEFAULT_TEST_SKILLS`, so a category that stops reaching the marketplace fails
- * the `toStrictEqual` instead of quietly agreeing with whatever arrived.
- */
+/** Written out, not derived from `DEFAULT_TEST_SKILLS`, so a lost category fails the comparison. */
 const EXPECTED_CATEGORY_COUNTS: Record<string, number> = {
   "web-framework": 1,
   "web-client-state": 1,
@@ -107,7 +101,6 @@ describe("Integration: Full Skill Pipeline", () => {
 
 describe("Integration: Stack Discovery", () => {
   it("should list available stacks from fixture", async () => {
-    // Create a source with stacks defined in config/stacks.ts
     const stackDirs = await createTestSource({
       stacks: [
         {
@@ -225,8 +218,6 @@ describe("Integration: Marketplace Integrity", () => {
 
     const stats = getMarketplaceStats(marketplace);
 
-    // Each skill's metadata.yaml category travels through plugin.json onto its
-    // marketplace entry, so nothing falls into the "uncategorized" fallback.
     expect(stats.byCategory).toStrictEqual(EXPECTED_CATEGORY_COUNTS);
   });
 });

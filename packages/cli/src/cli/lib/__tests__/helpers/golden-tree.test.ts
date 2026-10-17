@@ -21,7 +21,6 @@ const CONTEXT = {
   cliVersion: CLI_VERSION,
 };
 
-/** A tree holding one file, which is all most of the normalisation cases need. */
 function treeOf(file: string, content: string): InstallTree {
   return { files: { [file]: content }, emptyDirectories: [] };
 }
@@ -137,7 +136,7 @@ describe("normalizeInstallTree", () => {
 });
 
 describe("formatInstalledConfigs", () => {
-  /** Roots long enough that the writer broke every line naming one, as under a long `TMPDIR`. */
+  /** Long enough that the writer broke every line naming one. */
   const LONG_HOME = `/tmp/${"a-long-temp-dir-".repeat(6)}/fake-home`;
   const LONG_SOURCE = `/tmp/${"a-long-temp-dir-".repeat(6)}/fixture`;
   const CONFIG_TS = ".agents-inc/claude/config.ts";

@@ -28,8 +28,7 @@ import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { DEFAULT_TEST_AGENTS } from "../mock-data/mock-agents";
 import { sourceFolderInUse } from "../../installation/install-layout.js";
 
-// Boundary widening: test fixtures use arbitrary skill IDs, categories, and domains for test isolation.
-// Slugs and forkedFrom.skillId are narrowed to SkillSlug / SkillId; fictional values cast at definition site.
+// Fixtures name their own ids, categories and domains, so those widen to `string`.
 export type TestSkill = Pick<
   ExtractedSkillMetadata,
   "description" | "author" | "displayName" | "usageGuidance"
@@ -41,7 +40,6 @@ export type TestSkill = Pick<
 } & {
   content?: string;
   cliDescription?: string;
-  /** Skip metadata.yaml creation for this local skill (for testing missing-metadata warnings) */
   skipMetadata?: boolean;
   forkedFrom?: {
     skillId: SkillId;
@@ -95,14 +93,7 @@ export type TestSourceOptions = {
   localSkills?: TestSkill[];
   /** Create config/stacks.ts with these stack definitions */
   stacks?: TestStack[];
-  /**
-   * Write no `.claude-plugin/marketplace.json` — the source as its author's checkout stands before
-   * `build marketplace`.
-   *
-   * Every load of a custom marketplace refuses one in that state, so a source is published under
-   * {@link TEST_MARKETPLACE_NAME} unless a test's subject is that refusal or the author's side of
-   * the build.
-   */
+  /** Omit `.claude-plugin/marketplace.json`, as before `build marketplace`; loads refuse this. */
   unbuilt?: boolean;
 };
 
@@ -118,16 +109,7 @@ export type TestDirs = {
 
 export { fileExists, directoryExists };
 
-/**
- * One `config/skill-categories.ts` entry as this fixture writes it: every field
- * {@link CategoryDefinition} declares, with `id` and `domain` widened to `string`.
- *
- * The widening is {@link TestSkill}'s, for {@link TestSkill}'s reason — a fixture names its own
- * categories and domains so two suites cannot collide over one, and those names sit outside the
- * generated `Category` and `Domain` unions by design. Deriving from `CategoryDefinition` rather
- * than restating it holds every OTHER field to the type, so a field the category definition
- * stops carrying stops compiling here instead of surviving as text no loader reads.
- */
+/** `id` and `domain` widen for the same reason as `TestSkill`'s. */
 type TestCategoryDefinition = Omit<CategoryDefinition, "id" | "domain"> & {
   id: string;
   domain: string;
@@ -151,19 +133,11 @@ function domainOf(category: string): string {
   return dashIndex >= 0 ? category.slice(0, dashIndex) : category;
 }
 
-/**
- * Builds the two config files a test source ships, derived from the categories its skills declare.
- *
- * `diskCategories` and `diskRules` are the `config/skill-categories.ts` and
- * `config/skill-rules.ts` default exports, in the shapes `skillCategoriesFileSchema` and
- * `skillRulesFileSchema` parse. Neither carries skill data: a skill declares its own category
- * in its `metadata.yaml`, which `extractAllSkills` reads separately.
- */
+/** The `config/skill-categories.ts` and `config/skill-rules.ts` exports for these skills. */
 function generateMatrix(skills: TestSkill[]): {
   diskCategories: TestSkillCategoriesFile;
   diskRules: SkillRulesFile;
 } {
-  // Category keys are hyphen-separated and domain-prefixed (e.g., "web-framework", "api-api")
   const uniqueCategories = [...new Set(skills.map((skill) => skill.category))];
   const categories: Record<string, { name: string; description: string }> = Object.fromEntries(
     uniqueCategories.map((category) => {
@@ -178,8 +152,7 @@ function generateMatrix(skills: TestSkill[]): {
     }),
   );
 
-  // The tuple annotation is what makes the entry a checked literal: without it `fromEntries`
-  // infers the element type and a stale field rides through as an extra property nothing flags.
+  // The tuple annotation makes each entry a checked literal, so a stale field is flagged.
   const diskCategoriesMap: Record<string, TestCategoryDefinition> = Object.fromEntries(
     Object.entries(categories).map(([category, cat], order): [string, TestCategoryDefinition] => [
       category,
@@ -213,44 +186,21 @@ function generateMatrix(skills: TestSkill[]): {
 }
 
 /**
- * The marketplace a test source publishes under, and therefore the namespace its
- * skill ids live in.
- *
- * A source written here is a CUSTOM marketplace, and a custom marketplace may not
- * ship an id the public catalogue owns — the loader refuses the whole source when
- * it does, because a skill id is the directory the skill installs into. Fixtures
- * built from catalogue ids were exactly that refusal's subject, so the ones that
- * reach a real load publish through {@link inTestMarketplace} instead.
- *
- * The value spells neither noun of the marketplace/source vocabulary on purpose:
- * an id is printed in `search`'s ID column, and a fixture id containing the word
- * "marketplace" satisfies assertions about the CLI's own prose for free.
+ * A custom marketplace may not ship catalogue ids, so loaded fixtures namespace theirs here. Avoids
+ * "marketplace" and "source", which `search` would print and prose assertions would then match.
  */
 export const TEST_MARKETPLACE_NAME = "test-fixture";
 
-/**
- * The same skills, republished in {@link TEST_MARKETPLACE_NAME}'s namespace.
- *
- * Only the id moves. A slug names a skill inside its own source and a category
- * keeps its `domain-…` shape, so neither is namespaced, and every assertion
- * reading an id off the returned array follows on its own.
- */
+/** Only the id is namespaced; slugs and categories are already per-source. */
 export function inTestMarketplace(skills: TestSkill[]): TestSkill[] {
   return skills.map((skill) => ({ ...skill, id: testMarketplaceSkillId(skill.id) }));
 }
 
-/** Composes a bare id into {@link TEST_MARKETPLACE_NAME}'s namespace. */
 export function testMarketplaceSkillId(bareId: string): string {
   return `${TEST_MARKETPLACE_NAME}-${bareId}`;
 }
 
-/**
- * Creates a complete test source directory structure with skills, agents,
- * categories/rules config, the `.claude-plugin/marketplace.json` a custom
- * marketplace must carry (unless `unbuilt`), and optionally a plugin layout. Sets
- * up temp directories that must be cleaned up via cleanupTestSource.
- * @returns TestDirs containing all created directory paths for assertions
- */
+/** Builds a source and project under a temp dir; pair with `cleanupTestSource`. */
 export async function createTestSource(options: TestSourceOptions = {}): Promise<TestDirs> {
   const skills = options.skills ?? DEFAULT_TEST_SKILLS;
   const agents = options.agents ?? DEFAULT_TEST_AGENTS;
@@ -293,7 +243,7 @@ export async function createTestSource(options: TestSourceOptions = {}): Promise
       author: skill.author,
       category: skill.category,
       domain,
-      // displayName is required by extractAllSkills for source-based matrix loading
+      // extractAllSkills requires displayName
       displayName: skill.id,
       slug,
       contentHash,
@@ -397,10 +347,7 @@ permissionMode: {{ agent.permissionMode }}
       await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), content);
 
       if (!skill.skipMetadata) {
-        // The same four required fields the source writer above emits. A local
-        // skill installed by any product path carries them, and one that does not
-        // is refused by `compile` — the TestSkill already knows its category and
-        // slug, and dropping them here wrote a file no product path produces.
+        // The fields every product path writes; `compile` refuses a local skill without them.
         const metadata: Record<string, unknown> = {
           displayName: skill.id,
           author: skill.author,
@@ -419,11 +366,7 @@ permissionMode: {{ agent.permissionMode }}
   return dirs;
 }
 
-/**
- * Writes the `.claude-plugin/marketplace.json` a custom marketplace must carry for any command to
- * load it: published under {@link TEST_MARKETPLACE_NAME}, listing one plugin per skill the source
- * ships — the shape `build marketplace` writes, since the schema refuses a marketplace listing none.
- */
+/** One plugin per skill, as `build marketplace` writes; the schema refuses an empty listing. */
 async function writeMarketplaceManifest(sourceDir: string, skills: TestSkill[]): Promise<void> {
   const manifestPath = marketplaceManifestPath(sourceDir);
   await mkdir(path.dirname(manifestPath), { recursive: true });
@@ -437,12 +380,8 @@ async function writeMarketplaceManifest(sourceDir: string, skills: TestSkill[]):
 }
 
 /**
- * Removes a test source's temp dir, tolerating dirs that were never built.
- *
- * A `let dirs: TestDirs;` assigned inside `beforeAll` reads as definitely assigned to the
- * type checker, which has no flow analysis across hook callbacks — but the hook can throw
- * before the assignment, and then the teardown masks the real failure with a TypeError.
- * The guard lives here, where the parameter type says what the value can actually be.
+ * Accepts `undefined`: a `beforeAll` can throw before assigning `dirs`, and a TypeError here would
+ * mask that failure.
  */
 export async function cleanupTestSource(dirs: TestDirs | undefined): Promise<void> {
   if (dirs !== undefined) await cleanupTempDir(dirs.tempDir);
@@ -456,7 +395,7 @@ export { readTestYaml };
 
 export async function readTestJson<T>(filePath: string): Promise<T> {
   const content = await readFile(filePath, "utf-8");
-  // Boundary cast: JSON.parse returns `any`, caller provides expected type
+  // JSON.parse returns `any`; the caller names the type
   return JSON.parse(content) as T;
 }
 

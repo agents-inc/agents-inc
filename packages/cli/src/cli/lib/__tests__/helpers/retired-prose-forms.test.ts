@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { RETIRED_FORM_STRINGS, SHOUTING } from "./retired-prose-forms.js";
 
-/**
- * The line the numeral alternative exists for, written out rather than reached through the roster.
- * It is the first entry of {@link RETIRED_FORM_STRINGS}, but binding to that would make this
- * assertion pass for whatever the roster happens to hold rather than for the shape under test.
- */
+// Spelled out rather than read from the roster, so the test can't pass for whatever it holds.
 const NUMERAL_SEPARATED_RUN = "DISPLAY ALL 5 CORE PRINCIPLES AT THE START OF EVERY RESPONSE";
 
 describe("SHOUTING", () => {

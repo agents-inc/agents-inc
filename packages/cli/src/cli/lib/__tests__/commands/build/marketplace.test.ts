@@ -12,45 +12,26 @@ import { VALID_PACKAGE_JSON_FILE } from "../../mock-data/mock-source-files.js";
 import type { Marketplace, PluginManifest } from "../../../../types";
 import { firstElement } from "../../helpers/element-at.js";
 
-/** The marketplace name every build here publishes under unless it overrides it. */
 const MARKETPLACE_NAME = VALID_PACKAGE_JSON_FILE.name;
 
-/** The valid fixture's identity fields, minus the `author` the refusal cases vary. */
 const { author: _fixtureAuthor, ...PACKAGE_IDENTITY_WITHOUT_AUTHOR } = VALID_PACKAGE_JSON_FILE;
 
-/**
- * The names no marketplace may publish under. Spelled out rather than imported:
- * the rule is these four strings, and a test that read the module's own list
- * would agree with any list it grew.
- */
+/** Spelled out, not imported: a test reading the module's own list would agree with any list. */
 const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local", "eject"] as const;
 
-/** The npm package the public catalogue publishes from — the sole holder of its name. */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-/** The marketplace name that package publishes under, and no other may. */
 const PUBLIC_CATALOGUE_NAME = "agents-inc";
 
-/**
- * Composes a skill id in a marketplace's own namespace.
- *
- * A marketplace's skill ids carry its name as their prefix, so a fixture plugin's
- * name and the name its build publishes under are one string — spelling either
- * alone produces a build the namespace validator refuses.
- */
+/** Skill ids must carry the marketplace name as prefix, or the namespace validator refuses. */
 function namespacedId(marketplaceName: string, bare: string): string {
   return `${marketplaceName}-${bare}`;
 }
 
-/** {@link namespacedId} in the default {@link MARKETPLACE_NAME} namespace. */
 function skillId(bare: string): string {
   return namespacedId(MARKETPLACE_NAME, bare);
 }
 
-/**
- * Creates a plugin directory with a valid plugin.json manifest. The manifest
- * name mirrors the directory name and version defaults to "1.0.0".
- */
 async function createPluginDir(
   pluginsDir: string,
   name: string,
@@ -63,12 +44,10 @@ async function createPluginDir(
   return pluginDir;
 }
 
-/** Reads and parses the generated marketplace.json */
 async function readMarketplaceJson(outputPath: string): Promise<Marketplace> {
   return readTestJson<Marketplace>(outputPath);
 }
 
-/** Runs `build:marketplace` against the given plugins dir and output path. */
 function runBuildMarketplace(pluginsDir: string, outputPath: string, ...extraArgs: string[]) {
   return runCliCommand([
     "build:marketplace",
@@ -102,7 +81,6 @@ describe("build:marketplace command", () => {
     });
 
     it("should error when package.json is missing required fields", async () => {
-      // package.json missing name/version/description
       await writeFile(path.join(projectDir, "package.json"), JSON.stringify({}));
 
       const { error } = await runCliCommand(["build:marketplace"]);
@@ -129,8 +107,7 @@ describe("build:marketplace command", () => {
       pluginsDir = path.join(projectDir, "dist", "plugins");
       outputPath = path.join(projectDir, "marketplace.json");
       await mkdir(pluginsDir, { recursive: true });
-      // One plugin, because a build with none is refused before an owner is ever written and
-      // every case below is about the owner the manifest carries.
+      // One plugin: a build with none is refused before an owner is written.
       await createPluginDir(pluginsDir, skillId("web-framework-react"), "React framework");
     });
 
@@ -149,7 +126,7 @@ describe("build:marketplace command", () => {
 
     it("should parse object-form author { name, email }", async () => {
       await writeTestPackageJson(projectDir, {
-        // Object-form author; the schema accepts strings or objects
+        // Object-form author; the schema accepts strings or objects.
         author: { name: "Jane Doe", email: "jane@example.com" },
       });
 
@@ -162,14 +139,8 @@ describe("build:marketplace command", () => {
     });
 
     /**
-     * Three spellings of an `author` that yields no owner name. They were three specs
-     * asserting three different warnings over a manifest the command wrote anyway; the
-     * command now refuses all three identically, so they are one condition with one
-     * outcome and one case table.
-     *
-     * Written as whole package.json objects rather than as overrides because the first
-     * case is the ABSENCE of the key, which an overrides object cannot spell under
-     * `exactOptionalPropertyTypes`.
+     * Three spellings of an `author` with no owner name, refused identically. Whole objects, since
+     * an absent key cannot be spelled as an override under `exactOptionalPropertyTypes`.
      */
     it.each([
       ["absent", PACKAGE_IDENTITY_WITHOUT_AUTHOR],
@@ -191,14 +162,7 @@ describe("build:marketplace command", () => {
       ).toBe(false);
     });
 
-    /**
-     * The fourth field `marketplaceSchema` constrains, and the one that was not guarded.
-     *
-     * `packageJsonSchema` types `version` as a bare `z.string()`, and `generateMarketplace`
-     * defaults it with `??`, which `""` is not — so an empty version passed straight through into
-     * a manifest whose own reader requires `min(1)`. Written and then refused on read, which is
-     * the shape the zero-plugin refusal closed for `plugins`.
-     */
+    /** `version` is defaulted with `??`, which lets `""` through to a reader requiring `min(1)`. */
     it("refuses to write a marketplace whose version is empty", async () => {
       await writeTestPackageJson(projectDir, { version: "" });
 
@@ -220,7 +184,6 @@ describe("build:marketplace command", () => {
       const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
 
       expect(error).toBeUndefined();
-      // Warns because no email is parseable
       expect(stderr).toContain("no parseable email");
       const marketplace = await readMarketplaceJson(outputPath);
       expect(marketplace.owner.name).toBe("Solo Name");
@@ -242,7 +205,6 @@ describe("build:marketplace command", () => {
 
     it("should parse object-form author { name, email, url }", async () => {
       await writeTestPackageJson(projectDir, {
-        // Object-form author with URL; `parseAuthor` preserves name + email
         author: {
           name: "Jane Doe",
           email: "jane@example.com",
@@ -332,12 +294,7 @@ describe("build:marketplace command", () => {
       await writeTestPackageJson(projectDir);
     });
 
-    /**
-     * The two ways to reach a marketplace with nothing in it: a `--plugins-dir` that names no
-     * directory, and one that names an empty directory. Both are the same mistake to make — the
-     * flag points somewhere the plugins are not — and the refusal names the flag either way, since
-     * neither a missing nor an empty directory is distinguishable from having built nothing yet.
-     */
+    /** A missing and an empty `--plugins-dir` are one mistake, so the refusal names the flag. */
     it.each([
       ["names no directory at all", "/definitely/not/real/path/xyz"],
       ["names an empty directory", undefined],
@@ -357,10 +314,8 @@ describe("build:marketplace command", () => {
       const outputPath = path.join(projectDir, "marketplace.json");
       await mkdir(pluginsDir, { recursive: true });
 
-      // Valid plugin
       await createPluginDir(pluginsDir, skillId("web-framework-react"), "React framework");
 
-      // Invalid plugin: plugin.json exists but contains invalid JSON
       const invalidPluginDir = path.join(pluginsDir, "broken-plugin");
       const invalidManifestDir = path.join(invalidPluginDir, PLUGIN_MANIFEST_DIR);
       await mkdir(invalidManifestDir, { recursive: true });
@@ -385,10 +340,8 @@ describe("build:marketplace command", () => {
       const outputPath = path.join(projectDir, "marketplace.json");
       await mkdir(pluginsDir, { recursive: true });
 
-      // Valid plugin
       await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono framework");
 
-      // Invalid plugin: valid JSON but missing required 'name' field
       const invalidPluginDir = path.join(pluginsDir, "nameless-plugin");
       const invalidManifestDir = path.join(invalidPluginDir, PLUGIN_MANIFEST_DIR);
       await mkdir(invalidManifestDir, { recursive: true });
@@ -438,7 +391,6 @@ describe("build:marketplace command", () => {
     });
 
     it("should include marketplace identity from package.json in output", async () => {
-      // Rewrite package.json with single-word values to match assertions
       const customName = "my-marketplace";
       await writeTestPackageJson(projectDir, {
         name: customName,
@@ -491,7 +443,6 @@ describe("build:marketplace command", () => {
     });
 
     it("should sort plugins alphabetically in output", async () => {
-      // Create plugins in non-alphabetical order
       await createPluginDir(pluginsDir, skillId("web-state-zustand"), "Zustand");
       await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono");
       await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
@@ -531,7 +482,7 @@ describe("build:marketplace command", () => {
         (p) => p.name === skillId("meta-methodology-anti-over-engineering"),
       );
 
-      // Plugin manifests don't carry category — it comes from skill metadata.yaml
+      // Category comes from skill metadata.yaml, not the plugin manifest.
       expect(reactPlugin?.category).toBeUndefined();
       expect(drizzlePlugin?.category).toBeUndefined();
       expect(metaPlugin?.category).toBeUndefined();
@@ -545,7 +496,6 @@ describe("build:marketplace command", () => {
       const marketplace = await readMarketplaceJson(outputPath);
       const plugin = firstElement(marketplace.plugins);
 
-      // Source should reference the plugin directory relative to plugin root
       expect(typeof plugin.source).toBe("string");
       expect(plugin.source).toContain(skillId("web-framework-react"));
     });
@@ -580,7 +530,6 @@ describe("build:marketplace command", () => {
     it("should overwrite existing marketplace.json on repeated builds", async () => {
       await createPluginDir(pluginsDir, skillId("web-test-a"), "Test");
 
-      // First build with version 1.0.0
       await writeTestPackageJson(projectDir, { version: "1.0.0" });
       await runBuildMarketplace(pluginsDir, outputPath);
 
@@ -588,7 +537,6 @@ describe("build:marketplace command", () => {
       expect(first.version).toBe("1.0.0");
       expect(first.plugins).toHaveLength(1);
 
-      // Add another plugin and rebuild with bumped version
       await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono");
       await writeTestPackageJson(projectDir, { version: "1.1.0" });
 
@@ -600,10 +548,8 @@ describe("build:marketplace command", () => {
     });
 
     it("should skip directories without valid plugin.json manifests", async () => {
-      // Valid plugin
       await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
 
-      // Invalid: directory without .claude-plugin/plugin.json
       const invalidDir = path.join(pluginsDir, "not-a-plugin");
       await mkdir(invalidDir, { recursive: true });
       await writeFile(path.join(invalidDir, "README.md"), "# Not a plugin");
@@ -616,7 +562,6 @@ describe("build:marketplace command", () => {
     });
 
     it("should write nothing at all when the plugins directory is empty", async () => {
-      // pluginsDir exists but is empty
       await writeTestPackageJson(projectDir, { name: "empty-marketplace" });
 
       const { error } = await runBuildMarketplace(pluginsDir, outputPath);
@@ -635,13 +580,10 @@ describe("build:marketplace command", () => {
 
       const raw = await readFile(outputPath, "utf-8");
 
-      // Valid JSON
       expect(() => JSON.parse(raw)).not.toThrow();
 
-      // 2-space indentation
       expect(raw).toContain('  "name"');
 
-      // Trailing newline
       expect(raw.endsWith("\n")).toBe(true);
     });
 
@@ -653,7 +595,6 @@ describe("build:marketplace command", () => {
 
       expect(error).toBeUndefined();
       expect(stdout).toContain("2 plugins");
-      // Category breakdown is shown in output
       expect(stdout).toContain("web");
       expect(stdout).toContain("api");
     });
@@ -670,7 +611,7 @@ describe("build:marketplace command", () => {
     });
 
     it("should override package.json name when --name is provided", async () => {
-      // package.json has an npm scoped name, which is not a valid marketplace name
+      // An npm scoped name is not a valid marketplace name.
       const overrideName = "agents-inc-skills";
       await writeTestPackageJson(projectDir, { name: "@agents-inc/skills" });
       await createPluginDir(pluginsDir, namespacedId(overrideName, "web-test-a"), "Test");

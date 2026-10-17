@@ -14,15 +14,11 @@ import { envReadsIn } from "./helpers/env-reads.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/** The environment a door hands its child, and the one a caller hands the door. */
 type ChildEnv = Record<string, string | undefined>;
 
 /**
- * Every start of the binary the doors below make, recorded INSTEAD of performed: the arguments
- * and the environment the child would have been handed. Both spawners are replaced, because the
- * two non-interactive doors start the binary through `execa` and the PTY harness through
- * `@lydell/node-pty` — and the environment a door computes is the subject, so it is read at the
- * one point every door must pass through, rather than from the door's source text.
+ * Every binary start the doors make, recorded instead of performed. Both spawners (`execa` and
+ * `@lydell/node-pty`) are replaced, so the environment is read where every door must pass.
  */
 const spawned = vi.hoisted(() => vi.fn<(args: readonly string[], env: ChildEnv) => void>());
 
@@ -43,26 +39,13 @@ vi.mock("@lydell/node-pty", () => ({
   },
 }));
 
-/** The shipped CLI — everything a spawned `bin/run.js` executes, and nothing that tests it. */
 const PRODUCT_SOURCES = ["src/cli/**/*.ts", "src/cli/**/*.tsx"];
 const NOT_PRODUCT = ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**", "**/__mocks__/**"];
 
 /**
- * Every way this suite starts the compiled binary, and what each one is. A variable one runner
- * clears and another does not is not half-solved — the specs that leak are simply the ones on
- * the other runners, and nothing about them says so.
- *
- * The MEMBERSHIP is derived rather than stated: this list named two doors, called itself the
- * whole set in its own comment, and left `runCLI` — most of the non-interactive command specs —
- * spawning with the harness's environment. A hand-written roster of runners carries the same
- * defect the roster of variables below it would: the entry that matters is the one nobody
- * remembered to add. So it is held against `scripts/check-spawn-doors.ts`, which finds a door by
- * the constant it reaches the binary through rather than by having been told about it. `spawns`
- * stays hand-written, because a scan can name a file and a callee but not what the door is for.
- *
- * `spawnedBy` and `open` are hand-written for the same reason, and the pinning check below holds
- * the first against the scan: `open` starts the binary through the one door `spawnedBy` names, so
- * a second door in the same file is reported there rather than passing on the first one's answer.
+ * Every way this suite starts the binary. Membership is held against
+ * `scripts/check-spawn-doors.ts`, which finds doors by the constant they reach the binary through;
+ * `spawns`, `spawnedBy` and `open` stay hand-written because a scan cannot say what a door is for.
  */
 const RUNNERS: RunnerDoor[] = [
   {
@@ -89,20 +72,14 @@ const RUNNERS: RunnerDoor[] = [
 ];
 
 /**
- * Where a door is driven from. The two are DIFFERENT directories on purpose: every door takes the
- * project it works in as one argument and the HOME it hands over as another, and driving both from
- * one string makes `path.join(home, ".codex")` and `path.join(projectDir, ".codex")` the same
- * answer — so the pinning check below could not tell the correct derivation from the hazard.
- * `<project>/.codex` is not hypothetical: it is where Codex keeps a project's own agents.
+ * Different directories on purpose: from one string, `path.join(home, ".codex")` and
+ * `path.join(projectDir, ".codex")` agree, hiding the hazard (Codex keeps project agents there).
  */
 type DriveFrom = {
-  /** The HOME the caller names, and the one every pin must be derived from. */
   home: string;
-  /** The directory the door is told to work in, inside that HOME and never equal to it. */
   projectDir: string;
 };
 
-/** One door, and how to start the binary through it once. */
 type RunnerDoor = {
   runner: string;
   spawns: string;
@@ -110,10 +87,8 @@ type RunnerDoor = {
   open: (loaded: unknown, places: DriveFrom, callerEnv: ChildEnv) => unknown;
 };
 
-// What each door's module offers, spelled structurally at the boundary where it is loaded by path.
-// Importing the modules by name instead would pull the whole E2E harness into this project's
-// program, where `@lydell/node-pty` has no types: its declarations reach only `e2e/tsconfig.json`,
-// through the triple-slash reference in `e2e/helpers/node-pty.d.ts` (TS7016 without it).
+// Structural module types: importing by name would pull the E2E harness into this program, where
+// `@lydell/node-pty` has no types (TS7016 without `e2e/helpers/node-pty.d.ts`).
 type CliFixtureModule = {
   CLI: { run: (args: string[], project: { dir: string }, options: { env: ChildEnv }) => unknown };
 };
@@ -125,40 +100,29 @@ type TestUtilsModule = {
 };
 
 /**
- * The third-party binaries a spawned `bin/run.js` starts in its turn, each paired with the
- * directory under HOME it keeps its state in, keyed by the variable that relocates it.
- *
- * Faking HOME does not isolate either of them. `CLAUDE_CONFIG_DIR` BEATS `HOME` in the Claude CLI,
- * and `CODEX_HOME` beats it in Codex, so an exported value sends every call the child makes into
- * the developer's own installation, past the fake HOME entirely. A door therefore PINS both — set
- * after the caller's environment, derived from the HOME the child is actually handed — and a
- * default a caller can override is the same leak one layer up.
+ * `CLAUDE_CONFIG_DIR` and `CODEX_HOME` beat `HOME`, so a door must pin both after the caller's
+ * environment, derived from the HOME it hands the child; an overridable default leaks too.
  */
 const HOST_STATE_DIRS = { CLAUDE_CONFIG_DIR: ".claude", CODEX_HOME: ".codex" };
 
-/** Where the pinning check says the child's home is. Nothing creates it: every spawn is recorded. */
+/** Nothing creates it: every spawn is recorded. */
 const HOME_UNDER_TEST = path.join(os.tmpdir(), "a-home-no-door-creates");
 
-/** The project each door is driven in — inside that HOME, and never the same string as it. */
+/** Inside that HOME, and never the same string as it. */
 const DRIVEN_FROM: DriveFrom = {
   home: HOME_UNDER_TEST,
   projectDir: path.join(HOME_UNDER_TEST, "project"),
 };
 
-/**
- * A caller contradicting every pin at once — the shape an exported variable reaches a door in,
- * since each door spreads its caller's environment. A pin is the door's answer winning over this.
- */
+/** Contradicts every pin, as an exported variable would reach a door through its env spread. */
 const CONTRADICTING_CALLER_ENV: ChildEnv = {
   HOME: HOME_UNDER_TEST,
   CLAUDE_CONFIG_DIR: path.join(os.tmpdir(), "a-developers-claude-config"),
   CODEX_HOME: path.join(os.tmpdir(), "a-developers-codex-home"),
 };
 
-/** The built binary, as every door names it in the arguments it hands the spawner. */
 const BIN_RUN_PATH = path.join(CLI_ROOT, "bin", "run.js");
 
-/** The HOME a child is handed and where each host would keep its state under it. */
 function hostStateIn(env: ChildEnv): ChildEnv {
   return {
     HOME: env.HOME,
@@ -166,7 +130,6 @@ function hostStateIn(env: ChildEnv): ChildEnv {
   };
 }
 
-/** What {@link hostStateIn} must read for a child handed `home`. */
 function hostStatePinnedTo(home: string): ChildEnv {
   return {
     HOME: home,
@@ -176,75 +139,41 @@ function hostStatePinnedTo(home: string): ChildEnv {
   };
 }
 
-/**
- * A door's module, loaded by path. The specifier is computed, so the type checker does not follow
- * it — which is the point: see the structural module types above.
- */
+/** Loaded by a computed specifier, so the type checker does not follow it; see the module types. */
 async function loadRunner(runner: string): Promise<unknown> {
   const loaded: unknown = await import(pathToFileURL(path.join(CLI_ROOT, runner)).href);
   return loaded;
 }
 
-/**
- * Every environment variable `src/cli/` reads by NAME, which is the roster every runner answers
- * for below. Held against the scan rather than beside it: a new read that nobody clears is the
- * defect, and this is the line that has to move before it can ship. Each is one of the product's
- * own overrides, a knob a developer's shell may carry.
- */
+/** Held against the scan: a new read nobody clears must move this line before it can ship. */
 const NAMED_ENV_READS = ["AGENTS_INC_API_URL", "GIGET_AUTH", "XDG_CACHE_HOME"];
 
 /**
- * The constants a bracket read goes through, whose VALUES name variables just as directly.
- * Resolved by importing the constant rather than restating its value, so renaming the variable
- * moves what the runners must clear and reddens them until they follow.
- *
- * `CODEX_HOME_VAR` is the layout module's read: the host roles hang a Codex installation off
- * whichever root the variable names, so the product now reads a variable the doors were already
- * pinning. It is answered by that pin rather than by a clearance — see
- * {@link EVERY_PRODUCT_ENV_VAR}. `CLAUDE_CONFIG_DIR_VAR` is the same module's read of where Claude
- * Code keeps its state file, answered the same way.
+ * Resolved from the constants, so a renamed variable moves what runners must clear. The host-state
+ * variables are answered by a pin rather than a clearance.
  */
 const ENV_READS_BY_CONSTANT = { CLAUDE_CONFIG_DIR_VAR, CODEX_HOME_VAR, SOURCE_ENV_VAR };
 
-/**
- * The one place forwarding the WHOLE environment is the point rather than a leak: `execCommand`
- * spawns the Claude CLI, a different program, which is entitled to the user's environment. Named
- * so a second such spread arrives here with its reason instead of passing as this one's twin.
- */
+/** `execCommand` spawns the Claude CLI, which is entitled to the user's whole environment. */
 const WHOLE_ENV_FORWARDERS = ["src/cli/utils/exec.ts"];
 
 /**
- * The seed API's address, and what every door hands the child for it unless a spec names a store.
- *
- * Clearing it is not enough, because the product does not refuse an unset value — it falls back to
- * `https://api.agentsinc.sh`. A cleared variable therefore sent every run that reaches the network
- * to the live store, and once a bare `edit` began publishing, an e2e spec minted a real id there.
- * Port 1 on the loopback refuses at once, so a run no spec pointed at a store fails fast and
- * locally rather than writing to production.
+ * Clearing is not enough: unset, the product falls back to the live store. Port 1 on loopback
+ * refuses at once, so an unpointed run fails fast and locally.
  */
 const SEED_API_VAR = "AGENTS_INC_API_URL";
 const UNROUTABLE_SEED_API = "http://127.0.0.1:1";
 
-/** A store a spec starts and names — the value that must reach the child untouched. */
 const A_SPECS_OWN_STORE = "http://127.0.0.1:43210";
 
 /**
- * Every variable a spawned binary must be CLEARED of, whichever shape the product reads it in.
- *
- * A {@link HOST_STATE_DIRS} variable is left out, and is the one case where that is not a hole: a
- * host's state directory is answered by a PIN and never by a clearance, and the second describe
- * block below drives every door and compares the value it would hand the child — which is the
- * stronger check of the two, because clearing `CODEX_HOME` only leaves the child falling back to
- * `.codex` under whichever HOME it was given, while the pin says which directory that is. Holding
- * such a variable to the clearance check would ask every door to undo the pin the same file
- * requires of it. {@link SEED_API_VAR} is left out for the same reason: it is answered by a
- * DEFAULT, which the third describe block drives and compares.
+ * Every variable a spawned binary must be cleared of. Host-state variables are answered by a pin
+ * and the seed API by a default, each driven and compared in its own describe block below.
  */
 const EVERY_PRODUCT_ENV_VAR = [...NAMED_ENV_READS, ...Object.values(ENV_READS_BY_CONSTANT)]
   .filter((name) => !(name in HOST_STATE_DIRS) && name !== SEED_API_VAR)
   .sort();
 
-/** Each product source paired with what it does to `process.env`. */
 async function productEnvReads(): Promise<
   { file: string; reads: ReturnType<typeof envReadsIn> }[]
 > {
@@ -299,8 +228,7 @@ describe("a spawned binary is told about every environment variable the product 
   });
 
   it("answers for every file that starts the binary, and for no file that does not", () => {
-    // Per FILE, not per door: a file spawning twice is read once here, and the scan reports
-    // each of its calls.
+    // Per file, not per door: the scan reports each of a file's calls.
     const doors = [...new Set(check().doors.map((door) => door.file))].sort();
 
     expect(
@@ -309,20 +237,11 @@ describe("a spawned binary is told about every environment variable the product 
     ).toStrictEqual(doors);
   });
 
-  /**
-   * Judged per DOOR and from the syntax tree, because the two coarser readings both pass on a
-   * runner that clears nothing. This asked whether the runner's SOURCE TEXT contained
-   * `<NAME>: undefined` anywhere, and a comment satisfies that — measured, by replacing `runCLI`'s
-   * clearing line with a comment saying it: this file stayed green while the door leaked `VITEST`
-   * into every binary it spawned. Per file rather than per door is the same defect one step up, a
-   * file with two spawns passing on whichever of them is written correctly.
-   */
+  /** Per door and from the syntax tree: a source-text match passes on a comment saying it. */
   it.each(RUNNERS)("$spawns clears every one of them", ({ runner }) => {
     const doors = clearances().filter((door) => door.file === runner);
 
-    // Two subject guards. An empty roster leaves the filter below satisfied for free, and so does
-    // a runner whose doors this scan cannot see — each would report a clean runner for a reason
-    // that has nothing to do with the environment it hands over.
+    // Two subject guards: an empty roster, or doors the scan cannot see, would pass for free.
     expect(
       EVERY_PRODUCT_ENV_VAR,
       "the roster is empty, so this runner is asked nothing",
@@ -346,30 +265,14 @@ describe("a spawned binary is told about every environment variable the product 
 });
 
 /**
- * Judged by what a door HANDS the child rather than by what its source says, because the question
- * is a value and not a name: a door naming `CODEX_HOME` BEFORE the caller's spread defaults it,
- * a door deriving it from anything but the HOME it hands over points it somewhere else, and both
- * read the same to a scan for the key. So each door is driven once, with the spawner recorded
- * rather than run, by a caller contradicting every pin — and the environment it would have started
- * the binary with is compared against the one its own HOME implies.
- *
- * **Driven from a project that is NOT the caller's HOME**, which is the half that was missing. Each
- * door was opened with its project directory and the caller's HOME set to one string, so a pin
- * taken from the project and a pin taken from the HOME produced the same value and the second
- * hazard in the paragraph above was unreachable — the check read as covering it and could not fail
- * for it. `<project>/.codex` is where Codex keeps a project's own agents, so a door deriving
- * `CODEX_HOME` from the directory it works in is the shape this now separates.
- *
- * The PTY harness is the door this was written against: it pinned neither variable, and handed
- * whatever the caller or the developer's shell carried straight to the binary it spawned.
+ * Judged by the value each door hands the child, driven by a caller contradicting every pin, from a
+ * project that is not the caller's HOME, so a pin derived from the project is told apart.
  */
 describe("a spawned binary keeps each host's state inside the HOME it is handed", () => {
   it.each(RUNNERS)(
     "$spawns pins every host's state directory to that HOME, not to the project it works in",
     async ({ runner, spawnedBy, open }) => {
-      // Subject guard: the door driven below is the only one this file holds. A second door here
-      // would otherwise pass on the first one's answer, which is the per-file reading the
-      // clearing check above was rewritten to stop.
+      // Subject guard: a second door here would pass on the first one's answer.
       expect(
         check()
           .doors.filter((door) => door.file === runner)
@@ -377,8 +280,7 @@ describe("a spawned binary keeps each host's state inside the HOME it is handed"
         `${runner} starts the binary somewhere other than the one door this check drives`,
       ).toStrictEqual([spawnedBy]);
 
-      // Subject guard: the two directories must differ, or both derivations answer the same and
-      // the comparison below is satisfied by the door this is written against.
+      // Subject guard: the two directories must differ, or both derivations agree.
       expect(
         DRIVEN_FROM.projectDir,
         "the project and the HOME are one directory, so a pin taken from either reads the same",
@@ -386,8 +288,7 @@ describe("a spawned binary keeps each host's state inside the HOME it is handed"
 
       await open(await loadRunner(runner), DRIVEN_FROM, CONTRADICTING_CALLER_ENV);
 
-      // Subject guard: the door started the built binary, once — an empty record would satisfy no
-      // comparison below, but it would fail it for a reason that has nothing to do with pinning.
+      // Subject guard: the door started the built binary, once.
       expect(
         spawned.mock.calls.map(([args]) => args.slice(0, 1)),
         `${runner} did not start the built binary exactly once`,
@@ -401,12 +302,7 @@ describe("a spawned binary keeps each host's state inside the HOME it is handed"
   );
 });
 
-/**
- * Judged by what a door HANDS the child, for the same reason as the pinning check above: the
- * question is a value. Each door is driven three ways — by a caller naming nothing, by a caller
- * whose shell exports a seed API of its own, and by a spec naming the store it started — and the
- * child must reach the store only in the third.
- */
+/** Driven three ways; the child may reach the store only when a spec names it. */
 describe("a spawned binary reaches no seed API a spec did not name", () => {
   afterEach(() => {
     vi.unstubAllEnvs();

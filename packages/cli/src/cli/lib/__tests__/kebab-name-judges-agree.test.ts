@@ -17,32 +17,13 @@ import { validatePluginManifest } from "../plugins/plugin-validator.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/** The shipped CLI — every surface a user can reach, and nothing that tests one. */
 const PRODUCT_SOURCES = ["src/cli/**/*.ts", "src/cli/**/*.tsx"];
 const NOT_PRODUCT = ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**", "**/__mocks__/**"];
 
 /**
- * Several modules independently judge whether a name is kebab-case, and they must agree.
- *
- * They exist because several artefacts carry such a name — a marketplace being PUBLISHED
- * (`validateKebabCaseName`, reached from `build marketplace`), a marketplace being LOADED
- * (`marketplaceSchema.name`), a `plugin.json` being validated (`isKebabCase`, module-private,
- * driven here through `validatePluginManifest`), and a custom skill's `slug` being validated on
- * load (`customMetadataValidationSchema`).
- *
- * **The roster is derived rather than remembered, and that is the whole of what makes this a
- * gate.** `kebabCaseJudgesIn` finds a judge by asking each anchored pattern what it ACCEPTS, not
- * by looking for the shared constant's name — a scan keyed on the name sees only the surfaces
- * that already agree, which is the one thing a roster of judges must not be built from. So a
- * fifth judge written in a fifth spelling arrives here on its first day, and a rostered surface
- * that stops reaching the one pattern reddens the walk rather than the verdicts.
- *
- * **What this file deliberately does NOT assert is that the judges say the same SENTENCE.** They
- * do not, and should not: one is parameterised by a noun, one names the offending characters, one
- * carries an example and where to edit it. Pinning the prose equal would force a false uniformity
- * on surfaces with genuinely different jobs. The prose duplication is real and is filed as
- * `2026-08-20-marketplace-name-rule-enforced-on-emit-and-not-on-load.md`; the VERDICT is the half
- * that must not diverge, and it is the half held here.
+ * Every module judging whether a name is kebab-case must reach the same verdict. The roster is
+ * derived: `kebabCaseJudgesIn` finds judges by what their patterns accept, so a new spelling shows
+ * up here. Only verdicts are pinned; the error prose legitimately differs per surface.
  */
 describe("every judge of a kebab-case name", () => {
   let tempDir: string;
@@ -55,10 +36,10 @@ describe("every judge of a kebab-case name", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** The noun `build marketplace` passes, mirrored rather than imported — it is that command's word. */
+  /** Mirrored, not imported: it is `build marketplace`'s word. */
   const MARKETPLACE_NOUN = "Marketplace";
 
-  /** The one plugin `marketplaceSchema.plugins.min(1)` requires before `name` is ever reached. */
+  /** `marketplaceSchema.plugins.min(1)` must pass before `name` is reached. */
   const ONE_PLUGIN = [createMockMarketplacePlugin("web-framework-react")];
 
   async function marketplaceLoadAccepts(name: string): Promise<boolean> {
@@ -77,26 +58,14 @@ describe("every judge of a kebab-case name", () => {
     return !errors.some((error) => error.includes("kebab-case"));
   }
 
-  /**
-   * The one field, rather than the whole schema around it: `skillMetadataBaseSchema` demands
-   * half a dozen unrelated fields before `slug` is reached, and a fixture supplying them would
-   * put this judge's verdict behind a fixture's correctness.
-   */
+  /** The field alone: the whole schema demands unrelated fields before `slug` is reached. */
   function customSkillSlugAccepts(name: string): boolean {
     return customMetadataValidationSchema.shape.slug.safeParse(name).success;
   }
 
   /**
-   * Every judge the scan finds, paired with the way this file drives it. `judge` is what the
-   * scan names the surface by — the shared constant, or a second spelling's own text — and it is
-   * asserted against the walk below, so a surface added, moved or deleted reddens this roster.
-   *
-   * `surface` is what the verdict table is keyed by, and it is not the same thing as the site: a
-   * file states the rule once and can judge several artefacts through it, so `schemas.ts` appears
-   * twice here and once in the walk. Keying the verdicts by site instead silently dropped one of
-   * the two into the other.
-   *
-   * In the order the walk yields them, because that is what it is compared against.
+   * In walk order. `surface` keys the verdicts, not the site: `schemas.ts` judges two artefacts
+   * through one pattern, so it appears twice here and once in the walk.
    */
   const JUDGES = [
     {
@@ -130,12 +99,7 @@ describe("every judge of a kebab-case name", () => {
     accepts: (name: string) => boolean | Promise<boolean>;
   }[];
 
-  /**
-   * Names chosen for the boundaries a hand-rolled judge gets wrong, not for coverage. The last
-   * four entries are each accepted by `/^[a-z0-9-]+$/` and refused by `KEBAB_CASE_PATTERN` — they
-   * are what makes this table discriminating rather than decorative, and `acme-` and
-   * `acme--skills` are the two a second spelling of the rule in `schemas.ts` used to admit.
-   */
+  /** The last four are accepted by `/^[a-z0-9-]+$/` and refused by `KEBAB_CASE_PATTERN`. */
   const NAMES = [
     { name: "acme-skills", accepted: true },
     { name: "a", accepted: true },
@@ -150,7 +114,6 @@ describe("every judge of a kebab-case name", () => {
     { name: "acme--skills", accepted: false },
   ] as const;
 
-  /** Every judge in the product tree, as `file: judge`, in the order the walk yields them. */
   async function judgeSitesInProduct(): Promise<string[]> {
     const files = (await fg(PRODUCT_SOURCES, { cwd: CLI_ROOT, ignore: NOT_PRODUCT })).sort();
 
@@ -166,20 +129,17 @@ describe("every judge of a kebab-case name", () => {
 
   type Judge = (typeof JUDGES)[number];
 
-  /** How the scan and this roster both name one site, so the two cannot spell it differently. */
+  /** Shared by the scan and the roster, so the two cannot spell a site differently. */
   function siteOf(judge: Judge): string {
     return `${judge.file}: ${judge.judge}`;
   }
 
-  /**
-   * The sites a roster claims, deduplicated: the scan names a file's pattern once however many
-   * artefacts that file judges by it, so the two schemas.ts surfaces arrive here as one site.
-   */
+  /** Deduplicated: the scan names a file's pattern once, so schemas.ts is one site. */
   function sitesOf(judges: readonly Judge[]): string[] {
     return [...new Set(judges.map(siteOf))];
   }
 
-  /** How the scan spells a site reaching the one pattern, so `endsWith` cannot match a longer name. */
+  /** The trailing pattern name keeps `endsWith` from matching a longer name. */
   const REACHES_THE_ONE_PATTERN = `: ${SHARED_PATTERN}`;
 
   async function verdictsFor(name: string): Promise<Record<string, boolean>> {

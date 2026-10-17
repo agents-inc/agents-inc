@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { invocationsIn } from "./handed-out-invocations.js";
 
-/**
- * The reader's own tests. It is held against the real `src/cli/` tree by the gate in
- * `../handed-out-invocations.test.ts`; what is proved here is that it reads a message the way a
- * person does, on the forms the messages are actually written in.
- *
- * Each fixture is one message as it is written in source — the interpolation and the punctuation
- * around it — because the punctuation is what ends a command name, and a fixture that dropped it
- * would prove the reader works on a shape no message takes.
- */
+// Fixtures keep the source's quoting and punctuation: that is what ends a command name.
 describe("reading the invocations a message hands out", () => {
   it("takes the command out of a quoted instruction", () => {
     expect(invocationsIn("Run '${CLI_INVOKE_COMMAND} init' to create one.")).toStrictEqual([
@@ -61,13 +53,7 @@ describe("reading the invocations a message hands out", () => {
     expect(invocationsIn('export const CLI_INVOKE_COMMAND = "npx agents-inc";')).toStrictEqual([]);
   });
 
-  /**
-   * The deliberate over-read, pinned so it is a decision rather than a surprise. An invocation
-   * written without quotes runs into the prose after it, and there is no way to tell where the
-   * command ends without already knowing the roster — which is the question this whole mechanism
-   * exists because nothing can answer statically. It reads as ambiguous to a person too, and the
-   * gate naming a command nobody recognises is the right place to find that out.
-   */
+  // Deliberate over-read: without quotes, the command's end can't be found without the roster.
   it("reads unquoted prose after an invocation as part of it", () => {
     expect(
       invocationsIn("Run ${CLI_INVOKE_COMMAND} update to refresh the marketplace"),

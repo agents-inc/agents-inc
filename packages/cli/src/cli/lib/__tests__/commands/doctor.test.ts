@@ -24,24 +24,13 @@ import {
 const ORPHANED_SKILL_ID = "web-framework-react";
 const ORPHANED_AGENT_NAME = "web-developer";
 
-/**
- * A skill directory in the shared `~/.claude/skills/` tree that this CLI did not put there.
- * `.claude/skills/` belongs to Claude Code, not to this installation.
- */
+/** `.claude/skills/` belongs to Claude Code, so this CLI did not put this there. */
 const FOREIGN_SKILL_DIR = "context7-mcp";
 
-/**
- * An agent file in the shared `.claude/agents/` tree that this CLI did not compile. Its
- * counterpart claim is the provenance marker rather than `forkedFrom`, and it carries none —
- * which is the whole of what makes it somebody else's file.
- */
+/** Carries no provenance marker, which is what makes it somebody else's file. */
 const FOREIGN_AGENT_NAME = "my-own-reviewer";
 
-/**
- * The provenance block the copier stamps into every skill directory this CLI writes. With no
- * configuration left to name an id, it is the only claim an installed directory can carry — and
- * it is the same claim `uninstall` reads before removing anything.
- */
+/** Without a config, provenance is a directory's only claim; `uninstall` reads it too. */
 const CLI_PROVENANCE = {
   skillId: ORPHANED_SKILL_ID,
   contentHash: "abc1234",
@@ -72,10 +61,8 @@ describe("doctor command", () => {
     });
 
     it("should fail when no config exists", async () => {
-      // projectDir has no .agents-inc/claude/config.ts
       const { error } = await runCliCommand(["doctor"]);
 
-      // Should exit with error because Config Valid check fails
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     });
 
@@ -92,27 +79,16 @@ describe("doctor command", () => {
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
-      // Should complete without critical errors when config is valid
-      // (may fail on Source Reachable if no source is available). Read from stdout, where the
-      // Config Valid row is printed: `error` carries only the exit, so a negation against it alone
-      // held whatever the row said.
+      // Read from stdout, where the row is printed: `error` carries only the exit.
       const output = stdout + (error?.message || "");
       expect(output).toContain("config.ts is valid");
       expect(output.toLowerCase()).not.toContain("config.ts has errors");
     });
   });
 
-  /**
-   * A config that EXISTS and cannot be loaded. "Doctor fails on a config with syntax errors" and
-   * "doctor fails when there is no config" both exit ERROR, so a spec that seeds the corrupt file
-   * somewhere the resolver does not look reports the second while reading as the first — which is
-   * why the spec below asserts the row and the path, not only the exit code.
-   */
+  /** No config and a corrupt one both exit ERROR, so the row and path are asserted. */
   describe("config validation", () => {
-    /**
-     * What doctor says about a config it FOUND and could not read, taken verbatim from a run.
-     * "No config here" is the other way to exit ERROR, and it says nothing of the kind.
-     */
+    /** Verbatim from a run; the absent-config row says nothing of the kind. */
     const UNREADABLE_CONFIG_ROW = "exists but could not be loaded";
 
     it("should fail on a config.ts with syntax errors", async () => {
@@ -121,8 +97,7 @@ describe("doctor command", () => {
       const { error, stdout } = await runCliCommand(["doctor"]);
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      // The discriminating half: a project where doctor looked somewhere else exits ERROR too,
-      // reporting a config that is not there — which reads exactly like this one.
+      // Discriminating half: doctor looking elsewhere exits ERROR too.
       expect(
         stdout,
         `doctor exited ERROR without reporting the config at ${configPath} — it found no config rather than a broken one, so this spec is about the wrong failure`,
@@ -137,8 +112,7 @@ describe("doctor command", () => {
 
       const { stdout, error } = await runCliCommand(["doctor"]);
 
-      // May still exit with error if source is unreachable,
-      // but should not fail on config parsing — read from stdout, where the row is printed
+      // Read from stdout, where the row is printed.
       const output = stdout + (error?.message || "");
       expect(output).toContain("config.ts is valid");
       expect(output.toLowerCase()).not.toContain("config.ts has errors");
@@ -186,7 +160,6 @@ describe("doctor command", () => {
   });
 
   describe("agents check", () => {
-    /** The one agent both cases below configure — compiled in the first, missing in the second. */
     const CONFIGURED_AGENT_NAME = "web-developer";
 
     it("should pass when agents are compiled", async () => {
@@ -203,7 +176,6 @@ describe("doctor command", () => {
         }),
       );
 
-      // Create the compiled agent file
       await writeFile(
         path.join(agentsDir, `${CONFIGURED_AGENT_NAME}.md`),
         renderAgentMd(CONFIGURED_AGENT_NAME, "Agent content here."),
@@ -219,7 +191,6 @@ describe("doctor command", () => {
     });
 
     it("should warn when agents need recompilation", async () => {
-      // Create config with agent but no compiled .md file
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -243,7 +214,6 @@ describe("doctor command", () => {
       const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
 
-      // Create config with no agents
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -253,7 +223,6 @@ describe("doctor command", () => {
         }),
       );
 
-      // Create an orphaned agent file not in config
       await writeFile(
         path.join(agentsDir, "orphaned-agent.md"),
         "# Orphaned Agent\n\nThis agent is not in config.",
@@ -271,7 +240,6 @@ describe("doctor command", () => {
       const agentsDir = path.join(claudeDir, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
 
-      // Excluded project agent — its .md file is stale
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -281,9 +249,7 @@ describe("doctor command", () => {
         }),
       );
 
-      // Stale .md file from before exclusion. It carries real frontmatter because a
-      // compile wrote it — a bare heading is content doctor rejects before it ever
-      // reaches the orphan check.
+      // Real frontmatter: a bare heading is rejected before the orphan check.
       await writeFile(
         path.join(agentsDir, "web-developer.md"),
         renderAgentMd("web-developer", "Excluded agent content."),
@@ -292,22 +258,14 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // Excluded project agent .md should be flagged as orphan
       expect(output).toContain("orphaned agent file");
       expect(output).toContain("web-developer.md (not in config)");
     });
   });
 
-  /**
-   * The row's other verdict. With no configuration at all, ownership is not
-   * unknown — it is settled, and the answer is that nothing owns any of it.
-   */
+  /** With no configuration, ownership is settled: nothing owns any of it. */
   describe("orphans check with no configuration", () => {
-    /**
-     * An installed skill and a compiled agent, both valid enough to clear the content layer.
-     * Each carries the claim its own kind can make with no configuration left to name it: the
-     * skill its `forkedFrom` block, the agent the marker the compiler stamps into every file.
-     */
+    /** Each carries the claim its kind can make without a config: `forkedFrom`, or the marker. */
     async function installContentWithoutConfig(): Promise<void> {
       const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, ORPHANED_SKILL_ID);
       await mkdir(skillDir, { recursive: true });
@@ -331,14 +289,12 @@ describe("doctor command", () => {
       await writeAgentFileForTest(ORPHANED_AGENT_NAME, { compiled: true });
     }
 
-    /** A bare directory in the shared skills tree, of the shape another tool leaves behind. */
     async function installForeignSkillDir(): Promise<void> {
       await mkdir(path.join(projectDir, LOCAL_SKILLS_PATH, FOREIGN_SKILL_DIR), {
         recursive: true,
       });
     }
 
-    /** An agent file in the shared agents tree that this CLI did not compile — no marker. */
     async function installForeignAgentFile(): Promise<void> {
       await writeAgentFileForTest(FOREIGN_AGENT_NAME, { compiled: false });
     }
@@ -375,8 +331,7 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // An empty directory with no configuration is the state `init` exists for,
-      // not a stranded one — there is nothing for a configuration to have owned.
+      // An empty directory with no configuration is the state `init` exists for.
       expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
       expect(output).not.toContain("no configuration declares them");
     });
@@ -388,9 +343,7 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // The count is the assertion, not the absence of the name: the content layer names the
-      // foreign directory in the same report, so `not.toContain` on it would be vacuous either
-      // way. Two skill directories are on disk and exactly one of them is this CLI's.
+      // The count: the content layer names the foreign dir too, so `not.toContain` is vacuous.
       expect(
         output,
         "the row offers files for removal — it must count only what `uninstall` would remove",
@@ -404,14 +357,12 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // `uninstall` refuses a directory carrying no provenance, so a row that offered this one
-      // for removal would be the CLI contradicting itself across two of its own screens.
+      // `uninstall` refuses a directory with no provenance, so offering it would contradict it.
       expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
       expect(output).not.toContain("no configuration declares them");
       expect(output).not.toContain("Nothing declares the files above");
 
-      // Stepped over is not unmentioned. The content layer names it in the same run, so the
-      // directory is accounted for rather than silently dropped.
+      // Stepped over is not unmentioned: the content layer names it.
       expect(output).toContain(FOREIGN_SKILL_DIR);
       expect(output).toContain("not installed by this CLI");
     });
@@ -423,9 +374,7 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // The count, for the same reason the skills half asserts on it: the content layer walks
-      // every agent file in the same run, so a `not.toContain` on the hand-written name would
-      // hold either way. Two agent files are on disk and exactly one of them is this CLI's.
+      // The count, as for skills: the content layer walks every agent file too.
       expect(
         output,
         "the row offers files for removal — it must count only what `uninstall` would remove",
@@ -439,8 +388,7 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // `uninstall` with no configuration removes the marker-carrying agents and keeps the rest,
-      // so a row that offered this one for removal would be the CLI contradicting itself.
+      // `uninstall` without config keeps unmarked agents, so offering this one would contradict it.
       expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
       expect(output).not.toContain("no configuration declares them");
     });
@@ -452,9 +400,7 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // Absent and unreadable are different states with different remedies. Only
-      // the first settles ownership; the second is a content finding that gates
-      // the whole operational layer, this row included.
+      // Unreadable is not absent: it is a content finding that gates this row too.
       expect(output).toContain("exists but could not be loaded");
       expect(output).toContain("Skipped — fix the content errors above first");
       expect(output).not.toContain("no configuration declares them");
@@ -463,7 +409,6 @@ describe("doctor command", () => {
 
   describe("skills installed check", () => {
     it("should warn when eject-mode skill is missing from disk", async () => {
-      // Config lists an eject-mode skill, but no skill directory exists on disk
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -476,13 +421,11 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // Should report the missing skill
       expect(output).toContain("missing from disk");
       expect(output).toContain("web-framework-react");
     });
 
     it("should pass when eject-mode skill files exist on disk", async () => {
-      // Create config listing an eject-mode skill
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -492,9 +435,7 @@ describe("doctor command", () => {
         }),
       );
 
-      // Create the skill files on disk. Both halves are written: an ejected skill
-      // with no metadata.yaml is invalid content, and doctor stops at the content
-      // layer before it reaches the eject-mode disk check under test here.
+      // metadata.yaml too: without it doctor stops at the content layer.
       const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, "web-framework-react");
       await mkdir(skillDir, { recursive: true });
       await writeFile(
@@ -516,13 +457,11 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // Should NOT report missing skills
       expect(output).not.toContain("missing from disk");
       expect(output).toContain("1/1 eject-mode skill installed");
     });
 
     it("should not check plugin-mode skills for disk presence", async () => {
-      // Config lists a plugin-mode skill (no files needed on disk)
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -535,24 +474,17 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // Plugin skills should not be checked for disk presence
       expect(output).not.toContain("missing from disk");
       expect(output).toContain("No eject-mode skills configured");
     });
   });
 
   /**
-   * The pair: a stack skill found nowhere is reported, and one found only as the project's own
-   * local skill is not. The local one is a skill the user wrote — an id no marketplace carries —
-   * because `checkSkillsResolved` counts a skill as found when the loaded catalogue holds it OR a
-   * local copy does, so a catalogue id resolves whether or not anything is on disk. The spec here
-   * used `web-framework-react` with a metadata.yaml short of `displayName` and `slug`, which
-   * discovery refuses, and passed with no local skill written at all.
+   * The pair: a skill found nowhere is reported; one found only as a local skill is not. The local
+   * one needs an id no marketplace carries, since a catalogue id resolves without anything on disk.
    */
   describe("broken agent references", () => {
     it("should report skills in stack that cannot be resolved", async () => {
-      // Config has a stack referencing a skill that doesn't exist
-      // anywhere (not in matrix, not in local skills)
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
@@ -570,7 +502,6 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // Should report the unresolvable skill in the stack
       expect(output).toContain("web-framework-nonexistent");
       expect(output).toContain("not found");
     });
@@ -590,9 +521,7 @@ describe("doctor command", () => {
         }),
       );
 
-      // The local skill, written whole: `custom: true` is what carries a slug the catalogue
-      // does not, and every field doctor's content layer requires is present, so nothing
-      // upstream of the resolution check stops the run before it.
+      // Whole skill: `custom: true` carries a non-catalogue slug; every required field is present.
       const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, CUSTOM_HOUSE_TOOLING_SKILL.id);
       await mkdir(skillDir, { recursive: true });
       await writeFile(
@@ -615,7 +544,6 @@ describe("doctor command", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
       const output = stdout + (error?.message || "");
 
-      // The skill should be resolved (found as local skill)
       expect(output).toContain("1/1 skill found");
       expect(output).not.toContain(`${CUSTOM_HOUSE_TOOLING_SKILL.id} (not found)`);
     });

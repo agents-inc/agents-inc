@@ -2,15 +2,7 @@ import { expect } from "vitest";
 
 import { parseCompiledAgentSections } from "../helpers/compiled-agent-sections.js";
 
-/**
- * Verify preloaded vs dynamic skill placement in compiled agent output.
- *
- * The reading is {@link parseCompiledAgentSections}'s rather than this module's own, because a
- * compiled agent is not the shape a mirror template renders: its prose is separated by `---`
- * rules, and its activation protocol demonstrates the very call the dynamic skills are named by.
- * A reader that splits on the first and scans for the second answers a truncated body and a
- * placeholder skill — both invisible under a fixture written by whoever wrote the assertion.
- */
+/** Verify preloaded vs dynamic skill placement in compiled agent output. */
 export function expectAgentCompilation(
   content: string,
   expectations: {
@@ -45,16 +37,6 @@ export function expectAgentCompilation(
   }
 }
 
-/**
- * Verify structural validity of compiled agent markdown.
- *
- * Every section is checked unconditionally. An `options` bag carrying `hasCorePrinciples` and
- * `hasMethodologies` sat here until 2026-08-23 and nothing could reach it: all eight call sites
- * pass two arguments, both flags defaulted to running their check, and so the opt-out existed only
- * as a signature promising a discrimination no caller made. Same shape as the `hasSkillActivation`
- * disjunction deleted beside it. A compiled agent that legitimately lacks one of these sections
- * needs its own named assertion, not a flag on this one.
- */
 export function expectValidAgentMarkdown(content: string, agentName: string): void {
   expect(content).toMatch(/^---\n/);
   expect(content).toContain(`name: ${agentName}`);

@@ -9,14 +9,7 @@ import { type LintZone, lintZonesIn } from "./lint-zones.js";
 
 const RULE = "no-restricted-syntax";
 
-/**
- * The tree every case below is read against, small enough to state and to reason about.
- *
- * `dist/bundled.ts` sorts FIRST, so any case that answers with it is a case where an ignore was
- * not applied — which is the whole of what the bare-directory ignore case asserts. `types.d.ts`
- * is the only file its own case selects, so a subject of anything but `null` there is the ambient
- * exclusion having failed.
- */
+// `dist/bundled.ts` sorts first, so an answer naming it means an ignore was not applied.
 const TREE = [
   "dist/bundled.ts",
   "src/a.ts",
@@ -25,19 +18,16 @@ const TREE = [
   "types.d.ts",
 ] as const;
 
-/** A block that declares the rule for the files it names, which is all a zone is. */
 function declaring(files: (string | string[])[]): Linter.Config {
   return { files, rules: { [RULE]: "error" } };
 }
 
-/** A block that declares something else entirely — it is not a zone and must not become one. */
 function silentAbout(files: string[]): Linter.Config {
   return { files, rules: { "no-console": "error" } };
 }
 
 let tree = "";
 
-/** The zones the helper derives from `config` over the fixture tree. */
 function zonesIn(config: Linter.Config[]): LintZone[] {
   return lintZonesIn(config, RULE, tree);
 }
@@ -68,11 +58,6 @@ describe("the zones a config splits a rule into are read off the config", () => 
     ]);
   });
 
-  /**
-   * The property the whole derivation exists for, and the one a hand-written roster could not
-   * hold: a new zone is measured because the config declares it, not because anyone
-   * remembered to add a row for it.
-   */
   it("grows by itself when a block is added, with no roster to extend", () => {
     const before = [declaring(["src/**/*.ts"]), declaring(["**/*.test.ts"])];
     const after = [...before, declaring(["src/extra/**/*.ts"])];
@@ -83,10 +68,6 @@ describe("the zones a config splits a rule into are read off the config", () => 
     ]);
   });
 
-  /**
-   * A zone nothing can be linted as is reported, never skipped. Skipping is how the roster went
-   * short in the first place, and a dropped zone and a passing one read identically.
-   */
   it("answers null for a block whose every file a later block owns", () => {
     expect(zonesIn([declaring(["src/spec.test.ts"]), declaring(["**/*.test.ts"])])).toStrictEqual([
       { patterns: "src/spec.test.ts", subject: null },

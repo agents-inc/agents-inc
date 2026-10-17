@@ -31,22 +31,12 @@ import { firstElement } from "../../helpers/element-at.js";
 import { readTestFile, type TestSkill } from "../../fixtures/create-test-source.js";
 import type { SkillId } from "../../../../types";
 
-/**
- * The file the editor fetches, spelled rather than imported.
- *
- * It is a wire name: a consumer builds the URL from it without asking this
- * package, so a test reading the constant would agree with the constant moving
- * and say nothing about the artefact anyone can actually fetch.
- */
+/** Spelled, not imported: a wire name consumers build URLs from. */
 const CATALOG_JSON = "catalog.json";
 
-/** The manifest written beside it, spelled for the same reason. */
 const MARKETPLACE_JSON = "marketplace.json";
 
-/**
- * Every config module the catalogue is read from. Each is read only to build the catalogue, so a
- * build that wrote the manifest before reading them published a manifest for a build that failed.
- */
+/** Read only to build the catalogue, so the manifest must not be written before them. */
 const CATALOGUE_CONFIG_MODULES = [
   path.join(SOURCE_ROOT_DIR, STANDARD_FILES.CONFIG_TS),
   SKILL_CATEGORIES_PATH,
@@ -54,80 +44,49 @@ const CATALOGUE_CONFIG_MODULES = [
   STACKS_FILE_PATH,
 ] as const;
 
-/** The marketplace every fixture here publishes under unless it says otherwise. */
 const MARKETPLACE_NAME = "acme";
 
-/**
- * The npm package the public catalogue publishes from. Written out rather than
- * imported from the constant the guards read: it is an identity, and a test
- * asserting it against its own definition cannot notice that identity moving.
- */
+/** Written out, not imported: an identity asserted against its own definition cannot move. */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-/** The marketplace name that package publishes under, and no other may. */
 const PUBLIC_CATALOGUE_NAME = "agents-inc";
 
-/**
- * A package name the catalogue's own is a prefix of. Nobody's identity but its
- * own author's — and an implementation that matched loosely would hand it the
- * built-in stacks.
- */
+/** The catalogue's name is a prefix of it; a loose match would hand it the built-in stacks. */
 const CATALOGUE_LOOKALIKE_PACKAGE = `${PUBLIC_CATALOGUE_PACKAGE}-extra`;
 
-/** A publishable name for that lookalike, since its scoped npm name is not one. */
+/** Its scoped npm name is not publishable as a marketplace name. */
 const LOOKALIKE_MARKETPLACE_NAME = "acme";
 
-/**
- * The catalogue skill a fixture borrows its taxonomy from.
- *
- * A fixture must not invent a domain, a category or a slug — those are members of
- * generated unions — so the factory answers for them from a real catalogue entry
- * and the test overrides only the fields that make the skill this marketplace's
- * own: the id it publishes under, and the category it declares.
- */
+/** Taxonomy comes from a real catalogue entry: a fixture must not invent union members. */
 const TAXONOMY_BASE: SkillId = "web-framework-react";
 
-/** The taxonomy a skill that exists only on the author's machine borrows. */
 const LOCAL_TAXONOMY_BASE: SkillId = "web-state-zustand";
 
-/**
- * The built-in category {@link TAXONOMY_BASE} sits in.
- *
- * A marketplace may place its own skill in one of these rather than declaring a
- * category, and then the catalogue owes the consumer that definition — which is
- * the case a scaffold cannot exercise, because its one skill sits in its one
- * declared category and the two candidate rules agree there.
- */
+/** A marketplace skill placed in a built-in category, whose definition the catalogue then owes. */
 const BUILT_IN_CATEGORY = "web-framework";
 
-/** The id the fixture marketplace publishes its one skill under. */
 const MARKETPLACE_SKILL_ID = `${MARKETPLACE_NAME}-house-style`;
 
-/** A category no built-in defines, so its presence in a catalog came from the marketplace. */
 const MARKETPLACE_CATEGORY = `${MARKETPLACE_NAME}-conventions`;
 
-/** What the marketplace calls that category — a synthesized stand-in would not say this. */
+/** A synthesized stand-in would not carry this name. */
 const MARKETPLACE_CATEGORY_DISPLAY_NAME = "House Conventions";
 
-/** And how it describes it. `synthesizeCategory` writes "Auto-generated category for ...". */
+/** `synthesizeCategory` writes "Auto-generated category for ..." instead. */
 const MARKETPLACE_CATEGORY_DESCRIPTION = "How this marketplace writes things";
 
-/** The stack the fixture marketplace ships in its own `config/stacks.ts`. */
 const MARKETPLACE_STACK_ID = `${MARKETPLACE_NAME}-starter`;
 
-/** The sub-agent that stack staffs. */
 const STACK_AGENT = "web-developer";
 
-/** A skill present only in `.claude/skills` — never a marketplace's to publish. */
 const LOCAL_ONLY_SKILL_ID = "my-private-skill";
 
-/** One built-in stack, named so the built-in assertion cannot pass on an empty list. */
+/** Named so the built-in assertion cannot pass on an empty list. */
 const A_BUILT_IN_STACK_ID = "nextjs-fullstack";
 
-/** The order a declared category sorts at — any number the synthesizer does not use. */
+/** Any order the synthesizer does not use. */
 const MARKETPLACE_CATEGORY_ORDER = 1;
 
-/** The one skill the fixture marketplace ships. */
 function marketplaceSkill(): TestSkill {
   return createTestSkill(TAXONOMY_BASE, "This marketplace's own house style", {
     id: MARKETPLACE_SKILL_ID,
@@ -135,29 +94,19 @@ function marketplaceSkill(): TestSkill {
   });
 }
 
-/** The same marketplace's skill, left in the built-in category its taxonomy names. */
 function skillInBuiltInCategory(): TestSkill {
   return createTestSkill(TAXONOMY_BASE, "This marketplace's own take on the framework", {
     id: MARKETPLACE_SKILL_ID,
   });
 }
 
-/** A skill that exists only where the author happens to be standing. */
 function localOnlySkill(): TestSkill {
   return createTestSkill(LOCAL_TAXONOMY_BASE, "A skill only this machine has", {
     id: LOCAL_ONLY_SKILL_ID,
   });
 }
 
-/**
- * Writes one skill into the marketplace's own `src/skills/<id>/`, and the built plugin that
- * publishes it.
- *
- * Both halves, because `build marketplace` refuses a manifest with no plugins in it — the schema it
- * would be read back with is `plugins: z.array(...).min(1)` — so a marketplace holding a skill it
- * has not built is not a state this command produces an artefact from, and every catalog assertion
- * below needs an artefact.
- */
+/** Skill plus its built plugin: `build marketplace` refuses a manifest with no plugins. */
 async function publishMarketplaceSkill(marketplaceDir: string, skill: TestSkill): Promise<void> {
   await writeSourceSkill(path.join(marketplaceDir, SKILLS_DIR_PATH), skill.id, skill);
   await writeTestPluginManifest(path.join(marketplaceDir, PLUGINS_DIST_PATH, skill.id), {
@@ -167,12 +116,10 @@ async function publishMarketplaceSkill(marketplaceDir: string, skill: TestSkill)
   });
 }
 
-/** Writes one skill into `<baseDir>/.claude/skills/<id>/` — a local skill. */
 async function writeLocalSkill(baseDir: string, skill: TestSkill): Promise<void> {
   await writeSourceSkill(path.join(baseDir, LOCAL_SKILLS_PATH), skill.id, skill);
 }
 
-/** Writes one of a marketplace's `config/*.ts` modules. */
 async function writeConfigModule(
   marketplaceDir: string,
   relPath: string,
@@ -181,7 +128,6 @@ async function writeConfigModule(
   await writeConfigModuleSource(marketplaceDir, relPath, renderConfigTs(data));
 }
 
-/** Writes one of a marketplace's config modules as the given text, loadable or not. */
 async function writeConfigModuleSource(
   marketplaceDir: string,
   relPath: string,
@@ -192,7 +138,6 @@ async function writeConfigModuleSource(
   await writeFile(filePath, source);
 }
 
-/** Gives the marketplace a category of its own, declared the way an author declares one. */
 async function writeMarketplaceCategories(marketplaceDir: string): Promise<void> {
   await writeConfigModule(marketplaceDir, SKILL_CATEGORIES_PATH, {
     version: DEFAULT_VERSION,
@@ -209,7 +154,6 @@ async function writeMarketplaceCategories(marketplaceDir: string): Promise<void>
   });
 }
 
-/** Gives the marketplace a stack of its own, the way the scaffold writes one. */
 async function writeMarketplaceStacks(marketplaceDir: string): Promise<void> {
   await writeConfigModule(marketplaceDir, STACKS_FILE_PATH, {
     stacks: [
@@ -227,7 +171,7 @@ async function writeMarketplaceStacks(marketplaceDir: string): Promise<void> {
   });
 }
 
-/** A skill's short `cliDescription` label, distinct from its SKILL.md description on purpose. */
+/** Distinct from the SKILL.md description on purpose. */
 const SHORT_LABEL = "Short label";
 
 describe("build:marketplace catalog emission", () => {
@@ -238,11 +182,7 @@ describe("build:marketplace catalog emission", () => {
 
   beforeEach(async () => {
     ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("build-marketplace-catalog-"));
-    // `loadSkillsMatrixFromSource` reaches the home directory through `os.homedir()`.
-    // Node re-reads `$HOME` on every call, so the env var alone would carry there; bun
-    // resolves it once at startup and ignores the mutation, and this package runs both.
-    // Pointing the spy at the same fake home is what makes the absence assertions below
-    // assertions rather than accidents.
+    // Bun resolves `$HOME` once at startup, so the env var alone would not reach `os.homedir()`.
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
     catalogPath = path.join(projectDir, PLUGIN_MANIFEST_DIR, CATALOG_JSON);
   });
@@ -302,11 +242,7 @@ describe("build:marketplace catalog emission", () => {
       ).toBe(firstBuild);
     });
 
-    /**
-     * CLI-898: the editor's preview drew each skill's `description` — the short
-     * `cliDescription` — into the activation table, where the install writes the SKILL.md
-     * description. The catalogue carries both, so the preview can draw the one the install does.
-     */
+    /** The editor's preview needs the SKILL.md description the install writes, not the label. */
     it("carries the SKILL.md description beside the short label", async () => {
       const skill = marketplaceSkill();
       await appendFile(
@@ -466,10 +402,7 @@ describe("build:marketplace catalog emission", () => {
       await writeMarketplaceCategories(projectDir);
       await publishMarketplaceSkill(projectDir, marketplaceSkill());
 
-      // A scoped npm name is not publishable as a marketplace name, so the build is
-      // refused without one — the same flag the sibling case above needs, and for the
-      // same reason. It does not touch the claim: `offersBuiltInStacks` answers off
-      // `isPublicCatalogueCheckout`, which reads the package identity from disk.
+      // A scoped npm name is not publishable, so `--name` is needed; the claim reads package.json.
       await runCliCommand(["build:marketplace", "--name", LOOKALIKE_MARKETPLACE_NAME]);
 
       const catalog = await readTestJson<Matrix>(catalogPath);

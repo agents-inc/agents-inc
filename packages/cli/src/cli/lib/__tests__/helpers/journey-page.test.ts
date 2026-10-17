@@ -18,33 +18,21 @@ import {
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const E2E_ROOT = path.join(CLI_ROOT, "e2e");
 
-/** The spec tree a fixture page is read against, small enough to state and to reason about. */
 const SPEC_NAMES = [
   "commands/init-from-agent-scope",
   "commands/init-from-shared-config",
   "lifecycle/install-mode-bulk",
 ];
 
-/**
- * The same tree once `e2e/fixtures/` holds its first spec. Nothing else about it moves, which is
- * the whole point: the two lists differ by one member, and no name the page carries is about it.
- */
 const SPEC_NAMES_WITH_A_FIXTURES_SPEC = [...SPEC_NAMES, "fixtures/init-from-a-seeded-store"];
 
-/**
- * What journey 1 writes to name the helper driving its install — a module path, then a symbol
- * inside it. It is not a spec and never was, and it lives in a directory that holds none.
- */
+/** A module path then a symbol: not a spec. */
 const HELPER_AND_SYMBOL = "fixtures/dual-scope-helpers.initGlobalWithEject";
 
 const HEADER = `| #   | Journey | From-scratch spec | Surfaces asserted | Status |
 | --- | ------- | ----------------- | ----------------- | ------ |`;
 
-/**
- * A numbered table that is not a journey table, written the same width as one so that nothing but
- * its heading cells can tell the two apart. The page carries such a table — the four assertion
- * surfaces, numbered 1 to 4 — and a reader discriminating by width would read its rows as journeys.
- */
+/** A numbered non-journey table of the same width, told apart only by its heading cells. */
 const SURFACES_TABLE = [
   "| #   | Surface | What it is | Read it with | Notes |",
   "| --- | ------- | ---------- | ------------ | ----- |",
@@ -107,11 +95,6 @@ describe("readJourneyRows", () => {
   });
 });
 
-/**
- * The two guards that make the reader's silence mean something. Without the first, a page whose
- * table shape moved reads exactly like a page with nothing to answer for, and every judgement over
- * it holds vacuously. Without the second, a row is proved by a spec that does not exist.
- */
 describe("the reader refuses to judge nothing", () => {
   it("throws when no journey row parses at all", () => {
     expect(() => readJourneyRows("# A page with prose and no table\n", SPEC_NAMES)).toThrow(
@@ -126,12 +109,6 @@ describe("the reader refuses to judge nothing", () => {
   });
 });
 
-/**
- * Every backticked name is classified, because the two ways one can fail to be a spec reference are
- * NOT the same: a bare `init-from-agent-scope` is a spec the page named without saying where it
- * lives, and `skipIf` is a code symbol that was never a spec. A reader that skipped both identically
- * left six entries unjudged while the page read as fully checked.
- */
 describe("every backticked name is classified rather than skipped", () => {
   it("names where a spec lives when the page named it without its directory", () => {
     const rows = readJourneyRows(
@@ -164,17 +141,6 @@ describe("every backticked name is classified rather than skipped", () => {
   });
 });
 
-/**
- * A name's kind is a fact about the name, not about what happens to sit beside it in the tree.
- *
- * The reader used to decide whether the page MEANT a spec by asking whether the name's first
- * segment was a directory that currently holds one — so `e2e/fixtures/` counted as helper-land
- * purely because no spec had ever been written there. Put the first one there and journey 1's
- * `fixtures/dual-scope-helpers.initGlobalWithEject` became a spec reference answering to no file,
- * the reader threw, and every gate in `spec-gates.test.ts` that walks row → spec went red naming a
- * journey row and a helper that had not moved. It has happened once already, which is the whole
- * reason the two lists below differ by a single member no assertion here mentions.
- */
 describe("a name's kind does not move when the tree around it does", () => {
   const NAMING_A_HELPER = page(
     `| 1 | Global install from nothing | \`lifecycle/install-mode-bulk\`; \`${HELPER_AND_SYMBOL}\` drives it | 1, 2 | **COVERED** |`,
@@ -184,8 +150,7 @@ describe("a name's kind does not move when the tree around it does", () => {
     const before = readJourneyRows(NAMING_A_HELPER, SPEC_NAMES);
     const after = readJourneyRows(NAMING_A_HELPER, SPEC_NAMES_WITH_A_FIXTURES_SPEC);
 
-    // The subject guard for the claim beside it: a page whose helper went unread would leave both
-    // sides empty and agreeing, which is the vacuous form of this whole comparison.
+    // Non-empty on both sides, so the comparison cannot agree vacuously.
     expect(nonSpecNamesIn(before)).toStrictEqual([HELPER_AND_SYMBOL]);
     expect(nonSpecNamesIn(after)).toStrictEqual([HELPER_AND_SYMBOL]);
   });
@@ -199,13 +164,6 @@ describe("a name's kind does not move when the tree around it does", () => {
   });
 });
 
-/**
- * The row-level half of that same totality, which for a while was the half nothing held. A name
- * that fails to resolve is classified; a ROW that failed to parse was passed over, and one
- * unescaped `|` inside a code span is all it takes — markdown makes an extra cell of it, the reader
- * skips the row, and every gate walking row → spec skips it in silence with the page still reading
- * as fully checked.
- */
 describe("a row the reader cannot read is numbered all the same", () => {
   it("numbers a row whose cells came out wrong, so a gate can see the reader pass over it", () => {
     const dropped = page(
@@ -235,11 +193,6 @@ describe("a row the reader cannot read is numbered all the same", () => {
   });
 });
 
-/**
- * The reader's only contact with the filesystem, kept apart from the parsing so the rest of it is
- * pure. Read against the real tree rather than a fixture: what it has to get right is the shape
- * this repository's specs are actually named in.
- */
 describe("readSpecNames", () => {
   it("names every e2e spec the way the page names one — directory, basename, no suffix", () => {
     const specNames = readSpecNames(E2E_ROOT);
@@ -253,15 +206,6 @@ describe("readSpecNames", () => {
   });
 });
 
-/**
- * What keeps `SPEC_DIRECTORIES` honest, and the reason stating it is not a return to the
- * hand-maintained list this reader once declined to judge six entries behind.
- *
- * The old list said nothing when the tree moved out from under it. This one reddens here — by
- * MEMBERS, so the message names the directory and the side it is missing from. A count would say
- * only that something changed, and could not tell a directory gained from one swapped for another.
- * Watched red by dropping `pages` from the constant: this assertion, and only this assertion.
- */
 describe("the stated spec directories are the directories the tree holds", () => {
   it("names every e2e directory that holds a spec, and none that holds none", () => {
     expect(

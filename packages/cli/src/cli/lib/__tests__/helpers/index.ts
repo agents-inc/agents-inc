@@ -1,6 +1,5 @@
 import { parse as parseYaml } from "yaml";
 
-// --- Re-exports from sub-files ---
 export { CLI_ROOT, runCliCommand } from "./cli-runner.js";
 export {
   readTestYaml,
@@ -9,11 +8,7 @@ export {
   writeTestTsConfig,
   writeTestPackageJson,
 } from "./config-io.js";
-// Both, never one. The two normalisers are a single substitution apart and the weaker one
-// leaves a reordering assertion green, so a door offering only `normalizeGlobalConfig` steers
-// an author who meant the order-sensitive comparison into exactly the swap
-// `config-comparison.js` documents. Neither is imported through this barrel today, which is
-// what makes carrying one of the pair a trap rather than a preference.
+// Exported as a pair: offering only the order-insensitive one invites the wrong swap.
 export { normalizeGlobalConfig, normalizeConfigPreservingOrder } from "./config-comparison.js";
 export {
   writeTestSkill,
@@ -36,13 +31,7 @@ export type {
   InstallThroughOperationsResult,
 } from "./install-through-operations.js";
 
-// --- Remaining utility function ---
-
-/**
- * Lightweight frontmatter parser for test assertions.
- * Returns raw key-value pairs (unlike the production parseFrontmatter which
- * returns typed SkillFrontmatter with Zod validation).
- */
+/** Raw frontmatter key-values, without the production parser's Zod validation. */
 export function parseTestFrontmatter(content: string): Record<string, unknown> | null {
   if (!content.startsWith("---")) {
     return null;

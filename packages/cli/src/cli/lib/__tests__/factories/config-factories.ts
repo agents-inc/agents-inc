@@ -45,10 +45,7 @@ export function buildGateReport(
   };
 }
 
-/**
- * A fresh write whose gate reached nobody. `config` and `configPath` have no default: a command
- * reads both back. Typed against `ConfigWriteResult` so a retired field cannot linger.
- */
+/** A fresh write whose gate reached nobody. `config` and `configPath` have no default. */
 export function buildConfigWriteResult(
   config: ProjectConfig,
   configPath: string,
@@ -144,7 +141,6 @@ export function buildSourceResult(
   };
 }
 
-/** initializeMatrix + buildSourceResult, the common arrange step. */
 export function initMatrixAndSource(
   matrix: MergedSkillsMatrix,
   sourcePath: string,

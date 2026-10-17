@@ -155,8 +155,7 @@ describe("installation", () => {
     it("surfaces a corrupt config file instead of treating it as eject mode", async () => {
       await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
 
-      // A file that exists but cannot be parsed must not become a phantom eject
-      // installation — detection surfaces the corruption so callers can report it.
+      // A parse failure must surface, not read as an eject installation.
       await expect(detectInstallation(tempDir)).rejects.toThrow("could not be loaded");
     });
 

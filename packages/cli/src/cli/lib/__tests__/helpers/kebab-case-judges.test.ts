@@ -1,20 +1,9 @@
-/**
- * Contract for `kebab-case-judges.ts` — the scan that finds every surface deciding whether a
- * name is kebab-case.
- *
- * The recogniser is BEHAVIOURAL rather than syntactic, and the fixtures are what makes that
- * worth the cost: the shape it exists to find is a judge written with its own regex, and there
- * is no spelling to match on. `/^[a-z][a-z0-9-]*$/` and `/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/` share
- * no useful substring, and a scan looking for one of them cannot see the other — which is the
- * whole reason the roster it feeds went stale.
- */
 import { describe, expect, it } from "vitest";
 
 import { kebabCaseJudgesIn, SHARED_PATTERN } from "./kebab-case-judges.js";
 
 const MODULE = "judge.ts";
 
-/** A judge reaching the one constant, which is what every aligned surface does. */
 const REACHES_THE_SHARED_PATTERN = [
   `import { ${SHARED_PATTERN} } from "../consts.js";`,
   ``,
@@ -24,10 +13,6 @@ const REACHES_THE_SHARED_PATTERN = [
   ``,
 ].join("\n");
 
-/**
- * The defect: a judge with its own regex, in the exact spelling the tree carries one. It shares
- * no substring with the shared pattern and it accepts two names the shared pattern refuses.
- */
 const HAND_ROLLED = [
   `import { z } from "zod";`,
   ``,
@@ -35,21 +20,12 @@ const HAND_ROLLED = [
   ``,
 ].join("\n");
 
-/**
- * Where the shared pattern is DECLARED. Both halves of a declaration read as a judge to a naive
- * scan — the literal is the pattern, and the name beside it is the name — so a roster fed by
- * one would carry the constant's own home as a fourth surface that judges nothing.
- */
 const DECLARES_THE_SHARED_PATTERN = [
   `export const ${SHARED_PATTERN} = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;`,
   ``,
 ].join("\n");
 
-/**
- * Anchored patterns over the same character class that judge something else entirely — an
- * author handle, a content hash, a finding's filename. Each is a hit for any scan keying on
- * `a-z0-9` and a hit for none that asks what the pattern ACCEPTS.
- */
+/** Same character class, judging something else. */
 const JUDGES_SOMETHING_ELSE = [
   `export const AUTHOR_HANDLE_PATTERN = /^@[a-z][a-z0-9-]*$/;`,
   `export const CONTENT_HASH = /^[a-f0-9]{7}$/;`,
@@ -58,11 +34,7 @@ const JUDGES_SOMETHING_ELSE = [
   ``,
 ].join("\n");
 
-/**
- * The per-character helper `validate-kebab-name.ts` keeps beside the shared pattern. It is
- * built from the same class and judges no whole name — an unanchored class matches a letter
- * inside `Acme-Skills` as readily as inside `acme-skills`.
- */
+/** Unanchored, so it judges no whole name. */
 const JUDGES_ONE_CHARACTER = [
   `const KEBAB_CASE_CHARACTER = /[a-z0-9-]/;`,
   ``,
@@ -72,7 +44,6 @@ const JUDGES_ONE_CHARACTER = [
   ``,
 ].join("\n");
 
-/** A regex with a global flag, whose `lastIndex` survives a call and skips the next one. */
 const CARRIES_A_GLOBAL_FLAG = [`export const SLUG = /^[a-z][a-z0-9-]*$/g;`, ``].join("\n");
 
 describe("every surface that judges a kebab-case name", () => {

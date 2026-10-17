@@ -37,36 +37,17 @@ import type { SkillId } from "../../../types";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
- * The `init --from` install spine: plugin skills are handed to the
- * Claude CLI, once each, at the scope their own config entry names — and that
- * install GATES the config write.
- *
- * Both halves are load-bearing and neither is observable from the outside. The
- * ref and scope decide which registry key a later `uninstall` owns, so a skill
- * installed at the wrong scope uninstalls from the wrong place; and writing
- * config.ts after a failed install leaves entries claiming a skill is installed
- * that is not, with no marker to distinguish them from real ones.
- *
- * The seam is `Init.run` with the seam BELOW `installPluginSkills` mocked —
- * `claudePluginInstall` in utils/exec.js. That keeps `installPluginSkills` itself
- * real (the ref construction and the scope mapping are the things under test) and
- * costs nothing to run, while still driving the whole command: flag parsing, the
- * fetch, the seed decode, and the ordering of install against config write.
+ * `init --from` hands each plugin skill to the host once, at its own scope, and that install gates
+ * the config write. Only the host (below `installPluginSkills`) is mocked, so ref construction and
+ * scope mapping run for real.
  */
 
 const MARKETPLACE = "drift-lock-marketplace";
 const SEED_ID = "DriftLock1";
 const WEB_DEV = "web-developer";
 
-/** Project-scoped in the payload, and therefore at the seam. */
 const PROJECT_SKILL_ID = "web-framework-react" satisfies SkillId;
-/**
- * Global-scoped in the payload, and therefore at the seam.
- *
- * The seam speaks this product's scope words; Claude's own are `user` and `project`, and the
- * translation is the Claude host's — `lib/hosts/__tests__/the-claude-host-spawns-what-it-spawns-today.test.ts`
- * is where `--scope user` is pinned.
- */
+/** The host translates scope words; `--scope user` is pinned in the Claude host's own specs. */
 const GLOBAL_SKILL_ID = "api-framework-hono" satisfies SkillId;
 
 const PROJECT_SKILL_REF = buildMarketplacePluginRef(PROJECT_SKILL_ID, MARKETPLACE);
@@ -82,8 +63,7 @@ const {
   mockDiscoverInstalledSkills,
   mockCompileAgentsAllScopes,
 } = vi.hoisted(() => ({
-  // Typed against the real functions, so a field a stub returns that the product has retired is
-  // a compile error here rather than a dead value nothing reads.
+  // Typed against the real functions so a retired stub field is a compile error.
   mockInstallPlugin: vi.fn<PluginHost["installPlugin"]>(),
   mockLoadSource: vi.fn<typeof loadSource>(),
   mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
@@ -92,19 +72,14 @@ const {
   mockCompileAgentsAllScopes: vi.fn<typeof compileAgentsAllScopes>(),
 }));
 
-// The one seam below the spine: everything from `installPluginSkills` upward runs for real, so
-// the ref and the scope this records are the ones the host would have been handed. The whole host
-// is stubbed rather than one member — `init` resolves the marketplace before it installs
-// anything, and that resolution shells out too.
+// The whole host is stubbed: `init`'s marketplace resolution shells out too.
 vi.mock("../../hosts/host-for.js", async () => {
   const { createMockPluginHost } = await import("../helpers/mock-plugin-host.js");
   const host = createMockPluginHost({ installPlugin: mockInstallPlugin });
   return { hostAt: () => host, hostFor: () => host };
 });
 
-// `installPluginSkills` and `pluginInstallFailureError` are deliberately NOT
-// overridden — they are the spine. Only the source load and the write/compile
-// tail are stubbed, so the test neither fetches a marketplace nor compiles.
+// `installPluginSkills` stays real; only the source load and the write/compile tail are stubbed.
 vi.mock("../../operations/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../operations/index.js")>();
   return {
@@ -119,7 +94,6 @@ vi.mock("../../operations/index.js", async (importOriginal) => {
 
 const { default: Init } = await import("../../../commands/init.js");
 
-/** A payload naming one project-scoped and one global-scoped plugin skill. */
 function buildTwoScopePluginPayload() {
   return buildSeedPayload({
     skills: {
@@ -134,33 +108,22 @@ function buildTwoScopePluginPayload() {
         assignments: { [WEB_DEV]: "lazy" },
       }),
     },
-    // Pinned into the project because the project-scoped skill is assigned to it: a sub-agent
-    // resting at the shared selection default could not hold that skill, and the decode refuses
-    // the pair rather than handing the pipeline a row it has nowhere to write.
+    // Pinned into the project: a sub-agent at the shared default could not hold a project skill.
     agents: { [WEB_DEV]: { scope: "project" } },
   });
 }
 
-/**
- * Serves one shared configuration to `fetchSeedConfig`, under the id these runs ask for.
- *
- * Answering the network rather than mocking the module keeps the schema decode and the
- * seed -> selection mapping real: a payload shape the CLI would reject on the wire must
- * reject here too. The URL is not asserted on — the store's own specs cover that, and this one is
- * about what happens after the payload lands.
- */
+/** Answering the network keeps the schema decode and seed -> selection mapping real. */
 function serveSeed(payload: SeedPayload): void {
   configMockServer.use(storedConfigHandlerFor(SEED_ID, payload));
 }
 
-/** The host's `installPlugin` arguments as `[ref, scope]`, dropping the project dir. */
 function installedRefsAndScopes(): Array<[string, string]> {
   return mockInstallPlugin.mock.calls.map(([ref, scope]) => [ref, scope]);
 }
 
 describe("init --from: plugin install spine", () => {
-  // The lifecycle only: these specs assert on what the command DID with the payload, not
-  // on the request that fetched it.
+  // Lifecycle only: these specs assert on what the command did, not on the fetch.
   useMockWorker();
   let tempDir: string;
   let projectDir: string;
@@ -172,13 +135,10 @@ describe("init --from: plugin install spine", () => {
     projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
 
-    // `--from` is greenfield-only, and the global half of that check reads `os.homedir()`. Without
-    // a fake HOME this spec would consult the developer's own ~/.agents-inc/claude and refuse to install
-    // the global-scoped skill on any machine that happens to have one.
+    // `--from`'s greenfield check reads `os.homedir()`, so HOME must not be the developer's.
     vi.stubEnv("HOME", tempDir);
 
-    // A settings file that already grants a permission, so the post-install
-    // permission notice resolves to null and never renders.
+    // An existing permission grant keeps the post-install permission notice from rendering.
     await mkdir(path.join(projectDir, CLAUDE_DIR), { recursive: true });
     await writeFile(
       path.join(projectDir, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON),
@@ -186,8 +146,7 @@ describe("init --from: plugin install spine", () => {
     );
     process.chdir(projectDir);
 
-    // The payload's skill ids must resolve to a category and a domain, which the
-    // decode reads from the ACTIVE matrix, not from sourceResult.
+    // The decode resolves categories from the ACTIVE matrix, not from sourceResult.
     initializeMatrix(REACT_HONO_WEB_API_DOMAINS_MATRIX);
 
     mockLoadSource.mockResolvedValue(
@@ -218,15 +177,12 @@ describe("init --from: plugin install spine", () => {
 
     await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
-    // Exhaustive, not "contains": a second call for the same skill would install
-    // it twice, and a call for a skill the payload never named would install
-    // something nobody asked for. Both are invisible to a per-call assertion.
+    // Exhaustive: no duplicate install and no skill the payload never named.
     expect(installedRefsAndScopes()).toStrictEqual([
       [PROJECT_SKILL_REF, "project"],
       [GLOBAL_SKILL_REF, "global"],
     ]);
-    // Third argument: every install is anchored to the directory the command runs
-    // in, which is what decides where a project-scoped install is recorded.
+    // Anchored to the cwd, which decides where a project-scoped install is recorded.
     for (const call of mockInstallPlugin.mock.calls) {
       expect(call[2]).toBe(process.cwd());
     }
@@ -247,10 +203,7 @@ describe("init --from: plugin install spine", () => {
   });
 
   it("reaches neither the Claude CLI nor the config write when run at the global root", async () => {
-    // Same payload, run from HOME instead of the project. There the two scopes collapse onto one
-    // directory, so a project-scoped entry would be registered against `$HOME` as a project and
-    // recorded in the global config — and no layer below this one re-reads the scope to notice.
-    // The refusal has to land before BOTH seams, which is what the two negatives below say.
+    // At HOME both scopes collapse onto one directory, so the refusal must land before both seams.
     serveSeed(buildTwoScopePluginPayload());
     process.chdir(tempDir);
 
@@ -272,8 +225,7 @@ describe("init --from: plugin install spine", () => {
 
   it("never reaches the config write when a plugin install fails, and exits non-zero", async () => {
     serveSeed(buildTwoScopePluginPayload());
-    // The first skill installs, the second does not — the partial-failure shape.
-    // A config written here would claim BOTH skills are installed.
+    // Partial failure: a config written now would claim both skills are installed.
     mockInstallPlugin
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error(CLAUDE_INSTALL_FAILURE));

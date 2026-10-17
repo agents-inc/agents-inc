@@ -28,19 +28,16 @@ describe("list command", () => {
     it("should run without error when no installation exists", async () => {
       const { error } = await runCliCommand(["list"]);
 
-      // Command handles "no installation" gracefully (logs message, returns without error)
       expect(error).toBeUndefined();
     });
 
     it("should work with ls alias", async () => {
       const { error } = await runCliCommand(["ls"]);
 
-      // Alias should work the same as the full command
       expect(error).toBeUndefined();
     });
 
     it("should show installation info when local installation exists", async () => {
-      // Create a minimal local installation
       const claudeDir = path.join(projectDir, CLAUDE_DIR);
       const agentsDir = path.join(claudeDir, "agents");
       const skillsDir = path.join(claudeDir, "skills");
@@ -48,24 +45,20 @@ describe("list command", () => {
       await mkdir(agentsDir, { recursive: true });
       await mkdir(skillsDir, { recursive: true });
 
-      // Write minimal config
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         agents: buildAgentConfigs(["web-developer"]),
       });
 
-      // Write a test agent
       await writeFile(
         path.join(agentsDir, "web-developer.md"),
         "# Web Developer\n\nTest agent content.",
       );
 
-      // Write a test skill
       await writeTestSkill(skillsDir, "web-testing-vitest");
 
       const { error } = await runCliCommand(["list"]);
 
-      // Should run successfully with a local installation
       expect(error).toBeUndefined();
     });
   });
@@ -74,7 +67,6 @@ describe("list command", () => {
     it("should accept --help flag", async () => {
       const { stdout } = await runCliCommand(["list", "--help"]);
 
-      // Help should display command summary
       expect(stdout).toContain("Show installation information");
     });
   });

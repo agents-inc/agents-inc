@@ -9,16 +9,7 @@ import { fetchRecordPath, sanitizeSourceForCache } from "../../loading/source-fe
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils.js";
 import { ensureRecordedCheckout, linkSharedCache } from "./shared-marketplace-checkout.js";
 
-/**
- * Where a command run under a fake home looks for the default marketplace, spelled out here
- * rather than imported from the module under test.
- *
- * The module's whole job is to put a checkout at the address `fetchFromRemoteSource` computes,
- * and it assembles that address from `sanitizeSourceForCache`. Asking it for the answer and
- * comparing it to itself would pass however wrong the address was, so this is assembled a second
- * time from the same product helpers and the same product constants — which is the only thing
- * either side is allowed to agree on.
- */
+// Assembled independently of the module under test, so a wrong address there can fail.
 function expectedCheckoutDir(cacheDir: string): string {
   return path.join(
     cacheDir,
@@ -30,20 +21,9 @@ function expectedCheckoutDir(cacheDir: string): string {
 
 const SHARED_CACHE_DIR = path.join(os.tmpdir(), "agents-inc-unit-shared-cache", ".cache");
 
-/**
- * The tarball the record names, mirrored rather than imported: the module keeps it private, and
- * an assertion reading the value it is asserting about cannot fail when that value changes.
- */
+// Mirrored rather than imported, so the assertion can fail if the value changes.
 const NEVER_REVALIDATED_TARBALL = `https://example.invalid/${DEFAULT_PLUGIN_NAME}.tar.gz`;
 
-/**
- * A fetch that writes a checkout's worth of bytes and nothing more, standing in for the ~2.5s
- * download the real one makes.
- *
- * The fetch is a parameter of the mechanism precisely so this file never makes that download and
- * never touches {@link SHARED_CACHE_DIR}'s contents — the rule in `shared-source.ts` covers this
- * module too, and the specs below build under roots they created.
- */
 function fetchWriting(name: string): (dir: string) => Promise<void> {
   return async (dir) => {
     await mkdir(dir, { recursive: true });
@@ -51,7 +31,6 @@ function fetchWriting(name: string): (dir: string) => Promise<void> {
   };
 }
 
-/** A fetch that must not be reached. Any call is the failure, reported at the call. */
 function fetchThatMustNotRun(): (dir: string) => Promise<void> {
   return vi.fn(() => Promise.reject(new Error("the checkout was already published")));
 }
@@ -64,7 +43,6 @@ describe("ensureRecordedCheckout", () => {
     return () => cleanupTempDir(cacheHome);
   });
 
-  /** The address this spec's own cache home resolves, assembled the same way the shared one is. */
   function checkout(): string {
     return expectedCheckoutDir(path.join(cacheHome, ".cache"));
   }
@@ -76,12 +54,6 @@ describe("ensureRecordedCheckout", () => {
     expect(await fileExists(fetchRecordPath(checkout()))).toBe(true);
   });
 
-  /**
-   * The record is what keeps every worker offline. `classifyCachedCopy` answers `current`
-   * without asking the network only when a record exists AND carries no `etag`; a record with
-   * one costs a HEAD per file, and no record at all reads as `unrecorded` and re-downloads the
-   * whole marketplace — the exact failure this module exists to prevent.
-   */
   it("records the copy with no ETag, so nothing revalidates it over the network", async () => {
     await ensureRecordedCheckout(cacheHome, fetchWriting("SKILL.md"));
 
@@ -103,21 +75,7 @@ describe("ensureRecordedCheckout", () => {
     expect(await readdir(checkout())).toStrictEqual(["SKILL.md"]);
   });
 
-  /**
-   * The crash window, and the reason the record is written unconditionally rather than only on
-   * the fetching path.
-   *
-   * `rename` publishes the checkout and the record is a SIBLING path (`${cacheDir}.etag.json`),
-   * so the rename does not carry it — a run killed between the two leaves a directory the guard
-   * accepts and a record `classifyCachedCopy` answers `unrecorded` to. Nothing repaired that:
-   * every later run returned early over the directory and every worker in every later run
-   * re-downloaded the whole marketplace, which is the 31-downloads-per-run defect restored
-   * permanently by one interrupted setup.
-   *
-   * A published checkout is complete by construction, so the repair costs a small write and
-   * never a fetch — asserted here, because a repair that re-downloaded would be the same defect
-   * paid for once instead of forever.
-   */
+  // The record is a sibling path the rename doesn't carry; a killed run can leave it missing.
   it("records a checkout an interruption published but never recorded, without fetching again", async () => {
     await publishWithoutRecording();
 
@@ -127,11 +85,6 @@ describe("ensureRecordedCheckout", () => {
     expect(await readdir(checkout())).toStrictEqual(["SKILL.md"]);
   });
 
-  /**
-   * The other side of the same window. A fetch that dies has published nothing, so the next run
-   * finds no directory, fetches again and completes — where a half-built tree at the published
-   * address would be a checkout every later run accepted and no run could describe.
-   */
   it("publishes nothing when the fetch fails, so the next run rebuilds", async () => {
     await expect(
       ensureRecordedCheckout(cacheHome, () => Promise.reject(new Error("network down"))),
@@ -144,18 +97,13 @@ describe("ensureRecordedCheckout", () => {
     expect(await fileExists(fetchRecordPath(checkout()))).toBe(true);
   });
 
-  /** The state an interrupted run leaves: the directory published, and nothing beside it. */
   async function publishWithoutRecording(): Promise<void> {
     await mkdir(checkout(), { recursive: true });
     await writeFile(path.join(checkout(), "SKILL.md"), "a checkout\n");
   }
 });
 
-/**
- * The shared checkout, read and never written. `vitest.global-setup.ts` publishes it before any
- * worker starts, and these specs assert what it left — building one here would put a second
- * writer on a machine-wide path, which is the rule `shared-source.ts` states for the whole family.
- */
+// Read only: a second writer on a machine-wide path would race globalSetup.
 describe("the shared checkout vitest.global-setup.ts publishes", () => {
   it("sits where a fake home's cacheRoot() resolves", async () => {
     const entries = await readdir(expectedCheckoutDir(SHARED_CACHE_DIR));
@@ -197,13 +145,7 @@ describe("linkSharedCache", () => {
     }
   });
 
-  /**
-   * The teardown half, and the one that would be catastrophic to get wrong: `cleanupTempDir`
-   * removes a fake home while every later test in the run is still reading the checkout through
-   * its own link. `fs.rm` unlinks a symlink rather than descending through it — asserted rather
-   * than assumed, because a Node that did descend would delete the shared checkout mid-run and
-   * the symptom would be a re-download in an unrelated file.
-   */
+  // Asserts fs.rm unlinks rather than descends; descending would delete the shared checkout.
   it("survives the teardown that removes the fake home holding the link", async () => {
     const tempDir = await createTempDir("cc-shared-checkout-spec-");
     const fakeHome = path.join(tempDir, "fakehome");

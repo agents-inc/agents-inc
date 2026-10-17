@@ -1,43 +1,8 @@
 /**
- * A host's directory reached through the CONSTANT that spells it — the half of the host-path ban
- * that `host-path-literals-are-funnelled.test.ts` beside this file cannot see, and the half that
- * had no gate of its own.
- *
- * **The class is measured, not argued.** Two of the four Claude leaks found by driving the Codex
- * lane on 2026-09-22 wrote no banned spelling at all: `doctor`'s Skills Installed row joined
- * `LOCAL_SKILLS_PATH` onto a scope root and reported every skill of a healthy Codex installation
- * missing, and the permission notice joined `CLAUDE_DIR` onto a project root and ended a Codex
- * install by telling the user to edit a Claude settings file. `CLAUDE_DIR` is an identifier and
- * `path.join` composes at run time, so no regex over literals or template text reaches either —
- * both passed `npm run lint` on the day they were written. `eslint.config.js` answers that with a
- * `no-restricted-imports` group on the SYMBOLS, and this file is what holds the group binding.
- *
- * **Why it needed its own file rather than a case in the literal spec.** The two bans are written
- * under DIFFERENT RULES — `no-restricted-syntax` for the literals, `no-restricted-imports` for the
- * symbols — and a flat config declares each in a different set of blocks. Neither rule merges its
- * options across blocks, so the zone rosters cannot be shared: a list reused between them leaves
- * one unmeasured wherever it does not reach. `source-folder-literals-are-funnelled.test.ts` already
- * carries both halves for the folder this product owns and says the same thing at :44; this is that
- * discipline arriving one layer out.
- *
- * **Assertions are on the MESSAGE, never on the rule id.** One zone's `no-restricted-imports`
- * options carry five groups at once — the config-gate privates, the config writer, the source
- * folder, the Claude host seam and this one — so a rule-id assertion passes because SOME group
- * reported and says nothing about which. Every expected string is a LITERAL rather than an import
- * from `eslint.config.js`: an assertion bound to the text the linter renders moves with it and
- * could never fail.
- *
- * **And the message is CONTAINED, not led with.** `no-restricted-imports` renders its own sentence
- * first — `'CLAUDE_DIR' import from '…' is restricted from being used by a pattern.` — and appends
- * the configured message after it. The literal spec's `startsWith` is correct for
- * `no-restricted-syntax`, which renders the message verbatim, and silently answers false for every
- * fixture here; it is written out because copying that helper across is the obvious mistake, and it
- * turns this whole file green having measured nothing.
- *
- * **The zone roster is DERIVED from the config**, through `lintZonesIn` in `helpers/lint-zones.ts`,
- * for the reason that helper exists: a hand-written roster records the blocks somebody remembered.
- * What is hand-written is only the EXEMPTIONS below, each with the reason it is one — so a block
- * added to the config arrives in the derivation, is not one of those, and is required to report.
+ * A host directory composed from the constant that spells it (`path.join(root, CLAUDE_DIR)`), which
+ * no literal regex sees; held by a `no-restricted-imports` group. Its own file because that rule's
+ * zones differ from the literal ban's. Assertions use `includes` on literal message text: the rule
+ * prefixes its own sentence, and five groups share the rule id. Zones come from `lintZonesIn`.
  */
 
 import path from "path";
@@ -47,60 +12,35 @@ import { describe, expect, it } from "vitest";
 import { CLI_ROOT } from "./helpers/cli-runner.js";
 import { type LintZone, flatConfigAt, lintZonesIn } from "./helpers/lint-zones.js";
 
-/** The rule the symbol ban is written under — not the rule the literal ban uses. */
 const RESTRICTED_IMPORTS = "no-restricted-imports";
 
 const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
 const ESLINT_CONFIG = await flatConfigAt(ESLINT_CONFIG_PATH);
 
-/** Enough of this ban's own message to tell it from the four other groups under the same rule. */
+/** Enough to tell this ban from the four other groups under the same rule. */
 const HOST_PATH_SYMBOL_REPORT = "A host path is resolved, not composed";
 
-/**
- * The half of the message that makes the ban a FUNNEL rather than a dead end.
- *
- * Pinned separately from the report itself because the two fail apart: the group can go on
- * reporting while the message loses the sentence, and the assertion above would stay green through
- * it. This is the literal spec's `FUNNEL_FOR_A_PATH_NO_ROLE_ANSWERS` reasoning, for the message
- * that names no roles at the site an author is standing on.
- */
+/** Pinned apart: the group can keep reporting after the message loses its remedy. */
 const FUNNEL_FOR_A_PATH_NO_ROLE_ANSWERS = "add the role there rather than composing it here";
 
-/** The sibling symbol ban's own message, so a fixture that trips IT is not read as a pass. */
+/** So a fixture that trips the sibling ban is not read as a pass. */
 const SOURCE_FOLDER_SYMBOL_REPORT = "The source folder's name is resolved, not written";
 
 /**
- * The zones the symbol ban is deliberately LIFTED in, each by the patterns its block selects.
- *
- * Written out because each is a decision, and the derivation cannot tell a zone that dropped the
- * group on purpose from one that dropped it by restating the rule and forgetting.
- *
- * The first entry is the one that carries weight: it is the BACKLOG of product files that still
- * compose a host path out of these constants, and it may only shrink. It is spelled here as the
- * block spells it — one string, the file list joined — so a file ADDED to the backlog reddens this
- * file by name rather than joining a list nothing counts.
+ * Hand-written: the derivation cannot tell a deliberate exemption from a forgotten restatement. The
+ * first entry is a backlog that may only shrink, spelled as its block spells it.
  */
 const EXEMPT_PATTERNS = [
-  // The rostered backlog, in the config's own order. Each of these composes a directory that is
-  // Claude's on an installation that may not be: `installation.ts` and `layout-findings.ts` an
-  // agents or skills directory, `plugin-finder.ts` and `plugin-settings.ts` Claude's plugin tree,
-  // `local-skill-loader.ts` / `local-skill-mover.ts` / `external-skills.ts` / `eject.ts` the
-  // ejected-skill paths, `messages.ts` and `uninstall.tsx` one host's directory inside a sentence
-  // every host's user reads, and `compiler.ts` a legacy templates directory. Several need a scope
-  // in hand before they can ask the layout for a path at all, which is why they are a backlog.
+  // Backlog: each composes a Claude directory, and several need a scope in hand to ask the layout.
   "src/cli/commands/eject.ts, src/cli/commands/uninstall.tsx, src/cli/lib/compiler.ts, src/cli/lib/installation/installation.ts, src/cli/lib/installation/layout-findings.ts, src/cli/lib/plugins/plugin-finder.ts, src/cli/lib/plugins/plugin-settings.ts, src/cli/lib/seed/external-skills.ts, src/cli/lib/skills/local-skill-loader.ts, src/cli/lib/skills/local-skill-mover.ts, src/cli/utils/messages.ts",
-  // The single write choke point, whose global-pair tripwire has to know every directory a write
-  // could land in. Its block turns the rule off outright.
+  // The write choke point, whose tripwire must know every directory; its block turns the rule off.
   "src/cli/utils/fs.ts",
-  // The funnel: the module that declares the host roles these constants feed, and the module the
-  // message points every other site at.
+  // The funnel the message points at.
   "src/cli/lib/installation/install-layout.ts",
-  // The barrel that re-exports the path vocabulary from `@workspace/compile`, which is how these
-  // names are reachable in this package at all.
+  // The barrel re-exporting these names from `@workspace/compile`.
   "src/cli/consts.ts",
 ];
 
-/** A zone with a file to lint. One without is a config defect, reported by its own gate below. */
 function isMeasurable(zone: LintZone): zone is LintZone & { subject: string } {
   return zone.subject !== null;
 }
@@ -109,14 +49,7 @@ const ZONES = lintZonesIn(ESLINT_CONFIG, RESTRICTED_IMPORTS, CLI_ROOT);
 const REPORTED_ZONES = ZONES.filter((zone) => !EXEMPT_PATTERNS.includes(zone.patterns));
 const EXEMPT_ZONES = ZONES.filter((zone) => EXEMPT_PATTERNS.includes(zone.patterns));
 
-/**
- * Every way a host path is COMPOSED rather than written, each writing no banned spelling at all.
- *
- * Both symbols and both import spellings, because both are live and one says nothing about the
- * other: the CLI's own barrel re-exports these names from `@workspace/compile`, so a group naming
- * only the barrel leaves the direct import as the bypass, and a group naming only the package
- * leaves the barrel as one.
- */
+/** Both symbols and both import routes (the barrel and `@workspace/compile` directly). */
 const COMPOSED_HOST_PATHS = [
   {
     name: "Claude's state directory joined from the barrel",
@@ -164,14 +97,7 @@ const COMPOSED_HOST_PATHS = [
   },
 ] as const;
 
-/**
- * A sibling of the banned names, imported from the same module, which must be left alone.
- *
- * The subject guard for the reported loop: a group that banned the whole MODULE would satisfy
- * every assertion above without naming a single symbol, and would condemn most paths this package
- * builds. `STANDARD_FILES` is the nearest live neighbour — it sits in the same import statement as
- * `CLAUDE_DIR` in three product files today.
- */
+/** Subject guard: a ban on the whole module would pass above while condemning most paths. */
 const NEIGHBOURING_IMPORT = [
   `import path from "path";`,
   `import { STANDARD_FILES } from "../../consts.js";`,
@@ -181,19 +107,12 @@ const NEIGHBOURING_IMPORT = [
   ``,
 ].join("\n");
 
-/** What one in-process, type-aware ESLint pass over one fixture is allowed to take. */
 const LINT_PASS_BUDGET_MS = 2_500;
 
 const COMPOSED_TIMEOUT_MS = ZONES.length * COMPOSED_HOST_PATHS.length * LINT_PASS_BUDGET_MS;
 const NEIGHBOUR_TIMEOUT_MS = ZONES.length * LINT_PASS_BUDGET_MS;
 
-/**
- * The messages the repository's own ESLint config reports against `source` when it is read as
- * `zone`. The config is LOADED rather than restated — a second copy of the group here could not
- * tell a group that stopped matching from one that was never configured.
- *
- * A fixture that failed to parse asked nothing, so it is thrown on rather than counted.
- */
+/** The repository's own config, loaded rather than restated. An unparseable fixture throws. */
 async function messagesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -211,18 +130,13 @@ async function messagesReportedAgainst(
   return result.messages.map((message) => message.message);
 }
 
-/** Whether any message CARRIES `report` — see the docblock on the rendering above. */
+/** `includes`: the rule prefixes its own sentence to the configured message. */
 function reports(messages: readonly string[], report: string): boolean {
   return messages.some((message) => message.includes(report));
 }
 
 describe("a host path composed from the constant that spells it", () => {
-  /**
-   * The precondition every loop rests on, and the half a derivation can get wrong that a roster
-   * could not: a block declaring the rule for files that are not there, or for files a later block
-   * has already taken, leaves nothing to lint as that zone — which reads exactly like a zone that
-   * passed.
-   */
+  /** A zone with no file to lint reads exactly like a zone that passed. */
   it("finds a file to lint in every zone the config declares the rule for", () => {
     expect(
       ZONES.filter((zone) => !isMeasurable(zone)).map((zone) => zone.patterns),
@@ -230,13 +144,7 @@ describe("a host path composed from the constant that spells it", () => {
     ).toStrictEqual([]);
   });
 
-  /**
-   * An exemption that stopped existing leaves the silence loop with nothing to check and no red to
-   * say so — the derivation would simply hand every zone to the reported half, which passes.
-   *
-   * It is also the guard on the BACKLOG: its zone is one patterns string, so a twelfth file joining
-   * the list that may only shrink fails here, naming both spellings.
-   */
+  /** A vanished exemption would hand every zone to the reported half; also guards the backlog. */
   it("still finds each zone the ban is deliberately lifted in", () => {
     expect(
       EXEMPT_ZONES.map((zone) => zone.patterns),
@@ -244,7 +152,7 @@ describe("a host path composed from the constant that spells it", () => {
     ).toStrictEqual(EXEMPT_PATTERNS);
   });
 
-  /** The subject guard for the loop below: with no reported zone it would pass having run nothing. */
+  /** Subject guard: with no reported zone the loop below would pass having run nothing. */
   it("leaves at least one zone the ban is meant to reach", () => {
     expect(
       REPORTED_ZONES.length,
@@ -291,12 +199,7 @@ describe("a host path composed from the constant that spells it", () => {
     NEIGHBOUR_TIMEOUT_MS,
   );
 
-  /**
-   * A ban whose message names only roles is a dead end at the site an author is standing on: the
-   * path they need may be one no role answers yet, and "call one of these" is then advice they
-   * cannot take. The literal ban was found in exactly that state on 2026-09-21 and its remedy was
-   * to carry the funnel in the message; this keeps the second half attached to the first here.
-   */
+  /** "Call one of these roles" is no help when no role answers the path yet. */
   it("tells an author what to do when no role answers the path it condemned", async () => {
     const eslint = new ESLint({ cwd: CLI_ROOT });
     const zone = REPORTED_ZONES.filter(isMeasurable)[0];

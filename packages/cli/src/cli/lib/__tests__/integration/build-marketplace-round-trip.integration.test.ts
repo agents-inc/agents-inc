@@ -12,23 +12,15 @@ import { fetchMarketplace } from "../../loading/source-fetcher.js";
 import { EXIT_CODES } from "../../exit-codes.js";
 import { MARKETPLACE_JSON, PLUGIN_MANIFEST_DIR, STANDARD_FILES } from "../../../consts.js";
 
-/** The plugins directory the build scans, relative to the project root. */
 const PLUGINS_DIR_FLAG = path.join("dist", "plugins");
 
-/**
- * One plugin, published in the fixture marketplace's own namespace. A build needs
- * at least one: `marketplaceSchema` requires a non-empty `plugins`, and the
- * namespace validator requires every id to carry the marketplace's name.
- */
+/** A build needs one plugin, named in the fixture marketplace's namespace. */
 const PLUGIN_NAME = `${VALID_PACKAGE_JSON_FILE.name}-web-framework-react`;
 
-/** An npm scoped name: legal for a package, and not a name a marketplace may publish under. */
 const SCOPED_PACKAGE_NAME = "@acme/skills";
 
-/** The characters {@link SCOPED_PACKAGE_NAME} carries that a marketplace name may not. */
 const SCOPED_NAME_OFFENDERS = ["@", "/"];
 
-/** {@link VALID_PACKAGE_JSON_FILE} without the field the marketplace owner is derived from. */
 const PACKAGE_JSON_WITHOUT_AUTHOR = {
   name: VALID_PACKAGE_JSON_FILE.name,
   version: VALID_PACKAGE_JSON_FILE.version,

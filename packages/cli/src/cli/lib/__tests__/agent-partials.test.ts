@@ -18,18 +18,9 @@ const AGENTS_DIR = path.join(CLI_ROOT, "src", "agents");
 const TEMPLATES_DIR = "_templates";
 const AGENT_TEMPLATE = path.join(AGENTS_DIR, TEMPLATES_DIR, "agent.liquid");
 
-/**
- * The half of the template the prose actually lands in.
- *
- * `agent.liquid` became the frontmatter alone when C5 split it, because a Codex agent ROLE
- * DEFINITION has no frontmatter and its `developer_instructions` carries the body on its own. The
- * wrappers these contracts are about have always been in the body, so the check reads both halves
- * — one file would now be checking the partials against nothing, which is the failure this
- * assertion's own message names.
- */
+/** The body half: `agent.liquid` is frontmatter only, and the wrappers live in the body. */
 const AGENT_BODY_TEMPLATE = path.join(AGENTS_DIR, TEMPLATES_DIR, "agent-body.liquid");
 
-/** Both halves of the shipped agent template, as one string to search. */
 async function wholeAgentTemplate(): Promise<string> {
   const [frontmatter, body] = await Promise.all([
     readFile(AGENT_TEMPLATE, "utf8"),
@@ -39,24 +30,12 @@ async function wholeAgentTemplate(): Promise<string> {
   return `${frontmatter}${body}`;
 }
 
-/** Every agent directory: two levels down, `<group>/<agent>/`. */
 const AGENT_GLOB = "*/*";
 
 /**
- * The partial every agent owes, its technique tag, and the wrapper `agent.liquid` puts AROUND it.
- *
- * Both halves are needed and the negative one matters more. A missing technique degrades one
- * agent and shows up in a read; a partial that opens with the wrapper the template already adds
- * emits the tag twice around the same content, which a diff review reading one file at a time
- * cannot see at all — on its own the file looks like well-formed markup. `skill-summoner` shipped
- * both partials that way, and the doubling reached every compiled copy.
- *
- * `template` is the exact block the template renders this partial into, asserted first: a
- * template that stopped wrapping would leave the negative below policing a tag nobody adds.
- *
- * Required means `readAgentFiles` in `lib/compiler.ts` reaches it through `readFile` rather than
- * `readFileOptional`, so an agent missing it cannot compile at all. That is what earns the
- * presence roster below, and it is why the two partials beside it do not get one.
+ * Required partials (read without a fallback, so an agent missing one cannot compile), their
+ * technique tag, and the wrapper the template adds around them. A partial opening with that wrapper
+ * would emit the tag twice; `template` is asserted first so the negative polices a real wrapper.
  */
 const REQUIRED_PARTIALS = [
   {
@@ -68,22 +47,9 @@ const REQUIRED_PARTIALS = [
 ] as const;
 
 /**
- * The partials an agent may ship or omit, each with the render field that carries it.
- *
- * `readAgentFiles` reads both through `readFileOptional` defaulting to `""`, and the
- * `agent-summoner` playbook's "The Agent Structure" tells an author the same thing: of the five
- * markdown partials only `identity.md` and `playbook.md` are required. So an agent that follows
- * the shipped instructions and ships neither of these is a valid agent, and no PRESENCE roster is
- * asserted over them — a roster would redden on a correctly authored agent. What survives is
- * conditional: a copy that DOES exist owes its technique and must not self-wrap.
- *
- * `renderKey` is what makes the optionality real, and it names a field rather than a template
- * substring for a reason. The guard used to be asserted as the literal
- * `{% if criticalRequirementsTop != "" %}` appearing anywhere in `agent.liquid`, which is a claim
- * about the template's TEXT rather than about what it renders: move that tag inside the wrapper —
- * or leave it in place as an empty `{% if %}{% endif %}` — and the substring survives while every
- * agent without the file compiles `<critical_requirements></critical_requirements>` around
- * nothing. The render below cannot be satisfied that way.
+ * Optional partials: no presence roster, since a correct agent may omit them, but a copy that
+ * exists owes its technique and must not self-wrap. `renderKey` names a field so the guard is
+ * proved by rendering, not by a template substring.
  */
 const OPTIONAL_PARTIALS = [
   {
@@ -109,19 +75,8 @@ const OPTIONAL_PARTIALS = [
 }[];
 
 /**
- * Which agents ship each optional partial — a ledger of what is on disk, not a contract that
- * every agent must carry one.
- *
- * The two conditional assertions at the foot of this file only ever read files that ARE there, so
- * both are satisfied by an empty set: delete all eighteen `critical-requirements.md` and every
- * assertion in this file still passes, the presence roster above covering `identity.md` alone by
- * design. This is what gives them a subject.
- *
- * A ledger rather than a roster because the two fail differently. Deriving the expected list from
- * {@link agentNamesOnDisk} would make an agent that legitimately omits an optional partial a
- * failure; naming the shippers makes it an edit — add or remove the name here, beside the others.
- * Constrained to `AgentName` so retiring an agent is a compile error at the line holding its name
- * rather than a `toStrictEqual` searching for a directory nothing creates.
+ * A ledger of which agents ship each optional partial, so the conditional assertions have a
+ * subject. Typed to `AgentName`, so retiring an agent is a compile error here.
  */
 const OPTIONAL_PARTIAL_SHIPPERS = {
   "critical-requirements.md": [
@@ -165,10 +120,8 @@ const OPTIONAL_PARTIAL_SHIPPERS = {
   ],
 } as const satisfies Record<(typeof OPTIONAL_PARTIALS)[number]["file"], readonly AgentName[]>;
 
-/** Both kinds, for the contracts that hold however the partial came to be on disk. */
 const PARTIAL_CONTRACTS = [...REQUIRED_PARTIALS, ...OPTIONAL_PARTIALS] as const;
 
-/** The agents the partials tree holds, in the spelling `AGENT_NAMES` uses. */
 async function agentNamesOnDisk(): Promise<string[]> {
   const dirs = await fg(AGENT_GLOB, {
     cwd: AGENTS_DIR,
@@ -178,7 +131,6 @@ async function agentNamesOnDisk(): Promise<string[]> {
   return dirs.map((dir) => path.basename(dir)).sort();
 }
 
-/** Every copy of one partial, paired with the agent that owns it. */
 async function everyCopyOf(file: string): Promise<{ agent: string; source: string }[]> {
   const paths = await fg(`${AGENT_GLOB}/${file}`, { cwd: AGENTS_DIR });
   return Promise.all(
@@ -189,15 +141,9 @@ async function everyCopyOf(file: string): Promise<{ agent: string; source: strin
   );
 }
 
-/** A version string the render is handed; the provenance stamp is not this file's subject. */
 const RENDER_VERSION = "0.0.0-partials";
 
-/**
- * The shipped template rendered with every partial empty except the fields named.
- *
- * Empty content fields are what make the answer the TEMPLATE's: a fixture carrying prose would
- * satisfy a wrapper assertion with its own text rather than with the guard under test.
- */
+/** Every other partial empty, so a wrapper assertion is answered by the template, not by prose. */
 async function renderWith(partials: Partial<CompiledAgentData>): Promise<string> {
   const engine = await createLiquidEngine();
 
@@ -216,14 +162,7 @@ async function renderWith(partials: Partial<CompiledAgentData>): Promise<string>
   );
 }
 
-/**
- * Whether a LINE of this partial is the wrapper tag, opening or closing.
- *
- * Line equality rather than a substring: `skill-summoner` legitimately names both tags inside
- * backticks, because the structure it instructs an author about is the structure it is itself
- * written in. A `toContain` would condemn that sentence and leave nothing said about the shape
- * that matters.
- */
+/** Line equality, not a substring: `skill-summoner` legitimately names both tags in backticks. */
 function selfWraps(source: string, wrapper: string): boolean {
   return source
     .split("\n")

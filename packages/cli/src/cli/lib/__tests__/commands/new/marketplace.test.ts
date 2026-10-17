@@ -15,17 +15,11 @@ import {
 } from "../../../../consts";
 import { sourceDir } from "../../../installation/install-layout.js";
 
-/** The name every scaffold under test publishes under. */
 const MARKETPLACE_NAME = "acme";
 
-/**
- * The names no marketplace may publish under. Spelled out rather than imported:
- * the rule is these four strings, and a test that read the module's own list
- * would agree with any list it grew.
- */
+/** Spelled out, not imported: a test reading the module's own list would agree with any list. */
 const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local", "eject"] as const;
 
-/** Every file the published guide promises a marketplace directory holds. */
 const PROMISED_FILES = [
   STANDARD_FILES.PACKAGE_JSON,
   SKILL_CATEGORIES_PATH,

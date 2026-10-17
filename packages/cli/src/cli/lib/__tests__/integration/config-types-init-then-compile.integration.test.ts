@@ -23,30 +23,15 @@ import { FULLSTACK_TRIO_MATRIX } from "../mock-data/mock-matrices";
 import { INIT_SKILL_IDS, INIT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { cleanupTempDir, createTempDir } from "../test-fs-utils";
 
-/**
- * A sub-agent this marketplace declares and the CLI does not — the only shape in which the two
- * rosters can be told apart. The E2E and unit fixtures both ship `web-developer` /
- * `api-developer`, which the CLI also ships, so every existing fixture is blind to this by
- * construction.
- */
+/** A sub-agent only the marketplace declares: the only shape in which the two rosters differ. */
 const MARKETPLACE_ONLY_AGENT = "fixture-marketplace-only-agent";
 
-/** A boundary cast: a marketplace's own sub-agent id is genuinely outside `AgentName`. */
+/** Boundary cast: a marketplace's own sub-agent id is outside `AgentName`. */
 const MARKETPLACE_AGENT_NAME = MARKETPLACE_ONLY_AGENT as AgentName;
 
 /**
- * `init` writes `config-types.ts`, `compile` refreshes it from the config already on disk, and
- * nothing about the installation moved in between — so the two runs must produce the same file.
- *
- * They did not. `init` reached `config-types.ts` through `writeProjectConfig`, which loaded
- * CLI ∪ marketplace sub-agent definitions, and `compile` reached it through `loadAgentDefs`,
- * which loads the CLI's own. The emitted `AgentName` union asks each name whether the loaded
- * roster DECLARES it, so a marketplace sub-agent was a declared one on the way in and the user's
- * own on the way out: `init` emitted a flat union and `compile` rewrote it sectioned under
- * `// Custom`, with no edit between them and nothing telling the user which file was right.
- *
- * Held at the file rather than at the loaders: the defect is one artefact with two producers, so
- * the artefact is what is pinned.
+ * `init` and `compile` must emit the same `config-types.ts` when nothing moved in between. Held at
+ * the file, not the loaders: one artefact with two producers.
  */
 describe("config-types.ts written by init and refreshed by compile", () => {
   let source: TestDirs;
@@ -55,7 +40,6 @@ describe("config-types.ts written by init and refreshed by compile", () => {
   let tempDir: string;
   let savedHome: string | undefined;
 
-  /** The global pair's types half — where a home-directory install writes the standalone unions. */
   function globalTypesPath(): string {
     return path.join(sourceFolderInUse(homeDir, "claude").dir, STANDARD_FILES.CONFIG_TYPES_TS);
   }
@@ -64,8 +48,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
     tempDir = await createTempDir("cc-config-types-init-compile-");
     homeDir = path.join(tempDir, "home");
     await mkdir(homeDir, { recursive: true });
-    // `vitest.setup.ts` spies `os.homedir()` to honour a HOME a test sets itself, which is what
-    // makes this the home directory for `isHomeDirectory` and for the gate's `globalPairPaths`.
+    // `vitest.setup.ts` spies `os.homedir()` to honour a HOME the test sets.
     savedHome = process.env.HOME;
     process.env.HOME = homeDir;
 
@@ -91,14 +74,8 @@ describe("config-types.ts written by init and refreshed by compile", () => {
   });
 
   /**
-   * A home-directory install: one standalone `config-types.ts`, no import-and-extend project half
-   * to route the sub-agent unions around. `writeProjectConfig` is `init`'s own producer, called
-   * exactly as `init.tsx` calls it — with no `agents` option, which is the branch that loaded the
-   * marketplace-aware roster.
-   *
-   * The two sub-agents take DIFFERENT scopes so `SelectedAgentName` and `ProjectAgentName` have
-   * different memberships. With both at one scope the two unions are the same string, and an
-   * emission that collapsed one into the other would satisfy every assertion below.
+   * `writeProjectConfig` called as `init.tsx` calls it (no `agents` option). The two sub-agents
+   * take different scopes so `SelectedAgentName` and `ProjectAgentName` cannot collapse unnoticed.
    */
   async function installAtHome(): Promise<void> {
     await writeProjectConfig({
@@ -114,11 +91,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
     });
   }
 
-  /**
-   * `compile`'s global pass, verbatim from `refreshConfigTypes` in `commands/compile.ts`: the
-   * config on disk is the input, the matrix is reloaded, and the sub-agent roster comes from
-   * `loadAgentDefs` — the value that pass also hands its compiler.
-   */
+  /** `compile`'s global pass, as `refreshConfigTypes` in `commands/compile.ts` runs it. */
   async function refreshAsCompileDoes(): Promise<void> {
     const loaded = await loadProjectConfigFromDir(homeDir, "claude");
     expect(loaded, "init must have written a config for the refresh to read").not.toBeNull();
@@ -139,10 +112,7 @@ describe("config-types.ts written by init and refreshed by compile", () => {
     expect(afterRefresh).toBe(afterInit);
   });
 
-  /**
-   * The control for the assertion above, and the reason it is not vacuous: a run that selected no
-   * marketplace sub-agent would be byte-identical whichever roster each producer loaded.
-   */
+  /** The control: with no marketplace sub-agent selected, either roster gives identical bytes. */
   it("carries the marketplace's own sub-agent, which is what the two rosters disagree about", async () => {
     await installAtHome();
 
@@ -152,10 +122,8 @@ describe("config-types.ts written by init and refreshed by compile", () => {
   });
 
   /**
-   * `SelectedAgentName` and `ProjectAgentName` are NOT interchangeable and neither may collapse
-   * into the other: the emitted `stack` is keyed by `ProjectAgentName`, and that is what makes
-   * assigning a project skill to a global sub-agent a type error in a hand-written `config.ts`.
-   * Held with exact members rather than a count, and at both ends of the refresh.
+   * The emitted `stack` is keyed by `ProjectAgentName`, which makes assigning a project skill to a
+   * global sub-agent a type error; so neither union may collapse into the other.
    */
   it("keeps SelectedAgentName and ProjectAgentName as separate unions across the refresh", async () => {
     await installAtHome();

@@ -4,32 +4,18 @@ import { createMockExtractedSkill, createMockSkill, createTestSkill } from "./sk
 
 const DESCRIPTION = "A skill used by the factory tests";
 
-/** In the canonical taxonomy, and its trailing segments happen to equal its slug. */
 const CANONICAL_ID: SkillId = "web-framework-react";
 
-/**
- * In the canonical taxonomy, and its trailing segments do NOT equal its slug:
- * the catalogue's slug is "react-query", while the id's segments after the
- * domain and category read "state-react-query".
- */
+/** Slug "react-query"; the id's trailing segments read "state-react-query". */
 const SLUG_UNLIKE_ID: SkillId = "web-server-state-react-query";
 
-/**
- * In the canonical taxonomy, and its first two segments do NOT equal its
- * category: the shipped catalogue files it under "api-orm", while the id reads
- * "api" then "database".
- */
+/** Category "api-orm"; the id's leading segments read "api-database". */
 const CATEGORY_UNLIKE_ID: SkillId = "api-database-drizzle";
 
-/**
- * Same, on the domain axis's neighbour: the catalogue files this under
- * "web-client-state" while the id's first two segments read "web-state".
- */
+/** Category "web-client-state"; the id's leading segments read "web-state". */
 const CLIENT_STATE_ID: SkillId = "web-state-zustand";
 
-// Boundary cast: a marketplace-namespaced id is not a member of the generated
-// union, and this is the error path — the factory must refuse it rather than
-// read a taxonomy off its segments.
+// Boundary cast: a namespaced id outside the union, for the error path.
 const NAMESPACED_ID = "e2e-web-framework-react" as SkillId;
 
 // Boundary cast: an id no registry knows, for the error path.
@@ -218,7 +204,7 @@ describe("createMockExtractedSkill", () => {
 
   it("lets a stated taxonomy override the canonical one", () => {
     const skill = createMockExtractedSkill(CANONICAL_ID, {
-      // Boundary cast: a category the generated union has never heard of
+      // Boundary cast: a category outside the union.
       category: "devops-iac" as CategoryPath,
       domain: "cli",
       slug: "preact" as SkillSlug,

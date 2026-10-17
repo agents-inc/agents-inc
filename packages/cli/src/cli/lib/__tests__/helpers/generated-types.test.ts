@@ -6,15 +6,7 @@ const INLINE_UNION_SOURCE = `export type AgentName = 'api-developer' | 'web-deve
 export type SelectedAgentName = 'web-developer'
 `;
 
-/**
- * The same two aliases with their declarations REVERSED. `assembleConfigTypesSource`
- * (`lib/configuration/config-types-writer.ts`) emits `AgentName` above `SelectedAgentName` and
- * `ProjectAgentName`, so in a generated file the longer alias never precedes the one whose name
- * it ends with — which is the whole reason this fixture has to state the other order. Under the
- * emitted one, a reader that anchored on a bare `AgentName =` rather than on
- * `export type AgentName =` still answers correctly, because the first occurrence IS the
- * declaration asked for; reversed, that reader hands back `SelectedAgentName`'s body.
- */
+// Reversed from the emitted order, so a reader anchored on a bare `AgentName =` would fail.
 const SUFFIX_SHARING_ALIAS_DECLARED_FIRST = `export type SelectedAgentName = 'web-developer'
 
 export type AgentName = 'api-developer' | 'web-developer'
@@ -37,12 +29,6 @@ export type SelectedAgentName = AgentName
 export type ProjectAgentName = never
 `;
 
-/**
- * The shape `generateStackAgentConfig` (`@workspace/compile/config-types-source`) emits: an
- * object body carrying one `'<category>'?: ...` line per category, with no blank line inside it.
- * Every alias these readers are pointed at today is a flat string union; this one is emitted into
- * the same file and is what a reader reaching for the next alias would meet.
- */
 const OBJECT_BODY_SOURCE = `export type StackAgentConfig = {
   'api-framework'?: SkillAssignment<'api-framework-hono'>[]
   'web-framework'?: SkillAssignment<'web-framework-react'>[]
@@ -51,7 +37,6 @@ const OBJECT_BODY_SOURCE = `export type StackAgentConfig = {
 export type SelectedAgentName = 'web-developer'
 `;
 
-/** What the blank-line boundary leaves of `OBJECT_BODY_SOURCE`'s object body: all of it. */
 const THE_WHOLE_OBJECT_BODY = ` {
   'api-framework'?: SkillAssignment<'api-framework-hono'>[]
   'web-framework'?: SkillAssignment<'web-framework-react'>[]

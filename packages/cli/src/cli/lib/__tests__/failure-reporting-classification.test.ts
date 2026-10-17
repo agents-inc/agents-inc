@@ -20,36 +20,15 @@ const BASE_COMMAND = "src/cli/base-command.ts";
 const WARN_CALL = "this.warn(";
 const RECOVERY_CONSTANT = "INCOMPLETE_WORK_RECOVERY";
 
-/**
- * Every command whose ending is decided by the recorded-work list, and therefore every file the
- * warn roster below has to be total over. A command that adopts the mechanism without being
- * added here keeps its warn sites unjudged, which is the defect this gate exists against one
- * layer up — see the "answers for what it records" case at the foot of the file.
- *
- * In the order the directory yields them, because that is what it is compared against.
- */
+/** Commands whose ending the recorded-work list decides, in directory order. */
 const COMMANDS_WITH_A_THIRD_ENDING = [EDIT, EJECT, INIT] as const;
 
 /**
- * A command has three endings, not two: it succeeds, it refuses, or it finishes with work it
- * could not do. The third is `EXIT_CODES.COMPLETED_WITH_FAILURES`, and what decides it is which
- * of two calls a site makes — `this.warn` alone leaves the process at 0, `reportIncompleteWork`
- * warns AND records.
- *
- * The choice between them is a judgement nobody can make from the call site alone, which is what
- * makes the defect recur: a `this.warn` added for a failure looks exactly like a `this.warn`
- * added for an advisory, and both compile, lint and pass every spec. So the rosters below name
- * every warn-only site in these four files and say why each one is allowed to be one, and the
- * assertions hold them against the source. A new `this.warn` reddens this file until its author
- * has written down which side it is on.
- *
- * What this CANNOT judge is whether a stated reason is a good one — only that a reason was
- * stated, at a moment when the person adding the site is the one best placed to state it.
+ * `this.warn` alone exits 0; `reportIncompleteWork` warns and records. A failure warn looks like an
+ * advisory one at the call site, so every warn-only site is rostered with its reason.
  */
 type AdvisoryWarn = {
-  /** The source line verbatim, trimmed. */
   line: string;
-  /** Why this failure deliberately leaves the exit code alone. */
   why: string;
 };
 
@@ -101,14 +80,7 @@ const EDIT_ADVISORY_WARNS = [
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
-/**
- * `init`'s two remaining warn-only sites and the one that is detail beside a recorded failure.
- *
- * This file had NO reader of `compileResult.failed` or `compileResult.warnings` until the
- * completed-with-failures work reached it: it printed `Compiled N agents` — counting successes
- * only, so the number looked right — then `initialized successfully!` and exited 0. A sub-agent
- * that failed to compile during a user's first install reached no surface at all.
- */
+/** `init`'s warn-only sites, and the one that is detail beside a recorded failure. */
 const INIT_ADVISORY_WARNS = [
   {
     line: "if (!opened.ok) this.warn(opened.error);",
@@ -128,11 +100,7 @@ const INIT_ADVISORY_WARNS = [
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
-/**
- * `eject`'s warn sites are all the same kind, and it is a kind neither of the other two commands
- * has: a destination that already holds content and a `--force` the user did not pass. Nothing
- * was attempted, nothing was lost, and the remedy is a flag rather than a repair.
- */
+/** An occupied destination without `--force`: nothing attempted, and the remedy is a flag. */
 const EJECT_ADVISORY_WARNS = [
   {
     line: "this.warn(result.skipReason);",
@@ -148,12 +116,7 @@ const EJECT_ADVISORY_WARNS = [
   },
 ] as const satisfies readonly AdvisoryWarn[];
 
-/**
- * `base-command.ts`'s warns are shared by `init`, `edit`, `compile` and `uninstall`, so none of
- * them can adopt one command's exit-code policy without adopting it for all four. They are
- * rostered here anyway: a deliberate exclusion that is written down is one a later reader can
- * revisit, and one that is merely absent is indistinguishable from an oversight.
- */
+/** Shared by four commands, so none adopts one's policy; rostered so the exclusion is visible. */
 const BASE_COMMAND_ADVISORY_WARNS = [
   {
     line: "this.warn(message);",
@@ -198,15 +161,11 @@ const BASE_COMMAND_ADVISORY_WARNS = [
 ] as const satisfies readonly AdvisoryWarn[];
 
 /**
- * Every recovery a command names when it finishes with work undone, in source order and with
- * repeats — so a failure site that is DELETED reddens here too, which the warn rosters above
- * cannot see. Held against `INCOMPLETE_WORK_RECOVERY`'s own membership below, so a recovery
- * sentence no site reaches for cannot sit in `messages.ts` looking used.
+ * Every recovery a failure site names, in source order with repeats, so a deleted site reddens too.
+ * Held against `INCOMPLETE_WORK_RECOVERY`, so no unused recovery sentence survives.
  */
 type FailureSite = {
-  /** The `INCOMPLETE_WORK_RECOVERY` member this site reaches for. */
   recovery: keyof typeof INCOMPLETE_WORK_RECOVERY;
-  /** The leftover state it is the remedy for. */
   forWhat: string;
 };
 
@@ -228,14 +187,12 @@ const EJECT_FAILURE_SITES = [
   },
 ] as const satisfies readonly FailureSite[];
 
-/** Every file that carries a failure site, paired with the roster naming that file's sites. */
 const FAILURE_SITE_ROSTERS = [
   { file: EDIT, sites: EDIT_FAILURE_SITES },
   { file: INIT, sites: INIT_FAILURE_SITES },
   { file: EJECT, sites: EJECT_FAILURE_SITES },
 ] as const;
 
-/** Every file whose warn sites are rostered, paired with its roster. */
 const WARN_ROSTERS = [
   { file: EDIT, warns: EDIT_ADVISORY_WARNS },
   { file: INIT, warns: INIT_ADVISORY_WARNS },
@@ -243,19 +200,11 @@ const WARN_ROSTERS = [
   { file: BASE_COMMAND, warns: BASE_COMMAND_ADVISORY_WARNS },
 ] as const;
 
-/**
- * Recording work and answering for it are two calls, and only the second one moves the exit
- * code. A command that makes the first and not the second files its failures into a list
- * nothing reads — which is the original defect wearing the mechanism that was built to close it.
- */
+/** Only answering moves the exit code; recording without answering files failures nobody reads. */
 const RECORDING_CALLS = ["this.reportIncompleteWork(", "this.recordIncompleteWork("];
 const ANSWERING_CALL = "this.exitIfWorkIncomplete()";
 
-/**
- * Every command oclif loads, derived from the directory rather than listed. A hand-kept list
- * would leave a command added tomorrow outside the gate, silently — which is the shape of every
- * defect this file is written against.
- */
+/** Derived from the directory, so a new command cannot sit outside the gate. */
 const EVERY_COMMAND = "src/cli/commands/**/*.{ts,tsx}";
 
 async function sourceOf(relativePath: string): Promise<string> {
@@ -310,12 +259,7 @@ describe("a failure a command reports must say whether it changes the exit code"
     ).toStrictEqual(typedKeys(INCOMPLETE_WORK_RECOVERY).sort());
   });
 
-  /**
-   * The gate the hoist to `BaseCommand` made necessary. While the machinery was private to
-   * `edit`, a command could not record without also owning the ending; shared, it can — and a
-   * recorded failure in a command whose `run()` never asks is invisible exactly the way a bare
-   * `this.warn` was.
-   */
+  /** Since `BaseCommand` shares recording, a command can record without ever answering. */
   it("answers for what it records, in every command that records anything", async () => {
     const sources = await Promise.all(
       (await commandFiles()).map(async (file) => ({ file, source: await sourceOf(file) })),

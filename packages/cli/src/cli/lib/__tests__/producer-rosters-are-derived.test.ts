@@ -9,7 +9,6 @@ import { producerRostersIn } from "./helpers/producer-rosters.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/** Every spec the package holds, whichever of its suites collects it. */
 const EVERY_SPEC = [
   "src/**/*.test.ts",
   "src/**/*.test.tsx",
@@ -18,38 +17,12 @@ const EVERY_SPEC = [
 ];
 
 /**
- * A spec whose subject is AGREEMENT BETWEEN SEVERAL PRODUCERS holds its roster of producers
- * against a walk of the tree.
- *
- * Such a spec is green by construction. It compares the producers its author gathered, so the
- * one nobody gathered is invisible — which is exactly the recurrence it was written against.
- * Two specs here had already gone stale that way: the toast roster lost the toast its own
- * subject had most recently produced, and the kebab-case roster's docblock claimed it "goes red
- * the day a fourth judge is written with a hand-rolled regex" while holding no tree walk that
- * could see one. A fourth judge was in the tree when that sentence was written.
- *
- * **The shape this gate reaches is a roster of CALLABLES, and that is the whole of its claim.**
- * A roster whose members are functions reaching product code is a roster of code paths and
- * cannot be anything else. Every wider recogniser measured against this tree condemned test
- * data with it — a roster of file paths, of exported symbol names, or of any subset of an
- * enumeration the tree declares reads, in syntax, exactly like the inputs a spec is
- * parameterised by. `NAMES` in `kebab-name-judges-agree.test.ts` is the case that settles it:
- * it is correctly hand-written, correctly discriminating, and parameterises the same assertions
- * the judges do. A gate condemning both is one that gets silenced.
- *
- * So the other half of the class is deliberately ungated, and the two instances that produced
- * this gate carry their own derivations instead. `producer-rosters.test.ts` is where the shapes
- * this reader accepts and refuses are planted, because a scan reporting nothing across a clean
- * tree is indistinguishable from one that cannot report.
+ * A spec comparing several producers must derive its roster from the tree: a hand-gathered roster
+ * cannot see the producer nobody gathered. Only rosters of callables are gated; wider recognisers
+ * condemn legitimate test data. `producer-rosters.test.ts` plants the shapes this reader accepts.
  */
 describe("a spec comparing several producers derives its roster from the tree", () => {
-  /**
-   * Rosters that cannot be derived, each standing as the reason rather than as an oversight.
-   *
-   * Empty, and that is the state to keep it in: an entry here is a spec that will keep passing
-   * while the producer nobody remembered goes unjudged, which is the whole defect. An entry has
-   * to be worth that, and it has to say what makes the walk impossible rather than awkward.
-   */
+  /** Keep empty: an entry is a spec that stays green while a forgotten producer goes unjudged. */
   const CANNOT_BE_DERIVED: readonly string[] = [];
 
   async function rostersInTheTree(): Promise<{ site: string; derived: boolean }[]> {
@@ -71,9 +44,7 @@ describe("a spec comparing several producers derives its roster from the tree", 
   it("holds every roster of producers against a walk", async () => {
     const rosters = await rostersInTheTree();
 
-    // Subject guard: a glob that matched nothing, or a reader that recognised none of what it
-    // matched, satisfies the comparison below for free. It asks only whether the scan is
-    // READING — the shapes it accepts and refuses are proved beside the reader, on fixtures.
+    // Subject guard: a scan that read nothing satisfies the comparison for free.
     expect(
       rosters.length,
       "no roster of producers was found anywhere — the scan has stopped reading",

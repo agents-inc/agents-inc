@@ -1,38 +1,8 @@
 /**
- * A HOST's directory may be written in one place, and the linter is what holds that.
- *
- * `install-layout.ts` answers the host roles per provider: `.claude/agents` on Claude against
- * `<repo>/.codex/agents` or `$CODEX_HOME/agents` on Codex, `.claude/skills` on Claude against
- * `.agents/skills` in a Codex repo, `.md` against `.toml` for a compiled agent. So a path composed
- * from a literal is a path that is right on one host and silently wrong on the other — the Codex
- * plan's Risk 7, where the CLI writes a directory the host never reads, exits 0, and every test
- * stays green. (This file read "NOTHING at all at Codex project scope" until 2026-09-21, on a
- * measurement a 23-run tie-break overturned; `codexProjectRoles` carries the correction and the
- * trust condition that comes with it.)
- *
- * This is the source-folder ban's shape one layer out, and the sibling file
- * `source-folder-literals-are-funnelled.test.ts` is the one to read first: same derivation, same
- * two-halves discipline, a different set of names. The half that is not decoration is the SECOND
- * one — the names here are a character away from names this repository is full of.
- * `.claude-plugin/plugin.json` is a plugin manifest, `config.toml` is Codex's own configuration file
- * which the layout module itself writes, and `claude` on its own is a provider name. A rule
- * condemning any of those would be reverted within the hour, so each is fed to this config here
- * and required to be silent.
- *
- * **Assertions are on the MESSAGE, not on the rule id.** Both bans are written under
- * `no-restricted-syntax`, so a fixture that trips the source-folder selectors reports the same rule
- * id as one that trips these — and an allowed-spelling assertion reading the id alone would fail
- * for the wrong reason, or pass because some other selector happened to fire. Every expected string
- * is a LITERAL rather than an import from `eslint.config.js`: an assertion bound to the text the
- * linter renders moves with it and could never fail.
- *
- * **The zone roster is DERIVED from the config**, through `lintZonesIn` in `helpers/lint-zones.ts`,
- * for the reason that helper exists: a hand-written roster records the blocks somebody remembered,
- * and this rule's options do not merge across blocks, so a zone that declares
- * `no-restricted-syntax` for a reason of its own silently drops every selector it does not restate.
- * What is hand-written is only the EXEMPTIONS below, each with the reason it is one. A block added
- * to the config that is not one of those must report, so a new zone is measured by arriving rather
- * than by being remembered.
+ * A host directory may be written only in `install-layout.ts`: a literal path is right on one host
+ * and silently wrong on the other. Read `source-folder-literals-are-funnelled.test.ts` first.
+ * Near-miss names must stay silent; assertions read the message (both bans share a rule id) as
+ * literals. Zones are derived via `lintZonesIn`; only exemptions are hand-written.
  */
 
 import path from "path";
@@ -42,64 +12,36 @@ import { describe, expect, it } from "vitest";
 import { CLI_ROOT } from "./helpers/cli-runner.js";
 import { type LintZone, flatConfigAt, lintZonesIn } from "./helpers/lint-zones.js";
 
-/** The rule both bans are written under, which is why nothing below asserts on its id. */
+/** Shared by both bans, so nothing below asserts on the id. */
 const RESTRICTED_SYNTAX = "no-restricted-syntax";
 
 const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
 const ESLINT_CONFIG = await flatConfigAt(ESLINT_CONFIG_PATH);
 
-/**
- * Enough of each message to name which ban reported, written out rather than imported.
- *
- * The directory half and the extension half are separate messages because they point at different
- * roles — one at the path answers, one at `agentCodec` — and a fixture proving one says nothing
- * about the other.
- */
+/** Written out, not imported. The directory and extension halves point at different roles. */
 const HOST_DIRECTORY_REPORT = "A host path is resolved, not written";
 const HOST_EXTENSION_REPORT = "A compiled agent's extension is the host's, not a constant";
 
-/**
- * The half of the directory message that makes the ban a FUNNEL rather than a dead end, and the
- * only thing standing between an author naming `.claude.json` and a rule with no remedy in it.
- *
- * Pinned separately from the report itself because the two fail apart: the selector can go on
- * reporting while the message loses the sentence, and the report assertion above would stay green
- * through it — which is the state the 2026-09-21 ruling found and fixed.
- */
+/** Pinned apart: the selector can keep reporting after the message loses its remedy. */
 const FUNNEL_FOR_A_PATH_NO_ROLE_ANSWERS = "Where no role above answers the path you need";
 
-/** The sibling ban's own message, so an allowed fixture that trips IT is not read as a pass. */
+/** So an allowed fixture that trips the sibling ban is not read as a pass. */
 const SOURCE_FOLDER_REPORT = "The source folder's name is resolved, not written";
 
-/**
- * The zones the host-path ban is deliberately LIFTED in, each by the patterns its block selects.
- *
- * Written out because each is a decision, and the derivation cannot tell a zone that dropped the
- * selectors on purpose from one that dropped them by restating the rule and forgetting.
- */
+/** Hand-written: the derivation cannot tell a deliberate exemption from a forgotten restatement. */
 const EXEMPT_PATTERNS = [
-  // Specs and their fixtures. A fixture spelling `.claude/agents` is RECORDING what Claude Code
-  // does, not deciding where this CLI writes, and the host's own directory name is not the thing
-  // that is changing — which is exactly the asymmetry with the source-folder ban, and the reason
-  // that one reaches this zone while this one does not.
+  // Specs record what Claude Code does; unlike the source-folder ban, this one skips them.
   "**/*.test.ts, **/*.test.tsx, **/__tests__/**, **/__mocks__/**, **/e2e/**",
-  // The rostered backlog: product files whose user-facing PROSE still spells a host directory. A
-  // list that may only shrink, and the one place a pre-existing site can be recorded without an
-  // inline directive in a file this step does not own. It was three files and is one as of
-  // 2026-09-22 — `installation.ts` and `discover-skills.ts` came off with the Codex narration
-  // pass, and `init.tsx` stays for its oclif command DESCRIPTION, which is read at module load
-  // with no installation in hand and so has no scope to resolve a path against.
+  // Backlog that may only shrink: the oclif command description has no scope to resolve against.
   "src/cli/commands/init.tsx",
-  // The spec zone proper, for the reason the first entry carries.
+  // The spec zone proper.
   "**/*.test.ts, **/*.test.tsx",
-  // The funnel: the module every role is answered in, and the one this ban's message points at.
+  // The funnel this ban's message points at.
   "src/cli/lib/installation/install-layout.ts",
-  // The e2e tree's one mirror of the product's path vocabulary, which exists to spell these names
-  // rather than import them.
+  // The e2e mirror of the product's path vocabulary.
   "e2e/pages/constants.ts",
 ];
 
-/** A zone with a file to lint. One without is a config defect, reported by its own gate below. */
 function isMeasurable(zone: LintZone): zone is LintZone & { subject: string } {
   return zone.subject !== null;
 }
@@ -109,12 +51,8 @@ const REPORTED_ZONES = ZONES.filter((zone) => !EXEMPT_PATTERNS.includes(zone.pat
 const EXEMPT_ZONES = ZONES.filter((zone) => EXEMPT_PATTERNS.includes(zone.patterns));
 
 /**
- * Every spelling of a host path that must be refused outside the layout module.
- *
- * Both node types for the directory half — a bare string literal and a template's static text are
- * two different selectors, and one says nothing about the other. The extension half is a literal
- * only: an extension inside a template is a filename being composed, which is the `.md` twin's
- * territory and is named in the config's own note as deferred.
+ * Refused outside the layout module. Both node types for directories (literal and template text);
+ * extensions as literals only, since template extensions are the deferred `.md` twin's territory.
  */
 const BANNED_SPELLINGS = [
   {
@@ -142,12 +80,7 @@ const BANNED_SPELLINGS = [
     report: HOST_DIRECTORY_REPORT,
     source: `export const projectSkills = ".agents/skills";\n`,
   },
-  // Claude Code's own per-user state FILE, not a directory, and the case that made the ruling of
-  // 2026-09-21 necessary: the selector already reported it — the trailing `[^\w-]` is satisfied by
-  // the `.` — while no role the message named answered it, so it was condemned with nowhere to go
-  // and pinned by nothing. Banned, because `~/.claude.json` is Claude's where Codex keeps the
-  // equivalent in `$CODEX_HOME/config.toml`, and the message now carries the funnel: where no role
-  // answers the path, the role is added to `install-layout.ts` rather than composed at the site.
+  // A file, not a directory: Codex keeps the equivalent in `$CODEX_HOME/config.toml`.
   {
     name: "Claude Code's own state file",
     report: HOST_DIRECTORY_REPORT,
@@ -170,14 +103,7 @@ const BANNED_SPELLINGS = [
   },
 ] as const;
 
-/**
- * Names that share a prefix with a banned one and must be left alone. Each is live in this
- * repository or in the layout module's own answers, which is what makes this half a measurement
- * rather than a guess.
- *
- * None of them may trip the SOURCE-folder ban either, or the silence asserted below would be
- * measuring the wrong selector.
- */
+/** Prefix-sharing names that must be left alone, by this ban and the source-folder ban alike. */
 const ALLOWED_SPELLINGS = [
   {
     name: "a plugin manifest directory",
@@ -201,19 +127,12 @@ const ALLOWED_SPELLINGS = [
   },
 ];
 
-/** What one in-process, type-aware ESLint pass over one fixture is allowed to take. */
 const LINT_PASS_BUDGET_MS = 2_500;
 
 const BANNED_TIMEOUT_MS = ZONES.length * BANNED_SPELLINGS.length * LINT_PASS_BUDGET_MS;
 const ALLOWED_TIMEOUT_MS = ZONES.length * ALLOWED_SPELLINGS.length * LINT_PASS_BUDGET_MS;
 
-/**
- * The messages the repository's own ESLint config reports against `source` when it is read as
- * `zone`. The config is LOADED rather than restated — a second copy of the selectors here could
- * not tell a rule that stopped matching from one that was never configured.
- *
- * A fixture that failed to parse asked nothing, so it is thrown on rather than counted.
- */
+/** The repository's own config, loaded rather than restated. An unparseable fixture throws. */
 async function messagesReportedAgainst(
   eslint: ESLint,
   source: string,
@@ -231,18 +150,12 @@ async function messagesReportedAgainst(
   return result.messages.map((message) => message.message);
 }
 
-/** Whether any message reported starts with `report` — the ban naming itself. */
 function reports(messages: readonly string[], report: string): boolean {
   return messages.some((message) => message.startsWith(report));
 }
 
 describe("a host path written outside the layout module", () => {
-  /**
-   * The precondition every loop rests on, and the half a derivation can get wrong that a roster
-   * could not: a block declaring the rule for files that are not there, or for files a later block
-   * has already taken, leaves nothing to lint as that zone — which reads exactly like a zone that
-   * passed.
-   */
+  /** A zone with no file to lint reads exactly like a zone that passed. */
   it("finds a file to lint in every zone the config declares the rule for", () => {
     expect(
       ZONES.filter((zone) => !isMeasurable(zone)).map((zone) => zone.patterns),
@@ -250,10 +163,7 @@ describe("a host path written outside the layout module", () => {
     ).toStrictEqual([]);
   });
 
-  /**
-   * An exemption that stopped existing leaves the silence loop with nothing to check and no red to
-   * say so — the derivation would simply hand every zone to the reported half, which passes.
-   */
+  /** A vanished exemption would hand every zone to the reported half, which passes. */
   it("still finds each zone the ban is deliberately lifted in", () => {
     expect(
       EXEMPT_ZONES.map((zone) => zone.patterns),
@@ -261,7 +171,7 @@ describe("a host path written outside the layout module", () => {
     ).toStrictEqual(EXEMPT_PATTERNS);
   });
 
-  /** The subject guard for the loop below: with no reported zone it would pass having run nothing. */
+  /** Subject guard: with no reported zone the loop below would pass having run nothing. */
   it("leaves at least one zone the ban is meant to reach", () => {
     expect(
       REPORTED_ZONES.length,
@@ -288,11 +198,7 @@ describe("a host path written outside the layout module", () => {
     BANNED_TIMEOUT_MS,
   );
 
-  /**
-   * A ban whose message names roles that do not answer the path it condemned is a dead end. The
-   * ruling of 2026-09-21 kept the ban and made the message say what to do instead, and this is the
-   * assertion that keeps the second half attached to the first.
-   */
+  /** A ban whose message names no role for the condemned path is a dead end. */
   it("tells an author what to do when no role answers the path it condemned", async () => {
     const eslint = new ESLint({ cwd: CLI_ROOT });
     const zone = REPORTED_ZONES.filter(isMeasurable)[0];

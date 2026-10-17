@@ -26,11 +26,7 @@ const REACT_SKILL_ID: SkillId = "web-framework-react";
 // Boundary cast: TestSkill.id is string, but INSTALL_MODE_SKILLS contains valid SkillIds
 const ALL_SKILL_NAMES = INSTALL_MODE_SKILLS.map((s) => s.id) as SkillId[];
 
-/**
- * Re-runs the install for every skill (the re-copy path), through the three operations
- * `commands/init.tsx` runs and in its order: copy the selected skills, write the scoped config
- * pair, then compile every scope's sub-agents.
- */
+/** The three operations `commands/init.tsx` runs, in its order. */
 async function reinstallAllSkills(dirs: TestDirs) {
   const matrix = createMatrixFromTestSkills(INSTALL_MODE_SKILLS);
   const skills = buildSkillConfigs(ALL_SKILL_NAMES, { origin: "eject" });
@@ -74,17 +70,13 @@ describe("Integration: install-mode round trip with delete and re-copy", () => {
     it("should delete a local skill directory completely", async () => {
       const skillDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, REACT_SKILL_ID);
 
-      // Verify skill exists before deleting
       expect(await directoryExists(skillDir)).toBe(true);
       expect(await fileExists(path.join(skillDir, STANDARD_FILES.SKILL_MD))).toBe(true);
 
-      // Delete
       await deleteLocalSkill(dirs.projectDir, REACT_SKILL_ID);
 
-      // Verify skill directory is gone
       expect(await directoryExists(skillDir)).toBe(false);
 
-      // Verify NO _archived directory was created
       const archivedDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, "_archived");
       expect(await directoryExists(archivedDir)).toBe(false);
     });
@@ -93,18 +85,15 @@ describe("Integration: install-mode round trip with delete and re-copy", () => {
       // Boundary cast: intentionally testing nonexistent skill ID
       const nonExistentSkill = "web-framework-nonexistent" as SkillId;
 
-      // Should not throw
       await deleteLocalSkill(dirs.projectDir, nonExistentSkill);
     });
 
     it("should handle deleting the same skill twice", async () => {
-      // Delete once
       await deleteLocalSkill(dirs.projectDir, REACT_SKILL_ID);
 
       const skillDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, REACT_SKILL_ID);
       expect(await directoryExists(skillDir)).toBe(false);
 
-      // Delete again - should not throw
       await deleteLocalSkill(dirs.projectDir, REACT_SKILL_ID);
     });
   });
@@ -113,28 +102,22 @@ describe("Integration: install-mode round trip with delete and re-copy", () => {
     it("should delete local skill then re-copy from source (content matches source, not local edits)", async () => {
       const skillDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, REACT_SKILL_ID);
 
-      // Read local content first (should contain "Local Version")
       const localContent = await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf-8");
       expect(localContent).toContain("Local Version");
 
-      // Delete the local skill
       await deleteLocalSkill(dirs.projectDir, REACT_SKILL_ID);
       expect(await directoryExists(skillDir)).toBe(false);
 
-      // Re-copy from source through the live install sequence
       await reinstallAllSkills(dirs);
 
-      // Read the re-copied content - should contain "Marketplace Version" (from source), NOT "Local Version"
       const reCopiedContent = await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf-8");
       expect(reCopiedContent).toContain("Marketplace Version");
       expect(reCopiedContent).not.toContain("Local Version");
     });
 
     it("should handle full install pipeline after deleting local skills", async () => {
-      // Delete react skill
       await deleteLocalSkill(dirs.projectDir, REACT_SKILL_ID);
 
-      // Re-run the install with all skills
       const { copied, config: configResult, compilation } = await reinstallAllSkills(dirs);
 
       expect(copied.projectCopied.map((skill) => skill.skillId).sort()).toStrictEqual(
@@ -143,12 +126,10 @@ describe("Integration: install-mode round trip with delete and re-copy", () => {
       expect(compilation.compiled).toStrictEqual(["web-developer"]);
       expect(compilation.failed).toStrictEqual([]);
 
-      // Verify config generated with exact skill list
       expect(await fileExists(configResult.configPath)).toBe(true);
       const config = await readTestTsConfig<ProjectConfig>(configResult.configPath);
       expectSkillConfigs(config, buildSkillConfigs(ALL_SKILL_NAMES, { origin: "eject" }));
 
-      // Verify NO _archived directory exists
       const archivedDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, "_archived");
       expect(await directoryExists(archivedDir)).toBe(false);
     });
@@ -158,18 +139,16 @@ describe("Integration: install-mode round trip with delete and re-copy", () => {
     it("should delete eject skills when switching to plugin, re-copy when switching back", async () => {
       const skillDir = path.join(dirs.projectDir, LOCAL_SKILLS_PATH, REACT_SKILL_ID);
 
-      // Read original local content
       const originalContent = await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf-8");
       expect(originalContent).toContain("Local Version");
 
-      // Delete (simulates eject -> plugin switch)
+      // Simulates eject -> plugin.
       await deleteLocalSkill(dirs.projectDir, REACT_SKILL_ID);
       expect(await directoryExists(skillDir)).toBe(false);
 
-      // Re-copy from source (simulates plugin -> eject switch)
+      // Simulates plugin -> eject.
       await reinstallAllSkills(dirs);
 
-      // Content should be marketplace version (NOT preserved local edits)
       const reCopiedContent = await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf-8");
       expect(reCopiedContent).toContain("Marketplace Version");
       expect(reCopiedContent).not.toContain("Local Version");

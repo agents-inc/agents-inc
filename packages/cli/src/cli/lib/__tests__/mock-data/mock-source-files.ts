@@ -1,15 +1,3 @@
-// Shared fixtures for published-source file shapes (validated by source-validator).
-//
-// These represent the on-disk shapes for a marketplace source repo:
-//   - stack config.yaml         (stackConfigValidationSchema)
-//   - embedded skill metadata   (metadataValidationSchema)
-//   - config/skill-categories.ts default export (skillCategoriesFileSchema)
-//   - config/skill-rules.ts default export      (skillRulesFileSchema)
-//   - config/stacks.ts default export           (stacksConfigSchema)
-//
-// Spread to vary individual fields for negative-case tests:
-//   { ...VALID_STACK_CONFIG_FILE, version: undefined }
-
 export const VALID_STACK_CONFIG_FILE = {
   id: "test-stack",
   name: "Test Stack",
@@ -58,13 +46,7 @@ export const VALID_STACKS_CONFIG_FILE = {
   ],
 };
 
-/**
- * Minimal package.json fixture for `build marketplace` tests.
- *
- * `build marketplace` reads marketplace identity (name, version, description,
- * author) from package.json at the cwd. Tests that exercise happy-path
- * marketplace generation need this file on disk.
- */
+/** `build marketplace` reads the marketplace identity from package.json at the cwd. */
 export const VALID_PACKAGE_JSON_FILE = {
   name: "test-marketplace",
   version: "0.1.0",

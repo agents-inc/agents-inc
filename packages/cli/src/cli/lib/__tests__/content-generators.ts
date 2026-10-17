@@ -1,7 +1,3 @@
-/**
- * Pure content renderers for test file generation.
- * Single source of truth for all test content templates.
- */
 import { omit } from "remeda";
 import type { z } from "zod";
 import type { skillRulesFileSchema } from "../schemas";
@@ -61,11 +57,7 @@ export function renderAgentYaml(
   ].join("\n");
 }
 
-/**
- * Renders an installed agent markdown file with YAML frontmatter.
- * Used for `~/.claude/agents/<name>.md` or `<project>/.claude/agents/<name>.md`,
- * which is the format validated by `validateAgentFrontmatter`.
- */
+/** An installed agent `.md`, in the format `validateAgentFrontmatter` checks. */
 export function renderAgentMd(
   name: string,
   description?: string,
@@ -74,8 +66,7 @@ export function renderAgentMd(
   const desc = description ?? `Test ${name} agent`;
   const tools = (options?.tools ?? ["Read", "Write"]).join(", ");
   const body = options?.body ?? `# ${name}\n\n${desc}`;
-  // A writing sub-agent: compile writes its completion-gate `Stop` hook as one JSON line under
-  // this key.
+  // Compile writes a writing sub-agent's `Stop` hook as one JSON line under this key.
   const hooks = options?.hooks === undefined ? "" : `hooks: ${options.hooks}\n`;
   return `---
 name: ${name}
@@ -92,15 +83,7 @@ export interface SkillMetadataFields {
   domain?: string;
   author?: string;
   displayName?: string;
-  /**
-   * Required, so that no fixture reaches the `local` placeholder by omission.
-   *
-   * A skill's category is the field that decides whether it can be reached at all: local-skill
-   * discovery refuses the placeholder outright, and a skill wearing it belongs to no domain, so
-   * it joins no grid tab and reaches no sub-agent. A default here wrote that skill silently, and
-   * a spec built on one exercised a catalogue the skill was never in. The placeholder is still
-   * writable — {@link renderMetadataYaml} takes it like any other value — but only by name.
-   */
+  /** Required, so no fixture reaches the unreachable `local` placeholder by omission. */
   category: string;
   slug?: string;
   cliDescription?: string;
@@ -109,39 +92,22 @@ export interface SkillMetadataFields {
   forkedFrom?: { skillId: string; contentHash: string; date: string };
 }
 
-/**
- * The fields `localRawMetadataSchema` requires of every registered skill — the
- * four without which no product path produces a `metadata.yaml`, and without
- * which `compile` refuses the run.
- */
+/** The four fields `localRawMetadataSchema` requires; `compile` refuses a skill missing one. */
 export type RequiredMetadataField = "displayName" | "slug" | "category" | "domain";
 
-/**
- * The fields as they reach the emitter: each of the four above is absent when
- * {@link renderIncompleteMetadataYaml} was asked to leave it out.
- */
+/** Each required field is absent when {@link renderIncompleteMetadataYaml} was asked to omit it. */
 type EmittedMetadataFields = Omit<SkillMetadataFields, RequiredMetadataField> &
   Partial<Pick<SkillMetadataFields, RequiredMetadataField>>;
 
-/** Stand-in identity for a fixture that writes a skill without naming one. */
 const UNNAMED_SKILL_DISPLAY_NAME = "Test Skill";
 const UNNAMED_SKILL_SLUG = "test-skill";
 
-/**
- * The domain a category belongs to, by the `<domain>-<name>` convention every
- * one of the marketplace's categories follows. A fixture that names a category
- * and no domain gets the domain that category actually belongs to, rather than a
- * constant that would contradict it.
- */
+/** By the `<domain>-<name>` category convention, so an implied domain never contradicts it. */
 function domainOfCategory(category: string): string {
   return category.split("-")[0] ?? category;
 }
 
-/**
- * Fills the required fields a fixture left unnamed. `category` is not among them —
- * it is the one field a wrong value makes the skill unreachable through, so it is
- * asked for rather than supplied.
- */
+/** `category` is not filled: a wrong value makes the skill unreachable, so it is asked for. */
 function completeMetadata(fields: SkillMetadataFields): SkillMetadataFields {
   return {
     ...fields,
@@ -151,22 +117,12 @@ function completeMetadata(fields: SkillMetadataFields): SkillMetadataFields {
   };
 }
 
-/**
- * Renders a complete metadata.yaml for a test skill: every field a fixture names,
- * plus the required ones it did not. A fixture writes content the product could
- * have written — one that no product path produces cannot fail for a reason the
- * product has.
- */
+/** Every field the fixture names plus the required ones it did not, as the product would write. */
 export function renderMetadataYaml(fields: SkillMetadataFields): string {
   return emitMetadataYaml(completeMetadata(fields));
 }
 
-/**
- * Renders a metadata.yaml with the named required fields left out — the shape
- * `compile` refuses and `doctor` reports. Deliberately separate from
- * {@link renderMetadataYaml}: incompleteness is a thing an error-path fixture has
- * to ask for by name, never something it falls into by omission.
- */
+/** Required fields left out by name: incompleteness is asked for, never fallen into. */
 export function renderIncompleteMetadataYaml(
   fields: SkillMetadataFields,
   omitted: readonly RequiredMetadataField[],
@@ -174,32 +130,17 @@ export function renderIncompleteMetadataYaml(
   return emitMetadataYaml(omit(completeMetadata(fields), [...omitted]));
 }
 
-/**
- * Renders a metadata.yaml no YAML parser can read — the other half of the class
- * {@link renderIncompleteMetadataYaml} covers. `readSkillMetadata` refuses both
- * ways of describing nothing, a file nothing parses out of and a file that
- * parses without the required fields, and an error-path fixture asks for either
- * by name rather than hand-rolling a broken string per spec.
- */
+/** A metadata.yaml no YAML parser can read. */
 export function renderUnparseableMetadataYaml(): string {
   return `{{{ this is not: valid: yaml: "at all\n`;
 }
 
-/**
- * Renders a complete metadata.yaml whose `forkedFrom` is a bare string rather than a mapping —
- * the third way a file describes nothing to `readLocalSkillMetadata`, which refuses the WHOLE
- * file when `localSkillMetadataSchema` refuses its provenance, every other field with it.
- */
+/** A bare-string `forkedFrom`: `readLocalSkillMetadata` then refuses the whole file. */
 export function renderMetadataYamlWithUnreadableProvenance(fields: SkillMetadataFields): string {
   return `${renderMetadataYaml(fields)}forkedFrom: not a mapping\n`;
 }
 
-/**
- * Renders a SKILL.md whose frontmatter no YAML parser can read — the SKILL.md half of
- * {@link renderUnparseableMetadataYaml}. The fences and the `name:` line are there, so the file
- * still reads as a skill to whoever opens it; the `description:` value opens a flow sequence it
- * never closes, which is a syntax error rather than a schema one.
- */
+/** Frontmatter with an unclosed flow sequence: a YAML syntax error, not a schema one. */
 export function renderUnparseableSkillMd(id: string): string {
   return `---\nname: ${id}\ndescription: [never closed\n---\n\n# ${id}\n`;
 }
@@ -227,13 +168,7 @@ function emitMetadataYaml(fields: EmittedMetadataFields): string {
   return lines.join("\n") + "\n";
 }
 
-/**
- * A `config/skill-rules.ts` default export, exactly as `skillRulesFileSchema` parses it.
- *
- * Inferred from that schema rather than restated beside it, so the two cannot drift: a field
- * the rules file stops carrying stops compiling at every fixture still supplying it, which is
- * the whole reason this renderer is typed while {@link renderConfigTs} above it is not.
- */
+/** Inferred from `skillRulesFileSchema`, so a dropped field stops compiling at every fixture. */
 export type SkillRulesFile = z.infer<typeof skillRulesFileSchema>;
 
 /** Renders a `config/skill-rules.ts` whose default export `loadSkillRules` accepts. */

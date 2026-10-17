@@ -14,14 +14,8 @@ import type { PluginHost } from "../../hosts/plugin-host.js";
 import type { ProjectConfig } from "../../../types";
 
 /**
- * `update` refreshes every marketplace its installation names, and the seam under test is the one
- * directly below it: `refreshMarketplace` on the `PluginHost` the folder answers. Everything above
- * that — reading the installation's config, deciding which marketplaces it actually uses, and
- * refusing to run without the host's binary — is real here, which is the whole point: the
- * command's only job is to derive that marketplace list and hand it over once per name.
- *
- * The command class is imported directly rather than driven through `runCliCommand`,
- * because that helper resolves commands out of `dist/` where a module mock cannot reach.
+ * The seam is `refreshMarketplace` on the `PluginHost`; everything above it is real. Imported
+ * directly because `runCliCommand` resolves out of `dist/`, where a module mock can't reach.
  */
 
 const { mockMarketplaceUpdate, mockHostAvailable } = vi.hoisted(() => ({
@@ -44,20 +38,14 @@ const MARKETPLACE = "agents-inc";
 const OTHER_MARKETPLACE = "acme-skills";
 const MARKETPLACE_FAILURE = "Failed to update marketplace: network unreachable";
 
-/**
- * The refresh summary's two halves. `claude plugin marketplace update` re-reads a marketplace's
- * listing and leaves every installed plugin at the version it was installed at, so the summary may
- * not claim the update is complete, and says the plugins were left as they were.
- */
+/** `claude plugin marketplace update` leaves installed plugins alone, so "complete" is false. */
 const FALSE_COMPLETION_CLAIM = "Update complete!";
 const PLUGINS_UNCHANGED = "Installed plugins were not changed";
 
-/** Marketplace names handed to the host, in call order. */
 function updatedMarketplaces(): string[] {
   return mockMarketplaceUpdate.mock.calls.map(([name]) => name);
 }
 
-/** Runs the command, returning the oclif error it threw (or `undefined` on success). */
 async function runUpdate(): Promise<(Error & { oclif?: { exit?: number } }) | undefined> {
   return Update.run([], { root: CLI_ROOT }).then(
     () => undefined,
@@ -75,8 +63,7 @@ describe("update command", () => {
     tempDir = await createTempDir("cc-update-test-");
     projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
-    // The config loader falls back to $HOME when the cwd carries no config, so an
-    // unstubbed HOME would let the developer's own installation decide these results.
+    // The config loader falls back to $HOME, so HOME must not be the developer's.
     vi.stubEnv("HOME", tempDir);
     process.chdir(projectDir);
 
@@ -108,8 +95,7 @@ describe("update command", () => {
       const error = await runUpdate();
 
       expect(error).toBeUndefined();
-      // Exhaustive: a repeat call would refresh the same marketplace twice, and a name
-      // the config never used would refresh something nobody asked about.
+      // Exhaustive: no repeat refresh, and no marketplace the config never used.
       expect(updatedMarketplaces()).toStrictEqual([MARKETPLACE, OTHER_MARKETPLACE]);
     });
 

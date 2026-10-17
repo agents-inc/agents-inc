@@ -83,7 +83,6 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
     });
 
     it("should use --source flag when all layers are configured", async () => {
-      // Set up all layers
       process.env[SOURCE_ENV_VAR] = "github:env/source";
       await createProjectConfig(projectDir, {
         marketplace: "github:project/source",
@@ -185,7 +184,6 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         marketplace: "github:my-company/internal-skills",
       });
 
-      // Verify file exists where expected
       expect(await fileExists(configPath)).toBe(true);
 
       const config = await loadProjectSourceConfig(projectDir);
@@ -207,18 +205,13 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
     });
 
     it("should return null for missing project config", async () => {
-      // No config file created
       const config = await loadProjectSourceConfig(projectDir);
       expect(config).toBeNull();
     });
 
     /**
-     * The third corruption kind, and the last one that reported itself as absence. A file that
-     * cannot be EVALUATED sent this rung the same `null` a missing file does, and `resolveSource`
-     * reads the return value alone — so the run walked past a config naming a private marketplace
-     * and fetched the public one. It refuses now (owner ruling 2026-08-20). The spec directly
-     * above holds the state that still answers `null`, without which this pair cannot tell a
-     * scoped guard from one that has swallowed both cases.
+     * A config that cannot be evaluated must refuse, not read as absent: `resolveSource` would walk
+     * past it to the public marketplace. Paired with the `null` spec above.
      */
     it("should refuse a project config that exists and cannot be evaluated", async () => {
       const configPath = await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
@@ -235,7 +228,6 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
 
   describe("default precedence (lowest)", () => {
     it("should use default source when no config exists", async () => {
-      // No flag, no env, no project config
       const result = await resolveSource({ caller: "stored", projectDir });
 
       expect(result.sourceOrigin).toBe("default");
@@ -286,9 +278,7 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
         marketplaceName: "https://marketplace.example.com",
       });
 
-      // The flag overrides the source, and the name stored beside the config's own marketplace
-      // labels that marketplace only — carried onto the flag's, it named plugins after a
-      // marketplace Claude Code had registered under a different name.
+      // The stored marketplace name labels the config's own marketplace only, not the flag's.
       const result = await resolveSource({
         caller: "init",
         flag: "github:flag/source",
@@ -340,15 +330,8 @@ describe("User Journey: Config Precedence - Source Resolution", () => {
   });
 
   /**
-   * The install-repointing trap, closed. `loadSourceConfig` once turned EVERY load failure into
-   * `null`, so a refusal raised in the Zod schema alone arrived here as "no config" — and
-   * `resolveSource` reads the return value alone, so it walked past that rung to the public
-   * marketplace instead of the one the config named. It raises every load failure now: the shape
-   * the schema refused, the module whose exports are all named, and — since 2026-08-20 — the file
-   * that could not be evaluated at all, which was the last one still reported as absence. These two
-   * hold the refusal at the caller for the SCHEMA kind, and the spec above holds it for the
-   * evaluation kind; all three assert that `resolveSource` rejects, which is the shape a silent
-   * `null` could never produce.
+   * Every load failure must raise rather than read as "no config", or `resolveSource` falls
+   * through to the public marketplace. These hold the schema kind; the spec above, evaluation.
    */
   describe("a config carrying a field name from before the rename", () => {
     it("refuses to resolve rather than repointing at the default marketplace", async () => {
@@ -385,11 +368,7 @@ describe("User Journey: Project Config Save and Load", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /**
-   * Records `source` in a project's config the way every caller does now that
-   * the gate owns the write: read what is there, overlay the source, hand the
-   * partial to `writeProjectPartial` (see `recordSource` in `eject.ts`).
-   */
+  /** Overlays the source via `writeProjectPartial`, as `recordSource` in `eject.ts` does. */
   async function saveSourceToProjectConfig(
     dir: string,
     source: string,
@@ -436,9 +415,7 @@ describe("User Journey: Project Config Save and Load", () => {
       expect(config?.marketplaceName).toBe("https://internal-marketplace.company.com");
     });
 
-    // A literal rather than the constant the product writes: a folder name is text on people's
-    // disks, and an assertion that imported it could not fail when it moved. This project has
-    // neither folder on disk, so the answer is where a new installation is created.
+    // A literal: a folder name is text on disk. With neither folder present, the new one is used.
     it("should return config path from getProjectConfigPath", () => {
       const configPath = getProjectConfigPath(projectDir, "claude");
       expect(configPath).toBe(
@@ -464,22 +441,18 @@ describe("User Journey: Config Precedence with CLI", () => {
   });
 
   it("should respect config precedence in actual command execution", async () => {
-    // Create test fixture with project config
     dirs = await createTestSource({
       projectConfig: {
         name: "test-project",
-        // Note: source is in project config, not plugin config
       },
     });
 
     process.chdir(dirs.projectDir);
 
-    // Create project-level config with custom source
     await createProjectConfig(dirs.projectDir, {
       marketplace: "github:my-company/internal-skills",
     });
 
-    // Verify project config was created
     const config = await loadProjectSourceConfig(dirs.projectDir);
     expect(config?.marketplace).toBe("github:my-company/internal-skills");
   });
@@ -497,10 +470,9 @@ describe("User Journey: Config Precedence with CLI", () => {
       marketplace: "github:project/source",
     });
 
-    // Set environment variable
     process.env[SOURCE_ENV_VAR] = "github:env/override";
 
-    // Resolve source as the install-time caller — env should win
+    // Install-time caller: env wins.
     const result = await resolveSource({ caller: "init", projectDir: dirs.projectDir });
 
     expect(result.source).toBe("github:env/override");
@@ -527,17 +499,14 @@ describe("User Journey: Config Edge Cases", () => {
 
     await createProjectConfig(projectDir, {
       marketplaceName: "https://marketplace.example.com",
-      // No marketplace ref field
     });
 
     const config = await loadProjectSourceConfig(projectDir);
     expect(config?.marketplace).toBeUndefined();
     expect(config?.marketplaceName).toBe("https://marketplace.example.com");
 
-    // Resolve should fall back to default for source
     const result = await resolveSource({ caller: "stored", projectDir });
     expect(result.sourceOrigin).toBe("default");
-    // But should still have marketplace
     expect(result.marketplace).toBe("https://marketplace.example.com");
   });
 
@@ -549,9 +518,7 @@ describe("User Journey: Config Edge Cases", () => {
   });
 
   it("should allow extra unknown fields (passthrough schema)", async () => {
-    // projectSourceConfigSchema uses .passthrough() so unknown fields are preserved
-    // rather than rejected. This enables forward compatibility — older CLI versions
-    // can load configs written by newer versions without breaking.
+    // `.passthrough()` keeps unknown fields so older CLIs can load newer configs.
     const projectDir = path.join(tempDir, "project");
     await writeTestTsConfig(projectDir, {
       marketplace: "github:valid/source",

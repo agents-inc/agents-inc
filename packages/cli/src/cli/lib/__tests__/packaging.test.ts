@@ -12,21 +12,7 @@ const SRC_AGENTS_DIR = path.join(CLI_ROOT, "src", "agents");
 const DIST_AGENTS_DIR = path.join(DIST_DIR, "src", "agents");
 const WHOLE_TREE = "**";
 
-// The published package includes dist/ wholesale via the `files` field, so
-// anything compiled into dist ships to every user. The tsup entry globs read
-// whole directories, and this repository keeps its tests beside the code they
-// cover — sixteen compiled test files shipped in 0.150.0 and every release
-// before it because nothing asserted they must not.
-//
-// This used to carry `describe.skipIf(!existsSync(DIST_DIR))`, for the case of
-// a bare `vitest run` before anything was ever built — failing that run on a
-// missing build reports the wrong problem. vitest.global-setup.ts now reports
-// the right one, and it does so from globalSetup, which runs before a single
-// spec is collected: with dist/ moved aside, this file does not reach the skip,
-// it does not reach collection at all. The run ends on "dist/ does not exist"
-// and never prints a test count. So the condition could no longer be false when
-// the describe body was reached, and a skip nobody can observe reads as a
-// suite that has an excuse rather than one that always runs.
+// dist/ ships wholesale, and tests live beside the code they cover.
 describe("published package contents", () => {
   it("compiles no test files into dist", async () => {
     const compiledTests = await fg(["**/*.test.js", "**/*.test.js.map", "**/*.test.d.ts"], {
@@ -36,12 +22,7 @@ describe("published package contents", () => {
     expect(compiledTests.sort(), "dist must hold no compiled tests — they ship").toStrictEqual([]);
   });
 
-  // The agent partials reach dist through a copy in tsup's onSuccess, and `fs.copy`
-  // merges: it never removes a destination entry the source has dropped. A retired
-  // agent therefore survived every incremental build and could publish, because
-  // dist/ ships wholesale — and E2E builds the dist it then runs against, so the
-  // stale directory was invisible to every other gate. Set equality, not a subset:
-  // a subset assertion passes on precisely this failure mode.
+  // `fs.copy` merges, so a retired agent's partials would survive. Set equality, not a subset.
   it("mirrors src/agents into dist instead of merging into it", async () => {
     const distEntries = await fg(WHOLE_TREE, {
       cwd: DIST_AGENTS_DIR,

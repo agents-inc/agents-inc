@@ -19,13 +19,8 @@ import type { ProjectConfig } from "../../../types";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 
 /**
- * `share` mints an id for the installation in this directory, so the CLI can create shared
- * configurations rather than only consume them.
- *
- * The seam is the network, answered by `@workspace/api-mocks`: everything above it — reading the
- * config, mapping it onto the wire contract and refusing what the contract cannot carry — runs for
- * real, which is the whole point. Mocking the publish module instead would leave the mapping
- * untested and would let a payload the store must refuse pass here.
+ * The network is answered by `@workspace/api-mocks`, so the config-to-wire mapping and its refusals
+ * run for real; mocking the publish module would leave them untested.
  */
 
 const { default: Share } = await import("../../../commands/share.js");
@@ -35,7 +30,6 @@ const REACT_ID = "web-framework-react";
 const REACT_CATEGORY = "web-framework";
 const PRIVATE_MARKETPLACE = "acme-internal";
 
-/** Runs the command, returning the oclif error it threw (or `undefined` on success). */
 function runShare(): Promise<(Error & { oclif?: { exit?: number } }) | undefined> {
   return Share.run([], { root: CLI_ROOT }).then(
     () => undefined,
@@ -56,14 +50,12 @@ describe("share command", () => {
     tempDir = await createTempDir("cc-share-test-");
     projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
-    // The config loader falls back to $HOME when the cwd carries no config, so an unstubbed HOME
-    // would let the developer's own installation decide what these runs share.
+    // The config loader falls back to $HOME, so HOME must not be the developer's.
     vi.stubEnv("HOME", tempDir);
     process.chdir(projectDir);
 
     stdoutChunks = [];
-    // Saved to be assigned straight back onto the same object in afterEach, so it is called with
-    // the receiver it came from. Binding would restore a wrapper rather than the original method.
+    // Restored onto the same object in afterEach; binding would restore a wrapper instead.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
     origWrite = process.stdout.write;
     process.stdout.write = function (str: unknown): boolean {
@@ -79,15 +71,11 @@ describe("share command", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Writes the `config.ts` this command reads the installation out of. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
     await writeTestTsConfig(projectDir, buildProjectConfig(overrides));
   }
 
-  /**
-   * The one installed configuration these specs share, unless a spec varies it: a plugin from the
-   * public catalogue, because a share carries plugins only and refuses an ejected skill.
-   */
+  /** A public-catalogue plugin: a share carries plugins only and refuses an ejected skill. */
   function installedOverrides(overrides?: Partial<ProjectConfig>): Partial<ProjectConfig> {
     return {
       skills: [buildSkillConfig(REACT_ID, { scope: "global", origin: DEFAULT_PUBLIC_SOURCE_NAME })],
@@ -106,8 +94,7 @@ describe("share command", () => {
 
       expect(error).toBeUndefined();
       expect(output).toContain(STORED_ID);
-      // An id nobody can act on is not a share. Both destinations are named because the CLI and
-      // the editor are the two things that read one.
+      // Both destinations are named: the CLI and the editor are the two readers of an id.
       expect(output).toContain(`init --from ${STORED_ID}`);
       expect(output).toContain(EDITOR_URL);
     });
@@ -118,9 +105,7 @@ describe("share command", () => {
       await runShare();
 
       const posted: unknown = JSON.parse(await firstElement(worker.requests).text());
-      // The whole envelope, structurally: `toContain` on the body text cannot say which scope a
-      // skill carries or which sub-agent holds it, and a subset match would pass on a body
-      // carrying a second skill this project never installed.
+      // The whole envelope: `toContain` can't see scope or holder, and a subset would allow extras.
       expect(posted).toStrictEqual({
         v: SEED_VERSION,
         matrixVersion: MATRIX_VERSION,
@@ -155,8 +140,7 @@ describe("share command", () => {
       const error = await runShare();
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      // The store's writes are the scarce half of its free tier; minting an id for a
-      // configuration that installs nothing spends one to produce a dead link.
+      // An id for a config that installs nothing spends a scarce store write on a dead link.
       expect(worker.requests).toStrictEqual([]);
     });
 

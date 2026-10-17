@@ -14,11 +14,7 @@ import type {
 import type { CopiedSkill } from "../../skills";
 import type { TestSkill } from "../fixtures/create-test-source";
 
-/**
- * The taxonomy a known test skill carries. Fields are `string` rather than the
- * generated unions because fixtures deliberately use categories and slugs the
- * shipped catalogue has never heard of.
- */
+/** `string` fields: fixtures use categories and slugs the shipped catalogue lacks. */
 type CanonicalTaxonomy = {
   domain: string;
   category: string;
@@ -26,19 +22,10 @@ type CanonicalTaxonomy = {
 };
 
 /**
- * Canonical taxonomy for known test skills, stated per ID — never read off the
- * ID's segments. createTestSkill() and createMockSkill() look up from here;
- * custom/novel skills must pass the fields they need in overrides, and an ID
- * that is in neither place is an error rather than a guess.
- *
- * Slugs match the shipped catalogue for IDs that exist in it, and are the
- * fixture's own value for the rest.
- *
- * Uses a lazy singleton to avoid circular initialization issues:
- * test-fixtures.ts calls createMockSkill() at module level during import,
- * and ESM hoists all imports before evaluating any `const` declarations.
+ * Taxonomy stated per id, never read off its segments; an unlisted id must pass the fields.
+ * Lazy because test-fixtures.ts calls createMockSkill() during a circular import.
  */
-// eslint-disable-next-line no-var -- `var` avoids TDZ in circular ESM imports (let/const would throw)
+// eslint-disable-next-line no-var -- `var` avoids TDZ in circular ESM imports
 var _canonicalSkillTaxonomy: Record<string, CanonicalTaxonomy> | undefined;
 function getCanonicalSkillTaxonomy(): Record<string, CanonicalTaxonomy> {
   if (!_canonicalSkillTaxonomy) {
@@ -208,7 +195,6 @@ function getCanonicalSkillTaxonomy(): Record<string, CanonicalTaxonomy> {
   return _canonicalSkillTaxonomy;
 }
 
-/** Title-case each slug segment: "react-query" -> "React Query". */
 function deriveDisplayName(slug: string): string {
   return slug
     .split("-")
@@ -216,13 +202,7 @@ function deriveDisplayName(slug: string): string {
     .join(" ");
 }
 
-/**
- * Creates a TestSkill for disk-based integration tests (createTestSource).
- * Takes domain, category and slug from the canonical taxonomy, or from the
- * caller when it states all three. Nothing is read off the ID's segments, so a
- * marketplace-namespaced ID is refused rather than silently split into a
- * plausible-looking taxonomy.
- */
+/** Taxonomy comes from the table or overrides, never the id, so a namespaced id is refused. */
 export function createTestSkill(
   id: SkillId,
   description: string,
@@ -281,17 +261,7 @@ export function createMockSkill(id: SkillId, overrides?: Partial<ResolvedSkill>)
   };
 }
 
-/**
- * Creates a mock ExtractedSkillMetadata for testing — what extractAllSkills()
- * returns for one skill. Takes domain, category and slug from the canonical
- * taxonomy, or from the caller when it states them. Nothing is read off the
- * ID's segments, so a marketplace-namespaced ID is refused rather than silently
- * split into a plausible-looking taxonomy.
- *
- * directoryPath is the layout createTestSource writes and extractAllSkills
- * therefore reads back — the resolved category, then the whole ID as the
- * directory name. The ID is a directory name here, not a source of fields.
- */
+/** `directoryPath` is the `<category>/<id>` layout createTestSource writes. */
 export function createMockExtractedSkill(
   id: SkillId,
   overrides?: Partial<ExtractedSkillMetadata>,
@@ -341,12 +311,11 @@ export function createMockSkillEntry(
   };
 }
 
-/** Convert a TestSkill (disk-based) to a ResolvedSkill (in-memory) for matrix creation. */
 export function testSkillToResolvedSkill(
   skill: TestSkill,
   overrides?: Partial<ResolvedSkill>,
 ): ResolvedSkill {
-  // Boundary cast: TestSkill.id is string, but in practice always a valid SkillId
+  // Boundary cast: TestSkill.id is a string, in practice a valid SkillId.
   return createMockSkill(skill.id as SkillId, {
     description: skill.description,
     ...overrides,
@@ -365,14 +334,7 @@ export function createMockSkillDefinition(
   };
 }
 
-/**
- * Generic over the id rather than fixed to `SkillId` so a caller keeps whatever
- * narrowness it brought: a catalogue literal still yields a `SkillAssignment`,
- * while a marketplace-namespaced fixture id — which is not a member of the
- * generated union — yields the same shape with `id: string`. Widening the
- * parameter to `string` outright would have made the return type unbuildable
- * without an `as SkillId` cast, which CLAUDE.md bans for fabricated ids.
- */
+/** Not narrowed to `SkillId`: marketplace-namespaced fixture ids are outside the union. */
 export function createMockSkillAssignment<Id extends string>(
   id: Id,
   preloaded = false,
@@ -380,25 +342,19 @@ export function createMockSkillAssignment<Id extends string>(
   return { id, preloaded };
 }
 
-/** Terse alias of createMockSkillAssignment for stack/assignment fixtures. */
+/** Terse alias of createMockSkillAssignment. */
 export const sa = <Id extends string>(
   id: Id,
   preloaded = false,
 ): Omit<SkillAssignment, "id"> & { id: Id } => createMockSkillAssignment(id, preloaded);
 
-/**
- * An assignment that states only WHICH skill an agent gets — the built-in
- * stacks' shape, and the one a user's saved config carries for a lazy skill.
- * Distinct from `sa(id)`, which writes `preloaded: false` and is therefore
- * somebody's word for the load.
- */
+/** No `preloaded` key at all — the built-in stacks' shape, unlike `sa(id)`. */
 export const saUnflagged = <Id extends string>(
   id: Id,
 ): Omit<SkillAssignment, "id"> & { id: Id } => ({
   id,
 });
 
-/** Creates a CopiedSkill mock (the record copySkillsToLocalFlattened reports). */
 export function createMockCopiedSkill(id: SkillId, overrides?: Partial<CopiedSkill>): CopiedSkill {
   return {
     skillId: id,
@@ -409,10 +365,7 @@ export function createMockCopiedSkill(id: SkillId, overrides?: Partial<CopiedSki
   };
 }
 
-/**
- * Creates a ResolvedSkill with availableSources annotation for multi-source testing.
- * Simulates what multi-source-loader.ts does after tagging.
- */
+/** Tagged with `availableSources` as multi-source-loader.ts does. */
 export function createMockMultiSourceSkill(
   id: SkillId,
   sources: SkillSource[],

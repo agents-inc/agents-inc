@@ -1,22 +1,7 @@
 /**
- * The runtime tripwire on the global config pair, held against every provider rather than one.
- *
- * Every write in the CLI funnels through `utils/fs.writeFile`, which resolves its target and
- * refuses the two halves of the GLOBAL pair unless the caller holds the config gate's token.
- * `isGlobalPairPath` is what it asks.
- *
- * A global pair can sit in `~/.agents-inc/<provider>/` for each provider. A guard that knows one
- * of them lets the others through with nothing failing anywhere, which is the quietest way a
- * config-gate ruling can stop being true — the gate's static layers (module privacy, the lint bans, the source scanner) are
- * all satisfied by a write that simply lands somewhere they were not told about.
- *
- * Both directions are pinned in this file on purpose. A refusal on its own cannot tell a
- * correctly-scoped guard from one that has swallowed its whole domain: the `withGateToken` specs
- * are what say the gate can still write its own pair, and the unrelated-file spec is what says
- * the folder itself is not off limits.
- *
- * `vi.importActual` on purpose: `src/cli/utils/__mocks__/fs.ts` replaces `writeFile` with a
- * `vi.fn()`, and a spec asserting on the guard while holding the mock asserts on nothing.
+ * `utils/fs.writeFile` refuses every provider's global config pair without the gate token, and
+ * still lets the gate and unrelated files through. `vi.importActual`, because the manual mock
+ * replaces `writeFile`.
  */
 
 import os from "os";
@@ -28,15 +13,9 @@ import { STANDARD_FILES } from "../../consts.js";
 import { withGateToken } from "../config-gate/gate-token.js";
 import { cleanupTempDir, createTempDir } from "./test-fs-utils.js";
 
-/** The sentence the write primitive refuses with. Its wording is the user-facing half. */
 const REFUSAL = "may only be written through config-gate";
 
-/**
- * Every folder a GLOBAL config pair can sit in, paired with each half of the pair.
- *
- * Written out as a roster rather than assembled from a provider list, so a provider added to the
- * product without a row here reads as a missing row rather than as a loop that grew on its own.
- */
+/** A roster, not built from a provider list, so a new provider shows up as a missing row. */
 const GLOBAL_PAIR_LOCATIONS = [
   { label: "the claude folder", segments: [".agents-inc", "claude"] },
   { label: "the codex folder", segments: [".agents-inc", "codex"] },

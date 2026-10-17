@@ -18,40 +18,22 @@ import { EXPECTED_SKILLS } from "../expected-values";
 import type { BrandingConfig, SkillConfig, SkillId } from "../../../types";
 import { writeTestTsConfig } from "../helpers/config-io.js";
 
-/**
- * A `branding.name` a project config supplies, sharing no substring with
- * {@link DEFAULT_BRANDING.NAME} so neither half of a paired assertion can be satisfied by the
- * other's output.
- */
+/** Shares no substring with the default name, so neither paired assertion fakes the other. */
 const WHITE_LABEL_NAME = "Northwind";
 
-/**
- * The marketplace-carried half of the mixed installation the count tests below report on. Held
- * against `SkillId` so retiring one of these ids reddens this line rather than a consumer of it.
- */
+/** Held against `SkillId` so retiring an id reddens this line rather than a consumer. */
 const MARKETPLACE_SKILL_IDS = [
   "web-framework-react",
   "web-state-zustand",
   "web-testing-vitest",
 ] as const satisfies readonly SkillId[];
 
-/** The locally ejected half — the one skill of a mixed install that owns a directory on disk. */
 const EJECTED_SKILL_ID = "web-mocks-msw" satisfies SkillId;
 
-/**
- * A directory under `.claude/skills/` that no configuration declares. The CLI did not install it
- * and does not manage it, so it is deliberately not a member of `SkillId`.
- */
+/** Declared by no configuration, so deliberately not a `SkillId`. */
 const UNDECLARED_SKILL_DIR = "context7-mcp";
 
-/**
- * Writes an installed project: the `.agents-inc/claude/config.ts` declaring `skills`, and a
- * `.claude/skills/<id>` directory for each id in `onDisk`.
- *
- * The two lists are separate parameters because they genuinely differ in every installation the
- * counts are asserted over — a plugin skill is declared and owns no directory, an undeclared
- * directory owns one and is declared nowhere.
- */
+/** `skills` are declared; each `onDisk` id gets a `.claude/skills/<id>` dir. */
 async function writeInstallation(
   projectDir: string,
   skills: SkillConfig[],
@@ -65,10 +47,6 @@ async function writeInstallation(
   }
 }
 
-/**
- * Writes the `.agents-inc/claude/config.ts` the dashboard reads: a project declaring no skills, carrying
- * a `branding` block only when one is named — the two states the title line is asserted over.
- */
 async function writeDashboardConfig(projectDir: string, branding?: BrandingConfig): Promise<void> {
   await writeTestTsConfig(projectDir, {
     name: "test-project",
@@ -91,9 +69,7 @@ describe("init command", () => {
 
   describe("already initialized — dashboard", () => {
     it("should show dashboard when project is already initialized", async () => {
-      // A real installation: the config declares skills so it is detected as
-      // installed. A config declaring neither skills nor agents is content-less
-      // and routes to the editor, not the dashboard.
+      // Declaring skills makes it an installation; a content-less config routes to the editor.
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
@@ -101,7 +77,6 @@ describe("init command", () => {
 
       const { stdout, stderr, error } = await runCliCommand(["init"]);
 
-      // Should NOT have an error exit code — dashboard exits with SUCCESS
       expect(error?.oclif?.exit).toBeUndefined();
 
       const combinedOutput = stdout + stderr + (error?.message || "");
@@ -120,14 +95,12 @@ describe("init command", () => {
         skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
       });
 
-      // Install the declared skills — the dashboard reports what is on disk
       for (const skillId of EXPECTED_SKILLS.WEB_DEFAULT) {
         await mkdir(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId), {
           recursive: true,
         });
       }
 
-      // Create compiled agents
       const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, "web-developer.md"), "# Web Developer");
@@ -157,11 +130,7 @@ describe("init command", () => {
       expect(text).toContain("github:agents-inc/skills");
     });
 
-    /**
-     * The dashboard's title line follows `branding.name`. Paired with the default below because
-     * neither half means anything alone: the configured one passes on a title hardcoded to the
-     * fixture, and the default one passes on a title that reads no config at all.
-     */
+    /** Paired with the default below: either alone passes on a hardcoded or config-blind title. */
     it("should title the dashboard with the configured branding name", async () => {
       await writeDashboardConfig(projectDir, { name: WHITE_LABEL_NAME });
 
@@ -187,8 +156,7 @@ describe("init command", () => {
     });
 
     it("should not modify existing config when already initialized", async () => {
-      // A real installation (declares skills) so init shows the dashboard and
-      // leaves the config untouched, rather than routing to the editor.
+      // Declares skills, so init shows the dashboard rather than routing to the editor.
       const configPath = await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
@@ -202,8 +170,7 @@ describe("init command", () => {
     });
 
     it("should exit with SUCCESS when already initialized", async () => {
-      // A real installation (declares skills) so init shows the dashboard, which
-      // exits cleanly, rather than routing to the editor.
+      // Declares skills, so init shows the dashboard rather than routing to the editor.
       await writeTestTsConfig(projectDir, {
         name: "test-project",
         skills: buildSkillConfigs([...EXPECTED_SKILLS.WEB_DEFAULT]),
@@ -211,7 +178,6 @@ describe("init command", () => {
 
       const { error } = await runCliCommand(["init"]);
 
-      // No error exit code — dashboard exits cleanly
       expect(error?.oclif?.exit).toBeUndefined();
     });
 
@@ -229,14 +195,8 @@ describe("init command", () => {
   });
 
   /**
-   * The number of skills the CLI reports it manages, on the two surfaces that report it: the
-   * dashboard's `Skills: N installed` and `list`'s `Skills:  N`.
-   *
-   * **Both are asserted on the same installation in the same test, and that pairing is the
-   * point.** They read one producer — `getInstallationInfo` — and each was only ever compared
-   * against itself, which is how the two dashboard paths silently diverged once already
-   * (`todo/archive.md`, 2026-08-24). A number is not a surface's own answer; it is the
-   * installation's, and both must say it.
+   * The dashboard's `Skills: N installed` and `list`'s `Skills:  N` read one producer, so both are
+   * asserted on the same installation in the same test.
    */
   describe("the number of skills the CLI reports it manages", () => {
     const MIXED_INSTALL_SKILLS: SkillConfig[] = [
@@ -321,8 +281,7 @@ describe("init command", () => {
         source: TEST_SOURCE_URL,
       });
 
-      // The title is the name the formatter was HANDED, which is what makes this a formatter of
-      // its data rather than of a constant. `getDashboardData` is where that name is resolved.
+      // The formatter titles with the name it was handed; `getDashboardData` resolves it.
       expect(text).toContain(WHITE_LABEL_NAME);
       expect(text).toContain("12 installed");
       expect(text).toContain("3 compiled");

@@ -8,7 +8,6 @@ import { renderSkillMd } from "../../content-generators";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, STANDARD_FILES } from "../../../../consts";
 import type { PluginManifest } from "../../../../types";
 
-/** Writes a minimal source skill (SKILL.md only) into the given skills dir. */
 async function writeSkill(skillsDir: string, name: string, description?: string): Promise<void> {
   const skillDir = path.join(skillsDir, name);
   await mkdir(skillDir, { recursive: true });
@@ -40,7 +39,6 @@ describe("build:plugins command", () => {
     });
 
     it("should complete with 0 skills when no skills directory exists", async () => {
-      // projectDir has no skills directory - command still runs
       const { stdout, error } = await runCliCommand(["build:plugins"]);
 
       expect(error).toBeUndefined();
@@ -55,7 +53,6 @@ describe("build:plugins command", () => {
 
       const { error } = await runCliCommand(["build:plugins", "--output-dir", outputPath]);
 
-      // Should not error on --output-dir flag
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--output-dir"));
     });
@@ -65,7 +62,6 @@ describe("build:plugins command", () => {
 
       const { error } = await runCliCommand(["build:plugins", "-o", outputPath]);
 
-      // Should accept -o shorthand
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("-o"));
     });
@@ -73,7 +69,6 @@ describe("build:plugins command", () => {
     it("should accept --skill flag", async () => {
       const { error } = await runCliCommand(["build:plugins", "--skill", "web/framework/react"]);
 
-      // Should not error on --skill flag
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--skill"));
     });
@@ -81,7 +76,6 @@ describe("build:plugins command", () => {
     it("should accept --verbose flag", async () => {
       const { error } = await runCliCommand(["build:plugins", "--verbose"]);
 
-      // Should not error on --verbose flag
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--verbose"));
     });
@@ -89,7 +83,6 @@ describe("build:plugins command", () => {
     it("should accept -v shorthand for verbose", async () => {
       const { error } = await runCliCommand(["build:plugins", "-v"]);
 
-      // Should accept -v shorthand
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("-v"));
     });
@@ -106,7 +99,6 @@ describe("build:plugins command", () => {
         "--verbose",
       ]);
 
-      // Should accept all flags
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--output-dir"));
       expect(output).not.toContain(parseRefusal("--verbose"));
@@ -117,7 +109,6 @@ describe("build:plugins command", () => {
 
       const { error } = await runCliCommand(["build:plugins", "-o", outputPath, "-v"]);
 
-      // Should accept all shorthand flags
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("-o"));
       expect(output).not.toContain(parseRefusal("-v"));
@@ -134,7 +125,6 @@ describe("build:plugins command", () => {
         outputPath,
       ]);
 
-      // Should accept both flags
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--skill"));
       expect(output).not.toContain(parseRefusal("--output-dir"));
@@ -143,7 +133,6 @@ describe("build:plugins command", () => {
     it("should accept --skill with --verbose", async () => {
       const { error } = await runCliCommand(["build:plugins", "--skill", "react", "--verbose"]);
 
-      // Should accept both flags
       const output = error?.message || "";
       expect(output).not.toContain(parseRefusal("--skill"));
       expect(output).not.toContain(parseRefusal("--verbose"));
@@ -154,7 +143,6 @@ describe("build:plugins command", () => {
     it("should error when specific skill not found", async () => {
       const { error } = await runCliCommand(["build:plugins", "--skill", "nonexistent-skill-xyz"]);
 
-      // Should exit with error when skill not found
       expect(error).toBeInstanceOf(Error);
       expect(error!.message).toContain("missing required SKILL.md file");
     });
@@ -170,22 +158,18 @@ describe("build:plugins command", () => {
     });
 
     it("should produce plugin directory with plugin.json for a single skill", async () => {
-      // Create a valid skill with frontmatter
       await writeSkill(skillsDir, "web-framework-react", "React framework");
 
       const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
       expect(error).toBeUndefined();
 
-      // Plugin directory should exist
       const pluginDir = path.join(outputDir, "web-framework-react");
       expect(await directoryExists(pluginDir)).toBe(true);
 
-      // plugin.json should exist inside .claude-plugin/
       const manifestPath = path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
       expect(await fileExists(manifestPath)).toBe(true);
 
-      // Parse and verify manifest content
       const manifestContent = await readFile(manifestPath, "utf-8");
       const manifest: PluginManifest = JSON.parse(manifestContent);
       expect(manifest.name).toBe("web-framework-react");
@@ -198,7 +182,6 @@ describe("build:plugins command", () => {
 
       await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
-      // SKILL.md should be copied into skills/{skillName}/ inside plugin dir
       const copiedSkillMd = path.join(
         outputDir,
         "web-framework-react",
@@ -227,7 +210,6 @@ describe("build:plugins command", () => {
     });
 
     it("should compile multiple skills and report count in stdout", async () => {
-      // Create two skills
       for (const name of ["web-framework-react", "api-framework-hono"]) {
         await writeSkill(skillsDir, name);
       }
@@ -237,7 +219,6 @@ describe("build:plugins command", () => {
       expect(error).toBeUndefined();
       expect(stdout).toContain("Compiled 2 skill plugins");
 
-      // Both plugin directories should exist
       expect(await directoryExists(path.join(outputDir, "web-framework-react"))).toBe(true);
       expect(await directoryExists(path.join(outputDir, "api-framework-hono"))).toBe(true);
     });
@@ -253,7 +234,6 @@ describe("build:plugins command", () => {
     });
 
     it("should compile a specific skill with --skill flag", async () => {
-      // Create two skills but only compile one
       for (const name of ["web-framework-react", "api-framework-hono"]) {
         await writeSkill(skillsDir, name);
       }
@@ -269,7 +249,6 @@ describe("build:plugins command", () => {
       expect(error).toBeUndefined();
       expect(stdout).toContain("Compiled web-framework-react");
 
-      // Only the targeted skill should be compiled
       expect(await directoryExists(path.join(outputDir, "web-framework-react"))).toBe(true);
       expect(await directoryExists(path.join(outputDir, "api-framework-hono"))).toBe(false);
     });
@@ -313,7 +292,6 @@ describe("build:plugins command", () => {
       const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
       expect(error).toBeUndefined();
-      // Current skill survives, stale orphan is deleted
       expect(await directoryExists(path.join(outputDir, "web-framework-react"))).toBe(true);
       expect(await directoryExists(orphanDir)).toBe(false);
     });
@@ -335,7 +313,6 @@ describe("build:plugins command", () => {
       ]);
 
       expect(error).toBeUndefined();
-      // Single-skill mode must not treat every other plugin as an orphan
       expect(await directoryExists(orphanDir)).toBe(true);
       expect(await directoryExists(path.join(outputDir, "api-framework-hono"))).toBe(false);
     });
@@ -347,7 +324,7 @@ describe("build:plugins command", () => {
         skills: "./skills/",
       });
 
-      // A skill with no frontmatter fails to compile and is indistinguishable from a removed one
+      // A skill with no frontmatter fails to compile, indistinguishable from a removed one.
       const badSkillDir = path.join(skillsDir, "bad-skill");
       await mkdir(badSkillDir, { recursive: true });
       await writeFile(path.join(badSkillDir, STANDARD_FILES.SKILL_MD), "# no frontmatter");
@@ -355,7 +332,6 @@ describe("build:plugins command", () => {
       const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
       expect(error).toBeUndefined();
-      // Pruning is skipped entirely, so the orphan is preserved rather than falsely deleted
       expect(await directoryExists(orphanDir)).toBe(true);
       expect(await directoryExists(path.join(outputDir, "web-framework-react"))).toBe(true);
     });
@@ -369,7 +345,6 @@ describe("build:plugins command", () => {
       const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
       expect(error).toBeUndefined();
-      // A directory without .claude-plugin/plugin.json is left untouched
       expect(await directoryExists(nonPluginDir)).toBe(true);
       expect(await fileExists(path.join(nonPluginDir, "notes.txt"))).toBe(true);
     });
@@ -384,7 +359,6 @@ describe("build:plugins command", () => {
       const { error } = await runCliCommand(["build:plugins", "--output-dir", outputDir]);
 
       expect(error).toBeUndefined();
-      // Agent plugins are out of scope for skill-only pruning and must survive
       expect(await directoryExists(agentDir)).toBe(true);
     });
   });

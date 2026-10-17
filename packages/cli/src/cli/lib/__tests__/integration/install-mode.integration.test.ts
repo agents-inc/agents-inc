@@ -4,8 +4,7 @@ import type { SkillConfig } from "../../../types/config";
 import type { SourceLoadResult } from "../../loading/source-loader";
 import { buildAndMergeConfig } from "../../installation/local-installer";
 import { writeProjectConfig } from "../../operations/project/write-project-config.js";
-// `writeConfigFile` is a config-gate internal — no barrel exposes it, by design.
-// A test asserting on the writer itself is allowed the deep import.
+// Deep import: `writeConfigFile` is a config-gate internal no barrel exposes.
 import { writeConfigFile } from "../../config-gate/propagate.js";
 import { deriveInstallMode } from "../../installation/installation";
 import {
@@ -30,15 +29,12 @@ const VITEST_SKILL_ID: SkillId = "web-testing-vitest";
 
 const INIT_TEST_MATRIX = FULLSTACK_TRIO_MATRIX;
 
-/** Mixed-source skill set: react local (eject), hono plugin, vitest local. */
 const MIXED_SOURCE_SKILLS: SkillConfig[] = [
   { id: REACT_SKILL_ID, scope: "project", origin: "eject" },
   { id: HONO_SKILL_ID, scope: "project", origin: "agents-inc" },
   { id: VITEST_SKILL_ID, scope: "project", origin: "eject" },
 ];
 
-// Shared per-test source setup for the install-mode suites (the
-// writeConfigFile suite manages its own temp dir instead)
 let dirs: TestDirs;
 let sourceResult: SourceLoadResult;
 
@@ -136,7 +132,6 @@ describe("Integration: Install Mode Persistence", () => {
 
 describe("Integration: Install Mode Config Round-Trip", () => {
   it("should round-trip install mode through config write and read", async () => {
-    // First install with "eject" sources
     const localSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "eject" });
     const result1 = await writeProjectConfig({
       selection: buildInstallSelection(localSkills, {
@@ -149,7 +144,6 @@ describe("Integration: Install Mode Config Round-Trip", () => {
     const config1 = await readTestTsConfig<ProjectConfig>(result1.configPath);
     expect(deriveInstallMode(config1.skills)).toBe("eject");
 
-    // Second install with "plugin" sources — config gets overwritten
     const pluginSkills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const result2 = await writeProjectConfig({
       selection: buildInstallSelection(pluginSkills, {
@@ -223,7 +217,6 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
   });
 
   it("should merge with existing config preserving install mode from a new selection", async () => {
-    // Write initial config with "eject" source skills
     await writeTestTsConfig(
       dirs.projectDir,
       buildProjectConfig({
@@ -231,7 +224,6 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
       }),
     );
 
-    // Build a selection with "plugin" source skills
     const skills = buildSkillConfigs(INIT_SKILL_IDS, { origin: "agents-inc" });
     const selection = buildInstallSelection(skills, {
       selectedAgents: ["web-developer"],
@@ -239,7 +231,6 @@ describe("Integration: buildAndMergeConfig Install Mode", () => {
 
     const mergeResult = await buildAndMergeConfig(selection, sourceResult, dirs.projectDir);
 
-    // The new selection's skills should take precedence
     expect(deriveInstallMode(mergeResult.config.skills)).toBe("plugin");
     expect(mergeResult.merged).toBe(true);
   });

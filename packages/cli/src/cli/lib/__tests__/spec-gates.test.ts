@@ -24,47 +24,17 @@ const E2E_ROOT = path.join(CLI_ROOT, "e2e");
 const E2E_CONFIG_PATH = path.join(E2E_ROOT, "vitest.config.ts");
 const USER_JOURNEYS_PATH = path.join(CLI_ROOT, ".ai-docs", "standards", "e2e", "user-journeys.md");
 
-/** Every spec file the E2E tree holds, whichever suffix it carries. */
 const EVERY_E2E_SPEC = "e2e/**/*.test.ts";
 
-/**
- * Every name the From-scratch column carries that no spec answers to, each with the reason it is
- * not one.
- *
- * Stated rather than tolerated. The column names helpers and code symbols alongside specs, and
- * those are legitimate — what is not is a gate deciding that for itself. A reader that quietly
- * dropped whatever it could not resolve is exactly what left six entries unjudged on a page whose
- * whole job is to say what has been proved, so a new name lands here with its reason or it fails.
- */
+/** From-scratch names that are not specs, each with its reason, so a new one cannot slip by. */
 const RECOGNISED_NON_SPEC_NAMES = [
-  // Journey 17: the vitest guard the blocked plugin leg is skipped by, named to say why that leg
-  // does not run. A code symbol, so there is no file for it to resolve to.
+  // Journey 17: the vitest guard the blocked plugin leg is skipped by; a symbol, not a file.
   "skipIf",
 ];
 
 /**
- * Every spec the `e2e` project collects that no journey names — the page's opening requirement
- * read in the direction nothing else reads it.
- *
- * `user-journeys.md` opens by requiring every spec it collects to belong to a journey, and the
- * three gates above hold it to that from the ROW end: the specs a row names are from scratch, are
- * named with their directory, and are specs at all. All three walk row -> spec, so the page cannot
- * see what it OMITS — and a spec belonging to no row is invisible in exactly the way a row naming
- * no spec is not. It has already cost something: five corrupt-config specs belonged to no journey,
- * which is how a ruling landed on the second reader of `config.ts` with no row whose
- * surfaces anyone re-judged
- * (`agent-findings/2026-08-21-five-specs-covered-a-behaviour-the-coverage-matrix-had-no-row-for.md`).
- *
- * **This is a backlog, not a verdict.** It rosters the population as it stood when the gate landed,
- * because a gate that opens by demanding a hundred and fifty rows is deleted the first time it is
- * inconvenient — the site checker and the from-scratch gate above both introduced themselves this
- * way. What it buys immediately is the NEXT spec: a file added without a journey fails here, and a
- * spec that gains a row has to leave this list in the same commit, so the number can only fall.
- *
- * Re-derive rather than trusting the length of this array — the gate itself prints the difference,
- * and this is the population it is measured against:
- *
- *     find e2e -name '*.e2e.test.ts' | wc -l
+ * Specs no journey names: the spec -> row direction the row gates cannot see. A backlog that may
+ * only shrink: a new spec without a journey fails, and a spec gaining a row must leave the list.
  */
 const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "commands/build-agent-plugins",
@@ -162,10 +132,7 @@ const SPECS_BELONGING_TO_NO_JOURNEY: readonly string[] = [
   "lifecycle/uninstall-reinit-lifecycle",
 ];
 
-/**
- * Calls that WRITE the state the run then reads. `user-journeys.md` calls a spec that begins from
- * one a VARIANT: legitimate for covering a branch, never proof the journey is reachable.
- */
+/** Calls that write the state the run reads: a spec beginning from one is a variant. */
 const FIXTURE_SEED_CALLS = [
   /\bProjectBuilder\.[A-Za-z]+\s*\(/,
   /\bbuildProjectConfig\s*\(/,
@@ -173,15 +140,8 @@ const FIXTURE_SEED_CALLS = [
 ];
 
 /**
- * Calls that drive the real binary into a directory holding nothing — `init` itself, and the
- * fixtures that install a seed payload through it. A file carrying one of these has a from-scratch
- * leg however many variant legs sit beside it, which is why the judgement below needs both lists:
- * `commands/share` seeds one of its five specs from a fixture and installs the other four
- * through `init --from`.
- *
- * A closed set, so a new way to install from nothing makes every spec using it read as a
- * variant and this gate fail. The fix is to add the call shape here, never to reword the row it
- * condemned — a row's marker follows what its specs do, not the other way round.
+ * Calls that drive the binary into an empty directory; one is a from-scratch leg. A closed set: a
+ * new install route makes its specs read as variants until the call shape is added here.
  */
 const FROM_SCRATCH_INSTALLS = [
   /\bCLI\.run\(\s*\[\s*"init"/,
@@ -194,28 +154,13 @@ const FROM_SCRATCH_INSTALLS = [
 ];
 
 /**
- * Every way a verdict can be written so that nothing it measures can make it false, each paired
- * with the same verdict written so the code under it CAN. The pairing is the point: a rule that
- * condemned both halves would just be banning count comparisons, and every spec would learn to
- * write around it. The shape is what is refused, never the subject.
- *
- * `@typescript-eslint/no-unnecessary-condition` is enabled here and sees NONE of them: it judges a
- * condition against its TYPE, and `number >= 0` is a `boolean` whose value the type `number`
- * leaves open. The shape is syntactic, so the rules that close it are too.
- *
- * The first entry is the live one — the shape a hand-run verdict took on 2026-08-18
- * (`after.length >= 0 && before.length >= 0`) while reading as a check on two directory listings.
- * The rest are the same class reached from the other operand order, from a subject other than
- * `.length`, and through self-comparison.
+ * Each vacuous verdict shape paired with its falsifiable twin, so only the shape is refused.
+ * `no-unnecessary-condition` sees none of them: `number >= 0` is a `boolean` to the type checker.
  */
 type EscapeShape = {
-  /** How the shape reads, phrased to finish "this zone accepts …". */
   name: string;
-  /** The rule `eslint.config.js` answers it with. */
   rule: string;
-  /** A verdict written in the shape, which every zone must report against. */
   vacuous: string;
-  /** The same verdict the code can falsify, which every zone must stay silent about. */
   discriminating: string;
 };
 
@@ -245,13 +190,7 @@ const ESCAPE_SHAPES = [
 `,
   },
   {
-    // The widening measured on 2026-08-18. A `Set`'s and a `Map`'s `size` is never negative for
-    // the same reason a `length` is not, and the selector reaches it by property NAME, so a
-    // domain object's own `size` field is reached too — which is where a false positive would
-    // come from. Measured across every workspace before widening: twelve comparisons of a
-    // `.size`, `.byteLength` or `.count` against a literal, every one of them discriminating
-    // (`> 0`, `=== 0`), and none in the vacuous direction. Nothing existing is condemned, which
-    // is what the widening had to show before it could be more than a guess.
+    // `.size` is reached by property name; no existing comparison is in the vacuous direction.
     name: "a set's size compared against zero",
     rule: "no-restricted-syntax",
     vacuous: `export function verdict(seen: Set<string>): boolean {
@@ -277,10 +216,9 @@ const ESCAPE_SHAPES = [
   },
 ] as const satisfies readonly EscapeShape[];
 
-/** The one shape `packages/eslint-config/base.js` answers, and so the one the shared-base gate needs. */
+/** The one shape the shared base answers. */
 const SELF_COMPARE_RULE = "no-self-compare";
 
-/** The rules `packages/eslint-config/base.js` states, which every workspace extending it inherits. */
 async function sharedBaseConfig(): Promise<Linter.Config[]> {
   // Parse boundary: a plain-`.js` module has no type of its own, so the shape is declared here.
   const shared = (await import(pathToFileURL(SHARED_BASE_CONFIG_PATH).href)) as {
@@ -294,7 +232,6 @@ async function sharedBaseConfig(): Promise<Linter.Config[]> {
   return shared.baseConfig;
 }
 
-/** The shape a named rule answers for — a rule with none has nothing to be proved against. */
 function escapeShapeFor(rule: string): EscapeShape {
   const shape = ESCAPE_SHAPES.find((candidate) => candidate.rule === rule);
   if (shape === undefined) throw new Error(`no escape shape measures '${rule}'`);
@@ -302,99 +239,38 @@ function escapeShapeFor(rule: string): EscapeShape {
   return shape;
 }
 
-/**
- * The config both halves of the escape-shape gate read: the zone derivation below, and the ESLint
- * run it feeds. Named once and handed to both rather than resolved twice — `new ESLint({ cwd })`
- * finds this file by search, and a gate whose roster and whose linter could be reading different
- * configs is the class of defect the derivation exists to end.
- */
+/** Handed to both the zone derivation and the linter, so the two cannot read different configs. */
 const ESLINT_CONFIG_PATH = path.join(CLI_ROOT, "eslint.config.js");
 
-/** The rule whose zones this gate measures. Its options are what do not merge across blocks. */
+/** Its options do not merge across blocks. */
 const ZONED_RULE = "no-restricted-syntax";
 
 /**
- * One real file per zone `eslint.config.js` configures `no-restricted-syntax` separately in, and
- * the reason this gate lints more than one file. That rule's options are NOT merged across config
- * blocks — the last block naming it for a file owns all of them, which the config states for
- * `no-restricted-imports` and is equally true here. So a zone that declares the rule for its own
- * reason silently drops every selector it does not restate, and a zone no block declares it for
- * has none at all.
- *
- * **DERIVED from the config, because the hand-written roster was the defect.** It stood at two
- * zones, then three, then five, and each of those numbers was short of the config at the time — a
- * roster extended by whoever remembers to extend it records the blocks somebody remembered. The
- * two added on 2026-09-20 had been unmeasured for as long as they existed, one of them while the
- * block's own closing comment said this roster read it. A row per zone cannot be left off now:
- * every block declaring the rule becomes a zone here, and `lint-zones.ts` finds it a file it owns
- * — one it matches that no LATER declaring block matches, since a later block would own the rule's
- * options for that file and the lint would be measuring the wrong zone.
- *
- * Each subject must EXIST and be linted by the real config: `lintText` needs a path the TypeScript
- * project service can resolve, and an unresolvable one fails as a parse error rather than as a
- * missing rule. The derivation only ever answers with a file that is on disk, which is why it
- * reads the tree rather than the patterns alone.
+ * One real file per zone that configures `no-restricted-syntax`, derived from the config: options
+ * don't merge, so each zone must be linted. `lint-zones.ts` picks a file no later block also owns,
+ * and only files on disk, since `lintText` needs a path the project service can resolve.
  */
 const LINT_ZONES = lintZonesIn(await flatConfigAt(ESLINT_CONFIG_PATH), ZONED_RULE, CLI_ROOT);
 
-/** A zone with a file to lint. One without is a config defect, reported by its own gate below. */
 function isMeasurable(zone: LintZone): zone is LintZone & { subject: string } {
   return zone.subject !== null;
 }
 
-/**
- * What one in-process ESLint pass over one fixture is allowed to take.
- *
- * Every pass is a type-aware lint that resolves the fixture through the TypeScript project
- * service. Re-measured 2026-09-20, when the roster became a derivation: **3.28-3.37s across the
- * 56 passes the seven zones the config declared that day needed, so ~59ms each** — and the
- * budget is per PASS for exactly that reason: the count is read off the config and the timeout
- * below multiplies by it. The figure here read
- * "~2.7s, so ~110ms each" until then, which was honest when it was written and had not been
- * re-taken since: 2.7s over 24 passes is the THREE-zone loop, and the roster had reached five.
- * The budget is ~40x one pass, and the headroom is the whole point: the gate passed in isolation
- * and on a quiet re-run while failing under a wave with six agents live, which reads to whoever
- * meets it as a regression the change caused rather than as a busy machine.
- */
+/** Per type-aware pass; the timeout multiplies it by the derived pass count, with headroom. */
 const LINT_PASS_BUDGET_MS = 2_500;
 
-/**
- * The timeout that gate runs under, DERIVED from the work rather than stated beside it.
- *
- * A shape added to the array above, or a zone added to `eslint.config.js`, is more lint passes,
- * and a constant written as a number would go on claiming to be sized for the old loop — the
- * failure would land on whoever added it, under a name that says nothing about them. Raising the
- * suite default instead is the other wrong answer: it would hand the same headroom to every unit
- * test in the package, where a ten-second unit test IS the bug.
- */
+/** Derived from the work, so new shapes or zones grow it; a suite default would hide slow units. */
 const ESCAPE_SHAPE_TIMEOUT_MS = LINT_ZONES.length * ESCAPE_SHAPES.length * 2 * LINT_PASS_BUDGET_MS;
 
-/**
- * The path the shared-base gate lints under. Any `.ts` path does: that gate replaces the config
- * file rather than resolving one, and the shared base is not type-checked, so nothing here has to
- * belong to a TypeScript program the way `LINT_ZONES` do.
- */
+/** Any `.ts` path: the shared-base gate replaces the config file and type-checks nothing. */
 const SHARED_BASE_ZONE = "src/cli/lib/content-validator.ts";
 
-/**
- * The shared base itself, reached by path rather than by package specifier.
- *
- * `packages/eslint-config` ships three flat configs as plain `.js` and states in its own manifest
- * that it holds no TypeScript at all — `check-shared-tsconfig.ts` reads exactly that declaration.
- * A `.d.ts` written here so `import { baseConfig } from "@workspace/eslint-config/base"` would
- * type-check turns that declaration false and takes two cross-workspace checks with it. A path
- * import is the same parse boundary `e2eProjects` below uses, for the same reason.
- */
+/** By path: `packages/eslint-config` declares no TypeScript, so it ships no `.d.ts`. */
 const SHARED_BASE_CONFIG_PATH = path.resolve(CLI_ROOT, "../eslint-config/base.js");
 
-/** One gate: a named vitest project, and the specs its `include` claims. */
 type SuiteProject = { test: { name: string; include: string[] } };
 
-/**
- * The projects `e2e/vitest.config.ts` declares, loaded rather than restated — a second copy of
- * the include globs here could not tell a config that stopped matching a file from one that
- * never did.
- */
+/** Loaded rather than restated, so a config that stopped matching a file is seen. */
 async function e2eProjects(): Promise<SuiteProject[]> {
   // Parse boundary: vitest's own config type admits far more than the shape a gate must declare.
   const configModule = (await import(pathToFileURL(E2E_CONFIG_PATH).href)) as {
@@ -407,60 +283,29 @@ async function e2eProjects(): Promise<SuiteProject[]> {
   return projects;
 }
 
-/**
- * The journey rows `user-journeys.md` carries, read against the specs the tree actually holds.
- *
- * Both halves come off disk. The page is not restated here — a second copy of the From-scratch
- * column would agree with itself whatever the page went on to say — and neither is the spec list
- * it is judged against. The reading itself lives in `helpers/journey-page.ts`, with its own tests:
- * a markdown-table parser is the kind of thing that has to be proved before it can be believed,
- * and one inlined here was trusted for months while it silently declined to judge six entries.
- */
+/** The page and the spec list both come off disk; parsing lives in `helpers/journey-page.ts`. */
 async function journeyRows(): Promise<JourneyRow[]> {
   return readJourneyRows(await readFile(USER_JOURNEYS_PATH, "utf8"), readSpecNames(E2E_ROOT));
 }
 
 /**
- * Whether the page names `spec` anywhere on it — a From-scratch cell, a Status cell's prose, one
- * of journey 38's legs, or the withdrawn table's Specs column. All four are the page claiming the
- * spec, and a reading restricted to the From-scratch column would file the five documented
- * corrupt-config variants as belonging to nothing.
- *
- * A membership test rather than a reader: it picks nothing out of the page, which is why it does
- * not need tests of its own the way `journey-page.ts` does. Both accepted forms END at a backtick,
- * and that is the whole of the care needed — a plain substring scan reports `commands/compile`,
- * `commands/doctor` and `commands/uninstall` as claimed, on mentions of `commands/compile-…`,
- * `commands/doctor-diagnostics` and `commands/uninstall-corrupt-config`. All three are the shortest
- * name in their family, which is the shape this fails on and the shape a spec directory fills up
- * with.
+ * Whether the page names `spec` anywhere. Both accepted forms end at a backtick, so a family's
+ * shortest name (`commands/compile`) is not claimed by `commands/compile-…`.
  */
 function namedOnJourneyPage(page: string, spec: string): boolean {
   return page.includes(`\`${spec}\``) || page.includes(`${spec}${SPEC_SUFFIX}\``);
 }
 
-/** The source of a spec the page names. The reader has already proved a file answers to it. */
 async function readNamedSpec(named: string): Promise<string> {
   return readFile(path.join(E2E_ROOT, `${named}${SPEC_SUFFIX}`), "utf8");
 }
 
-/** Whether every spec this row names is a variant, which is what leaves it with no proof. */
 async function namesOnlyVariants(row: JourneyRow): Promise<boolean> {
   const sources = await Promise.all(specsNamedBy(row).map(readNamedSpec));
   return sources.every(holdsOnlyVariants);
 }
 
-/**
- * Whether every leg this file holds begins from a fixture-written config.
- *
- * Three halves are read, not two. A file that seeds a config somewhere AND installs from nothing
- * somewhere else still carries the from-scratch proof the column claims for it — and a file that
- * INSTALLS NOTHING AT ALL is neither: its subject is what a command prints over a directory, so
- * "from scratch" and "variant" are both the wrong question to ask of it.
- *
- * That third shape was missing until 2026-08-23 and it cost a file split: a report-shape spec had
- * to become its own file rather than join its sibling, purely so the row would not read `TO TEST`
- * about assertions that exist. A heuristic with no word for a shape condemns it.
- */
+/** A file that also installs from nothing is not a variant; one installing nothing is neither. */
 function holdsOnlyVariants(source: string): boolean {
   if (installsNothing(source)) return false;
 
@@ -469,28 +314,12 @@ function holdsOnlyVariants(source: string): boolean {
   return seeds && !installsFromNothing;
 }
 
-/**
- * Whether a file drives the binary without ever installing through it.
- *
- * The subject of such a spec is output — a refusal, a report, a usage line — read over whatever
- * the directory already holds. It may still write a config to have something to read, which is
- * exactly why `FIXTURE_SEED_CALLS` alone misclassifies it as a variant.
- *
- * Deliberately narrow: it asks whether ANY installing call appears, so a file with one install leg
- * and one output leg is judged by the rules above rather than exempted here. Only a file that
- * installs nowhere qualifies.
- */
+/** The subject is output; a file with any install leg is judged by the rules above instead. */
 function installsNothing(source: string): boolean {
   return !INSTALLING_CALLS.some((call) => call.test(source));
 }
 
-/**
- * Every call that puts something on disk through the product, from-scratch or not.
- *
- * A superset of {@link FROM_SCRATCH_INSTALLS}: that list is about installs into an EMPTY
- * directory, this one about installs at all. Kept beside it so the two cannot drift into
- * disagreeing about what an install is.
- */
+/** A superset of {@link FROM_SCRATCH_INSTALLS}, kept beside it so the two cannot drift. */
 const INSTALLING_CALLS = [
   ...FROM_SCRATCH_INSTALLS,
   /\bCLI\.run\(\s*\[\s*"(edit|compile|update|uninstall|eject)"/,
@@ -501,14 +330,8 @@ const INSTALLING_CALLS = [
 ];
 
 /**
- * The rules the repository's own ESLint config reports against `source` when it is read as
- * `zone`. The config is LOADED rather than restated — a second copy of the selectors here could
- * not tell a rule that stopped matching from one that was never configured.
- *
- * A fixture that failed to parse asked nothing, so it is thrown on rather than counted: a parse
- * failure produces a `fatal` message with a null `ruleId`, and judging on "eslint said
- * something" would hold for it exactly as `exitCode !== 0` held for a narrowing probe that never
- * type-checked an assignment.
+ * The repository's own config, loaded rather than restated. A parse failure (a `fatal` message
+ * with null `ruleId`) throws rather than counting as a report.
  */
 async function rulesReportedAgainst(
   eslint: ESLint,
@@ -537,37 +360,19 @@ async function packageScripts(): Promise<string[]> {
 }
 
 /**
- * Every way a spec is turned off from inside the file rather than by a machine it cannot run on.
- *
- * `describe.skipIf(cond)` states a condition and is legitimate — most of this suite is skipped
- * without the Claude CLI, and a run says so. An UNCONDITIONAL `.skip` runs nowhere, and vitest's
- * skipped tally is already full of the conditional kind, so no number in a run tells the two
- * apart. `it.todo` is deliberately absent: it has no body, so nothing about it can be mistaken
- * for coverage, and vitest counts todos separately.
- *
- * The trailing `(` is what discriminates: `describe.skipIf(` contains `describe.skip` and must
- * not be reported.
+ * Unconditional skips only: `skipIf` states a condition and `it.todo` has no body. The trailing
+ * `(` keeps `describe.skipIf(` from matching.
  */
 const UNCONDITIONAL_SKIP_FORMS = ["describe.skip(", "it.skip(", "test.skip("];
 
-/** The spec's path when it is turned off in its own file, else null. */
 async function specTurnedOffInItsOwnFile(spec: string): Promise<string | null> {
   const source = await readFile(path.join(CLI_ROOT, spec), "utf8");
   return UNCONDITIONAL_SKIP_FORMS.some((form) => source.includes(form)) ? spec : null;
 }
 
 /**
- * A spec file no configured suite collects is a file nobody has ever run, and nothing about it
- * fails: `e2e/smoke/` sat outside every `include` for months, accumulating a fixture the Claude
- * CLI rejected and assertions that could not see it. All three halves are asserted, because each
- * alone is satisfiable by doing nothing — a config that claims a file no script hands to vitest
- * is as unrun as a file no config claims, and a file both of them reach is as unrun as either
- * when its own `describe` is skipped.
- *
- * The third is the one that shipped a hole here. A propagation spec's only route to the defect it
- * covered was a bulk hotkey; the hotkey was withdrawn, the fixture could no longer reach the
- * defect, and the file went `describe.skip` — where it read exactly like a passing file for as
- * long as nobody opened it.
+ * A spec no suite collects, no script runs, or that skips itself is never run, and each alone
+ * fails nothing; all three are asserted.
  */
 describe("every spec the repository holds belongs to a gate", () => {
   it("collects every spec file under e2e/ from one of the configured projects", async () => {
@@ -607,24 +412,13 @@ describe("every spec the repository holds belongs to a gate", () => {
 });
 
 /**
- * The precondition every gate below rests on, and the one nothing held.
- *
- * All three of them walk row → spec, so a row the reader never returned is judged by none of them —
- * and there is no red anywhere to say so, because a page whose entries are skipped reads exactly
- * like a page whose entries all passed. That is the failure `journey-page.ts` was written to end,
- * and it ended only the NAME half: a row still had to come out five cells wide, and one unescaped
- * `|` inside a code span is enough that it does not. It has already happened here — row 11 wrote
- * `GlobalAgentName | "…"` in its Status cell, markdown made six cells of it, the reader dropped it,
- * and the six specs it names were the only proof six journeys had.
- *
- * The two readings are compared by MEMBERS rather than by length, because a page that gained a row
- * while losing another is a page where nothing changed at all.
+ * Every row the tables number must come out of the reader: a dropped row (e.g. an unescaped `|` in
+ * a code span) is judged by no gate. Compared by members, not length.
  */
 describe("the reader sees every row the journey tables number", () => {
   it("reads every numbered row, rather than dropping one whose cells came out wrong", async () => {
     const page = await readFile(USER_JOURNEYS_PATH, "utf8");
-    // The reader refuses a page it parsed nothing out of, which is this comparison's subject guard:
-    // two empty readings would agree with each other about a page neither of them read.
+    // The reader refuses a page it parsed nothing out of: this comparison's subject guard.
     const read = (await journeyRows()).map((row) => row.number);
 
     expect(
@@ -634,20 +428,9 @@ describe("the reader sees every row the journey tables number", () => {
   });
 });
 
-/**
- * The third gate of the same shape. The two above prove a spec is claimed by a project and a
- * project by a script; this one proves a spec a journey names as its from-scratch proof is one.
- *
- * Nothing else can. `user-journeys.md` defines a spec that begins from a fixture-written config
- * as a VARIANT and a row with no from-scratch spec as TO TEST, and both were prose: journey 9
- * named three specs that each open with `ProjectBuilder.editable` or `buildProjectConfig` +
- * `writeProjectConfig`, and read as PARTIAL awaiting one more assertion surface — strengthening
- * any of the three would have closed nothing.
- */
+/** A spec a journey names as its from-scratch proof must be one, not a variant. */
 describe("the from-scratch classifier has a word for each shape a spec takes", () => {
-  // Three shapes, and the third is the one that was missing until 2026-08-23. Written as source
-  // fragments rather than by pointing at real spec files, so the assertions stay true when those
-  // files change — the subject is the classifier's vocabulary, not any spec's current contents.
+  // Source fragments, not real spec files: the subject is the classifier's vocabulary.
   const SEEDS_AND_NEVER_INSTALLS = `
     await writeProjectConfig(dir, { name: "x" });
     const { stdout } = await CLI.run(["doctor"], { dir });
@@ -670,8 +453,7 @@ describe("the from-scratch classifier has a word for each shape a spec takes", (
     expect(holdsOnlyVariants(SEEDS_THEN_INSTALLS_FROM_NOTHING)).toBe(false);
   });
 
-  // The discriminating case. Without it the two above would be satisfied by a classifier that
-  // simply answered `false` to everything, which is the vacuous form of this whole gate.
+  // The discriminating case: otherwise an always-`false` classifier would pass.
   it("still calls a spec that seeds a config and only edits it a variant", () => {
     expect(holdsOnlyVariants(SEEDS_AND_EDITS_ONLY)).toBe(true);
   });
@@ -682,8 +464,7 @@ describe("a journey names from-scratch specs that are from scratch", () => {
     const rows = await journeyRows();
     const naming = rows.filter((row) => specsNamedBy(row).length > 0);
 
-    // The subject guard the reader cannot carry for this one: it refuses a page it failed to parse
-    // at all, but a page it read whose rows name no spec would leave the judgement below vacuous.
+    // Subject guard: rows naming no spec would leave the judgement below vacuous.
     expect(
       naming.length,
       "no journey row names a spec — the From-scratch column has stopped being read",
@@ -703,12 +484,7 @@ describe("a journey names from-scratch specs that are from scratch", () => {
     ).toStrictEqual([]);
   });
 
-  /**
-   * Half of the hole this gate carried for as long as it read the page inline. Five specs were
-   * named without the directory they live in, the reader skipped whatever it could not resolve,
-   * and a skipped row reads exactly like a passing one — so the page looked fully checked while
-   * nothing had judged those five. A name is only proof if a run can be pointed at it.
-   */
+  /** A name is only proof if a run can be pointed at it. */
   it("names every spec with the directory it lives in", async () => {
     const rows = await journeyRows();
     const rewrites = rows
@@ -722,11 +498,7 @@ describe("a journey names from-scratch specs that are from scratch", () => {
     ).toStrictEqual([]);
   });
 
-  /**
-   * The other half. Not everything the column names is a spec, and the two that are not are both
-   * legitimate — but a gate that decides that for itself decides it for every future entry too.
-   * Naming them makes the next unrecognised one fail here and be justified, rather than dropped.
-   */
+  /** Non-spec names are rostered so the next unrecognised one must be justified. */
   it("names nothing outside a spec that this gate has not been told about", async () => {
     const rows = await journeyRows();
 
@@ -737,22 +509,14 @@ describe("a journey names from-scratch specs that are from scratch", () => {
   });
 });
 
-/**
- * The same requirement read spec -> row, which is the direction the three gates above cannot see.
- *
- * They ask whether the specs a row NAMES are proof; this asks whether a spec is named at all. The
- * page opens on that requirement — "every spec the `e2e` project collects belongs to a journey on
- * this page" — and until now nothing held it, so the matrix could not report its own omissions.
- */
+/** Spec -> row: whether a spec is named at all, which the row gates cannot see. */
 describe("every spec the e2e project collects belongs to a journey", () => {
   it("names every spec on the page, bar the backlog rostered when this gate landed", async () => {
     const page = await readFile(USER_JOURNEYS_PATH, "utf8");
     const specs = readSpecNames(E2E_ROOT);
     const claimed = specs.filter((spec) => namedOnJourneyPage(page, spec));
 
-    // The subject guard for the roster below: a page that stopped being readable claims nothing,
-    // and every spec would arrive as unclaimed — a diff of a hundred and fifty names that says
-    // nothing about the one thing that actually broke.
+    // Subject guard: an unreadable page would report every spec as unclaimed.
     expect(
       claimed.length,
       "the page names no spec at all — it has been restructured out from under this gate",
@@ -766,25 +530,11 @@ describe("every spec the e2e project collects belongs to a journey", () => {
 });
 
 /**
- * The fourth gate, and the one that answers for the other three. A check is trusted because it
- * has been seen to go red for the reason it names; a check nobody has watched fail is
- * indistinguishable from a check that cannot. Two live instances in two days, both caught by
- * mutation and by nothing else: a narrowing probe whose `exitCode !== 0` verdict held on a SYNTAX
- * error, and a hand-run verdict reading `after.length >= 0 && before.length >= 0`.
- *
- * Only the second is a shape a linter can see, and `eslint.config.js` now refuses it. That rule
- * reports nothing across this repository, which is the whole problem with leaving it there
- * unattended — so this gate is its mutation proof, kept rather than performed once: it feeds the
- * config the shape and requires a report, and feeds it the discriminating form and requires
- * silence.
+ * The mutation proof for the lint rule refusing vacuous verdicts: each shape must report and each
+ * discriminating twin must stay silent, in every zone.
  */
 describe("a verdict that cannot fail is refused before it is trusted", () => {
-  /**
-   * The precondition the loop below rests on, and the half a derivation can get wrong that a
-   * roster could not: a block declaring the rule for files that are not there, or for files a
-   * later block has already taken, leaves nothing to lint as that zone. Skipping it would restore
-   * exactly what the roster did — a zone nothing measures, reading like a zone that passed.
-   */
+  /** A zone with no file to lint reads exactly like a zone that passed. */
   it("finds a file to lint in every zone the config declares the rule for", () => {
     expect(
       LINT_ZONES.filter((zone) => !isMeasurable(zone)).map((zone) => zone.patterns),
@@ -806,8 +556,7 @@ describe("a verdict that cannot fail is refused before it is trusted", () => {
             subject,
           );
 
-          // The positive half is the subject guard for the negative one: without it, a zone eslint
-          // declined to lint at all would satisfy the negative for free.
+          // The positive half guards the negative: an unlinted zone would satisfy it for free.
           expect(
             againstVacuous,
             `the zone eslint.config.js declares for '${patterns}' accepts ${shape.name} — '${shape.rule}' does not reach it, measured on '${subject}'`,
@@ -824,15 +573,8 @@ describe("a verdict that cannot fail is refused before it is trusted", () => {
 });
 
 /**
- * The fifth gate, and the one that says where the fourth's rules live. `no-self-compare` is core
- * ESLint, sits outside `js.configs.recommended`, and `x === x` is not a mistake this package has
- * any special claim on — it was enabled here alone, so every other workspace in the repository
- * accepted the shape.
- *
- * This lints with the SHARED base and nothing else, which is the only way to tell a rule the base
- * carries from one this package adds on top: the gate above runs the real config, where the two are
- * indistinguishable. A workspace that extends the base and states no rules of its own gets exactly
- * what this asserts.
+ * `no-self-compare` lives in the shared base so every workspace inherits it; linted with the base
+ * alone, the only way to tell its rules from this package's additions.
  */
 describe("the shared base config refuses a value compared against itself", () => {
   it("reports no-self-compare under @workspace/eslint-config/base alone", async () => {
@@ -862,18 +604,8 @@ describe("the shared base config refuses a value compared against itself", () =>
 });
 
 /**
- * The door every spawning spec needed, and now nobody calls.
- *
- * `ensureBinaryExists` refuses a spec file that begins with no `dist/` to spawn — a real window,
- * and one `globalSetup`'s `assertDistIsFresh` does not cover, because that answers once per RUN
- * and this one is asked per FILE. It was per-file discipline across 251 files and 525 lines, with
- * NOTHING gating that a new spec remembered it: forget it and the reward is a 45-second timeout
- * naming nothing, and no reader could tell "omitted correctly" from "forgot".
- *
- * `e2e/setup.ts` is a `setupFiles` entry, so a `beforeAll` registered there runs once before every
- * spec file in the suite — the same door at zero call sites, which is what makes this gate an
- * assertion of ABSENCE rather than of presence. A spec that calls it now is not wrong, it is
- * redundant, and redundancy here is how the per-file discipline would grow back.
+ * `ensureBinaryExists` is asked once per spec file from `e2e/setup.ts`'s `beforeAll`, so a spec
+ * calling it is redundant and lets the per-file discipline grow back.
  */
 describe("the dist door is the harness's, not each spec's", () => {
   const GUARD = "ensureBinaryExists";
@@ -903,18 +635,8 @@ describe("the dist door is the harness's, not each spec's", () => {
   });
 
   /**
-   * The replacement guard stands at `afterAll` as well, and that position is the only one covering
-   * a `dist/` emptied DURING a spec's own `beforeAll`.
-   *
-   * The window was filed as unclosable: the door has already passed, and a throwing `beforeAll`
-   * skips every `beforeEach` under it, so both registered guards are blind and the spec fails on
-   * whatever its setup happened to hit — an error naming nothing about a build. That much is true
-   * and was measured again here. What was not true is that no hook sees it.
-   *
-   * **Measured on vitest 4.1.10**: a setup file's `afterAll` runs even when the spec's `beforeAll`
-   * threw, and its own throw is reported ALONGSIDE the misleading one rather than in place of it.
-   * So the file still fails for the wrong-looking reason, and the real cause is now printed beside
-   * it — which is the whole of what the reader was missing.
+   * Only `afterAll` sees a `dist/` emptied during a spec's own `beforeAll`: a throwing `beforeAll`
+   * skips every `beforeEach`, but a setup file's `afterAll` still runs and reports the real cause.
    */
   it("also stands at afterAll, the one position a throwing beforeAll cannot skip", async () => {
     const setup = await readFile(path.join(E2E_ROOT, "setup.ts"), "utf8");

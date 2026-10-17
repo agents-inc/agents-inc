@@ -1,13 +1,6 @@
-// Shared agent configs and definitions for test files.
-
 import type { AgentDefinition, AgentName } from "../../../types";
 import type { TestAgent } from "../fixtures/create-test-source";
 import { createMockAgent } from "../factories/agent-factories.js";
-
-// ---------------------------------------------------------------------------
-// Canonical agent definitions — reusable for both mock objects and disk-writing tests.
-// Use AGENT_DEFS.webDev.title etc. instead of repeating inline strings.
-// ---------------------------------------------------------------------------
 
 export const AGENT_DEFS = {
   webDev: {
@@ -34,31 +27,15 @@ export const AGENT_DEFS = {
     description: "A code review agent",
     tools: ["Read", "Grep", "Glob"],
   },
-  // satisfies (not `as const satisfies`): `as const` would make tools readonly and
-  // break the `string[]` constraint; this still validates each name is a valid AgentName.
+  // Not `as const`: readonly tools would break the `string[]` constraint.
 } satisfies Record<
   string,
   { name: AgentName; title: string; description: string; tools: string[] }
 >;
 
-// ---------------------------------------------------------------------------
-// Agent definitions from resolver.test.ts
-// ---------------------------------------------------------------------------
-
 /**
- * `sonnet` rather than `opus`, and the divergence is the assertion.
- *
- * `resolveAgents` resolves a model as `agentConfig.model ?? definition.model`, so a spec proving
- * the metadata default SURVIVES a config that overrides only `effort` can only discriminate while
- * this value is one nothing else in the run would produce. Every bundled agent has declared
- * `model: opus` since the owner ruled the roster uniform on 2026-09-03 — re-derive with
- * `grep -h '^model:' $(find src/agents -name metadata.yaml) | sort | uniq -c` — so pinning this
- * mock at `opus` made `?? definition.model` and a hardcoded `?? "opus"` produce the same byte, and
- * the assertion went unfalsifiable while continuing to read as rigorous.
- *
- * These are the suite's own definitions and no ruling about shipped agents reaches them, so the
- * value is chosen deliberately: `sonnet` is neither the shipped default nor the `haiku` the
- * override spec sets, which keeps the two directions telling different stories.
+ * `sonnet` is neither the shipped `opus` default nor the override spec's `haiku`, so a surviving
+ * `definition.model` is distinguishable from a hardcoded fallback.
  */
 const WEB_DEVELOPER_DEFINITION = createMockAgent("Web Developer", {
   description: "Frontend web developer",
@@ -78,10 +55,6 @@ export const RESOLVE_AGENTS_DEFINITIONS: Record<string, AgentDefinition> = {
   "web-developer": WEB_DEVELOPER_DEFINITION,
   "api-developer": API_DEVELOPER_DEFINITION,
 };
-
-// ---------------------------------------------------------------------------
-// Default test agents for createTestSource (from create-test-source.ts)
-// ---------------------------------------------------------------------------
 
 export const DEFAULT_TEST_AGENTS: TestAgent[] = [
   {

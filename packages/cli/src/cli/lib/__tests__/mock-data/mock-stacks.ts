@@ -1,13 +1,6 @@
-// Shared stack constants for test files.
-// TestStack arrays are used with createTestSource() for integration tests.
-
 import type { TestStack } from "../fixtures/create-test-source.js";
 import { sa, saUnflagged } from "../factories/skill-factories.js";
 import { createMockStack } from "../factories/stack-factories.js";
-
-// ---------------------------------------------------------------------------
-// Stacks from config-generator.test.ts
-// ---------------------------------------------------------------------------
 
 export const FULLSTACK_STACK = createMockStack("fullstack", {
   name: "Fullstack Stack",
@@ -103,12 +96,7 @@ export const MANY_CATEGORIES_STACK = createMockStack("fullstack", {
   },
 });
 
-/**
- * The built-in stacks' shape: which skills each agent gets, and no word on how
- * any of them loads. The same skill on two agents so the mapping's per-pair
- * answer is visible — a web framework preloads on the web developer and arrives
- * lazily on a meta agent that also carries it.
- */
+/** No load flags; one skill on two agents so the mapping's per-pair answer shows. */
 export const UNFLAGGED_TWO_AGENT_STACK = createMockStack("unflagged-stack", {
   name: "Unflagged Stack",
   description: "States which skills, never how they load",
@@ -122,10 +110,7 @@ export const UNFLAGGED_TWO_AGENT_STACK = createMockStack("unflagged-stack", {
   },
 });
 
-/**
- * A third-party stack's shape: the author wrote the load out, in both
- * directions, and against what the mapping would have said for either pair.
- */
+/** Every load flag authored, each the opposite of what the mapping would say. */
 export const AUTHORED_FLAGS_STACK = createMockStack("authored-flags-stack", {
   name: "Authored Flags Stack",
   description: "The author's word on every load",
@@ -156,10 +141,6 @@ export const LOCAL_SKILL_STACK = createMockStack("test-stack", {
   },
 });
 
-// ---------------------------------------------------------------------------
-// Stack from compilation-pipeline.test.ts
-// ---------------------------------------------------------------------------
-
 export const COMPILATION_TEST_STACK = createMockStack("test-stack", {
   name: "Test Stack",
   description: "A test stack for integration testing",
@@ -172,11 +153,6 @@ export const COMPILATION_TEST_STACK = createMockStack("test-stack", {
     },
   },
 });
-
-// ---------------------------------------------------------------------------
-// TestStack arrays from consumer-stacks-matrix.integration.test.ts
-// (used with createTestSource() — different shape than Stack objects above)
-// ---------------------------------------------------------------------------
 
 export const CUSTOM_TEST_STACKS: TestStack[] = [
   {

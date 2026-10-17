@@ -37,9 +37,6 @@ describe("envReadsIn", () => {
     });
   });
 
-  // The field the whole reader exists for. A shape it cannot classify has to arrive as a
-  // report, because a reader that dropped it would answer "this file reads nothing" for a file
-  // that reads everything — and a gate asking "is every read pinned" would agree.
   it("reports a shape it cannot classify instead of dropping it", () => {
     expect(envReadsIn("const every = Object.keys(process.env);")).toStrictEqual({
       ...NOTHING_READ,

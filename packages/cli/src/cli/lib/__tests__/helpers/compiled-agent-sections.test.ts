@@ -2,42 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { parseCompiledAgentSections } from "./compiled-agent-sections.js";
 
-/**
- * The protocol's preamble, mirroring `src/agents/_templates/agent.liquid`.
- *
- * Mirrored rather than imported, for the reason `e2e/pages/constants.ts` exists: an assertion
- * that reads the very string the product renders moves with it and cannot fail. What these
- * fixtures are for is the SHAPE around the string — the heading, the `Invoke:` line and the
- * usage line the reader pairs — so the prose only has to be prose the shipped template plausibly
- * emits.
- */
+/** Mirrors `agent.liquid`'s preamble; importing it would move both sides at once. */
 const PROTOCOL_PREAMBLE = `The skills below are available through the Skill tool. Open a task by naming which of them it
 touches and loading those first — a skill carries the conventions this project expects for its
 area, and its content reaches you only once you invoke it.
 `;
 
-/** What the template renders in place of the protocol when every skill is preloaded. */
 const PRELOADED_NOTE = `<skills_note>
 This agent's skills are preloaded through its frontmatter, so their content is already in context.
 </skills_note>`;
 
-/** And when the project has configured no skills at all. */
 const NO_SKILLS_NOTE = `<skills_note>
 No skills are configured for this agent. The Skill tool is available, so a skill this project adds
 later can be loaded by name.
 </skills_note>`;
 
-/**
- * The trailing block every compiled agent closes with, wrapped around whichever skills block the
- * agent's posture selects.
- *
- * **The nesting is the shipped shape rather than a fixture convenience**: `agent.liquid` emits
- * `<skill_activation_protocol>` INSIDE `<system-reminder>`, because the skill list is the one
- * part of the body that moves when a user edits their stack and everything volatile is kept below
- * everything stable. So the protocol is never a top-level section, and `<system-reminder>` is the
- * only hyphenated tag a compiled agent carries — which is what `SECTION_OPENS` and
- * `SECTION_CLOSES` admit a `-` for.
- */
+/** The shipped nesting: the skills block renders inside `<system-reminder>`. */
 function systemReminder(skillsBlock: string): string {
   return `<system-reminder>
 Compiled by 9.9.9.
@@ -127,7 +107,6 @@ ${systemReminder(
 `),
 )}`;
 
-/** The `{% elsif %}` arm: every skill preloaded, so no protocol renders at all. */
 const NO_DYNAMIC_SKILLS_AGENT = `---
 name: web-developer
 skills:
@@ -137,7 +116,6 @@ skills:
 
 ${systemReminder(PRELOADED_NOTE)}`;
 
-/** No `skills:` key at all — the frontmatter list is emitted only when a preload exists. */
 const NO_PRELOADED_SKILLS_AGENT = `---
 name: web-developer
 model: opus
@@ -160,17 +138,7 @@ name: web-developer
 
 ${systemReminder(NO_SKILLS_NOTE)}`;
 
-/**
- * A protocol carrying prose a scanner would report as a skill: `### ` headings that name none,
- * and a fenced `skill: "[skill-id]"` demonstrating the call.
- *
- * **Not the shipped template's shape, and deliberately kept anyway.** The shipped preamble is
- * three lines of prose with no headings and no fence, so nothing in the bundled tree exercises
- * the pairing that keeps such lines out of the answer. A project may override `agent.liquid`
- * from its own `.agents-inc/claude/agents/_templates/`, and the retired shipped template carried
- * exactly this shape — so a reader that scanned for either token alone would have answered wrongly then and
- * would answer wrongly for an overriding project now.
- */
+/** Not the shipped shape, but a project's overriding `agent.liquid` may carry such prose. */
 const PROSE_IN_PROTOCOL_AGENT = `---
 name: web-developer
 ---
@@ -202,11 +170,6 @@ You build web applications.
 </role>
 `;
 
-/**
- * The shipped template's own shape: the `---` horizontal rules that separate its sections, the
- * headings an agent's `playbook.md` and `output.md` contribute, prose demonstrating tag and
- * heading syntax inside a fence, and the protocol nested inside the trailing block.
- */
 const STRUCTURED_AGENT = `---
 name: web-developer
 ---
@@ -281,10 +244,6 @@ describe("parseCompiledAgentSections", () => {
   });
 
   describe("preloadedRefs", () => {
-    /**
-     * `- id:id` has no space after the colon, so YAML reads it as a plain scalar rather
-     * than a mapping. Reading it with the real parser is what proves that.
-     */
     it("reads plugin-mode preloads as the qualified ref, in rendered order", () => {
       const { preloadedRefs } = parseCompiledAgentSections(PLUGIN_MODE_AGENT);
 
@@ -317,10 +276,6 @@ describe("parseCompiledAgentSections", () => {
   });
 
   describe("dynamicEntries", () => {
-    /**
-     * The asymmetry the whole module exists for: the heading is the bare id even in plugin
-     * mode, and only the `Invoke:` line carries the ref.
-     */
     it("reads a plugin-mode entry as a bare heading id and a qualified invoke ref", () => {
       const { dynamicEntries } = parseCompiledAgentSections(PLUGIN_MODE_AGENT);
 
@@ -353,10 +308,6 @@ describe("parseCompiledAgentSections", () => {
       expect(dynamicEntries).toStrictEqual([]);
     });
 
-    /**
-     * Pairing a heading to an `Invoke:` line is what keeps a protocol's own prose out of the
-     * answer; a scan for either shape on its own reports it.
-     */
     it("reports none of a protocol's own headings or its demonstrated invocation", () => {
       const { dynamicEntries } = parseCompiledAgentSections(PROSE_IN_PROTOCOL_AGENT);
 
@@ -365,12 +316,6 @@ describe("parseCompiledAgentSections", () => {
       ]);
     });
 
-    /**
-     * A compiled body is separated by `---` rules, so a reader that SPLIT the frontmatter
-     * off rather than replacing it hands back only the fragment between the first two
-     * rules — and answers `[]` for every agent, the protocol sitting in the trailing block
-     * past all of them.
-     */
     it("reads a protocol sitting past the body's horizontal rules", () => {
       const { dynamicEntries } = parseCompiledAgentSections(PLUGIN_MODE_AGENT);
 
@@ -397,12 +342,6 @@ describe("parseCompiledAgentSections", () => {
       ]);
     });
 
-    /**
-     * The protocol is NOT a top-level section: `agent.liquid` renders it inside
-     * `<system-reminder>`, so a roster that named it would describe a body the compile stopped
-     * emitting — which is the reading `compiler.test.ts`'s `SHIPPED_TEMPLATE_SECTIONS` states
-     * against the real render.
-     */
     it("reports the trailing block rather than the protocol nested inside it", () => {
       const { sectionOrder } = parseCompiledAgentSections(PLUGIN_MODE_AGENT);
 
@@ -414,11 +353,6 @@ describe("parseCompiledAgentSections", () => {
       ]);
     });
 
-    /**
-     * The hyphen `SECTION_OPENS` and `SECTION_CLOSES` admit is there for exactly one tag, and
-     * without a case naming it a character class narrowed back to `[a-z0-9_]` would drop the
-     * trailing block from every roster above while every other assertion stayed green.
-     */
     it("reads the hyphenated trailing tag as a section, opening and closing", () => {
       const { sectionOrder } = parseCompiledAgentSections(NO_SKILLS_AT_ALL_AGENT);
 

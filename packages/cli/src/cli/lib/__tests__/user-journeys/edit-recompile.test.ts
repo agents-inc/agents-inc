@@ -46,7 +46,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
   silenceConsole(["log", "warn"]);
 
   beforeEach(async () => {
-    // Create test source with plugin structure containing default skills and agents
     dirs = await createTestSource({
       skills: DEFAULT_TEST_SKILLS,
       agents: DEFAULT_TEST_AGENTS,
@@ -73,11 +72,9 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
 
     const result = await recompileAgents(options);
 
-    // pm is a simple agent that should compile without skill issues
     expect(result.compiled).toContain("pm");
     expect(result.failed).toStrictEqual([]);
 
-    // Verify the agent file was created
     const agentPath = path.join(outputDir, "pm.md");
     expect(await fileExists(agentPath)).toBe(true);
 
@@ -89,7 +86,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     const pluginDir = dirs.pluginDir!;
     const pluginSkillsDir = path.join(pluginDir, STANDARD_DIRS.SKILLS);
 
-    // Step 1: Initial compile with skills provided directly
     const reactSkillDef: SkillDefinitionMap = {
       "web-framework-react": createMockSkillDefinition("web-framework-react", {
         description: "React framework",
@@ -106,7 +102,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
 
     const agentPath = path.join(outputDir, "pm.md");
 
-    // Step 2: Edit a skill file in the plugin directory
     const reactSkillPath = path.join(
       pluginSkillsDir,
       "web-framework-react",
@@ -117,23 +112,20 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
       await writeTestFile(reactSkillPath, originalSkill + APPENDED_SKILL_SECTION);
     }
 
-    // Step 3: Recompile (loadPluginSkills will re-read the edited skill files)
     const recompileOptions = buildRecompileOptions(dirs, outputDir, {
       agents: ["pm"],
-      // Don't provide skills - let it reload from plugin dir
+      // No skills: reload from the plugin dir.
     });
 
     const recompileResult = await recompileAgents(recompileOptions);
     expect(recompileResult.compiled).toContain("pm");
     expect(recompileResult.failed).toStrictEqual([]);
 
-    // Step 4: Verify the agent was recompiled (file was overwritten)
     const recompiledContent = await readTestFile(agentPath);
     expectValidAgentMarkdown(recompiledContent, "pm");
   });
 
   it("should preserve unchanged agents during recompile", async () => {
-    // Compile two agents
     const options = buildRecompileOptions(dirs, outputDir, {
       agents: ["pm"],
     });
@@ -144,12 +136,10 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     const agentPath = path.join(outputDir, "pm.md");
     const firstContent = await readTestFile(agentPath);
 
-    // Recompile the same agent with no changes to skills
     const result2 = await recompileAgents(options);
     expect(result2.compiled).toContain("pm");
     expect(result2.failed).toStrictEqual([]);
 
-    // Content should be equivalent (same agent, same skills -> same output)
     const secondContent = await readTestFile(agentPath);
     expect(secondContent).toBe(firstContent);
   });
@@ -158,7 +148,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     const pluginDir = dirs.pluginDir!;
     const pluginSkillsDir = path.join(pluginDir, STANDARD_DIRS.SKILLS);
 
-    // Step 1: Initial compile with no skills provided (empty plugin skills)
     const initialOptions = buildRecompileOptions(dirs, outputDir, {
       agents: ["pm"],
       skills: {},
@@ -169,12 +158,11 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
 
     const agentPath = path.join(outputDir, "pm.md");
 
-    // Step 2: Add a brand new skill to the plugin skills directory
     await writeTestSkill(pluginSkillsDir, "web-testing-vitest", {
       skipMetadata: true,
     });
 
-    // Step 3: Recompile without providing skills (force reload from plugin dir)
+    // No skills: force a reload from the plugin dir.
     const recompileOptions = buildRecompileOptions(dirs, outputDir, {
       agents: ["pm"],
     });
@@ -183,13 +171,11 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     expect(recompileResult.compiled).toContain("pm");
     expect(recompileResult.failed).toStrictEqual([]);
 
-    // The agent file should still be valid after recompile
     const recompiledContent = await readTestFile(agentPath);
     expectValidAgentMarkdown(recompiledContent, "pm");
   });
 
   it("should handle removing skills from agents", async () => {
-    // Step 1: Initial compile with explicit skills
     const initialSkills: SkillDefinitionMap = {
       "web-framework-react": createMockSkillDefinition("web-framework-react", {
         description: "React framework",
@@ -207,7 +193,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     const initialResult = await recompileAgents(initialOptions);
     expect(initialResult.compiled).toContain("pm");
 
-    // Step 2: Recompile with fewer skills (simulating removal)
     const reducedSkills: SkillDefinitionMap = {
       "web-framework-react": createMockSkillDefinition("web-framework-react", {
         description: "React framework",
@@ -223,7 +208,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     expect(recompileResult.compiled).toContain("pm");
     expect(recompileResult.failed).toStrictEqual([]);
 
-    // Verify the agent file is still valid
     const agentPath = path.join(outputDir, "pm.md");
     const content = await readTestFile(agentPath);
     expectValidAgentMarkdown(content, "pm");
@@ -247,14 +231,12 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
   });
 
   it("should report correct compiled and failed agent lists", async () => {
-    // Compile a valid agent and an invalid one
     const options = buildRecompileOptions(dirs, outputDir, {
       agents: ["pm", "non-existent-agent-xyz" as AgentName],
     });
 
     const result = await recompileAgents(options);
 
-    // pm should compile, non-existent should be warned about
     expect(result.compiled).toContain("pm");
     expect(result.warnings).toStrictEqual(
       expect.arrayContaining([expect.stringContaining("non-existent-agent-xyz")]),
@@ -272,7 +254,6 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     const result = await recompileAgents(options);
     expect(result.compiled).toContain("pm");
 
-    // Verify file is in the custom output directory, not the plugin dir
     const agentPath = path.join(customOutputDir, "pm.md");
     expect(await fileExists(agentPath)).toBe(true);
 
@@ -285,20 +266,16 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
       agents: ["pm"],
     });
 
-    // First compile
     await recompileAgents(options);
     const agentPath = path.join(outputDir, "pm.md");
     const firstContent = await readTestFile(agentPath);
 
-    // Second compile
     await recompileAgents(options);
     const secondContent = await readTestFile(agentPath);
 
-    // Third compile
     await recompileAgents(options);
     const thirdContent = await readTestFile(agentPath);
 
-    // All three should be identical (deterministic compilation)
     expect(firstContent).toBe(secondContent);
     expect(secondContent).toBe(thirdContent);
   });

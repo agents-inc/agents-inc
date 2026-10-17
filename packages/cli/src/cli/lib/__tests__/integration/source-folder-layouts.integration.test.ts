@@ -1,12 +1,6 @@
 /**
- * What the CLI actually does with an installation — found, loaded, and compiled from.
- *
- * An installation is `.agents-inc/<provider>/` and nothing else. The layout module's own answer is
- * pinned in `lib/installation/install-layout.test.ts`; this file is the other half — the readers
- * that sit on top of it.
- *
- * The folder names are literals. They are text on people's disks, and an assertion that
- * imported the constant the product writes would move with it and could never fail.
+ * The readers on top of the install layout: an installation is found, loaded and compiled from
+ * `.agents-inc/<provider>/`. Folder names are literals: they are text on people's disks.
  */
 
 import os from "os";
@@ -25,7 +19,6 @@ import { loadProjectConfig, loadProjectConfigFromDir } from "../../configuration
 import { detectInstallation } from "../../installation/index.js";
 import { loadProjectAgents } from "../../loading/loader.js";
 
-/** The layout. */
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
 
 /** Names that say which of two configs on one disk was the one that got read. */
@@ -34,7 +27,6 @@ const IN_THE_GLOBAL_FOLDER = "read-from-the-global-folder";
 
 const FIXTURES_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures");
 
-/** The one sub-agent whose partials the fixture tree carries, and the two files a compile needs. */
 const FIXTURE_AGENT = "web-developer";
 const REQUIRED_AGENT_PARTIALS = ["identity.md", "playbook.md"] as const;
 

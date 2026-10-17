@@ -10,11 +10,7 @@ import type {
 import type { TestSkill } from "../fixtures/create-test-source";
 import { testSkillToResolvedSkill } from "./skill-factories.js";
 
-/**
- * Builds a matrix from disk-oriented TestSkills by resolving each to a
- * ResolvedSkill. Pass `toResolvedOverrides` to carry per-skill fields (e.g.
- * `author`) that the default derivation would otherwise replace with defaults.
- */
+/** `toResolvedOverrides` carries per-skill fields (e.g. `author`) the derivation would default. */
 export function createMatrixFromTestSkills(
   skills: TestSkill[],
   toResolvedOverrides?: (skill: TestSkill) => Partial<ResolvedSkill>,
@@ -29,16 +25,7 @@ export function createMatrixFromTestSkills(
   );
 }
 
-/**
- * Holds THE one documented boundary cast for test category maps. Test fixtures
- * supply a subset of the Category union and often partial CategoryDefinition
- * values (e.g. just `{ domain }`), but the matrix consumes a complete
- * Record<Category, CategoryDefinition>.
- *
- * NOTE: param is `Partial<Record<Category, Partial<CategoryDefinition>>>` (values
- * are also partial at call sites) — wider than the ledger's `Partial<Record<Category,
- * CategoryDefinition>>`, which would reject the `{ domain: "web" }` shorthand.
- */
+/** Boundary cast: fixtures supply a partial map with partial values (e.g. `{ domain }`). */
 export function buildCategoryMap(
   defs: Partial<Record<Category, Partial<CategoryDefinition>>>,
 ): Record<Category, CategoryDefinition> {
@@ -53,24 +40,23 @@ export function createMockMatrix(
   let overrides: Partial<MergedSkillsMatrix> | undefined;
 
   if (skillsOrFirstSkill === undefined) {
-    // Empty call: createMockMatrix()
     skillsRecord = {};
   } else if (
     "id" in skillsOrFirstSkill &&
     typeof (skillsOrFirstSkill as ResolvedSkill).id === "string" &&
     "slug" in skillsOrFirstSkill
   ) {
-    // New spread syntax: createMockMatrix(skill1, skill2, ..., optionalOverrides?)
+    // Spread form: createMockMatrix(skill1, skill2, ..., overrides?)
     const allArgs = [skillsOrFirstSkill, ...rest];
     const lastArg = allArgs[allArgs.length - 1];
 
-    // The last arg is overrides when it lacks the 'id' + 'slug' skill shape
+    // The last arg is overrides when it lacks the skill shape.
     const hasOverrides = lastArg !== undefined && !("id" in lastArg && "slug" in lastArg);
     overrides = hasOverrides ? lastArg : undefined;
     const skills = (hasOverrides ? allArgs.slice(0, -1) : allArgs) as ResolvedSkill[];
     skillsRecord = Object.fromEntries(skills.map((skill) => [skill.id, skill]));
   } else {
-    // Old record syntax: createMockMatrix({ "id": skill }, overrides?)
+    // Record form: createMockMatrix({ "id": skill }, overrides?)
     skillsRecord = skillsOrFirstSkill as Record<string, ResolvedSkill>;
     overrides = rest[0] as Partial<MergedSkillsMatrix> | undefined;
   }
@@ -91,7 +77,6 @@ export function createMockMatrix(
   };
 }
 
-/** Decomposed matrix config returned by createMockMatrixConfig (replaces SkillsMatrixConfig) */
 export type MockMatrixConfig = {
   categories: Record<string, CategoryDefinition>;
   relationships: RelationshipDefinitions;

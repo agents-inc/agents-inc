@@ -5,9 +5,7 @@ import { setupIsolatedHome } from "../helpers/isolated-home.js";
 describe("help command", () => {
   let cleanup: () => Promise<void>;
 
-  // Every in-process run goes through the oclif `init` hook, which calls
-  // `resolveSource` and walks to the home root — so even `help` reads whatever
-  // `~/.agents-inc/claude/config.ts` and cwd the developer's machine happens to have.
+  // The oclif `init` hook reads the home config, so even `help` needs an isolated home.
   beforeEach(async () => {
     ({ cleanup } = await setupIsolatedHome("cc-help-test-"));
   });
@@ -20,7 +18,6 @@ describe("help command", () => {
     it("should show command listing", async () => {
       const { stdout } = await runCliCommand(["help"]);
 
-      // oclif help outputs the list of available commands
       expect(stdout).toContain("COMMANDS");
     });
 
@@ -44,7 +41,6 @@ describe("help command", () => {
     it("should exit with code 0", async () => {
       const { error } = await runCliCommand(["help"]);
 
-      // Help completes without error
       expect(error).toBeUndefined();
     });
   });
@@ -59,7 +55,6 @@ describe("help command", () => {
     it("should show init command summary", async () => {
       const { stdout } = await runCliCommand(["help", "init"]);
 
-      // Init command summary contains "Initialize"
       expect(stdout).toContain("Initialize");
     });
   });
@@ -90,7 +85,6 @@ describe("help command", () => {
     it("should show compile command summary", async () => {
       const { stdout } = await runCliCommand(["help", "compile"]);
 
-      // Compile command summary contains "Compile agents"
       expect(stdout).toContain("Compile agents");
     });
   });
@@ -105,7 +99,6 @@ describe("help command", () => {
     it("should list build subcommands", async () => {
       const { stdout } = await runCliCommand(["help", "build"]);
 
-      // build has subcommands: plugins, marketplace
       expect(stdout).toContain("plugins");
       expect(stdout).toContain("marketplace");
     });
@@ -129,7 +122,6 @@ describe("help command", () => {
     it("should error for unknown command", async () => {
       const { error, stderr } = await runCliCommand(["help", "nonexistent-command"]);
 
-      // oclif should error when help is requested for a command that does not exist
       const hasError = error !== undefined;
       const errorMessage = error?.message ?? "";
       const hasStderrMessage =

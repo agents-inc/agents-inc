@@ -6,16 +6,7 @@ import type {
 } from "../../operations/index.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 
-/**
- * What the operations a command is built from answer, for a spec that stubs them.
- *
- * Each factory is typed against the operation's own result type, so a field the product adds is
- * a compile error at the one default here, and a field it retires is a compile error at every
- * override still naming it — neither survives as a dead value a hand-written object literal
- * returns. Every default is the result of an operation that found or did NOTHING, and a spec
- * whose assertion depends on one of those empties names it at the call site rather than
- * inheriting it.
- */
+// Every default is an operation that found or did nothing; a spec relying on one names it.
 
 /** `loadSource`'s answer: the source it was handed, and no startup messages captured. */
 export function buildLoadedSource(

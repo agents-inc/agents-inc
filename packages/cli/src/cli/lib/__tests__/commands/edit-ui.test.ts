@@ -24,15 +24,8 @@ import { writeTestTsConfig } from "../helpers/config-io.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
 
 /**
- * `edit --ui` is the outbound half of the editor round trip: it mints an id for the
- * installation in this directory and opens it in the editor.
- *
- * The seam is the network, answered by `@workspace/api-mocks` exactly as the `share` specs
- * answer it: reading the config, mapping it onto the wire contract and refusing what the contract
- * cannot carry all run for real, because that mapping is the whole of what this flag contributes
- * over `share`.
- * The browser opener is the one module mocked — it is a process boundary, and a spec that
- * launched a real browser would be unrunnable in CI.
+ * The network is answered by `@workspace/api-mocks`, so the config-to-wire mapping runs for real.
+ * Only the browser opener is mocked: it is a process boundary.
  */
 
 const { default: Edit } = await import("../../../commands/edit.js");
@@ -43,7 +36,6 @@ const REACT_CATEGORY = "web-framework";
 const PRIVATE_MARKETPLACE = "acme-internal";
 const OPENER_FAILURE = "Could not open your browser — 'xdg-open' exited 3.";
 
-/** Runs the command, returning the oclif error it threw (or `undefined` on success). */
 function runEditUi(): Promise<(Error & { oclif?: { exit?: number } }) | undefined> {
   return Edit.run(["--ui"], { root: CLI_ROOT }).then(
     () => undefined,
@@ -65,14 +57,12 @@ describe("edit --ui", () => {
     tempDir = await createTempDir("cc-edit-ui-test-");
     projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
-    // The config loader falls back to $HOME when the cwd carries no config, so an unstubbed
-    // HOME would let the developer's own installation decide what these runs share.
+    // The config loader falls back to $HOME, so HOME must not be the developer's.
     vi.stubEnv("HOME", tempDir);
     process.chdir(projectDir);
 
     stdoutChunks = [];
-    // Saved to be assigned straight back onto the same object in afterEach, so it is called
-    // with the receiver it came from. Binding would restore a wrapper rather than the original.
+    // Restored onto the same object in afterEach; binding would restore a wrapper instead.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- restored, not called
     origWrite = process.stdout.write;
     process.stdout.write = function (str: unknown): boolean {
@@ -81,8 +71,7 @@ describe("edit --ui", () => {
     };
 
     origIsTTY = process.stdin.isTTY;
-    // Whether a browser may be launched is a fact about the terminal this ran in, so every spec
-    // states it rather than inheriting whatever the runner happened to be started from.
+    // Every spec states whether a browser may launch rather than inheriting the runner's terminal.
     process.stdin.isTTY = false;
 
     mockOpenUrl.mockResolvedValue({ ok: true });
@@ -96,12 +85,10 @@ describe("edit --ui", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Writes the `config.ts` this command reads the installation out of. */
   async function installConfig(overrides: Partial<ProjectConfig>): Promise<void> {
     await writeTestTsConfig(projectDir, buildProjectConfig(overrides));
   }
 
-  /** The one installed configuration these specs open, unless a spec varies it. */
   function installedOverrides(overrides?: Partial<ProjectConfig>): Partial<ProjectConfig> {
     return {
       skills: [buildSkillConfig(REACT_ID, { scope: "global", origin: EJECT_SOURCE })],
@@ -166,8 +153,7 @@ describe("edit --ui", () => {
 
       await runEditUi();
 
-      // Piped or in CI there is nobody whose browser this would be. The link is the whole of
-      // what such a run can offer, and it is printed either way.
+      // Piped or in CI there is no browser to open; the link is printed either way.
       expect(mockOpenUrl).not.toHaveBeenCalled();
       expect(stdoutChunks.join("")).toContain(`${EDITOR_URL}/?fromId=${STORED_ID}`);
     });

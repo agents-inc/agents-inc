@@ -45,12 +45,8 @@ import type { discoverAllPluginSkills } from "../../plugins/index.js";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
- * One rejected selection, two commands, one wording.
- *
- * A selection the matrix rejects — a conflict, an unmet requirement, an exclusive category with
- * two picks — is a fact about the selection, not about the command that produced it. These specs
- * drive `init --from` and `edit --from` over the SAME shared configuration and compare the
- * warnings verbatim, because "init warns too" is a weaker claim than "init warns the same".
+ * `init --from` and `edit --from` over the same rejected configuration must warn verbatim alike:
+ * "init warns too" is weaker than "init warns the same".
  */
 
 const {
@@ -64,8 +60,7 @@ const {
   mockDiscoverAllPluginSkills,
 } = vi.hoisted(() => ({
   mockRender: vi.fn(),
-  // Typed against the real functions, so a field a stub returns that the product has retired is
-  // a compile error here rather than a dead value nothing reads.
+  // Typed against the real functions so a retired stub field is a compile error.
   mockLoadSource: vi.fn<typeof loadSource>(),
   mockLoadAgentDefs: vi.fn<typeof loadAgentDefs>(),
   mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
@@ -100,21 +95,14 @@ vi.mock("../../plugins/index.js", async (importOriginal) => ({
 const { default: Init } = await import("../../../commands/init.js");
 const { default: Edit } = await import("../../../commands/edit.js");
 
-/** The skill whose own `requires` entry the rejected selection below leaves unmet. */
 const REQUIRING_SKILL_ID = "web-framework-react" satisfies SkillId;
-/** What it requires, and what the clean selection adds to satisfy it. */
 const REQUIRED_SKILL_ID = "web-state-zustand" satisfies SkillId;
 
-/**
- * The rejected fixture: React selected, the Zustand it requires left out. Run through the
- * production validator rather than hand-written, so the expected text IS the product's text.
- */
+/** Run through the production validator, so the expected text is the product's text. */
 const REJECTED_VALIDATION = validateSelection([REQUIRING_SKILL_ID], BUILD_STEP_REQUIRES_MATRIX);
 
-/** What either command owes the user for {@link REJECTED_VALIDATION}. */
 const EXPECTED_WARNINGS = REJECTED_VALIDATION.errors.map((error) => error.message);
 
-/** The id both commands are handed; the mock worker serves whichever payload a spec stores. */
 const SEED_ID = "ParityCheck1";
 
 /** A project-scoped skill, so a run from a project holds nothing back as the global install's. */
@@ -130,7 +118,6 @@ const ACCEPTED_PAYLOAD = buildSeedPayload({
 
 const PROJECT_NAME = "validation-parity-project";
 
-/** Answers yes to whichever confirm a run puts up. */
 function confirmEveryPrompt(): void {
   mockRender.mockImplementation((element: ReactElement<Record<string, unknown>>) => {
     const onConfirm = element.props.onConfirm as (() => void) | undefined;
@@ -139,7 +126,6 @@ function confirmEveryPrompt(): void {
   });
 }
 
-/** Every `this.warn` message one command run emitted, in order. */
 async function warningsFrom(run: () => Promise<unknown>): Promise<string[]> {
   const warnings: string[] = [];
   const spy = vi.spyOn(Command.prototype, "warn").mockImplementation((input: Error | string) => {
@@ -159,9 +145,7 @@ describe("init and edit report a rejected selection identically", () => {
 
   useMockWorker();
 
-  // Both runs confirm through a stubbed prompt, which stands in for a person at a terminal — and
-  // `edit --from` refuses to apply where stdin is not one. Stated rather than inherited from
-  // whatever the runner was started from.
+  // The stubbed confirm stands in for a person, and `edit --from` refuses without a terminal.
   standAtTerminal();
 
   beforeEach(async () => {
@@ -172,22 +156,19 @@ describe("init and edit report a rejected selection identically", () => {
     await mkdir(fakeHome, { recursive: true });
     vi.stubEnv("HOME", fakeHome);
 
-    // `init` needs a greenfield directory and `edit` needs an installed one — the two
-    // preconditions are the only thing that differs between the runs.
+    // The only difference between the runs: `init` needs a greenfield dir, `edit` an installed one.
     initProjectDir = path.join(tempDir, "init-project");
     editProjectDir = path.join(tempDir, "edit-project");
     await mkdir(path.join(initProjectDir, CLAUDE_DIR), { recursive: true });
 
-    // A settings file that already grants a permission, so init's post-install permission notice
-    // resolves to null and never renders.
+    // An existing permission grant keeps init's post-install permission notice from rendering.
     await writeFile(
       path.join(initProjectDir, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON),
       JSON.stringify({ permissions: { allow: ["Read(*)"] } }),
     );
 
-    // The installed roster matches the payload each spec serves exactly, so `edit` reaches its
-    // no-change branch: the validation report is then the only thing that run has to say.
-    // `agents: []` is named because the factory's default roster would give edit a change to make.
+    // Matching the served payload exactly sends `edit` down its no-change branch; `agents: []`
+    // because the factory's default roster would give edit a change to make.
     await writeEditInstallation([REQUIRING_SKILL_ID]);
 
     initializeMatrix(BUILD_STEP_REQUIRES_MATRIX);
@@ -197,11 +178,7 @@ describe("init and edit report a rejected selection identically", () => {
       buildLoadedSource(buildSourceResult(BUILD_STEP_REQUIRES_MATRIX, tempDir)),
     );
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
-    // Every warning either command could add after the write is switched off BY NAME, because
-    // these specs compare the warnings a run emitted against the validator's alone: a config
-    // holding a skill no sub-agent loads is warned about, so is every compile warning, and so is
-    // every warning from a recompile the write propagated into another project — which is why the
-    // gate report names the empty list of projects it reached.
+    // Every post-write warning is switched off by name, so only the validator's warnings remain.
     mockWriteProjectConfig.mockResolvedValue(
       buildConfigWriteResult(
         buildProjectConfig({ name: PROJECT_NAME, skills: [], agents: [] }),

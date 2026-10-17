@@ -18,11 +18,8 @@ export async function writeTestSkill(
   skillsDir: string,
   skillId: SkillId,
   options?: {
-    /** Extra fields to merge into metadata.yaml (e.g., forkedFrom, displayName) */
     extraMetadata?: Record<string, unknown>;
-    /** Skip metadata.yaml creation entirely */
     skipMetadata?: boolean;
-    /** Custom SKILL.md content (overrides default generated content) */
     skillContent?: string;
   },
 ): Promise<string> {
@@ -47,9 +44,6 @@ export async function writeTestSkill(
     const domain = category.split("-")[0];
 
     const contentHash = await computeSkillFolderHash(skillDir);
-    // displayName included with the rest: it is one of the four fields
-    // `localRawMetadataSchema` requires, so a file without it describes no skill
-    // and `compile` refuses it.
     const baseMetadata = {
       author,
       category,
@@ -67,13 +61,7 @@ export async function writeTestSkill(
   return skillDir;
 }
 
-/**
- * Creates a source-level skill directory with SKILL.md and rich metadata.yaml.
- * Use this when testing `extractAllSkills()` and `mergeMatrixWithSkills()`.
- *
- * Unlike `writeTestSkill()` which creates installed skills, this writes skills
- * in the source directory layout (under `src/skills/<domain>/<category>/<name>/`).
- */
+/** Writes a skill in the source layout, where `writeTestSkill` writes an installed one. */
 export async function writeSourceSkill(
   skillsDir: string,
   directoryPath: string,
@@ -118,11 +106,6 @@ export async function writeTestAgent(
   return agentDir;
 }
 
-/**
- * Writes a source-agent layout (metadata.yaml + identity.md + playbook.md) for
- * one TestAgent under a source `agents/` directory. Extracted verbatim from
- * createTestSource's agent loop — output is byte-identical.
- */
 export async function writeSourceAgent(agentsDir: string, agent: TestAgent): Promise<string> {
   const agentDir = path.join(agentsDir, agent.name);
   await mkdir(agentDir, { recursive: true });
@@ -153,12 +136,7 @@ export async function writeSourceAgent(agentsDir: string, agent: TestAgent): Pro
   return agentDir;
 }
 
-/**
- * Writes a claude CLI v2 plugin registry (`installed_plugins.json`) under
- * pluginsDir. Each entry maps a `<plugin>@<marketplace>` key to one user-scoped
- * install record per given installPath — the shape `claude plugin install`
- * (>=2.1.220) writes for its cache layout.
- */
+/** One user-scoped install record per installPath, keyed `<plugin>@<marketplace>`. */
 export async function writeTestInstalledPluginsRegistry(
   pluginsDir: string,
   installPathsByKey: Record<string, string[]>,
@@ -176,11 +154,6 @@ export async function writeTestInstalledPluginsRegistry(
   return registryPath;
 }
 
-/**
- * Writes a plugin manifest (`.claude-plugin/plugin.json`) under pluginDir.
- * Defaults to pretty (2-space) JSON — matching createTestSource and the build
- * command tests; pass `{ pretty: false }` for the compact-form call sites.
- */
 export async function writeTestPluginManifest(
   pluginDir: string,
   manifest: TestPluginManifest,

@@ -5,7 +5,7 @@ export function createMockCategory(
   displayName: string,
   overrides?: Partial<CategoryDefinition>,
 ): CategoryDefinition {
-  // Boundary cast: test factory accepts arbitrary category IDs for test isolation
+  // Boundary cast: tests pass arbitrary category ids.
   return {
     id: id as Category,
     displayName,

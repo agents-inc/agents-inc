@@ -20,7 +20,7 @@ const AGENT = "web-developer";
 describe("installThroughOperations", () => {
   let dirs: TestDirs;
 
-  // Registered before `useFakeHome`, whose own `beforeEach` reads `dirs.tempDir`.
+  // Before `useFakeHome`, whose `beforeEach` reads `dirs.tempDir`.
   beforeEach(async () => {
     dirs = await createTestSource({ skills: INSTALL_MODE_SKILLS });
   });
@@ -44,7 +44,6 @@ describe("installThroughOperations", () => {
       projectDir: dirs.projectDir,
     });
 
-    // The copy step: every selected skill on disk under the project's skills directory.
     expect(copied.projectCopied.map((skill) => skill.skillId).sort()).toStrictEqual(
       [...SKILL_IDS].sort(),
     );
@@ -53,11 +52,9 @@ describe("installThroughOperations", () => {
       expect(await fileExists(skillPath)).toBe(true);
     }
 
-    // The config step: a config.ts naming exactly those skills.
     const written = await readTestTsConfig<ProjectConfig>(config.configPath);
     expect(written.skills.map((skill) => skill.id).sort()).toStrictEqual([...SKILL_IDS].sort());
 
-    // The compile step: the selected sub-agent compiled, with nothing failed.
     expect(compilation.compiled).toStrictEqual([AGENT]);
     expect(compilation.failed).toStrictEqual([]);
   });

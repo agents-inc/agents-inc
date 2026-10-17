@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeConfigPreservingOrder, normalizeGlobalConfig } from "./config-comparison.js";
 
-/** Lines in the shape the `config.ts` writer emits them: bare keys, single-quoted values. */
 const PROJECTS_LINE = "  projects: ['/home/alice/app', '/tmp/xyz-123'],";
 const OTHER_PROJECTS_LINE = "  projects: ['/home/bob/other'],";
 const SKILL_REACT = "  { id: 'web-framework-react', scope: 'global', origin: 'eject' },";
@@ -37,16 +36,6 @@ describe("normalizeGlobalConfig", () => {
   });
 });
 
-/**
- * The order-SENSITIVE sibling, and the case the block above cannot have.
- *
- * The two are one substitution apart at every call site and read identically there, which is what
- * made swapping them look like a dedup rather than an assertion change: importing the sorted one
- * into a round-trip test weakens "the passthrough edit rewrote the config byte for byte" into "it
- * kept the same set of lines in any order", and reordering is the regression that test exists for.
- * So the reordering case is asserted in both directions, in one file, and neither assertion means
- * anything without the other.
- */
 describe("normalizeConfigPreservingOrder", () => {
   it("does not mask a change to the projects list", () => {
     const before = [SKILL_REACT, PROJECTS_LINE, SKILL_VITEST].join("\n");

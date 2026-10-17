@@ -321,8 +321,6 @@ describe("edit command", () => {
   });
 });
 
-// Adding an agent with no skill change must not end in "No changes made".
-
 describe("edit command detects added agents", () => {
   let tempDir: string;
   let projectDir: string;
@@ -378,8 +376,6 @@ describe("edit command detects added agents", () => {
     expect(mockGetAgentDefinitions).toHaveBeenCalledTimes(1);
   });
 });
-
-// Skills switched to local source during edit are copied to .claude/skills/.
 
 describe("edit command copies newly added local skills", () => {
   let tempDir: string;

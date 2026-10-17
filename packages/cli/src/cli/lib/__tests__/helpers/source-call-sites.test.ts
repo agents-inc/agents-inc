@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { callSiteLines, callSiteOwners, constantMembersNamed } from "./source-call-sites.js";
 
-/**
- * The readers a roster gate is built on. Each is exercised on the shape that would make a gate
- * silently green: a second call sharing one line, and a constant reference naming no member.
- */
 describe("callSiteLines", () => {
   it("returns one trimmed entry per call, in source order", () => {
     const source = ["  this.warn(a);", "const x = 1;", "    this.warn(b);"].join("\n");
@@ -91,10 +87,6 @@ describe("callSiteOwners", () => {
       "}",
     ].join("\n");
 
-    // Nothing on the way to the call declares a member, so the call is
-    // reported as unattributed rather than filed under `if`. A reader that
-    // took the nearest parenthesised line would name a keyword, and a roster
-    // naming `if` reads like a real owner.
     expect(callSiteOwners(source, "this.pressSpace(")).toStrictEqual({
       owners: [],
       unattributed: 1,

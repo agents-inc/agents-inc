@@ -1,6 +1,5 @@
 import type { SkillId } from "../../types";
 
-/** Canonical skill ID lists per test fixture */
 export const EXPECTED_SKILLS = {
   WEB_DEFAULT: ["web-framework-react", "web-state-zustand"],
   API_DEFAULT: ["api-framework-hono"],

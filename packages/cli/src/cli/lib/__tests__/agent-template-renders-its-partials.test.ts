@@ -8,57 +8,25 @@ import { partialsRenderedBy } from "./helpers/template-partial-renders.js";
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/**
- * The shipped template a compile renders when nothing overrides it — both halves.
- *
- * C5 split it: `agent.liquid` is the frontmatter and ends by including `agent-body.liquid`, which
- * is where the prose and every `{% render %}` tag now live. Reading only the frontmatter half
- * would make the roster below agree with an empty list, which is the failure this file exists to
- * catch rather than to demonstrate.
- */
+/** Both halves: `agent.liquid` includes `agent-body.liquid`, where the render tags live. */
 const AGENT_TEMPLATE_HALVES = ["agent.liquid", "agent-body.liquid"].map((half) =>
   path.join(CLI_ROOT, "src/agents/_templates", half),
 );
 
-/** The directory `{% render "methodologies/…" %}` resolves against. */
 const METHODOLOGIES_DIR = path.join(CLI_ROOT, "src/agents/_templates/methodologies");
 
 const METHODOLOGY_PREFIX = "methodologies/";
 const LIQUID_SUFFIX = ".liquid";
 
-/**
- * The methodology partials `agent.liquid` renders, in the order it renders them.
- *
- * Order is part of the claim: the tags appear in the body in sequence, so this is the order every
- * compiled sub-agent reads its methodologies in.
- */
+/** In render order, which is the order every compiled sub-agent reads them. */
 const RENDERED_METHODOLOGY_PARTIALS = ["operating-principles"] as const;
 
-/**
- * Partials that sit in the directory and no `{% render %}` tag names.
- *
- * A member here is a file the compile ships and never reads — lines that read as part of the
- * product to anyone opening the directory, and are in no sub-agent anywhere.
- *
- * Empty since 2026-09-03, and the roster stays because emptiness is the assertion. The six
- * partials this directory used to hold were retired together: five were rendered into every
- * compiled sub-agent and are now one, and `improvement-protocol` was rendered by nothing while
- * instructing agents to write the prohibitions and the shouted emphasis the same pass removed.
- */
+/** Keep empty: a member is a file the compile ships and no sub-agent reads. */
 const UNRENDERED_METHODOLOGY_PARTIALS = [] as const;
 
 /**
- * Every methodology partial on disk is one the shipped template renders.
- *
- * The four things that normally catch a name that no longer names anything are all inapplicable
- * to a Liquid partial at once — `tsc` does not open one, ESLint does not lint one, the engine
- * runs `strictVariables: false`, and a `{% render %}` tag that disappears leaves no residue in
- * the output, only a shorter sub-agent. So the two ends are held against each other directly:
- * the tags the template writes, and the files the directory holds.
- *
- * A roster rather than a fixture, and rather than a count. A count cannot see a swap — one
- * partial retired and another added leaves it green — and the whole subject here is WHICH file
- * is on which side.
+ * Nothing else catches a stale `{% render %}` (no tsc, no lint, `strictVariables: false`), so the
+ * template's tags and the directory's files are held against each other by name.
  */
 describe("the shipped agent template renders the partials beside it", () => {
   it("renders the methodology partials in the order a compiled sub-agent reads them", async () => {

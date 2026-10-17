@@ -34,11 +34,7 @@ import { firstElement } from "../helpers/element-at.js";
 
 const EJECT_INSTALLED_SKILL_IDS: SkillId[] = ["web-framework-react", "api-framework-hono"];
 
-/**
- * Every directory `eject agent-partials` copies out of `src/agents/` — the
- * templates directory plus one directory per agent role. Asserted by name
- * rather than by count so a roster reorganization names what moved.
- */
+/** By name, not count, so a roster reorganization names what moved. */
 const EJECTED_AGENT_DIRS = [
   path.basename(DIRS.templates),
   "developer",
@@ -49,13 +45,7 @@ const EJECTED_AGENT_DIRS = [
   "tester",
 ].sort();
 
-/**
- * The partials `readAgentFiles` compiles each sub-agent out of, and therefore the
- * files `eject agent-partials` puts under the reader's control. The success log used
- * to promise "templates, agent intro, workflow, and examples" — four nouns, not one
- * of them a file the command wrote — so the log is asserted against this list AND
- * this list against the ejected tree.
- */
+/** The partials `readAgentFiles` compiles from; the success log is asserted against this list. */
 const EJECTED_AGENT_PARTIAL_FILES = [
   STANDARD_FILES.IDENTITY_MD,
   STANDARD_FILES.PLAYBOOK_MD,
@@ -64,15 +54,7 @@ const EJECTED_AGENT_PARTIAL_FILES = [
   STANDARD_FILES.OUTPUT_MD,
 ];
 
-/**
- * Everything `eject templates` copies out of `src/agents/_templates/` — both halves of the agent
- * template and the methodology partials directory beside them. Named rather than counted: a count
- * is green whichever entries land there.
- *
- * `agent-body.liquid` joined the list with C5's split. It has to be ejected WITH `agent.liquid`,
- * because the frontmatter half ends by including it: eject one and a project's own template
- * renders the shipped body, which is the opposite of what ejecting a template is for.
- */
+/** `agent-body.liquid` must eject with `agent.liquid`, which includes it. Named, not counted. */
 const EJECTED_TEMPLATE_ENTRIES = ["agent.liquid", "agent-body.liquid", "methodologies"].sort();
 
 /** A promise of a default, in a help text belonging to a flag that has none. */
@@ -186,10 +168,6 @@ describe("eject command", () => {
     });
   });
 
-  /**
-   * The help text is the surface a user reads before running anything, and this one
-   * promised a default the flag does not declare, at a destination nothing writes to.
-   */
   describe("the --output flag's own description", () => {
     it("promises no default, because the flag declares none", () => {
       expect(Eject.flags.output.default).toBeUndefined();
@@ -234,9 +212,7 @@ describe("eject command", () => {
 
       const configPath = getProjectConfigPath(projectDir, "claude");
       expect(await fileExists(configPath)).toBe(true);
-      // The resolver prefers whichever folder holds a config, so reading the path back through it
-      // finds the file under either name. A fresh project's eject creates the NEW folder, and only
-      // a literal says which — a folder name is text on a user's disk, not a constant to import.
+      // A literal: a folder name is text on disk, and a fresh project's eject creates the new one.
       expect(configPath).toBe(
         path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS),
       );
@@ -247,7 +223,7 @@ describe("eject command", () => {
     });
 
     it("should not overwrite existing config.yaml", async () => {
-      // Create existing config with custom YAML content (eject checks both .ts and .yaml)
+      // Eject checks both .ts and .yaml configs.
       const configDir = sourceFolderInUse(projectDir, "claude").dir;
       await mkdir(configDir, { recursive: true });
       const configPath = path.join(configDir, "config.yaml");
@@ -256,7 +232,6 @@ describe("eject command", () => {
 
       await runCliCommand(["eject", "agent-partials"]);
 
-      // YAML config should still exist unchanged
       const content = await readFile(configPath, "utf-8");
       expect(content).toBe(customContent);
     });
@@ -286,13 +261,7 @@ describe("eject command", () => {
       expect(await directoryExists(outputDir)).toBe(true);
     });
 
-    /**
-     * Named for what the second run does rather than for the skip branch it does NOT
-     * take: the first eject leaves `_templates` beside the partial directories, and
-     * `ejectAgentPartials` only refuses outright when the destination holds partials
-     * WITHOUT templates. That refusal is covered by "should block agent-partials eject
-     * when agents/ contains actual agent dirs" below.
-     */
+    /** The first eject leaves `_templates`, so the second re-ejects rather than refusing. */
     it("should skip templates and re-eject partials on a second run without --force", async () => {
       await runCliCommand(["eject", "agent-partials"]);
 
@@ -303,10 +272,8 @@ describe("eject command", () => {
     });
 
     it("should overwrite partials when --force is used", async () => {
-      // First eject
       await runCliCommand(["eject", "agent-partials"]);
 
-      // Second eject with --force
       const { error } = await runCliCommand(["eject", "agent-partials", "--force"]);
 
       const output = error?.message || "";
@@ -328,7 +295,6 @@ describe("eject command", () => {
       expect(stderr).toContain("templates already exist");
       expect(stdout).toContain("Agent partials ejected");
 
-      // Custom template content should be preserved
       const templateContent = await readFile(path.join(templatesDir, "agent.liquid"), "utf-8");
       expect(templateContent).toBe("custom template content");
     });
@@ -339,14 +305,13 @@ describe("eject command", () => {
         path.basename(DIRS.agents),
       );
 
-      // Manually create agents/ with an actual agent subdir to simulate a prior full eject
+      // An actual agent subdir simulates a prior full eject.
       await mkdir(path.join(agentsDir, "developer"), { recursive: true });
       await writeFile(
         path.join(agentsDir, "developer", STANDARD_FILES.AGENT_METADATA_YAML),
         "id: developer",
       );
 
-      // Second full eject without --force should be blocked
       const { stderr } = await runCliCommand(["eject", "agent-partials"]);
 
       expect(stderr).toContain("already exist");
@@ -382,15 +347,12 @@ describe("eject command", () => {
       );
       const entries = await readdir(agentsDir);
 
-      // Only _templates should exist, not developer/, reviewer/, etc.
       expect(entries).toStrictEqual([path.basename(DIRS.templates)]);
     });
 
     it("should warn with --force suggestion when templates already exist without --force", async () => {
-      // First eject creates the templates
       await runCliCommand(["eject", "templates"]);
 
-      // Second eject without --force should warn
       const { stderr } = await runCliCommand(["eject", "templates"]);
 
       expect(stderr).toContain("already exist");
@@ -398,7 +360,6 @@ describe("eject command", () => {
     });
 
     it("should preserve existing templates without --force", async () => {
-      // First eject creates the templates
       await runCliCommand(["eject", "templates"]);
 
       const templatesDir = path.join(
@@ -407,20 +368,16 @@ describe("eject command", () => {
         path.basename(DIRS.templates),
       );
 
-      // Modify a template file to detect overwrites
       const agentLiquidPath = path.join(templatesDir, "agent.liquid");
       await writeFile(agentLiquidPath, "custom template content");
 
-      // Second eject without --force
       await runCliCommand(["eject", "templates"]);
 
-      // Custom content should be preserved
       const afterContent = await readFile(agentLiquidPath, "utf-8");
       expect(afterContent).toBe("custom template content");
     });
 
     it("should overwrite existing templates with --force", async () => {
-      // First eject creates the templates
       await runCliCommand(["eject", "templates"]);
 
       const templatesDir = path.join(
@@ -429,16 +386,13 @@ describe("eject command", () => {
         path.basename(DIRS.templates),
       );
 
-      // Modify a template file
       const agentLiquidPath = path.join(templatesDir, "agent.liquid");
       await writeFile(agentLiquidPath, "custom template content");
 
-      // Second eject with --force should overwrite
       const { stdout } = await runCliCommand(["eject", "templates", "--force"]);
 
       expect(stdout).toContain("Agent templates ejected");
 
-      // Content should be replaced with fresh copy from CLI source
       const afterContent = await readFile(agentLiquidPath, "utf-8");
       expect(afterContent).not.toBe("custom template content");
     });
@@ -458,8 +412,7 @@ describe("eject command", () => {
       const { stdout, error } = await runCliCommand(["eject", "skills"]);
 
       expect(error).toBeUndefined();
-      // The count and the source label both belong to whichever marketplace answered,
-      // so the assertion names the clause that says the skills came from one at all.
+      // The count and source label vary by marketplace, so only the clause is asserted.
       expect(stdout).toMatch(/skills ejected to .+ from \S+/);
       expect(await directoryExists(path.join(projectDir, LOCAL_SKILLS_PATH))).toBe(true);
     });
@@ -476,8 +429,7 @@ describe("eject command", () => {
     it("should refuse a --source flag — it reads the configured source", async () => {
       const { error } = await runCliCommand(["eject", "skills", "--source", "/nonexistent/path"]);
 
-      // The flag is withdrawn, not merely ignored: silently accepting it would eject from one
-      // source while recording another in config.ts.
+      // Withdrawn, not ignored: accepting it would eject from one source and record another.
       expect(error?.message).toContain("--source");
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
@@ -490,8 +442,7 @@ describe("eject command", () => {
       expect(error).toBeUndefined();
       expect(stdout).toContain("Agent partials ejected");
       expect(stdout).toContain("Agent templates ejected");
-      // The third type, which "should eject both agent-partials and templates" below
-      // does not reach — `all` is the only invocation that ejects all three.
+      // Only `all` ejects the third type.
       expect(stdout).toMatch(/skills ejected to .+ from \S+/);
     });
 
@@ -525,14 +476,12 @@ describe("eject command", () => {
       expect(await directoryExists(templatesDir)).toBe(true);
 
       const entries = await readdir(agentsDir);
-      // Should have templates AND other agent dirs
       expect([...entries].sort()).toStrictEqual(EJECTED_AGENT_DIRS);
     });
   });
 
   describe("error handling", () => {
     it("should error when output path is an existing file", async () => {
-      // Create a file where output directory would be
       const outputPath = path.join(tempDir, "existing-file");
       await writeFile(outputPath, "existing content");
 
@@ -541,11 +490,7 @@ describe("eject command", () => {
       expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
     });
 
-    /**
-     * Where the files land is the claim. The negation below reads a phrase no code path prints, so
-     * on its own it held whether or not the tilde was expanded; the directory under HOME, and the
-     * absence of a literal `~` beside the project, are what an unexpanded path would get wrong.
-     */
+    /** The negation alone held either way; the HOME dir and absent literal `~` are the claim. */
     it("should expand tilde in output path", async () => {
       const { stdout, error } = await runCliCommand([
         "eject",
@@ -566,7 +511,6 @@ describe("eject command", () => {
   });
 });
 
-// Skills that exist in the source but are NOT installed locally (eligible for eject)
 const NON_INSTALLED_SKILLS = DEFAULT_TEST_SKILLS.filter(
   (s) => !EJECT_INSTALLED_SKILL_IDS.includes(s.id as SkillId),
 );
@@ -582,11 +526,6 @@ function buildEjectMatrix(localSkillIds: SkillId[] = []): MergedSkillsMatrix {
   );
 }
 
-/**
- * Builds the matrix, source result, and skill IDs for eject operations.
- * When localSkillIds is provided, marks those skills as local and filters them out.
- * When omitted, returns all skill IDs (plugin mode behavior).
- */
 async function runEjectCopy(dirs: TestDirs, outputDir: string, localSkillIds?: SkillId[]) {
   const matrix = buildEjectMatrix(localSkillIds);
   const sourceResult = buildSourceResult(matrix, dirs.sourceDir);
@@ -596,14 +535,7 @@ async function runEjectCopy(dirs: TestDirs, outputDir: string, localSkillIds?: S
   return copySkillsToLocalFlattened(skillIds, outputDir, sourceResult);
 }
 
-// These tests exercise the eject skill-copying pipeline directly by calling
-// copySkillsToLocalFlattened. The production eject command calls this same
-// function after loading the matrix via loadSkillsMatrixFromSource, but the
-// production skillCategoriesFileSchema has hardcoded z.enum values that
-// require ALL categories and display names to be present — which prevents
-// test source matrices from validating. By testing the copying logic directly,
-// we verify the core eject behavior (filtering, file copying, metadata
-// injection) without requiring a valid full-production matrix on disk.
+// Tests the copy pipeline directly: the production categories schema needs a full matrix on disk.
 
 describe("eject skills from initialized project", () => {
   let dirs: TestDirs;
@@ -614,7 +546,6 @@ describe("eject skills from initialized project", () => {
     dirs = await createTestSource();
     process.chdir(dirs.projectDir);
 
-    // Run the live install to create a real initialized project with 2 skills
     const installMatrix = buildEjectMatrix();
     initializeMatrix(installMatrix);
     const installSource = buildSourceResult(installMatrix, dirs.sourceDir);
@@ -682,7 +613,6 @@ describe("eject skills from initialized project", () => {
     expect(await fileExists(metadataPath)).toBe(true);
 
     const metadata = await readTestYaml<Record<string, unknown>>(metadataPath);
-    // copySkillsToLocalFlattened injects forkedFrom with skillId, contentHash, date, source
     expect(metadata.forkedFrom).toStrictEqual({
       skillId: targetSkill.id,
       contentHash: expect.any(String),
@@ -738,9 +668,7 @@ describe("eject skills from initialized project", () => {
   });
 });
 
-// Plugin mode writes config and agents but does NOT copy skills to .claude/skills/ — the
-// skills live in installed plugins. Therefore, when ejecting skills from a plugin mode
-// project, ALL source skills should be eligible (none are local).
+// Plugin mode copies no skills locally, so every source skill is eligible for eject.
 
 describe("eject in plugin mode", () => {
   let dirs: TestDirs;
@@ -751,8 +679,7 @@ describe("eject in plugin mode", () => {
     dirs = await createTestSource();
     process.chdir(dirs.projectDir);
 
-    // Plugin mode is the config write ALONE — `init` skips its copy step when no skill is
-    // ejected, so nothing lands under .claude/skills/ and every source skill stays eligible.
+    // Plugin mode is the config write alone: `init` skips its copy step when nothing is ejected.
     const installMatrix = buildEjectMatrix();
     initializeMatrix(installMatrix);
     const installSource = buildSourceResult(installMatrix, dirs.sourceDir);
@@ -775,7 +702,6 @@ describe("eject in plugin mode", () => {
     expect(await fileExists(configPath)).toBe(true);
 
     const config = await readTestTsConfig<ProjectConfig>(configPath);
-    // installMode is derived at runtime from skills; all skills should have non-local source
     expect(config.skills.every((s) => s.origin !== "eject")).toBe(true);
   });
 
@@ -832,7 +758,6 @@ describe("eject in plugin mode", () => {
 
     await runEjectCopy(dirs, defaultSkillsDir);
 
-    // All source skills should be present (none are local in plugin mode)
     for (const skill of DEFAULT_TEST_SKILLS) {
       const skillDir = path.join(defaultSkillsDir, skill.id);
       expect(await directoryExists(skillDir)).toBe(true);
@@ -845,14 +770,13 @@ describe("eject in plugin mode", () => {
 
     const copiedSkills = await runEjectCopy(dirs, outputDir);
 
-    // All source skills should be ejected (none are local in plugin mode)
     expect(copiedSkills.length).toBe(DEFAULT_TEST_SKILLS.length);
   });
 
   it("should eject agent-partials from plugin mode project", async () => {
     const { stdout } = await runCliCommand(["eject", "agent-partials", "--force"]);
 
-    // Partials eject from CLI source, not project source
+    // Partials eject from CLI source, not project source.
     expect(stdout).toContain("Agent partials ejected");
 
     const partialsDir = path.join(

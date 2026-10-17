@@ -13,9 +13,6 @@ describe("flattenCliOutput", () => {
     expect(flattenCliOutput("already one line")).toBe("already one line");
   });
 
-  // The whole point is asserting a WHOLE sentence, so the collapse must not swallow the spaces
-  // that separate its words — a version that stripped rather than collapsed would pass every
-  // `toContain` on a fragment and fail only on the full string, which is the case it exists for.
   it("collapses runs of whitespace to one space rather than removing them", () => {
     expect(flattenCliOutput("two    words\t\tapart")).toBe("two words apart");
   });
@@ -26,7 +23,6 @@ describe("flattenCliOutput", () => {
 });
 
 describe("compactCliOutput", () => {
-  /** A path longer than oclif's line, broken where the column ran out, as oclif breaks one. */
   const BROKEN_PATH =
     " ›   Error: config at '/tmp/a-very-long-temp-dir-0123\n ›   456789/config.ts' failed\n";
   const WHOLE_PATH = "config at '/tmp/a-very-long-temp-dir-0123456789/config.ts' failed";

@@ -9,11 +9,7 @@ import { HANDED_OUT_INVOCATIONS, invocationsIn } from "./helpers/handed-out-invo
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/**
- * Everything that ships. Tests are excluded because a spec quoting a message is not the CLI
- * saying anything to anybody, and a spec's own fixture is free to name a command deliberately
- * absent.
- */
+/** Tests are excluded: a spec quoting a message is not the CLI saying it. */
 const SHIPPED_SOURCES = ["src/cli/**/*.ts", "src/cli/**/*.tsx"];
 const NOT_SHIPPED = ["src/cli/**/*.test.ts", "src/cli/**/*.test.tsx", "src/cli/**/__tests__/**"];
 
@@ -25,23 +21,12 @@ async function everyShippedSource(): Promise<string> {
   return sources.join("\n");
 }
 
-/**
- * Half of a two-part guard, and the half that does the binding. The other half is
- * `e2e/commands/handed-out-invocations.e2e.test.ts`, which runs every entry of
- * `HANDED_OUT_INVOCATIONS` against the real binary.
- *
- * Separating them is the whole design. A run-it spec reading its own hand-written list proves
- * the binary answers for a list nobody has held against the messages — which is the state the
- * `add` refusal shipped in for as long as it existed. This end reads the messages and refuses a
- * list that has stopped describing them, so a new invocation cannot reach users without someone
- * deciding, here, that the binary should answer for it.
- */
+/** Binds `HANDED_OUT_INVOCATIONS` to the messages; `handed-out-invocations.e2e.test.ts` runs it. */
 describe("the invocations the CLI hands out are the ones a spec runs", () => {
   it("finds in src exactly the invocations the run-it list names", async () => {
     const found = invocationsIn(await everyShippedSource());
 
-    // The subject guard: a scan that matched nothing satisfies nothing, and a renamed
-    // interpolation would produce exactly that while every message still printed.
+    // Subject guard: a scan matching nothing would satisfy everything.
     expect(
       found.length,
       "no message in src/cli hands out an invocation at all — the reader has stopped matching what the messages are written through",

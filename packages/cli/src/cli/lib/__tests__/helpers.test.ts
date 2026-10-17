@@ -26,7 +26,6 @@ describe("test helpers", () => {
 
   describe("createMockSkill", () => {
     it("creates a valid skill with defaults", () => {
-      // Using normalized skill ID format — category resolved from canonical registry
       const skill = createMockSkill("web-framework-react");
 
       expect(skill.id).toBe("web-framework-react");

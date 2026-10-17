@@ -34,23 +34,14 @@ vi.mock("../../hosts/host-for.js", async () => {
   return { hostAt: () => host, hostFor: () => host };
 });
 
-/**
- * The removal plan's compiled-agents item, the section header it sits under, and the statement
- * that stands beside it for the agent files this run leaves alone. Written out here rather than
- * imported from the command, so an assertion meant to hold a user-facing string still cannot move
- * with it. Both singular and plural forms are spelled out — the count is part of the claim.
- */
+/** Written out, not imported, so an assertion on user-facing text cannot move with it. */
 const PLAN_AGENTS_ITEM = "(CLI-compiled)";
 const PLAN_CLI_MANAGED_SECTION = "CLI-managed files:";
 const PLAN_AGENTS_KEPT_ONE = "Kept 1 agent in";
 const PLAN_AGENTS_KEPT_TWO = "Kept 2 agents in";
 const PLAN_AGENTS_KEPT_REASON = "no agents-inc marker";
 
-/**
- * The three lines that say whether this run has a removal to make at all: the heading the plan is
- * printed under, the report that stands in its place when there is none, and the closing line that
- * claims the removal happened. Written out here for the same reason as the plan strings above.
- */
+/** Whether the run has a removal to make at all; written out for the same reason. */
 const PLAN_PREVIEW_HEADING = "The following will be removed:";
 const NOTHING_TO_UNINSTALL = "Nothing to uninstall";
 const UNINSTALL_COMPLETE = "Uninstall complete";
@@ -58,56 +49,29 @@ const UNINSTALL_COMPLETE = "Uninstall complete";
 const TEST_PLUGIN_NAME = "test-plugin@marketplace";
 
 /**
- * The line `uninstall` prints for each plugin it really deregistered, written out here for the
- * reason every other string in this file is: an assertion that imported the product's own wording
- * would move with it and could never fail.
- *
- * The count is what a run OBSERVED, never what its plan named. Every spec here that stages a
- * plugin DIRECTORY registers nothing with a host, so the host finds nothing to deregister and the
- * run must stay silent about a removal it did not make — which is why those specs assert this
- * line's ABSENCE, beside the directory assertion that carries their subject. That negative is also
- * satisfied by a command that never counts anything. What stops it being free is the counting
- * half: `uninstallPlugins` answering `totalUninstalled: 1` when the host reports `removed`, in
- * "should uninstall re-scoped plugins by trying both scopes" below; the operation's own
- * `absent`/`removed` pair in `uninstall-plugin-skills.test.ts`; and the printed line itself, which
- * only the e2e `codex-uninstall-reports-what-it-observed` asserts present.
+ * Printed per plugin really deregistered: the count is what a run observed, not what it planned.
+ * Specs staging only a directory register nothing, so they assert its absence.
  */
 const PLUGIN_COUNT_LINE = "Uninstalled 1 plugin";
 
-/** Why a spec that staged only a plugin directory must not print {@link PLUGIN_COUNT_LINE}. */
 const NOTHING_REGISTERED_TO_COUNT =
   "no host held a registration for the staged plugin, so a count claims a removal the run never observed";
 
-/**
- * The skill the staged plugin is keyed on — `<skill>@<origin>` is {@link TEST_PLUGIN_NAME} — and
- * no catalogue skill, so a config naming it is written as the plain string it is.
- */
+/** Not a catalogue skill, so a config naming it is written as a plain string. */
 const TEST_PLUGIN_SKILL = "test-plugin";
 const PLUGIN_SUBPATH = path.join(CLAUDE_DIR, "plugins", TEST_PLUGIN_NAME);
 const TEST_SOURCE = TEST_SOURCE_URL;
 const TEST_EXTRA_SOURCE = "github:acme-corp/skills";
 
-/**
- * Two marketplace NAMES — what the plugin registry keys on — kept apart from the refs above so
- * an assertion cannot pass by matching the wrong one.
- */
+/** Registry keys, kept apart from the refs above so an assertion cannot match the wrong one. */
 const MARKETPLACE_NAME = "agents-inc";
 const OTHER_MARKETPLACE_NAME = "custom-source";
 
-/**
- * A catalogue skill staged as a plugin, for the specs that hand `uninstallPlugins` a
- * `ProjectConfig` directly rather than writing one to disk. That parameter is typed to the
- * catalogue union, so {@link TEST_PLUGIN_SKILL} could only reach it through a cast — an id
- * production can never pass there.
- */
+/** `uninstallPlugins` takes a catalogue-typed config, so the fixture skill would need a cast. */
 const CATALOGUE_PLUGIN_SKILL = "web-framework-react" satisfies SkillId;
 const CATALOGUE_PLUGIN_NAME = `${CATALOGUE_PLUGIN_SKILL}@marketplace`;
 
-/**
- * A `branding.name` a project config supplies, sharing no substring with
- * {@link DEFAULT_BRANDING.NAME} so neither half of a paired assertion can be satisfied by the
- * other's output.
- */
+/** Shares no substring with the default name, so neither paired assertion fakes the other. */
 const WHITE_LABEL_NAME = "Northwind";
 
 /** The preserved-directory warning, minus the name of the tool it says did not create it. */
@@ -115,13 +79,7 @@ function notCreatedBy(brandingName: string): string {
   return `not created by ${brandingName} CLI`;
 }
 
-/**
- * Creates a `config.ts` with source configuration, in the folder the project is on.
- *
- * `skills` takes fixture ids as well as catalogue ones: the config is written to disk, which is
- * the boundary the product reads it back through, so a staged plugin's non-catalogue skill needs
- * no cast to get there.
- */
+/** `skills` takes fixture ids too: the config is written to disk, so no cast is needed. */
 async function createProjectConfig(
   projectDir: string,
   {
@@ -147,34 +105,24 @@ async function createProjectConfig(
   );
 }
 
-/**
- * Creates a plugin directory with the full settings.json-based discovery chain:
- * 1. Project .claude/settings.json with enabledPlugins
- * 2. Fake home ~/.claude/plugins/installed_plugins.json registry
- * 3. Plugin manifest at the install path (.claude-plugin/plugin.json)
- */
+/** A plugin dir with the full discovery chain: settings.json, home registry, and manifest. */
 async function createPluginDir(projectDir: string, fakeHome: string): Promise<string> {
   const pluginDir = path.join(projectDir, PLUGIN_SUBPATH);
   await mkdir(pluginDir, { recursive: true });
 
-  // Create plugin manifest so getVerifiedPluginInstallPaths can verify the path
   await writeTestPluginManifest(
     pluginDir,
     { name: TEST_PLUGIN_NAME, version: "1.0.0" },
     { pretty: false },
   );
 
-  // Create .claude/settings.json with enabled plugin
   const settingsPath = path.join(projectDir, CLAUDE_DIR, "settings.json");
   await writeFile(settingsPath, JSON.stringify({ enabledPlugins: { [TEST_PLUGIN_NAME]: true } }));
 
-  // Use resolved (real) paths for registry entries because process.cwd()
-  // resolves symlinks (e.g., /var -> /private/var on macOS) and the
-  // uninstall command compares projectPath against process.cwd().
+  // Real paths: process.cwd() resolves symlinks (/var -> /private/var on macOS).
   const realProjectDir = fs.realpathSync(projectDir);
   const realPluginDir = path.join(realProjectDir, PLUGIN_SUBPATH);
 
-  // Create global registry at fake home
   const registryDir = path.join(fakeHome, CLAUDE_DIR, "plugins");
   await mkdir(registryDir, { recursive: true });
   await writeFile(
@@ -198,7 +146,6 @@ async function createPluginDir(projectDir: string, fakeHome: string): Promise<st
   return pluginDir;
 }
 
-/** Creates a skill with forkedFrom.source matching a configured source (CLI-installed) */
 async function createCLISkill(
   skillsDir: string,
   skillId: SkillId,
@@ -217,21 +164,18 @@ async function createCLISkill(
   });
 }
 
-/** Creates a skill directory WITHOUT forkedFrom (user-created skill) */
 async function createUserSkill(skillsDir: string, skillId: SkillId): Promise<string> {
   return writeTestSkill(skillsDir, skillId, {
     extraMetadata: { displayName: skillId },
   });
 }
 
-/** Creates a skill directory with no metadata.yaml at all */
 async function createSkillWithoutMetadata(skillsDir: string, skillId: SkillId): Promise<string> {
   return writeTestSkill(skillsDir, skillId, {
     skipMetadata: true,
   });
 }
 
-/** Creates a user MCP server config in .claude/mcp.json */
 async function createUserMcpConfig(claudeDir: string): Promise<string> {
   const mcpPath = path.join(claudeDir, "mcp.json");
   await writeFile(
@@ -245,32 +189,25 @@ async function createUserMcpConfig(claudeDir: string): Promise<string> {
   return mcpPath;
 }
 
-/** Creates a user settings.json in .claude/settings.json (without plugin references) */
 async function createUserSettings(claudeDir: string): Promise<string> {
   const settingsPath = path.join(claudeDir, "settings.json");
   await writeFile(settingsPath, JSON.stringify({ userPreference: "dark-mode" }));
   return settingsPath;
 }
 
-/** Creates a user CLAUDE.md in .claude/CLAUDE.md */
 async function createUserClaudeMd(claudeDir: string): Promise<string> {
   const claudeMdPath = path.join(claudeDir, STANDARD_FILES.CLAUDE_MD);
   await writeFile(claudeMdPath, "# Project Instructions\n\nUser project rules.");
   return claudeMdPath;
 }
 
-/** Creates `<projectDir>/.claude/skills/` (and .claude/) and returns the skills dir. */
 async function createProjectSkillsDir(projectDir: string): Promise<string> {
   const skillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
   await mkdir(skillsDir, { recursive: true });
   return skillsDir;
 }
 
-/**
- * Writes one agent file into `<projectDir>/.claude/agents/` and returns its path.
- * `compiled` stamps it with the provenance marker the compiler emits — the only thing
- * that says this CLI produced the file once the configuration naming it is gone.
- */
+/** `compiled` stamps the provenance marker, the CLI's only claim once the config is gone. */
 async function createAgentFile(
   projectDir: string,
   agentName: string,
@@ -383,13 +320,7 @@ describe("uninstall command", () => {
       expect(output).toContain("not created by");
     });
 
-    /**
-     * The one branded line `uninstall` prints that is neither its heading nor its sign-off. It
-     * claims which tool did NOT write the directory being kept, so under a white label it has to
-     * name the tool the user knows. Paired with the default below: the configured half alone
-     * passes on a line hardcoded to the fixture, and the default half alone passes on wiring that
-     * never landed.
-     */
+    /** Paired with the default below: either alone passes on a hardcoded or never-wired line. */
     it("should name the configured branding in the preserved-skill warning", async () => {
       await createProjectConfig(projectDir, { branding: { name: WHITE_LABEL_NAME } });
       const skillsDir = await createProjectSkillsDir(projectDir);
@@ -443,11 +374,9 @@ describe("uninstall command", () => {
 
       const output = stdout + stderr;
 
-      // CLI skill should be removed
       expect(await directoryExists(cliSkillDir)).toBe(false);
       expect(output).toContain("Removed 1 CLI-installed skill");
 
-      // User skill should remain
       expect(await directoryExists(userSkillDir)).toBe(true);
       expect(output).toContain("Skipping 'web-tooling-custom'");
     });
@@ -471,33 +400,26 @@ describe("uninstall command", () => {
       });
       const skillsDir = await createProjectSkillsDir(projectDir);
 
-      // Skill from primary source
       const primarySkillDir = await createCLISkill(skillsDir, "web-framework-react", TEST_SOURCE);
-      // Skill from extra source
       const extraSkillDir = await createCLISkill(
         skillsDir,
         "web-tooling-acme" as SkillId,
         TEST_EXTRA_SOURCE,
       );
-      // User skill
       const userSkillDir = await createUserSkill(skillsDir, "web-tooling-personal" as SkillId);
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      // Both source-matched skills removed
       expect(await directoryExists(primarySkillDir)).toBe(false);
       expect(await directoryExists(extraSkillDir)).toBe(false);
-      // User skill preserved
       expect(await directoryExists(userSkillDir)).toBe(true);
       expect(stdout).toContain("Removed 2 CLI-installed skills");
     });
 
     it("should handle legacy skills without source field in forkedFrom when config exists", async () => {
-      // Legacy skill: has forkedFrom but no source field
       await createProjectConfig(projectDir);
       const skillsDir = await createProjectSkillsDir(projectDir);
 
-      // Create a legacy skill with forkedFrom but no source
       const legacySkillDir = await writeTestSkill(skillsDir, "web-framework-vue-composition-api", {
         extraMetadata: {
           displayName: "web-framework-vue-composition-api",
@@ -505,14 +427,13 @@ describe("uninstall command", () => {
             skillId: "web-framework-vue-composition-api",
             contentHash: "def5678",
             date: "2026-01-01",
-            // Note: no source field (legacy)
+            // No source field (legacy).
           },
         },
       });
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      // Legacy skill with forkedFrom but no source should still be removed when config exists
       expect(await directoryExists(legacySkillDir)).toBe(false);
       expect(stdout).toContain("Removed 1 CLI-installed skill");
     });
@@ -533,9 +454,7 @@ describe("uninstall command", () => {
 
       expect(await directoryExists(agentsDir)).toBe(false);
       expect(stdout).toContain("Removed 1 compiled agent");
-      // The control for the config-less case below. A config naming the agents is exactly what
-      // makes their directory the CLI's to delete, so this is the state — and the only state —
-      // in which the plan may promise it.
+      // Control for the config-less case below: a config naming the agents makes them deletable.
       expect(stdout).toContain(PLAN_CLI_MANAGED_SECTION);
       expect(stdout).toContain(PLAN_AGENTS_ITEM);
       expect(stdout).not.toContain(PLAN_AGENTS_KEPT_ONE);
@@ -556,14 +475,11 @@ describe("uninstall command", () => {
       expect(await directoryExists(agentsDir)).toBe(true);
       expect(await readFile(agentPath, "utf-8")).toBe(agentBefore);
 
-      // The plan may not promise a removal the run then declines to make. Without a config
-      // nothing says which agent files this CLI compiled, so every one of them is kept.
+      // Without a config nothing says which agent files this CLI compiled, so all are kept.
       expect(output).not.toContain(PLAN_AGENTS_ITEM);
       expect(output).not.toContain(PLAN_CLI_MANAGED_SECTION);
 
-      // With that item gone the plan carries no removal at all, and these agents were the only
-      // thing here. A heading over an empty list and a closing success line each report a removal
-      // this run never makes, so neither may be printed — the run has nothing to uninstall.
+      // With nothing to remove, neither the heading nor the success line may print.
       expect(output).not.toContain(PLAN_PREVIEW_HEADING);
       expect(output).toContain(NOTHING_TO_UNINSTALL);
       expect(output).not.toContain(UNINSTALL_COMPLETE);
@@ -573,8 +489,7 @@ describe("uninstall command", () => {
       const skillsDir = await createProjectSkillsDir(projectDir);
       const cliSkillDir = await createCLISkill(skillsDir, "web-framework-react");
 
-      // Neither file carries the marker, so neither is this CLI's to delete — including the one
-      // whose basename is an agent the CLI itself compiles.
+      // No marker, so neither is this CLI's, including the one named like a built-in agent.
       const builtInNamed = await createAgentFile(projectDir, AGENT_DEFS.webDev.name, {
         compiled: false,
       });
@@ -585,27 +500,20 @@ describe("uninstall command", () => {
       const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
       const output = stdout + stderr;
 
-      // Skills carry their own forked-from metadata, so they are identified without the config and
-      // a plan is printed. That is the positive subject guard the two negatives below need: with no
-      // plan on screen at all they would hold for free.
+      // Positive subject guard: skills carry their own provenance, so a plan is printed.
       expect(output).toContain(PLAN_PREVIEW_HEADING);
       expect(output).toContain(PLAN_CLI_MANAGED_SECTION);
       expect(output).not.toContain(PLAN_AGENTS_ITEM);
       expect(output).toContain(PLAN_AGENTS_KEPT_TWO);
       expect(output).toContain(PLAN_AGENTS_KEPT_REASON);
 
-      // The plan and the run are one decision: what it promised is gone, what it named as kept is
-      // byte-identical.
+      // What the plan promised is gone; what it kept is byte-identical.
       expect(await directoryExists(cliSkillDir)).toBe(false);
       expect(await readFile(builtInNamed, "utf-8")).toBe(builtInNamedBefore);
       expect(await readFile(userNamed, "utf-8")).toBe(userNamedBefore);
     });
 
-    /**
-     * The marker is what lets a run with no configuration tell its own output from the user's.
-     * One file carries it and goes; the other does not and stays — and the plan the user reads
-     * before pressing `y` says both, as does the summary printed after.
-     */
+    /** The marker tells this CLI's agents from the user's; the plan and summary say both. */
     it("should sweep the marked agents and keep the unmarked ones when no config can name them", async () => {
       const compiled = await createAgentFile(projectDir, AGENT_DEFS.webDev.name, {
         compiled: true,
@@ -657,10 +565,7 @@ describe("uninstall command", () => {
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      // config.ts was the only content, so the emptied provider folder goes — and so does the
-      // `.agents-inc/` parent, which is this product's own name and means nothing left empty.
-      // Asserting the parent is not decoration: the provider folder's absence is satisfied by an
-      // install that left `.agents-inc/` sitting there with nothing in it.
+      // The emptied provider folder goes, and so does the `.agents-inc/` parent.
       expect(await directoryExists(sourceFolder)).toBe(false);
       expect(await directoryExists(path.join(projectDir, ".agents-inc"))).toBe(false);
       expect(stdout).toContain("Removed .agents-inc/claude/");
@@ -742,9 +647,7 @@ describe("uninstall command", () => {
 
   describe("re-scoped plugin handling", () => {
     it("should match plugin keys using marketplace fallback when skill source differs", async () => {
-      // Config has skill.origin = "re-scoped-source" but config.marketplaceName = "marketplace"
-      // Plugin key in settings.json is "test-plugin@marketplace"
-      // Without the marketplace fallback, the key won't match
+      // origin "re-scoped-source" vs marketplaceName "marketplace": only the fallback key matches.
       await createProjectConfig(projectDir, {
         marketplaceName: "marketplace",
         skills: buildSkillConfigs([TEST_PLUGIN_SKILL], {
@@ -774,27 +677,19 @@ describe("uninstall command", () => {
 
       const keys = getCliInstalledPluginKeys(config);
 
-      // Primary keys always present
       expect(keys.has("web-framework-react@custom-source")).toBe(true);
       expect(keys.has("web-state-zustand@eject")).toBe(true);
       expect(keys.has("api-framework-hono@agents-inc")).toBe(true);
 
-      // Marketplace variant for non-eject skill whose origin differs from the marketplace name
       expect(keys.has("web-framework-react@agents-inc")).toBe(true);
 
-      // No marketplace variant for eject skills
       expect(keys.has("web-state-zustand@agents-inc")).toBe(false);
 
-      // No marketplace variant when the origin already matches the marketplace name
-      // (only the primary key "api-framework-hono@agents-inc" exists, no duplicate)
+      // No duplicate when the origin already matches the marketplace name.
       expect(keys.size).toBe(4);
     });
 
-    /**
-     * The registry key is `<id>@<marketplace NAME>` — the identity Claude Code registered the
-     * plugin under. Once the ref moves onto `marketplace`, reading that field here would build
-     * a key spelling a repository URL, which matches nothing and leaves the plugin installed.
-     */
+    /** The registry key uses the marketplace name; the ref would spell a URL and match nothing. */
     it("builds the marketplace variant key from the marketplace name, not the ref", () => {
       const config = buildProjectConfig({
         marketplace: TEST_SOURCE_URL,
@@ -816,7 +711,6 @@ describe("uninstall command", () => {
       const uninstallPlugin = vi.mocked(hostAt(projectDir).uninstallPlugin);
       uninstallPlugin.mockClear();
 
-      // Import the exported uninstallPlugins function
       const { uninstallPlugins: uninstallPluginsFn } = await import("../../../commands/uninstall");
 
       const pluginsDir = path.join(projectDir, CLAUDE_DIR, "plugins");
@@ -839,8 +733,7 @@ describe("uninstall command", () => {
 
       expect(result.totalUninstalled).toBe(1);
 
-      // A re-scoped plugin is filed under the scope it was INSTALLED at, so every scope the host
-      // installs plugins at is swept — the config's own answer first.
+      // A re-scoped plugin is filed under its install scope, so every scope is swept.
       expect(
         uninstallPlugin.mock.calls.map(([ref, scope, dir]) => [ref, scope, dir]),
         "one scope alone leaves a re-scoped plugin registered, and the wrong scope first removes the one the config does not name",
@@ -851,9 +744,7 @@ describe("uninstall command", () => {
     });
 
     it("should uninstall project-scoped plugin that was re-scoped from global during init", async () => {
-      // Scenario: skill was originally global, re-scoped to project during init
-      // Config says scope: "project" but plugin registry may have "user" scope entry
-      // The marketplace name in config differs from the skill origin
+      // Originally global, re-scoped to project; the registry may hold a "user" entry.
       await createProjectConfig(projectDir, {
         marketplaceName: "marketplace",
         skills: buildSkillConfigs([TEST_PLUGIN_SKILL], {
@@ -867,14 +758,12 @@ describe("uninstall command", () => {
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      // Plugin should be detected via marketplace fallback key and removed
       expect(await directoryExists(pluginDir)).toBe(false);
       expect(stdout, NOTHING_REGISTERED_TO_COUNT).not.toContain(PLUGIN_COUNT_LINE);
     });
 
     it("should uninstall global-scoped plugin that was re-scoped from project during edit", async () => {
-      // Scenario: skill was originally project, re-scoped to global during edit
-      // Config says scope: "global" but plugin registry may have "project" scope entry
+      // Originally project, re-scoped to global; the registry may hold a "project" entry.
       const uninstallPlugin = vi.mocked(hostAt(projectDir).uninstallPlugin);
       uninstallPlugin.mockClear();
 
@@ -900,8 +789,7 @@ describe("uninstall command", () => {
 
       expect(result.totalUninstalled).toBe(1);
 
-      // The paired case: a global config entry is asked at global scope first, and the project
-      // scope is swept after it rather than instead of it.
+      // A global entry is asked at global scope first, then the project scope is swept too.
       expect(
         uninstallPlugin.mock.calls.map(([ref, scope, dir]) => [ref, scope, dir]),
         "with the order reversed this passes while removing the registration the config does not name first",
@@ -974,16 +862,13 @@ describe("uninstall command", () => {
 
       await runCliCommand(["uninstall", "--yes"]);
 
-      // CLI artifact removed
       expect(await directoryExists(cliSkillDir)).toBe(false);
 
-      // All user content preserved
       expect(await directoryExists(userSkillDir)).toBe(true);
       expect(await fileExists(mcpPath)).toBe(true);
       expect(await fileExists(settingsPath)).toBe(true);
       expect(await fileExists(claudeMdPath)).toBe(true);
 
-      // .claude/ preserved because user content remains
       expect(await directoryExists(claudeDir)).toBe(true);
     });
   });
@@ -1038,24 +923,21 @@ describe("uninstall command", () => {
 
   describe("global scope handling", () => {
     it("should not remove global-scoped skills when only global skills exist", async () => {
-      // Config has global-scoped skills, but uninstall only looks at projectDir/.claude/skills/
+      // Uninstall only looks at projectDir/.claude/skills/.
       await createProjectConfig(projectDir, {
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      // Place the skill at the global location (~/.claude/skills/)
       const globalSkillsDir = path.join(fakeHome, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       await mkdir(globalSkillsDir, { recursive: true });
       await createCLISkill(globalSkillsDir, "web-framework-react");
 
       const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
 
-      // Global skills should be untouched — uninstall only operates on project dir
       expect(await directoryExists(globalSkillsDir)).toBe(true);
       expect(await directoryExists(path.join(globalSkillsDir, "web-framework-react"))).toBe(true);
 
-      // No skills or agents are removed from the project directory (only the
-      // config manifest is, which is expected by default).
+      // Only the config manifest is removed from the project directory.
       const output = stdout + stderr;
       expect(output).not.toContain("CLI-installed skill");
       expect(output).not.toContain("compiled agent");
@@ -1069,33 +951,27 @@ describe("uninstall command", () => {
         ],
       });
 
-      // Project skill at projectDir/.claude/skills/
       const projectSkillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       await mkdir(projectSkillsDir, { recursive: true });
       const projectSkillDir = await createCLISkill(projectSkillsDir, "web-framework-react");
 
-      // Global skill at ~/.claude/skills/
       const globalSkillsDir = path.join(fakeHome, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       await mkdir(globalSkillsDir, { recursive: true });
       await createCLISkill(globalSkillsDir, "web-state-zustand");
 
       const { stdout } = await runCliCommand(["uninstall", "--yes"]);
 
-      // Project skill should be removed
       expect(await directoryExists(projectSkillDir)).toBe(false);
       expect(stdout).toContain("Removed 1 CLI-installed skill");
 
-      // Global skill should be untouched
       expect(await directoryExists(path.join(globalSkillsDir, "web-state-zustand"))).toBe(true);
     });
   });
 
   describe("global uninstall", () => {
-    // Global uninstall is done by running cc uninstall from ~/.claude/ (or wherever
-    // global config lives). No --global flag needed — the command uses process.cwd().
+    // Global uninstall runs from the global dir; there is no --global flag.
     it("should remove global artifacts when run from global dir", async () => {
-      // The command uses process.cwd() as the project directory, so we must chdir
-      // to fakeHome for global uninstall to find the right .claude/skills/.
+      // The command uses process.cwd(), so chdir to fakeHome.
       const globalSkillsDir = path.join(fakeHome, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       await mkdir(globalSkillsDir, { recursive: true });
       await createCLISkill(globalSkillsDir, "web-framework-react");

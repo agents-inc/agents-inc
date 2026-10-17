@@ -58,12 +58,10 @@ import { firstElement } from "../helpers/element-at.js";
 const INSTALLED_SKILLS_SUBDIR = path.join(CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 const INSTALLED_AGENTS_SUBDIR = path.join(CLAUDE_DIR, "agents");
 
-/** Section headings and skip notice of doctor's layered output. */
 const CONTENT_SECTION = "Content checks";
 const OPERATIONAL_SECTION = "Operational checks";
 const SKIP_AFTER_CONTENT_ERRORS = "Skipped — fix the content errors above first";
 
-/** The operational rows, as the report heads them. */
 const ROW_CONFIG_VALID = "Config Valid";
 const ROW_SKILLS_RESOLVED = "Skills Resolved";
 const ROW_AGENTS_COMPILED = "Agents Compiled";
@@ -72,61 +70,37 @@ const ROW_SKILLS_INSTALLED = "Skills Installed";
 const ROW_PLUGINS_INSTALLED = "Plugins Installed";
 const ROW_MARKETPLACE_REACHABLE = "Marketplace Reachable";
 
-/**
- * One operational row standing down: the name, the glyph its skip status prints, and the word.
- * The blanket notice carries no row name and no status column, so it never matches this.
- *
- * The glyph comes from {@link UI_SYMBOLS} rather than a literal, because it is not what these
- * tests are about — they are about WHICH row stood down. It is an EN-DASH and was an ASCII hyphen
- * here for as long as `doctor` printed one, which is the difference no reader could see.
- */
+/** One row standing down; the blanket notice has no row name or status column, so never matches. */
 function skippedRow(name: string): RegExp {
   return new RegExp(`${name}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`);
 }
 
-/** The agent `setupValidatedProject` declares, and the compiled file that satisfies it. */
 const CONFIGURED_AGENT_NAME = "web-developer";
 
-/** A compiled agent file no configuration declares — what the orphan row exists to name. */
 const ORPHANED_AGENT_NAME = "orphan-agent";
 
-/**
- * The skill the fixtures configure, which the registered marketplace provides.
- *
- * Namespaced, because the marketplace these fixtures build IS a custom one and a
- * custom marketplace shipping a public-catalogue id is refused whole at load.
- */
+/** Namespaced: a custom marketplace shipping a public-catalogue id is refused whole at load. */
 const CONFIGURED_SKILL_ID = testMarketplaceSkillId("web-framework-react");
 
-/**
- * An installed skill directory the configuration never mentions. It is the unrelated content the
- * operational rows are asserted to survive, so it must be a skill nothing else in the fixture reads.
- */
+/** Content the operational rows must survive, so nothing else in the fixture may read it. */
 const UNRELATED_INSTALLED_SKILL_ID = "web-framework-vue-composition-api";
 
-/** A marketplace name rather than the eject origin, which is what makes a skill plugin-mode. */
+/** A marketplace origin rather than eject, which makes a skill plugin-mode. */
 const PLUGIN_MODE_ORIGIN = "agents-inc";
 
-/**
- * A marketplace name Claude Code will not register plugins under, and the same name
- * written the way it accepts.
- */
+/** A name Claude Code will not register plugins under, and the same name in the accepted form. */
 const MANIFEST_NAME_REFUSED = "Acme_Skills";
 const MANIFEST_NAME_ACCEPTED = "acme-skills";
 
-/** The Marketplaces row's clean verdict — the tick a refused manifest must not earn. */
 const MARKETPLACES_ROW_CLEAN = "1 marketplace validated";
 
-/** The report's closing line, which a run that finished prints and an aborted one does not. */
+/** Printed by a run that finished, not by an aborted one. */
 const SUMMARY_LINE = "Summary:";
 
-/** The manifest as a reader of the report has to type it — the location half of a finding. */
 const MARKETPLACE_MANIFEST_FILE = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
 
-/** The three ways a marketplace can lack a valid manifest, each a different route through the load. */
 const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
 
-/** Leaves a source's manifest in the state `defect` names. */
 async function breakMarketplaceManifest(
   sourceDir: string,
   defect: (typeof MANIFEST_DEFECTS)[number],
@@ -139,12 +113,11 @@ async function breakMarketplaceManifest(
   await mkdir(path.dirname(manifestPath), { recursive: true });
   await writeFile(
     manifestPath,
-    // A marketplace listing no plugin is the one manifest shape the schema refuses outright.
+    // A marketplace listing no plugin is the shape the schema refuses outright.
     defect === "unparseable" ? "{ this is not json" : JSON.stringify(createMockMarketplace([])),
   );
 }
 
-/** Gives a source a `.claude-plugin/marketplace.json` publishing under `name`. */
 async function writeMarketplaceManifest(sourceDir: string, name: string): Promise<void> {
   const manifestPath = marketplaceManifestPath(sourceDir);
   await mkdir(path.dirname(manifestPath), { recursive: true });
@@ -157,20 +130,13 @@ async function writeMarketplaceManifest(sourceDir: string, name: string): Promis
   );
 }
 
-/** A registry file the JSON parser refuses, so nothing can be read out of it. */
 const UNPARSEABLE_REGISTRY = "{ not valid json !!!";
 
-/** An agent file carrying no frontmatter — content the agents pass reports and nothing else reads. */
 const AGENT_MD_WITHOUT_FRONTMATTER = "# Just a plain markdown file, no frontmatter here.\n";
 
-/** A slug the fixture marketplaces below never ship, so a rule naming it resolves to nothing. */
 const DANGLING_RULE_SLUG = "angular-standalone";
 
-/**
- * A conflict rule pairing a slug the source ships with one it does not. A source's own rules
- * are never narrowed to what it ships, so the merge drops the reference and records the slug —
- * the one shape that produces an author's typo.
- */
+/** Pairs a shipped slug with an unshipped one; the merge drops it and records the typo. */
 const RULES_WITH_DANGLING_SLUG: Partial<RelationshipDefinitions> = {
   conflicts: [
     {
@@ -180,22 +146,12 @@ const RULES_WITH_DANGLING_SLUG: Partial<RelationshipDefinitions> = {
   ],
 };
 
-/**
- * Where the audit manifest lives, as a reader of the report has to type it. It is this CLI's own
- * file rather than anything in the marketplace under validation, which is the point: a verdict the
- * matrix contradicts is recorded there and nowhere else.
- */
+/** This CLI's file, not the marketplace's: verdicts the matrix contradicts are recorded there. */
 const AUDIT_MANIFEST_FILE = "src/cli/lib/configuration/skill-audit.ts";
 
 /**
- * A skill the built-in audit manifest records as `universal`. Placed in an exclusive category it
- * contradicts its own verdict, which is the only OTHER health finding reported at error severity
- * — the control for "the reader's relationship moves this one finding and no other".
- *
- * Its id is bare, and has to be: the audit manifest is keyed by the public catalogue's own ids,
- * so a skill outside them cannot contradict a verdict nothing records for it. Only the catalogue
- * may ship such an id, which is why the one source built around this skill declares itself the
- * catalogue — see {@link buildSourceWithDanglingSlugAndAuditContradiction}.
+ * Recorded as `universal`, so an exclusive category contradicts it: the control error finding. Its
+ * id is bare (the manifest keys catalogue ids), so only a catalogue source may ship it.
  */
 const UNIVERSAL_VERDICT_SKILL: TestSkill = {
   id: "web-forms-zod-validation",
@@ -209,30 +165,17 @@ const UNIVERSAL_VERDICT_SKILL: TestSkill = {
   author: "@test",
 };
 
-/**
- * A skill directory under `~/.claude/skills/` that something other than this CLI installed —
- * the shared Claude Code directory's other tenants. Named after the live example: an MCP helper
- * skill with no metadata.yaml at all.
- */
+/** Installed by something else: an MCP helper skill with no metadata.yaml. */
 const FOREIGN_SKILL_DIR = "context7-mcp";
 
-/**
- * The provenance block this CLI stamps into every skill directory it writes. Its presence is one
- * of the two things that make a directory this installation's to judge.
- */
+/** Its presence is one of the two things that make a directory this installation's to judge. */
 const CLI_PROVENANCE = {
   skillId: "web-framework-react",
   contentHash: "abc1234",
   date: "2026-01-01",
 };
 
-/**
- * Write a valid installed skill under `<skillsDir>/<dirName>/` with strict-schema metadata.
- *
- * Provenance is part of the fixture rather than an option, because it is part of what an install
- * IS: the copier stamps `forkedFrom` into every directory it writes, and a skill directory without
- * it is one somebody else put there.
- */
+/** Provenance is always stamped: a skill directory without it is someone else's. */
 async function writeValidInstalledSkill(
   skillsDir: string,
   dirName: string,
@@ -256,7 +199,6 @@ async function writeValidInstalledSkill(
   await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), stringifyYaml(metadata));
 }
 
-/** Write a valid installed agent `.md` file with real markdown frontmatter. */
 async function writeValidInstalledAgent(
   agentsDir: string,
   name: string,
@@ -291,10 +233,6 @@ const REACT_SOURCE_SKILL: TestSkill = {
   author: "@test",
 };
 
-/**
- * Creates a valid skill directory with full metadata.yaml fields
- * that pass the strict metadataValidationSchema.
- */
 async function writeValidSourceSkill(
   skillsDir: string,
   dirPath: string,
@@ -323,11 +261,7 @@ async function writeValidSourceSkill(
   await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), stringifyYaml(metadata));
 }
 
-/**
- * Creates minimal skill-categories.ts and skill-rules.ts with the given categories.
- * A category may omit its `domain` — the field is optional in the schema, and leaving it out is
- * the shape the matrix health check reports as `category-missing-domain`.
- */
+/** A category may omit `domain`, which the health check reports as `category-missing-domain`. */
 async function writeTestMatrix(
   configDir: string,
   categories: Record<string, { domain?: string; displayName: string }>,
@@ -362,13 +296,12 @@ async function writeTestMatrix(
   await writeFile(path.join(configDir, "skill-rules.ts"), renderConfigTs(rulesData));
 }
 
-/** Build a valid minimal source at the given path. */
 async function buildValidSource(sourceDir: string): Promise<void> {
   const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
   const configDir = path.join(sourceDir, "config");
   await mkdir(configDir, { recursive: true });
 
-  // Directory name equals the skill id (marketplace convention) so the source is warning-free
+  // Directory name equals the skill id, so the source is warning-free.
   await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
   await writeTestMatrix(configDir, {
@@ -377,7 +310,6 @@ async function buildValidSource(sourceDir: string): Promise<void> {
   await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 }
 
-/** Build an otherwise valid marketplace whose own relationship rules name a slug it never ships. */
 async function buildSourceWithDanglingRuleSlug(sourceDir: string): Promise<void> {
   const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
   const configDir = path.join(sourceDir, "config");
@@ -394,13 +326,8 @@ async function buildSourceWithDanglingRuleSlug(sourceDir: string): Promise<void>
 }
 
 /**
- * The same marketplace, carrying a second health defect alongside the dangling slug: a skill the
- * audit manifest calls `universal` sitting in an exclusive category.
- *
- * This one is the PUBLIC CATALOGUE's own checkout rather than a custom marketplace, and the
- * package.json below is what says so. The audit manifest names catalogue ids and nothing else, so
- * the contradiction is only constructible for a source entitled to ship one — every other source
- * is refused for taking it.
+ * Adds a `universal` skill in an exclusive category. Built as the public catalogue's checkout (see
+ * package.json below), since only the catalogue may ship the catalogue ids the manifest names.
  */
 async function buildSourceWithDanglingSlugAndAuditContradiction(sourceDir: string): Promise<void> {
   const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
@@ -422,7 +349,6 @@ async function buildSourceWithDanglingSlugAndAuditContradiction(sourceDir: strin
   await writeMarketplaceManifest(sourceDir, DEFAULT_PUBLIC_SOURCE_NAME);
 }
 
-/** Build a source with a metadata schema violation (missing required fields). */
 async function buildInvalidSource(sourceDir: string): Promise<void> {
   const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
   const skillDir = path.join(skillsDir, "web", "framework", "react");
@@ -433,7 +359,7 @@ async function buildInvalidSource(sourceDir: string): Promise<void> {
     renderSkillMd("web-framework-react", "React"),
   );
 
-  // Missing required fields: displayName, cliDescription, usageGuidance, slug
+  // Missing required fields: displayName, cliDescription, usageGuidance, slug.
   await writeFile(
     path.join(skillDir, STANDARD_FILES.METADATA_YAML),
     stringifyYaml({ category: "web-framework", author: "@test" }),
@@ -441,14 +367,7 @@ async function buildInvalidSource(sourceDir: string): Promise<void> {
   await writeMarketplaceManifest(sourceDir, TEST_MARKETPLACE_NAME);
 }
 
-/**
- * Standard arrange: builds a valid minimal source under `<tempDir>/source` and
- * registers it as the project's primary source. The config declares an agent
- * because a config declaring neither skills nor agents is content-less and does
- * not detect as an installation at all — doctor's operational layer would then
- * report a missing config rather than checking the one that is there.
- * Returns the source directory.
- */
+/** The config declares an agent, since a content-less config is not detected as an installation. */
 async function setupValidatedProject(
   tempDir: string,
   projectDir: string,
@@ -499,12 +418,7 @@ describe("doctor content checks", () => {
       expect(stdout).toContain("0 errors");
     });
 
-    /**
-     * A marketplace whose content is broken is missing skills from the matrix every configured id
-     * is resolved against, so the skills row would report ids as "not found" that the row above
-     * has already explained. It is the only operational row that reads what the marketplace holds:
-     * the rest read config.ts and the files on disk, and answer as truthfully as ever.
-     */
+    /** A broken marketplace misleads only the skills row; the rest read config.ts and disk. */
     it("should stand down only the row a broken primary source can mislead", async () => {
       const sourceDir = path.join(tempDir, "source");
       await buildInvalidSource(sourceDir);
@@ -585,12 +499,7 @@ describe("doctor content checks", () => {
       );
     });
 
-    /**
-     * A green tick printed under a warning about the same file is worse than no row at all —
-     * the row is the summary a reader trusts, and it contradicts the line above it. The
-     * accepted-name spec beside this one is what says the row still ticks for a marketplace
-     * whose only difference is a name Claude Code registers plugins under.
-     */
+    /** A tick under a warning about the same file contradicts it; the accepted name still ticks. */
     describe("a marketplace naming itself something Claude Code cannot register", () => {
       it("should refuse rather than tick, and name the manifest holding the name", async () => {
         const sourceDir = await setupValidatedProject(tempDir, projectDir);
@@ -619,11 +528,8 @@ describe("doctor content checks", () => {
     });
 
     /**
-     * A custom marketplace must carry a valid manifest, so `doctor` reports one that does not —
-     * against the file itself, the one the reader opens — and still finishes its report. Over an
-     * installation reading from it nothing can load, which is an error. In its author's own
-     * repository before the build it is the next step rather than a fault, which is a warning.
-     * The first spec of this describe is the permitted twin: the same marketplace, published.
+     * A custom marketplace without a valid manifest is reported against that file and the report
+     * still finishes: an error for an installation, a warning in its author's repo pre-build.
      */
     describe("a marketplace with no valid marketplace.json", () => {
       it.each(MANIFEST_DEFECTS)(
@@ -683,16 +589,14 @@ describe("doctor content checks", () => {
     });
 
     it("should attribute each pass's own errors instead of reporting one aggregate", async () => {
-      // Seed exactly 1 error in sources + 1 in plugins + 1 in skills.
-      // Source with no skills directory → 1 error.
+      // One error each in sources, plugins and skills; a source with no skills dir is one.
       const sourceDir = path.join(tempDir, "source");
       await mkdir(sourceDir, { recursive: true });
       await writeTestTsConfig(
         projectDir,
         buildProjectConfig({
           name: "test-project",
-          // The configuration names the skill below, which is what makes its directory this
-          // installation's to judge — a metadata.yaml that is gone can carry no provenance.
+          // Naming the skill makes its directory this installation's to judge.
           skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
           agents: buildAgentConfigs(["web-developer"]),
           marketplace: sourceDir,
@@ -722,11 +626,7 @@ describe("doctor content checks", () => {
       expect(stdout).toMatch(/1 skill: 1 error/);
     });
 
-    /**
-     * One command, two contexts, already told apart by whether the marketplace being validated
-     * is the directory the command ran in. The author is standing in the repository that holds
-     * the typo; the consumer is being told about a file in someone else's.
-     */
+    /** The author stands in the repo with the typo; the consumer is told about someone else's. */
     it("should fail the run for a slug the marketplace under the cwd dangles", async () => {
       await buildSourceWithDanglingRuleSlug(projectDir);
 
@@ -758,11 +658,7 @@ describe("doctor content checks", () => {
       expect(stdout).toContain(`Marketplace '${sourceDir}'`);
     });
 
-    /**
-     * The stand-down is keyed on a content pass FAILING, and a warning does not. That is the
-     * right outcome on the merits too: `blocks: ["skills"]` is justified by a broken marketplace
-     * leaving skills out of the matrix, and an unresolved rule slug leaves every skill in it.
-     */
+    /** The stand-down keys on a failing content pass; an unresolved rule slug drops no skill. */
     it("should stand no operational row down for a marketplace warning", async () => {
       const sourceDir = path.join(tempDir, "source");
       await buildSourceWithDanglingRuleSlug(sourceDir);
@@ -802,7 +698,6 @@ describe("doctor content checks", () => {
     it("should validate an installed plugin when present", async () => {
       await setupValidatedProject(tempDir, projectDir);
 
-      // Create a plugin in the project's .claude/plugins/ directory
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "my-plugin");
       await writeTestPluginManifest(
         pluginDir,
@@ -813,15 +708,13 @@ describe("doctor content checks", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error).toBeUndefined();
-      // A pass with no issues at all reads "<n> validated"; one carrying advisory
-      // warnings reads its counts instead. Either way the error count must be zero.
+      // A clean pass reads "<n> validated", one with warnings its counts; errors must be zero.
       expect(stdout).toMatch(/1 plugin(: 0 errors| validated)/);
     });
 
     it("should surface plugin errors in the aggregate exit code", async () => {
       await setupValidatedProject(tempDir, projectDir);
 
-      // Create a plugin with malformed plugin.json — validator should report it as invalid
       const pluginDir = path.join(projectDir, CLAUDE_DIR, PLUGINS_SUBDIR, "broken-plugin");
       const manifestDir = path.join(pluginDir, PLUGIN_MANIFEST_DIR);
       await mkdir(manifestDir, { recursive: true });
@@ -1107,7 +1000,6 @@ describe("doctor content checks", () => {
       await setupValidatedProject(tempDir, projectDir);
 
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
-      // One valid skill alongside one broken skill in the same directory.
       await writeValidInstalledSkill(globalSkillsDir, "web-framework-react");
       const brokenSkillDir = path.join(globalSkillsDir, "web-framework-vue");
       await mkdir(brokenSkillDir, { recursive: true });
@@ -1128,9 +1020,8 @@ describe("doctor content checks", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      // Counter reports both skills: 2 walked, 1 error.
       expect(stdout).toMatch(/2 skills: 2 errors/);
-      // The broken skill's error is surfaced — pass did not abort after it.
+      // The pass did not abort after the broken skill.
       expect(stdout).toContain("Missing SKILL.md");
     });
   });
@@ -1180,8 +1071,7 @@ describe("doctor content checks", () => {
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
       });
 
-      // No metadata.yaml, so nothing in this directory can carry provenance — the configuration
-      // naming the id is the whole claim.
+      // No metadata.yaml, so the configuration naming the id is the whole claim.
       const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
       const skillDir = path.join(globalSkillsDir, "web-framework-react");
       await mkdir(skillDir, { recursive: true });
@@ -1291,42 +1181,31 @@ describe("doctor content checks", () => {
         }),
       );
 
-      // Install a skill and an agent under the fake-home location only.
       await writeValidInstalledSkill(
         path.join(fakeHome, INSTALLED_SKILLS_SUBDIR),
         "web-framework-react",
       );
       await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "web-developer");
 
-      // Run doctor from the fake-home directory: cwd === homedir().
+      // cwd === homedir().
       process.chdir(fakeHome);
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error).toBeUndefined();
-      // Without the dedup both scopes resolve to the same directory and each
-      // file would be counted twice.
+      // Without the dedup both scopes resolve to one directory and count each file twice.
       expect(stdout).toContain("1 skill validated");
       expect(stdout).toContain("1 agent validated");
     });
   });
 
   /**
-   * Which operational rows a content error may stand down, and which it may not. An operational row
-   * is a cascade of a content finding only when it reads the content that finding is about: the
-   * orphan row compares file NAMES against the config, the config row reads config.ts, and the
-   * marketplace row reports whether the marketplace loads — none of them opens an installed skill,
-   * a plugin registry or an agent's frontmatter, so none of them can be misled by one being broken.
+   * An operational row may stand down only if it reads the content a finding is about; the orphan,
+   * config and marketplace rows open no skill, registry or agent frontmatter.
    */
   describe("operational rows an unrelated content error must not silence", () => {
-    /** Where the user-scoped plugin registry lives under the isolated home. */
     const userPluginsDir = () => path.join(fakeHome, CLAUDE_DIR, PLUGINS_SUBDIR);
 
-    /**
-     * A project with sound config, marketplace and plugins, carrying the two operational findings
-     * a reader runs `doctor` to be told about: one compiled agent no config declares, and one
-     * eject-mode skill the config names that never reached disk. Both are true of the installation
-     * whatever any installed skill's metadata says.
-     */
+    /** An orphaned agent and a missing eject skill: findings true whatever skill metadata says. */
     async function setupProjectWithOperationalFindings(): Promise<string> {
       const sourceDir = await setupValidatedProject(tempDir, projectDir, {
         skills: buildSkillConfigs([CONFIGURED_SKILL_ID]),
@@ -1339,11 +1218,7 @@ describe("doctor content checks", () => {
       return sourceDir;
     }
 
-    /**
-     * The owner's machine, reduced: one skill directory this CLI installed — its metadata says so
-     — whose SKILL.md is gone. Broken, and provably this installation's without the configuration
-     * having to name it, which is what keeps it unrelated to every operational row below.
-     */
+    /** A CLI-installed skill (per its metadata) missing SKILL.md: unrelated to every row below. */
     async function installSkillMissingItsSkillMd(): Promise<void> {
       const skillDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR, UNRELATED_INSTALLED_SKILL_ID);
       await mkdir(skillDir, { recursive: true });
@@ -1405,11 +1280,7 @@ describe("doctor content checks", () => {
       expect(stdout).toContain("No plugin-mode skills configured");
     });
 
-    /**
-     * The one row that genuinely cannot answer. It resolves configured ids against the local-skill
-     * discovery pass, and that pass drops any skill whose metadata it cannot read — so a "not found"
-     * from it would be the same finding one row above, worded as if it were a second one.
-     */
+    /** Configured ids resolve through local discovery, which drops unreadable skills. */
     it("stands the skills row down and says which finding blocked it", async () => {
       await setupProjectWithOperationalFindings();
       await installSkillMissingItsSkillMd();
@@ -1425,16 +1296,7 @@ describe("doctor content checks", () => {
       );
     });
 
-    /**
-     * Fourteen rows are printed and one of them stands down, so thirteen verdicts are what the
-     * counts add up to. A summary that folded the skipped row into `passed` would claim one nobody
-     * reached.
-     *
-     * The count IS this spec's subject, which is why it stays a count: the claim is arithmetic —
-     * that the skipped row is counted nowhere — and no roster of row names can state it. The
-     * breakdown below is what keeps the number legible when it moves, and it has moved twice: the
-     * Layout row took the passes from 8 to 9, and the Placements Offered row from 9 to 10.
-     */
+    /** The skipped row must be counted nowhere: a count is the claim, so it stays a count. */
     it("counts only the rows it actually ran", async () => {
       await setupProjectWithOperationalFindings();
       await installSkillMissingItsSkillMd();
@@ -1457,8 +1319,7 @@ describe("doctor content checks", () => {
       const { stdout, error } = await runCliCommand(["doctor"]);
 
       expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-      // Every plugin-mode skill would read as "no enabled plugin found" off a registry nobody
-      // could parse, which is the registry's finding wearing the row's words.
+      // Off an unparseable registry, every plugin skill would read "no enabled plugin found".
       expect(stdout).toMatch(skippedRow(ROW_PLUGINS_INSTALLED));
       expect(
         stdout,
@@ -1490,11 +1351,7 @@ describe("doctor content checks", () => {
       ).toContain("1/1 skill found");
     });
 
-    /**
-     * The content pass no operational row reads. `Agents Compiled` asks whether a file is there and
-     * `No Orphans` reads the names of the files that are — neither opens one, so a file with no
-     * frontmatter changes neither answer.
-     */
+    /** Neither agent row opens a file, so missing frontmatter changes neither answer. */
     it("runs every operational row when the broken content is an agent file", async () => {
       const sourceDir = await setupProjectWithOperationalFindings();
       await writeFile(
@@ -1517,11 +1374,7 @@ describe("doctor content checks", () => {
       expect(stdout).toContain(`Connected to local: ${sourceDir}`);
     });
 
-    /**
-     * The boundary the scoping stops at. Every operational row is read out of config.ts, so a
-     * config that cannot be loaded still takes the whole layer down — the one content finding that
-     * genuinely cascades into all of them.
-     */
+    /** Every operational row reads config.ts, so an unloadable config takes the layer down. */
     it("keeps the whole layer down when the config every row reads cannot be loaded", async () => {
       await setupProjectWithOperationalFindings();
       await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
@@ -1590,7 +1443,6 @@ describe("source validation (validateSource)", () => {
     const skillDir = path.join(skillsDir, "web", "framework", "react");
     await mkdir(skillDir, { recursive: true });
 
-    // Write metadata.yaml without SKILL.md
     await writeFile(
       path.join(skillDir, STANDARD_FILES.METADATA_YAML),
       stringifyYaml({
@@ -1615,7 +1467,6 @@ describe("source validation (validateSource)", () => {
     const skillDir = path.join(skillsDir, "web", "framework", "react");
     await mkdir(skillDir, { recursive: true });
 
-    // Write SKILL.md without metadata.yaml
     await writeFile(
       path.join(skillDir, STANDARD_FILES.SKILL_MD),
       renderSkillMd("web-framework-react", "React"),
@@ -1638,7 +1489,7 @@ describe("source validation (validateSource)", () => {
       renderSkillMd("web-framework-react", "React"),
     );
 
-    // Missing required fields: displayName, cliDescription, usageGuidance
+    // Missing required fields: displayName, cliDescription, usageGuidance.
     await writeFile(
       path.join(skillDir, STANDARD_FILES.METADATA_YAML),
       stringifyYaml({
@@ -1663,7 +1514,6 @@ describe("source validation (validateSource)", () => {
       renderSkillMd("web-framework-react", "React"),
     );
 
-    // Use snake_case key instead of camelCase
     await writeFile(
       path.join(skillDir, STANDARD_FILES.METADATA_YAML),
       stringifyYaml({
@@ -1687,7 +1537,7 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    // Directory name is "react" but the skill id is its SKILL.md frontmatter name
+    // The skill id is its SKILL.md frontmatter name, not the directory name.
     await writeValidSourceSkill(skillsDir, "web/framework/react", REACT_SOURCE_SKILL);
 
     await writeTestMatrix(configDir, {
@@ -1732,7 +1582,6 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    // Create skill directory
     const skillDir = path.join(skillsDir, "web", "framework", "react");
     await mkdir(skillDir, { recursive: true });
 
@@ -1754,7 +1603,6 @@ describe("source validation (validateSource)", () => {
       }),
     );
 
-    // Add a conflict rule referencing a non-existent skill
     const matrixCategories = {
       "web-framework": {
         id: "web-framework",
@@ -1787,8 +1635,7 @@ describe("source validation (validateSource)", () => {
 
     const result = await validateSource(sourceDir);
 
-    // Unresolved slugs are now dropped during resolution (with a warning),
-    // so no dangling references appear in the matrix health check
+    // Unresolved slugs are dropped during resolution, so the health check sees none.
     const crossRefIssues = result.issues.filter((i) => i.message.includes("unresolved reference"));
     expect(crossRefIssues).toHaveLength(0);
   });
@@ -1839,9 +1686,7 @@ describe("source validation (validateSource)", () => {
 
     const result = await validateSource(sourceDir);
 
-    // Phase 3 cross-reference ran and found no issues
     expect(result.errorCount).toBe(0);
-    // No cross-reference skipped warnings
     const crossRefSkipped = result.issues.filter((i) =>
       i.message.includes("Cross-reference validation skipped"),
     );
@@ -1853,10 +1698,9 @@ describe("source validation (validateSource)", () => {
     const skillsDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS);
     await mkdir(skillsDir, { recursive: true });
 
-    // Create a valid skill but with a malformed categories config to trigger Phase 3 failure
+    // A malformed categories config makes Phase 3 fail.
     await writeValidSourceSkill(skillsDir, CONFIGURED_SKILL_ID, REACT_SOURCE_SKILL);
 
-    // Write a malformed categories file so loadSkillsMatrixFromSource throws
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
     await writeFile(path.join(configDir, "skill-categories.ts"), "export default INVALID;");
@@ -1864,7 +1708,6 @@ describe("source validation (validateSource)", () => {
 
     const result = await validateSource(sourceDir);
 
-    // Phase 3 should gracefully catch the error and report a warning
     const crossRefWarnings = result.issues.filter((i) =>
       i.message.includes("Cross-reference validation skipped"),
     );
@@ -1878,7 +1721,6 @@ describe("source validation (validateSource)", () => {
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    // Create a skill with custom: true and a non-standard category
     const skillDir = path.join(skillsDir, "custom-tools-my-linter");
     await mkdir(skillDir, { recursive: true });
 
@@ -1905,18 +1747,13 @@ describe("source validation (validateSource)", () => {
 
     const result = await validateSource(sourceDir);
 
-    // Custom skills should not fail schema validation for non-standard categories/slugs
     const schemaErrors = result.issues.filter(
       (i) => i.severity === "error" && i.file.includes("my-linter"),
     );
     expect(schemaErrors).toHaveLength(0);
   });
 
-  /**
-   * The same defect, weighed by whether the reader can act on it. An author is standing in the
-   * repository that holds the typo and wants the run to fail; a consumer is being told about a
-   * file they cannot open, in a marketplace whose skills still install and still resolve.
-   */
+  /** An author can fix the typo and wants the run to fail; a consumer cannot open the file. */
   describe("a slug the marketplace's own rules dangle", () => {
     it("is an error for the author of the marketplace being validated", async () => {
       const sourceDir = path.join(tempDir, "source");
@@ -1963,11 +1800,7 @@ describe("source validation (validateSource)", () => {
     });
   });
 
-  /**
-   * `doctor` prints a finding as `- [ERROR] <file>: <message>`, so the path is the file the reader
-   * opens. Each health finding has to name the file its own defect is written in — a family of
-   * findings sharing one path is only correct when every member lives there, and these do not.
-   */
+  /** Each finding must name the file its own defect is written in. */
   describe("the file a cross-reference finding sends the reader to", () => {
     it("names the rules file for a slug the marketplace's rules dangle", async () => {
       const sourceDir = path.join(tempDir, "source");

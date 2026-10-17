@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { standAtTerminal } from "./terminal-input.js";
 
-/** The stdin vitest handed this worker, read before any spec has replaced it. */
 const RUNNER_STDIN = process.stdin;
 
 describe("standAtTerminal", () => {
@@ -23,10 +22,7 @@ describe("standAtTerminal", () => {
   });
 });
 
-/**
- * Runs after the block above, which is the point: its hooks do not reach this one, so stdin here
- * is whatever that block's last `afterEach` left behind.
- */
+// Outside the block above, so its hooks don't run here.
 describe("after standAtTerminal's tests", () => {
   it("puts the runner's own stdin back", () => {
     expect(process.stdin).toBe(RUNNER_STDIN);

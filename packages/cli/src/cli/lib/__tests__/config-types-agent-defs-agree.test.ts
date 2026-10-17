@@ -20,45 +20,18 @@ import type { AgentName } from "../../types/index.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-/**
- * A sub-agent a marketplace ships and the CLI does not.
- *
- * Not an `AgentName` and deliberately not cast to one: that union is generated from the CLI's own
- * `src/agents/` by `scripts/generate-source-types.ts`, so a name only a marketplace carries is
- * outside it by construction — which is the whole reason a union built from a marketplace-aware
- * roster names something nothing can compile.
- */
+/** Deliberately not cast to `AgentName`: that union is generated from the CLI's own agents only. */
 const MARKETPLACE_ONLY_AGENT = "fixture-marketplace-only-agent";
 
-/**
- * Which sub-agents exist, asked of one loader.
- *
- * Names only, sorted: the DEFINITIONS differ between a CLI agent and a marketplace agent of the
- * same name (title, description, tools), and none of that reaches a type union. What reaches it
- * is the roster.
- */
+/** Names only: definitions differ between CLI and marketplace agents; only names reach a union. */
 function rosterOf(agents: Partial<Record<AgentName, unknown>>): string[] {
   return typedKeys(agents).sort(bytewise);
 }
 
 /**
- * "Which sub-agents exist" has one answer, and every path that generates the sub-agent unions in a
- * `config-types.ts` derives it from `loadAgentDefs`.
- *
- * The answer is CLI-ONLY (owner ruling 2026-08-21), because that is what the rest of the system
- * already is: `AGENT_NAMES` is generated from the CLI's own `src/agents/` and nothing else, agent
- * partials resolve through `getLocalAgentDefinitions`, which answers `PROJECT_ROOT`, and every
- * compile pass therefore looks for a sub-agent's partials under the CLI. A union built from
- * CLI ∪ marketplace admits a name none of those three can honour.
- *
- * **The defect this file exists against is not one wrong producer but FOUR producers of one
- * union**, two of which had drifted: `init` (through `writeProjectConfig`) and the background
- * loader in `config-types-writer.ts` loaded CLI ∪ marketplace, while `edit` and `compile` loaded
- * CLI-only — so the same config emitted two different `config-types.ts` files depending on which
- * command last wrote it. Fixing the two would leave the shape that produced them intact, so the
- * roster below is the gate: every production module that reads sub-agent definitions off disk is
- * named here with the posture it takes, and the roster is asserted against a walk of `src/cli`. A
- * fifth producer reddens this file and its author has to say which side it is on.
+ * Every producer of the sub-agent unions in `config-types.ts` derives its roster from
+ * `loadAgentDefs`, which is CLI-only: partials resolve under the CLI, so a marketplace name could
+ * not compile. The roster is asserted against a walk of `src/cli`, so a new producer must declare.
  */
 describe("every producer of the sub-agent unions in config-types.ts", () => {
   let source: TestDirs;
@@ -95,11 +68,8 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
   });
 
   /**
-   * The control, and the half without which the two assertions above mean nothing: they would read
-   * identically against a fixture that declares no sub-agent at all, or against a loader that
-   * reads no marketplace. This proves the fixture ships one, that the OTHER answer really does
-   * carry it, and that the name is outside the compile-time roster — so a producer taking that
-   * answer puts a literal in `AgentName` that no compile pass can honour.
+   * The control: the fixture ships a marketplace agent, the other answer carries it, and it is
+   * outside `AgentName`. Without this the assertions above pass on an empty fixture.
    */
   describe("the answer the aligned producers no longer take", () => {
     it("carries the marketplace's own sub-agent", async () => {
@@ -116,29 +86,18 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
     });
   });
 
-  /**
-   * What a module does with the sub-agent definitions it loads. The four are exhaustive over the
-   * roster below, and the distinction that matters is the first two against the last two: a
-   * roster that reaches `config-types.ts` decides a literal union a user's hand-written `config.ts`
-   * is checked against, and any other roster decides no type at all.
-   */
+  /** Only rosters reaching `config-types.ts` decide a type; the others decide none. */
   type UnionPosture =
-    /** `loadAgentDefs` itself — the single definition of "which sub-agents exist". */
     | "the one function"
-    /** Reaches a config-types.ts write, and gets its roster from the one function. */
     | "derives from the one function"
-    /** Re-exports a loader and loads nothing itself. */
     | "re-export only"
-    /** Loads sub-agent definitions for something that is not a type union. */
     | "not the union"
-    /** Reaches a config-types.ts write with its OWN roster. Named, not tolerated silently. */
+    /** Reaches a config-types.ts write with its own roster. */
     | "its own roster";
 
   type AgentDefReader = {
-    /** Path relative to the package root. */
     file: string;
     posture: UnionPosture;
-    /** Why that posture is the right one here. */
     why: string;
   };
 
@@ -210,15 +169,9 @@ describe("every producer of the sub-agent unions in config-types.ts", () => {
     },
   ] as const satisfies readonly AgentDefReader[];
 
-  /**
-   * The three names a production module gets sub-agent definitions through.
-   *
-   * A module reaching none of them holds no roster, so the walk below is exhaustive over the
-   * class rather than over a directory somebody remembered to name.
-   */
+  /** A module reaching none of these holds no roster, so the walk is exhaustive over the class. */
   const LOADER_NAMES = ["loadAllAgents", "loadMergedAgents", "loadAgentDefs"];
 
-  /** A spec or a test-support module: neither ships, so neither is bound by the ruling. */
   function isTestSource(file: string): boolean {
     return file.includes("/__tests__/") || /\.test\.tsx?$/.test(file);
   }

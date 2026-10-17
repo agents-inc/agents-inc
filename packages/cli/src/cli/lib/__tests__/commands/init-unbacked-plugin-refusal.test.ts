@@ -36,14 +36,8 @@ import type {
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
- * A skill that exists only in this project cannot be pulled from a marketplace, so an
- * install that asks for one has to be refused rather than attempted — and refused by
- * NAME, because the generic plugin-install advice ("check the id, refresh the
- * marketplace") is impossible to act on for a skill the user wrote themselves.
- *
- * Driven through `init --from`, which states an install mode explicitly and so is the
- * one route that can still ask for a plugin install of an unbacked skill. The seam below
- * `installPluginSkills` is mocked (`claudePluginInstall`), so "never shelled out" is observable.
+ * A project-only skill has no marketplace to install from, so `init --from` must refuse it by name
+ * without shelling out (`claudePluginInstall` is mocked to observe that).
  */
 
 const MARKETPLACE = "unbacked-refusal-marketplace";
@@ -58,8 +52,7 @@ const {
   mockDiscoverInstalledSkills,
   mockCompileAgentsAllScopes,
 } = vi.hoisted(() => ({
-  // Typed against the real functions, so a field a stub returns that the product has retired is
-  // a compile error here rather than a dead value nothing reads.
+  // Typed against the real functions so a retired stub field is a compile error.
   mockInstallPlugin: vi.fn<PluginHost["installPlugin"]>(),
   mockLoadSource: vi.fn<typeof loadSource>(),
   mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
@@ -94,8 +87,7 @@ function serveSeed(payload: SeedPayload): void {
 }
 
 describe("init --from: a plugin install nothing backs", () => {
-  // The lifecycle only: these specs assert on what the command DID with the payload, not
-  // on the request that fetched it.
+  // Lifecycle only: these specs assert on what the command did, not on the fetch.
   useMockWorker();
   let tempDir: string;
   let projectDir: string;

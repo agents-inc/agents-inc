@@ -1,16 +1,6 @@
 /**
- * The BASELINE is the part of a compiled sub-agent that comes from the template rather than from
- * the agent's own five markdown files — every byte of it is carried identically by all eighteen,
- * so a sentence added here is added eighteen times.
- *
- * Rendered rather than read off disk. The template and its partials are three surfaces (literal
- * text, `{% render %}` tags, and the partial files themselves) and only the render puts them in
- * the same string; a scan of `agent.liquid` alone reports a baseline a fifth of its real size,
- * and would have called the 13.8 KB of methodology partials clean by never opening them.
- *
- * The two subjects here are the two that no other gate in this package can see. `tsc` does not
- * open a `.liquid` file, ESLint does not lint one, and the engine runs `strictVariables: false` —
- * so a baseline that doubled in size, or filled with prohibitions, would ship green.
+ * The baseline: what the template adds identically to all eighteen compiled sub-agents. Rendered,
+ * since only a render joins template text, render tags and partials; no other gate reads `.liquid`.
  */
 import { describe, expect, it } from "vitest";
 
@@ -25,29 +15,17 @@ import { offendingLines, retiredFormsIn } from "./helpers/text-scans.js";
 import { SKILLS } from "./test-fixtures.js";
 import type { CompiledAgentData } from "../../types";
 
-/** A version string the render is handed; the provenance stamp is not this file's subject. */
 const RENDER_VERSION = "0.0.0-baseline";
 
-/**
- * The four skill fields of a render, which between them choose which of the three blocks the
- * template's closing `{% if dynamicSkills.size > 0 %}` chain emits.
- */
+/** The skill fields that choose which block the template's closing `dynamicSkills` chain emits. */
 type SkillPosture = Pick<
   CompiledAgentData,
   "skills" | "preloadedSkills" | "dynamicSkills" | "preloadedSkillIds"
 >;
 
 /**
- * The baseline in one skill posture: an agent rendered with every content field empty.
- *
- * Empty content fields are what make the measurement the TEMPLATE's rather than an agent's. A
- * fixture carrying prose would fold that prose into the number, and the budget below would then
- * be a fact about the fixture — passing or failing on an edit to the fixture's own text.
- *
- * The posture is a PARAMETER because it selects a branch, and a scan that only ever renders one
- * posture has never read the other two. The worst prose in this template's history lived inside
- * the `dynamicSkills` branch, which an empty-skill render leaves unentered — so both scans below
- * would have reported it clean.
+ * Content fields empty so the measurement is the template's. The skill posture is a parameter
+ * because it selects a branch, and a single-posture scan never reads the other two.
  */
 async function renderBaselineWith(skills: SkillPosture): Promise<string> {
   const engine = await createLiquidEngine();
@@ -67,19 +45,16 @@ async function renderBaselineWith(skills: SkillPosture): Promise<string> {
   );
 }
 
-/** Nothing configured: the template's no-skills `<skills_note>`, and what the budget measures. */
 function withNoSkills(): SkillPosture {
   return { skills: [], preloadedSkills: [], dynamicSkills: [], preloadedSkillIds: [] };
 }
 
-/** One skill reached through the Skill tool, which is what renders `<skill_activation_protocol>`. */
 function withOneDynamicSkill(): SkillPosture {
   const skill = createMockSkillEntry(SKILLS.react.id);
 
   return { skills: [skill], preloadedSkills: [], dynamicSkills: [skill], preloadedSkillIds: [] };
 }
 
-/** One skill carried in the frontmatter, which renders the preloaded `<skills_note>` instead. */
 function withOnePreloadedSkill(): SkillPosture {
   const skill = createMockSkillEntry(SKILLS.react.id, true);
 
@@ -92,58 +67,15 @@ function withOnePreloadedSkill(): SkillPosture {
 }
 
 /**
- * What the baseline may weigh, in UTF-8 bytes.
- *
- * **The unit is measured rather than assumed, and it did not used to be.** The assertion below
- * read `baseline.length`, which counts UTF-16 code units, while this docblock, the constant's own
- * name and the failure message all said bytes — and the baseline carries em-dashes and arrows,
- * each one unit and three bytes. `Buffer.byteLength` is what makes the four agree, and it is the
- * quantity that means something about a file eighteen agents are compiled into.
- *
- * A ceiling rather than a measurement, and deliberately not the current figure: a budget set to
- * whatever the tree happens to render is satisfied by definition on the day it is written and
- * never fails afterwards. This one was chosen against **15,412 B — what the pre-slimming template
- * rendered in the NO-SKILLS posture**, literal template text plus the five rendered methodology
- * partials — and leaves room for a baseline roughly a quarter that size.
- *
- * The posture belongs to the figure. The same template rendered 15,444 B carrying one preloaded
- * skill and 16,952 B carrying one dynamic skill, so a byte count with no posture attached names
- * three different numbers and settles none of them.
- *
- * The methodology partials were slimmed to one after those three figures were taken. Re-measured
- * through this test's own render path on 2026-09-04, the same three postures render 2,324 B
- * no-skills, 2,622 B one dynamic skill and 2,327 B one preloaded skill — under a fifth of the
- * pre-slimming figures above, and comfortably inside the ceiling below rather than pressed against
- * it. This docblock previously said 2,290 / 2,586 / 2,293 B; measured against the tree that
- * carried them those postures rendered 2,204 / 2,500 / 2,207 code units and 2,216 / 2,514 / 2,219
- * bytes, so the stated figures reproduced in neither unit.
- *
- * Measured in the no-skills posture, and only there. A budget taken over a render carrying skills
- * would be a fact about a project's configuration rather than about the template — every skill a
- * user selects adds an entry, so the same template would pass for one stack and fail for another.
- *
- * The reason a ceiling is worth having at all: the baseline is the one block in the product that
- * grows without anyone deciding to grow it. Every rule anybody wanted every agent to follow was
- * added here, because here is where it reaches all eighteen at once.
+ * A ceiling in UTF-8 bytes (`Buffer.byteLength`; the baseline carries multi-byte dashes), measured
+ * in the no-skills posture only, since skills add per-configuration entries. Deliberately not the
+ * current figure, which a budget would satisfy by definition.
  */
 const BASELINE_BYTE_BUDGET = 4_000;
 
 /**
- * Prohibitions and shouting, as the shapes they are actually written in.
- *
- * Matched by POSITION rather than by case, which is what makes the scan both complete and quiet.
- * A case-sensitive scan for `DO NOT` misses `Do NOT` and `Do not`, and those are the spellings a
- * prohibition actually survives in — every one that outlived nine review passes of `prompt-bible.md`
- * was spelled that way. A blanket case-insensitive scan then over-fires on ordinary prose: "a burden
- * they never agreed to" is description, and the generated-file notice "do not edit" is addressed to
- * a human opening the file rather than to the agent reading it.
- *
- * So a prohibition counts when it sits where an imperative sits — opening a line, a sentence, a
- * bullet, or a bold run. The second pattern keeps the shouted forms wherever they appear, since
- * ALL-CAPS is a directive in any position. The all-caps shape is separate because the
- * damage it does is tonal rather than grammatical — a baseline that tells eighteen agents they
- * are LYING TO THEMSELVES spends its emphasis budget before any agent's own critical rules are
- * read.
+ * Prohibitions matched by position (where an imperative sits), not case: `Do not` is how they
+ * survive, while a blanket case-insensitive scan fires on prose. Shouted capitals count anywhere.
  */
 const PROHIBITIONS = [
   /(?:^|[.!?]\s+|\*\*|^[-*]\s+)(?:do not|don't|never|avoid|must not)\b/im,
@@ -151,16 +83,7 @@ const PROHIBITIONS = [
   /\bforbidden\b/i,
 ] as const;
 
-/**
- * The three branches of the chain that closes the template, each with a line only it emits.
- *
- * The marker is what stops the two scans from passing for free. `offendingLines` answers `[]` as
- * readily for a block that never rendered as for one that rendered calmly, so a posture that
- * quietly selected the wrong branch — or a later edit that deleted a branch outright — would
- * leave both assertions green with the text they name unread. The dynamic-skills marker carries
- * the second half of that: the protocol block is the concept of dynamic skills, so its presence
- * is an invariant in its own right rather than only scaffolding for the scans.
- */
+/** Each branch's marker line, so a branch that never rendered cannot pass the scans for free. */
 const BASELINE_BRANCHES = [
   {
     posture: "no skills configured",
@@ -229,18 +152,8 @@ describe.each(BASELINE_BRANCHES)("the baseline of an agent with $posture", ({ bu
 });
 
 /**
- * The body's order is a cache decision before it is an editorial one.
- *
- * A sub-agent's compiled markdown IS its system prompt, so the file's leading bytes are the
- * cacheable prefix of every invocation of it. Two things in the body change without the agent's
- * role changing at all — the CLI version stamped into the provenance marker, and the skill list,
- * which moves whenever a user edits their stack — and both sat UPSTREAM of the largest static
- * blocks, so a patch release or a stack edit invalidated the playbook and the output format
- * beneath them.
- *
- * Relocating both below everything static is the whole of the fix, and the order below is what
- * records it. `toStrictEqual` rather than a `toContain` per section: the subject is the sequence,
- * and a containment check passes for every permutation of it.
+ * The compiled body is the sub-agent's system prompt, so stable sections must precede the volatile
+ * version stamp and skill list to keep the prefix cacheable. `toStrictEqual`: the subject is order.
  */
 describe("the compiled body puts everything stable before everything volatile", () => {
   it("closes with the volatile block and nothing after it", async () => {
@@ -255,12 +168,7 @@ describe("the compiled body puts everything stable before everything volatile", 
     ).toBe("<system-reminder>");
   });
 
-  /**
-   * The version is the only environment-derived byte a compiled agent has ever carried, and it
-   * sat on the first body line. Two claims, and the pair is the point: it is gone from the top,
-   * and it is still somewhere — dropping it silently would be a different change wearing this
-   * one's clothes.
-   */
+  /** Both halves: gone from the top, and still present below. */
   it("keeps the generator version out of the cacheable prefix and inside the volatile block", async () => {
     const engine = await createLiquidEngine();
     const rendered = await renderAgent(engine, createMockCompiledAgentData(), RENDER_VERSION);

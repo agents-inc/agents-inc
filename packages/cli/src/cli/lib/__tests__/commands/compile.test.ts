@@ -85,11 +85,7 @@ describe("compile command", () => {
   });
 
   describe("metadata.yaml requirement for local skills", () => {
-    // The project config declares an agent so the project is detected as an
-    // installation (a config that declares neither skills nor agents is
-    // content-less and is not treated as installed). Compile then discovers the
-    // on-disk local skills these cases exercise, same as the sibling
-    // "compilation output" cases above.
+    // The declared agent makes the project count as an installation.
     let localDirs: TestDirs;
 
     afterEach(async () => {
@@ -109,7 +105,6 @@ describe("compile command", () => {
       const { stdout, error } = await runCliCommand(["compile"]);
 
       const output = stdout + (error?.message || "");
-      // Skill should be discovered (not skipped)
       expect(output).not.toContain("missing metadata.yaml");
       expect(output).toContain("Discovered 1 local skill");
       expect(output).not.toContain("Discovered 1 local skills");
@@ -128,7 +123,6 @@ describe("compile command", () => {
       const { stderr, stdout, error } = await runCliCommand(["compile"]);
 
       const allOutput = stdout + stderr + (error?.message || "");
-      // Warning should be emitted with the skill name and mention metadata.yaml
       expect(allOutput).toContain("web-tooling-incomplete");
       expect(allOutput).toContain("metadata.yaml");
       expect(allOutput).toContain("skipped");
@@ -147,9 +141,7 @@ describe("compile command", () => {
       const { stderr, stdout, error } = await runCliCommand(["compile"]);
 
       const allOutput = stdout + stderr + (error?.message || "");
-      // Warning should contain the skill name
       expect(allOutput).toContain("web-tooling-custom");
-      // Warning should contain the path hint
       expect(allOutput).toContain(".claude/skills/");
     });
   });
@@ -213,21 +205,14 @@ describe("compile command", () => {
       const output = stdout + (error?.message || "");
       expect(output).toContain("Discovered 1 local skill");
       expect(output).not.toContain("Discovered 1 local skills");
-      // First compile of a fresh source, so every agent is a genuine write — the
-      // summary's two numbers are what it counts, not the roster it walked. The noun follows
-      // the count, so a fixture rewriting one says "agent".
+      // A fresh source, so every agent is a genuine write.
       expect(output).toMatch(/[1-9]\d* project agents? rewritten, 0 unchanged/);
     });
   });
 
   /**
-   * The type unions in `config-types.ts` are derived from the seated catalogue, so a
-   * pass that could not seat one has nothing to derive them from. Writing them anyway
-   * narrows every union to what the built-in catalogue happens to carry — dropping every
-   * marketplace-only and local category — and at global scope propagates that into every
-   * registered project, from a failure that used to be a warning and no write.
-   *
-   * Which assertion carries the red: `config-types.ts` existing at all after the run.
+   * Without a seated catalogue, writing `config-types.ts` would narrow every union to the built-in
+   * catalogue and, at global scope, propagate that into every registered project.
    */
   describe("a failed matrix seat", () => {
     let localDirs: TestDirs;
@@ -236,7 +221,6 @@ describe("compile command", () => {
       await cleanupTestSource(localDirs);
     });
 
-    /** A marketplace path nothing is at, so the seat's fetch refuses before any matrix exists. */
     const missingMarketplaceIn = (tempDir: string) =>
       path.join(tempDir, "marketplace-that-is-gone");
 
@@ -297,12 +281,8 @@ describe("compile command", () => {
   });
 
   /**
-   * A pass that discovers no skill is two different installations, and only one of them has
-   * nothing to compile. Sub-agents pinned on with no skill — which the editor produces and
-   * `init --from` installs as base agents — compile exactly as `init` compiled them. A config
-   * that DECLARES skills none of which is on disk is a lost installation, and recompiling it would
-   * strip every skill from every sub-agent, so that one is still refused. Pinned together because
-   * either alone is satisfied by a guard that swallowed the other.
+   * Pinned together: pinned-on agents with no skills still compile, while a config declaring skills
+   * none of which is on disk is refused. Either alone passes a guard that swallowed the other.
    */
   describe("a pass that discovers no skills", () => {
     let localDirs: TestDirs;
@@ -355,7 +335,6 @@ describe("compile command", () => {
 
     it("should include actionable guidance in error message", async () => {
       const { error } = await runCliCommand(["compile"]);
-      // Without installation, command errors with guidance to run init first
       expect(error?.message).toContain("No installation found");
     });
   });

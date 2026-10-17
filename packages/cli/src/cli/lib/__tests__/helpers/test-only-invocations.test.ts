@@ -1,14 +1,3 @@
-/**
- * Contract for `test-only-invocations.ts` — the two readers that say which callables a module
- * OFFERS and which names a file INVOKES.
- *
- * Every fixture below is a shape that was measured rather than imagined. Three of them killed the
- * census that preceded this reader: a barrel's re-export and a doc comment's link tag both
- * read as production references and hid two dead symbols, and a bare `.filter(name)` reference
- * read as no invocation at all and condemned a live one. The reader is driven against source text
- * so all three can be planted — a scan whose only input is a tree with nothing wrong in it has
- * never been shown to report anything.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,14 +6,9 @@ import {
   isTestSupportModule,
 } from "./test-only-invocations.js";
 
-/** What the fixtures are parsed as, one per script kind the package holds. */
 const MODULE_FILE = "installer.ts";
 const COMPONENT_FILE = "wizard.tsx";
 
-/**
- * A module's export list: a function declaration, both function-valued const forms, and four
- * shapes that are exported and are not a callable this reader can name.
- */
 const EVERY_EXPORT_SHAPE = [
   `export function installEject(): void {}`,
   `export const installPluginConfig = async (): Promise<void> => {};`,
@@ -37,20 +21,12 @@ const EVERY_EXPORT_SHAPE = [
   ``,
 ].join("\n");
 
-/**
- * A barrel, in both spellings. It declares nothing of its own and keeps nothing alive, and the
- * one in `installation/index.ts` is why the census reported `installEject` as reached.
- */
 const BARREL_REEXPORT = [
   `export { installEject } from "./local-installer.js";`,
   `export { installPluginConfig as installConfig } from "./plugin-installer.js";`,
   ``,
 ].join("\n");
 
-/**
- * A doc comment naming the symbol, which is the other half of that miss. A comment contributes
- * no identifier to the syntax tree, so this fixture proves the reader is reading the tree.
- */
 const DOC_COMMENT_LINK = [
   `/**`,
   ` * The plugin path. See {@link installEject} for the eject entry point.`,
@@ -59,10 +35,6 @@ const DOC_COMMENT_LINK = [
   ``,
 ].join("\n");
 
-/**
- * A bare name handed to a higher-order function — `isSnakeCase` is passed exactly this way in
- * `source-validator.ts`, and was reported dead by a reader keying on `name(`.
- */
 const BARE_REFERENCE = [
   `import { isSnakeCase } from "./source-validator.js";`,
   ``,
@@ -72,7 +44,6 @@ const BARE_REFERENCE = [
   ``,
 ].join("\n");
 
-/** The ordinary shape, so the fixtures above are read against one that plainly does invoke. */
 const DIRECT_CALL = [
   `import { installEject } from "./local-installer.js";`,
   ``,
@@ -82,13 +53,8 @@ const DIRECT_CALL = [
   ``,
 ].join("\n");
 
-/** An import nothing goes on to use. Lint sees this one; the roster must not read it as a call. */
 const IMPORT_WITHOUT_USE = [`import { installEject } from "./local-installer.js";`, ``].join("\n");
 
-/**
- * The three places a name is a KEY rather than a binding, and the one place it is both. Object
- * shorthand writes a property's name and reads the binding of that name in one token.
- */
 const KEYS_AND_SHORTHAND = [
   `const modes = { installEject: 1 };`,
   `const reached = plugin.installEject;`,
@@ -96,7 +62,6 @@ const KEYS_AND_SHORTHAND = [
   ``,
 ].join("\n");
 
-/** A name in a type position, which is erased and calls nothing. */
 const TYPE_POSITION = [
   `import type { installEject } from "./local-installer.js";`,
   ``,
@@ -105,10 +70,6 @@ const TYPE_POSITION = [
   ``,
 ].join("\n");
 
-/**
- * A lazily-loaded module, which is how `config-gate/index.ts` reaches its loaders. The
- * destructured binding is a declaration; the call under it is the invocation.
- */
 const DYNAMIC_IMPORT = [
   `export async function gate(): Promise<void> {`,
   `  const { loadAgentDefs } = await import("../operations/project/load-agent-defs.js");`,
@@ -117,7 +78,6 @@ const DYNAMIC_IMPORT = [
   ``,
 ].join("\n");
 
-/** A rendered component and a handed-over callback, beside an attribute name that is neither. */
 const JSX_ELEMENT = [
   `import { Wizard } from "./wizard-layout.js";`,
   `import { onSelectSkill } from "./handlers.js";`,
@@ -126,7 +86,6 @@ const JSX_ELEMENT = [
   ``,
 ].join("\n");
 
-/** Paths a module reaches this package's users through. */
 const SHIPPED_MODULES = [
   "src/cli/lib/installation/local-installer.ts",
   "src/cli/commands/init.tsx",
@@ -135,7 +94,6 @@ const SHIPPED_MODULES = [
   "tsup.config.ts",
 ];
 
-/** Paths that exist for the suite: specs, the machinery directories, the harness, the runner. */
 const TEST_SUPPORT_MODULES = [
   "src/cli/lib/installation/local-installer.test.ts",
   "src/cli/components/common/summary-panel.test.tsx",
