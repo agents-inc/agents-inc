@@ -1,6 +1,4 @@
-// Vendored byte-for-byte into packages/matrix/src/vendor/ by scripts/generate-matrix-package.ts.
-// ANY edit here — a comment-only one included — obliges `bun run generate:matrix` in packages/cli;
-// `generate:matrix:check` is the gate.
+// Vendored into packages/matrix/src/vendor/; any edit needs `bun run generate:matrix`.
 
 import type { AgentName } from "./agents";
 import type { CodexModelName, Domain, EffortLevel, ModelName } from "./matrix";
@@ -9,7 +7,6 @@ import type { StackAgentConfig } from "./stacks";
 
 export type SkillScope = "project" | "global";
 
-/** Claude CLI plugin scope (`--project`/`--user` install target). */
 export type ClaudePluginScope = "project" | "user";
 
 export type SourceEntry = {
@@ -26,7 +23,7 @@ export type BrandingConfig = {
 export type SkillConfig = {
   id: SkillId;
   scope: SkillScope;
-  /** Where this skill came from: "eject" (the project's own copy) or a marketplace name. */
+  /** "eject" (the project's own copy) or a marketplace name. */
   origin: string;
   excluded?: boolean;
 };
@@ -86,8 +83,7 @@ export type ProjectConfig = {
   marketplace?: string;
 
   /**
-   * The name the marketplace's manifest gives it, which plugins are registered under. Known only
-   * after a fetch, so it cannot fold into the ref.
+   * The manifest's name, which plugins register under; known only after a fetch.
    * @example "agents-inc"
    */
   marketplaceName?: string;
@@ -100,21 +96,21 @@ export type ProjectConfig = {
 
   branding?: BrandingConfig;
 
-  /** Custom skills directory override (default: "src/skills") */
+  /** Default: "src/skills" */
   skillsDir?: string;
 
-  /** Custom agents directory override (default: "src/agents") */
+  /** Default: "src/agents" */
   agentsDir?: string;
 
-  /** Custom stacks file path override (default: "config/stacks.ts") */
+  /** Default: "config/stacks.ts" */
   stacksFile?: string;
 
-  /** Custom categories file path override (default: "config/skill-categories.ts") */
+  /** Default: "config/skill-categories.ts" */
   categoriesFile?: string;
 
-  /** Custom rules file path override (default: "config/skill-rules.ts") */
+  /** Default: "config/skill-rules.ts" */
   rulesFile?: string;
 
-  /** Tracked project installation paths (global config only) */
+  /** Global config only. */
   projects?: string[];
 };
