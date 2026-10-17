@@ -1,68 +1,29 @@
 name: Regenerate catalog
 
-# The other half of agents-inc/skills' dispatch-catalog-regen.yml. The skills
-# marketplace is a separate repository, so a merge there changes this
-# repository's generated catalog while no commit lands here to notice it. That
-# repository POSTs a repository_dispatch; this workflow receives it,
-# regenerates, and opens a pull request. It never merges anything.
-#
-# This arrangement is not new — it is what the CLI and the web app did for each
-# other before they became one repository. It is back because the marketplace
-# stayed outside.
+# Receives agents-inc/skills' repository_dispatch, regenerates the catalog and opens a PR.
 on:
   repository_dispatch:
-    # Must match the event_type the skills repository POSTs. Changing one side
-    # alone silently stops every regen: an unmatched event_type is accepted with
-    # 204 and then matches no workflow, so the sender still goes green.
+    # Must match the event_type the skills repository sends; a mismatch fails silently.
     types: [skills-updated]
-  # repository_dispatch only ever runs the copy of this file on the DEFAULT
-  # BRANCH, so nothing about this workflow can be exercised from a pull request
-  # — it does not exist until it is merged. workflow_dispatch is the only way to
-  # ask for a run on demand once it is.
   workflow_dispatch:
 
-# contents: write pushes the regeneration branch; pull-requests: write opens the
-# pull request against it. Nothing else — this workflow builds nothing, publishes
-# nothing and deploys nothing.
 permissions:
   contents: write
   pull-requests: write
 
-# Deliberately NOT cancel-in-progress, which is the opposite of ci.yml's choice
-# and for the opposite reason. ci.yml cancels because a superseded run has
-# nothing to say about the commit that replaced it. This job has something to
-# lose instead: it pushes to one fixed branch, and a run cancelled between the
-# push and the pull request leaves that branch ahead of a pull request that
-# never got updated. Queuing costs a few minutes, and GitHub keeps only the
-# newest pending run, so the regen that lands is still the newest one.
+# Not cancel-in-progress: a run cancelled between push and PR leaves the branch ahead of it.
 concurrency:
   group: regenerate-catalog
 
 env:
-  # `bun install` runs this repository's `prepare` script, which installs the
-  # husky hooks — so the `git commit` create-pull-request makes further down
-  # fired .husky/pre-commit INSIDE this job: lint-staged plus a turbo run, in a
-  # working tree that also holds the skills checkout, under an environment none
-  # of it was written for. Both attempts of the first live run failed exactly
-  # there. Husky reads this variable and installs nothing, runs nothing. The
-  # regeneration pull request is not ungated by this: ci.yml runs on the PR
-  # itself, which is the gate that was always meant to judge it.
+  # Stops `bun install` installing husky hooks that would fire on the action's commit.
   HUSKY: 0
-  # Kept in step with ci.yml by hand. Actions has no way to share a value across
-  # workflow files, so these two drift silently if that one is bumped alone.
+  # Kept in step with ci.yml by hand.
   BUN_VERSION: 1.2.6
   NODE_VERSION: 22
-  # One FIXED branch, and that is the whole idempotency story. A second dispatch
-  # arriving while a regeneration is already open force-updates this branch and
-  # the pull request already attached to it, rather than stacking a second one
-  # beside it. Anything varying — a SHA, a run number, a date — would open a new
-  # pull request every merge in the marketplace.
+  # Fixed branch, so a later dispatch updates the open PR instead of opening another.
   REGEN_BRANCH: automation/catalog-regen
-  # actions/checkout can only write under $GITHUB_WORKSPACE, so the marketplace
-  # lands inside this repository's working tree. That is safe on both counts
-  # that matter: it is not matched by the root package.json workspace globs
-  # (apps/*, packages/*), so `bun install` ignores it, and add-paths below names
-  # the generated directories explicitly, so it cannot reach a commit.
+  # Inside the workspace (checkout requires it) but outside the workspace globs and add-paths.
   SKILLS_CHECKOUT: skills-source
 
 jobs:
@@ -70,8 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # A hand-started run carries no client_payload, so it regenerates from the
-      # tip of the marketplace instead of a named commit.
+      # A hand-started run has no payload, so it uses the marketplace tip.
       - name: Resolve the skills commit to regenerate from
         id: trigger
         env:
@@ -80,16 +40,7 @@ jobs:
 
       - uses: actions/checkout@v5
 
-      # The checkout that no other job in this repository has. generate:types
-      # reads the marketplace directly, which is exactly why
-      # generate:types:check is deliberately absent from ci.yml. This
-      # workflow is the first runner anywhere that can run it.
-      #
-      # No token: agents-inc/skills is public, and GITHUB_TOKEN — which is
-      # scoped to THIS repository and grants nothing in that one — is enough to
-      # clone it for that reason alone. If the marketplace is ever made private
-      # this step is what breaks, and it will read as an authentication failure
-      # rather than a visibility change.
+      # generate:types reads the marketplace. No token needed while agents-inc/skills is public.
       - name: Check out the skills marketplace
         uses: actions/checkout@v5
         with:
@@ -107,24 +58,7 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # THREE generators, not two, and the order is load-bearing.
-      #
-      # generate:types writes src/cli/types/generated/, and BOTH of the others
-      # read what it wrote: generate:schemas copies SKILL_SLUGS and CATEGORIES
-      # verbatim into metadata.schema.json's enums, and generate:matrix vendors
-      # the generated files wholesale into packages/matrix. Running either
-      # before types republishes the previous run's vocabulary, and the shipped
-      # schema rejects legitimate slugs and categories.
-      #
-      # The schemas step is here even though a marketplace merge is not
-      # obviously about JSON schemas. Leave it out and the pull request looks
-      # complete, merges, and then ci.yml's generate:schemas:check turns main red
-      # on the very next push — a failure landing one commit after the change
-      # that caused it, in a job that names neither.
-      #
-      # generate:types takes the marketplace path as argv[2]; the default is a
-      # sibling of the repository root, which is the local layout and not this
-      # one.
+      # Order matters: schemas and matrix both read what generate:types writes.
       - name: Regenerate the source types
         working-directory: packages/cli
         run: bun run generate:types "$GITHUB_WORKSPACE/$SKILLS_CHECKOUT"
@@ -137,33 +71,17 @@ jobs:
         working-directory: packages/cli
         run: bun run generate:matrix
 
-      # The only third-party action in this repository, and the only one pinned
-      # to a full commit SHA. Everything in ci.yml is a first-party actions/* or
-      # oven-sh/setup-bun on a floating major tag; this one is pinned because it
-      # is handed a token that can write to the default branch, and a moved tag
-      # is a silent supply-chain change to the thing holding that token.
+      # Pinned to a SHA: it holds a token that can write to the default branch.
       - name: Open or update the regeneration pull request
         id: regen
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
-          # GITHUB_TOKEN is the fallback and it works, with one real cost: pull
-          # requests it creates deliberately do not trigger `on: pull_request`
-          # workflows, so ci.yml never runs on the regeneration and the pull
-          # request arrives with no checks at all. That matters here more than
-          # usual — the generated types feed every typecheck in the repository,
-          # and check-web's generate:matrix:check is the gate that would confirm
-          # this very diff. Setting REGEN_PR_TOKEN to a PAT makes CI run on the
-          # pull request; leaving it unset costs review signal, not correctness.
+          # PRs opened with GITHUB_TOKEN trigger no CI; set REGEN_PR_TOKEN (a PAT) to get checks.
           token: ${{ secrets.REGEN_PR_TOKEN || github.token }}
           branch: ${{ env.REGEN_BRANCH }}
           base: main
-          # Closes the pull request and removes the branch when a later regen
-          # finds nothing left to change — a marketplace revert should not leave
-          # a stale diff open.
           delete-branch: true
-          # Exactly what the three generators write, and nothing else. Without
-          # this the action commits every modified and untracked file, which
-          # here would include the marketplace checkout above.
+          # Without this the action would also commit the marketplace checkout.
           add-paths: |
             packages/cli/src/cli/types/generated
             packages/cli/src/schemas
@@ -199,10 +117,6 @@ jobs:
             the marketplace updates this pull request rather than opening a
             second one beside it.
 
-      # The idempotency claim above is only checkable from a live run: the
-      # action reports `created` the first time and `updated` on every dispatch
-      # that follows while this pull request is open. Reading it off the run
-      # summary beats inferring it from the pull request list.
       - name: Say what happened
         env:
           OPERATION: ${{ steps.regen.outputs.pull-request-operation }}

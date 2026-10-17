@@ -1,7 +1,4 @@
-# Most patterns below have no slash in them, so git matches them at every level:
-# the root, apps/*, and packages/* alike. The few that do contain a slash are
-# anchored to this directory and are grouped at the bottom, where they are
-# called out.
+# Patterns without a slash match at every level; slashed ones are anchored here.
 
 # Logs
 logs
@@ -16,14 +13,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-# `vite build --mode test` in apps/editor, which the appearance suite builds
-# and serves. Its own directory rather than `dist/`, so a visual run can never
-# overwrite what `bun run deploy` is about to upload.
+# apps/editor's visual-test build, kept apart from the deployable `dist/`.
 dist-test
 *.local
-# `storybook build` in packages/ui, which Chromatic runs for itself on every
-# publish. Unanchored like its neighbours, so a second workspace growing a
-# Storybook needs no second entry.
+# packages/ui's Storybook build.
 storybook-static
 
 # Caches
@@ -31,51 +24,24 @@ storybook-static
 .cache
 *.tsbuildinfo
 
-# The reserved prefix for scratch material — a verification harness, a throwaway
-# probe, anything a run writes into a workspace rather than anything anyone
-# authored. No slash, so it holds at every level, and the trailing wildcard lets a
-# harness name itself (`.scratch-plugin-verify/`). Reserved because untracked
-# scratch material is not inert: it joins `eslint .` and `prettier --check .` and
-# fails them for the whole package until someone deletes it, and the ESLint half
-# reports a syntax error against a file whose syntax is fine. Naming the prefix
-# once means the next harness only has to be put in the right place rather than
-# added to three lists. The matching entries are `globalIgnores` in
-# packages/cli/eslint.config.js — not derived from this file — and that package's
-# .prettierignore, since Prettier reads only the .gitignore in its own working
-# directory and there is none there. The mechanism is written out beside the
-# `files:` list in that ESLint config.
+# Reserved prefix for scratch output, so it stays out of eslint and prettier runs.
+# Mirrored in packages/cli's eslint globalIgnores and .prettierignore.
 .scratch*
 
 # env files (can opt-in for committing if needed)
 .env*
-# ...but the templates are the documentation for what each one is.
+# ...but templates are committed.
 !.env.example
-# ...and apps/editor/.env.production is opted in, because it is not a secret
-# and it is not local. It holds the one address the deployed editor calls,
-# which Vite freezes into the published bundle, so it is public by the time
-# anyone loads the site. Committing it is what stops a developer's `.env`
-# reaching a production build — Vite ranks `.env.production` above `.env` — and
-# it is the file apps/editor/scripts/check-deployable-bundle.ts checks the
-# built artefact against. A `.env.production.local` is still ignored, which is
-# how you build against a local worker without touching this.
+# ...and apps/editor/.env.production: public, frozen into the bundle, and what
+# check-deployable-bundle.ts checks against.
 !.env.production
-# ...and so is apps/editor/.env.test, for the same reasons: it holds the stub
-# worker's address, which the appearance suite's build needs and which is no
-# more secret than the production one. The file says why.
+# ...and apps/editor/.env.test, the stub worker's address.
 !.env.test
 
-# Wrangler's local secret file — `wrangler dev` reads it and nothing else does.
-# It needs its own entry because the `.env*` rule above does NOT match it: the
-# pattern is anchored to the start of the name and this one begins `.dev`. That
-# near-miss is the whole reason this block is here rather than assumed — a
-# secret written to a file nobody checked is a secret in the next commit. Any
-# suffix too (`.dev.vars.production`).
+# Wrangler's local secrets; `.env*` does not match `.dev.vars`.
 .dev.vars
 .dev.vars.*
-# ...except the template, which is the whole point of having one: the real file
-# is invisible, so without this a fresh clone cannot know the worker needs three
-# values and finds out when sign-in fails. Names and comments only — check that
-# before adding anything to it.
+# ...except the template, which lists names only.
 !.dev.vars.example
 
 # Editor directories and files
@@ -91,92 +57,37 @@ storybook-static
 
 # Claude Code working files, at any level
 .claude
-# Where an installation keeps its source: `.agents-inc/<provider>/`. Measured: a fresh
-# `init --from` writes `.agents-inc/claude/config.ts` and `config-types.ts`, untracked and
-# committable without this.
+# An installation's source, `.agents-inc/<provider>/`.
 .agents-inc
 .claude-design/
 CLAUDE.md
 
-# Playwright. The anchored paths are apps/editor's, and correctly so: only that
-# workspace runs Playwright, and it sits at the same depth it did in the web
-# repository.
-#
-# `test-results/` is UNANCHORED, and that is the one exception. Playwright
-# resolves `outputDir` against the process's working directory rather than
-# against the config's, so a run invoked from the repository root — `bunx
-# playwright test`, with the config found by walking up — writes the directory
-# there instead. The anchored entry below cannot see that one, and what lands is
-# a `.last-run.json` nobody wants in a commit.
+# Playwright. `test-results/` is unanchored because a run from the root writes it there.
 test-results/
 apps/editor/test-results/
 apps/editor/playwright-report/
 apps/editor/blob-report/
 apps/editor/.playwright/
-# Argos writes its captures here on every `test:visual` run. Anchored like its
-# Playwright neighbours above, and it needs its own entry rather than riding on
-# theirs: Argos chooses `screenshots/` by default, which matches none of them.
-# Two and a half megabytes of PNG, one `git add -A` from being permanent — and
-# the `.png.argos.json` sidecars beside them also match lint-staged's
-# `*.{js,json,...}` pattern, so a commit would reformat machine output as well
-# as keep it.
+# Argos captures from `test:visual`.
 apps/editor/screenshots/
 
 # wrangler local state
 .wrangler
 
-# The CLI's private working notes, all but two of them. This pattern contains a
-# slash, so it is anchored to this file's directory — which is why it had to be
-# re-pointed at packages/cli when the CLI moved a level down. Left as `todo/*`
-# it would have matched nothing and committed every note.
+# The CLI's private notes, all but two.
 packages/cli/todo/*
 !packages/cli/todo/TODO.md
 !packages/cli/todo/TODO-completed.md
 
-# Three files the unanchored CLAUDE.md rule above would otherwise swallow. The
-# root CLAUDE.md is new rather than moved: agents start a session at the root,
-# and until it existed nothing there pointed them at the CLI's documentation
-# map. The other two — the CLI's own working instructions and one compiler test
-# fixture — were tracked at the repository root for the whole of the CLI's
-# history, so being tracked already that rule never applied to them; the merge
-# moved them a level down, where the rule does match, fresh, so each needs
-# naming here. The fixture is read from disk by compiler.test.ts; CI clones
-# fresh, so leaving it uncommitted fails the CLI suite. All three are anchored to
-# their exact paths — the root file by a leading slash, since an unanchored
-# !CLAUDE.md would un-ignore every one in the tree — so every other CLAUDE.md in
-# the repository stays ignored.
-#
-# `packages/ui/CLAUDE.md` is the fourth, and it is the one that shows why this
-# list is a hazard rather than a formality: it was written straight into an
-# ignored path, so it existed on ONE MACHINE for as long as it existed at all
-# and no clone had the design system's guidance — the focus-treatment rule, the
-# semantics rule, the flex-basis rule, the `LatticeCell` division of affordance.
-# Nothing failed. A doc that is never read by anyone else is not a doc that
-# breaks; it is a doc that quietly is not there (REPO-41, owner 2026-08-29).
-# A new workspace CLAUDE.md needs a line here on the day it is written.
+# Tracked CLAUDE.md files the unanchored rule above would swallow. A new workspace
+# CLAUDE.md needs a line here, or it never leaves the machine it was written on.
 !/CLAUDE.md
 !packages/cli/CLAUDE.md
 !packages/cli/src/cli/lib/__tests__/fixtures/stacks/default/CLAUDE.md
 !packages/ui/CLAUDE.md
 
-# The Skill Olympics corpus (todo plan CLI-729, was D-162), excluded outright — the plan and
-# its 879 supporting files both. `contestants/` is third-party skill text copied
-# verbatim from other authors, and `arena/` and `test-cases/` hold the outputs
-# those skills produced, the artefacts the benchmark's rubric scores. This
-# pattern contains a slash, so it is anchored to this file's directory.
-#
-# The root .prettierignore names those same three subdirectories, for a related
-# reason rather than the same one: reformatting them would rewrite the evidence
-# being measured. It is deliberately left as it is — a gitignored file can still
-# be formatted locally, so the two rules do different jobs and neither replaces
-# the other.
-#
-# CLI-729 is a live item, so todo/cli.md is written to match: it gives the plan
-# and catalog as plain paths rather than links and says outright that they exist
-# only on the maintainer's machine. Turning them back into links would ship a
-# tracker whose references resolve for one person and nobody else.
+# The Skill Olympics corpus stays local: third-party skill text and benchmark outputs.
 todo/plans/CLI-729-skill-olympics/
 
-# generated by packages/cli/scripts/handrun.mjs — the hand-run bundle must sit beside the
-# e2e helpers so CLI_ROOT, derived from import.meta.url, still resolves to the package root
+# Bundle written by packages/cli/scripts/handrun.mjs beside the e2e helpers.
 packages/cli/e2e/helpers/handrun.gen.mjs

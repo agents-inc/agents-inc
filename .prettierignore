@@ -1,8 +1,5 @@
-# Prettier reads .prettierignore from its working directory only, so this file
-# is the one that counts for the root `format` script. Entries whose only slash
-# is the trailing one are not anchored — they match at every depth, so `dist/`
-# and `node_modules/` below already cover packages/cli, apps/editor and the rest.
-# There is nothing to repeat per workspace.
+# Prettier reads only the .prettierignore in its working directory. Unanchored entries
+# match at every depth.
 
 dist/
 dist-test/
@@ -16,37 +13,25 @@ bun.lock
 .cache/
 *.cache
 *.js.map
-# Astro's generated types and content-collection cache in apps/www. Rewritten
-# by every `astro sync`, so reformatting them is pure churn. The trailing slash
-# makes this a directory match — `.astro` source files are untouched.
+# Astro's generated types; `.astro` source files are untouched.
 .astro/
 
 # Backup files
 .claude_backup/
 
-# Copied verbatim from the agents-inc CLI, or emitted by a generator. Reformatting either would
-# create diff noise on every regeneration.
+# Vendored or generated.
 packages/matrix/src/vendor/
 packages/matrix/src/generated/
 packages/compile/src/generated/
 apps/editor/src/lib/skill-icons.ts
-# Emitted by `wrangler types`; regenerating it would undo any reformatting anyway.
 apps/server/worker-configuration.d.ts
-# Emitted by drizzle-kit: the numbered .sql files and the snapshot JSON beside
-# them. Both are rewritten on every `drizzle-kit generate`, so formatting them
-# is churn that reappears — and the snapshots are drizzle's own record of what
-# the schema was, which nothing should be editing by hand at all.
 apps/server/migrations/
 test-results/
 playwright-report/
-# Argos captures and their sidecar metadata — machine output, and the sidecars
-# are JSON, so without this a commit reformats them.
+# Argos captures and their JSON sidecars.
 screenshots/
 
-# The Skill Olympics corpus (todo plan D-162). `contestants/` is third-party skill text copied
-# verbatim from other authors, and `arena/` holds the outputs those skills produced — the very
-# artefacts being scored on the rubric. Reformatting either would rewrite the evidence. The plan
-# and catalog markdown beside them are ours and stay formatted.
+# Skill Olympics evidence; reformatting would rewrite what is scored.
 todo/plans/D-162-skill-olympics/arena/
 todo/plans/D-162-skill-olympics/contestants/
 todo/plans/D-162-skill-olympics/test-cases/

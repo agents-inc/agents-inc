@@ -4,43 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
-  # So a run can be started by hand. Added after the repository was renamed to
-  # agents-inc/agents-inc and the first push afterwards fired no run at all —
-  # the commit reached main, Actions stayed enabled and the workflow stayed
-  # active, but no event arrived. Without this there was no way to ask for one:
-  # re-running an earlier run re-runs that commit, not the one you care about.
+  # Lets a run be started by hand.
   workflow_dispatch:
 
-# A superseded run has nothing to say about the commit that replaced it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   BUN_VERSION: 1.2.6
-  # Node is pinned, not inherited. Ink 7 raised the CLI's floor to Node 22, so
-  # packages/cli/package.json declares it — but every job here installed bun and
-  # nothing else, which left each run on whatever Node ubuntu-latest happened to
-  # ship that week. That Node is not incidental: the CLI's E2E harness launches
-  # the CLI as a real child process with `pty.spawn("node", …)`, so the runner's
-  # Node is the runtime that actually executes the thing under test. Pinning it
-  # means CI tests the floor the package declares rather than the image's guess.
+  # Pinned to the CLI's declared floor; its E2E harness spawns the CLI with `node`.
   NODE_VERSION: 22
 
 jobs:
-  # Every job carries a timeout because GitHub's default is six hours, and this
-  # repository has already burned seventy minutes of runner time on one hang.
-  # The numbers are measured, not guessed — three green runs on 2026-08-04 put
-  # check-web at 4-5 minutes, check-cli at 25-26 and deploy at 30 seconds —
-  # then given headroom, because the point is to bound a hang, not to police
-  # duration.
-  #
-  # check-web's bound exists to stop a hang, not to police duration. It went
-  # 15 to 25 on 2026-08-31 and 25 to 40 on 2026-10-14, each time because the
-  # editor's Playwright suite (`workers: 2` on the runner) outgrew it with
-  # nothing hung: run 38621807704's `test:e2e` was killed at 22m after
-  # 2026-10-11's whole job took 24.9m of 25. If it is hit again, the next move
-  # is `workers` in apps/editor/playwright.config.ts (the runner has four cores).
+  # Timeouts bound a hang (GitHub's default is six hours), not duration.
   check-web:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -57,79 +34,33 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # The two cross-workspace checks, in the job that runs first because they
-      # answer in under a second and nothing else here can answer at all. Both
-      # compare workspaces to each other — syncpack on dependency ranges, the
-      # second on whether each tsconfig.json still extends the shared config —
-      # and a defect of that shape is invisible to every per-workspace gate,
-      # which is why packages/cli/tsconfig.json could extend nothing for months
-      # with tsc, eslint, both suites and turbo typecheck green throughout.
-      # Neither check ran anywhere automatic until now; `deps:check` was a
-      # script you had to remember.
+      # Cross-workspace checks; fast, so first.
       - name: Workspaces must agree with each other
         run: bun run deps:check
 
-      # packages/matrix holds a vendored copy of the CLI's catalog, and it goes
-      # stale whenever the CLI's types or agent metadata are edited without
-      # regenerating it. That used to be a cross-repo dispatch that opened a
-      # pull request, because the two halves lived in different repositories.
-      # They do not any more: a commit that changes the catalog can carry the
-      # regenerated output with it, so this is a check rather than a PR.
-      #
-      # The writer lives in packages/cli — it is the CLI's own types and agent
-      # metadata being vendored — so the check is run from there even though
-      # the files it guards belong to the web side. It is CI-safe because every
-      # input is in this repository; generate:types, which reads the sibling
-      # skills checkout no runner has, deliberately has no check here.
-      #
-      # It compares in memory and writes nothing, which is why this no longer
-      # needs the regenerate-then-git-diff pair it replaced — and it reports a
-      # file it emits that is not committed at all, which `git diff` could not
-      # see.
-      #
-      # It runs before the suites on purpose. A stale catalog means something
-      # was left uncommitted, and saying so takes seconds — waiting out the E2E
-      # run first would only delay the same answer.
+      # Fast staleness checks run before the suites.
       - name: The vendored catalog must match what is committed
         working-directory: packages/cli
         run: bun run generate:matrix:check
 
-      # The same reasoning for the vendored agent corpus: packages/cli writes it,
-      # the editor's output preview reads it, and every input is in this
-      # repository — so the runner can regenerate and byte-compare. Without this
-      # nothing catches a partial, a template or a version bump that landed
-      # without a regeneration, and the preview then draws bytes no install writes.
       - name: The vendored agent corpus must match what is committed
         working-directory: packages/cli
         run: bun run generate:compile:check
 
-      # And the worker's D1 migrations, for the same reason one step up: a
-      # `notNull`, an index or a foreign key added to src/db/*.schema.ts type
-      # checks, lints and passes the whole suite — the suite applies the
-      # COMMITTED migrations, so the tables it uses are the old ones — and the
-      # first sign of the missing file is the deploy applying schema that does
-      # not match the code it just shipped. This is the step that has to fail
-      # before that, which is why it is here rather than in the deploy job.
+      # The suites apply committed migrations, so only this catches a missing one.
       - name: The migrations must match the schema they are generated from
         working-directory: apps/server
         run: bun run db:generate:check
 
-      # The CLI is filtered out of every turbo run below: check-cli owns it, and
-      # running it in both jobs would pay for it twice.
+      # check-cli owns the CLI.
       - run: bun run typecheck --filter='!agents-inc'
       - run: bun run lint --filter='!agents-inc'
 
-      # Chromium installs before `test`, not just before `test:e2e`: the
-      # packages/ui suite runs Storybook stories under vitest browser mode, so
-      # plain `test` needs a browser too. Only chromium is configured, so only
-      # chromium is installed — once, for both suites.
+      # packages/ui's `test` uses vitest browser mode, so it needs chromium too.
       - run: bunx playwright install --with-deps chromium
 
       - run: bun run test --filter='!agents-inc'
 
-      # The Playwright suite is the one that actually covers wiring, so it
-      # gates the deploy rather than running after it. (No count here on
-      # purpose — the last one this comment carried went stale.)
       - run: bun run test:e2e --filter='!agents-inc'
 
       - uses: actions/upload-artifact@v4
@@ -139,11 +70,7 @@ jobs:
           path: apps/editor/playwright-report/
           retention-days: 7
 
-  # The CLI shipped from this repository for eight months with no CI of its own.
-  # It has one now, and it is a separate job because its end-to-end suite drives
-  # a real pseudo-terminal and takes minutes — long enough that sharing a job
-  # with the web checks would hide which half is slow, and long enough that the
-  # deploy below deliberately does not wait for it.
+  # Separate job: its pty E2E suite is slow, and deploy does not wait for it.
   check-cli:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -160,11 +87,6 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # The committed JSON schemas must match what the Zod schemas generate —
-      # the CLI's own generated matrix went stale for weeks because nothing
-      # regenerated and compared. The types generator cannot run here (it reads
-      # the sibling skills checkout, which the runner does not have); its check
-      # lives in prepublishOnly, on the machine that publishes.
       - run: bun run generate:schemas:check
         working-directory: packages/cli
 
@@ -173,53 +95,21 @@ jobs:
       - run: bun run test --filter=agents-inc
       - run: bun run test:e2e --filter=agents-inc
 
-      # The smoke files, which `test:e2e` does not collect — they probe a
-      # third-party binary and are a separate vitest project for that reason.
-      # What this step proves has two halves and they must not be conflated.
-      # The CLAUDE probes carry `describe.skipIf(!claudeAvailable)` and this
-      # runner has no `claude`, so nothing they assert is coverage of the Claude
-      # CLI and this step must not be read as such; what a skipped run still
-      # proves is that the files collect, import and resolve their helpers,
-      # which is precisely what rotted while no command ran them at all. The
-      # CODEX probe does not skip — `@openai/codex` is a pinned devDependency,
-      # so `e2e/smoke/codex-lane.smoke.test.ts` runs for real here and its
-      # assertions ARE coverage. Which files are which:
-      # `grep -L 'describe.skipIf' packages/cli/e2e/smoke/*.smoke.test.ts`.
-      # Run directly rather than through turbo: adding a task for one
-      # workspace's short step buys nothing, and `working-directory` is what the
-      # schema check above already does.
+      # `test:e2e` does not collect the smoke files. The Claude probes skip here (no `claude`);
+      # the Codex probe runs for real.
       - name: The smoke files must at least still load
         working-directory: packages/cli
         run: bun run test:smoke
 
-  # Chromatic — the appearance half of the DESIGN SYSTEM's coverage, and the
-  # only check anywhere in this repository that compares a render to the last
-  # one anybody accepted. check-web already renders every story in a real
-  # Chromium and gates on axe, but axe reads structure — names, labels, roles —
-  # and a component whose padding, colour or border moved passes every one of
-  # those checks while looking different. `color-contrast` is held out of axe
-  # permanently by owner ruling (packages/ui/.storybook/preview.ts says why), so
-  # for the palette specifically a baseline diff is the only instrument left.
-  #
-  # Its own job rather than a step in check-web, for two independent reasons:
-  # it needs the full git history that job deliberately does not fetch, and it
-  # talks to a third-party service, so a Chromatic outage should not be able to
-  # hold up the type check.
-  #
-  # It does NOT gate the deploy, on the same reasoning check-cli does not: a
-  # visual change waiting to be accepted in Chromatic's UI is a question for a
-  # human, not a reason to stop shipping the editor. It still turns the commit
-  # red, which is the part that matters.
+  # Chromatic baseline diffs for packages/ui. Own job: needs full history, and an outage
+  # should not block the type check. Does not gate deploy.
   visual-ui:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
-          # Chromatic walks git history to find the baseline build this commit
-          # descends from. A shallow clone has one commit and no ancestry, so
-          # every run would look like the project's first and re-baseline the
-          # whole package — which is to say it would never report a change.
+          # Chromatic finds its baseline through git ancestry.
           fetch-depth: 0
 
       - uses: actions/setup-node@v4
@@ -232,44 +122,15 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # The CLI, not chromaui/action: the action installs its own Node and its
-      # own dependencies, which is a second install of a workspace this job has
-      # already installed from the lockfile, and the CLI reads the token out of
-      # the environment by itself. It runs `build-storybook` for us —
-      # packages/ui/chromatic.config.json names the script — then uploads the
-      # build and diffs it.
-      #
-      # No `playwright install` here, deliberately: the screenshots are taken in
-      # Chromatic's infrastructure across its browsers, not on this runner. That
-      # is the whole reason this is a hosted service rather than another
-      # `toHaveScreenshot` in the Playwright suite.
-      #
-      # Unguarded on purpose. Without CHROMATIC_PROJECT_TOKEN this job fails
-      # loudly, which is correct — the alternative is a `if: secrets…` guard
-      # that turns a missing token into a green skip, and a gate that passes
-      # over nothing is the failure mode this repository keeps writing comments
-      # about.
+      # Screenshots are taken in Chromatic's infrastructure, so no `playwright install`.
+      # Unguarded: a missing token should fail, not skip green.
       - name: The design system must still look like its baselines
         working-directory: packages/ui
         run: bun run chromatic
         env:
           CHROMATIC_PROJECT_TOKEN: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
 
-  # Argos — the same question asked of the EDITOR rather than of the design
-  # system, and the two do not overlap. visual-ui above diffs components
-  # standing alone; this diffs the assembled screen, which is where a component
-  # that is correct in isolation goes wrong. Nothing in check-web can see
-  # either: `getByRole` has no opinion about pixels, which is why the
-  # behavioural suite passes through a layout change without noticing it.
-  #
-  # Its own job for the same two reasons as visual-ui — a third-party service
-  # should not be able to hold up the type check, and an appearance diff
-  # waiting on a human is not a reason to stop shipping the editor. It does not
-  # gate the deploy.
-  #
-  # This suite builds the app and serves it statically rather than driving the
-  # dev server the behavioural suite uses. That is measured rather than
-  # preferred; playwright.visual.config.ts carries the measurement.
+  # Argos baseline diffs for the assembled editor. Does not gate deploy.
   visual-editor:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -286,16 +147,9 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # Only chromium, matching the suite's single project — and unlike
-      # visual-ui, this one really does take its screenshots on this runner.
       - run: bunx playwright install --with-deps chromium
 
-      # The config's webServer runs `vite build --mode test` and serves it, so
-      # there is no build step here. `--mode test` is what points the bundle at
-      # the stub worker the fixtures route; apps/editor/.env.test says why.
-      #
-      # Unguarded, like visual-ui: without ARGOS_TOKEN this fails loudly rather
-      # than skipping green over an appearance suite that ran nowhere.
+      # The config's webServer builds and serves the app. Unguarded, like visual-ui.
       - name: The editor must still look like its baselines
         working-directory: apps/editor
         run: bun run test:visual
@@ -310,12 +164,7 @@ jobs:
           retention-days: 7
 
   deploy:
-    # check-web only, and check-cli deliberately absent. Nothing the CLI's
-    # pseudo-terminal suite covers can change what Cloudflare serves, so gating
-    # on it would add minutes to every web deploy in exchange for no signal
-    # about the thing being deployed. check-cli still runs on the same commit
-    # and still turns the commit red when it fails — it just does not hold the
-    # door.
+    # check-cli is absent: nothing it covers changes what Cloudflare serves.
     needs: check-web
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -334,26 +183,7 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # `turbo deploy` builds first, and VITE_API_URL is inlined into that
-      # build. It is deliberately NOT set here any more: it lives in the
-      # committed apps/editor/.env.production, which `vite build` loads by
-      # itself, so CI and a hand-run `bun run deploy` produce the same bundle
-      # from the same file instead of from two copies of one address that must
-      # never disagree. Setting it here again would silently outrank that file
-      # — a shell variable beats every .env — and the deploy would then fail on
-      # check-deployable-bundle.ts rather than ship the difference, which is
-      # the behaviour we want but not a reason to keep the second copy.
-      # VITE_API_URL stays named in turbo.json's build `env` so that a shell
-      # value, if one ever returns, still keys the cache.
-      # D1 migrations, BEFORE the deploy. The worker's auth and /stacks routes
-      # read tables that `wrangler deploy` does not create — it ships code, not
-      # schema — so without this a migration authored in a commit reaches the
-      # edge as code expecting a column that is not there. Applied by hand for
-      # the first two, which is exactly the arrangement that works until the
-      # once somebody forgets.
-      #
-      # Idempotent: `migrations apply` runs only what the `d1_migrations` table
-      # says has not run, so a deploy with no new migration is a no-op.
+      # `wrangler deploy` ships code, not schema; `migrations apply` is idempotent.
       - name: The database must have the schema the code expects
         working-directory: apps/server
         run: bunx wrangler d1 migrations apply agents-inc-db --env production --remote
@@ -363,21 +193,12 @@ jobs:
 
       - run: bun run deploy
         env:
-          # Slugs are public identifiers — they appear in every Sentry URL, so
-          # they are config rather than secrets. The DSN is public too (it
-          # ships inside the bundle), but is kept alongside the token so there
-          # is one place to look. All four are safe to leave unset: an absent
-          # DSN disables reporting, an absent token skips source maps.
+          # Public slugs and DSN. Unset DSN disables reporting; unset token skips source maps.
           SENTRY_ORG: vince-inc
-          # A project slug in an external Sentry account. Renamed there FIRST
-          # (2026-08-06), then here — in that order nothing ever points at a
-          # slug Sentry does not know, which would fail every source-map
-          # upload on a line that reads like a typo.
           SENTRY_PROJECT: agents-inc-editor
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          # Absent means PostHog is never downloaded at all — the SDK is a
-          # separate chunk that only loads when a key exists.
+          # Absent means PostHog is never downloaded.
           VITE_POSTHOG_KEY: ${{ secrets.VITE_POSTHOG_KEY }}
           VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
