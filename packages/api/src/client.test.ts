@@ -8,13 +8,6 @@ const BASE = "https://api.example.test"
 
 type Call = { url: string; init: RequestInit }
 
-/**
- * The whole of what this package produces is the argument pair it hands
- * `fetch`, so that is what every test here reads. hc calls
- * `(opt?.fetch || fetch)(url, { body, method, headers, ...opt?.init })`, which is why
- * injecting one is enough to see the base URL, the headers and the
- * credentials policy without a server or a network.
- */
 const urlOf = (input: Parameters<typeof globalThis.fetch>[0]) =>
   input instanceof Request ? input.url : String(input)
 
@@ -29,7 +22,6 @@ const recordingFetch = () => {
   return { calls, fetch }
 }
 
-/** hc builds a `Headers` for the request; this reads one back by name. */
 const headerOf = (init: RequestInit, name: string) =>
   new Headers(init.headers).get(name)
 
@@ -123,12 +115,10 @@ describe("apiRequestInit", () => {
   })
 })
 
-/** What `POST /configs` can answer, as the typed client sees it. */
 type CreateConfigStatus = Awaited<
   ReturnType<ApiClient["configs"]["$post"]>
 >["status"]
 
-/** A refusal as the worker's write limiter sends it, window and all. */
 const rateLimited = (retryAfter?: string) =>
   new Response("Too many requests", {
     status: 429,
@@ -136,9 +126,6 @@ const rateLimited = (retryAfter?: string) =>
   })
 
 describe("retryAfterSeconds", () => {
-  // A status the route does not declare is one the typed client cannot be
-  // asked about: `response.status === 429` fails to compile against it, so a
-  // consumer could only ever read the limit as an anonymous refusal.
   it("reads a status the typed client knows POST /configs can answer", () => {
     expectTypeOf<429>().toExtend<CreateConfigStatus>()
   })
@@ -151,8 +138,6 @@ describe("retryAfterSeconds", () => {
     expect(retryAfterSeconds(rateLimited())).toBeNull()
   })
 
-  // RFC 9110 also allows an HTTP-date. No route of this worker sends one, and
-  // guessing a clock difference would be a second opinion on when to retry.
   it("says nothing for a window it cannot read as whole seconds", () => {
     const unreadable = ["Wed, 21 Oct 2026 07:28:00 GMT", "", "-5", "0", "1.5"]
 

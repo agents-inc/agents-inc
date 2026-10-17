@@ -48,14 +48,9 @@ import {
 
 import type { JsonBodyType, PathParams } from "msw"
 
-// One mock of the routes apps/editor calls. `/monitoring` is deliberately
-// absent: Sentry's SDK reaches it, no code in the editor does, and it is
-// somebody else's envelope format rather than this worker's contract.
+// `/monitoring` is absent: only Sentry's SDK calls it.
 
-// The routes, exported because both of apps/editor's suites had re-declared
-// what this file already names — the Playwright support modules and the unit
-// tests beside each client. Two copies of a route string cannot see each other
-// drift, and neither is wrong on its own.
+// Exported so the editor's suites share one copy of each route.
 export const CONFIGS_URL = `${WORKER_ORIGIN}/configs`
 export const SKILL_INDEX_URL = `${WORKER_ORIGIN}/skills`
 
@@ -65,79 +60,31 @@ const CREATED = 201
 const NOT_FOUND = 404
 const INTEGRITY_FAILURE = 500
 
-/**
- * The content type the worker really announces its own sentences under.
- *
- * `HttpResponse.text` writes a bare `text/plain`; every refusal below is a `c.text(...)` in
- * `apps/server/src/index.ts`, and hono writes its `TEXT_PLAIN`, which carries a charset parameter.
- * The difference is not cosmetic — the CLI's seed layer gates quoting on the type, so a double
- * announcing the bare form cannot tell a correct `startsWith` from a broken `===`, and the broken
- * one drops every refusal these routes can explain the moment it meets the real wire.
- *
- * Mirrored rather than imported because it belongs to hono and `apps/server`, which is the same
- * reason the bodies beside it are fixtures rather than imports.
- */
+// hono's `c.text` content type. The CLI gates quoting on it, so a bare `text/plain` would hide a
+// broken check.
 const HONO_TEXT_PLAIN = "text/plain; charset=UTF-8"
 
-/**
- * One of the worker's own plain-text refusals, announced as the worker announces it.
- *
- * A function rather than five inline header objects: one fact about `c.text` stated five times
- * cannot see itself drift, and this file already argues that about a route string. It also marks
- * which bodies are the WORKER's — the two `HttpResponse.text` calls under `RAW_URL` answer for
- * GitHub's raw CDN rather than for hono, so they deliberately do not come through here.
- */
+// The worker's own `c.text` refusals; GitHub raw CDN answers do not come through here.
 const workerText = (body: string, status: number) =>
   HttpResponse.text(body, {
     status,
     headers: { "content-type": HONO_TEXT_PLAIN },
   })
 
-/**
- * The status `POST /configs` refuses a body its own write schema does not take — one of the
- * refusals the worker declares for this route (`apps/server/src/index.ts`'s `createConfigRoute`
- * also answers 409, 413, 429 and 503), and the only one this file used to leave unmodelled: the route
- * had no way to be refused at all before `createConfig` below started asking
- * `installableSeedPayloadSchema` (CLI-849). Named apart from the two below because it is what the
- * validating default answers, where those two are answered only by an opt-in handler.
- */
+// What `POST /configs` answers a body its write schema refuses.
 const REFUSED = 400
 
-/**
- * Two more of `POST /configs`' refusals, and they are two rather than one because only the first
- * names something the person at the keyboard can do (SERVER-04): the tab is running a bundle from
- * before the last deploy, and a reload is the whole fix.
- */
+// 409 is a stale bundle (a reload fixes it); 503 is the store.
 export const OUT_OF_DATE = 409
 export const STORE_UNAVAILABLE = 503
 
-/**
- * The answer `POST /configs` gives: the content address it minted.
- *
- * The id is content-addressed, so the real worker mints the same one for the
- * same payload every time — which is what makes answering with a constant
- * faithful rather than a simplification.
- *
- * Named apart from the handler below so a spy that RECORDS the request can
- * answer with it rather than restate it. apps/editor's `captureCreateConfig`
- * wrote out the status and the shape itself before this existed, which is a
- * second claim about what the worker mints.
- */
+/** Ids are content-addressed, so a constant answer is faithful. */
 export const mintedConfig = () =>
   HttpResponse.json({ id: STORED_ID }, { status: CREATED })
 
 /**
- * Validates against the WRITE schema before minting, exactly as the worker does — restating no
- * rule of its own, since `installableSeedPayloadSchema` is imported rather than re-derived
- * (CLI-849). Before this, every body minted an id: the double was more permissive than the worker
- * it stands in for, which is how a payload the CLI's own (weaker) local schema accepted once
- * reached a real HTTP 400 with nothing here able to see it coming.
- *
- * A refusal answers the whole `safeParse` result, JSON-serialized exactly as
- * `@hono/zod-validator`'s default hook sends it — `c.json(result, 400)` — which is what
- * `publish-seed.ts`'s `refusalSchema` reads on the wire. A `ZodError` has no own enumerable fields
- * beyond `name` and `message`, so `{ success: false, error: { name, message } }` is what actually
- * crosses, with the issues rendered into `message` as a JSON document.
+ * Validates with the worker's own write schema; a refusal sends the `safeParse` result as
+ * `@hono/zod-validator`'s default hook does.
  */
 const createConfig = http.post(CONFIGS_URL, async ({ request }) => {
   const validated = installableSeedPayloadSchema.safeParse(await request.json())
@@ -149,10 +96,7 @@ const createConfig = http.post(CONFIGS_URL, async ({ request }) => {
   )
 })
 
-// Which answer comes back is decided by the id, exactly as the store decides
-// it: one id holds a payload, one holds bytes that no longer parse, and every
-// other id — including `DEAD_LINK_ID` — has never been seen. That default is
-// the worker's own behaviour, not a fallback invented here.
+// Answered by id as the store does; every unknown id is a 404.
 const readConfig = http.get<{ id: string }>(READ_CONFIG_URL, ({ params }) => {
   if (params.id === STORED_ID) return HttpResponse.json(STORED_PAYLOAD)
 
@@ -163,43 +107,19 @@ const readConfig = http.get<{ id: string }>(READ_CONFIG_URL, ({ params }) => {
   return workerText(NO_CONFIG_BODY, NOT_FOUND)
 })
 
-/** The worker answering as it does when nothing has gone wrong. */
 export const configHandlers = [createConfig, readConfig]
 
-/**
- * The store holding ONE named id, answering with the payload it was given.
- *
- * `readConfig` above knows exactly the ids this package has fixtures for, and a
- * spec that mints its own — a marketplace payload, or a body it captured off
- * its own POST a moment earlier — needs the store to hold that one instead.
- * Installed AHEAD of `configHandlers`, since `readConfig` claims every id.
- *
- * The payload is whatever JSON the caller holds rather than a `SeedPayload`,
- * because the sharpest use of it is a body read straight off the wire and
- * deliberately NOT parsed: parsing is what the round trip is being tested for.
- */
+/** Install ahead of `configHandlers`, whose `readConfig` claims every id. */
 export const storedConfigHandlerFor = (id: string, payload: JsonBodyType) =>
   http.get(`${CONFIGS_URL}/${id}`, () => HttpResponse.json(payload))
 
-/**
- * The store having never heard of one named id — `readConfig`'s default arm,
- * aimed at an id it would otherwise answer for.
- */
 export const missingConfigHandlerFor = (id: string) =>
   http.get(`${CONFIGS_URL}/${id}`, () => workerText(NO_CONFIG_BODY, NOT_FOUND))
 
-/**
- * What the worker's limiters refuse with: `CONFIG_WRITES` on this route (per address, sized in
- * apps/server/wrangler.jsonc), `COMPOSE_CALLS` and better-auth's own on theirs. Every
- * Install-dialog open mints, so the first is reachable by hand.
- */
 export const TOO_MANY = 429
 
-/**
- * The limiter's answer, window and all. It names the exposure the worker's `cors()` adds rather
- * than leaving it to `answerFor`, because `@msw/playwright` fulfils a handler's response verbatim:
- * without it Chromium hides `retry-after` from the editor, which then cannot say when to retry.
- */
+// Names the CORS exposure itself: `@msw/playwright` fulfils responses verbatim, so `retry-after`
+// would otherwise be hidden from the editor.
 const rateLimited = () =>
   HttpResponse.text(RATE_LIMITED_BODY, {
     status: TOO_MANY,
@@ -218,90 +138,42 @@ const configRefusalOf = (status: number) => {
   return new HttpResponse(null, { status })
 }
 
-/**
- * The mint refusing, named by the status it refuses with — the worker's own answer for 503 and
- * 429, and a NULL body for every other status, standing for a refusal that carries no
- * explanation at all.
- *
- * That silence used to be justified for every caller: the editor's `createSharedConfig` never
- * reads a refusal's body, so a body invented for the rest would have
- * been a claim about the worker nothing checked. It is no longer true of every caller — the CLI's
- * `publishSeedConfig` now reads the body for every status but 409 — which is why a spec exercising
- * that envelope for 400 builds its own body (`publish-seed.test.ts`'s `contractRefusalHandler`, and
- * `createConfig` above for a payload that genuinely fails the write schema) rather than reaching
- * for this function: `configRefusedHandlerFor(400)` still means "refused with nothing said."
- */
+/** The worker's own answer for 503 and 429; a null body for every other status. */
 export const configRefusedHandlerFor = (status: number) =>
   http.post(CONFIGS_URL, () => configRefusalOf(status))
 
-/** The limiter doing its job, as `stacks.test.ts` in apps/server pins it. */
 export const configRateLimitedHandler = configRefusedHandlerFor(TOO_MANY)
 
-/**
- * KV refusing the write — now that `createConfig` above validates for real, the one refusal on
- * this route no BODY can provoke: it names an infrastructure failure rather than a question about
- * what was posted, so a payload that passes `installableSeedPayloadSchema` cannot reach it either
- * way. Installed per test with `configMockServer.use(...)` rather than living in the default set,
- * because a store that always refuses is not the worker's resting state.
- *
- * That was stated as fact here while it was merely hoped: this comment used to read "the one
- * failure the POST has that no request can provoke, since the body was built from the contract's
- * own schema" — while `createConfig` minted an id for any body at all, so nothing here enforced
- * the premise. The CLI's own LOCAL copy of that schema was weaker than the write schema for a
- * week, and a body built from IT — never validated against the schema this file now imports —
- * reached this exact refusal's sibling (400) repeatedly in production (CLI-849).
- */
+/** KV refusing the write: the one refusal no body can provoke. */
 export const storeRefusedHandler = configRefusedHandlerFor(STORE_UNAVAILABLE)
 
-/**
- * The mint never getting an answer at all — offline, DNS, a proxy that dropped
- * the connection. Not a refusal: the worker never saw it, so there is no status
- * to read and the app has to say something different about it.
- */
+/** Network failure, not a refusal: there is no status to read. */
 export const configUnreachableHandler = http.post(CONFIGS_URL, () =>
   HttpResponse.error()
 )
 
-// The index as the worker serves it when the daily build behind it is landing:
-// the whole thing, every allowlisted repository, in one response. The freshness
-// header travels with it because it is the half of the contract a body cannot
-// carry.
+// The freshness header is the half of the contract a body cannot carry.
 const readSkillIndex = http.get(SKILL_INDEX_URL, () =>
   HttpResponse.json(SKILL_INDEX, {
     headers: { [SKILL_INDEX_FRESHNESS_HEADER]: "fresh" },
   })
 )
 
-/** The worker answering as it does when nothing has gone wrong. */
 export const skillIndexHandlers = [readSkillIndex]
 
-/**
- * The scheduled build behind the index has stopped landing, so what the worker
- * holds has been ageing for days. A 200 and not a 502 by design: a list of
- * external skills from last week is worth almost what today's is worth, and an
- * error is worth nothing. Installed per test with `configMockServer.use(...)`,
- * because a build that has stopped running is not the resting state.
- */
+/** A 200 by design: last week's index beats an error. */
 export const staleSkillIndexHandler = http.get(SKILL_INDEX_URL, () =>
   HttpResponse.json(STALE_SKILL_INDEX, {
     headers: { [SKILL_INDEX_FRESHNESS_HEADER]: "stale" },
   })
 )
 
-/**
- * The only case the route refuses outright: no index has been published to KV,
- * so there is genuinely nothing to serve. Reachable in production exactly once
- * — between a first deploy and the first scheduled build that succeeds — and
- * never again afterwards, because the published index carries no expiry.
- */
+/** No index published yet: only reachable before the first scheduled build succeeds. */
 export const skillIndexUnavailableHandler = http.get(SKILL_INDEX_URL, () =>
   workerText(SKILL_INDEX_UNAVAILABLE_BODY, STORE_UNAVAILABLE)
 )
 
-// GitHub's contents API, which is where a marketplace's catalogue really lives.
-// Wildcarded on the path because the caller builds it, and a handler that
-// rebuilt the same string would only be asserting that two copies of one
-// expression agree.
+// Wildcarded: the caller builds the path.
 export const CATALOG_URL = `${GITHUB_API_ORIGIN}/repos/:owner/:repo/contents/*`
 
 const UNAUTHORIZED = 401
@@ -310,27 +182,14 @@ const RATE_LIMITED = 403
 const repoOf = (params: { owner: string; repo: string }) =>
   `${params.owner}/${params.repo}`
 
-/**
- * GitHub's own refusal for a repository the caller may not see — and for one
- * that does not exist, which is the same answer on purpose.
- *
- * Exported because a browser suite that answers a per-spec estate of
- * repositories still has to refuse the ones outside it, and a second spelling
- * of this body would be a second claim about GitHub.
- */
+/** GitHub's answer for a repository that is missing or hidden: the same on purpose. */
 export const githubNotFound = () =>
   HttpResponse.json({ message: "Not Found" }, { status: NOT_FOUND })
 
-/** Whether this request carries the token the private marketplace accepts. */
 export const carriesMarketplaceToken = (request: Request) =>
   request.headers.get("Authorization") === `Bearer ${MARKETPLACE_TOKEN}`
 
-/**
- * The public marketplace, served to anyone. A private one 404s until the token
- * arrives — GitHub's own behaviour, and the reason a 404 offers the token
- * rather than declaring the name wrong: an unauthorized caller cannot tell a
- * repository that does not exist from one they may not see, and neither can we.
- */
+// A private marketplace 404s until the token arrives, as GitHub does.
 const readCatalog = http.get<{ owner: string; repo: string }>(
   CATALOG_URL,
   ({ params, request }) => {
@@ -348,14 +207,9 @@ const readCatalog = http.get<{ owner: string; repo: string }>(
   }
 )
 
-/** GitHub answering as it does for a marketplace anyone may read. */
 export const catalogHandlers = [readCatalog]
 
-/**
- * A catalogue that is JSON and is not a catalogue. The one failure the editor
- * must never retry: the bytes will not improve, so the author's build is what
- * has to change, and the message has to name the field that says so.
- */
+/** JSON that is not a catalogue: the one failure never worth retrying. */
 export const malformedCatalogHandler = http.get(CATALOG_URL, () =>
   HttpResponse.json(MALFORMED_CATALOG)
 )
@@ -365,11 +219,7 @@ export const catalogUnauthorizedHandler = http.get(CATALOG_URL, () =>
   HttpResponse.json({ message: "Bad credentials" }, { status: UNAUTHORIZED })
 )
 
-/**
- * A token whose scopes do not cover this repository, and the unauthenticated
- * rate limit — GitHub spends one status on both. Either way the answer is the
- * same shape of fix as a 401's, so the token field is what has to appear.
- */
+/** GitHub spends 403 on both missing scopes and the anonymous rate limit. */
 export const catalogForbiddenHandler = http.get(CATALOG_URL, () =>
   HttpResponse.json(
     { message: "API rate limit exceeded" },
@@ -377,23 +227,16 @@ export const catalogForbiddenHandler = http.get(CATALOG_URL, () =>
   )
 )
 
-/** GitHub unreachable — offline, DNS, a proxy that dropped the connection. */
 export const catalogUnreachableHandler = http.get(CATALOG_URL, () =>
   HttpResponse.error()
 )
 
-// ── An external skill's own directory ────────────────────────────────────
-//
-// Two origins, because the real fetch uses two. The git trees API lists the
-// whole repository in ONE request whatever the nesting depth — which is what
-// keeps a skill with a `reference/` directory to a single call against the
-// sixty-an-hour anonymous limit — and every file after that comes off the raw
-// CDN, which is rate-limit-free and sends `access-control-allow-origin: *`.
+// The trees API lists the whole repo in one call (anonymous limit is 60/h); files come off the
+// raw CDN, which is unlimited and CORS-open.
 
 const TREE_URL = `${GITHUB_API_ORIGIN}/repos/:owner/:repo/git/trees/:ref`
 const RAW_URL = `${GITHUB_RAW_ORIGIN}/:owner/:repo/:ref/*`
 
-// The two skills the specs stage, by the repository they come from.
 const SKILL_TREES = [EXTERNAL_SKILL, OTHER_EXTERNAL_SKILL]
 
 const blobsOf = (skill: { path: string; files: Record<string, string> }) =>
@@ -405,9 +248,7 @@ const blobsOf = (skill: { path: string; files: Record<string, string> }) =>
     sha: relative,
   }))
 
-// A repository holds more than the one skill a spec is after, so the tree
-// carries a decoy: a listing filtered by prefix is only proved by entries the
-// prefix has to exclude.
+// A decoy outside the skill's prefix, so the prefix filter is proved.
 const DECOY_BLOB = {
   path: "README.md",
   mode: "100644",
@@ -457,14 +298,9 @@ const readSkillFile = http.get<{ owner: string; repo: string }>(
   }
 )
 
-/** GitHub answering as it does for a public repository holding a skill. */
 export const skillContentsHandlers = [readSkillTree, readSkillFile]
 
-/**
- * A skill directory far past the per-skill cap. One file rather than the real
- * sixty-one, because what is being tested is the refusal and not the arithmetic
- * of summing a tree.
- */
+/** One file past the per-skill cap. */
 export const oversizedSkillHandler = http.get(TREE_URL, () =>
   HttpResponse.json({
     sha: "HEAD",
@@ -481,11 +317,7 @@ export const oversizedSkillHandler = http.get(TREE_URL, () =>
   })
 )
 
-/**
- * A skill directory holding a file that is not text. The tree says nothing
- * about encoding — every entry is a blob — so this is only detectable once the
- * bytes arrive, which is why the refusal lives at the decode and not the list.
- */
+/** A non-text file is only detectable once the bytes arrive. */
 export const binarySkillFileHandler = http.get(RAW_URL, () =>
   HttpResponse.arrayBuffer(BINARY_FILE_BYTES.buffer, {
     headers: { "content-type": "application/octet-stream" },
@@ -502,18 +334,11 @@ export const skillTreeUnreachableHandler = http.get(TREE_URL, () =>
   HttpResponse.error()
 )
 
-// The signed-in half of the worker, added on 2026-08-29: a session, a person's
-// saved stacks and the composer's one call. Every one of them sits behind
-// `authenticated` (apps/server/src/auth.ts), which is why the DEFAULT set here
-// is the worker as it answers a browser holding no cookie — `null` for the
-// session, 401 for the other five. That is the state every first visit is in,
-// and the one the app is fully usable in.
+// Signed-in routes sit behind `authenticated`, so the default set answers a cookieless browser:
+// a `null` session and 401 elsewhere.
 
 const AUTH_URL = `${WORKER_ORIGIN}/api/auth`
 
-// Exported for the reason `CONFIGS_URL` is: each of these was written out again
-// beside a test that records the request rather than the answer, and two copies
-// of a route string cannot see each other drift.
 export const SESSION_URL = `${AUTH_URL}/get-session`
 export const SIGN_IN_URL = `${AUTH_URL}/sign-in/social`
 
@@ -533,24 +358,8 @@ const UNSUPPORTED_MEDIA_TYPE = 415
 const BAD_REQUEST = 400
 
 /**
- * Better Auth's two entry conditions on a POST, applied before either route
- * answers.
- *
- * MEASURED against `wrangler dev`, not inferred — both `/sign-in/social` and
- * `/sign-out` answer 415 with no `content-type: application/json` (a
- * `text/plain` one included) and 400 with the header but an unparseable body.
- *
- * It is here because its absence hid a shipped defect for the whole life of the
- * feature. `signOut` in the editor sent no header and no body, so the real
- * worker refused it 415 every time in every environment — and this mock
- * answered `{ success: true }` to anything at all, so `accounts.spec.ts`'s
- * "a signed-in page can be signed out again" passed against a fake that would
- * have accepted an empty request. A mock more permissive than the worker cannot
- * fail, and one that cannot fail is not a test of the client.
- *
- * The body is read from a CLONE so a spec recording the request can still read
- * it: `Request.json()` consumes the stream, and the specs that assert what
- * sign-in posted run after this.
+ * Better Auth's POST guards: 415 without a JSON content type, 400 for an unparseable body.
+ * Reads a clone so specs can still read the request.
  */
 const requiringJson =
   (answer: () => Response) =>
@@ -578,9 +387,7 @@ const requiringJson =
     return answer()
   }
 
-// Answered the same whether or not a session exists, because starting a flow
-// is what a signed-out browser does — this is the one auth route the default
-// set and the signed-in set agree about.
+// Same answer signed in or out: starting a flow is what a signed-out browser does.
 const startSignIn = http.post(
   SIGN_IN_URL,
   requiringJson(() => HttpResponse.json({ url: GITHUB_AUTHORIZE_URL }))
@@ -591,18 +398,11 @@ const signOut = http.post(
   requiringJson(() => HttpResponse.json({ success: true }))
 )
 
-/** The worker's auth surface answering a browser that holds no session. */
 export const authHandlers = [readNoSession, startSignIn, signOut]
 
 const refuseUnauthorized = () =>
   HttpResponse.json(UNAUTHORIZED_BODY, { status: UNAUTHORIZED })
 
-/**
- * All four stack routes, refusing. Four rather than the two the editor has a
- * client for: what the routes answer without a cookie is not a function of who
- * calls them, and a set describing half the worker would let a mock and a
- * worker disagree in the half nothing looked at.
- */
 export const stackHandlers = [
   http.get(STACKS_URL, refuseUnauthorized),
   http.post(STACKS_URL, refuseUnauthorized),
@@ -610,7 +410,6 @@ export const stackHandlers = [
   http.delete(STACK_URL, refuseUnauthorized),
 ]
 
-/** The composer's route, refusing for the same reason. */
 export const composeHandlers = [http.post(COMPOSE_URL, refuseUnauthorized)]
 
 const readSignedInSession = http.get(SESSION_URL, () =>
@@ -619,11 +418,7 @@ const readSignedInSession = http.get(SESSION_URL, () =>
 
 const listStacks = http.get(STACKS_URL, () => HttpResponse.json(SAVED_STACKS))
 
-// Answers with what it was sent, exactly as the worker does: the id and the
-// timestamps are minted server-side, and the name and the pointer come off the
-// request untouched. Nothing is stored, for the reason `createConfig` stores
-// nothing — a mock that keeps a list is a second implementation of the route,
-// and what is worth asserting about a save is the REQUEST.
+// Echoes the request with server-minted id and timestamps; nothing is stored.
 const createStack = http.post<PathParams, { name: string; configId: string }>(
   STACKS_URL,
   async ({ request }) => {
@@ -632,10 +427,7 @@ const createStack = http.post<PathParams, { name: string; configId: string }>(
   }
 )
 
-// An update in place: the id, the pointer and the creation time are untouched,
-// the name is the caller's and `updatedAt` moves. WHICH row is a question only
-// a store can answer, so the mock renames the one it has and echoes the id it
-// was asked for.
+// Renames in place; only `name` and `updatedAt` change.
 const renameStack = http.patch<{ id: string }, { name: string }>(
   STACK_URL,
   async ({ params, request }) => {
@@ -650,8 +442,7 @@ const renameStack = http.patch<{ id: string }, { name: string }>(
   }
 )
 
-// 204 whether or not a row went, because the caller's question is "make this
-// not exist" and the answer is the same either way.
+// 204 whether or not a row existed.
 const deleteStack = http.delete(
   STACK_URL,
   () => new HttpResponse(null, { status: NO_CONTENT })
@@ -662,18 +453,8 @@ const compose = http.post(COMPOSE_URL, () =>
 )
 
 /**
- * The whole signed-in worker in one array, installed per test with
- * `configMockServer.use(...signedInHandlers)`.
- *
- * One array rather than one per surface, deliberately: a single cookie decides
- * all of it, so a set that flips the session to signed in while leaving
- * `/stacks` answering 401 describes a worker that cannot exist — and a test
- * built on one asserts against a state production never reaches.
- *
- * A refusal below that can only be reached signed in goes AHEAD of this in the
- * same call — `use(stackNotFoundHandler, ...signedInHandlers)`, not the other
- * way round. `use()` matches in argument order, so a one-off placed after this
- * array is shadowed by it and never answers anything.
+ * One cookie decides every signed-in route, so they ship as one set. `use()` matches in argument
+ * order: pass one-offs ahead of this array or they are shadowed.
  */
 export const signedInHandlers = [
   readSignedInSession,
@@ -684,31 +465,13 @@ export const signedInHandlers = [
   compose,
 ]
 
-/**
- * A rename naming a stack this person does not have. 404 and not 403, and the
- * distinction is the worker's: another person's id and an id nobody has are
- * the same answer, because the alternative confirms the stack exists.
- *
- * Installed on top of `signedInHandlers`, which is the only state it can be
- * reached from.
- */
+/** 404 rather than 403, so another person's id looks like no id. */
 export const stackNotFoundHandler = http.patch(STACK_URL, () =>
   HttpResponse.json(NO_STACK_BODY, { status: NOT_FOUND })
 )
 
-// A status and nothing else, here and in the five below. The clients branch on
-// the status alone and never read a refusal's body — `createStack` in
-// apps/editor/src/lib/api/stacks.ts and both calls in `api/auth.ts` — so a
-// body invented here would be a claim about the worker that nothing checks.
-// The routes that DO declare a body get it, above.
+// The clients branch on status alone, so the refusals below carry no body.
 
-/**
- * The save refusing, named by the status it refuses with.
- *
- * Parameterised because a suite names the status it is exercising, and a fixed
- * handler per status would be this one expression written out again — which is
- * what apps/editor's `stubStackRefusal` was.
- */
 export const stackRefusedHandlerFor = (status: number) =>
   http.post(STACKS_URL, () =>
     status === UNAUTHORIZED
@@ -719,23 +482,13 @@ export const stackRefusedHandlerFor = (status: number) =>
 /** The save failing for a reason the route does not declare: an outage, a bug. */
 export const stackRefusedHandler = stackRefusedHandlerFor(SERVER_ERROR)
 
-/** The save never getting an answer at all — the worker never saw it. */
 export const stackUnreachableHandler = http.post(STACKS_URL, () =>
   HttpResponse.error()
 )
 
 /**
- * The composer's route refusing, named by the status it refuses with.
- *
- * The bodies the route declares, and nothing for every other status — a body
- * invented for the rest would be a claim nothing checks.
- *
- * A 400 is deliberately NOT one of them, because on this route the status is
- * not the discriminator: `/compose` spends one 400 on two guards, an empty
- * sentence and one past its cap, and says which in the body. So the bodiless
- * 400 this answers with is the DEGRADE case — a refusal `composeProposal`
- * cannot read and must fall back on — and `composeTooLongHandler` below is the
- * readable one. Both are needed, and neither can be reached by status alone.
+ * Declared bodies for 429 and 502, none otherwise. `/compose` tells its two 400s apart by body, so
+ * this bodiless 400 is the unreadable case and `composeTooLongHandler` the readable one.
  */
 const composeRefusalOf = (status: number) => {
   if (status === TOO_MANY) {
@@ -751,44 +504,21 @@ const composeRefusalOf = (status: number) => {
 export const composeRefusedHandlerFor = (status: number) =>
   http.post(COMPOSE_URL, () => composeRefusalOf(status))
 
-/**
- * The one refusal on this route that names something the person can do.
- *
- * Its own handler rather than an arm of `composeRefusalOf`, because what makes
- * it tellable is the BODY: the worker refuses an empty sentence with the same
- * 400, so a double keyed on the status would mint one answer for two guards and
- * assert that `composeProposal` reads a discriminator it never saw.
- */
+/** Its own handler: an empty sentence gets the same 400, so only the body tells them apart. */
 export const composeTooLongHandler = http.post(COMPOSE_URL, () =>
   HttpResponse.json(COMPOSE_TOO_LONG_BODY, { status: BAD_REQUEST })
 )
 
-/**
- * The limiter doing its job. Keyed on the person rather than the address
- * (apps/server/src/compose.ts), which is what an identity buys: this route
- * spends real money on every call, and a signed-in caller is one that can be
- * quota'd rather than merely counted.
- */
 export const composeTooManyHandler = composeRefusedHandlerFor(TOO_MANY)
 
-/**
- * The model answering with nothing usable, or not at all. One handler for both
- * because the worker spends one status on them, and it says no more than that
- * on purpose — an upstream message can carry request ids, account details and
- * quota figures, none of which belong in a browser.
- */
+/** One status for a silent or unusable model; upstream detail is withheld from the browser. */
 export const composeRefusedHandler = composeRefusedHandlerFor(MODEL_SILENT)
 
-/** The compose call never getting an answer at all. */
 export const composeUnreachableHandler = http.post(COMPOSE_URL, () =>
   HttpResponse.error()
 )
 
-/**
- * Sign-in refused by the auth routes' own limiter, which is tighter than the
- * rest of them — the windows are in apps/server/src/auth.ts. The one auth
- * refusal that names its own fix, which is why the client tells it apart.
- */
+/** The auth limiter: the one auth refusal that names its own fix. */
 export const signInRateLimitedHandler = http.post(
   SIGN_IN_URL,
   () => new HttpResponse(null, { status: TOO_MANY })
@@ -800,16 +530,11 @@ export const signInRefusedHandler = http.post(
   () => new HttpResponse(null, { status: SERVER_ERROR })
 )
 
-/**
- * A 200 that carries no `url`. Its own case rather than a variant of the
- * refusal above: the request succeeded, so nothing about the status says the
- * browser is not about to leave, and the client has to notice that it isn't.
- */
+/** A 200 with no `url`: the client must notice it is not redirecting. */
 export const signInWithoutRedirectHandler = http.post(SIGN_IN_URL, () =>
   HttpResponse.json({})
 )
 
-/** Sign-in never getting an answer at all. */
 export const signInUnreachableHandler = http.post(SIGN_IN_URL, () =>
   HttpResponse.error()
 )
@@ -823,30 +548,12 @@ export const signOutUnreachableHandler = http.post(SIGN_OUT_URL, () =>
   HttpResponse.error()
 )
 
-/**
- * The session read never getting an answer. Not a refusal on this side: the
- * client reads an unreachable worker as signed out, so an outage degrades to
- * the experience every first visitor already has rather than to an error
- * nobody can act on.
- */
+/** Read as signed out, so an outage degrades to a first visit. */
 export const sessionUnreachableHandler = http.get(SESSION_URL, () =>
   HttpResponse.error()
 )
 
-/**
- * The whole worker answering a browser that holds no cookie — the resting
- * state, and the one every first visit is in.
- *
- * Named here rather than assembled by each runner, because a runner that
- * composes its own list is a second statement of what a first visit sees, free
- * to fall a route behind without either side noticing. `configMockServer` in
- * `./node` spreads this, and so does any binding that installs these handlers
- * its own way.
- *
- * The signed-in worker is deliberately not part of it: one cookie decides the
- * session, all four `/stacks` routes and `/compose` at once, so a suite that
- * wants that worker installs `signedInHandlers` ahead of these.
- */
+/** The worker as a cookieless browser sees it; install `signedInHandlers` ahead of these. */
 export const defaultHandlers = [
   ...configHandlers,
   ...skillIndexHandlers,

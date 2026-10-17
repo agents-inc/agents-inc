@@ -31,14 +31,6 @@ import {
 
 import type { IncomingRequest, MockedAnswer } from "./answer"
 
-// `answerFor` is what makes the Playwright suite and the Vitest suite ONE mock
-// rather than two that agree by hand. Vitest gets these handlers through
-// `msw/node`, which intercepts inside the process; Playwright cannot use that —
-// it drives a real browser — so it resolves the same handlers here and hands
-// the result to `route.fulfill`.
-//
-// The tests below are therefore about the two things that seam can get wrong:
-// which handler answers, and what a browser is allowed to see of the answer.
 
 const jsonOf = (answer: MockedAnswer): unknown => {
   if (!answer.served) throw new Error(`Not served: ${answer.reason}`)
@@ -48,14 +40,7 @@ const jsonOf = (answer: MockedAnswer): unknown => {
 const get = (url: string) => new Request(url)
 
 describe("what the handlers answer", () => {
-  // The disagreement this module exists to end. The Playwright suite used to
-  // answer every path under `/api/auth/` with the SESSION body, so a sign-in
-  // came back as `null` — a body the worker cannot produce, and one the client
-  // reads as "no redirect" rather than as the navigation it is.
-  // The header is named rather than left to `Request`, and that is the point of
-  // the two rows below: a string body with no `content-type` is typed
-  // `text/plain` by the fetch spec, which Better Auth refuses. A request built
-  // without it is not one the editor could send.
+  // A string body with no `content-type` is `text/plain`, which Better Auth refuses.
   const authPost = (path: string, body: unknown = {}) =>
     new Request(`${WORKER_ORIGIN}/api/auth/${path}`, {
       method: "POST",
@@ -80,16 +65,6 @@ describe("what the handlers answer", () => {
     expect(jsonOf(answer)).toStrictEqual({ success: true })
   })
 
-  // The fidelity these two hold is what a whole feature turned on. `signOut` in
-  // the editor sent no `content-type` and no body, the real worker answered 415
-  // to that in every environment from the day it was written, and this mock
-  // answered `{ success: true }` to anything — so the Playwright spec named
-  // "a signed-in page can be signed out again" passed while sign-out had never
-  // once worked. A mock more permissive than the worker cannot fail, and one
-  // that cannot fail is not a test of the client.
-  //
-  // Both statuses were MEASURED against `wrangler dev` rather than assumed, for
-  // both routes and for a `text/plain` header as well as an absent one.
   it.each(["sign-out", "sign-in/social"])(
     "refuses %s carrying no JSON content-type, exactly as the worker does",
     async (path) => {
@@ -120,8 +95,7 @@ describe("what the handlers answer", () => {
     }
   )
 
-  // Argument order decides, exactly as `use()` does in the Vitest suite, so one
-  // arrangement of the same handlers is what both suites reason about.
+  // Argument order decides, as under `use()`.
   it("lets an earlier handler answer ahead of a later one", async () => {
     const refused = await answerFor(
       stackHandlers,
@@ -138,9 +112,7 @@ describe("what the handlers answer", () => {
     expect(jsonOf(listed)).toStrictEqual(SAVED_STACKS)
   })
 
-  // Bytes rather than text, because a skill's directory can hold a file that is
-  // not text at all — and a decoder in this seam would substitute replacement
-  // characters for exactly the bytes the refusal is about.
+  // A decoder here would mangle exactly the bytes the refusal is about.
   it("carries a body that is not text through unchanged", async () => {
     const answer = await answerFor(
       [binarySkillFileHandler],
@@ -151,11 +123,7 @@ describe("what the handlers answer", () => {
   })
 })
 
-// The one thing `msw/node` never shows and a browser always does. The worker
-// wraps every route in `cors()` with `exposeHeaders` (apps/server/src/index.ts),
-// and without that header Chromium hands the app a response with the freshness
-// header silently missing — which is a different answer from either of the two
-// the route has.
+// Without the worker's `exposeHeaders`, Chromium hides the freshness header.
 describe("what a browser is allowed to read", () => {
   it("exposes the worker's own response headers", async () => {
     const answer = await answerFor(
@@ -169,7 +137,6 @@ describe("what a browser is allowed to read", () => {
     })
   })
 
-  // GitHub is not this worker, so nothing here may speak for its CORS policy.
   it("says nothing about a third party's headers", async () => {
     const answer = await answerFor(
       skillContentsHandlers,
@@ -183,9 +150,7 @@ describe("what a browser is allowed to read", () => {
 })
 
 describe("what is not an answer at all", () => {
-  // A dead connection is not a status. The caller has to abort the request
-  // rather than fulfil it, or the app under test sees a 0-status response
-  // nobody's worker sends.
+  // The caller must abort rather than fulfil: no worker sends a 0 status.
   it("reports a handler that refuses to answer", async () => {
     const answer = await answerFor(
       [sessionUnreachableHandler],
@@ -195,8 +160,7 @@ describe("what is not an answer at all", () => {
     expect(answer).toStrictEqual({ served: false, reason: "unreachable" })
   })
 
-  // The caller falls back to whatever was registered before it, which is what
-  // keeps the Playwright fixture's third-party guard the last word.
+  // The caller falls back to whatever was registered before it.
   it("reports a request no handler claimed", async () => {
     const answer = await answerFor(
       authHandlers,
@@ -207,13 +171,7 @@ describe("what is not an answer at all", () => {
   })
 })
 
-// packages/cli's e2e suite spawns the CLI as a subprocess, so nothing in-process
-// can intercept what it sends and its config store has to stay a real
-// `node:http` server. What arrives there is an IncomingMessage on a loopback
-// port; what every handler in this package is anchored on is `WORKER_ORIGIN`.
-// Those are two different origins, so a Request built from the request as it
-// arrived matches nothing at all — and answers `unhandled` for every route
-// rather than failing.
+// A loopback-port request must be re-based on `WORKER_ORIGIN` or it matches nothing.
 describe("what a node:http server hands these handlers", () => {
   const arrived = (over: Partial<IncomingRequest> = {}): IncomingRequest => ({
     method: "GET",
@@ -229,10 +187,6 @@ describe("what a node:http server hands these handlers", () => {
     expect(jsonOf(answer)).toStrictEqual(STORED_PAYLOAD)
   })
 
-  // A handler is free to match on a header — `carriesMarketplaceToken` is the
-  // one that does — so what a caller forwards decides which answer comes back.
-  // What it must NOT forward is the hop: `host` contradicts the URL above,
-  // and `content-length` describes bytes this request no longer carries.
   it("keeps the headers a handler matches on and drops the hop's own", () => {
     const request = workerRequestFrom(
       arrived({
@@ -263,18 +217,12 @@ describe("what a node:http server hands these handlers", () => {
     expect(await request.text()).toBe(body)
   })
 
-  // `new Request` REFUSES a GET that carries a body, and a server that reads
-  // every request's bytes has one for a GET too — an empty string. Without this
-  // the stub throws on its first read rather than answering it.
+  // `new Request` refuses a GET with a body, and a server reads an empty one for every GET.
   it("gives a GET no body, whatever arrived with it", () => {
     expect(workerRequestFrom(arrived(), "left over").body).toBeNull()
   })
 })
 
-// `configMockServer` in ./node composes the resting set for the Vitest suite. A
-// Playwright runner that binds these handlers itself needs the same list, and
-// composing it a second time is how two suites get to disagree about what a
-// first visit sees. One array, spread by both.
 describe("the worker at rest", () => {
   it("answers a first visit with no session", async () => {
     const answer = await answerFor(
@@ -285,7 +233,6 @@ describe("the worker at rest", () => {
     expect(jsonOf(answer)).toBe(NO_SESSION)
   })
 
-  // The half that says this is the resting set rather than the signed-in one.
   it("and refuses what a cookie unlocks", async () => {
     const answer = await answerFor(
       defaultHandlers,

@@ -22,7 +22,7 @@
     "typescript": "~6",
     "vitest": "^4"
   },
-  "//exports": "Three entry points, each for a consumer that must not pay for the others. `./fixtures` is deliberately free of any msw import, so a consumer that wants a payload and not a handler loads no mocking library at all. `./node` is the one place msw/node is named, which is what keeps the environment choice out of every other file — the root entry names msw itself but never an interceptor, which is what lets the Playwright runner resolve these handlers with `answerFor` while intercepting its own way.",
+  "//exports": "Three entry points: `./fixtures` imports no msw, `./node` is the only one naming msw/node.",
   "exports": {
     ".": "./src/index.ts",
     "./fixtures": "./src/fixtures.ts",

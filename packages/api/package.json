@@ -24,7 +24,7 @@
     "typescript": "~6",
     "vitest": "^4"
   },
-  "//exports": "One module, one entry. The package is the transport and nothing else, so there is no second thing a consumer could want to import separately — and a barrel over a single module would only be a name to keep in step.",
+  "//exports": "One module, one entry: the package is only the transport.",
   "exports": {
     ".": "./src/client.ts"
   }

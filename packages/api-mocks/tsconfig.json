@@ -1,16 +1,10 @@
 {
   "extends": "@workspace/typescript-config/base.json",
   "compilerOptions": {
-    // DOM rather than `types: ["node"]`, which is what `node.json` would bring.
-    // What this package needs from its environment is the Fetch API — msw
-    // models `Request`, `Response` and `Headers` and nothing else — and those
-    // are the same names in a browser, in Node and inside the Workers runtime
-    // the mocked worker actually runs on. Naming Node here would tie an
-    // environment-agnostic package to one of the three for no gain.
+    // DOM for the Fetch API, which is the same in browser, Node and Workers.
     "lib": ["ES2022", "DOM"]
   },
-  // vitest.config.ts is here so ESLint's project service can find it: a file in
-  // no tsconfig is a parse error under type-aware linting, not a skipped file.
+  // In a tsconfig so type-aware ESLint can parse it.
   "include": ["src", "vitest.config.ts"],
   "exclude": ["node_modules"]
 }
