@@ -9,8 +9,7 @@ import { useWideViewport } from "@/lib/viewport"
 const CELL_RULE =
   "shadow-[inset_0_-1px_0_var(--color-hairline)] hover:shadow-[inset_0_-1px_0_var(--color-field-border)] data-active:hover:shadow-[inset_0_-1px_0_var(--color-hairline)]"
 
-// Pinned, the strip's own hairline replaces the cells'. 3rem is the owner's
-// (2026-10-11), over v6's 26px.
+// Pinned, the strip's own hairline replaces the cells'.
 const CELL_RULE_PINNED =
   "group-data-pinned/bar:h-12 group-data-pinned/bar:shadow-none group-data-pinned/bar:hover:shadow-[inset_0_-1px_0_var(--color-field-border)]"
 
@@ -32,8 +31,7 @@ function DomainTabButton({
   return (
     <button
       type="button"
-      // A pick jumps down the page rather than filtering (EDITOR-79), so the
-      // claim is "current", not "pressed".
+      // A pick jumps rather than filters, so "current", not "pressed".
       aria-current={active}
       {...(active && { "data-active": "" })}
       {...{ [DOMAIN_TAB]: tab.id }}
@@ -57,11 +55,7 @@ function DomainTabButton({
   )
 }
 
-/**
- * Every domain in equal cells spanning the column, with one indicator sliding
- * under them as the page scrolls. `use-active-domain.ts` writes the
- * indicator's position.
- */
+// `use-active-domain.ts` positions the indicator.
 export function DomainTabs({
   tabs,
   activeDomain,

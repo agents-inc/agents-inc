@@ -1,4 +1,4 @@
-// The server's `nameSchema` cap (apps/server/src/stacks.ts).
+// The server's `nameSchema` cap.
 const MAX_NAME_LENGTH = 80
 
 export type SaveNameProblem = "empty" | "too-long" | "taken"
@@ -9,7 +9,6 @@ export type SaveNameCheck =
 export const sameName = (a: string, b: string) =>
   a.trim().toLowerCase() === b.trim().toLowerCase()
 
-/** Trims `typed`, then refuses it empty, over the cap, or matching any of `taken` in any case. */
 export const validateSaveName = (
   typed: string,
   taken: readonly string[]

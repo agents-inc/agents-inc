@@ -1,9 +1,7 @@
 import type { Locator, Page } from "@playwright/test"
 
-// Step 01's provider cards: a radiogroup, because an install has exactly one
-// provider. Scoped to `main`, so a provider control elsewhere cannot answer for
-// it. `option` names are not `exact`, which in Playwright is a case-insensitive
-// substring match: `codex` finds a card named `Codex` whatever else it reads.
+// Step 01's provider radiogroup, scoped to `main`. Option names are
+// case-insensitive substring matches.
 export class ProviderControl {
   readonly root: Locator
 

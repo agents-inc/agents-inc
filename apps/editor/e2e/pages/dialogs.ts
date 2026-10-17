@@ -40,7 +40,6 @@ export class InstallDialog {
     return this.root.locator('[data-slot="command-block"]', { hasText: text })
   }
 
-  // One row per sub-agent this install writes.
   get agentRows(): Locator {
     return this.agentsPane.locator('[data-slot="inventory-agent"]')
   }
@@ -118,13 +117,11 @@ export class OutputPreviewDialog {
     await this.root.locator(ROW_SELECTOR).first().waitFor({ state: "visible" })
   }
 
-  /** Every row's own name, in emission order. */
   async rowNames() {
     await this.waitForTree()
     return this.root.locator('[data-slot="preview-row-name"]').allInnerTexts()
   }
 
-  /** Every row's path, in emission order. */
   async rowPaths() {
     await this.waitForTree()
     return this.root
@@ -132,7 +129,6 @@ export class OutputPreviewDialog {
       .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-path")))
   }
 
-  /** Every row's ARIA position, as the attribute strings, in emission order. */
   async rowPositions() {
     await this.waitForTree()
     return this.root.locator(ROW_SELECTOR).evaluateAll((rows) =>
@@ -145,7 +141,6 @@ export class OutputPreviewDialog {
     )
   }
 
-  /** Which row is the tree's single tab stop. */
   async rowTabStops() {
     await this.waitForTree()
     return this.root.locator(ROW_SELECTOR).evaluateAll((rows) =>
@@ -156,7 +151,6 @@ export class OutputPreviewDialog {
     )
   }
 
-  /** The focused row's path, `null` when focus is elsewhere. */
   async focusedRowPath() {
     return this.treePane.evaluate((pane, selector) => {
       const active = pane.ownerDocument.activeElement
@@ -171,7 +165,6 @@ export class OutputPreviewDialog {
     return this.row(path).getAttribute("data-marker")
   }
 
-  /** The paths of every row carrying one state label, in emission order. */
   async pathsMarked(marker: string) {
     await this.waitForTree()
     return this.root
@@ -360,7 +353,6 @@ export class MarketplaceDialog {
   }
 }
 
-// The confirmation that performs a marketplace switch, naming what it drops.
 export class MarketplaceSwitchDialog {
   readonly root: Locator
   readonly description: Locator
@@ -419,9 +411,8 @@ export type StoredSave = { id: string; name: string; payload: unknown }
 
 type StoredSlot = { saves: StoredSave[]; owed?: string[] }
 
-// The rail Save's dialog: a name, then Save. Signed in it stays open through
-// the mint and the write, and says a refusal in its alert. Sign-in also opens
-// it on an owed save whose name the account already lists.
+// The rail Save's dialog. Signed in it stays open through the write; sign-in
+// also opens it for a name clash.
 export class SaveStackDialog {
   readonly root: Locator
   readonly nameInput: Locator
@@ -463,7 +454,6 @@ export class SaveStackDialog {
     await this.cancelButton.click()
   }
 
-  /** Names the save, presses Save, and waits for the dialog to close on it. */
   async saveAs(name: string) {
     await this.fill(name)
     await this.save()
@@ -485,7 +475,6 @@ export class SaveStackDialog {
     return (await this.slot())?.saves ?? null
   }
 
-  /** The names of the saves still owed to the account, in owed order. */
   async owed(): Promise<string[]> {
     const slot = await this.slot()
     if (!slot) return []

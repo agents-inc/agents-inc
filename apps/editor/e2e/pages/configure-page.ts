@@ -44,7 +44,6 @@ export type SavedMarketplaces = {
   saved: Record<string, string>
 }
 
-/** The arrangement slot, as `ui-store` persists it. */
 export type StoredUi = {
   rosterCollapsed: Record<string, boolean>
   rosterGroupBy: string
@@ -60,7 +59,6 @@ const FRAMES_UNTIL_A_DEFERRED_WRITE_IS_LAID_OUT = 3
 // Every skill cell. Nothing on the filter bar can match it.
 const SKILL_CELL = 'main section [data-slot="lattice-cell"]'
 
-// A category's grid, read for its track count.
 const LATTICE = '[data-slot="lattice"]'
 
 const MARKETPLACE_SECTION = '[data-slot="marketplace-row"]'
@@ -111,13 +109,11 @@ export class ConfigurePage {
   // The sticky wrapper that pins, and the band inside it that goes dark.
   readonly filterBar: Locator
   readonly filterBand: Locator
-  // The domain strip under the band: one tab per domain in the catalogue,
-  // scoped as a group, because a bare `button` under the bar would still match
-  // the add-skill block above it.
+  // One tab per domain, scoped as a group: a bare `button` under the bar also
+  // matches the add-skill block.
   readonly domainTabs: Locator
-  // The `all 42 | selected 14` pair, drawn only once something is selected.
-  // By the group's name, which is fixed while the cells' counts move. Page
-  // wide, because where it sits is a claim of its own.
+  // Drawn once something is selected; by the group's name, which is fixed while
+  // counts move.
   readonly selectedFilter: Locator
   readonly emptyState: Locator
   // A substring match: the name carries the catalogue as well as the word.
@@ -224,22 +220,15 @@ export class ConfigurePage {
     return (JSON.parse(raw) as { state: SavedMarketplaces }).state
   }
 
-  /** Which catalogue this browser chose; `null` when it has saved none. */
   async chosenMarketplace() {
     return (await this.savedMarketplaces())?.current ?? null
   }
 
-  /**
-   * The token filed under one marketplace, and `null` when none is.
-   *
-   * The distinction is the point: `""` is a marketplace saved that needed no
-   * token, and `null` is one this browser never saved at all.
-   */
+  /** `""` is a marketplace saved without a token; `null` is one never saved. */
   async savedToken(marketplace: string) {
     return (await this.savedMarketplaces())?.saved[marketplace] ?? null
   }
 
-  /** Every marketplace this browser saved, which is what the switcher lists. */
   async savedMarketplaceRefs() {
     const slot = await this.savedMarketplaces()
     return slot === null ? [] : Object.keys(slot.saved)
@@ -349,7 +338,6 @@ export class ConfigurePage {
     return this.stacks.locator('[data-slot="lattice-cell"]').nth(index)
   }
 
-  // By any part of the hinge's copy.
   hinge(label: string): Locator {
     return this.page.locator('[data-slot="hinge"]').filter({ hasText: label })
   }
@@ -362,7 +350,6 @@ export class ConfigurePage {
       .getByRole("button", { name: words, exact: true })
   }
 
-  // The box that carries a step title's margins.
   stepHinge(words: string | RegExp): Locator {
     return this.page
       .getByRole("main")
@@ -470,12 +457,10 @@ export class ConfigurePage {
     return new SkillCell(this.page, name, scope)
   }
 
-  // The common case: a named skill inside a named category of a domain.
   skillIn(domainLabel: string, categoryName: string, name: string): SkillCell {
     return this.skill(name, this.category(domainLabel, categoryName))
   }
 
-  // Every rendered skill cell, for counting what a filter left behind.
   get skillCells(): Locator {
     return this.page.locator(SKILL_CELL)
   }
@@ -530,9 +515,8 @@ export class ConfigurePage {
   }
 
   /**
-   * Every stop of a keyboard walk that landed on a control `cover` hides, so a
-   * failure prints which controls and by how many pixels.
-   *
+   * Every keyboard stop that `cover` hides, so a failure names the controls and
+   * pixels.
    * @param key `Tab` puts a control at the bottom edge, `Shift+Tab` at the top.
    */
   async stopsCoveredBy(
@@ -551,7 +535,6 @@ export class ConfigurePage {
     return covered
   }
 
-  // True once the filter bar has reached the top and changed shape.
   async isBarStuck() {
     return this.page.evaluate(() =>
       document.documentElement.hasAttribute("data-bar-stuck")

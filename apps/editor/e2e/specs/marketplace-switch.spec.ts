@@ -23,21 +23,7 @@ import {
 
 import type { ConfigurePage } from "../pages/configure-page"
 
-// More than one marketplace, which the slot could not hold.
-//
-// A single `{ marketplace, token }` made "which marketplace is mine" and "which
-// token do I have" the same fact, so saving a second marketplace overwrote the
-// first — and a GitHub PAT is shown once and cannot be recovered. Keyed by
-// marketplace, that loss is not guarded against, it is unrepresentable.
-//
-// The switcher is the other half: once a browser can hold two, it needs a way
-// to say which one. Switching seats a different catalogue, which drops the
-// skills the new one does not carry, so it asks first — with a dialog that
-// names those skills rather than warning that something may change.
-
-// `ref` is what a visitor types; `stored` is what the slot then holds and what
-// the switcher lists. They differ by the protocol prefix `--marketplace` routes
-// on, so one repository has one entry however it was spelled.
+// `ref` is typed; `stored` is what the slot holds and the switcher lists.
 const ACME = {
   ref: MARKETPLACE_REF,
   stored: MARKETPLACE_CANONICAL_REF,
@@ -51,13 +37,12 @@ const BIGCO = {
   skill: "Bigco Widgets",
 } as const
 
-// The id behind that name, for the assertions that read a minted payload
-// rather than the screen. Taken from the fixture rather than written out: the
-// catalogue is a rename of Acme's, so the ids move together with it.
+// The id behind that name; the cast holds because the fixture catalogue is
+// non-empty.
 const [BIGCO_SKILL_ID] = Object.keys(BIGCO_CATALOG.skills) as [string]
 
-// A skill only the vendored catalogue ships, so its presence names the public
-// catalogue rather than counting what rendered.
+// Only the vendored catalogue ships it, so its presence names the public
+// catalogue.
 const PUBLIC_SKILL = EXCLUSIVE_CATEGORY.first
 
 const loadMarketplace = async (configure: ConfigurePage, ref: string) => {
@@ -80,8 +65,6 @@ test.describe("a browser that has saved more than one marketplace", () => {
     stubMarketplaceEstate(page)
   })
 
-  // The row's own defect, stated as an assertion. Loading a second marketplace
-  // used to write over the slot the first one's PAT was in.
   test("keeps the first marketplace's token when a second is loaded", async ({
     configure,
   }) => {
@@ -94,8 +77,7 @@ test.describe("a browser that has saved more than one marketplace", () => {
     expect(await configure.savedToken(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(
       MARKETPLACE_TOKEN
     )
-    // Saved, and saved as needing no token — which is a different answer from
-    // never having been saved at all.
+    // Saved needing no token, which differs from never saved.
     expect(await configure.savedToken(BIGCO.stored)).toBe("")
     expect(await configure.chosenMarketplace()).toBe(BIGCO.stored)
   })
@@ -119,10 +101,6 @@ test.describe("a browser that has saved more than one marketplace", () => {
     )
   })
 
-  // The field takes both spellings of one repository — the bare `owner/repo` it
-  // asks for and the prefixed form `--marketplace` takes — and stored verbatim
-  // they are two entries, each with its own copy of the PAT. The switcher then
-  // offers to switch to the repository the browser is already on.
   test("is one saved marketplace however the repository was spelled", async ({
     configure,
   }) => {
@@ -133,13 +111,9 @@ test.describe("a browser that has saved more than one marketplace", () => {
     await expect(configure.skill(ACME.skill).root).toBeVisible()
 
     expect(await configure.savedMarketplaceRefs()).toStrictEqual([ACME.stored])
-    // Where you already are is not somewhere to switch to, and with one saved
-    // marketplace there is nowhere else at all.
     await expect(configure.marketplaceSwitcher).toBeHidden()
   })
 
-  // A switcher with one entry is furniture: there is nowhere else to go, and
-  // the floating button already names where you are.
   test("offers no switcher until there is somewhere else to go", async ({
     configure,
   }) => {
@@ -152,16 +126,12 @@ test.describe("a browser that has saved more than one marketplace", () => {
     await expect(configure.skill(BIGCO.skill).root).toBeVisible()
 
     await expect(configure.switchTo(ACME.stored)).toBeVisible()
-    // Where you already are is not somewhere to switch to; the button beside
-    // the switcher is the one that names it.
     await expect(configure.switchTo(BIGCO.stored)).toBeHidden()
     await expect(configure.marketplaceButton).toContainText(BIGCO.ref)
   })
 })
 
 test.describe("switching between saved marketplaces", () => {
-  // Two saved, sitting on Acme with two of its skills picked — so there is
-  // something concrete to lose and something concrete to name.
   test.beforeEach(async ({ configure, page }) => {
     stubMarketplaceEstate(page)
 
@@ -174,9 +144,7 @@ test.describe("switching between saved marketplaces", () => {
     await configure.skill(ACME.otherSkill).toggle()
   })
 
-  // The whole of the owner's ruling in one assertion: the description names
-  // WHICH skills go, because that set is computable before the switch. A
-  // dialog that said "your selection may change" is one people click through.
+  // Names which skills go: that set is computable before the switch.
   test("names the skills the target does not carry", async ({ configure }) => {
     await configure.switchTo(BIGCO.stored).click()
 
@@ -191,14 +159,8 @@ test.describe("switching between saved marketplaces", () => {
     await configure.switchTo(BIGCO.stored).click()
     await expect(configure.marketplaceSwitchDialog.root).toBeVisible()
 
-    // Reached WITHOUT the accessibility tree: the grid is `aria-hidden` while
-    // a modal is over it — correct, and invisible to `getByRole` — so "the
-    // catalogue underneath has not changed" is a question only a CSS locator
-    // can ask, exactly as it is for the install sheet under a preview.
-    //
-    // The gateway rather than the widgets, because a cell carries its skill's
-    // DESCRIPTION too and one of Acme's names another: "the library Acme
-    // Widgets replaced" is a second cell matching that text.
+    // By CSS, not role: the grid is `aria-hidden` under the modal. The gateway
+    // rather than the widgets, because a cell also carries its description.
     await expect(
       configure.skillCells.filter({ hasText: ACME.otherSkill })
     ).toHaveCount(1)
@@ -230,10 +192,7 @@ test.describe("switching between saved marketplaces", () => {
     expect(await configure.chosenMarketplace()).toBe(BIGCO.stored)
   })
 
-  // The dialog said the skills would be DROPPED. Coming back is what tells
-  // dropped from merely hidden — a selection the grid stopped drawing would
-  // still be selected on return, and would still be in the install list and in
-  // any link shared from here.
+  // Coming back tells dropped from merely hidden.
   test("really drops the skills it said it would", async ({ configure }) => {
     await configure.switchTo(BIGCO.stored).click()
     await configure.marketplaceSwitchDialog.confirm()
@@ -247,9 +206,6 @@ test.describe("switching between saved marketplaces", () => {
     expect(await configure.skill(ACME.otherSkill).isSelected()).toBe(false)
   })
 
-  // Switching to a catalogue that carries everything selected costs nothing,
-  // and the dialog has to be able to say so — a warning that is always the same
-  // sentence is not a description of anything.
   test("says a switch that carries everything loses nothing", async ({
     configure,
   }) => {
@@ -265,16 +221,8 @@ test.describe("switching between saved marketplaces", () => {
   })
 })
 
-// The other door to the same act, and the one that had neither the guard nor
-// the sentence.
-//
-// `MarketplaceForm.submit()` seats a catalogue exactly as the CTA above does —
-// so a selection the target cannot carry is dropped here too, and dropping it
-// in silence is the whole defect the switcher exists to prevent rather than a
-// smaller version of it. Naming and dropping travel together or the pairing
-// means nothing: a door that drops without naming is the silent loss, and a
-// door that names without dropping leaves ids in the install list and in every
-// link minted from here that nothing on screen can explain.
+// The dialog seats a catalogue exactly as the switcher does, so it must name
+// and drop the same way.
 test.describe("loading another marketplace from the dialog", () => {
   test.beforeEach(async ({ configure, page }) => {
     stubMarketplaceEstate(page)
@@ -288,7 +236,6 @@ test.describe("loading another marketplace from the dialog", () => {
     await configure.skill(ACME.otherSkill).toggle()
   })
 
-  // The switcher's ruling, said at this door in the switcher's own words.
   test("names the skills the load would drop, before it loads", async ({
     configure,
   }) => {
@@ -303,8 +250,7 @@ test.describe("loading another marketplace from the dialog", () => {
     await expect(consequence).toContainText(ACME.otherSkill)
   })
 
-  // Named BEFORE, which is the half a notice printed afterwards cannot buy:
-  // the visitor is told what it costs while it still costs nothing.
+  // Named before: the visitor is told the cost while it still costs nothing.
   test("seats nothing on the press that reads the catalogue", async ({
     configure,
   }) => {
@@ -323,10 +269,8 @@ test.describe("loading another marketplace from the dialog", () => {
     await expect(configure.marketplaceButton).toContainText(ACME.ref)
   })
 
-  // Clearing the field seats a catalogue exactly as naming one does, and it is
-  // the ONLY door to the public catalogue at all — the switcher lists what was
-  // saved, and the public one is never saved. So it costs the selection exactly
-  // as much, and has to say so in the same words.
+  // Clearing the field is the only door to the public catalogue, so it must
+  // name the cost too.
   test("names what going back to the public catalogue costs", async ({
     configure,
   }) => {
@@ -341,16 +285,12 @@ test.describe("loading another marketplace from the dialog", () => {
 
     await configure.marketplaceDialog.load()
 
-    // Really dropped rather than merely off the grid. Share reads the SELECTION
-    // rather than the grid — it is disabled by an empty one — so a skill the
-    // seated catalogue cannot place would still be holding it open.
+    // Share reads the selection, not the grid, so a dropped skill would still
+    // hold it open.
     await expect(configure.skill(PUBLIC_SKILL).root).toBeVisible()
     await expect(configure.roster.shareButton).toBeDisabled()
   })
 
-  // And the skills it named are gone rather than merely off the grid — the
-  // same distinction `pruneToCatalog` was written for, asked of the door that
-  // never called it.
   test("really drops the skills it said it would", async ({ configure }) => {
     await configure.marketplaceButton.click()
     await configure.marketplaceDialog.fill(BIGCO.ref)
@@ -369,9 +309,7 @@ test.describe("loading another marketplace from the dialog", () => {
   })
 })
 
-// A load that costs the selection nothing must not grow a second press. That
-// is every first load of every session — and every spec written before this
-// one, which is the strongest statement of it available.
+// A load that costs nothing must not grow a second press.
 test.describe("loading a marketplace with nothing selected", () => {
   test("loads on the press that asked for it", async ({ configure, page }) => {
     stubMarketplaceEstate(page)
@@ -385,14 +323,8 @@ test.describe("loading a marketplace with nothing selected", () => {
   })
 })
 
-// What the link actually installs, minted AFTER the catalogue moved.
-//
-// The suite's blind spot, and the reason this row survived it: every sharing
-// spec mints against the catalogue it started on, so a payload that names one
-// marketplace and carries another's ids is a shape no assertion could see. It
-// is not a cosmetic mismatch — the CLI resolves these ids against the ref at
-// the top of the payload, so the receiver installs a SUBSET and the sharer is
-// never told.
+// Minted after the catalogue moved: the payload must name the seated
+// marketplace and only its ids.
 test.describe("a payload minted after a catalogue change", () => {
   test.beforeEach(async ({ configure, page }) => {
     stubMarketplaceEstate(page)
@@ -406,10 +338,7 @@ test.describe("a payload minted after a catalogue change", () => {
     await configure.skill(ACME.otherSkill).toggle()
   })
 
-  // Driven end to end on the real CLI as `Warning: Skipped 1 skill(s) this
-  // catalog does not know: bigco-web-ledger`. Read off the wire rather than off
-  // the screen, because the grid draws only what the seated catalogue can place
-  // — which is exactly what made this invisible.
+  // Read off the wire: the grid draws only what the seated catalogue can place.
   test("carries only ids the marketplace it names can resolve", async ({
     configure,
     page,
@@ -432,11 +361,8 @@ test.describe("a payload minted after a catalogue change", () => {
     expect(Object.keys(body!.skills as object)).toStrictEqual([BIGCO_SKILL_ID])
   })
 
-  // The same payload's other half. `useInstallCommand` memoises the serialised
-  // payload on the SELECTION alone, while `toSeedPayload` reads the seated
-  // marketplace and version — so a catalogue that moved under an unchanged
-  // selection stamps the ref the ids were picked on rather than the one they
-  // will be resolved against.
+  // `useInstallCommand` memoises on the selection, while the payload's ref
+  // comes from the seat.
   test("stamps the catalogue that is seated, not the one it was left on", async ({
     configure,
     page,
@@ -459,15 +385,10 @@ test.describe("a payload minted after a catalogue change", () => {
   })
 })
 
-// EDITOR-37 stands: a shared address SEATS a marketplace without storing it.
-// The switcher is a new way to observe that, and a stricter one — it lists what
-// the visitor saved, so a link that quietly stored its own would show up here as
-// an entry nobody chose.
+// A shared address seats a marketplace without storing it; the switcher lists
+// only saved ones.
 test.describe("a shared address", () => {
-  // Saved the way a visitor saves — two marketplaces loaded by hand, one of
-  // them private and paid for with a PAT — rather than written into storage.
-  // The shape of the slot is what this row changes, so a spec that seeds it
-  // would be asserting against its own copy of the answer.
+  // Saved by hand rather than seeded: the slot's shape is what is under test.
   test.beforeEach(async ({ configure, page }) => {
     stubMarketplaceEstate(page)
     stubGetConfig(page, MARKETPLACE_IMPORT_ID, MARKETPLACE_PAYLOAD)
@@ -493,10 +414,6 @@ test.describe("a shared address", () => {
     await expect(configure.switchTo(ACME.stored)).toBeHidden()
   })
 
-  // The half of EDITOR-38 that was deliberately left unbuilt: on a shared
-  // address, pressing Load could destroy the visitor's stored PAT, because the
-  // slot held exactly one. It cannot now — a load files its token under its own
-  // marketplace, and no other key is reachable from here.
   test("cannot cost the visitor a stored PAT, whatever is loaded from it", async ({
     configure,
     page,
@@ -513,17 +430,12 @@ test.describe("a shared address", () => {
     expect(await configure.savedToken(ACME.stored)).toBe("")
   })
 
-  // A token AUTHORIZES one repository and identifies none, so it has no
-  // business being presented to another — and a link chooses the marketplace,
-  // which is what made the single slot's "whatever token I hold" reachable by
-  // anyone who could send a URL.
   test("sends no token to a marketplace it holds none for", async ({
     configure,
     page,
   }) => {
-    // Registered after the marketplaces above were loaded, so what it records
-    // is this navigation and nothing before it. Playwright matches the most
-    // recently added route first.
+    // After the loads above: Playwright matches the most recently added route
+    // first.
     const authorizations = stubMarketplaceEstate(page)
 
     await page.goto(`/?fromId=${MARKETPLACE_IMPORT_ID}`)
@@ -533,9 +445,6 @@ test.describe("a shared address", () => {
   })
 })
 
-// The deploy that lands the keyed shape meets browsers holding the single slot.
-// Reading one as unreadable would discard it — the marketplace and the PAT
-// both, invisibly, by the same discard path that exists to be safe.
 test.describe("a browser upgrading from the single slot", () => {
   test("carries the marketplace and its token into the keyed shape", async ({
     configure,
@@ -546,8 +455,8 @@ test.describe("a browser upgrading from the single slot", () => {
 
     await page.reload()
 
-    // The catalogue loads, which is only possible if the PAT came through: the
-    // private marketplace 404s anyone who asks without it.
+    // Loading proves the PAT came through: the private marketplace 404s without
+    // it.
     await expect(configure.skill(ACME.skill).root).toBeVisible()
     expect(await configure.chosenMarketplace()).toBe(
       PRIVATE_MARKETPLACE_CANONICAL_REF
@@ -557,11 +466,8 @@ test.describe("a browser upgrading from the single slot", () => {
     )
   })
 
-  // The other slot already out there: the keyed shape, written before the ref
-  // was normalised, so its KEY is the bare `owner/repo` the field asked for.
-  // Nothing may be orphaned by the deploy that starts writing the prefixed
-  // form — a PAT is shown once and cannot be recovered — so the entry is
-  // re-keyed rather than left beside a new one.
+  // A keyed slot from before normalisation: its entry is re-keyed, token
+  // included.
   test("re-keys a saved marketplace without dropping its token", async ({
     configure,
     page,

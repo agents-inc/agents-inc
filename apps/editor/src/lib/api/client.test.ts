@@ -9,21 +9,7 @@ import { composeProposal } from "./compose"
 import { createSharedConfig, fetchSharedConfig } from "./configs"
 import { listStacks } from "./stacks"
 
-// One property of every call the editor makes to the worker, asserted in one
-// place: the session cookie travels with it.
-//
-// This is the test that exists because the alternative failure is invisible.
-// The session is a cookie on `.agentsinc.sh` set by a different origin, so a
-// request that omits `credentials: "include"` is not refused — the browser
-// sends it anonymously and drops the cookie on the way back, which looks like
-// being signed out for no reason with nothing logged on either side. Nothing
-// in a node suite has a cookie jar, so what is checked here is the flag rather
-// than the cookie: `request.credentials` is the whole of what this side
-// controls, and it is what was missing.
-//
-// Table-driven rather than five tests, because the point is that the set is
-// exhaustive: a new call added to a module here and not to this list is the
-// omission the table is shaped to make obvious.
+// No cookie jar in node, so the flag is checked rather than the cookie.
 
 const CREDENTIALS = "include"
 
@@ -39,8 +25,6 @@ beforeEach(() => {
   seen.clear()
   sentHeaders.clear()
 
-  // Recorded rather than taken from the default set, because what is under
-  // test is the request and `@workspace/api-mocks` describes the responses.
   configMockServer.use(
     http.post(`${WORKER_ORIGIN}/configs`, ({ request }) => {
       remember("createSharedConfig", request)
@@ -86,17 +70,7 @@ describe("every call to the worker", () => {
   })
 })
 
-// The other half of the same policy, on the one seam where the two could
-// disagree.
-//
-// `authFetch` is the untyped path — Better Auth's routes are mounted with a
-// single handler, so there is nothing there for `hc` to type — and it builds
-// its request by spreading the session policy over whatever the caller passed.
-// Spreading a policy that names `headers` over a caller that also names them
-// replaces the caller's, and the caller that loses most by that is `signIn`:
-// it posts a JSON body, and a POST that arrives without its `content-type` is
-// refused by the worker rather than failing here. Nothing else in the suite
-// looks at a request header, so without this the swap reads as green.
+// Spreading the policy over caller headers would replace them.
 
 describe("the untyped auth seam", () => {
   it("keeps the caller's own headers while adding the session cookie", async () => {

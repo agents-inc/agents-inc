@@ -56,7 +56,7 @@ const watchedSlot = () => {
   return { storage, writes, removals, held: () => held }
 }
 
-// The slot a shared configuration runs on (EDITOR-37): read, never written.
+// The slot a shared configuration runs on: read, never written.
 describe("withoutWrites", () => {
   it("answers with what the slot holds", () => {
     const slot = watchedSlot()
@@ -101,11 +101,8 @@ const UNKNOWN_SKILL = "acme-web-widgets"
 const PRIVATE_CATALOG_SKILL = UNKNOWN_SKILL
 const PRIVATE_CATALOG_STACK = "acme-house-stack"
 
-// The store on a `localStorage` this suite can watch. `set` is what writes —
-// persist calls `setItem` outside zustand's own `Object.is` short-circuit — so
-// these read the slot. The browser stands before the import because the slot
-// is read once at module scope; in node persist would otherwise find no
-// storage and every assertion would pass vacuously.
+// Persist reads the slot once at module scope, so the browser stands before the
+// import; in node every assertion would pass vacuously.
 const storeOnAWatchedSlot = async () => {
   const held = new Map<string, string>()
   // This store's slot alone: the UI store persists beside it.
@@ -170,9 +167,8 @@ describe("an action the catalogue refuses", () => {
   })
 })
 
-// A project skill on a global sub-agent cannot be installed (the CLI throws
-// on it), but the store refuses none of the three ways in: it is an error to
-// resolve, and `summarize` gates Install and Share on it (EDITOR-08).
+// A project skill on a global sub-agent cannot be installed, but the store
+// refuses none of the three ways in: `summarize` gates Install and Share on it.
 describe("the scope rule in the store", () => {
   const asProject = () => {
     const store = useConfigStore.getState()
@@ -269,9 +265,8 @@ describe("the scope rule in the store", () => {
   })
 })
 
-// v6 §2 rule 2: on Codex no unselected plugin skill rests at project. Only
-// remembered plugin+project entries move; selected skills and ejected ones
-// never do, and nothing moves back.
+// On Codex no unselected plugin skill rests at project. Only remembered
+// plugin+project entries move; nothing moves back.
 describe("remembered project plugins on Codex", () => {
   const EXCLUSIVE_SIBLING = "web-framework-vue-composition-api"
   const PLUGIN_PROJECT = "web-styling-tailwind"

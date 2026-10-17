@@ -1,8 +1,6 @@
 import type { Locator, Page } from "@playwright/test"
 
-// Locating is this file's job; expecting is the spec's. The specs write these
-// strings out again rather than importing them, so an assertion cannot agree
-// with its own locator by construction.
+// Specs write these strings out again rather than importing them.
 const SCOPE_BAND_TEXT = {
   global: /^~\/\.(claude|codex) · global$/,
   project: /^\.\/\.(claude|codex) · project$/,
@@ -18,7 +16,6 @@ const LINK_COPIED = "Link copied"
 // the footer's action row over Install.
 export class RosterPanel {
   readonly root: Locator
-  // The 05 title, and its words and index.
   readonly header: Locator
   readonly heading: Locator
   readonly headerIndex: Locator
@@ -60,7 +57,6 @@ export class RosterPanel {
     return this.root.getByRole("button", { name: label, exact: true })
   }
 
-  /** Shares, and waits for the link to reach the clipboard. */
   async shareLink() {
     await this.shareButton.click()
     await this.shareNarrating(LINK_COPIED).waitFor()
@@ -162,7 +158,7 @@ export class RosterPanel {
     })
   }
 
-  // The count button the where-used list used to hang from.
+  // The count button beside the where-used list.
   whereUsedCount(skillName: string, agentId: string): Locator {
     return this.skillRowCell(skillName, agentId).getByRole("button", {
       name: /^Used by /,

@@ -10,9 +10,8 @@ import {
 
 import type { ConfigurePage } from "../pages/configure-page"
 
-// A per-agent Codex model travels as `codexModel` beside the Claude `model`.
-// The provider never enters the payload (ruling 3), so both pins travel on
-// either provider and each install reads its own.
+// A per-agent Codex model travels as `codexModel` beside `model`; the provider
+// never enters the payload.
 
 const CONFIG_KEY = "agents-inc:config:v1"
 // `PERSIST_VERSION`, mirrored: persisted-schema reaches a Vite-only module.

@@ -153,7 +153,7 @@ test.describe("opening a share link", () => {
       EXCLUSIVE_CATEGORY.first
     )
     await expect(react.root).toHaveAttribute("aria-pressed", "true")
-    // Kept (EDITOR-37); `shared-link.spec.ts` covers what it buys.
+    // Kept; `shared-link.spec.ts` covers what it buys.
     await expect(page).toHaveURL(`/editor/?fromId=${STORED_ID}`)
   })
 

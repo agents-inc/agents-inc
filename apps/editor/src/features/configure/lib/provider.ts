@@ -3,9 +3,7 @@ import type { AgentName } from "@workspace/matrix"
 
 import type { SkillOptions } from "@/stores/persisted-schema"
 
-// What each provider can install, measured on the pinned
-// `@openai/codex@0.155.1`. This module is on the first-paint graph: a VALUE
-// import of `@workspace/compile` puts its chunk there and fails
+// On the first-paint graph: a value import of `@workspace/compile` fails
 // `scripts/first-paint-budget.ts`. Type imports are free.
 
 export const PROVIDER_CHOICES = [
@@ -18,8 +16,7 @@ type Placement = `${SkillOptions["install"]}+${SkillOptions["scope"]}`
 const placementOf = ({ install, scope }: SkillOptions): Placement =>
   `${install}+${scope}`
 
-// Codex plugins are machine-wide: no subcommand takes a scope, so
-// plugin+project has no mechanism and the CLI refuses it by name (D3).
+// Codex plugins are machine-wide: no subcommand takes a scope.
 const CODEX_OFFERS = [
   "plugin+global",
   "eject+global",
@@ -59,7 +56,6 @@ export const placementRefusal = (
 ): string | undefined =>
   offersPlacement(provider, options) ? undefined : unofferedPlacementReason()
 
-/** The mark on a selected skill Codex cannot install, lead first. */
 export const UNOFFERED_PLACEMENT_ERROR = {
   lead: "Codex has no project-level plugins.",
   detail:
@@ -84,7 +80,7 @@ const leftOutOfCodex: ReadonlySet<string> = new Set(AGENTS_LEFT_OUT_OF_CODEX)
 export const compilesAgent = (provider: Provider, agentId: string): boolean =>
   provider === "claude" || !leftOutOfCodex.has(agentId)
 
-// The recorded reason (D8), not a capability claim: both compile as role files.
+// The recorded reason, not a capability claim: both compile as role files.
 export const leftOutOfCodexReason = (): string =>
   `Codex installs leave this sub-agent out for v1 — its roster mechanics on Codex are not proven.`
 
@@ -94,8 +90,8 @@ export const agentsLeftOutOfCodexNotice = (
   `${inAnEnglishList(agentNames)} ${agentNames.length === 1 ? "is" : "are"} ` +
   `not installed on Codex — left out for v1, because their roster mechanics there are not proven.`
 
-// Measured: an untrusted Codex project reads `.agents/skills` but silently
-// ignores role files and plugin enablement.
+// An untrusted Codex project reads `.agents/skills` but silently ignores role
+// files and plugin enablement.
 export const untrustedProjectNote = (): string =>
   `Codex reads a project's sub-agents only once the project is trusted — ` +
   `until then the skills still reach the model and the rest is ignored silently.`

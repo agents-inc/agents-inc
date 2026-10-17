@@ -66,65 +66,39 @@ import type {
   SeedPayload,
 } from "@workspace/matrix"
 
-// Nothing here may reach a browser-only module: `e2e/specs/output-preview.spec.ts`
-// imports this file in Node, where `@/lib/observability/report` throws. That
-// rules out `./derive` and `@/stores/marketplace-store`.
+// Imported in Node by an e2e spec: no browser-only modules (e.g. `./derive`).
 import { COMPUTED_AT_INSTALL, type PreviewLang } from "./render-tokens"
 
-/**
- * What an install would write, drawn by `@workspace/compile`, the renderers the
- * CLI writes with. What a browser cannot know is a placeholder, never a guess.
- *
- * The pipeline mirrors `init --from` from a project directory on a clean machine:
- *
- *   seedToInstallSelection        the payload's own decode
- *   generateProjectConfigFromSkills + the assigned stack   (`buildInstallConfig`)
- *   splitConfigByScope            one config, two roots
- *   addSessionToGlobal            the global half, over the blank pair `ensureBlankPair` writes
- *   generateConfigSource          standalone for `~/`, inlining for `./`
- *   generateConfigTypesSource     / generateProjectConfigTypesSource
- *   renderAgentFromCorpus         the real Liquid render, off the vendored corpus
- *   installedSkillTree            a carried skill's directory, renamed and registered
- *
- * It skips the steps that read an existing disk (`mergeWithExistingConfig`,
- * the global reconcile), which the dialog's footer says.
- */
+// What `init --from` would write on a clean machine, rendered with the CLI's
+// own renderers; what a browser cannot know is a placeholder. Steps that read
+// an existing disk are skipped.
 
-/** What a row's state label says. Root, directory and group rows carry none. */
 export type PreviewMarker = "new" | "plugin" | "eject"
 
 export type PreviewNode = {
-  /** The row's identity AND what the header subtitle shows — a path, wherever a path exists. */
+  /** Also the header subtitle: a path, where one exists. */
   id: string
-  /** What the row reads in the tree: a bare filename, or a directory with its trailing slash. */
   name: string
   depth: number
   marker: PreviewMarker | null
-  /** The pane's text. Empty for a row that is not a file. */
   body: string
-  /** How the pane reads {@link body}. `"text"` runs no grammar at all. */
   lang: PreviewLang
 }
 
 export type PreviewRoot = {
-  /** The base directory the root is written under, and the row's own name. */
   base: PreviewBase
-  /** What this root's config pair is rendered from; exposed so a test can re-render it. */
+  /** Exposed so a test can re-render the pair. */
   config: ProjectConfig
   nodes: PreviewNode[]
 }
 
 export type OutputPreview = {
   roots: PreviewRoot[]
-  /** Files an install actually writes — see {@link countWrittenFiles}. */
   fileCount: number
-  /** The release the vendored corpus was generated from, which every agent body is stamped with. */
   corpusVersion: string
-  /** What a selection naming no row resolves to: the project `config.ts`, then the global one. */
   defaultSelectionId: string | null
 }
 
-/** Global first, then project — the order an install writes them in. */
 const GLOBAL_BASE = "~/"
 const PROJECT_BASE = "./"
 
@@ -135,17 +109,9 @@ const SCOPE_OF: Record<PreviewBase, SkillScope> = {
   [PROJECT_BASE]: "project",
 }
 
-// `COMPUTED_AT_INSTALL` stands in for what only the installing machine knows:
-// the global types import specifier, the project's name, and a marketplace's
-// manifest name.
-
-/** A skill installed as a plugin, so nothing is written for it under either root. */
 const isPluginSkill = (skill: SkillConfig) => skill.origin !== EJECT_SOURCE
 
-/**
- * The `(agent, skill)` pairs whose scopes newly agree: on a clean machine, every
- * compatible pair (`computeScopeEligibilityGained` with no prior config).
- */
+// On a clean machine every compatible pair is newly eligible.
 const scopeEligibilityGained = (
   skills: readonly SkillConfig[],
   agents: readonly AgentScopeConfig[]
@@ -163,11 +129,7 @@ const scopeEligibilityGained = (
       )
   )
 
-/**
- * The CLI's `resolveDescription`: a loaded stack's description, else the
- * payload's. The editor's payload carries a `stackId`, so the stack arm is live.
- * An unknown stack falls back rather than throwing as the install does.
- */
+// Unlike the CLI, an unknown stack falls back rather than throwing.
 const resolveDescription = (
   selectedStackId: string | null,
   shared: string | undefined
@@ -175,11 +137,8 @@ const resolveDescription = (
   activeStacks().find((stack) => stack.id === selectedStackId)?.description ??
   shared
 
-/**
- * The name `setConfigMetadata` records beside the ref. Another marketplace's
- * comes from a manifest this app never fetches, so it is the placeholder. The
- * public one's is read only when a plugin registers it, so it needs a plugin.
- */
+// Another marketplace's name comes from a manifest never fetched here; the
+// public one's is recorded only when a plugin registers it.
 const recordedMarketplaceName = (
   marketplace: string,
   skills: readonly SkillConfig[]
@@ -192,11 +151,8 @@ const recordedMarketplaceName = (
   return registersAPlugin ? DEFAULT_PUBLIC_SOURCE_NAME : undefined
 }
 
-/**
- * The configuration `init --from` builds from this payload, minus every disk
- * read. The payload's assigned stack replaces the ownership-derived one
- * (`resolveStackProperty`), or a bare sub-agent gets someone else's skills.
- */
+// The payload's assigned stack replaces the derived one, or a bare sub-agent
+// gets someone else's skills.
 function buildConfig(payload: SeedPayload): ProjectConfig {
   const { result } = seedToInstallSelection(payload, activeMatrix())
   const skillIds = [...new Set(result.skills.map((skill) => skill.id))]
@@ -226,7 +182,6 @@ function buildConfig(payload: SeedPayload): ProjectConfig {
     result.description
   )
 
-  // The payload's own, or `DEFAULT_SOURCE`, where a clean machine resolves.
   const marketplace = payload.marketplace ?? DEFAULT_SOURCE
   const marketplaceName = recordedMarketplaceName(marketplace, result.skills)
 
@@ -242,13 +197,8 @@ function buildConfig(payload: SeedPayload): ProjectConfig {
   }
 }
 
-/**
- * The skill rows one sub-agent compiles with, reproducing `buildCompileAgents`
- * and `resolveAgents`: the config's stack for that agent, minus effectively
- * excluded skills, minus — for a global agent — anything that is not itself
- * global, with each skill's `origin` threaded on so `pluginRefFor` can decide
- * per skill between `${id}:${id}` and a bare id.
- */
+// Mirrors the CLI's `buildCompileAgents`/`resolveAgents`; `origin` lets
+// `pluginRefFor` pick `${id}:${id}` or a bare id.
 function agentSkills(
   config: ProjectConfig,
   matrix: Matrix,
@@ -267,14 +217,10 @@ function agentSkills(
     )
 }
 
-/** One `(skill, sub-agent)` row of the stack, with the usage line the skill states. */
 type StackReference = { id: SkillId; usage: string; preloaded: boolean }
 
-/**
- * When a sub-agent reaches for a skill: `statedUsageFor` in the CLI's
- * `stacks-loader.ts`, byte for byte. A blank `usageGuidance` counts as none, or
- * `agent.liquid` would draw an empty bullet.
- */
+// Matches the CLI's `statedUsageFor`; blank counts as none, or the template
+// draws an empty bullet.
 const statedUsageFor = (
   stated: string | undefined,
   category: string
@@ -283,17 +229,12 @@ const statedUsageFor = (
     ? stated
     : `Use when working with ${category}.`
 
-/**
- * One sub-agent's stack, flattened into references — `resolveAgentConfigToSkills`
- * in the CLI's `stacks-loader.ts`, including the usage line it reads off the
- * catalogue.
- */
 const stackReferences = (
   agentStack: StackAgentConfig,
   matrix: Matrix
 ): StackReference[] =>
   Object.entries(agentStack).flatMap(([category, assignments]) =>
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries hides a Partial's explicit undefined
     (assignments ?? []).map((assignment: SkillAssignment) => ({
       id: assignment.id,
       usage: statedUsageFor(
@@ -304,11 +245,7 @@ const stackReferences = (
     }))
   )
 
-/**
- * Which of a sub-agent's stack rows survive to its compiled markdown:
- * effectively excluded skills leave, and a GLOBAL sub-agent sees global skills
- * alone — the cross-scope safety net `buildCompileAgents` applies.
- */
+// A global sub-agent sees global skills only, as `buildCompileAgents` enforces.
 const reachableFrom = (config: ProjectConfig, agent: AgentScopeConfig) => {
   const excluded = effectivelyExcludedSkillIds(config.skills)
   const globalSkillIds = new Set(
@@ -321,10 +258,6 @@ const reachableFrom = (config: ProjectConfig, agent: AgentScopeConfig) => {
     !excluded.has(id) && (agent.scope !== "global" || globalSkillIds.has(id))
 }
 
-/**
- * One reference as the template reads it, or nothing for an id the catalogue
- * does not carry, as `resolveSkillReferences` does.
- */
 const resolveSkill = (
   reference: StackReference,
   matrix: Matrix,
@@ -335,10 +268,8 @@ const resolveSkill = (
 
   const skill: Skill = {
     id: reference.id,
-    // A disk path the template never renders.
     path: "",
-    // The SKILL.md sentence, never the short label (CLI-898). The vendored
-    // table answers for the public catalogue; an older catalogue keeps the label.
+    // The SKILL.md sentence; the short label only as a last resort.
     description:
       described.activationDescription ??
       ACTIVATION_DESCRIPTIONS[reference.id] ??
@@ -351,20 +282,11 @@ const resolveSkill = (
   return [{ ...skill, ...pluginRefFor(skill) }]
 }
 
-/** One compiled sub-agent: its body, and the root it is written under. */
 type CompiledAgent = { name: AgentName; scope: SkillScope; body: string }
 
-/**
- * The corpus and the Liquid engine, the app's heaviest module, reached only
- * through `import()`. `CORPUS_CLI_VERSION` comes off it too, so the corpus
- * stays off the static graph.
- */
+// The heaviest module; kept off the static graph.
 const corpusRenderer = () => import("@workspace/compile/preview")
 
-/**
- * Every sub-agent the configuration selects for this provider, compiled from the vendored corpus:
- * each one's `AgentConfig` assembled by {@link agentConfigFor}, then rendered.
- */
 async function compileAgents(
   config: ProjectConfig,
   matrix: Matrix,
@@ -387,30 +309,20 @@ async function compileAgents(
   )
 }
 
-/**
- * Whether this provider's install compiles the sub-agent. Dropped here, as the
- * CLI drops it at install, since the payload is provider-neutral (ruling 3).
- */
+// The payload is provider-neutral, so the provider filter happens here.
 const isCompiledFor = (provider: Provider, agent: AgentScopeConfig): boolean =>
   !agent.excluded &&
   agent.name in AGENT_DEFINITIONS &&
   (provider === "claude" || compilesForCodex(agent.name))
 
-/**
- * One selected sub-agent's `AgentConfig`, composed as the CLI's `resolveAgents` composes it: the
- * config's `model` and `effort` over the metadata's, and the metadata-only fields forwarded when
- * set. `hooks` cannot be forwarded, since `GeneratedAgentDefinition` does not carry it, and
- * `outputFormat` reaches no template field.
- */
+// As the CLI's `resolveAgents`; `hooks` is absent from the generated definition.
 function agentConfigFor(
   config: ProjectConfig,
   matrix: Matrix,
   agent: AgentScopeConfig
 ): AgentConfig {
   const definition = AGENT_DEFINITIONS[agent.name]
-  // Widened to the interface: `definition` is a union of literal shapes, from which a field one
-  // agent never sets is absent rather than optional. `model` keeps the narrow read, since every
-  // shipped definition declares one.
+  // Widened: in the literal union, a field one agent never sets is absent.
   const definitionFields: GeneratedAgentDefinition = definition
   const effort = agent.effort ?? definitionFields.effort
 
@@ -439,12 +351,8 @@ function agentConfigFor(
   }
 }
 
-/**
- * The `ConfigTypesExtras` a project's types half is widened by: every literal
- * its sibling `config.ts` holds, since the inlining writer puts the active
- * global rows into the project's own file verbatim. `buildProjectTypesExtras`
- * in the CLI's `config-gate/propagate.ts` is the same derivation.
- */
+// Every literal the project `config.ts` holds, inlined global rows included;
+// same derivation as the CLI's `buildProjectTypesExtras`.
 function projectTypesExtras(
   projectSplit: ProjectConfig,
   globalConfig: ProjectConfig,
@@ -460,9 +368,10 @@ function projectTypesExtras(
 
   const extraSkillIds = [...new Set(skills.map((skill) => skill.id))]
   const stackCategories = Object.values(stack).flatMap((agentStack) =>
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.values launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.values hides a Partial's explicit undefined
     Object.keys(agentStack ?? {})
   )
+  // Object.keys widens the stack's category keys to string.
   const extraCategories = [
     ...new Set([
       ...deriveCategories(extraSkillIds, catalog),
@@ -484,7 +393,6 @@ function projectTypesExtras(
   }
 }
 
-/** The global root's pair: `writeGlobalPair`, over the CLI's whole roster. */
 const globalPair = (config: ProjectConfig, catalog: CompileCatalog) => ({
   configTs: generateConfigSource(config, catalog),
   configTypesTs: generateConfigTypesSource(
@@ -496,12 +404,7 @@ const globalPair = (config: ProjectConfig, catalog: CompileCatalog) => ({
   ),
 })
 
-/**
- * The project root's pair. `config.ts` takes the inlining writer. `config-types.ts`
- * takes the import form, since `ensureBlankPair` always writes a global pair
- * first. `SelectedAgentName` is over the inlined rows, global first, as
- * `regenerateConfigTypes` reads them back; `ProjectAgentName` is project-only.
- */
+// Types take the import form: a global pair always exists first.
 const projectPair = (
   projectSplit: ProjectConfig,
   globalConfig: ProjectConfig,
@@ -531,11 +434,7 @@ const projectPair = (
   }
 }
 
-/**
- * The marketplace a skill comes from: the seated one. A browser never fills
- * `origin` or `availableSources`, which would name ours to everybody. A ref is
- * not a name, and only the public catalogue's name is known here.
- */
+// A ref is not a name; only the public catalogue's name is known here.
 type SeatedMarketplace =
   | { readonly kind: "public"; readonly name: string }
   | { readonly kind: "ref"; readonly ref: string }
@@ -547,17 +446,12 @@ const seatedMarketplace = (): SeatedMarketplace => {
     : { kind: "ref", ref: seated }
 }
 
-/** The seated marketplace as prose, shared so both notes word it alike. */
 const marketplacePhrase = (seated: SeatedMarketplace): string =>
   seated.kind === "public"
     ? `the ${seated.name} marketplace`
     : `the marketplace at ${seated.ref}`
 
-/**
- * The same fact as a path. Only the public name can be a path segment; a ref
- * is named after the path, never spliced into a coordinate that resolves to
- * nothing.
- */
+// Only the public name can be a path segment.
 const ejectedSourceLine = (skillId: string): string => {
   const seated = seatedMarketplace()
   const path = `${SKILLS_DIR_PATH}/${skillId}`
@@ -570,11 +464,7 @@ const ejectedSourceLine = (skillId: string): string => {
 const seatedMarketplacePhrase = (): string =>
   marketplacePhrase(seatedMarketplace())
 
-/**
- * An ejected catalogue skill's directory, with no file bodies: the CLI copies
- * it verbatim and the preview fetches nothing. Its source is the seated
- * marketplace, never `origin`, which is the `eject` sentinel.
- */
+// `origin` is the `eject` sentinel here, so the source is the seated marketplace.
 const ejectedCatalogueNote = (skill: SkillConfig) =>
   [
     `${skill.id}/`,
@@ -587,10 +477,6 @@ const ejectedCatalogueNote = (skill: SkillConfig) =>
     `The preview makes no network call, so it cannot list what is inside.`,
   ].join("\n")
 
-/**
- * The pane behind an ejected directory row: empty for an external skill, whose
- * children explain it, and for an id the seated catalogue does not carry.
- */
 const ejectedDirectoryBody = (
   skill: SkillConfig,
   external: SeedExternalSkill | undefined,
@@ -602,10 +488,6 @@ const ejectedDirectoryBody = (
   return ejectedCatalogueNote(skill)
 }
 
-/**
- * A plugin skill's reference. It has no path: the host's plugin command decides
- * where it lands. The eject destination is the layout's.
- */
 const pluginReferenceNote = (
   skill: SkillConfig,
   base: PreviewBase,
@@ -627,39 +509,30 @@ type NodeInput = Omit<PreviewNode, "lang"> & { lang?: PreviewLang }
 
 const node = (input: NodeInput): PreviewNode => ({ lang: "text", ...input })
 
-/** A root, a directory or the plugin group: a row with no bytes of its own. */
 const structural = (id: string, name: string, depth: number): PreviewNode =>
   node({ id, name, depth, marker: null, body: "" })
 
-/**
- * Where one root's rows go, per provider. Claude writes under `.claude/`. A Codex project's roles
- * go under `.codex/` but its skills are committed at `.agents/skills/`, outside it, so the skills
- * directory carries its own depth.
- */
+// A Codex project's skills sit at `.agents/skills/`, outside `.codex/`.
 type DirRow = {
-  /** The row's own path, trailing slash and all — what every child is built from. */
   path: string
-  /** What the row reads in the tree, which may carry more than one segment (D10). */
+  /** May carry more than one segment. */
   name: string
   depth: number
 }
 
 type RootLayout = {
   source: DirRow
-  /** The host's own directory: `.claude/` on Claude, `.codex/` on Codex. */
   host: DirRow
   hostName: string
   agents: DirRow
-  /** What one compiled sub-agent is written as, which is not the same FILE on the two providers. */
   agentFile: (agent: AgentName) => { name: string; lang: PreviewLang }
   skills: DirRow
-  /** Whether {@link skills} hangs under {@link host} — false is Codex's committed project directory. */
   skillsUnderHost: boolean
 }
 
 const CODEX_DIR = ".codex"
 
-// The CLI's `CODEX_PROJECT_SKILLS_PATH`, held equal by `codex-provider.spec.ts`.
+// The CLI's `CODEX_PROJECT_SKILLS_PATH`.
 const CODEX_PROJECT_SKILLS = ".agents/skills"
 
 const dir = (path: string, name: string, depth: number): DirRow => ({
@@ -697,7 +570,6 @@ const codexLayout = (base: PreviewBase): RootLayout => {
     host,
     hostName: "Codex",
     agents: dirUnder(host, STANDARD_DIRS.AGENTS),
-    // A role file's body is prose in one multi-line string, so no grammar runs.
     agentFile: (agent) => ({ name: `${agent}.toml`, lang: "text" }),
     skills: committed
       ? dir(`${base}${CODEX_PROJECT_SKILLS}/`, `${CODEX_PROJECT_SKILLS}/`, 1)
@@ -709,7 +581,6 @@ const codexLayout = (base: PreviewBase): RootLayout => {
 const layoutFor = (provider: Provider, base: PreviewBase): RootLayout =>
   provider === "claude" ? claudeLayout(base) : codexLayout(base)
 
-/** A directory row and whatever hangs under it, or nothing at all when it holds nothing. */
 const directoryNodes = (
   row: DirRow,
   children: readonly PreviewNode[]
@@ -718,7 +589,6 @@ const directoryNodes = (
     ? []
     : [structural(row.path, row.name, row.depth), ...children]
 
-/** A file this install writes, one level under the directory row it is written into. */
 const writtenFile = (
   directory: DirRow,
   name: string,
@@ -734,11 +604,6 @@ const writtenFile = (
     lang,
   })
 
-/**
- * One root's rows, in emission order: the config pair in the source folder (one
- * row, D10), everything else under the host's directory, and `plugin skills` as
- * a group rather than a directory. Every path comes off {@link RootLayout}.
- */
 function rootNodes(
   base: PreviewBase,
   layout: RootLayout,
@@ -794,7 +659,6 @@ function rootNodes(
   ]
 }
 
-/** The plugin group's row and one row per plugin under it, or nothing when there are none. */
 const pluginGroupNodes = (
   base: PreviewBase,
   layout: RootLayout,
@@ -816,13 +680,10 @@ const pluginGroupNodes = (
   ]
 }
 
-/** A group, not a directory: plugin scope is per root, but a plugin has no path. */
+// A group, not a directory: a plugin has no path.
 const PLUGIN_GROUP = "plugin skills"
 
-/**
- * An ejected skill's directory, with children only for an external skill,
- * whose bytes travel in the payload ({@link carriedAsInstalled}).
- */
+// Only an external skill's bytes travel, so only it has children.
 function ejectedSkillNodes(
   skillsDir: DirRow,
   skill: SkillConfig,
@@ -843,29 +704,19 @@ function ejectedSkillNodes(
 
   return [
     directoryRow,
-    // `bytewise`, not `localeCompare`, so the order is not the machine's.
     ...Object.entries(external.files)
       .sort(([a], [b]) => bytewise(a, b))
-      // Somebody else's bytes, so no grammar runs over them.
       .map(([path, text]) => writtenFile(skillDir, path, text)),
   ]
 }
 
-/**
- * The global config a project install writes on a clean machine: the session's
- * global half added to the blank pair (`addSessionToGlobal`), so a stack's
- * description stays in the project's `config.ts`.
- */
 const globalConfigOnCleanMachine = (
   globalSplit: ProjectConfig,
   catalog: CompileCatalog
 ): ProjectConfig =>
   addSessionToGlobal(globalSplit, blankGlobalConfig(), catalog).config
 
-/**
- * The seated catalogue with every carried skill marked `custom: true`, as the
- * CLI's `externalCatalogueEntry` seats it, which files it under `// Custom`.
- */
+// Carried skills are `custom: true`, as the CLI seats them.
 const catalogueAsInstalled = (
   catalog: Matrix,
   carriedIds: readonly string[]
@@ -887,10 +738,6 @@ const seatedAsCustom = (
   return seated === undefined ? [] : [[id, { ...seated, custom: true }]]
 }
 
-/**
- * Every carried skill's directory as `writeExternalSkills` leaves it: the
- * manifest renamed to the installed id, with a `metadata.yaml` beside it.
- */
 async function carriedAsInstalled(
   external: Readonly<Record<string, SeedExternalSkill>>,
   catalog: Matrix
@@ -904,7 +751,6 @@ async function carriedAsInstalled(
   )
 }
 
-/** One carried skill's directory as its install leaves it; the date is the install's. */
 async function carriedSkillAsInstalled(
   id: string,
   skill: SeedExternalSkill,
@@ -926,7 +772,6 @@ async function carriedSkillAsInstalled(
   return [id, { ...skill, files }]
 }
 
-/** Files an install writes, which is exactly the rows marked `new`. */
 const countWrittenFiles = (roots: readonly PreviewRoot[]): number =>
   roots.flatMap((root) => root.nodes).filter((entry) => entry.marker === "new")
     .length
@@ -945,8 +790,7 @@ export async function buildOutputPreview(
   const { global: globalSplit, project: projectSplit } =
     splitConfigByScope(config)
   const globalConfig = globalConfigOnCleanMachine(globalSplit, catalog)
-  // Not destructured, so a Claude render never touches the Codex export and
-  // survives a test double that lacks it.
+  // Not destructured, so a test double without the Codex export still works.
   const agents = await compileAgents(
     config,
     catalog,
@@ -959,8 +803,7 @@ export async function buildOutputPreview(
   const carried = await carriedAsInstalled(external, catalog)
   const pairCatalog = catalogueAsInstalled(catalog, Object.keys(external))
 
-  // Both roots, always: a project install writes both config pairs whatever
-  // the configuration holds.
+  // A project install writes both config pairs regardless.
   const roots: PreviewRoot[] = [
     {
       base: GLOBAL_BASE,
@@ -998,7 +841,6 @@ export async function buildOutputPreview(
   }
 }
 
-/** The project root's `config.ts`, then the global root's, then nothing at all. */
 const defaultSelection = (roots: readonly PreviewRoot[]): string | null => {
   const configTsOf = (base: PreviewBase) =>
     roots

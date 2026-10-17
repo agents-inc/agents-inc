@@ -7,13 +7,10 @@ import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
 
-// axe over the assembled app; `packages/ui` gates each component alone. Every
-// state `visual.spec.ts` captures has an audit here.
-//
-// Two rules are held out. `color-contrast` is a permanent owner ruling (see
-// packages/ui/.storybook/preview.ts). `scrollable-region-focusable` is a
-// pending fix, EDITOR-58: the output preview's content pane scrolls and holds
-// nothing focusable. It comes out of the list once that is fixed.
+// axe over the assembled app; every state `visual.spec.ts` captures has an
+// audit here. `color-contrast` is held out permanently.
+// `scrollable-region-focusable` is held out until the output preview's content
+// pane, which scrolls, holds something focusable.
 
 // Enough of a selection that the roster and the sticky bar have something to
 // draw.

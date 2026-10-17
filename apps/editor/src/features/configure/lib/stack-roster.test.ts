@@ -13,10 +13,6 @@ import {
 } from "./derive"
 import { toSeedPayload } from "./seed"
 
-// Picking a stack installs every sub-agent the stack declares, one declared
-// with no skills included. No assignment names such a sub-agent, so nothing
-// but the stack itself can switch it on.
-
 const SKILL_LESS_STACK = "nextjs-fullstack"
 const FULLY_STAFFED_STACK = "cli-ink-oclif"
 const SKILL_LESS_AGENT = "cli-tester"

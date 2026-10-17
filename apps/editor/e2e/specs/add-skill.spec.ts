@@ -23,10 +23,8 @@ const OVERSIZED = SKILL_INDEX.skills.find(
 )!
 const OVERSIZED_NAME = OVERSIZED.name
 
-// Where a staged skill is filed, as the dropdown spells it — domain-qualified,
-// because a bare category name appears under more than one domain. Any real
-// category would do; this one is named once in `support/catalog.ts` and already
-// carries the catalogue drift check.
+// Domain-qualified, as the dropdown spells it: a bare category name repeats
+// across domains.
 const CATEGORY = `${DOMAINS.web.toLowerCase()} · ${EXCLUSIVE_CATEGORY.name.toLowerCase()}`
 
 // A term no entry's name or description holds, so the filter empties the list.
@@ -56,9 +54,7 @@ test.describe("add skill dialog", () => {
   }) => {
     await configure.addSkillButton.click()
 
-    // The provenance badge carries GitHub's whole `owner/name`, owner included:
-    // it is who a reader is deciding whether to trust, and `skills` alone says
-    // nothing about who published it.
+    // Owner included: it is who a reader is deciding whether to trust.
     const row = configure.addSkillDialog.result(FIRST_NAME)
     await expect(row).toContainText(FIRST!.description)
     await expect(row).toContainText(FIRST!.repo)
@@ -111,21 +107,9 @@ test.describe("add skill dialog", () => {
     await expect(dialog.footerNote).toContainText("0 staged")
   })
 
-  // The result row is the dialog's ONLY staging control, so a visitor who
-  // cannot reach it with a keyboard cannot use the dialog at all. Two tests
-  // rather than one: reaching the row and acting on it are different failures,
-  // and a row put in the tab order with a key handler that never runs would
-  // pass the first of them on its own.
-  //
-  // The search field takes focus as the dialog opens and nothing focusable sits
-  // between it and the list, so the first result is one Tab away — ONCE THERE IS
-  // ONE. Both tests wait for it before pressing anything, and that wait is the
-  // difference between a green suite and an intermittent one: the index is a
-  // network call, the dialog renders `loading skills…` until it lands, and a Tab
-  // pressed inside that window leaves focus on a field with nowhere to go. The
-  // failure is silent about its cause — the row exists by the time the assertion
-  // retries, so it reports a row that is merely `inactive`. Reproduced by
-  // delaying the stubbed index 600ms, at which point it fails every run.
+  // Two tests: reaching the row and acting on it fail differently. Both wait
+  // for the first result: a Tab pressed while the index is still loading leaves
+  // focus nowhere.
   test("tab moves from the search field to the first result", async ({
     configure,
     page,
@@ -174,8 +158,7 @@ test.describe("add skill dialog", () => {
 
     const added = configure.skill(FIRST_NAME)
     await expect(added.root).toBeVisible()
-    // The tag is IN the cell, not on the pressable — the selection target is a
-    // transparent overlay with no text of its own since EDITOR-58.
+    // The tag is in the cell: the selection target is a text-less overlay.
     await expect(added.cell).toContainText("added")
   })
 
@@ -198,9 +181,8 @@ test.describe("add skill dialog", () => {
     await expect(configure.roster.installButton).toContainText("1 skill")
   })
 
-  // EDITOR-46. The index carries each skill's weight, so a skill past the
-  // per-skill cap is refused where the visitor first sees it — not after
-  // search, stage, categorise, confirm AND a full GitHub tree listing.
+  // The index carries each skill's weight, so an oversized skill is refused on
+  // its own row.
   test("a skill too large to carry says so on its own row", async ({
     configure,
   }) => {
@@ -223,13 +205,7 @@ test.describe("add skill dialog", () => {
     await expect(row).not.toContainText(/stage/i)
   })
 
-  // Forced, and that is the finding rather than a workaround. Playwright reads
-  // `aria-disabled` only on an element whose computed role admits it, so while
-  // the row was a bare `<div>` the attribute was inert — to the suite and to a
-  // screen reader alike — and an ordinary click went through. Now that the row
-  // is a button the refusal is real and `click()` waits for a control that will
-  // never enable, so the press has to be forced to ask the question this test
-  // is about: if one did land, would it stage anything?
+  // Forced: the row is a button, so Playwright honours its `aria-disabled`.
   test("clicking a skill too large to carry stages nothing", async ({
     configure,
   }) => {
@@ -321,11 +297,7 @@ test.describe("add skill dialog freshness and failure", () => {
     await expect.poll(() => requests.length).toBe(2)
   })
 
-  // The header set and dropped in transit — the worker's `exposeHeaders` gone,
-  // or a proxy stripping it — so the dialog is told nothing. Nothing is the
-  // third answer: it asks again like a stale index, and says nothing to the
-  // user, because "still filling" is a claim and it has not been given one.
-  // This was every browser read until the worker exposed the header.
+  // Header dropped in transit: the dialog asks again but claims nothing.
   test("a freshness header the browser cannot read is not read as stale", async ({
     configure,
     page,

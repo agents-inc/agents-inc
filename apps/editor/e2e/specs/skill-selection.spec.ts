@@ -69,15 +69,9 @@ test.describe("skill selection", () => {
 })
 
 /**
- * The cell as the keyboard finds it and as it is once the keyboard has left,
- * captured alone, with the pointer nowhere near it — so the two pictures can
- * differ by the focus treatment and by nothing else.
- *
- * Reached by Shift+Tab and Tab rather than by `focus()`: Chromium matches
- * `:focus-visible` on a programmatic move only when the element it left
- * matched too, and the ring is drawn on `:focus-visible`. Whether it matched is
- * returned beside the pictures, because a capture taken without it compares
- * two cells that were never asked to draw a ring.
+ * Captured alone with the pointer away, so the pictures differ by the focus
+ * treatment only. Shift+Tab then Tab, so Chromium matches `:focus-visible`;
+ * whether it did is returned too.
  */
 const underAndAwayFromTheKeyboard = async (skill: SkillCell) => {
   const page = skill.root.page()
@@ -96,12 +90,8 @@ const underAndAwayFromTheKeyboard = async (skill: SkillCell) => {
   return { keyboardFocused, unchanged: focused.equals(away) }
 }
 
-// A CELL THE KEYBOARD IS ON HAS TO LOOK LIKE ONE. The press target is a button
-// stretched over the cell, and the cell clips what overflows it — so a ring
-// drawn outside the button was drawn entirely in the clipped band, and a
-// selected cell's own outline covered the same pixel. The two captures came
-// out byte-identical. In both themes, because the ring is a colour on a
-// surface and each theme has its own pair.
+// The ring must show past the overlay button and the cell's clip, in both
+// themes.
 test.describe("a skill cell under the keyboard", () => {
   for (const theme of ["light", "dark"] as const) {
     test.describe(`in the ${theme} theme`, () => {

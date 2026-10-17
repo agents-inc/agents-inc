@@ -1,15 +1,4 @@
-/**
- * The editor half of the shared selection contract (EDITOR-11, EDITOR-13).
- *
- * `SELECTION_SCENARIOS` lives in `@workspace/matrix` beside the shared
- * selection semantics both sides now consume. This runner holds `derive.ts` —
- * the view layer over those semantics — to the contract.
- *
- * A scenario's `divergence` names the historical bug it pinned, from when this
- * file's subject still carried a parallel implementation. Every scenario runs
- * as an ordinary passing test now; one going red means the editor's view layer
- * stopped rendering what the shared semantics answered.
- */
+// Holds `derive.ts` to the shared selection contract in `@workspace/matrix`.
 
 import {
   DISCOURAGED_PAIRS,
@@ -26,7 +15,6 @@ import {
   type ConfigSelection,
 } from "./derive"
 
-// Every filter off, so the grid holds a cell for every skill in the catalogue.
 const UNFILTERED: ConfigureSearch = {
   domain: null,
   q: "",
@@ -45,7 +33,6 @@ const configFor = (selection: readonly string[]): ConfigSelection => ({
   ),
 })
 
-// The cell is the contract: what the grid draws is what the user can act on.
 const cellsFor = (selection: readonly string[]) =>
   selectDomainViews(configFor(selection), UNFILTERED).flatMap((domain) =>
     domain.categories.flatMap((category) => category.cells)
@@ -77,7 +64,6 @@ const assertScenario = (scenario: SelectionScenario) => {
     expect(disabled.has(skillId), `${skillId} must stay offerable`).toBe(false)
   }
 
-  // A soft warning warns; it never takes the choice away.
   for (const skillId of scenario.discouraged) {
     expect(disabled.has(skillId), `${skillId} must not be disabled`).toBe(false)
   }
@@ -92,12 +78,8 @@ describe("the selection contract", () => {
 })
 
 describe("soft conflicts", () => {
-  // KNOWN GAP: as of 2026-08-06 no skill in the catalogue declares a
-  // `discourages` relationship, so this is red on its data alone — the cell
-  // surfaces `discouragedReason` through the shared semantics, but with zero
-  // pairs there is nothing to surface it for. Asserting the pair exists is
-  // what stops it going quietly green on an empty list; it turns real when
-  // the catalogue authors its first `discourages` rule.
+  // Fails until the catalogue declares a `discourages` pair; the length check
+  // stops it passing on an empty list.
   it.fails("surfaces a discouraged advisory against the selection", () => {
     expect(DISCOURAGED_PAIRS.length).toBeGreaterThan(0)
 

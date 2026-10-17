@@ -135,8 +135,7 @@ function ClaudeModelRadios({ agentId, options, tone, onPatch }: ModelRowProps) {
   )
 }
 
-// Toggles, not radios (Q5): none pressed is the session's own model, so
-// pressing the pressed one releases it.
+// Toggles, not radios: none pressed is the session's own model.
 function CodexModelToggles({ agentId, options, tone, onPatch }: ModelRowProps) {
   const pinned = chosenModelFor("codex", options)
   const released = restingAgentOptions(agentId).codexModel
@@ -177,8 +176,8 @@ function CodexModelToggles({ agentId, options, tone, onPatch }: ModelRowProps) {
   )
 }
 
-// Off cards keep every control live and recede only in colour. A sub-agent
-// Codex leaves out is drawn off and refuses the press, keeping its pin (D18).
+// A sub-agent Codex leaves out is drawn off and refuses the press, keeping its
+// pin.
 export function SubAgentCard({
   agent,
   config,

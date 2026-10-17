@@ -13,10 +13,8 @@ import type { BuiltMarketplace, StandIns } from "../support/install"
 import type { SeedPayload } from "@workspace/matrix"
 
 /**
- * PICKING A STACK INSTALLS EVERY SUB-AGENT THE STACK DECLARES — one declared
- * with no skills included (journeys 2 and 12). Such a sub-agent is named by no
- * assignment, so it reaches the install only if applying the stack switches it
- * on: the Install dialog, the preview and `init --from` must each name it.
+ * Picking a stack installs every sub-agent it declares, including one with no
+ * skills.
  */
 
 type Crossing = { marketplace: BuiltMarketplace; standIns: StandIns }

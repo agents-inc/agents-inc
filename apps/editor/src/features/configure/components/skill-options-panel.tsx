@@ -168,8 +168,7 @@ export function SkillOptionsPanel({
       ref={panelRef}
       role="group"
       aria-label="Skill options"
-      // A guard: no ancestor handles a click since EDITOR-58, and one that did
-      // would deselect the skill being configured.
+      // A guard: an ancestor handling it would deselect the skill.
       onClick={(event) => event.stopPropagation()}
       className={`absolute top-0 z-30 w-[18.5rem] border border-rule bg-cell pt-1 pb-2 text-left shadow-panel ${
         flip ? "right-[calc(100%+0.3125rem)]" : "left-[calc(100%+0.3125rem)]"
@@ -249,8 +248,7 @@ export function SkillOptionsPanel({
         )}
       </div>
 
-      {/* A new tab: added skills live for this session only. `↗` is text
-          because the design's icon set has no outbound arrow. */}
+      {/* A new tab: added skills live for this session only. */}
       <a
         href={sourceUrl}
         target="_blank"

@@ -9,8 +9,6 @@ import {
 } from "./domain-stops"
 import { observe } from "./use-pinned"
 
-// Every domain section drops one of these at its top edge, carrying the domain
-// id, and every tab carries the same id.
 export const DOMAIN_ANCHOR = "data-domain-anchor"
 export const DOMAIN_TAB = "data-domain-tab"
 
@@ -24,11 +22,7 @@ const maxScroll = () =>
 const documentTopOf = (element: Element) =>
   element.getBoundingClientRect().top + window.scrollY
 
-/**
- * Where each section's top meets the bottom of the PINNED bar. Measured against
- * the bar's height rather than its live bottom edge, which at rest sits a whole
- * column below where the pinned bar will be.
- */
+// Measured against the pinned bar's height: at rest its bottom edge sits lower.
 export const stopsUnder = (
   bar: HTMLElement,
   anchors: readonly HTMLElement[]
@@ -40,7 +34,6 @@ export const stopsUnder = (
   )
 }
 
-// With nothing matching the filter, the strip rests on its first tab.
 const domainsDrawn = (anchors: readonly HTMLElement[], strip: Element) =>
   anchors.length > 0
     ? anchors.map((anchor) => anchor.getAttribute(DOMAIN_ANCHOR) ?? "")
@@ -59,11 +52,7 @@ const placeIndicator = (indicator: HTMLElement, box: TabBox | undefined) => {
   indicator.style.width = `${box.width}px`
 }
 
-/**
- * Slides the indicator to where the page is, and answers which domain that
- * makes current. Both read the same progress, so the label never disagrees
- * with the bar under it.
- */
+// Indicator and current domain read one progress, so they never disagree.
 const followPage = (bar: HTMLElement, indicator: HTMLElement) => {
   const strip = indicator.parentElement
   if (!strip) return null
@@ -77,13 +66,7 @@ const followPage = (bar: HTMLElement, indicator: HTMLElement) => {
   return domains[currentIndex(progress)] ?? null
 }
 
-/**
- * The domain the column is showing, with the strip's indicator drawn to match.
- *
- * Re-subscribed after every render, which is also the redraw a render needs: a
- * query moves every section without a scroll. Declared after the pin's own
- * layout effect, so a scroll that pins the bar is measured pinned.
- */
+// Re-subscribed every render: a query moves sections without a scroll.
 export function useActiveDomain(
   bar: RefObject<HTMLElement | null>,
   indicator: RefObject<HTMLElement | null>

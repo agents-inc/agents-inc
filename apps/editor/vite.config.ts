@@ -8,28 +8,10 @@ import { firstPaintBudget } from "./scripts/first-paint-budget"
 import { spaFallbackShell } from "./scripts/spa-fallback-shell"
 import { parseEnv } from "./src/env.schema"
 
-// One chunk per rate of change, so a deploy invalidates only what changed. The
-// whole app used to be a single 1.03 MB file — 302 KB gzipped — which meant a
-// one-line copy edit re-hashed React, the catalogue and every brand icon along
-// with it, and every returning visitor downloaded all of them again. A cold
-// first paint pays 0.6 KB for the arrangement: 310.9 KB gzipped before against
-// 311.5 KB after, both measured 2026-08-21 under Node.
-//
-// THE PRIORITIES ARE LOAD-BEARING, and not for the reason the order suggests. A
-// group captures its matches' dependencies as well as its matches, so unless
-// `vendor` outranks `catalog` the catalogue's chunk swallows zod — 18 KB of a
-// library that has not changed, re-downloaded every time the marketplace is
-// regenerated.
-//
-// SO IS `entriesAware` ON THE CATCH-ALL. Without it a `test: /node_modules/`
-// group collects a dependency reached only through `import()` — posthog-js is
-// the one here — and hoists it into the static graph, which put 74 KB back on
-// the first-paint path while reading as a tidier list of chunks. With it,
-// modules are grouped by which entry actually reaches them, so the lazy half
-// stays lazy.
-//
-// `[\\/]` rather than `/` in every test: these match absolute module ids, which
-// use backslashes on Windows.
+// One chunk per rate of change. Priorities matter: a group also captures its
+// matches' dependencies, so `vendor` must outrank `catalog`; `entriesAware`
+// keeps `import()`-only deps lazy. `[\\/]` because module ids use backslashes
+// on Windows.
 const CHUNK_GROUPS = [
   {
     name: "react",
@@ -52,35 +34,20 @@ const CHUNK_GROUPS = [
     priority: 40,
     entriesAware: true,
   },
-  // Each skill's SKILL.md description, which only the output preview reads,
-  // and the preview is reached through `import()`. Ranked above `catalog`,
-  // whose test matches this file too and would put it on the first-paint path.
+  // Above `catalog`, whose test also matches this file; only the lazy preview
+  // reads it.
   {
     name: "activation-descriptions",
     test: /packages[\\/]matrix[\\/]src[\\/](vendor[\\/]generated[\\/])?activation-descriptions\./,
     priority: 15,
   },
-  // Then the generated catalogue itself, which changes when the marketplace
-  // does rather than when this app does.
   {
     name: "catalog",
     test: /packages[\\/]matrix[\\/]/,
     priority: 10,
   },
-  // LAST, and the ordering is the whole of it. The shared renderers and the
-  // vendored agent corpus are reached only through `import()`, so they belong
-  // nowhere near first paint — but a group claims its matches' DEPENDENCIES as
-  // well as its matches, and `packages/compile` depends on `packages/matrix`,
-  // which the app loads eagerly. Ranked above `catalog` this group swallows the
-  // catalogue, the merged chunk becomes statically reachable from the entry,
-  // and the 226 KB corpus lands on the first-paint path with it — measured, not
-  // argued: that build failed at 533.8 KB against a 330 KB budget. Ranked below,
-  // `catalog` has already claimed the catalogue and what is left here is the
-  // renderers alone.
-  //
-  // A group of its own rather than none at all, because the budget plugin also
-  // refuses ANY chunk — lazy ones included — that mixes first-party source with
-  // `node_modules`, and `vendor` above already claims `liquidjs` and `shiki`.
+  // Last: `packages/compile` depends on `packages/matrix`, so ranked higher it
+  // would pull the catalogue chunk, and the corpus with it, onto first paint.
   {
     name: "compile",
     test: /packages[\\/]compile[\\/]/,
@@ -88,19 +55,12 @@ const CHUNK_GROUPS = [
   },
 ]
 
-// https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // Vite inlines env at build time, so an unset variable is not a startup
-  // error — it is a bundle that silently points somewhere wrong. Parsing here,
-  // in Node before anything is emitted, turns that into a failed build.
+  // Vite inlines env at build time, so a bad value must fail the build here.
   parseEnv(loadEnv(mode, __dirname, "VITE_"), mode === "production")
 
-  // Source maps and their upload are one decision, not two. Everything under
-  // `dist/` is served publicly by the assets Worker, so a `.map` left behind
-  // publishes the whole source — and `hidden` only drops the reference
-  // comment, it still writes the file. Generating them *only* when the plugin
-  // is there to upload and then delete them means there is no arrangement in
-  // which a map survives into the deployment.
+  // Maps only when the plugin uploads and then deletes them: all of `dist/` is
+  // public.
   const uploadSourceMaps =
     mode === "production" && Boolean(process.env.SENTRY_AUTH_TOKEN)
 
@@ -113,9 +73,8 @@ export default defineConfig(({ mode }) => {
       ...(uploadSourceMaps
         ? [
             sentryVitePlugin({
-              // Each key is passed only when it is set. The plugin reads the
-              // same three variables itself when an option is absent, so an
-              // unset one has to stay absent rather than arrive as undefined.
+              // Only set keys: the plugin reads the env itself when an option
+              // is absent.
               ...(process.env.SENTRY_ORG !== undefined && {
                 org: process.env.SENTRY_ORG,
               }),
@@ -126,10 +85,7 @@ export default defineConfig(({ mode }) => {
                 authToken: process.env.SENTRY_AUTH_TOKEN,
               }),
               sourcemaps: { filesToDeleteAfterUpload: ["./dist/**/*.map"] },
-              // A rejected upload — wrong token scope, Sentry unreachable —
-              // must not stop the site shipping. The deploy is the important
-              // half; readable stack traces are the nice half. It stays loud
-              // in the CI log rather than failing the run.
+              // A failed upload must not stop the deploy.
               errorHandler: (error) => {
                 console.warn(
                   "[sentry] source map upload failed — deploying without them\n",
@@ -140,35 +96,22 @@ export default defineConfig(({ mode }) => {
           ]
         : []),
     ],
-    // THE EDITOR LIVES UNDER A PATH PREFIX, and Cloudflare does not strip it:
-    // "Assets defined for a Worker must be nested in a directory structure that
-    // mirrors the desired path." So the prefix has to be true in three places
-    // that must agree, and this is two of them — `base` rewrites every URL the
-    // build emits, `outDir` puts the files where the Route will look for them,
-    // and `basepath` in src/routes/router.tsx is the third. `assets.directory`
-    // in wrangler.jsonc stays `./dist`, one level ABOVE `outDir`, which is what
-    // makes scripts/spa-fallback-shell.ts's copy land somewhere the Worker's
-    // single-page-application fallback can find it.
+    // Cloudflare does not strip the prefix; must agree with `basepath` in
+    // src/routes/router.tsx.
     base: "/editor/",
 
     build: {
       outDir: "dist/editor",
       sourcemap: uploadSourceMaps ? "hidden" : false,
-      // Off to keep first paint under FIRST_PAINT_BUDGET_BYTES — the owner's
-      // choice on 2026-10-03. Browsers without native `modulepreload` (Safari
-      // before 17, Firefox before 115) still load every chunk, just without
-      // preloading, so they fetch a little later rather than failing.
+      // Off to stay under FIRST_PAINT_BUDGET_BYTES; every browser still loads
+      // the chunks.
       modulePreload: { polyfill: false },
       rolldownOptions: {
         output: { codeSplitting: { groups: CHUNK_GROUPS } },
       },
     },
     resolve: {
-      // One React for the whole graph, wherever the hoist puts a copy. Two
-      // Reacts means two hook dispatchers, and every Base UI component throws
-      // "Invalid hook call" at runtime with nothing failing at build time.
-      // react-dom is listed too: the two have to come from the same copy or
-      // React breaks anyway.
+      // Two copies of React break every hook at runtime.
       dedupe: ["react", "react-dom"],
       alias: {
         "@": path.resolve(__dirname, "./src"),

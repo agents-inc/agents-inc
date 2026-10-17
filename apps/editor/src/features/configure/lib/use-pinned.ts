@@ -1,12 +1,10 @@
 import { useEffect, useLayoutEffect, useState, type RefObject } from "react"
 
-// Decided from a static, zero-height sentinel rendered right before the bar:
-// it never moves when the bar changes shape, where measuring the bar itself
-// flipped the state every frame.
+// Read off a static sentinel before the bar: measuring the bar itself flipped
+// the state every frame.
 const isPinned = (bar: HTMLElement) =>
   (bar.previousElementSibling?.getBoundingClientRect().top ?? 1) <= 0
 
-// Every viewport change that can move a sticky element, in one subscription.
 export const observe = (update: () => void) => {
   update()
   window.addEventListener("scroll", update, { passive: true })
@@ -30,12 +28,8 @@ export function usePinned(bar: RefObject<HTMLElement | null>) {
   return pinned
 }
 
-/**
- * Writes the pin to the bar's `data-pinned` NOW, for a caller that has just
- * moved the page and has to measure the bar it moved: a scroll listener is a
- * frame late, and the domain jump runs from a passive effect, where
- * `flushSync` is refused.
- */
+// Synchronous, for a caller that just moved the page: a scroll listener is a
+// frame late, and `flushSync` is refused in a passive effect.
 export const publishPinned = (bar: HTMLElement | null) => {
   if (!bar) return
   if (isPinned(bar)) bar.dataset.pinned = ""

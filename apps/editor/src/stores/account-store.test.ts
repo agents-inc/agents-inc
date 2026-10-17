@@ -215,7 +215,7 @@ describe("a save a first sign-in could not carry", () => {
     })
   })
 
-  // Q10: neither written under a name the account holds, nor forgotten.
+  // Neither written under a name the account holds, nor forgotten.
   it("stays owed, unwritten, once the account lists its name", async () => {
     const { posted } = await firstSignInRefusing(new Set(["A"]))
     posted.length = 0
@@ -267,8 +267,8 @@ describe("signing out", () => {
   })
 })
 
-// EDITOR-73: a save of a different selection does not reach a local save, so
-// it must not clear that save's refusal.
+// A save of a different selection reaches no local save, so it must not clear
+// that save's refusal.
 describe("a save landing beside a refusal", () => {
   it("leaves the refusal standing and adds the row", async () => {
     accountHolding([])

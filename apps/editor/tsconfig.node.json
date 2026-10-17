@@ -3,16 +3,7 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
-  // vitest.config.ts is here so ESLint's project service can find it: a file in
-  // no tsconfig is a parse error under type-aware linting, not a skipped file.
-  // vitest.setup.ts is here for the same reason — it sits beside the config it
-  // is named by, and neither is under `src`.
-  //
-  // scripts/ joins them for the same reason and one more: check-deployable-bundle.ts
-  // is the last gate before a public deploy, so it is the last file in the
-  // repository that should be exempt from the checks everything else gets. It
-  // is Node rather than browser code — it reads dist/ off the disk — which is
-  // why it belongs to this project and not to tsconfig.app.json.
+  // Listed so type-aware ESLint can parse them.
   "include": [
     "vite.config.ts",
     "vitest.config.ts",

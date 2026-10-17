@@ -31,16 +31,12 @@ import {
   unknownPayloadIds,
 } from "./seed"
 
-// The payload is what leaves the browser: the envelope is stamped, the
-// selection passes through, and nothing that should stay local rides along.
-
 const SKILL = Object.keys(CATALOG.skillsById)[0]!
 const [AGENT, OTHER_AGENT] = Object.keys(SUB_AGENTS_BY_ID) as [string, string]
 const STACK = STACKS[0]!.id
 const GONE_AGENT = "retired-agent"
 const PINNED_CODEX_MODEL = "gpt-5.6-terra" as const
 
-// An added skill, filed under a category the catalogue really ships.
 const HOUSE_ID = externalSkillId(
   CATALOG.skillsById[SKILL]!.categoryId,
   "House React"
@@ -109,13 +105,11 @@ describe("toSeedPayload", () => {
     expect(toSeedPayload(config())).not.toHaveProperty("remembered")
   })
 
-  // Absent for the public catalogue; a loaded marketplace has to be named, or
-  // `--from` would install the receiver's own same-named skills.
   it("names no marketplace while the seat rests on the public catalogue", () => {
     expect(toSeedPayload(config())).not.toHaveProperty("marketplace")
   })
 
-  // Seated with the canonical ref, the only form production seats.
+  // The canonical ref is the only form production seats.
   it("names the marketplace the loaded catalogue came from", () => {
     useCatalogStore
       .getState()
@@ -144,8 +138,6 @@ describe("toSeedPayload", () => {
     })
   })
 
-  // Presence on the wire means "installs", so a pinned-off agent and its rows
-  // stay home.
   it("omits a pinned-off agent entirely, rows included", () => {
     const pinnedOff = {
       ...config(),
@@ -161,8 +153,7 @@ describe("toSeedPayload", () => {
     )
   })
 
-  // An unwritable scope pair is an error to resolve on screen, not a row to
-  // strip: the payload must describe what is on screen (EDITOR-08).
+  // The payload must describe what is on screen, errors included.
   it("carries a row the two scopes rule out rather than stripping it", () => {
     const projectSkill = {
       ...config(),
@@ -178,8 +169,7 @@ describe("toSeedPayload", () => {
     })
   })
 
-  // The mint is lenient on purpose; the write contract is enforced in
-  // `createSharedConfig`, where a payload becomes a write (CLI-851).
+  // Lenient on purpose; `createSharedConfig` enforces the write contract.
   it("mints a payload the write contract would refuse", () => {
     const projectSkill = {
       ...config(),
@@ -210,8 +200,6 @@ describe("toSeedPayload", () => {
     )
   })
 
-  // Only an explicit pin says `on`; repeating a derived one is where the
-  // payload could contradict itself.
   it("travels a derived-on agent's overrides without a pin", () => {
     const chosen = {
       ...config(),
@@ -323,8 +311,6 @@ describe("fromSeedPayload", () => {
     expect(Object.keys(restored.skills)).toStrictEqual([SKILL])
   })
 
-  // Silently dropping assignments somebody shared is the outcome the EDITOR-08
-  // ruling forbids, so the import keeps the pair and the screen flags it.
   it("keeps an assignment the two scopes rule out rather than dropping it", () => {
     const payload = toSeedPayload(config())
     const shared = {
@@ -355,8 +341,7 @@ describe("fromSeedPayload", () => {
   })
 })
 
-// Both pins travel and each provider reads its own (ruling 3). The wire field
-// is a string, so an id this editor does not offer arrives and is dropped.
+// The wire field is a string, so an id this editor does not offer is dropped.
 describe("the Codex model on the wire", () => {
   it("travels beside the Claude model rather than replacing it", () => {
     const pinned = {
@@ -420,8 +405,7 @@ describe("the Codex model on the wire", () => {
     })
   })
 
-  // Absence is `inherit`, and the payload says it by saying nothing. The
-  // store dropping a pick of `inherit` is config-store.test's.
+  // Absence is `inherit`.
   it("never sends inherit for an agent resting on it", () => {
     const resting = {
       ...config(),
@@ -441,9 +425,6 @@ describe("the Codex model on the wire", () => {
   })
 })
 
-// Pruning is right, but pruning in silence turns catalogue drift into a link
-// that comes back smaller than it was sent. Measured against what the import
-// produced, so it names exactly what was lost.
 describe("unknownPayloadIds", () => {
   it("names nothing when the catalogue placed every id", () => {
     const payload = toSeedPayload(config())
@@ -505,8 +486,7 @@ describe("unknownPayloadIds", () => {
   })
 })
 
-// An external skill answers to no catalogue, so its bytes travel inline
-// (owner, 2026-08-16) and `--from` reaches no third-party repository.
+// External skills travel inline, so `--from` reaches no third-party repository.
 describe("external skills in the payload", () => {
   const externalConfig = (): PersistedConfig => ({
     stackId: null,
@@ -556,7 +536,6 @@ describe("external skills in the payload", () => {
     ).toBe(true)
   })
 
-  // EDITOR-15/16: the payload's own content registers the ids before pruning.
   it("survives the round trip rather than pruning on arrival", () => {
     const payload = toSeedPayload(externalConfig())
     useCatalogStore.getState().reset()
@@ -585,8 +564,6 @@ describe("external skills in the payload", () => {
   })
 })
 
-// The saved stack has no id, so "it is applied" is the selection minting the
-// payload the slot holds.
 describe("matchesSavedStack", () => {
   const saved = () => toSeedPayload(config())
 

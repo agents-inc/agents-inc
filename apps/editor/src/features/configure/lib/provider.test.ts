@@ -8,9 +8,8 @@ import {
   patchForPress,
 } from "./provider"
 
-// `provider.ts` cannot import the renderer's roster (a value import of
-// `@workspace/compile` breaks the first-paint budget), so the mirror is pinned
-// here, where the import is free.
+// `provider.ts` cannot import the renderer's roster, so the mirror is pinned
+// here.
 describe("the roster Codex leaves out", () => {
   it("is the renderer's own list, mirrored", () => {
     expect([...AGENTS_LEFT_OUT_OF_CODEX]).toStrictEqual([
@@ -51,8 +50,6 @@ describe("the placements a provider offers", () => {
   })
 })
 
-// What a press writes, before any refusal is asked. Both doors onto the pair —
-// the skill cell and the options panel — write through it.
 describe("the patch a press produces", () => {
   const EJECT_PROJECT = { install: "eject", scope: "project" } as const
   const PLUGIN_GLOBAL = { install: "plugin", scope: "global" } as const

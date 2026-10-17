@@ -4,37 +4,18 @@ import { reportIssue } from "@/lib/observability/report"
 
 import { authFetch } from "./client"
 
-// The worker's auth surface, called directly rather than through
-// `better-auth`'s own React client.
-//
-// THAT IS A BUDGET DECISION, NOT A PREFERENCE. `scripts/first-paint-budget.ts`
-// fails the build past a fixed first-paint weight, and the whole of what this
-// app needs from Better Auth is three plain HTTP calls — who am I, take me to
-// GitHub, sign me out. Pulling a client library into the bundle to make three
-// fetches would spend the budget on a wrapper. If this grows past organisations
-// or two-factor, take the library and the weight together.
-//
-// `authFetch` rather than `api` because these paths are the one part of the
-// worker `AppType` does not describe — Better Auth serves them all from a
-// single `app.on` mount — so there is nothing for `hc` to type. It is the same
-// base URL and the same session policy either way; see `client.ts`.
+// Better Auth called directly rather than through its client, to stay under the
+// first-paint budget. `authFetch` because `AppType` does not describe these
+// routes.
 
-// Only what is drawn. Better Auth returns much more, and a schema that named it
-// would be a second copy of somebody else's contract to keep in step — this one
-// fails only if the two fields the rail renders stop arriving.
+// Only the fields the rail draws.
 const sessionSchema = z
   .object({ user: z.object({ id: z.string(), name: z.string() }) })
   .nullable()
 
 export type Session = z.infer<typeof sessionSchema>
 
-/**
- * Who is signed in, or `null`.
- *
- * A network failure is `null` too, deliberately: signed-out is the state this
- * app is fully usable in, so an unreachable worker degrades to the experience
- * every visitor has anyway rather than to an error nobody can act on.
- */
+/** A network failure is `null` too: signed-out is fully usable. */
 export const readSession = async (): Promise<Session> => {
   try {
     const response = await authFetch("get-session")
@@ -49,22 +30,7 @@ export const readSession = async (): Promise<Session> => {
 
 const redirectSchema = z.object({ url: z.string().url() })
 
-/**
- * Why a click on Sign in or Sign out did not do what it says, and nothing
- * about how to say so.
- *
- * The same shape `ShareResult` uses in `api/configs.ts`, for the same reason:
- * these are different situations for the person at the keyboard, and the words
- * belong to whatever is doing the telling. What matters here is that they come
- * back as a VALUE — every caller is a `void`-ed click handler, so a client that
- * throws puts the failure somewhere only a console shows it.
- *
- * - `too-many` — the auth routes are rate limited, and sign-in has a tighter
- *   rule than the rest; `apps/server/src/auth.ts` carries the windows. Waiting
- *   is the whole fix.
- * - `refused` — the worker answered and would not start the flow.
- * - `unreachable` — the request never got an answer at all.
- */
+/** Returned as a value: every caller is a `void`-ed click handler. */
 export type AuthRefusal = "too-many" | "refused" | "unreachable"
 
 export type AuthResult = { ok: true } | { ok: false; refusal: AuthRefusal }
@@ -75,13 +41,8 @@ const refusalOf = (status: number): AuthRefusal =>
   status === TOO_MANY ? "too-many" : "refused"
 
 /**
- * Leaves for GitHub, and does not come back — the worker's callback returns the
- * browser to `callbackURL` with the cookie set. `{ ok: true }` is therefore a
- * navigation already under way rather than a page that stayed.
- *
- * The URL is asked for rather than constructed: it carries state Better Auth
- * mints per attempt, and building it here would mean reimplementing the half of
- * OAuth that exists to stop somebody else's request being replayed as yours.
+ * Navigates away; the worker's callback returns with the cookie set. The URL
+ * carries per-attempt OAuth state, so it is asked for.
  */
 export const signIn = async (): Promise<AuthResult> => {
   try {
@@ -94,9 +55,8 @@ export const signIn = async (): Promise<AuthResult> => {
       }),
     })
 
-    // The body of a refusal is never read, which is what keeps a rate
-    // limiter's plain-text "Too many requests" — or a gateway's HTML — from
-    // being parsed as JSON and thrown at nobody.
+    // Never read the body: a limiter's plain text or a gateway's HTML is not
+    // JSON.
     if (!response.ok) {
       reportIssue("Sign-in refused", { status: response.status })
       return { ok: false, refusal: refusalOf(response.status) }
@@ -118,18 +78,7 @@ export const signIn = async (): Promise<AuthResult> => {
 
 export const signOut = async (): Promise<AuthResult> => {
   try {
-    // The header AND the body are both required, and this sent neither, so
-    // sign-out answered 415 in every environment from the day it was written.
-    // Better Auth refuses a POST carrying no `content-type` with
-    // UNSUPPORTED_MEDIA_TYPE and one carrying the header but no body with
-    // BAD_REQUEST — measured against `wrangler dev`, not inferred. 415 is not
-    // 429, so `refusalOf` read it as `refused` and the rail said so in
-    // SIGN-IN's words, which is why this looked like a sign-in problem and
-    // then like a stale build.
-    //
-    // `signIn` above has always sent both. That asymmetry is the whole defect:
-    // there is no rule here about auth routes, just one call site that was
-    // written without the two things the other one has.
+    // Better Auth answers 415 without `content-type` and 400 without a body.
     const response = await authFetch("sign-out", {
       method: "POST",
       headers: { "content-type": "application/json" },

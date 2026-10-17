@@ -20,8 +20,8 @@ import type { Page } from "@playwright/test"
 import type { SavedStack } from "@workspace/api-mocks"
 import type { PathParams } from "msw"
 
-// The worker's auth and stack routes (SERVER-04, EDITOR-57). The OAuth redirect
-// leaves for github.com and is never stubbed.
+// The worker's auth and stack routes. The OAuth redirect leaves for github.com
+// and is never stubbed.
 
 export { SIGNED_IN_USER } from "@workspace/api-mocks"
 
@@ -42,10 +42,8 @@ type StackBody = { name: string; configId: string }
 export const stubSignedOut = (page: Page) => stubWith(page, authHandlers)
 
 /**
- * Somebody is, and these are their stacks. Returns every `POST /stacks` body
- * it stored, and `refusing`: a name in it is answered 503 for as long as it
- * stays there. Ahead of the signed-in set, so the list given here outranks the
- * fixture's own.
+ * Signed in with these stacks. Returns the stored `POST /stacks` bodies and
+ * `refusing` (names answered 503). Ahead of the signed-in set.
  */
 export const stubSignedIn = (page: Page, stacks: SavedStack[] = []) => {
   const created: StackBody[] = []
@@ -110,7 +108,6 @@ const heldShut = () => {
   return { answered, release: () => open() }
 }
 
-/** Answering with a chosen set of skill ids, and saying why. */
 export const stubCompose = (
   page: Page,
   skillIds: string[],

@@ -42,8 +42,8 @@ import {
 
 type TestPage = Parameters<typeof stubSignedOut>[0]
 
-// EDITOR-57: signing in is additive; signed out, everything still works.
-// These build their own `ConfigurePage` so stubs land before first paint.
+// Signing in is additive. These build their own `ConfigurePage` so stubs land
+// before first paint.
 const arrive = async (page: TestPage) => {
   const configure = new ConfigurePage(page)
   await configure.goto()
@@ -242,7 +242,7 @@ test.describe("signed in", () => {
     await expect(configure.stack("Client work")).toBeVisible()
   })
 
-  // SERVER-04: what is stored is the typed name and a pointer, no config bytes.
+  // What is stored is the typed name and a pointer, no config bytes.
   test("saving sends the typed name and the id the payload was minted under", async ({
     page,
   }) => {
@@ -342,8 +342,8 @@ test.describe("signing in for the first time", () => {
     await expect(configure.adoptionNotice).toHaveCount(0)
   })
 
-  // The write contract refuses the pair before the POST (CLI-851), on every
-  // load, so the save stays local and the notice names the conflict.
+  // The write contract refuses the pair before the POST, so the save stays
+  // local and the notice names it.
   test("keeps a save the account will not take, and names the conflict", async ({
     page,
   }) => {
@@ -391,8 +391,8 @@ test.describe("signing in for the first time", () => {
     await expect(configure.adoptionNotice).toBeVisible()
   })
 
-  // EDITOR-73: an unrelated save must not clear a refusal, and a reload must
-  // not lose it either.
+  // An unrelated save must not clear a refusal, and a reload must not lose it
+  // either.
   test("keeps the refused save when an unrelated stack is saved", async ({
     page,
   }) => {
@@ -491,8 +491,8 @@ test.describe("signing in for the first time", () => {
   })
 })
 
-// Q10. Owed by a first sign-in whose write was refused; the account has
-// since come to list each name, lower-cased, from somewhere else.
+// Owed by a first sign-in whose write was refused; the account has since come
+// to list each name, lower-cased.
 const owingThenListed = async (page: TestPage, oldestFirst: string[]) => {
   stubCreateConfig(page)
   const firstSignIn = stubSignedIn(page)
@@ -713,7 +713,6 @@ test.describe("an owed save whose name the account now lists", () => {
     await page.reload()
 
     await expect(marketplace.root).toBeVisible()
-    // The account has landed.
     await expect(page.getByText(IN_THE_ACCOUNT)).toBeVisible()
     await expect(openDialogs(page)).toHaveCount(1)
 
@@ -765,7 +764,7 @@ test.describe("an owed save whose name the account now lists", () => {
 })
 
 test.describe("the composer, signed in", () => {
-  // EDITOR-54. The worker is stubbed, not the model.
+  // The worker is stubbed, not the model.
   test("draws the skills it was given, and sends the sentence", async ({
     page,
   }) => {

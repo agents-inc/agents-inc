@@ -13,10 +13,9 @@ import { stubSkillIndex } from "../support/skill-index"
 
 import type { ConfigurePage } from "../pages/configure-page"
 
-// A dialog hands focus back to the control that opened it, however it closes.
-// A field focused as it MOUNTS is focused before the dialog records what had
-// focus, which loses the way back — so each case also asserts the caret's
-// landing on open. Every dialog is opened from the keyboard.
+// A dialog hands focus back to its opener however it closes. A field focused on
+// mount would lose the way back, so each case also asserts where the caret
+// lands.
 
 const [FIRST] = SKILL_INDEX.skills
 const FIRST_NAME = FIRST!.name

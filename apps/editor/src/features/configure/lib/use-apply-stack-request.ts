@@ -21,14 +21,13 @@ const A_STACK = "This stack"
 const localSaveById = (saveId: string) =>
   useSavedStackStore.getState().saves.find((save) => save.id === saveId)
 
-// What applying a `StackRequest` means, for both the grid and the confirm.
 export const useApplyStackRequest = () => {
   const applyStack = useConfigStore((state) => state.applyStack)
   const applySavedStack = useConfigStore((state) => state.applySavedStack)
   const navigate = useNavigate({ from: "/" })
 
-  // Clearing releases the `selected` filter: its toggle is drawn only while
-  // something is selected, so it would strand an empty column.
+  // The `selected` toggle hides once nothing is selected, stranding an empty
+  // column, so clearing releases it.
   const releaseSelectedOnly = () =>
     void navigate({
       search: (prev) => ({ ...prev, sel: false }),
@@ -36,9 +35,7 @@ export const useApplyStackRequest = () => {
       replace: true,
     })
 
-  // A saved payload names its marketplace as a share link's does, so it gets
-  // the same welcome (EDITOR-59): seat that catalogue first, park when it will
-  // not load, and name what it could not place.
+  // Same welcome as a share link: seat its catalogue, park if it won't load.
   const adopt = async (payload: SeedPayload) => {
     const { sayCatalogue, parkCatalogue } = useUiStore.getState()
 
@@ -65,7 +62,6 @@ export const useApplyStackRequest = () => {
       return applyStack(request.stackId)
     }
 
-    // A failed fetch leaves the selection alone.
     if (request.kind === "remote")
       return void fetchSharedConfig(request.configId).then((result) => {
         if (result.ok) void adopt(result.payload)

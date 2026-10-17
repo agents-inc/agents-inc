@@ -41,8 +41,8 @@ export const DOMAIN_REACH = {
   api: 5,
 } as const
 
-// The Next.js stack's one skill reaching a single sub-agent, so a project-
-// scoped configuration's scope error (EDITOR-08) is resolved in one click.
+// The Next.js stack's one skill reaching a single sub-agent, so a scope error
+// is resolved in one click.
 export const SINGLE_AGENT_SKILL = {
   name: "Vite",
   category: "Build Tools",

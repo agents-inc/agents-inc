@@ -16,11 +16,9 @@ import {
 import type { ConfigurePage } from "../pages/configure-page"
 import type { Locator, Page } from "@playwright/test"
 
-// The editor is the only producer of `init --from <id> --provider codex`. Three
-// facts measured on the pinned @openai/codex@0.155.1 shape what it may produce:
-// plugin+project has no mechanism (D3), the two summoners are left out (D8,
-// shown disabled per D18), and the provider never reaches the payload
-// (ruling 3). Copy the product renders is mirrored here, never imported.
+// Measured on the pinned @openai/codex@0.155.1: no plugin+project, the two
+// summoners left out, and the provider never in the payload. Copy is mirrored,
+// never imported.
 
 const { web } = DOMAINS
 const { name: FRAMEWORK, first: REACT, second: VUE } = EXCLUSIVE_CATEGORY
@@ -29,8 +27,7 @@ const REACT_ID = "web-framework-react"
 
 const CLAUDE_COMMAND = `npx agents-inc init --from ${STORED_ID}`
 const CODEX_COMMAND = `${CLAUDE_COMMAND} --provider codex`
-// `--provider` without `--from` exits INVALID_ARGS (D15), so the mint-failed
-// fallback stays bare.
+// `--provider` without `--from` exits INVALID_ARGS, so the fallback stays bare.
 const BARE_COMMAND = "npx agents-inc init"
 const PROVIDER_FLAG = "--provider"
 
@@ -74,7 +71,7 @@ const withAProjectScopedPluginSkill = async (configure: ConfigurePage) => {
 }
 
 // The same, installable on Claude: its one sub-agent moves to project too, or
-// EDITOR-08's scope rule blocks Install on its own.
+// the scope rule blocks Install.
 const withAnInstallableProjectScopedPluginSkill = async (
   configure: ConfigurePage
 ) => {
@@ -382,7 +379,7 @@ test.describe("what the install dialog says a Codex install writes", () => {
     )
   })
 
-  // `$CODEX_HOME`, which on a clean machine is `~/.codex` (D14).
+  // `$CODEX_HOME`, which on a clean machine is `~/.codex`.
   test("names the global root Codex reads", async ({ configure }) => {
     await expect(configure.installDialog.root).toContainText("~/.codex")
     await expect(configure.installDialog.root).not.toContainText("~/.claude")
@@ -462,9 +459,8 @@ test.describe("what choosing Codex does not change", () => {
   })
 })
 
-// Codex drops both summoners whatever the configuration says (D8), so the
-// count is the provider's. Nothing here hardcodes it: the dialog's own rows
-// are the number, and Claude's reading holds the two apart.
+// Codex drops both summoners, so the count is the provider's; the dialog's rows
+// are the number.
 test.describe("how many sub-agents an install writes", () => {
   const openInstall = async (
     configure: ConfigurePage,
@@ -532,7 +528,7 @@ test.describe("how many sub-agents an install writes", () => {
   })
 })
 
-// Ruling 3: the bytes that leave the browser are the same on either provider.
+// The bytes that leave the browser are the same on either provider.
 test.describe("the payload", () => {
   test("is byte-identical on either provider", async ({ configure, page }) => {
     const bodies = captureCreateConfigBodies(page)
@@ -564,10 +560,8 @@ test.describe("the payload", () => {
   })
 })
 
-// Codex has no plugin+project. The app never produces it: PROJECT is refused
-// beside a plugin, and PLUGIN pressed on a project skill takes it to global.
-// `aria-disabled` rather than `disabled`, so the `title` reason still opens —
-// which is also why a refused press below has to be forced.
+// Codex has no plugin+project. `aria-disabled`, not `disabled`, so the `title`
+// reason still opens; refused presses are forced.
 test.describe("a placement Codex does not offer", () => {
   test("refuses the press that would produce it", async ({ configure }) => {
     await withSelection(configure)
@@ -675,8 +669,8 @@ test.describe("a placement Codex does not offer", () => {
   })
 })
 
-// v6 §2 rule 1: the refused PROJECT takes the unavailable ink, `not-allowed`,
-// and nothing under the pointer — at both doors onto the scope.
+// The refused PROJECT takes the unavailable ink, `not-allowed`, and nothing
+// under the pointer, at both doors.
 test.describe("the PROJECT cell Codex cannot install", () => {
   test("recedes in the skill cell, and the pointer changes nothing", async ({
     configure,
@@ -718,9 +712,8 @@ test.describe("the PROJECT cell Codex cannot install", () => {
   })
 })
 
-// v6 §2 rule 2: on Codex no unselected plugin skill rests at project, so
-// selecting one later never produces an error the visitor did not cause.
-// Nothing selected moves, and nothing moves back.
+// On Codex no unselected plugin skill rests at project. Nothing selected moves,
+// and nothing moves back.
 test.describe("a remembered project plugin on the way to Codex", () => {
   test("moves to global, and stays there back on Claude", async ({
     configure,
@@ -760,8 +753,8 @@ test.describe("a remembered project plugin on the way to Codex", () => {
   })
 })
 
-// v6 §2 rule 3: a skill chosen as plugin+project before the switch keeps that
-// placement as an error drawn on its own cell — never rewritten (D3).
+// A plugin+project skill chosen before the switch keeps its placement as an
+// error on its cell.
 test.describe("switching to Codex with that placement already chosen", () => {
   test("marks the skill asking for it, and no other", async ({ configure }) => {
     const skill = await switchedWithAProjectScopedPluginSkill(configure)
@@ -871,7 +864,7 @@ test.describe("switching to Codex with that placement already chosen", () => {
     await expect(skill.scope).toHaveText("project")
   })
 
-  // EDITOR-08's argument: a command the CLI refuses is worse than none.
+  // A command the CLI refuses is worse than none.
   test("refuses to hand over a command the CLI would reject", async ({
     configure,
   }) => {
@@ -916,8 +909,8 @@ test.describe("switching to Codex with that placement already chosen", () => {
   })
 })
 
-// Shown disabled with the reason rather than hidden (D18): the app writes both
-// either way and the CLI drops them at install.
+// Shown disabled with the reason rather than hidden: the CLI drops them at
+// install.
 test.describe("the sub-agents Codex leaves out", () => {
   test.beforeEach(async ({ configure }) => {
     await withSelection(configure)

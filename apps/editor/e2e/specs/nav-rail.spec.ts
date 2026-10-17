@@ -3,11 +3,8 @@ import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 
 import type { ConfigurePage } from "../pages/configure-page"
 
-// A search, a domain anchor and the selected-only filter all write the URL,
-// and none of them is a different page, so none may take the rail's current
-// page away. Each case asserts its parameter reached the URL first: a link
-// that stays current because the parameter never arrived passes for the
-// wrong reason.
+// None of these is a different page, so none may take the rail's current page
+// away. Each case first asserts its parameter reached the URL.
 
 const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY

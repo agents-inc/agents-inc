@@ -32,8 +32,7 @@ import { SkillOptionsPanel } from "./skill-options-panel"
 
 const DOTS = ["top", "middle", "bottom"] as const
 
-// `aria-disabled` rather than `disabled`, which would suppress the `title`
-// carrying the reason.
+// `aria-disabled`, since `disabled` would suppress the `title` reason.
 function PairCell({
   value,
   active,
@@ -60,8 +59,7 @@ function PairCell({
   )
 }
 
-// Selection is a `LatticeCellButton` stretched over the cell as a SIBLING of
-// its controls, so no control needs to stop propagation (EDITOR-45).
+// Selection is an overlay sibling of the controls, so none stops propagation.
 export function SkillCell({
   view,
   column,
@@ -84,15 +82,13 @@ export function SkillCell({
   const ejectOnly = isEjectOnly(skill.id)
   const cellRef = useRef<HTMLDivElement>(null)
 
-  // The same three fallbacks the store writes through, so the panel never
-  // shows one thing and saves another. `derive` cannot see `remembered`.
+  // The store's fallbacks, so the panel never shows one thing and saves another.
   const remembered = useConfigStore((state) => state.remembered[skill.id])
   const untouched = useMemo(() => freshEntry(skill.id), [skill.id])
   const options = entry ?? remembered ?? untouched
-  // Chosen before the switch to Codex: kept, and drawn as an error (D3).
+  // Chosen before the switch to Codex: kept, drawn as an error.
   const errored = selected && !offersPlacement(provider, options)
 
-  // Every entry point checks: nothing inside an incompatible cell selects it.
   const select = () => {
     // Tracked here because the store is never reached.
     if (incompatible) {
@@ -107,12 +103,11 @@ export function SkillCell({
     toggleSkill(skill.id)
   }
 
-  // The ••• and the badges configure a skill without selecting it.
   const requestPanel = () => {
     if (!incompatible) togglePanel(skill.id)
   }
 
-  // Asked of the placement the press would produce, not of the value pressed.
+  // Asked of the placement the press would produce.
   const refusalFor = (patch: Partial<SkillOptions>) =>
     placementRefusal(provider, {
       ...options,
@@ -125,8 +120,7 @@ export function SkillCell({
     setSkillOption(skill.id, patchForPress(provider, patch))
   }
 
-  // `pointerdown`, so the panel is gone before the press resolves. Presses
-  // inside are ignored, or the ••• would close then reopen.
+  // Presses inside are ignored, or the ••• would close then reopen.
   useEffect(() => {
     if (!open) return
 
@@ -155,13 +149,11 @@ export function SkillCell({
       className={cn(
         "group/cell px-3 py-[0.6875rem]",
         open && "z-58",
-        // Lifted so the error tip clears the cells after it.
         errored && "focus-within:z-50 hover:z-50"
       )}
     >
       <LatticeCellButton
         tabIndex={incompatible ? -1 : 0}
-        // The plain name, ruled out or not: `title` is the description.
         aria-label={skill.displayName}
         aria-pressed={selected}
         aria-disabled={incompatible || undefined}
@@ -169,7 +161,6 @@ export function SkillCell({
         onClick={select}
       />
 
-      {/* Above the badge row, which the error tip overlaps. */}
       <div className="pointer-events-none relative z-2 flex items-start gap-2.5">
         <SkillIcon
           monogram={skill.monogram}
@@ -182,7 +173,6 @@ export function SkillCell({
             <span className="truncate text-12 leading-[1.25] font-semibold text-ink">
               {skill.displayName}
             </span>
-            {/* No `incompatible` guard: reading is not configuring. */}
             {skill.added && (
               <Badge
                 variant="tag"
@@ -220,8 +210,7 @@ export function SkillCell({
           </div>
         </div>
 
-        {/* Three 2px boxes, not a glyph. Zero opacity rather than absent, so
-            revealing them cannot reflow the row; focus reveals them too. */}
+        {/* Zero opacity, not absent, so revealing them cannot reflow. */}
         <button
           type="button"
           aria-label={`Options for ${skill.displayName}`}
@@ -243,12 +232,10 @@ export function SkillCell({
         </button>
       </div>
 
-      {/* Two butted pairs: 0px inside a pair, 10px between. The row is inert
-          so the overlay keeps the cell's clicks; each group takes back its box. */}
+      {/* Inert, so the overlay keeps the cell's clicks; groups opt back in. */}
       <div className="pointer-events-none relative z-1 mt-[0.5625rem] -ml-[0.3125rem] flex min-w-0 items-center gap-[0.625rem]">
         {ejectOnly ? (
-          // A statement, not a choice: an added skill has no plugin form. It
-          // still catches the press, so it never toggles selection (EDITOR-45).
+          // An added skill has no plugin form; still catches the press.
           <span
             aria-label={`Install mode: ${options.install}`}
             className={cn(

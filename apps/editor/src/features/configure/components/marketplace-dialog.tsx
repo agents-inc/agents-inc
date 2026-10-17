@@ -31,11 +31,9 @@ import { FIELD_INSET, Field, Note } from "./dialog-field"
 import type { MarketplaceRecovery } from "@/features/configure/lib/use-catalog-first"
 import type { Matrix } from "@workspace/matrix/matrix-schema"
 
-// Which marketplace the grid runs on. The marketplace identifies; the token
-// only authorizes, so its field appears only once an answer says a token could
-// help. Both live in localStorage, never on our worker or in a `VITE_`
-// variable. Each token is filed under the marketplace it authorizes
-// (EDITOR-39).
+// The token field appears only once an answer says a token could help. Both
+// live in localStorage, never on our worker; each token is filed under the
+// marketplace it authorizes.
 
 // `invalid` is not offered a token: a catalogue that will not parse fails the
 // same however it is authorized.
@@ -70,12 +68,7 @@ type LoadState =
 const offersToken = (state: LoadState, token: string) =>
   (state.status === "failed" && state.kind === OFFERS_TOKEN) || token !== ""
 
-/**
- * The shell owns only whether it is open, however it was reached (the rail,
- * an arriving payload, or a saved marketplace failing at startup, EDITOR-36),
- * so cancelling a recovery leaves it parked. The form mounts only while open,
- * so its initial state is read fresh each time.
- */
+// Cancelling a recovery leaves it parked; the form remounts fresh on each open.
 export function MarketplaceDialog({
   recovery,
 }: {
@@ -167,21 +160,18 @@ function MarketplaceForm({
     reset()
   }
 
-  // The only place a marketplace is remembered, and only once it has loaded
-  // (EDITOR-37, EDITOR-38).
+  // The only place a marketplace is remembered, and only once it has loaded.
   const seatNamed = ({ marketplace: named, matrix }: Target) => {
     remember(named, token)
     load(matrix, named)
   }
 
   // A saved configuration's marketplace was the slot just cleared, so public
-  // finishes it; an arriving payload names its own and stays parked
-  // (EDITOR-38).
+  // finishes it; an arriving payload names its own and stays parked.
   const finishRecovery = (target: Target) =>
     isPublic(target) ? recovery?.onPublic() : recovery?.onSeated()
 
-  // Naming a consequence and dropping the skills it names travel together
-  // (EDITOR-41).
+  // Naming a consequence and dropping the skills it names travel together.
   const seat = (target: Target) => {
     if (isPublic(target)) seatPublic()
     else seatNamed(target)

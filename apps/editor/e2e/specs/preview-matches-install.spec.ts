@@ -19,44 +19,10 @@ import type { BuiltMarketplace, StandIns } from "../support/install"
 import type { SeedPayload } from "@workspace/matrix"
 
 /**
- * THE PREVIEW DRAWS WHAT `init --from <id>` WRITES — HELD AGAINST THE INSTALL
- * ITSELF, NOT AGAINST A SECOND OPINION OF IT.
- *
- * Journey 48. `output-preview.spec.ts` holds the pane against the model, and
- * the model's unit tests hold it against `@workspace/compile`; packages/cli's
- * `lifecycle/preview-matches-install` holds `@workspace/compile` against a
- * real install. Each link was green while the chain was broken (u03, u04):
- * the links meet at the renderers, and the defects were in what each side
- * handed them. So this spec opens an id in the browser, runs the CLI this
- * repository builds on the same id, and compares the two outputs whole — the
- * file set, then every file's bytes.
- *
- * Every install here is run from a project directory on a machine with
- * nothing installed, which is the premise the preview's footer states. One
- * of them names no marketplace, as every configuration minted on the public
- * catalogue does, so the CLI installs it from its default.
- *
- * WHAT IS NOT COMPARED, AND WHY — each one a thing the preview names rather
- * than guesses, so each is a stated gap rather than a tolerance:
- *
- *   · a line the preview draws with `<computed at install time>` — a value
- *     only the installing machine knows, such as the project's name or the
- *     project `config-types.ts` import specifier. The installed line must
- *     still have the preview line's shape, with a value where the placeholder
- *     stands;
- *   · the global config's `projects` list, which is the machine's own paths;
- *   · the files of a skill ejected out of the marketplace, which the install
- *     copies verbatim and the preview deliberately does not draw: its
- *     directory row is held to the directory the install wrote instead.
- *
- * `marketplaceName` IS compared: the preview draws it in every `config.ts`
- * the install writes it into, and in no other. A name the browser cannot read
- * is the first case above — a placeholder on a line of the installed line's
- * shape — and never an absent line.
- *
- * Plugin installs are not crossed: `claude plugin install` reaches the
- * network, and a plugin skill writes no file under either root for the
- * preview to draw.
+ * The preview against a real `init --from <id>` of the same id: the file set,
+ * then every byte. Not compared, each a gap the preview names: `<computed at
+ * install time>` lines (shape only), the global `projects` list, and the files
+ * of a skill ejected out of the marketplace.
  */
 
 type Crossing = { marketplace: BuiltMarketplace; standIns: StandIns }

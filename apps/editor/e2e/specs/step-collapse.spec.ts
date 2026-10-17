@@ -96,11 +96,8 @@ test.describe("folding a step", () => {
     expect(await configure.storedConfig()).toBe(chosen)
   })
 
-  // Every title's clearance is a MARGIN, so with the grid gone two titles
-  // become adjacent siblings and their margins COLLAPSE — the larger one, not
-  // the sum. Wrap a title in anything that establishes a new formatting
-  // context, and the collapse stops happening while every other assertion here
-  // stays green.
+  // Title clearances are margins, so two folded titles' margins collapse to the
+  // larger one; a new formatting context around a title would stop that.
   test("two adjacent folded titles sit one title margin apart", async ({
     configure,
   }) => {

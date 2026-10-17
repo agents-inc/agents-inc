@@ -2,10 +2,8 @@ import { Glyph, type GlyphName } from "@workspace/ui/components/glyph"
 import { cn } from "@workspace/ui/lib/utils"
 import { useId, type ReactNode } from "react"
 
-// A glyph button and the tip it opens on hover or focus. The tip is a sibling
-// so `peer-*` can reveal it, and it hangs from the nearest positioned ancestor,
-// which the caller chooses. `:focus` rather than `:focus-visible`, so the
-// keyboard opens it whether or not the browser draws a ring.
+// The tip is a sibling so `peer-*` can reveal it; `:focus`, not
+// `:focus-visible`, so the keyboard always opens it.
 export function InfoTip({
   label,
   glyph,

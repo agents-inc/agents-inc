@@ -25,11 +25,8 @@ import {
 
 import type { ConfigSelection } from "./derive"
 
-// Presence on the wire means "installs", so disabled rows and rows on
-// pinned-off agents stay home. A row whose scopes cannot meet travels: it is
-// an error on screen, not a row to strip (EDITOR-08). So the mint parses with
-// the lenient schema; `createSharedConfig` enforces the write contract
-// (CLI-851).
+// Presence on the wire means "installs". A row whose scopes cannot meet still
+// travels: it is an on-screen error, not a row to strip.
 const travelling = (entry: SkillEntry, isOn: (agentId: string) => boolean) =>
   Object.entries(entry.assignments).filter(
     ([agentId, assignment]) => assignment.enabled && isOn(agentId)
@@ -51,16 +48,14 @@ const toSeedSkill = (
 
 const isPinnedOff = (entry: AgentEntry) => entry.on === false
 
-// The wire carries any id, since Codex retires them. Only one this editor
-// offers crosses either way, so `inherit` never leaves and a retired id never
-// lands.
+// Only ids this editor offers cross either way: `inherit` never leaves and a
+// retired id never lands.
 const offeredCodexModel = (codexModel: string | undefined) => {
   const offered = CODEX_MODEL_NAMES.find((name) => name === codexModel)
   return offered === undefined ? {} : { codexModel: offered }
 }
 
-// Only an explicit pin says `on`; repeating a derived one is where the payload
-// could contradict itself.
+// Only an explicit pin says `on`, so the payload cannot contradict itself.
 const toSeedAgent = (entry: AgentEntry): SeedAgent => ({
   ...(entry.on === true && { on: true }),
   ...(entry.model !== undefined && { model: entry.model }),
@@ -71,7 +66,6 @@ const toSeedAgent = (entry: AgentEntry): SeedAgent => ({
 
 const saysSomething = (agent: SeedAgent) => Object.keys(agent).length > 0
 
-// An external skill's whole directory, minus the id it is already keyed by.
 const toSeedExternalSkill = ({
   displayName,
   description,
@@ -88,25 +82,21 @@ const toSeedExternalSkill = ({
   files,
 })
 
-// Only the ones the selection names: content is the expensive part.
+// Only selected ones: content is the expensive part.
 const travellingExternal = (config: ConfigSelection) =>
   Object.keys(config.skills).flatMap((skillId) => {
     const external = activeExternalSkill(skillId)
     return external ? [[skillId, toSeedExternalSkill(external)] as const] : []
   })
 
-// Sparse: an agent with nothing to say gets no entry.
 const travellingAgents = (config: ConfigSelection) =>
   Object.entries(config.agents)
     .filter(([, entry]) => !isPinnedOff(entry))
     .map(([agentId, entry]) => [agentId, toSeedAgent(entry)] as const)
     .filter(([, agent]) => saysSomething(agent))
 
-// The exact JSON the config store holds. The parse strips anything the
-// contract does not know, so no store field leaks unnoticed; `remembered` never
-// travels. `matrixVersion` and `marketplace` come off the seat, so `--from`
-// installs the skills these ids name; `marketplace` is absent for the public
-// catalogue.
+// The parse strips unknown fields so no store field leaks; `remembered` never
+// travels.
 export const toSeedPayload = (config: ConfigSelection): SeedPayload => {
   const marketplace = activeMarketplace()
   const external = travellingExternal(config)
@@ -127,9 +117,8 @@ export const toSeedPayload = (config: ConfigSelection): SeedPayload => {
   })
 }
 
-// Whether what is on screen is the saved snapshot, which has no id to match.
-// Compared as serialized payloads, the identity `useInstallCommand` keys on; a
-// reorder reads as a difference, which errs towards asking first.
+// The saved snapshot has no id, so compare serialized payloads; a reorder
+// reads as a difference, erring towards asking first.
 export const matchesSavedStack = (
   config: ConfigSelection,
   saved: SeedPayload | null
@@ -148,7 +137,7 @@ const fromSeedSkill = (skill: SeedSkill): SkillEntry => ({
   ),
 })
 
-// Absent stays absent: "no choice" is the missing key, never `undefined`.
+// "No choice" is the missing key, never `undefined`.
 const fromSeedAgent = (agent: SeedAgent): AgentEntry => ({
   ...(agent.on !== undefined && { on: agent.on }),
   ...(agent.model !== undefined && { model: agent.model }),
@@ -157,8 +146,7 @@ const fromSeedAgent = (agent: SeedAgent): AgentEntry => ({
   ...(agent.scope !== undefined && { scope: agent.scope }),
 })
 
-// Ids this catalogue does not know are pruned, skip-don't-fail, as the CLI
-// does. `remembered` starts empty: it never travels.
+// Unknown ids are pruned, skip-don't-fail, as the CLI does.
 export const fromSeedPayload = (payload: SeedPayload): PersistedConfig =>
   pruneUnknownIds({
     stackId: payload.stackId,
@@ -177,8 +165,7 @@ export const fromSeedPayload = (payload: SeedPayload): PersistedConfig =>
     ),
   })
 
-// The ids the import pruned, so a link that arrives smaller says so. Measured
-// against what the import produced, so it names exactly what was lost.
+// The ids the import pruned, so a link that arrives smaller says so.
 export const unknownPayloadIds = (
   payload: SeedPayload,
   adopted: PersistedConfig
@@ -188,7 +175,6 @@ export const unknownPayloadIds = (
   ...lostStack(payload.stackId, adopted.stackId),
 ]
 
-// The keys the map on the left had and the one on the right no longer holds.
 const lost = (before: object, after: object) =>
   Object.keys(before).filter((id) => !(id in after))
 
@@ -201,8 +187,7 @@ const externalFromPayload = (payload: SeedPayload): ExternalSkill[] =>
     ...skill,
   }))
 
-// Seats the payload's external skills before pruning, or their ids would be
-// pruned (EDITOR-15, EDITOR-16). Additive: skills added here already stay.
+// External skills are seated first, or pruning would drop their ids.
 export const adoptSeedPayload = (payload: SeedPayload): PersistedConfig => {
   useCatalogStore.getState().addExternal(externalFromPayload(payload))
   return fromSeedPayload(payload)

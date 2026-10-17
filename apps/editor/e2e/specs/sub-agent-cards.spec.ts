@@ -816,7 +816,7 @@ test.describe("model", () => {
   })
 })
 
-// Q5: toggles, none pressed at rest, which is the session's own model.
+// Toggles, none pressed at rest, which is the session's own model.
 test.describe("Codex model", () => {
   test("offers the four Codex models as toggles, none pressed", async ({
     configure,
@@ -938,7 +938,7 @@ test.describe("Codex model", () => {
 
     await page.reload()
     await configure.stacks.waitFor()
-    // The provider is transient (ruling 3), so a reload lands on Claude.
+    // The provider is transient, so a reload lands on Claude.
     await onCodex(configure)
 
     await expectPressedCodexModel(cards, TERRA)

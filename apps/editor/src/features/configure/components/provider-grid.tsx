@@ -13,8 +13,7 @@ const CARDS = {
   codex: { name: "Codex", line: "plugins install globally only" },
 } as const satisfies Record<Provider, { name: string; line: string }>
 
-// Step 01, on the stack card's face. One install has one provider, so the
-// cards are a radiogroup: one tab stop, arrows move and choose.
+// One install has one provider, so the cards are a radiogroup.
 export function ProviderGrid() {
   const provider = useUiStore((state) => state.provider)
   const setProvider = useUiStore((state) => state.setProvider)
@@ -24,7 +23,7 @@ export function ProviderGrid() {
   const columns = useLatticeColumns()
   const lineId = useId()
 
-  // v6 §2 rule 2: on Codex no unselected plugin skill rests at project.
+  // On Codex no unselected plugin skill rests at project.
   const choose = (choice: Provider) => {
     setProvider(choice)
     if (choice === "codex") moveRememberedPluginsToGlobal()

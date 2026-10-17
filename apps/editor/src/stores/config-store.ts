@@ -57,15 +57,14 @@ type ConfigActions = {
   toggleAgentPin: (agentId: string) => void
   // Only non-resting choices are kept.
   setAgentOption: (agentId: string, patch: Partial<AgentOptions>) => void
-  // v6 §2 rule 2, for the switch to Codex: no unselected plugin skill rests
-  // at project. Selected and ejected entries never move, and nothing moves back.
+  // For the switch to Codex: no unselected plugin skill rests at project.
+  // Selected and ejected entries never move.
   moveRememberedPluginsToGlobal: () => void
   // A shared config replaces the selection wholesale.
   importConfig: (config: PersistedConfig) => void
   // As `importConfig`, without counting a share-link arrival.
   applySavedStack: (config: PersistedConfig) => void
-  // Every door that seats a catalogue owes this call; why is in
-  // `features/configure/lib/marketplace-switch.ts`.
+  // Every door that seats a catalogue must call this.
   pruneToCatalog: () => void
   reset: () => void
 }
@@ -139,9 +138,8 @@ const lostKeys = (before: object, after: object) =>
 const lostStack = (before: string | null, after: string | null) =>
   before !== null && after === null ? [before] : []
 
-// The saved ids a prune could not place, named for the visitor: the same three
-// places `unknownPayloadIds` names. `remembered` is left out, as nothing on
-// screen could show its loss.
+// The saved ids a prune could not place, for the visitor. `remembered` is left
+// out: nothing shows its loss.
 export const unknownSavedIds = (
   before: PersistedConfig,
   after: PersistedConfig
@@ -227,8 +225,8 @@ const deselect = (
   remembered: setAside(state.remembered, skillId, entry),
 })
 
-// A third-party skill is always eject (owner ruling 2026-08-09): a plugin
-// would serve their repository as-is, without our metadata.
+// A third-party skill is always eject: a plugin would serve their repository
+// without our metadata.
 export const isEjectOnly = (skillId: string) =>
   activeExternalSkill(skillId) !== undefined
 
@@ -347,7 +345,6 @@ const alreadyInEffect = (
   )
 }
 
-// An agent record left saying nothing is dropped.
 const configureAgent = (
   agents: AgentMap,
   agentId: string,
@@ -398,8 +395,7 @@ const onlyPersistableSkills = (skills: SkillMap) =>
 // `undefined` where there is no localStorage.
 const OWN_SLOT = createJSONStorage(() => window.localStorage)
 
-// The same slot, read and never written: what a shared configuration runs on
-// (EDITOR-37).
+// The same slot, read and never written: what a shared configuration runs on.
 export const withoutWrites = <T>(
   storage: PersistStorage<T>
 ): PersistStorage<T> => ({
@@ -494,8 +490,8 @@ export const useConfigStore = create<ConfigState>()(
       },
 
       cycleAssignment: (skillId, agentId) => {
-        // No scope guard (EDITOR-08): a project skill on a global sub-agent
-        // is an error `summarize` gates Install and Share on.
+        // No scope guard: a project skill on a global sub-agent is an error
+        // `summarize` gates Install and Share on.
         const configured = configure(get(), skillId, (entry) => ({
           ...entry,
           assignments: cycled(entry.assignments, agentId),
@@ -597,8 +593,8 @@ export const useConfigStore = create<ConfigState>()(
       version: PERSIST_VERSION,
       migrate: migrateConfig,
       storage: OWN_SLOT,
-      // EDITOR-31: `merge` prunes against the loaded catalogue, so nothing
-      // reads storage until `readSavedConfig` knows it has settled.
+      // `merge` prunes against the loaded catalogue, so storage is read only
+      // once `readSavedConfig` knows it settled.
       skipHydration: true,
       partialize: ({ stackId, skills, remembered, agents }) => ({
         stackId,
@@ -639,8 +635,8 @@ export const useConfigStore = create<ConfigState>()(
 // Whether the slot is held open for a configuration that is not this browser's.
 let heldOpen = false
 
-// Holds this browser's saved configuration for as long as a shared address is
-// open (EDITOR-37). Handed back by `readSavedConfig`.
+// Holds this browser's saved configuration while a shared address is open;
+// `readSavedConfig` hands it back.
 export const detachSavedConfig = () => {
   if (heldOpen) return
   if (!OWN_SLOT) return
@@ -654,7 +650,7 @@ const reattachSavedConfig = () => {
   if (!heldOpen) return false
 
   // What is in memory is somebody else's, and `merge` keeps it on an empty
-  // slot (EDITOR-42). Cleared while writes are still off.
+  // slot. Cleared while writes are still off.
   useConfigStore.getState().reset()
 
   heldOpen = false
@@ -663,10 +659,9 @@ const reattachSavedConfig = () => {
 }
 
 /**
- * Reads the saved configuration once the catalogue it was saved against is
- * seated. Once per session — a re-read would drop what `partialize` never
- * wrote — except on the way back from a shared address. Answers with the saved
- * ids the catalogue could not place.
+ * Reads the saved configuration once its catalogue is seated, once per session
+ * except on the way back from a shared address. Answers with the ids it could
+ * not place.
  */
 export const readSavedConfig = async (): Promise<string[]> => {
   const wasHeldOpen = reattachSavedConfig()

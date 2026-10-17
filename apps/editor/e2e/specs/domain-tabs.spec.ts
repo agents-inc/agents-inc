@@ -111,8 +111,8 @@ const labelsCut = (configure: ConfigurePage) =>
       .map((node) => node.textContent)
   )
 
-// A scroll indicator first: picking a tab jumps to that section (EDITOR-79)
-// and filters nothing, so `aria-current` is the strip's one claim.
+// Picking a tab jumps and filters nothing, so `aria-current` is the strip's one
+// claim.
 test.describe("the domain strip", () => {
   test("renders one tab per domain, all of them at once", async ({
     configure,

@@ -38,9 +38,6 @@ import {
   type AgentEntry,
 } from "./persisted-schema"
 
-// localStorage is the app's one untrusted input, and a bug here is silent: the
-// app hands back a configuration missing someone's work and nothing throws.
-
 const KNOWN_SKILL = Object.keys(CATALOG.skillsById)[0]!
 const KNOWN_AGENT = Object.keys(SUB_AGENTS_BY_ID)[0]!
 const KNOWN_STACK = STACKS[0]!.id
@@ -204,7 +201,7 @@ describe("modelChoicesFor", () => {
     ])
   })
 
-  // Q5: no `inherit` choice; nothing pressed is the session's model.
+  // No `inherit` choice; nothing pressed is the session's model.
   it("offers the four Codex models by their short names, and nothing else", () => {
     expect(modelChoicesFor("codex")).toStrictEqual([
       { value: "gpt-6-astra", label: "astra" },
@@ -215,8 +212,8 @@ describe("modelChoicesFor", () => {
   })
 })
 
-// Both pins live on one entry and each provider reads its own (ruling 3), so
-// a pick on one provider must never move the other's.
+// Both pins live on one entry and each provider reads its own, so a pick on one
+// must never move the other's.
 describe("chosenModelFor", () => {
   const pinnedOn = (entry: AgentEntry) =>
     resolveAgentOptions({ [KNOWN_AGENT]: entry }, KNOWN_AGENT)
@@ -572,7 +569,7 @@ describe("pruneUnknownIds", () => {
   })
 })
 
-// Pre-release policy: no migrations — an old version is discarded, not upgraded.
+// No migrations: an old version is discarded, not upgraded.
 describe("migrateConfig", () => {
   const sink = {
     issue: vi.fn<ReportingSink["issue"]>(),

@@ -15,22 +15,8 @@ import {
 
 import type { ConfigurePage } from "../pages/configure-page"
 
-// A shared link is its own URL with its own state, and reloading it reopens
-// that same state (EDITOR-37, owner 2026-08-17).
-//
-// The id used to be STRIPPED from the address the moment it was applied, so a
-// reload had no idea it had ever been a shared link and restored this browser's
-// own marketplace and configuration over the top of it. Every fix inside that
-// model was bad — clearing the stored marketplace destroys a PAT that cannot be
-// recovered, keeping it leaves a trap that springs on reload, and warning at
-// import time patches over a surprise rather than removing it. Separating the
-// addresses removes it: the stored marketplace governs the normal editor URL,
-// and the shared URL governs itself.
-//
-// Two claims are made throughout, and they are deliberately made separately:
-// what is ON SCREEN at the shared address, and what is IN THE SLOT this browser
-// saves into. The whole of the separation is that the second never follows the
-// first.
+// A shared link is its own URL with its own state; reloading it reopens that
+// state.
 
 // What the public payload carries, and a sibling of it this browser picked for
 // itself. One exclusive category, so the two cannot both be selected — which is
@@ -65,7 +51,6 @@ test.describe("a shared link keeps its own address", () => {
     await expect(page).toHaveURL(`/editor/?fromId=${STORED_ID}`)
   })
 
-  // The owner's sentence, and the acceptance test for the whole row.
   test("reopens the same state on a reload", async ({ configure, page }) => {
     await page.goto(`/?fromId=${STORED_ID}`)
     await expect(configure.skill(SHARED_SKILL).root).toHaveAttribute(
@@ -134,9 +119,8 @@ test.describe("a shared link naming a marketplace this browser has not stored", 
 })
 
 test.describe("a shared link naming no marketplace while one is stored", () => {
-  // The case that motivated the row: a visitor on `acme/skills` opens a link
-  // built on the public catalogue. It used to apply, display correctly, and
-  // then prune itself to nothing on the next reload.
+  // A visitor on `acme/skills` opens a link built on the public catalogue; a
+  // reload must not prune it.
   test.beforeEach(async ({ configure, page }) => {
     stubMarketplaceCatalog(page)
     stubGetConfig(page, STORED_ID)
@@ -203,19 +187,8 @@ test.describe("a shared link naming no marketplace while one is stored", () => {
   })
 })
 
-// The branch every describe above misses: a visitor with NOTHING in the slot.
-//
-// `readSavedConfig` hands this browser's slot back and re-reads it, and an
-// empty slot answers `merge` with `undefined` — which returns what is already
-// in memory. Correct at startup, where that is empty state; on the way back
-// from a shared address it is somebody else's configuration. A visitor who HAD
-// saved something takes the other branch and returns correctly, which is why
-// every spec in this file passes while driving this exact path: each one
-// populates the slot in its `beforeEach` before it ever leaves the shared
-// address.
-//
-// So the fixture's own guarantee is the thing under test here — a fresh
-// context, and not one click before the navigation.
+// Nothing saved: an empty slot makes `merge` keep what is in memory, which here
+// is somebody else's.
 test.describe("a visitor who has saved nothing", () => {
   test.beforeEach(({ page }) => {
     stubGetConfig(page, STORED_ID)
@@ -287,9 +260,8 @@ test.describe("a visitor who has saved nothing", () => {
     )
   })
 
-  // EDITOR-43, and it is what makes EDITOR-42 land: the notice is the thing
-  // that promises the visitor their own configuration is untouched, so leaving
-  // it standing over their own grid is the app vouching for the swap.
+  // The notice promises the visitor's own configuration is untouched, so it
+  // must leave with the address.
   test("takes its notice with it when the address is left", async ({
     configure,
   }) => {

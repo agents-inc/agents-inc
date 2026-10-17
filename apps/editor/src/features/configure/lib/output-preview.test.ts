@@ -27,7 +27,7 @@ import type { SeedExternalSkill, SeedPayload } from "@workspace/matrix"
 const REACT = "web-framework-react"
 const TAILWIND = "web-styling-tailwind"
 
-// Only `MARKETPLACE_CATALOG` carries this id (CLI-498 prefixes custom ids).
+// Only `MARKETPLACE_CATALOG` carries this id.
 const ACME_SKILL = "acme-web-widgets"
 
 const WEB_DEVELOPER = "web-developer"
@@ -49,7 +49,6 @@ const configPairIn = (base: string) => [
   `${base}${SOURCE_DIR}${CONFIG_TYPES_TS}`,
 ]
 
-// Exactly these skills and sub-agent entries, built without the store.
 const payload = (
   skills: SeedPayload["skills"],
   agents: SeedPayload["agents"] = {}
@@ -79,7 +78,6 @@ const bodyOf = (
   file: string
 ) => rootOf(preview, base)?.nodes.find((node) => node.id.endsWith(file))?.body
 
-/** The paths of the files one root says an install writes — its `new` rows. */
 const writtenIn = (
   preview: Awaited<ReturnType<typeof buildOutputPreview>>,
   base: string
@@ -89,7 +87,7 @@ const writtenIn = (
     .map((node) => node.id)
 
 describe("the bytes the output preview draws", () => {
-  // C1: a global root renders standalone, against the root's own config.
+  // A global root renders standalone, against the root's own config.
   it("draws the global root's config.ts with the standalone writer", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),
@@ -106,7 +104,7 @@ describe("the bytes the output preview draws", () => {
     )
   })
 
-  // C1: a project root renders the inlining form with the preview's global config.
+  // A project root inlines the preview's global config.
   it("draws the project root's config.ts with the inlining writer", async () => {
     const preview = await buildOutputPreview(
       payload(
@@ -150,8 +148,6 @@ describe("the bytes the output preview draws", () => {
     )
   })
 
-  // The CLI writes the applied stack's description into the project config.ts,
-  // which a project install writes whatever the configuration holds.
   it("carries the applied stack's description into the project config.ts, where the CLI writes it", async () => {
     const [stack] = activeStacks()
 
@@ -249,7 +245,6 @@ describe("the marketplace a configuration naming none records", () => {
     ).toContain(DEFAULT_MARKETPLACE_LINE)
   })
 
-  // A configuration holding nothing global leaves the blank global pair alone.
   it("leaves the blank global config.ts without one, as the install does", async () => {
     const preview = await buildOutputPreview(
       payload(
@@ -336,8 +331,8 @@ describe("the name a seated marketplace is recorded under", () => {
 })
 
 describe("the one line a browser cannot know", () => {
-  // C2: the project config-types.ts import specifier depends on the disk, so the
-  // preview names a placeholder; a guessed `../` path is the failure to catch.
+  // The import specifier depends on the disk, so the preview names a
+  // placeholder; a guessed `../` path is the failure to catch.
   it("names the import path as a placeholder rather than inventing one", async () => {
     const preview = await buildOutputPreview(
       payload(
@@ -383,8 +378,7 @@ describe("the one line a browser cannot know", () => {
 })
 
 describe("a compiled sub-agent's markdown", () => {
-  // The mechanism only: the renderer's answer passes through untouched. Bytes
-  // against a real install are preview-matches-install.e2e's.
+  // Mechanism only; bytes against a real install are an e2e's.
   it("is the corpus renderer's return value, passed through untouched", async () => {
     const RENDERED = "---\nname: web-developer\n---\n\nrendered by the corpus\n"
 
@@ -411,8 +405,7 @@ describe("a compiled sub-agent's markdown", () => {
     vi.doUnmock("@workspace/compile/preview")
   })
 
-  // Provenance only. The marker is a constant (the first cacheable byte of a
-  // sub-agent's prompt), so no version assertion belongs here.
+  // The marker is a constant, so no version assertion belongs here.
   it("carries the provenance marker the CLI writes, byte for byte", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),
@@ -426,10 +419,7 @@ describe("a compiled sub-agent's markdown", () => {
     expect(agent?.body).toContain(provenanceMarker())
   })
 
-  // The config's effort over the metadata's, as `resolveAgents` composes it. No
-  // shipped definition declares one (`grep -c "effort:"
-  // packages/matrix/src/generated/agents.ts`), so the metadata is mocked; the
-  // spec after it is the control.
+  // No shipped definition declares an effort, so the metadata is mocked.
   describe("the effort a sub-agent runs at", () => {
     afterEach(() => {
       vi.doUnmock("@workspace/matrix")
@@ -484,8 +474,7 @@ describe("a compiled sub-agent's markdown", () => {
     })
   })
 
-  // The bullet telling a sub-agent when to load a skill. The fallback sentence is
-  // written out: it must match `statedUsageFor` in the CLI byte for byte.
+  // The fallback must match the CLI's `statedUsageFor` byte for byte.
   describe("the line telling a sub-agent when to reach for a skill", () => {
     afterEach(() => {
       useCatalogStore.getState().reset()
@@ -648,8 +637,7 @@ describe("a Codex model pin", () => {
   )
 })
 
-// CLI-898: the install writes each skill's SKILL.md description, not the
-// short label.
+// The install writes each skill's SKILL.md description, not the short label.
 describe("the description a skill is listed under", () => {
   afterEach(() => {
     useCatalogStore.getState().reset()
@@ -705,8 +693,6 @@ describe("the description a skill is listed under", () => {
     expect(await acmeBody()).toContain(SHORT_LABEL)
   })
 
-  // The vendored catalogue every visitor starts on. The table is imported after
-  // the negative, so a tree predating it fails on the label it draws.
   it("draws no short label on the vendored catalogue, the seat every visitor starts on", async () => {
     useCatalogStore.getState().reset()
     const label = activeMatrix().skills[REACT]?.description
@@ -747,8 +733,7 @@ describe("the description a skill is listed under", () => {
 })
 
 describe("what the tree says about plugin skills", () => {
-  // A plugin skill installs through Claude Code, so it gets no path under a
-  // root. Both directions are pinned: either alone is satisfiable by a bug.
+  // Both directions pinned: either alone is satisfiable by a bug.
   it("labels a plugin skill `plugin` and gives it no path under a root", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),
@@ -1015,8 +1000,7 @@ describe("a skill the configuration carries", () => {
 })
 
 describe("which roots are emitted", () => {
-  // Both roots, always: a project install writes both config pairs. Named
-  // rather than counted, since a count cannot see a swap.
+  // Named rather than counted, since a count cannot see a swap.
   it("emits the project root for a wholly global configuration, holding the pair the install writes there", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),
@@ -1073,7 +1057,6 @@ describe("which roots are emitted", () => {
     )
   })
 
-  // Global first, then project (B3.2).
   it("emits the global root before the project root", async () => {
     const preview = await buildOutputPreview(
       payload(
@@ -1094,8 +1077,7 @@ describe("which roots are emitted", () => {
 })
 
 describe("the footer's file count", () => {
-  // B3.4: only files an install writes, the pair per root and one per compiled
-  // sub-agent. Derived from the preview's own rows, since the roster moves.
+  // Derived from the preview's own rows, since the roster moves.
   it("counts the config pair per root and one file per compiled sub-agent", async () => {
     const preview = await buildOutputPreview(
       payload({ [REACT]: skill("global", "plugin") }),

@@ -1,21 +1,15 @@
 import { expect, test } from "../fixtures"
 import { ConfigurePage } from "../pages/configure-page"
 
-// What `--warm-01` resolves to in each theme, and `body` is painted with it.
-// Quoted from the design's palette rather than read back out of the stylesheet,
-// for the reason e2e/pages mirrors the product's copy: an assertion that reads
-// the very declaration it is checking cannot fail. The same two values
-// `visual.spec.ts` uses, and deliberately the same — a theme is a palette
-// substitution, so the one thing that proves the switch WORKED is the paint.
+// Quoted from the design's palette, not read from the stylesheet, so the
+// assertion can fail.
 const PAGE_BACKGROUND = {
   light: "rgb(255, 255, 255)",
   dark: "rgb(22, 21, 19)",
 } as const
 
-// ONE GLYPH, NOT A TRACK. Only the active theme's icon is drawn and clicking it
-// flips the theme, so the control's accessible name is the ACTION rather than
-// the state — a two-cell sun/moon track was built and rejected precisely
-// because it shows a state you are not in.
+// One glyph: only the active theme's icon is drawn, so the accessible name is
+// the action.
 test.describe("the theme control", () => {
   test("sits in the rail's footer, beside the GitHub mark", async ({
     configure,
@@ -26,10 +20,8 @@ test.describe("the theme control", () => {
     )
   })
 
-  // The palette follows the OS until somebody says otherwise, which is why the
-  // root carries no `data-theme` at all on arrival: an attribute written on
-  // mount would freeze whatever the machine happened to be set to at that
-  // moment and stop tracking it.
+  // Follows the OS until asked: no `data-theme` on arrival, since one written
+  // on mount would freeze the machine's setting.
   test("says nothing until it is asked to", async ({ configure }) => {
     expect(await configure.theme()).toBeNull()
   })

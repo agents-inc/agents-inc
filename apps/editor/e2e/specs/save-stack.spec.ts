@@ -296,7 +296,7 @@ test.describe("named saves in the grid", () => {
     await expect(react.root).toHaveAttribute("aria-pressed", "false")
   })
 
-  // No back-compat: the single slot is never read.
+  // The retired single slot is never read.
   test("draws nothing for a save under the retired single-slot key", async ({
     configure,
   }) => {

@@ -17,11 +17,8 @@ const {
   transitiveCategory,
 } = INCOMPATIBLE
 
-// A skill is ruled out when the current selection makes its requirements
-// unsatisfiable, which is almost never a direct relationship: nothing in the
-// catalogue links React to SvelteKit. It is SvelteKit → built on Svelte →
-// conflicts with React. The unit tests cover the derivation across the whole
-// catalogue; these cover that the grid actually draws and enforces it.
+// Ruled out several hops away: SvelteKit → built on Svelte → conflicts with
+// React.
 test.describe("incompatible skills", () => {
   test("nothing is ruled out before anything is chosen", async ({
     configure,
@@ -50,11 +47,8 @@ test.describe("incompatible skills", () => {
     ).toBe(true)
   })
 
-  // A cell is white because it is AVAILABLE. One that is not simply stops being
-  // white and sinks into the column — no opacity, no ink change, no border
-  // change. The `opacity: .4` this replaces put the skill's own name at roughly
-  // 2.1:1 and faded the cell's hairlines with it; the name stays at 14.8:1 now,
-  // which is why the assertion is on the FILL and never on the text.
+  // A ruled-out cell stops being white and sinks into the column; no opacity,
+  // so its name stays legible.
   test("a ruled-out cell recedes into the column, at full opacity", async ({
     configure,
   }) => {
@@ -93,10 +87,8 @@ test.describe("incompatible skills", () => {
     await sveltekit.root.click({ force: true })
     expect(await sveltekit.isSelected()).toBe(false)
 
-    // The controls inside it all route to the same toggle. Either cell of the
-    // install pair will do — the claim is that nothing inside a ruled-out cell
-    // selects it, so the one that happens to be on is as good a probe as the
-    // one that is not.
+    // Either install cell will do: nothing inside a ruled-out cell may select
+    // it.
     await sveltekit.installCell("plugin").click({ force: true })
     expect(await sveltekit.isSelected()).toBe(false)
 

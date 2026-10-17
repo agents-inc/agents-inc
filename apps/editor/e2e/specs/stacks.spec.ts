@@ -109,10 +109,8 @@ test.describe("switching stacks", () => {
   })
 })
 
-// THE FIRST CELL IS THE RESET, AND IT SAYS SO. There is no separate clear
-// control — `N skills selected ✕` was built and removed — because applying the
-// first cell and clearing are the same act, so the cell states the cost instead
-// of describing a starting point the visitor is no longer at.
+// The first cell is the reset: applying it and clearing are the same act, so it
+// states the cost.
 test.describe("the first cell as the reset", () => {
   test("describes a starting point while nothing is selected", async ({
     configure,
@@ -138,10 +136,7 @@ test.describe("the first cell as the reset", () => {
     )
   })
 
-  // Every selection, not just the visible ones: the stack goes with them, which
-  // is what the second hinge reports. A reset that cleared the grid and left the
-  // page still saying "then customise next.js full-stack" would be telling the
-  // visitor they still had a stack.
+  // Every selection, stack included: the second hinge must stop naming it.
   test("empties the whole configuration, stack included", async ({
     configure,
   }) => {

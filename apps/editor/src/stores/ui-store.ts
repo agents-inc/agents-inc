@@ -38,14 +38,11 @@ type UiState = {
   // `dialog` value because it opens over the install dialog, which has to stay
   // open underneath.
   previewSkillId: string | null
-  // Which row of the output preview's tree is open, as its path. Here rather
-  // than in the dialog because the dialog unmounts on close. The tree is
-  // regenerated from live state, so a path that no longer names a row is normal
-  // and resolves to the project root's `config.ts`.
+  // The output preview's open row, as a path; here because the dialog unmounts
+  // on close.
   outputSelection: string | null
-  // Whether the output preview fills the sheet, and how wide its tree column
-  // is in DESIGN pixels. Here for the reason `outputSelection` is: both survive
-  // a close.
+  // Both survive a close, like `outputSelection`. The width is in design
+  // pixels.
   outputFullscreen: boolean
   outputTreeWidth: number
   // Group key → that roster accordion is shut. Domain mode keys it by the bare
@@ -61,18 +58,14 @@ type UiState = {
   skillsCollapsed: boolean
   // Which palette to paint in. `system` follows the machine.
   theme: ThemePreference
-  // What the last act that seated a catalogue had to say, in one line above
-  // the grid, and whatever is parked behind the marketplace dialog waiting on a
-  // catalogue that would not load. Here rather than in `useCatalogFirst`
-  // because applying a saved stack seats a catalogue too.
+  // What the last catalogue seat had to say, and what is parked behind the
+  // marketplace dialog.
   catalogueNotice: string | null
   marketplaceRecovery: MarketplaceRecovery | null
   // Agents currently pulsing in the roster because a selection reached them.
   flashedAgentIds: string[]
-  // Which coding agent this configuration is being installed onto. Not in
-  // `config-store`: it never enters the payload or the saved selection, and
-  // travels only on the printed command. Transient, so a reload lands on
-  // Claude, which is what `init --from <id>` with no flag installs.
+  // Not in `config-store`: it never enters the payload. Transient, so a reload
+  // lands on Claude.
   provider: Provider
 
   openPanel: (skillId: string | null) => void

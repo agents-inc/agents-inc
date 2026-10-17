@@ -6,18 +6,11 @@ import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
 
-// Each capture is one state of the assembled app, diffed by Argos against the
-// last accepted render; packages/ui's Chromatic baselines cover components
-// alone. The states are chosen rather than swept: adding a screen is adding a
-// `test` here.
-//
-// Viewport-sized rather than full page, because below the fold is generated
-// catalogue that would change on every regeneration of packages/matrix.
+// One capture per chosen state, diffed by Argos. Viewport-sized: below the fold
+// is generated catalogue.
 
-// Both themes, by emulating the media query rather than clicking the theme
-// glyph, which would leave `data-theme` set for every capture after it. On the
-// same page rather than a second project, because Argos names an upload by the
-// string passed here alone.
+// Themes by emulating the media query, which leaves no `data-theme` behind.
+// Same page, since Argos names an upload by this string alone.
 const THEMES = ["light", "dark"] as const
 type Theme = (typeof THEMES)[number]
 
@@ -26,10 +19,8 @@ type Theme = (typeof THEMES)[number]
 const screenshotName = (name: string, theme: Theme) =>
   theme === "light" ? name : `${name}-dark`
 
-// What `--warm-01` resolves to in each theme, and `body` is painted with it
-// (`--background: var(--warm-01)` in @workspace/ui's globals.css). Quoted
-// rather than read from the stylesheet, so the assertion can fail. It guards
-// the harness: Argos cannot tell that a dark pass rendered light.
+// Quoted rather than read from the stylesheet, so it can fail; it guards the
+// harness, since Argos cannot tell a dark pass rendered light.
 const PAGE_BACKGROUND = {
   light: "rgb(255, 255, 255)",
   dark: "rgb(22, 21, 19)",
@@ -93,8 +84,7 @@ test.describe("the configure screen", () => {
     await capture(configure, "configure-empty-filter")
   })
 
-  // v6-08. The reason overhangs the cell to its right, so this guards its
-  // stacking.
+  // The reason overhangs the cell to its right, so this guards its stacking.
   test("with a Codex error mark's reason open", async ({ configure }) => {
     await withSelection(configure)
     const skill = configure.skillIn(

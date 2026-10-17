@@ -4,18 +4,11 @@ import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 const { web } = DOMAINS
 const { name: CATEGORY, first: SKILL } = EXCLUSIVE_CATEGORY
 
-// THE TWO PAIRS ON A CELL, AND THE POINT OF THEM BEING PAIRS.
-//
-// Each was one word that flipped on click until the 2026-09-06 refresh, which
-// replaced every hidden-alternative control in the app with one showing both
-// values at rest — so what a press will do is readable before you press it.
-// That is the claim the first two tests are about, and it is a claim about the
-// accessibility tree rather than about the amber styling that also signals it:
-// a `radiogroup` of `radio`s says the values are alternatives and says which is
-// on, where two independent toggles said neither.
+// Each pair shows both values at rest, so what a press will do is readable
+// first.
 test.describe("skill state badges", () => {
-  // The refresh in one assertion. `plugin` is on and `eject` is on screen
-  // beside it — visible, and reachable, before anything has been pressed.
+  // `plugin` is on and `eject` is visible beside it, before anything is
+  // pressed.
   test("shows both install modes at rest, with one on", async ({
     configure,
   }) => {
@@ -66,9 +59,8 @@ test.describe("skill state badges", () => {
     await expect(skill.scope).toHaveText("project")
   })
 
-  // TWO PAIRS ON ONE CELL, AND THEY ARE TWO CONTROLS. The 10px between them
-  // says so visually; this is the same claim in the tree, and it is what stops
-  // four cells reading as one row of four alternatives.
+  // Two pairs, two controls: otherwise four cells read as one row of
+  // alternatives.
   test("mode and scope are separate exclusive groups", async ({
     configure,
   }) => {
@@ -80,8 +72,7 @@ test.describe("skill state badges", () => {
     await expect(skill.scopeGroup.getByRole("radio")).toHaveCount(2)
   })
 
-  // ONE TAB STOP PER PAIR, not one per cell. Four tab stops on every cell of a
-  // 240-cell grid is what a row of independent toggles would have cost.
+  // One tab stop per pair, not per cell.
   test("only the cell that is on takes the tab stop", async ({ configure }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
 

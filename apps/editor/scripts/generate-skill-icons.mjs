@@ -1,14 +1,5 @@
-// Regenerates src/lib/skill-icons.ts.
-//
-//   bun scripts/generate-skill-icons.mjs
-//
-// Two sources, in order:
-//   1. An automatic pass that matches a skill slug against simple-icons ("vitest" → "vitest").
-//   2. OVERRIDES below, which is the reviewed part — every brand whose simple-icons slug differs
-//      from ours ("nextjs" → "nextdotjs"), plus `null` for automatic matches that are wrong.
-//
-// Every emitted slug is checked against simple-icons before writing, so a brand the library drops
-// (it has removed OpenAI, AWS and Playwright, among others) fails here rather than at runtime.
+// Regenerates src/lib/skill-icons.ts: `bun scripts/generate-skill-icons.mjs`.
+// Every emitted slug is checked against simple-icons before writing.
 
 import { writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -19,15 +10,14 @@ import { CATALOG } from "../../../packages/matrix/src/index.ts"
 const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 const iconSlugs = new Set(Object.values(simpleIcons).map((icon) => icon.slug))
 
-/** `null` rejects an automatic match. A string sets or replaces one. */
+/** `null` rejects an automatic match; a string sets or replaces one. */
 const OVERRIDES = {
-  // Automatic matches that latched onto the wrong word.
   "dnd-kit": null, // matched "kit"
   "offline-first": null, // matched "first"
   "ble-nfc": null, // generic NFC glyph, not a brand
   "better-auth-drizzle-hono": "betterauth", // the skill is Better Auth, not Hono
 
-  // Brands whose simple-icons slug differs from our skill slug.
+  // Brands whose simple-icons slug differs from ours.
   "angular-standalone": "angular",
   "anthropic-sdk": "anthropic",
   "apollo-server": "apollographql",
@@ -83,7 +73,6 @@ const OVERRIDES = {
   "zod-validation": "zod",
   yoga: "graphql",
 
-  // Every Electron sub-skill shares the one mark.
   "electron-forge": "electron",
   "electron-ipc": "electron",
   "electron-multiwindow": "electron",
@@ -94,7 +83,6 @@ const OVERRIDES = {
   "electron-updater": "electron",
 }
 
-/** Longest trailing run of slug segments that names a real brand: "web-mocks-msw" → "msw". */
 const autoMatch = (slug) => {
   const parts = slug.split("-")
   for (let start = 0; start < parts.length; start += 1) {
@@ -131,8 +119,7 @@ if (invalid.length) {
 
 const unmatched = skills.length - entries.length
 
-// Named imports rather than inlined path data: the 113 distinct marks are ~125KB of raw SVG
-// path, so they need to stay a tree-shakeable, separately-chunkable import.
+// Named imports keep the marks tree-shakeable.
 const exportNameBySlug = new Map(
   Object.entries(simpleIcons).map(([exportName, icon]) => [
     icon.slug,

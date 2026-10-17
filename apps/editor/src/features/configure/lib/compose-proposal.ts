@@ -3,17 +3,9 @@ import { defaultAssignmentsFor } from "./default-assignments"
 import type { ProposalGroup, ProposalRow } from "../components/proposal"
 import type { CatalogSkill } from "@workspace/matrix"
 
-// What a proposal's rows say, built from SKILL IDS and nothing else.
-//
-// The model returns ids; everything drawn beside them is derived here from the
-// app's own rules — `defaultAssignmentsFor` is the same resolver a click on a
-// cell goes through, so a proposed row cannot describe a placement the app
-// would not actually make. That is the whole reason the model is not allowed to
-// send load, scope or agent: two sources for one answer is how they disagree.
+// Rows are built from skill ids alone, through the same resolver a click uses,
+// so a row cannot describe a placement the app would not make.
 
-// The load a freshly-selected skill rests at, read off the resolver rather than
-// assumed. A skill that reaches several sub-agents at one load says it once; one
-// that genuinely differs says `mixed`, which is true and rare.
 const restingLoad = (skillId: string) => {
   const loads = new Set(
     Object.values(defaultAssignmentsFor(skillId)).map(({ load }) => load)
@@ -23,15 +15,9 @@ const restingLoad = (skillId: string) => {
   return loads.size === 1 ? [...loads][0]! : "mixed"
 }
 
-/** A proposed id together with the catalogue entry that lets it be drawn. */
 type AddedSkill = { id: string; skill: CatalogSkill }
 
-/**
- * Whether the seated catalogue can name this id.
- *
- * An id it cannot name has no row to draw, which is also why it is not applied:
- * a reviewable changeset promises that nothing arrives unseen.
- */
+// An id with no row is not applied either: nothing arrives unseen.
 const isNamed = (entry: {
   id: string
   skill: CatalogSkill | undefined
@@ -40,38 +26,18 @@ const isNamed = (entry: {
 const toRow = ({ id, skill }: AddedSkill): ProposalRow => ({
   name: skill.displayName,
   state: restingLoad(id),
-  // Never amber: an added skill resting at its own default is the app choosing,
-  // not the visitor overriding, and amber is reserved for what somebody
-  // deliberately picked.
+  // Amber marks a deliberate pick; this is the app's default.
   amber: false,
   added: true,
 })
 
-/**
- * What a proposal DRAWS and what applying it WILL SELECT, answered together.
- *
- * One question with two readers, and the two are handed back from one place
- * because a second derivation of the same predicate is a disagreement waiting
- * for an input that tells them apart. The composer used to filter the ids for
- * itself, which was only ever harmless because `toggleSkill` refuses an id no
- * catalogue carries: the rows dropped such an id and the second filter kept it.
- */
+// Rows and applied ids come from one derivation so they cannot disagree.
 export type ProposedChanges = {
   groups: ProposalGroup[]
-  /** The ids behind the rows, in the order the rows are drawn. */
   ids: string[]
 }
 
-/**
- * The proposal's groups, and the ids they stand for.
- *
- * One group, `Skills added`, and deliberately not more. **Ids the visitor has
- * already chosen are dropped rather than listed as changes** — proposing what
- * somebody already has reads as a change that will not happen, and `Apply`
- * would then toggle it back off, which is the opposite of what the row said.
- * `ProposalGroup.verb` has a `changed` member for when the model is allowed to
- * propose an assignment; today it is not, so nothing here produces one.
- */
+// Already-chosen ids are dropped: `Apply` would toggle them back off.
 export const groupsFor = (
   skillIds: readonly string[],
   skillById: (id: string) => CatalogSkill | undefined,

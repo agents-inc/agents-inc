@@ -7,8 +7,7 @@ import { DOMAIN_ANCHOR } from "@/features/configure/lib/use-active-domain"
 import { useLatticeColumns } from "@/features/configure/lib/use-lattice-columns"
 import { SkillCell } from "./skill-cell"
 
-// No heading: the strip under the bar carries every domain's name. The anchor
-// at the top edge is how the strip knows which domain the column is showing.
+// No heading: the strip under the bar carries every domain's name.
 export function DomainSection({
   view,
   first,
@@ -16,8 +15,7 @@ export function DomainSection({
   view: DomainView
   first: boolean
 }) {
-  // One value for the grid and for each cell's column, or the popover flips
-  // against a grid that moved.
+  // One value for the grid and each cell's column, or the popover misflips.
   const columns = useLatticeColumns()
 
   return (

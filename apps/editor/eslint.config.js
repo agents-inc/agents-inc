@@ -3,29 +3,8 @@ import { reactAppConfig } from "@workspace/eslint-config/react-app"
 import { defineConfig } from "eslint/config"
 
 /**
- * The source folder's name, written anywhere but a spec.
- *
- * The third copy of the ban `packages/cli/eslint.config.js` and `packages/compile/eslint.config.js`
- * carry, with the same regex, for the same reason: the source folder is `.agents-inc/<provider>/`,
- * and the editor renders paths under it. It DECLARES none — `output-preview.ts` imports the names from `@workspace/compile`,
- * which is where that package's own ban points — so there is no funnel to exempt here, only specs.
- *
- * ONE PRODUCT FILE CANNOT IMPORT THEM, and carries a `no-restricted-syntax` disable with the
- * measurement instead: `install-dialog.tsx` is on the static graph, where a single import of
- * `@workspace/compile` puts its 124.7 KB chunk on the first-paint path and
- * `scripts/first-paint-budget.ts` fails the build at 490.0 KB against a 344.0 KB budget
- * (measured 2026-09-20). `output-preview.ts` imports freely because it is reached only through
- * `import()`. Before writing a fourth zone here, check which graph the file is on.
- *
- * The boundary on either side is what keeps `agents-inc` the package, `npx agents-inc init`,
- * `github.com/agents-inc`, `agents-inc:config:v1` and `.claude-plugin/plugin.json` out of it: the
- * regex demands a `.` immediately before the name and a non-word, non-hyphen character after it.
- *
- * A spec may still write the names. They are text the preview renders and text on people's disks,
- * so an assertion that imported the constant the product writes would move with it and could never
- * fail — `e2e/specs/output-preview.spec.ts` pins the folder as a literal for exactly that reason
- * (`.agents-inc/claude/` since R2 flipped the preview onto it), and `packages/cli`'s
- * `e2e/pages/constants.ts` exemption is the same ruling.
+ * The source folder's name, banned outside specs. The boundaries keep
+ * `agents-inc` (package, URLs, storage keys) out of the match.
  */
 const SOURCE_FOLDER_NAME = "/(^|[^\\w.-])[.](agents-inc)([^\\w-]|$)/"
 
@@ -51,15 +30,12 @@ export default defineConfig([
     rules: { "no-restricted-syntax": ["error", ...SOURCE_FOLDER_LITERALS] },
   },
   {
-    // Specs, and the Playwright tree whole — its page objects and fixtures mirror the product's
-    // rendered strings the same way its specs do.
+    // Tests mirror rendered strings as literals.
     files: ["**/*.test.ts", "**/*.test.tsx", "e2e/**/*.ts"],
     rules: { "no-restricted-syntax": "off" },
   },
   {
-    // Playwright specs are not React. A fixture's `use()` is the fixture
-    // callback rather than React's `use` hook, and there is nothing here for
-    // fast refresh to reason about.
+    // A Playwright fixture's `use()` is not React's hook.
     files: ["e2e/**/*.ts", "playwright.config.ts"],
     rules: {
       "react-hooks/rules-of-hooks": "off",

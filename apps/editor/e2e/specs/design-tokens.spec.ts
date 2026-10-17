@@ -2,9 +2,7 @@ import type { Page } from "@playwright/test"
 
 import { expect, test } from "../fixtures"
 
-// Quoted from the design file rather than imported from the stylesheet, so the
-// assertion can fail. `--color-tree-border` shares the roster band's hex since
-// the palette merge.
+// Quoted from the design file rather than imported, so the assertion can fail.
 const NEW_TOKENS = {
   "--color-track": "#eeece4",
   "--color-track-hover": "#e7e4d9",

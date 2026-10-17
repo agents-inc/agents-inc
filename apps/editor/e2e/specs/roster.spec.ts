@@ -263,9 +263,8 @@ test.describe("roster panel", () => {
     ).toHaveText(/^(pre|lazy)$/)
   })
 
-  // Each band used to sit in a <section> box, which confines `position:
-  // sticky`, so the previous band vanished as the next one pinned. Bands are
-  // located by slot: other controls in the scroller carry `aria-expanded` too.
+  // No box per band, which would confine `position: sticky`. By slot: other
+  // controls carry `aria-expanded`.
   test("domain bands stack rather than replace each other", async ({
     configure,
     page,

@@ -37,88 +37,26 @@ import { useCatalogStore } from "@/stores/catalog-store"
 import { SKILL_SCOPES } from "@/stores/persisted-schema"
 import { useUiStore } from "@/stores/ui-store"
 
-/**
- * The three folders step 2 names, per provider: the config pair a fresh install creates, where an
- * ejected skill lands, and the global root the rest of it goes under.
- *
- * ONE TABLE RATHER THAN THREE TERNARIES, so a provider added to the control is a missing key here
- * rather than three sentences that were each read separately — `satisfies Record<Provider, …>` is
- * what turns it into a compiler error.
- *
- * The Codex row is not a translation of the Claude one. A project skill on Codex is a committed
- * file at `<repo>/.agents/skills/`, which is Codex's OWN mechanism for a project skill — it reaches
- * the model in that repo and nowhere else with no plugin, no marketplace and no trust entry — and
- * the global root is `$CODEX_HOME`, which on a clean machine is `~/.codex` (D14). `~/.agents/skills`
- * also reaches the model and is deliberately not this: uninstall and doctor have to agree with
- * where Codex actually reads.
- *
- * THIS STEP SAID `agents/config.ts` FROM 2026-08-04 UNTIL THIS CHANGE — a path
- * under a directory an install creates at neither root, and the one line of the
- * dialog nothing asserted on. The docs page `editor/install-and-share.md` has
- * named the config pair's real home the whole time; D11 is the ruling to make
- * the two agree, taken while the folder itself was being renamed.
- *
- * WRITTEN OUT, WHERE `output-preview.ts` IMPORTS THE SAME NAME FROM
- * `@workspace/compile`, AND THE DIFFERENCE IS MEASURED RATHER THAN A PREFERENCE.
- * This dialog is on the static graph; the preview is reached through `import()`
- * and stays off it. A single import of that package from here makes its whole
- * barrel statically reachable — `packages/compile` has no `sideEffects: false`
- * to shake it, and `vite.config.ts`'s `compile` chunk group is ranked LAST
- * precisely so the chunk stays lazy — which `scripts/first-paint-budget.ts`
- * refuses:
- *
- *   First paint is 490.0 KB gzipped, 146.0 KB over the 344.0 KB budget.
- *     assets/compile-De6xxjYT.js — 124.7 KB
- *
- * (`bunx vite build` in apps/editor, 2026-09-20. The build fails there with
- * spa-fallback-shell's message rather than that one — see the note below.)
- *
- * 124.7 KB on every first paint to avoid re-typing one path is the wrong trade,
- * and the rest of the table is written out for the same reason. What the copy
- * costs is that it does not move on its own, which is what the two pins are
- * for: `e2e/specs/install-dialog.spec.ts` holds the Claude row and
- * `e2e/specs/codex-provider.spec.ts` holds the Codex one, each naming the path
- * its provider writes AND the other provider's as an absence — a sentence
- * naming both would satisfy either assertion alone.
- */
+// The folders step 2 names, per provider. Written out rather than imported
+// from `@workspace/compile`: this file is on the static graph, and that import
+// fails `scripts/first-paint-budget.ts`. The e2e specs pin both rows.
 type InstalledPaths = {
-  /** The config pair's own file, inside the source folder a fresh install creates. */
   configTs: string
-  /**
-   * Where an ejected skill's directory is copied to, by the skill's scope.
-   *
-   * ONE FOLDER PER SCOPE, and it was one folder for both until this change: the step sent every
-   * ejected skill to the project's `.claude/skills/`, while the CLI copies a global one under the
-   * home directory — and every skill rests at global, so the folder named was wrong for the
-   * configuration nobody had touched.
-   */
   ejectedSkills: Record<(typeof SKILL_SCOPES)[number], string>
-  /** The root everything not in the project goes under. */
   globalRoot: string
-  /**
-   * WHAT A COMPILED SUB-AGENT IS WRITTEN AS, which is not the same file on the two providers.
-   *
-   * It said "sub-agent front-matter" on both until this change, and on Codex that named a file
-   * nothing writes: a Codex sub-agent is an agent role definition in TOML under `.codex/agents/`,
-   * with no frontmatter in it. A reader told to look for frontmatter after a Codex install finds
-   * none and has no way to tell a naming difference from a failed install.
-   *
-   * In the table for the reason the three paths are: a provider added to the control is a missing
-   * key here rather than a fourth sentence somebody has to remember to read.
-   */
   agentFiles: string
 }
 
 const INSTALLED_PATHS = {
   claude: {
-    // eslint-disable-next-line no-restricted-syntax -- importing the name from @workspace/compile puts its 124.7 KB chunk on the first-paint path and fails scripts/first-paint-budget.ts at 490.0 KB against 344.0 KB; the docblock above carries the measurement
+    // eslint-disable-next-line no-restricted-syntax -- a compile import breaks the first-paint budget
     configTs: ".agents-inc/claude/config.ts",
     ejectedSkills: { project: ".claude/skills/", global: "~/.claude/skills/" },
     globalRoot: "~/.claude",
     agentFiles: "sub-agent front-matter",
   },
   codex: {
-    // eslint-disable-next-line no-restricted-syntax -- the same measurement, and the same reason: this file is on the static graph
+    // eslint-disable-next-line no-restricted-syntax -- as above
     configTs: ".agents-inc/codex/config.ts",
     ejectedSkills: { project: ".agents/skills/", global: "~/.codex/skills/" },
     globalRoot: "~/.codex",
@@ -126,7 +64,6 @@ const INSTALLED_PATHS = {
   },
 } as const satisfies Record<Provider, InstalledPaths>
 
-/** A count and its noun, which is singular for one: `1 skill`, `2 skills`. */
 const counted = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? "" : "s"}`
 
@@ -134,10 +71,6 @@ type EjectedCopy = { count: number; folder: string }
 
 const isEjected = (skill: InventorySkill) => skill.install === "eject"
 
-/**
- * What step 2 says is copied rather than linked: one copy per scope that ejects anything, each to
- * its own scope's folder, in the order the panes above list the scopes.
- */
 const ejectedCopies = (
   inventory: InstallInventory,
   folders: InstalledPaths["ejectedSkills"]
@@ -147,11 +80,6 @@ const ejectedCopies = (
     folder: folders[scope],
   })).filter((copy) => copy.count > 0)
 
-/**
- * `ejects 1 skill into ~/.claude/skills/`, and a second copy joined on with `and` when both scopes
- * eject. A configuration that ejects nothing names no folder at all: `0 skills into
- * .claude/skills/` was a sentence about a folder nothing is copied to.
- */
 function EjectClause({ copies }: { copies: EjectedCopy[] }) {
   if (copies.length === 0) return "ejects no skills"
 
@@ -169,12 +97,8 @@ function EjectClause({ copies }: { copies: EjectedCopy[] }) {
   )
 }
 
-// A skill's name in the inventory. An added one's is a button, because this is
-// the list of what is about to be written to the reader's disk and an added
-// skill is the part of it written from somebody else's repository — EDITOR-32's
-// second way in, and the one the EDITOR-03 ruling is really about. The preview
-// opens OVER this dialog rather than replacing it, so the question can be asked
-// without losing the list that prompted it.
+// An added skill comes from someone else's repository, so its name opens its
+// contents, over this dialog.
 function InventoryName({ skill }: { skill: InventorySkill }) {
   const previewSkill = useUiStore((state) => state.previewSkill)
 
@@ -235,9 +159,6 @@ function ScopeGroup({
   )
 }
 
-// The same split on the other pane. Sub-agent front-matter used to be written
-// into the project unconditionally, which made its heading decoration; scope
-// is what turns it into the statement the skills pane's headings already are.
 function AgentScopeGroup({
   label,
   agents,
@@ -261,10 +182,7 @@ function AgentScopeGroup({
       {agents.map(({ agent, baseOnly }) => (
         <div
           key={agent.id}
-          // The footer states how many of these there are, so the rows have to
-          // be countable from outside: the two numbers agreeing is the claim,
-          // and a spec that re-derived the count from the configuration would
-          // compare the bug to itself.
+          // Counted by specs against the footer's number.
           data-slot="inventory-agent"
           className="py-0.5 text-11 text-ink-2"
         >
@@ -282,15 +200,7 @@ function AgentScopeGroup({
   )
 }
 
-/**
- * The sub-agents this provider does not install, named rather than simply absent.
- *
- * The roster keeps both rows and disables them (D18). This pane cannot: it is the list of files
- * about to be written, so a row here for a file that is not written is the disagreement that
- * disabled row exists to prevent. The rows go and the sentence stays — and nothing is drawn at all
- * on Claude, or for a configuration that never pinned one, because an install that left nothing out
- * has nothing to report.
- */
+// Named rather than listed: this pane lists only files about to be written.
 function AgentsLeftOut({ agents }: { agents: InstallInventory["leftOut"] }) {
   if (agents.length === 0) return null
 
@@ -303,13 +213,7 @@ function AgentsLeftOut({ agents }: { agents: InstallInventory["leftOut"] }) {
   )
 }
 
-/**
- * The command with its id picked out in amber — rule 4's "mark what they chose".
- *
- * FOUND IN THE LINE rather than assumed to end it. It was the last word until the provider flag
- * landed after it, and a render that split on the last space then coloured `codex` would have gone
- * on looking right — one amber word on the line either way.
- */
+// Found in the line, not assumed last: the provider flag follows it.
 function MarkedId({ text, id }: { text: string; id: string }) {
   const at = text.indexOf(id)
 
@@ -322,23 +226,14 @@ function MarkedId({ text, id }: { text: string; id: string }) {
   )
 }
 
-// An inventory of what will be written, then the two commands that write it.
-//
-// There is deliberately **no Install button**: installing is a CLI action, so
-// the dialog's job is to tell the user exactly what they are about to get and
-// hand them the command. The only action is Close.
+// No Install button: installing is a CLI action.
 export function InstallDialog({ config }: { config: ConfigSelection }) {
   const dialog = useUiStore((state) => state.dialog)
   const setDialog = useUiStore((state) => state.setDialog)
   const stacks = useCatalogStore((state) => state.stacks)
-  // The marketplace SEATED in this tab, and the only one of the three notions
-  // this line may read: the command below hands over a payload stamped with
-  // `activeMarketplace()`, so naming anything else would describe an install
-  // that is not the one about to happen. Subscribed rather than read once,
-  // because the dialog survives a swap underneath it.
+  // The seated marketplace, which the payload is stamped with. Subscribed: the
+  // dialog survives a swap underneath it.
   const marketplace = useCatalogStore((state) => state.marketplace)
-  // Which provider's tree the sentence below describes. The command carries the
-  // provider to the CLI; these are the folders that command then writes.
   const provider = useUiStore((state) => state.provider)
   const paths = INSTALLED_PATHS[provider]
 
@@ -351,10 +246,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
     global: inventory.agents.filter((entry) => entry.scope === "global"),
   }
 
-  // The end of the funnel. There is no Install button to click — installing
-  // is a CLI action — so reaching this dialog is the furthest the web app can
-  // observe someone getting, and the size of the configuration they got there
-  // with is what makes the drop-off before it readable.
+  // The furthest the funnel can observe.
   const open = dialog === "install"
 
   const { command, copied, copy, note, text } = useInstallCommand(config, open)
@@ -366,8 +258,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
       skillCount: stats.skillCount,
       agentCount: stats.agentCount,
     })
-    // Only the transition to open matters; the counts are a snapshot of it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- counts are a snapshot at open
   }, [open])
 
   return (
@@ -457,17 +348,9 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                   </em>
                   .
                 </p>
-                {/* The id is what carries this configuration to the CLI, so
-                    it is the one part of the command the user did not already
-                    know — amber, per rule 4, marks what they chose.
-
-                    `copyable` carries the button semantics and the keyboard
-                    path, so what belongs here is the name and the action. */}
                 <CommandBlock
                   copyable
-                  // The hook's own string, not a second copy assembled here —
-                  // otherwise what is announced and what is copied drift the
-                  // first time the command changes shape.
+                  // The hook's string, so the announced and copied text agree.
                   aria-label={`Copy ${text}`}
                   onClick={() => void copy()}
                 >
@@ -477,12 +360,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                     text
                   )}
                 </CommandBlock>
-                {/* The line under the command, which is also where the id's
-                    absence is explained rather than left as a silently shorter
-                    command. Its words come from the hook, one per ending, so a
-                    refusal a reload would fix is not spelled like the two
-                    nothing fixes (SERVER-04). Always rendered, so the block
-                    never shifts under the cursor the moment it is clicked. */}
+                {/* Always rendered, so the block never shifts when clicked. */}
                 <p
                   className={`pt-1.5 font-mono text-8 font-medium tracking-[.13em] uppercase ${
                     copied ? "text-brand-ink" : "text-muted-foreground"
@@ -490,14 +368,7 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
                 >
                   {note}
                 </p>
-                {/* WHAT HAPPENS AFTER THE COMMAND SUCCEEDS, on the one provider
-                    where success is not the whole story. An untrusted Codex
-                    project install is half live — the skills reach the model,
-                    the sub-agents are ignored in total silence — and silence
-                    is the reason this is on screen rather than left to the
-                    install's own output. Drawn only on Codex: Claude has no
-                    trust step and a sentence about one would be a step nobody
-                    has to take. */}
+                {/* An untrusted Codex project silently ignores sub-agents. */}
                 {provider === "codex" && (
                   <p className="pt-1.5 text-11 leading-[1.5] text-muted-foreground italic">
                     {untrustedProjectNote()}
@@ -510,16 +381,10 @@ export function InstallDialog({ config }: { config: ConfigSelection }) {
 
         <DialogFooter>
           <DialogFooterNote>
-            {/* The sub-agent count is the INVENTORY's length, not
-                `summarize`'s: the pane above lists what this provider writes,
-                and a footer counting the configuration instead said eleven over
-                a list of nine. One derivation, read twice. */}
+            {/* The inventory's count, so it matches the pane above. */}
             {counted(stats.skillCount, "skill")} ·{" "}
             {counted(inventory.agents.length, "sub-agent")} ·{" "}
             {stats.ejectedCount} ejected · change it later with{" "}
-            {/* Whole, because a command is read and typed whole: wrapped, it
-                left `edit` on a line of its own. The prose before it wraps
-                instead. */}
             <em className="whitespace-nowrap text-ink not-italic">
               npx agents-inc edit
             </em>

@@ -2,10 +2,8 @@ import type { Locator, Page } from "@playwright/test"
 
 import { OptionsPanel } from "./options-panel"
 
-// One skill cell. `root` is the selection target — an overlay button that is a
-// SIBLING of the cell's controls (EDITOR-58), carrying the name and
-// `aria-pressed`. `cell` is its container, reached with `..` because a class is
-// not a contract, and every inner control is found from it.
+// `root` is the selection overlay, a sibling of the cell's controls. `cell` is
+// its container, reached with `..` because a class is not a contract.
 export class SkillCell {
   readonly root: Locator
   readonly cell: Locator

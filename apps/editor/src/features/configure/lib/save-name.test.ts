@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { validateSaveName } from "./save-name"
 
-// The server's `nameSchema` cap (apps/server/src/stacks.ts), which also trims first.
+// The server's `nameSchema` cap, which also trims first.
 const MAX = 80
 
 const TAKEN = ["Start from scratch", "Next.js Full-Stack", "Weekday"]

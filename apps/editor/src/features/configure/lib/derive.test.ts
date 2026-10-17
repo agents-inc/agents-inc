@@ -39,8 +39,6 @@ import {
   type DomainView,
 } from "./derive"
 
-// The browser covers that the wiring works; these cover that the sums do.
-
 const SEARCH: ConfigureSearch = {
   domain: null,
   q: "",
@@ -52,8 +50,6 @@ const search = (over: Partial<ConfigureSearch> = {}): ConfigureSearch => ({
   ...over,
 })
 
-// One record per agent, holding all four of its decisions — the pin, the
-// model, the effort, the scope — and any of them may be absent.
 const scratch = (
   skills: Record<string, SkillEntry> = {},
   agents: ConfigSelection["agents"] = {}
@@ -62,7 +58,7 @@ const scratch = (
 // A sub-agent that writes files, and one Codex compiles like any other.
 const WRITING_AGENT = "web-developer"
 
-// A stack with real assignments, so the "unedited" baseline is not trivially empty.
+// Real assignments, so the "unedited" baseline is not trivially empty.
 const STACK = STACKS.find((candidate) => {
   const expansion = expandStack(candidate.id)
   return expansion && expansion.skillIds.length > 2
@@ -86,8 +82,7 @@ const asApplied = (): ConfigSelection => ({
   ),
 })
 
-// A stack member that definitely carries assignments, so the load-state and
-// row-off tests below can never silently sample an agentless skill.
+// Carries assignments, so later tests never sample an agentless skill.
 const FIRST_SKILL = EXPANSION.skillIds.find(
   (id) => (EXPANSION.assignmentsBySkill[id] ?? []).length > 0
 )!
@@ -134,9 +129,8 @@ describe("isStackCustom", () => {
     ).toBe(true)
   })
 
-  // Every one of these is an edit the user would be upset to lose, which is
-  // what the stack-switch confirm keys off. Comparing only the skill *set*
-  // would silently discard the other six.
+  // The stack-switch confirm keys off these; comparing only the skill set
+  // would miss the rest.
   it.each([
     ["install mode", { install: "eject" as const }],
     ["scope", { scope: "project" as const }],
@@ -194,9 +188,7 @@ describe("isStackCustom", () => {
     ).toBe(true)
   })
 
-  // `applyStack` writes its pins and no other agent record, so any other entry
-  // in that map is an edit — a pin in either direction, and equally a model or
-  // an effort, which are now decisions the same map holds.
+  // `applyStack` writes only its pins, so any other agent record is an edit.
   it.each([
     ["pinned off", { on: false }],
     ["pinned on", { on: true }],
@@ -253,7 +245,6 @@ describe("summarize", () => {
     })
   })
 
-  // A row the roster switched off must not install, so it must not count.
   it("ignores disabled assignments everywhere", () => {
     const config = scratch({
       a: skillEntry({
@@ -291,8 +282,7 @@ describe("summarize", () => {
     })
   })
 
-  // A project skill on a global sub-agent is an error to resolve, not an
-  // assignment that does nothing, so it counts.
+  // An error to resolve, not a no-op, so it counts.
   it("counts an assignment the two scopes rule out like any other", () => {
     const config = scratch({
       a: skillEntry({
@@ -312,9 +302,7 @@ describe("summarize", () => {
     })
   })
 
-  // The one number that changes: how many sub-agents have to be moved. Distinct
-  // SUB-AGENTS rather than pairs, because that is the number of clicks it takes
-  // to resolve — two project skills on one global sub-agent is one click.
+  // Distinct sub-agents, not pairs: one click per sub-agent resolves it.
   it("reports no unscoped sub-agents when every scope agrees", () => {
     const config = scratch({
       a: skillEntry({
@@ -347,8 +335,6 @@ describe("summarize", () => {
     expect(summarize(config).unscopedAgentCount).toBe(2)
   })
 
-  // Pinning the sub-agent into the project is one of the two ways out, and it
-  // changes nothing but the error count — everything else was already correct.
   it("clears the count once the sub-agent is pinned to the project", () => {
     const config = scratch(
       {
@@ -368,8 +354,7 @@ describe("summarize", () => {
     })
   })
 
-  // The live global skill keeps the sub-agent on, so zero is not zero for a
-  // second reason.
+  // The live global skill keeps the sub-agent on.
   it("does not count a switched-off row as needing anything", () => {
     const config = scratch({
       a: skillEntry({
@@ -385,8 +370,6 @@ describe("summarize", () => {
     expect(summarize(config).unscopedAgentCount).toBe(0)
   })
 
-  // Nor a sub-agent pinned off: it is excluded from every count on screen and
-  // from the payload, so there is nothing about it left to block.
   it("does not count a pinned-off sub-agent as needing anything", () => {
     const config = scratch(
       {
@@ -478,8 +461,6 @@ describe("selectRosterGroups", () => {
     )
   })
 
-  // The consolidated reviewer bands under meta, not under the domain whose
-  // skill it happens to carry.
   it("bands the reviewer under meta", () => {
     const groups = rosterGroups(
       scratch({
@@ -532,7 +513,6 @@ describe("selectRosterGroups", () => {
     expect(usedBy).toStrictEqual(["web-developer", "reviewer"])
   })
 
-  // The marker says which row is wrong; the agent stays on.
   it("marks a row the two scopes rule out, leaving the sub-agent on", () => {
     const rows = allRows(
       scratch({
@@ -565,7 +545,6 @@ describe("selectRosterGroups", () => {
     ).toBeUndefined()
   })
 
-  // A switched-off row is the user's decision, not a problem to fix.
   it("does not mark a switched-off row", () => {
     const rows = allRows(
       scratch({
@@ -582,7 +561,6 @@ describe("selectRosterGroups", () => {
     expect(row.scopeError).toBeUndefined()
   })
 
-  // An erroring row is still carried, so it is still a use.
   it("lists an erroring row among the skill's uses", () => {
     const rows = allRows(
       scratch(
@@ -607,13 +585,9 @@ describe("selectRosterGroups", () => {
   })
 })
 
-// The second banding: only the key, the label and which agents fall into
-// which band differ from the first.
 describe("selectRosterGroups grouped by scope", () => {
-  // The prefix keeps the key space disjoint from domain ids in the one
-  // `rosterCollapsed` record both modes share.
+  // Disjoint from domain ids in the shared `rosterCollapsed` record.
   const SCOPE_GROUP_KEYS = ["scope:global", "scope:project"] as const
-  // Space, U+00B7 MIDDLE DOT, space. Global first.
   const CLAUDE_LABELS = ["~/.claude · global", "./.claude · project"] as const
   const CODEX_LABELS = ["~/.codex · global", "./.codex · project"] as const
 
@@ -659,7 +633,6 @@ describe("selectRosterGroups grouped by scope", () => {
     expect(idsIn("scope:global")).toHaveLength(everyAgent - 1)
   })
 
-  // Not drawn empty — not drawn. The state every visitor opens on.
   it("omits a destination nobody writes to", () => {
     const groups = rosterGroups(scratch(), "scope")
 
@@ -694,7 +667,6 @@ describe("selectInstallInventory", () => {
     ])
   })
 
-  // Insertion order would reshuffle the pane as skills are toggled.
   it("orders agents by the catalog, not by which skill referenced them first", () => {
     const applied = asApplied()
     const forward = selectInstallInventory(applied, "claude")
@@ -722,9 +694,7 @@ describe("selectInstallInventory", () => {
     expect(inventory.agents[0]!.baseOnly).toBe(true)
   })
 
-  // The pane splits the agents by scope exactly as it splits the skills, so
-  // every agent has to carry where its front-matter lands — resolved, since
-  // the store holds only the agents that were moved off the resting scope.
+  // Resolved: the store holds only agents moved off the resting scope.
   it("carries each agent's resolved scope", () => {
     const inventory = selectInstallInventory(
       scratch(
@@ -744,9 +714,7 @@ describe("selectInstallInventory", () => {
     ).toStrictEqual({ "web-developer": "project", reviewer: "global" })
   })
 
-  // The pane lists what the install writes, and the install is blocked while an
-  // error stands — so the pane is only ever read in a resolvable state. What it
-  // must not do is describe a different configuration from the one on screen.
+  // The pane must describe the configuration on screen, errors included.
   it("lists an agent whose skills the scopes rule out", () => {
     const inventory = selectInstallInventory(
       scratch({
@@ -763,8 +731,6 @@ describe("selectInstallInventory", () => {
     ])
   })
 
-  // And it holds a skill, so it is not a bare agent. `baseOnly` says "this file
-  // has no skills in it", which would be a second thing the pane got wrong.
   it("does not call it base-only — it holds a skill", () => {
     const inventory = selectInstallInventory(
       scratch({
@@ -794,9 +760,8 @@ describe("selectInstallInventory", () => {
   })
 })
 
-// A Codex install drops both summoners, and every shipped stack staffs them.
-// The Claude arm is the control: "Codex installs fewer" is also met by a
-// selector that dropped the whole roster.
+// The Claude arm is the control: a selector dropping the whole roster would
+// also make "Codex installs fewer" pass.
 describe("the sub-agents a provider would actually install", () => {
   const SUMMONERS = ["agent-summoner", "skill-summoner"] as const
 
@@ -809,7 +774,6 @@ describe("the sub-agents a provider would actually install", () => {
     }
   )
 
-  // Sorted on both sides: catalogue order is pinned elsewhere.
   const idsOf = (agents: readonly { id: string }[]) =>
     agents.map((agent) => agent.id).sort()
 
@@ -825,8 +789,6 @@ describe("the sub-agents a provider would actually install", () => {
     ).toStrictEqual([WRITING_AGENT])
   })
 
-  // The dialog has to be able to SAY which two, rather than quietly listing one
-  // fewer row than the roster shows — D18's reasoning arriving one surface over.
   it("names the ones it dropped, and names none on Claude", () => {
     expect(
       idsOf(selectAgentsLeftOut(withBothSummoners, "codex"))
@@ -834,8 +796,7 @@ describe("the sub-agents a provider would actually install", () => {
     expect(selectAgentsLeftOut(withBothSummoners, "claude")).toStrictEqual([])
   })
 
-  // A summoner nobody pinned is not something the install "left out" — it was
-  // never in it. Without this the notice fires on every Codex configuration.
+  // Otherwise the notice fires on every Codex configuration.
   it("names nothing for a summoner that was never on", () => {
     expect(
       selectAgentsLeftOut(
@@ -845,7 +806,6 @@ describe("the sub-agents a provider would actually install", () => {
     ).toStrictEqual([])
   })
 
-  // The install dialog's own list must agree with the preview beside it.
   it("keeps them out of the install inventory on Codex, and in it on Claude", () => {
     const on = (provider: "claude" | "codex") =>
       idsOf(
@@ -858,8 +818,6 @@ describe("the sub-agents a provider would actually install", () => {
     expect(on("claude")).toStrictEqual([...SUMMONERS, WRITING_AGENT].sort())
   })
 
-  // The arithmetic the two surfaces state, over a real stack rather than a
-  // hand-built pair — this is the configuration a visitor actually arrives with.
   it("drops the two summoners out of an applied stack's count", () => {
     const applied = asApplied()
     const onClaude = selectInstalledAgents(applied, "claude")
@@ -889,7 +847,7 @@ describe("selectDomainViews", () => {
     expect(selectDomainViews(empty, SEARCH).length).toBe(CATALOG.domains.length)
   })
 
-  // A pick is a scroll target, not a filter (EDITOR-79).
+  // A pick is a scroll target, not a filter.
   it("renders every domain when one of them is picked", () => {
     const views = selectDomainViews(empty, search({ domain: "web" }))
 
@@ -898,7 +856,6 @@ describe("selectDomainViews", () => {
     )
   })
 
-  // A query reaches past the picked domain (EDITOR-64). The reported case:
   // `meta-config-stack-detect` sits in `shared`, not `meta`.
   it("finds a skill through a query with another domain in the address", () => {
     const id = "meta-config-stack-detect"
@@ -939,9 +896,6 @@ describe("selectDomainViews", () => {
   })
 })
 
-// Incompatibility is the one derivation that reads the whole catalogue at
-// once, and the interesting cases are all several hops from the thing the user
-// clicked — exactly the shape that is unreadable end-to-end and cheap here.
 describe("selectReachability", () => {
   const REACT = "web-framework-react"
   const SVELTE = "web-framework-svelte"
@@ -964,8 +918,6 @@ describe("selectReachability", () => {
     expect(ruledOutBy(REACT).has(SVELTE)).toBe(true)
   })
 
-  // The case `requires` exists for: nothing links React to SvelteKit
-  // directly — `conflictsWith` never leaves its own category. It is
   // SvelteKit → requires Svelte → conflicts with React.
   it("follows a requirement onto the skill built on it", () => {
     expect(ruledOutBy(REACT).has(SVELTEKIT)).toBe(true)
@@ -991,9 +943,7 @@ describe("selectReachability", () => {
     expect(out.has(SVELTE)).toBe(false)
   })
 
-  // The other direction, and the one the rule missed at first: Next.js is
-  // built on React, so choosing it chooses React — and everything React
-  // conflicts with has to go, even though Next.js names none of them.
+  // Choosing Next.js chooses React, so React's conflicts go too.
   describe("what the selection implies", () => {
     it("counts an implied skill as reached", () => {
       expect([...selectReachability(new Set([NEXTJS])).reached]).toContain(
@@ -1017,8 +967,7 @@ describe("selectReachability", () => {
       expect(out.has(NGRX)).toBe(true) // needs Angular
     })
 
-    // "Pinia needs Vue *or* Nuxt" cannot name which, so selecting Pinia must
-    // not silently commit the user to either.
+    // An "or" requirement implies neither side.
     it("implies nothing from an ambiguous requirement", () => {
       const { reached } = selectReachability(new Set([PINIA]))
 
@@ -1063,8 +1012,7 @@ describe("incompatible cells", () => {
     expect(cell.incompatibleReason).toContain("Nuxt")
   })
 
-  // Picking one of these replaces rather than adds, so disabling the rest
-  // would strand the user on their first choice with no way back.
+  // Picking one replaces rather than adds, so the rest stay enabled.
   it("leaves exclusive siblings selectable", () => {
     for (const sibling of [
       "web-framework-vue-composition-api",
@@ -1074,8 +1022,7 @@ describe("incompatible cells", () => {
     }
   })
 
-  // A verdict is about possibility, never presence: Expo needs React Native,
-  // which nothing selected rules out.
+  // A verdict is about possibility, never presence.
   it("leaves a skill selectable while the host it needs is merely unselected", () => {
     const expo = cellFor(withReact, "mobile-framework-expo")!
 
@@ -1083,7 +1030,6 @@ describe("incompatible cells", () => {
     expect(expo.incompatibleReason).toBeUndefined()
   })
 
-  // Both are meta-frameworks, so swapping really is the way between them.
   it("still leaves the implier's own siblings swappable", () => {
     const withNextjs = scratch({
       "web-meta-framework-nextjs": skillEntry({ assignments: {} }),
@@ -1094,8 +1040,7 @@ describe("incompatible cells", () => {
     )
   })
 
-  // Its requirement is unsatisfiable whichever sibling you swap to, so the
-  // sibling exemption must not rescue it.
+  // Unsatisfiable whichever sibling is swapped to.
   it("disables a sibling whose own requirement is out of reach", () => {
     const config = scratch({
       "web-framework-react": skillEntry({ assignments: {} }),
@@ -1120,7 +1065,6 @@ describe("incompatible cells", () => {
   })
 })
 
-// An added skill is a real catalogue entry, with no second code path.
 describe("derivations over an external skill", () => {
   const HOST = CATALOG.skillsById["web-framework-react"]!
   const CATEGORY = HOST.categoryId
@@ -1157,7 +1101,6 @@ describe("derivations over an external skill", () => {
   const cellsIn = (view: DomainView, categoryId: string) =>
     view.categories.find((category) => category.id === categoryId)?.cells ?? []
 
-  // It sits inside a real domain, beside the skills it belongs with.
   it("renders in the category it was filed under", () => {
     const views = selectDomainViews(scratch(), SEARCH)
     const domain = views.find((view) => view.id === DOMAIN)!
@@ -1189,8 +1132,6 @@ describe("derivations over an external skill", () => {
     expect(cells.map((cell) => cell.skill.id)).toStrictEqual([HOUSE_ID])
   })
 
-  // EDITOR-15, in the roster and the install pane: the name comes off the
-  // catalogue now, so no consumer needs a second list passed alongside.
   it("is named by the roster without being handed a second list", () => {
     const rows = rosterGroups(picked())
       .flatMap((group) => group.agents)
@@ -1207,7 +1148,6 @@ describe("derivations over an external skill", () => {
     ])
   })
 
-  // The install pane is a second way into the contents preview (EDITOR-32).
   it("is marked in the install inventory as one whose contents can be read", () => {
     const inventory = selectInstallInventory(picked(), "claude")
 
@@ -1215,13 +1155,10 @@ describe("derivations over an external skill", () => {
   })
 })
 
-// A shared link carries a stranger's files, so they can be read before
-// installing (EDITOR-32). A rendering over the seat, never a fetch.
 describe("an external skill's contents", () => {
   const CATEGORY = CATALOG.skillsById["web-framework-react"]!.categoryId
 
-  // Deliberately NOT in reading order, and SKILL.md deliberately not first: the
-  // order is the fetch's, which is the tree listing's, which is GitHub's.
+  // Deliberately not in reading order, as GitHub's tree listing returns it.
   const SPRAWLING: ExternalSkill = {
     id: externalSkillId(CATEGORY, "Sprawling"),
     displayName: "Sprawling",
@@ -1240,7 +1177,6 @@ describe("an external skill's contents", () => {
 
   const paths = () => toSkillContents(SPRAWLING).files.map((file) => file.path)
 
-  // SKILL.md is what a reader is deciding whether to trust.
   it("opens on SKILL.md however the directory listed it", () => {
     expect(paths()[0]).toBe("SKILL.md")
   })
@@ -1258,17 +1194,12 @@ describe("an external skill's contents", () => {
     ])
   })
 
-  // Verbatim, byte for byte. What is on screen has to be what the CLI would
-  // write, or the preview is reassuring the reader about a different file.
   it("carries each file's text exactly as it was fetched", () => {
     const manifest = toSkillContents(SPRAWLING).files[0]
 
     expect(manifest?.text).toBe(SPRAWLING.files["SKILL.md"])
   })
 
-  // A reader deciding whether to trust content wants to know whose it is. The
-  // whole coordinate — owner, repository and the directory within it — because
-  // one repository holds many skills and the owner is the informative half.
   it("names the coordinate the bytes were read from", () => {
     expect(toSkillContents(SPRAWLING).coordinate).toBe(
       "acme/skills/skills/sprawling"
@@ -1280,8 +1211,6 @@ describe("an external skill's contents", () => {
   })
 })
 
-// A cell's source link follows the SEATED marketplace, whose skills the grid
-// draws (EDITOR-44).
 describe("a catalogue skill's source link", () => {
   const ACME_SKILL = "acme-web-widgets"
 
@@ -1312,9 +1241,7 @@ describe("a catalogue skill's source link", () => {
     )
   })
 
-  // Whatever was typed reaches the seat verbatim — the field takes a pasted
-  // browser URL and the CLI's own `github:` prefix — so the address has to be
-  // read out of it rather than pasted into a template.
+  // The seat holds whatever was typed, so the address is parsed out of it.
   it("reads a marketplace pasted as a browser URL down to its repository", () => {
     seat("https://github.com/acme/skills")
 
@@ -1331,8 +1258,6 @@ describe("a catalogue skill's source link", () => {
     )
   })
 
-  // The catalogue came off that ref, so its skills are the ones on that ref.
-  // `HEAD` would be a different branch's answer to the same question.
   it("follows the ref the marketplace was named with", () => {
     seat("acme/skills#beta")
 
@@ -1341,8 +1266,6 @@ describe("a catalogue skill's source link", () => {
     )
   })
 
-  // An added skill answers to no marketplace at all, so a swap must not move
-  // its address: it is in the repository the index read it from.
   it("leaves an added skill pointing at the repository it came from", () => {
     const HOST = CATALOG.skillsById["web-framework-react"]!
     const outsider: ExternalSkill = {
@@ -1362,7 +1285,6 @@ describe("a catalogue skill's source link", () => {
   })
 })
 
-// The catalogue's count, blind to every filter.
 describe("catalogueSkillCount", () => {
   it("is every skill the catalogue holds", () => {
     expect(catalogueSkillCount()).toBe(
@@ -1370,8 +1292,7 @@ describe("catalogueSkillCount", () => {
     )
   })
 
-  // The assertion that keeps the hinge and the strip honest with each other:
-  // one number over nine, summed the other way round.
+  // Summed the other way round from the implementation.
   it("agrees with the strip's own per-domain counts", () => {
     expect(catalogueSkillCount()).toBe(
       selectDomainTabs().reduce((total, tab) => total + tab.skillCount, 0)

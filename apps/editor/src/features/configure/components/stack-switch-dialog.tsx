@@ -27,8 +27,7 @@ const targetNameOf = (request: StackRequest) => {
   )
 }
 
-// Reached only when the selection holds work that exists nowhere else, since
-// `StackGrid` applies directly otherwise.
+// Only when the selection holds work that exists nowhere else.
 export function StackSwitchDialog() {
   const pending = useUiStore((state) => state.pendingStack)
   const dismiss = useUiStore((state) => state.dismissStackRequest)

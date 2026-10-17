@@ -51,9 +51,7 @@ const sentenceFor = (failure: Failure, typed: string) =>
     ? PROBLEM_SENTENCES[failure](typed.trim())
     : SAVE_NARRATIONS[failure]
 
-// Every name the stack grid draws. The scratch cell answers to both of its.
-// An owed save is renamed in this browser too, so every local name is taken
-// then, drawn or not.
+// An owed save is renamed locally too, so every local name is taken then.
 const useTakenNames = (owed: SavedStack | undefined) => {
   const onGrid = useLocalSavesOnGrid()
   const everyLocal = useSavedStackStore((state) => state.saves)
@@ -70,8 +68,7 @@ const useTakenNames = (owed: SavedStack | undefined) => {
   ]
 }
 
-// The oldest owed save whose name the account already lists, once no other
-// modal is open. The two switch confirms open outside `dialog`.
+// The two switch confirms open outside `dialog`.
 const useOwedToAsk = () => {
   const firstClash = useAccountStore((state) => state.clashes[0])
   const clashing = useSavedStackStore((state) =>
@@ -87,19 +84,13 @@ const useOwedToAsk = () => {
   return anotherModalOpen ? undefined : clashing
 }
 
-/**
- * Names a save: the selection on screen from the rail's Save, or an owed save
- * whose name the account already lists. The shell owns whether it is open and
- * refuses to close while a signed-in save is in flight.
- */
 export function SaveStackDialog({ config }: { config: ConfigSelection }) {
   const dialog = useUiStore((state) => state.dialog)
   const setDialog = useUiStore((state) => state.setDialog)
   const signedIn = useAccountStore((state) => state.session !== null)
   const defer = useAccountStore((state) => state.defer)
   const owed = useOwedToAsk()
-  // Handed to the dialog rather than `autoFocus`-ed, or focus would not go
-  // back to Save on close.
+  // Not `autoFocus`, or focus would not return to Save on close.
   const nameInput = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
 
@@ -135,9 +126,7 @@ export function SaveStackDialog({ config }: { config: ConfigSelection }) {
 
 type Draft = {
   typed: string
-  // On from a failed submit, or from the start for an owed save, then
-  // following every change. Off while a save runs, or the name it just took
-  // would read as taken before the close.
+  // Off while a save runs, or the name it just took would read as taken.
   checking: boolean
   refused: Failure | null
 }
@@ -171,8 +160,7 @@ function SaveStackForm({
   const carryRenamed = useAccountStore((state) => state.carryRenamed)
   const messageId = useId()
   const [draft, setDraft] = useState(() => draftFor(owed))
-  // Reset in place rather than remounted, so focus stays in the field when
-  // the next owed save is asked about.
+  // Reset in place, not remounted, so focus stays in the field.
   const [askingAbout, setAskingAbout] = useState(owed?.id)
   if (askingAbout !== owed?.id) {
     setAskingAbout(owed?.id)

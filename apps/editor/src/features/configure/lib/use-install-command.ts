@@ -13,94 +13,46 @@ import type { ShareRefusal, ShareResult } from "@/lib/api/configs"
 
 const COPIED_DECAY_MS = 2_000
 
-// `init` alone is a valid CLI invocation. That is the fallback when an id
-// cannot be minted: the command still works, it simply does not carry what was
-// configured here.
+// The fallback when no id can be minted: still valid, just carries nothing.
 const BASE_COMMAND = "npx agents-inc init"
 
-// A flag rather than a positional. Nobody types this line — the block copies
-// itself — so brevity buys nothing, while a named flag says what the id is and
-// leaves room to accept a file or a URL later without a second one.
 const ID_FLAG = "--from"
 
-/**
- * Which coding agent to install onto, and the one thing on this line the app chose rather than the
- * visitor's configuration.
- *
- * ONLY EVER WRITTEN FOR A PROVIDER THAT IS NOT THE RESTING ONE. `init --from <id>` installs Claude,
- * so a Claude command carrying the flag would be stating a default — and the flag's whole job here
- * is to say that this install is the other thing.
- *
- * AFTER THE ID, not before it: the id is what the reader is being handed and the provider is a
- * qualifier on it, which is also the order `packages/cli`'s own install fixture pairs them in.
- */
+// Written only for a non-Claude provider, after the id.
 const PROVIDER_FLAG = "--provider"
 
-/**
- * D15: `--provider` IS INVALID WITHOUT `--from`, so the flag cannot ride along on the fallback.
- *
- * `init --provider codex` with no id exits INVALID_ARGS. Appending it to the bare command would hand
- * somebody whose worker is down a line that exits non-zero — so the command stays bare and the
- * absence is EXPLAINED here.
- */
+// `--provider` without `--from` exits non-zero, so the bare command says why.
 const PROVIDER_NEEDS_AN_ID = "a provider needs --from"
 
 export type InstallCommand =
   | { status: "minting" }
   | { status: "ready"; id: string }
-  // The refusal travels rather than collapsing into a bare "failed", for the
-  // reason the Share button's narrations exist (SERVER-04): only some of them
-  // have a remedy, and a surface that cannot tell them apart cannot mention it.
+  // The refusal travels: only some have a remedy worth naming.
   | { status: "failed"; refusal: ShareRefusal }
-  // The worker's write limit, which this dialog spends on every open. Apart
-  // from `failed` because it is the one refusal that ends on its own, and the
-  // note says when.
+  // Apart from `failed`: the one refusal that ends on its own.
   | { status: "limited"; retryAfterSeconds: number }
 
-/**
- * Every ending the line under the command has to speak for.
- *
- * `copied` is here and not on `InstallCommand` because copying is not an
- * outcome of minting — the command is on screen and copyable whether or not an
- * id ever arrived.
- */
 type InstallNote = "minting" | "ready" | "copied" | "limited" | ShareRefusal
 
-/**
- * The whole vocabulary, keyed by ending, so a new one cannot reach the dialog
- * without someone choosing its words — `Record` makes an unlisted member a type
- * error rather than a blank line.
- *
- * It lives beside the hook rather than beside the markup for the same reason
- * the Share button's does: a table at the render site can only see the coarse
- * status, which is exactly how three refusals came to share one sentence and
- * how the one a reload fixes came to read like the two nothing fixes.
- */
+// Keyed by ending, so a new one cannot reach the dialog without its own words.
 export const COMMAND_NOTES = {
   minting: "preparing your id",
   ready: "click to copy",
   copied: "copied",
-  // Re-opening the dialog mints again and is refused again, so without the
-  // reload no id ever arrives.
   "out-of-date": "out of date — reload the page for an id",
   refused: "id unavailable — this command starts over in the editor",
   unreachable: "offline — this command starts over in the editor",
-  // The only ending whose remedy is behind this dialog rather than in front of
-  // it. Re-opening mints again and is refused again, so the sentence has to
-  // send the reader back to the rows.
   unwritable: "a sub-agent needs project scope — close and fix the marked rows",
-  // The only ending the worker finishes: `limitReachedNote` appends the window
-  // it names.
+  // `limitReachedNote` appends the worker's window.
   limited: "rate limit reached — try again in",
 } as const satisfies Record<InstallNote, string>
 
 const SECONDS_PER_MINUTE = 60
 
-/** `1 second`, `30 seconds`. */
 const counted = (count: number, unit: string) =>
   `${count} ${unit}${count === 1 ? "" : "s"}`
 
-/** Seconds under a minute, whole minutes from there — rounded up, so nobody is sent back early. */
+// Minutes round up, so nobody is sent back early.
 const waitOf = (seconds: number) =>
   seconds < SECONDS_PER_MINUTE
     ? counted(seconds, "second")
@@ -109,14 +61,10 @@ const waitOf = (seconds: number) =>
 export const limitReachedNote = (retryAfterSeconds: number) =>
   `${COMMAND_NOTES.limited} ${waitOf(retryAfterSeconds)}`
 
-// What was minted, and for which configuration. Storing the key alongside the
-// result is what lets both `command` and `copied` be *derived* rather than
-// reset: changing the selection makes the old id stale by comparison, with no
-// effect writing state back on the way through.
+// Keyed, so `command` and `copied` are derived: a moved selection goes stale by
+// comparison, with no effect resetting state.
 type Minted = { key: string; result: ShareResult }
 
-// Whether what is on screen was minted for what is on screen. Anything else is
-// still in flight, including a result for a selection that has since moved.
 const toCommand = (minted: Minted | null, key: string): InstallCommand => {
   if (minted?.key !== key) return { status: "minting" }
 
@@ -129,9 +77,6 @@ const toCommand = (minted: Minted | null, key: string): InstallCommand => {
   return { status: "failed", refusal: result.refusal }
 }
 
-// The refusal's own words first, because what went wrong is the same either
-// way — and then, on a provider the bare command does not install, what the
-// command consequently cannot carry.
 const withoutAnId = (why: string, provider: Provider) =>
   provider === "claude" ? why : `${why} · ${PROVIDER_NEEDS_AN_ID}`
 
@@ -157,7 +102,6 @@ const noteFor = (
   }
 }
 
-/** The whole line the block hands over, which is what the clipboard gets. */
 const commandText = (command: InstallCommand, provider: Provider): string => {
   if (command.status !== "ready") return BASE_COMMAND
 
@@ -165,40 +109,18 @@ const commandText = (command: InstallCommand, provider: Provider): string => {
   return [BASE_COMMAND, ID_FLAG, command.id, ...providerArgs].join(" ")
 }
 
-// The install dialog's whole job is handing over a command that carries the
-// configuration, which means the configuration has to exist server-side first.
-// Minting happens when the dialog opens rather than when the command is
-// copied: the id has to be on screen to be read, so it cannot wait for a
-// click. The worker skips the write when the content-addressed key already
-// exists, so re-opening the same configuration costs a read rather than one of
-// the free tier's 1000 daily writes.
+// Mints on open, not on copy: the id has to be on screen to be read.
 export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
-  // Read here rather than taken as an argument: the provider changes the
-  // command and nothing else the caller holds, and the dialog that renders this
-  // line has no other use for it. It is deliberately NOT in `serialized` below
-  // — the payload is the same bytes on either provider (ruling 3), so pressing
-  // the control must not re-mint and must not produce a second id.
+  // Not in `serialized`: the payload is identical on either provider, so a
+  // switch must not re-mint.
   const provider = useUiStore((state) => state.provider)
-  // The seat's own two facts, subscribed rather than read once. A payload is
-  // stamped with the marketplace it can be resolved against and the version it
-  // was minted on, and `toSeedPayload` takes both off whichever catalogue is
-  // seated — so the serialisation below depends on them exactly as it depends
-  // on the selection.
   const marketplace = useCatalogStore((state) => state.marketplace)
   const version = useCatalogStore((state) => state.version)
 
-  // The selection's identity changes on every render; its *serialisation* does
-  // not. Keying on the string is what stops the dialog re-minting in a loop.
+  // Keyed on the string, or the dialog would re-mint in a loop.
   const serialized = useMemo(
     () => JSON.stringify(toSeedPayload(config)),
-    // The two above are load-bearing and are deliberately not read here.
-    // `toSeedPayload` reads the seat itself — as every derivation that touches
-    // a catalogue does — so these dependencies are what re-mint the payload
-    // when the catalogue underneath it is swapped. Without them a marketplace
-    // that moved under an unchanged selection stamps the ref the ids were
-    // picked on rather than the one they will be resolved against, which is
-    // the same shape `ConfigureScreen` names for its own derivations.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-mint when the seated catalogue swaps
     [config, marketplace, version]
   )
 
@@ -209,13 +131,8 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
     if (!open) return
     let stale = false
 
-    // Round-tripping the memo key rather than calling `toSeedPayload` again is
-    // what keeps the sent payload and the cache key provably the same bytes.
-    // The parse is what makes the result a `SeedPayload` — `JSON.parse` returns
-    // `any`, and an assertion would only have claimed the shape. It throws
-    // rather than degrading to `status: "failed"` on purpose: the input is this
-    // module's own serializer output, so a rejection is a bug here, not a
-    // network condition, and the worker would answer 400 for it anyway.
+    // Parsing the memo key keeps the sent payload and cache key the same bytes;
+    // a throw here is a bug in this module, not a network condition.
     void createSharedConfig(
       seedPayloadSchema.parse(JSON.parse(serialized))
     ).then((result) => {
@@ -245,8 +162,7 @@ export const useInstallCommand = (config: ConfigSelection, open: boolean) => {
       await navigator.clipboard.writeText(text)
       setCopiedKey(serialized)
     } catch {
-      // Permissions or focus refused it. The command is on screen and
-      // selectable either way, so there is nothing to recover from.
+      // Refused; the command is still on screen to select.
     }
   }
 

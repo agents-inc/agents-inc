@@ -21,12 +21,9 @@ import {
 
 import type { Page } from "@playwright/test"
 
-// Applying a saved stack: the `remote` arm fetches a payload by pointer, the
-// `saved` arm reads one from this browser. Either way the payload names its
-// marketplace, so both owe what a share link gets (EDITOR-59): seat that
-// catalogue first, park behind the marketplace dialog when it will not load,
-// and name what it could not place. Each test builds its own `ConfigurePage`
-// so stubs land before first paint.
+// Either arm's payload names its marketplace, so both owe what a share link
+// gets: seat it first, park when it will not load, and name what it could not
+// place.
 
 // Only the marketplace fixture ships it.
 const ACME_SKILL = "Acme Widgets"
@@ -137,7 +134,7 @@ test.describe("an account's saved stack", () => {
     )
   })
 
-  // EDITOR-16's words, at this door too.
+  // Names what it could not place, at this door too.
   test("names the ids the seated catalogue could not place", async ({
     page,
   }) => {

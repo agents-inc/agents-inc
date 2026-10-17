@@ -44,9 +44,8 @@ const fitOfLabel = (button: HTMLElement) => {
   }
 }
 
-// EDITOR-08. A global sub-agent cannot carry a project-scoped skill: it is an
-// error to resolve (Install and Share blocked, one click on the sub-agent's
-// scope fixes it), never a selection refused.
+// A global sub-agent cannot carry a project skill: an error to resolve, never a
+// selection refused.
 test.describe("a project skill on a global sub-agent", () => {
   test("marks the roster row and says what to do", async ({ configure }) => {
     const skill = configure.skillIn(web, CATEGORY, REACT)
@@ -270,8 +269,8 @@ test.describe("a shared link holding the pair", () => {
   })
 })
 
-// Save is the one door left open (EDITOR-08). Signed in it mints, and
-// `createSharedConfig` refuses the pair before the POST (CLI-851).
+// Save is the one door left open. Signed in it mints, and `createSharedConfig`
+// refuses the pair first.
 test.describe("a signed-in save of the pair", () => {
   test("refuses it before the POST, and says so in the dialog", async ({
     page,
@@ -291,7 +290,7 @@ test.describe("a signed-in save of the pair", () => {
 
     await expect(dialog.alert).toHaveText(SAVE_SCOPE_CONFLICT)
     await expect(dialog.nameInput).toHaveValue("Weekday")
-    // Both logs: no mint, and no row pointing at nothing (EDITOR-66).
+    // Both logs: no mint, and no row pointing at nothing.
     expect(posted).toStrictEqual([])
     expect(created).toStrictEqual([])
   })

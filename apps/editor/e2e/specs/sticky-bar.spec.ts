@@ -31,7 +31,7 @@ const NO_FILL = "rgba(0, 0, 0, 0)"
 const TYPED_TEXT = "rgb(36, 35, 32)"
 const PLACEHOLDER_TEXT = "rgb(106, 103, 92)"
 
-// Owner 2026-10-11, over v6's 26px.
+// Over v6's 26px.
 const STUCK_TAB_REM = 3
 // v6 `.barwrap.stuck .barband`: 18px above and below a 34px row.
 const STUCK_BAND_DESIGN_PX = 70
@@ -281,8 +281,8 @@ test.describe("sticky filter bar", () => {
     await expect(configure.filterBand).toHaveCSS("background-color", DARK_BAND)
   })
 
-  // Sticking is a scroll position, not an instruction (owner ruling
-  // 2026-08-09): the bar never takes the caret.
+  // Sticking is a scroll position, not an instruction: the bar never takes the
+  // caret.
   test("takes no focus as it sticks", async ({ configure }) => {
     await stick(configure)
 
@@ -328,7 +328,7 @@ test.describe("sticky filter bar", () => {
     expect(await configure.isBarStuck()).toBe(true)
   })
 
-  // Design 84a: the filled block becomes an outlined one on the dark band.
+  // The filled block becomes an outlined one on the dark band.
   test("add-skill trades its fill for a hairline once stuck", async ({
     configure,
   }) => {
@@ -447,7 +447,7 @@ test.describe("the domain strip once the bar is stuck", () => {
     expect(strip.width).toBeCloseTo(bar.width, 0)
   })
 
-  // Owner 2026-10-11: only the fill and hairline bleed.
+  // Only the fill and hairline bleed.
   test("keeps its first and last tab where they rest, inside the page padding", async ({
     configure,
   }) => {

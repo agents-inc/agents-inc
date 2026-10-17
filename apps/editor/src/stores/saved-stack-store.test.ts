@@ -29,7 +29,6 @@ const payload = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-// The default payload, typed as the store takes it.
 const valid = (): SeedPayload => seedPayloadSchema.parse(payload())
 
 const entry = (name: string, over: Record<string, unknown> = {}) => ({
@@ -119,7 +118,7 @@ describe("the saved stacks' slot", () => {
     expect(store.persist.getOptions().name).toBe(SLOT)
   })
 
-  // No back-compat: the v1 slot's payloads are refused anyway.
+  // The v1 slot is not read.
   it("ignores a stack under the retired single-slot key", async () => {
     const held = new Map([
       [
@@ -187,7 +186,7 @@ describe("save", () => {
     )
   })
 
-  // EDITOR-74: an id derived from the name collides the moment names repeat.
+  // An id derived from the name collides the moment names repeat.
   it("mints a fresh random id per save", () => {
     useSavedStackStore.getState().save("A", valid())
     useSavedStackStore.getState().save("B", valid())

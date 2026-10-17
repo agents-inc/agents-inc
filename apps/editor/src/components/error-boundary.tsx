@@ -3,11 +3,8 @@ import { Button } from "@workspace/ui/components/button"
 
 import { reportError } from "@/lib/observability/report"
 
-// React offers no hook for this — catching a render error still requires a
-// class. It is the only one in the app for that reason.
-//
-// Without it, a throw anywhere in a derivation unmounts the whole tree and
-// leaves a white page: no message, no reload affordance, and nothing reported.
+// Catching a render error still requires a class; without it a throw leaves a
+// white page.
 type Props = { children: ReactNode }
 type State = { failed: boolean }
 
@@ -25,10 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.failed) return this.props.children
 
-    // Reloading is the only honest action offered: the configuration lives in
-    // localStorage and survives the crash, which is what the second line
-    // exists to say. Anything more would be inventing recovery the app cannot
-    // actually perform.
+    // Reload is the only recovery: the configuration survives in localStorage.
     return (
       <main className="grid h-svh place-items-center bg-page">
         <div className="flex flex-col items-center gap-4">

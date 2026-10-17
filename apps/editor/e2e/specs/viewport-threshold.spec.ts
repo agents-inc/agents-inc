@@ -3,10 +3,8 @@ import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
 
 const { web } = DOMAINS
 
-// The app's one viewport threshold, 1500px in `src/lib/viewport.ts`, from both
-// sides. Written a second time here on purpose: a spec that asked the app for
-// its threshold would pass with the threshold anywhere. 1400 sits under it and
-// over the page's 1200px floor.
+// The 1500px threshold from both sides, written again on purpose: asking the
+// app for it would pass anywhere. 1400 sits under it and over the 1200px floor.
 const WIDE = { width: 1600, height: 1000 }
 const NARROW = { width: 1400, height: 1000 }
 

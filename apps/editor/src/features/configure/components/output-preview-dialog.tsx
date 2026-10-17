@@ -27,41 +27,11 @@ import type { Provider } from "@workspace/compile"
 import type { SeedPayload } from "@workspace/matrix"
 import type { KeyboardEvent } from "react"
 
-/**
- * WHAT AN INSTALL WRITES, BEFORE ANYTHING IS WRITTEN.
- *
- * Two roots in one tree — `~/` and `./` — because scope separates itself:
- * flipping a sub-agent's scope word in the roster visibly moves its `.md` from
- * one root to the other, with no tab bar and no breadcrumb doing any of the
- * work. The header IS the breadcrumb, and that is the whole of the decision and
- * its stated cost.
- *
- * ── The rendering-safety decision, arriving in a second dialog ────────────
- *
- * `skill-contents-dialog.tsx` decided once that a stranger's bytes reach the
- * screen as text: no markdown renderer, no sanitiser, and no raw-HTML escape
- * hatch anywhere on the path. Syntax highlighting is the one change that could
- * have broken it — the markup-returning half of Shiki's API returns a string,
- * and there is exactly one way to put a string of markup on screen — so the
- * pane renders `{ content, color }` objects as ordinary React children instead,
- * and a stranger's file has no grammar run over it at all. Both names are
- * asserted absent from this file, by name, in its own spec.
- *
- * ── What is behind `import()`, and why ────────────────────────────────────
- *
- * Neither the model nor the highlighter may be reached statically from here.
- * The vendored agent corpus, the Liquid engine and Shiki are the three heaviest
- * things this feature adds and every one of them is wanted only behind a click;
- * this component is on the first-paint path, so a static import of either
- * module would put all three there. `output-preview-dialog.test.ts` is the gate,
- * and it covers the transitive case a grep of the imports above could not.
- */
+// A stranger's bytes render as React text children, never as markup. The model
+// and highlighter stay behind `import()`; the spec gates the static graph.
 
-// Files an install writes, ejected directories, the release the corpus was
-// vendored at, and the sentence that says what all of that is a preview OF.
 const FOOTER_SEPARATOR = " · "
 
-// The design's flush edge and one step per level: `padding-left: 14 + depth * 13`.
 const ROW_INDENT_PX = 14
 const ROW_STEP_PX = 13
 
@@ -72,23 +42,10 @@ const ARROW_STEP: Record<string, number | undefined> = {
 
 const ROW_SELECTOR = '[data-slot="preview-row"]'
 
-/**
- * Safari shipped `requestIdleCallback` far later than the browsers this app was
- * measured on, so a macrotask stands in where it is missing. The stand-in's job
- * is to be off the render path rather than to be genuinely idle.
- */
 const IDLE_FALLBACK_MS = 200
 
-/**
- * Run when the page has nothing better to do, and answer how to call it off.
- *
- * The `typeof` test is a runtime one that the DOM types say is unnecessary:
- * `lib.dom` declares `requestIdleCallback` on `Window` unconditionally, so
- * `"requestIdleCallback" in window` narrows the other branch to `never` and the
- * fallback stops compiling. Safari shipped it in 18.4, which is inside this
- * app's target — Vite 8 defaults to baseline-widely-available and nothing here
- * overrides it — so the branch the types call dead is one real visitors take.
- */
+// The DOM types call this check unnecessary, but Safari before 18.4 lacks
+// `requestIdleCallback` and is in the build target.
 function whenIdle(run: () => void): () => void {
   if (typeof window.requestIdleCallback === "function") {
     const idle = window.requestIdleCallback(run)
@@ -103,29 +60,8 @@ function whenIdle(run: () => void): () => void {
   }
 }
 
-/**
- * The two heaviest chunks behind the preview, fetched once the page has nothing
- * better to do — and only for a configuration there is something to preview OF.
- *
- * BOTH HALVES OF THAT WERE UNTRUE AND THE DOCBLOCK CLAIMED THE FIRST ANYWAY.
- * This was a bare `useEffect(…, [])` on a component the roster mounts
- * unconditionally, so every visitor fetched the vendored corpus, the Liquid
- * engine, Shiki and its three grammars — the `compile` chunk at 186 KB gzipped
- * plus six vendor chunks, 290 KB in all on 2026-08-26 — including one who had
- * selected nothing and whose entry point was disabled. `live` is the same rule
- * that disables the entry point, and the idle callback is the one the previous
- * note described and the code did not have.
- *
- * The model is deliberately NOT warmed here. `useOutputPreview` imports it
- * immediately for exactly the configurations this hook now fires for, so
- * warming it a beat later could only ever be a no-op. The corpus IS named,
- * because the model reaches it through a second `import()` of its own and would
- * otherwise start fetching only once the model's chunk had arrived — measured
- * against a cold dev server at ~500ms for the model and ~300ms for the corpus,
- * which is 800ms of empty sheet in series and 500ms in parallel. What this
- * component may not reach is its STATIC graph, and its own spec is the gate on
- * that.
- */
+// Prefetches the heavy chunks at idle, only once there is something to preview.
+// The corpus is named because the model reaches it through a second `import()`.
 function useWarmPreview(live: boolean) {
   useEffect(() => {
     if (!live) return
@@ -147,31 +83,16 @@ type PreviewState =
 const failureMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
-/**
- * The preview for a configuration, prepared before it is asked for.
- *
- * It is built as soon as the entry point is live rather than when the dialog
- * opens, and that is a decision about the CTA rather than an optimisation: the
- * design's reason for putting this above Install is "you preview, then you
- * install", and a step that opens onto a blank sheet while a chunk downloads is
- * not a step. The work is one lazy import and a handful of Liquid renders, and
- * it is thrown away and redone whenever the configuration moves.
- */
+// Built as soon as the entry point is live, so the dialog never opens blank.
 function useOutputPreview(
   payload: SeedPayload,
   provider: Provider,
   live: boolean
 ): PreviewState {
-  // Keyed by the payload it was built for, so "still building" is DERIVED from
-  // the two rather than written into state by the effect. A `setState` in an
-  // effect body is a cascading render, and it would also let an older build
-  // that resolved late overwrite a newer one.
+  // Keyed by its inputs so "loading" is derived, not set in the effect.
   const [built, setBuilt] = useState<{
     payload: SeedPayload
-    // Keyed by the provider as well as the payload, because the provider is not
-    // IN the payload (ruling 3) and the tree it draws is a different tree: two
-    // builds of the same selection on either provider would otherwise read as
-    // the same build and the second would never be asked for.
+    // The provider is not in the payload but changes the tree.
     provider: Provider
     state: PreviewState
   } | null>(null)
@@ -208,10 +129,7 @@ async function buildState(
       preview: await buildOutputPreview(payload, provider),
     }
   } catch (error) {
-    // A payload the CLI would refuse — a project-scoped skill on a sub-agent
-    // resting at global — throws in the decode rather than drawing a quieter
-    // configuration than the one on screen. The refusal names every unwritable
-    // pair, so it is shown rather than swallowed.
+    // A payload the CLI would refuse throws; its message is shown.
     return { status: "failed", message: failureMessage(error) }
   }
 }
@@ -220,30 +138,17 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
   const dialog = useUiStore((state) => state.dialog)
   const setDialog = useUiStore((state) => state.setDialog)
 
-  // The same rule the entry point is disabled by: nothing selected is nothing
-  // to write, so there is nothing to prepare and nothing to fetch either.
   const live = summarize(config).skillCount > 0
 
   useWarmPreview(live)
 
-  // The seated catalogue, subscribed rather than read once. Loading a
-  // marketplace that carries every picked skill moves nothing in `config`, yet
-  // the payload is stamped with the marketplace and the preview is drawn
-  // against the catalogue — so without this the preview built before the load
-  // is the one shown after it.
   const seated = useCatalogStore((state) => state.matrix)
   const payload = useMemo(
     () => toSeedPayload(config),
-    // `seated` is load-bearing and is deliberately not read here.
-    // `toSeedPayload` and the preview both read the seat themselves, as every
-    // derivation that touches a catalogue does, so this dependency is what
-    // mints a new payload — and with it a new preview — when the catalogue
-    // underneath an unchanged selection is swapped.
+    // `seated` is unread but remints the payload when the catalogue swaps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, seated]
   )
-  // Beside the payload rather than inside it: the provider decides which tree
-  // an install writes and never travels on the wire.
   const provider = useUiStore((state) => state.provider)
   const state = useOutputPreview(payload, provider, live)
 
@@ -257,12 +162,7 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
       onOpenChange={(next, details) => {
         if (next) return
 
-        // `esc` STEPS OUT OF FULLSCREEN BEFORE IT CLOSES — one press each, in
-        // that order, because a maximised sheet is a place you are in and the
-        // first press is a reader asking to leave it rather than to leave the
-        // preview. One branch on the library's own event rather than a document
-        // listener racing it: a second listener would have to guess whether the
-        // dialog was going to handle the same key.
+        // The first `esc` leaves fullscreen; the second closes.
         if (fullscreen && details.reason === "escape-key") {
           details.cancel()
           exitFullscreen()
@@ -272,11 +172,6 @@ export function OutputPreviewDialog({ config }: { config: ConfigSelection }) {
         setDialog("none")
       }}
     >
-      {/* 760px at rest. `wide` is 620px, which is the widest the shell
-          otherwise goes, and this sheet holds a 250px column plus a file.
-          Fullscreen is the answer to the code pane being ~60 characters here,
-          which is narrow enough that generated `config.ts` lines wrap and stop
-          looking like the file they claim to be. */}
       <DialogContent fullscreen={fullscreen} className="w-[47.5rem]">
         {open && <Preview state={state} />}
       </DialogContent>
@@ -294,10 +189,7 @@ function Preview({ state }: { state: PreviewState }) {
 
   const preview = state.status === "ready" ? state.preview : null
   const nodes = preview?.roots.flatMap((root) => root.nodes) ?? []
-  // A path that no longer names a row is the normal case, not an error: the
-  // tree is rebuilt from live state every time it is opened, so a scope flip
-  // relocates rows between one opening and the next. Falling back beats
-  // blanking, which would read as an empty file.
+  // A stale selection is normal (scope flips move rows); fall back to the default.
   const selected =
     nodes.find((node) => node.id === selection) ??
     nodes.find((node) => node.id === preview?.defaultSelectionId)
@@ -311,6 +203,7 @@ function Preview({ state }: { state: PreviewState }) {
     const rows = [
       ...event.currentTarget.querySelectorAll<HTMLElement>(ROW_SELECTOR),
     ]
+    // Identity comparison only; the element type is irrelevant.
     const from = rows.indexOf(document.activeElement as HTMLElement)
     const next = Math.min(Math.max(from + step, 0), rows.length - 1)
     rows[next]?.focus()
@@ -327,13 +220,9 @@ function Preview({ state }: { state: PreviewState }) {
         }
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
-        // The design's second door onto the same act. It costs one attribute
-        // and reaches the reader who tries it before looking for a control.
         onDoubleClick={toggleFullscreen}
       />
 
-      {/* Each column scrolls on its own: a long file must not carry the tree
-          off the top of the sheet with it. */}
       <DialogPanes className="min-h-[26rem] overflow-hidden">
         <DialogPane
           side="tree"
@@ -341,17 +230,8 @@ function Preview({ state }: { state: PreviewState }) {
           role="tree"
           aria-label="Files this configuration writes"
           onKeyDown={moveFocus}
-          // `scrollbar-gutter` plus `overflow-x: hidden` plus each row's
-          // `padding-right` are one decision in three parts: the state labels
-          // clear the gutter, and a long filename ellipsizes rather than
-          // widening the column.
           className="[scrollbar-gutter:stable] overflow-x-hidden overflow-y-auto px-0 py-2.5"
-          // THE `/16` IS NOT DECORATION. The store holds DESIGN pixels — the
-          // unit every dimension in this app is written in — and `:root`
-          // carries a sizing knob that scales rem. Writing the number as CSS
-          // pixels would freeze this one column out of proportion with the row
-          // height, the font and the indent inside it, at every knob setting
-          // but 100%.
+          // The store holds design pixels; rem keeps the root sizing knob working.
           style={{ width: `${treeWidth / 16}rem` }}
         >
           {preview?.roots.flatMap((root, rootIndex) =>
@@ -368,8 +248,6 @@ function Preview({ state }: { state: PreviewState }) {
           )}
         </DialogPane>
 
-        {/* The real tension in this dialog, given a handle: long paths and long
-            generated lines competing for one width. */}
         <DialogPaneSplitter width={treeWidth} onWidth={setTreeWidth} />
 
         <ContentPane node={selected} failure={state} />
@@ -385,13 +263,7 @@ function Preview({ state }: { state: PreviewState }) {
   )
 }
 
-/**
- * The header's marker is binary, and its vocabulary is disjoint from the tree's:
- * `reference only` appears here and is never a row label, and `new` / `plugin` /
- * `eject` appear on a row and never here. A plugin node is where the difference
- * is load-bearing — the row says how it installs, the header says what the pane
- * is showing.
- */
+// Deliberately not the row's label vocabulary.
 const markerFor = (node: PreviewNode) =>
   node.marker === "plugin" ? "reference only" : "new"
 
@@ -406,26 +278,12 @@ const rankOf = (node: PreviewNode): keyof typeof NAME_CLASS => {
   return node.marker === null ? "directory" : "file"
 }
 
-/** A row's place among the siblings sharing its parent, one-based, as ARIA counts. */
 type RowPosition = { index: number; total: number }
 
-/** The key the roots themselves are grouped under — they have no parent row. */
 const NO_PARENT = ""
 
-/**
- * Where every row sits among its own siblings.
- *
- * `aria-level` alone is half a tree. These rows are DOM siblings — one flat run
- * of buttons, with `padding-left` doing all the nesting — so nothing structural
- * says how many rows share a level or which one this is, and ARIA requires
- * `aria-posinset` and `aria-setsize` alongside `aria-level` for exactly that
- * shape. Without them a screen reader announces the depth and nothing about how
- * far through the depth the listener has got.
- *
- * A row's parent is the nearest row above it one level shallower, which is why
- * this cannot group consecutive runs: `agents/` and `skills/` are siblings with
- * `web-developer.md` sitting between them.
- */
+// Rows are flat DOM siblings, so ARIA needs explicit posinset/setsize. A row's
+// parent is the nearest shallower row above it, not its consecutive run.
 function siblingPositions(
   nodes: readonly PreviewNode[]
 ): Map<string, RowPosition> {
@@ -471,7 +329,6 @@ function Row({
         "aria-setsize": position.total,
       })}
       aria-selected={selected}
-      // One tab stop for the whole tree; the arrows move within it.
       tabIndex={selected ? 0 : -1}
       data-slot="preview-row"
       data-path={node.id}
@@ -491,8 +348,6 @@ function Row({
         {node.name}
       </span>
       {node.marker !== null && (
-        // Amber for `eject` alone, which is the plugin/eject decision made
-        // visible: it means the user chose to own a copy.
         <span
           className={`ml-auto flex-none pl-2.5 font-mono text-7_5 font-normal ${
             node.marker === "eject" ? "text-brand-ink" : "text-roster-empty"
@@ -505,20 +360,11 @@ function Row({
   )
 }
 
-/** The file as its own lines, before the highlighter has anything to say. */
 const uncoloured = (body: string): PreviewToken[][] =>
   body === "" ? [] : body.split("\n").map((line) => [{ content: line }])
 
-/**
- * The selected file's bytes, one element per line.
- *
- * Painted in two passes on purpose. The first is the file's own text, rendered
- * synchronously, so the pane never shows an empty sheet for a file that has
- * one; the second replaces it with the highlighter's tokens when they arrive.
- * That is also the degrade path B4.3 requires — a Shiki chunk that never loads
- * leaves readable text rather than a blank pane, which would be a lie about
- * what the CLI writes.
- */
+// Plain text first, highlighted tokens when they arrive; if Shiki never loads
+// the text stays readable.
 function ContentPane({
   node,
   failure,
@@ -526,12 +372,7 @@ function ContentPane({
   node: PreviewNode | undefined
   failure: PreviewState
 }) {
-  // Every file coloured so far, by path. Clicking back to one already read
-  // paints it in the same commit as the click rather than through the pane's
-  // uncoloured first pass, which is what the tree invites — it is a list of
-  // files to move between. Its lifetime is this dialog's: the component is
-  // mounted only while the sheet is open, and the configuration cannot move
-  // underneath it while it is.
+  // Cached by path for the dialog's lifetime, so revisits paint coloured at once.
   const [coloured, setColoured] = useState<Record<string, PreviewToken[][]>>({})
 
   const body = node?.body ?? ""
@@ -573,8 +414,6 @@ function ContentPane({
       )}
       {lines.map((tokens, line) => (
         <div
-          // Lines have no identity of their own — the file is redrawn whole
-          // whenever the selection moves — so the index is the key.
           key={line}
           data-slot="preview-line"
           className="min-h-[1.0625rem] whitespace-pre-wrap"
@@ -588,13 +427,10 @@ function ContentPane({
   )
 }
 
-/** One run of a line, painted the way its token says. */
 function TokenRun({ token }: { token: PreviewToken }) {
   if (token.placeholder === true)
     return (
-      // The one run painted from the design rather than from the grammar. The
-      // ramp would give it the literal colour, which reads as a chosen value —
-      // and a value nobody has chosen yet is what this run says.
+      // Not the grammar's literal colour, which would read as a chosen value.
       <span data-slot="preview-placeholder" className="text-subtle">
         {token.content}
       </span>
@@ -609,21 +445,6 @@ function TokenRun({ token }: { token: PreviewToken }) {
   )
 }
 
-/**
- * The stat line, and the sentence that says what the whole sheet is a preview OF.
- *
- * None of the things a preview cannot know is papered over here. It cannot see
- * the disk it would install onto, so it is scoped to a clean machine and says so
- * as a claim rather than a hedge; it cannot know whether the install runs from a
- * project directory or from `$HOME`, which write different pairs, so it draws
- * the first — where the Install dialog sends the visitor — and says so; it
- * cannot know the project directory or the relative import to the global source
- * folder, so both are named rather than guessed; it draws against the catalogue
- * on screen, which a machine carrying locally-authored skills does not have; and
- * a compiled sub-agent's first body line is stamped with the release the corpus
- * was vendored at, which is a real difference for a visitor on an older CLI
- * rather than one to hide.
- */
 function Stats({ preview }: { preview: OutputPreview | null }) {
   if (!preview) return null
 

@@ -64,7 +64,7 @@ export const useSavedStackStore = create<SavedStackState>()(
         )
         if (!checked.ok) return checked
 
-        // Random, never the name (EDITOR-74).
+        // Random, never the name.
         const save = { id: crypto.randomUUID(), name: checked.name, payload }
         set({ saves: [save, ...saves] })
         return { ok: true, save }

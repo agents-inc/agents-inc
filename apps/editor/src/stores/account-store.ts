@@ -16,10 +16,9 @@ import {
 } from "@/lib/api/stacks"
 import { useSavedStackStore, type SavedStack } from "@/stores/saved-stack-store"
 
-/** Why a first sign-in could not carry a local save into the account: the mint's refusals or the write's. */
 export type AdoptionRefusal = ShareRefusal | StackRefusal
 
-/** Local save id → why it is not in the account. The grid keeps drawing each one. */
+/** Local save id → why it is not in the account. */
 export type Unadopted = Readonly<Record<string, AdoptionRefusal>>
 
 type Carried =
@@ -29,11 +28,10 @@ type Carried =
 type AccountState = {
   session: Session
   stacks: RemoteStack[]
-  // A fact about each local save, not about the account's list (EDITOR-73):
-  // only adoption or a sign-out may change it.
+  // Changed only by adoption or a sign-out.
   unadopted: Unadopted
-  // Ids of owed saves whose names the account already lists, oldest first.
-  // Each is asked for a new name once per sign-in.
+  // Owed saves whose names the account already lists; each is asked for a new
+  // name once per sign-in.
   clashes: string[]
   // `false` until the first `refresh` lands, so the rail never flashes "Sign in".
   ready: boolean
@@ -51,9 +49,7 @@ type Adoption = {
   clashes: string[]
 }
 
-// The one refusal readable without a request: the worker's own write gate,
-// decided before the POST (CLI-851), so a save it refuses cannot be in the
-// account by any route.
+// The worker's own write gate, checked before the POST.
 const writeContractRefusal = (payload: SeedPayload): AdoptionRefusal | null =>
   installableSeedPayloadSchema.safeParse(payload).success ? null : "unwritable"
 
@@ -94,8 +90,6 @@ const refusalsOf = (attempts: readonly Attempt[]): Unadopted =>
   )
 
 // An empty account is a first sign-in, so every local save is owed to it.
-// After that only the saves a first sign-in could not carry are, since an
-// account with stacks has otherwise been here before.
 const owedOldestFirst = (stacks: readonly RemoteStack[]) => {
   const { saves, owed } = useSavedStackStore.getState()
   const pending =
@@ -110,11 +104,8 @@ const listsNameOf = (stacks: readonly RemoteStack[], save: SavedStack) =>
 const idsOf = (saves: readonly SavedStack[]) => saves.map((save) => save.id)
 
 /**
- * Local saves carried into the account, oldest first, so signing in never
- * looks like losing work. A name the account already lists is never written
- * twice: that save stays owed until it is renamed. Every save's readable
- * refusal is still answered, because "not attempted" is not "adopted"
- * (EDITOR-73).
+ * Carries local saves into the account, oldest first. A name the account
+ * already lists is never written twice; that save stays owed until renamed.
  */
 const adoptLocalSaves = async (stacks: RemoteStack[]): Promise<Adoption> => {
   const owed = owedOldestFirst(stacks)
@@ -170,7 +161,7 @@ export const useAccountStore = create<AccountState>()((set, get) => ({
     (inFlight ??= refreshOnce(set).finally(() => (inFlight = null))),
 
   // Leaves `unadopted` alone: a save of some other selection reaches no local
-  // save (EDITOR-73).
+  // save.
   save: async (name, configId) => {
     const saved = await createStack(name, configId)
     if (saved.ok) set({ stacks: [saved.stack, ...get().stacks] })

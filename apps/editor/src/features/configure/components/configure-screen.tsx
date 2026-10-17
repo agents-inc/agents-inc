@@ -34,8 +34,7 @@ export function ConfigureScreen() {
   const skills = useConfigStore((state) => state.skills)
   const stackId = useConfigStore((state) => state.stackId)
   const agents = useConfigStore((state) => state.agents)
-  // Subscribed only for the re-render on a marketplace swap: `derive.ts` reads
-  // the seated catalogue itself.
+  // Subscribed only to re-render on a marketplace swap.
   const catalog = useCatalogStore((state) => state.catalog)
   const stacks = useCatalogStore((state) => state.stacks)
   const providerCollapsed = useUiStore((state) => state.providerCollapsed)
@@ -53,12 +52,9 @@ export function ConfigureScreen() {
     (state) => state.toggleSkillsCollapsed
   )
 
-  // Seats the catalogue a set of ids was minted against before anything
-  // resolves them.
   useCatalogFirst(search.fromId)
 
-  // Read from the store rather than the hook, because applying a saved stack
-  // seats a catalogue too.
+  // From the store, since applying a saved stack seats a catalogue too.
   const notice = useUiStore((state) => state.catalogueNotice)
   const recovery = useUiStore((state) => state.marketplaceRecovery)
 
@@ -68,16 +64,12 @@ export function ConfigureScreen() {
   )
   const domainViews = useMemo(
     () => selectDomainViews(config, search),
-    // `catalog` is unread but load-bearing: `selectDomainViews` reads the seat
-    // itself, so this dependency re-derives the grid when the catalogue swaps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-derive when the seated catalogue swaps
     [config, search, catalog]
   )
 
-  // Every domain in the catalogue, filtered or not. Not memoised: it reads the
-  // seated catalogue itself, so a memo would go stale on a marketplace swap.
+  // Not memoised: a memo would go stale on a marketplace swap.
   const domainTabs = selectDomainTabs()
-  // What the column is actually drawing, which is what the strip follows.
   const renderedDomains = useMemo(
     () => domainViews.map((view) => view.id),
     [domainViews]
@@ -88,7 +80,6 @@ export function ConfigureScreen() {
   return (
     <>
       <main className="min-w-0 bg-column px-gutter pt-0">
-        {/* What the last catalogue-first act cost, and nothing else. */}
         {notice && (
           <p
             role="alert"
@@ -98,8 +89,7 @@ export function ConfigureScreen() {
           </p>
         )}
 
-        {/* A fold unmounts its step and changes nothing chosen. No
-            `aria-controls`: an unmounted step has no id to point at. */}
+        {/* No `aria-controls`: an unmounted step has no id to point at. */}
         <Hinge
           index="01"
           label="choose your"
@@ -154,19 +144,11 @@ export function ConfigureScreen() {
           </>
         )}
 
-        {/* Room for an options panel hanging past the end of the catalogue,
-            sized by `use-panel-room.ts`. Ahead of the dock, because anything
-            below it lands under the dock. */}
+        {/* Room for an options panel past the catalogue's end. */}
         <div {...{ [PANEL_ROOM]: "" }} />
 
-        {/* `pointer-events-none` here and `pointer-events-auto` on the dock let
-            the strip beside the dock fall through to the cells beneath.
-            Sticky rather than fixed, so it follows the centred column with no
-            measured height.
-
-            Nothing may reserve space below it: a sticky box cannot leave its
-            containing block, so a `pb-*` on `<main>` lands under the dock. The
-            gap above it is the composer's own `mt-*`. */}
+        {/* Clicks beside the dock fall through to the cells. Nothing may pad
+            below it: a sticky box cannot leave its block. */}
         <div className="pointer-events-none sticky bottom-0 z-60">
           <Composer />
         </div>
@@ -178,10 +160,8 @@ export function ConfigureScreen() {
       <InstallDialog config={config} />
       <SaveStackDialog config={config} />
       <AddSkillDialog />
-      {/* Reached from the grid and from Install, so it opens over either. */}
       <SkillContentsDialog />
       <OutputPreviewDialog config={config} />
-      {/* Seating a catalogue through either finishes a parked recovery. */}
       <MarketplaceDialog recovery={recovery} />
       <MarketplaceSwitchDialog recovery={recovery} />
     </>

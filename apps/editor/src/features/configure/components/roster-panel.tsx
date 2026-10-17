@@ -267,8 +267,7 @@ function AgentBlock({
   const provider = useUiStore((state) => state.provider)
   const { agent, on, skills } = row
 
-  // Shown and inert rather than hidden (D18), so the roster and the install
-  // agree about what is installed.
+  // Shown and inert rather than hidden, so the roster and the install agree.
   const leftOut = compilesAgent(provider, agent.id)
     ? undefined
     : leftOutOfCodexReason()
@@ -434,9 +433,7 @@ function PreviewEntryPoint({ disabled }: { disabled: boolean }) {
   )
 }
 
-// Step 05: every sub-agent under stacking sticky bands, by domain or by the
-// destination it writes into, with its assignments inline. Everything is
-// derived; the panel stores only the where-used geometry.
+// Everything is derived; the panel stores only the where-used geometry.
 export function RosterPanel({ config }: { config: ConfigSelection }) {
   const collapsed = useUiStore((state) => state.rosterCollapsed)
   const rosterGroupBy = useUiStore((state) => state.rosterGroupBy)
@@ -569,8 +566,7 @@ export function RosterPanel({ config }: { config: ConfigSelection }) {
           </Button>
           <PreviewEntryPoint disabled={stats.skillCount === 0} />
         </div>
-        {/* One rule, both doors (EDITOR-08): a link minted over a scope
-            conflict would fail on the recipient. */}
+        {/* A link minted over a scope conflict would fail on the recipient. */}
         <Button
           variant="full"
           disabled={refused}

@@ -1,49 +1,25 @@
 import { defineConfig, devices } from "@playwright/test"
 
-// Its own port rather than Vite's default 5173, which is where anyone's
-// `bun run dev` listens — and a suite that reused whatever answered there ran
-// in one tree, tested another, and reported green. So the server is always one
-// this run started: `reuseExistingServer: false` below refuses a port that is
-// already answering, and `--strictPort` makes a busy one a startup failure
-// rather than a quiet move to the next. EDITOR_E2E_PORT moves it, for two runs
-// at once.
+// Own port, never reused, so a run cannot test someone's dev server.
 const PORT = Number(process.env.EDITOR_E2E_PORT ?? 5199)
 const BASE_URL = `http://localhost:${PORT}`
 
-// The editor is a desktop-only screen with a floor of its own, below which the
-// page scrolls sideways rather than reflowing. The floor is stated as
-// `min-w-[68.1818rem]` in `src/routes/route-components.tsx` — 1200px against a
-// root at 110% — but what a window actually bottoms out at is 1223px, because
-// the three grid tracks together (`7rem`, the middle column's `43.75rem`
-// minimum, `18.75rem`) are wider than the declared minimum. Measure rather than
-// trust either figure: `document.documentElement.scrollWidth` at the width in
-// question is the only answer that cannot go stale.
-//
-// The viewport is fixed above the app's one viewport threshold — the 1500px in
-// `src/lib/viewport.ts` — so a spec that sets no viewport of its own draws the
-// WIDE layout: four lattice tracks, and a domain tab carrying its count.
+// Above the 1500px threshold in src/lib/viewport.ts, so specs get the wide
+// layout.
 const VIEWPORT = { width: 1600, height: 1000 }
 
 const CHROMIUM = { ...devices["Desktop Chrome"], viewport: VIEWPORT }
 
-// The appearance suite is not collected here. It runs against a production
-// build rather than this config's dev server, which is not a preference:
-// one-shot captures are not survivable on the dev server, and the reasoning
-// and the measurement are in playwright.visual.config.ts.
+// Runs from playwright.visual.config.ts, against a production build.
 const APPEARANCE_SUITE = "visual.spec.ts"
 
-// Collected by its own project below rather than alongside everything else.
 const AUDIT_SUITE = "a11y.spec.ts"
 
 export default defineConfig({
   testDir: "./e2e/specs",
   fullyParallel: true,
-  // A committed `test.only` should fail the pipeline, not silently skip the suite.
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Absent locally rather than undefined, which is how Playwright is asked for
-  // its own default (half the cores) — CI pins it instead, where two runners'
-  // worth of parallelism is what the machine has.
   ...(process.env.CI ? { workers: 2 } : {}),
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never" }]]
@@ -59,39 +35,17 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      // Both exclusions have to be named here. A project's `testIgnore`
-      // REPLACES the config-level one rather than extending it — `takeFirst`
-      // in playwright/lib/common/config.js — so a config-level entry would
-      // stop applying to this project the moment it declared one of its own.
+      // A project's testIgnore replaces the config-level one.
       testIgnore: [APPEARANCE_SUITE, AUDIT_SUITE],
       use: CHROMIUM,
     },
-    // The audits, one at a time. `analyze()` runs axe inside the page, and axe
-    // builds its own tree of every node it finds there — over this screen's
-    // grid, the largest thing the app draws. An audit per worker therefore
-    // holds several of the suite's heaviest pages in memory at once, and enough
-    // of those together exhaust the machine: the kernel OOM-kills a renderer
-    // (`task=headless_shell` in `dmesg`) and the spec sees `page.evaluate:
-    // Target crashed` on whichever audit was unlucky, which is why it landed
-    // somewhere different every time. REPO-38. Reproduce by deleting the cap
-    // below and running the file over itself:
-    //
-    //   for i in 1 2 3; do bunx playwright test a11y.spec.ts & done; wait
-    //
-    // `workers` caps this project alone — the global limit still governs the
-    // total, and the rest of the suite keeps the pool. A CAP IS THE POINT: it
-    // changes how many audits run together and nothing else, so a renderer that
-    // dies for a real reason still fails its test exactly as it did. Retrying
-    // the crash, or teaching the audit to tolerate one, would have bought the
-    // same green by hiding the thing worth seeing.
+    // One audit at a time: concurrent axe runs over the grid OOM-kill the
+    // renderer.
     {
       name: "a11y",
       testMatch: AUDIT_SUITE,
       workers: 1,
-      // axe over the grid is CPU-bound, so it slows with the machine rather
-      // than with the app. The grid-bearing audits take 10–12s idle; at a load
-      // average near 90 eight of them ran past the default 30s, and the slowest
-      // took 32s once allowed to finish. 90s covers that.
+      // axe over the grid is CPU-bound and slows under load.
       timeout: 90_000,
       use: CHROMIUM,
     },

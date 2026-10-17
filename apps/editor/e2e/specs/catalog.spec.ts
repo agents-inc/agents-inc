@@ -9,15 +9,10 @@ import {
   STACKS,
 } from "../support/catalog"
 
-// The catalogue is regenerated from the agents-inc CLI, so the fixed points the
-// other specs lean on will drift eventually. These assertions exist so that
-// drift surfaces as one failure naming the value that moved, rather than as
-// every other spec going red at once.
+// Fixed points the other specs lean on, so catalogue drift fails here by name.
 test.describe("catalog assumptions", () => {
-  // `clearScratch` is held out because it is not a stack: it is the first cell's
-  // OTHER name, worn only while something is selected, and this test runs on a
-  // fresh visit where nothing is. The pair is asserted where it belongs, in
-  // `stacks.spec.ts`'s "the first cell as the reset".
+  // `clearScratch` is the first cell's other name, worn only once something is
+  // selected.
   test("the stacks the specs use are present", async ({ configure }) => {
     for (const [key, name] of Object.entries(STACKS)) {
       if (key === "clearScratch") continue
@@ -59,23 +54,15 @@ test.describe("catalog assumptions", () => {
     ).toBeVisible()
   })
 
-  // A stack skill reaching exactly ONE sub-agent is the fixed point that lets a
-  // spec build a project-scoped configuration and then resolve it (EDITOR-08).
-  // Both halves are upstream: which skill reaches one agent, and which one.
-  //
-  // Asserted through the STACK rather than a fresh pick, and that is the fact
-  // itself rather than a detail of the setup: a hand-picked skill takes the
-  // shared relevance rule and reaches its whole domain, while a stack skill
-  // takes the stack author's own word. Only the second of those is one.
+  // A stack skill reaching exactly one sub-agent, so a spec can build a scope
+  // error and resolve it.
   test("the single-agent stack skill still reaches exactly one sub-agent", async ({
     configure,
   }) => {
     await configure.chooseStack(STACKS.nextjs)
 
-    // Counted off the roster, which is where the number is legible now — the
-    // cell's own `1 agent` label was removed on 2026-09-07. Both halves are
-    // still asserted: how many rows the skill has, and that the one it has is
-    // the agent every spec leaning on this fixture names.
+    // Counted off the roster: how many rows the skill has, and that its one row
+    // is the named agent.
     await expect(
       configure.roster.skillRowsFor(SINGLE_AGENT_SKILL.name)
     ).toHaveCount(1)
@@ -87,10 +74,8 @@ test.describe("catalog assumptions", () => {
     ).toBeVisible()
   })
 
-  // The roster is upstream data as well, and the relevance rule reaches a
-  // whole domain of it, so every agent count in the suite moves the moment a
-  // domain gains or loses an agent. This is the one failure that names the
-  // number rather than the six specs that lean on it.
+  // The roster is upstream data, so every agent count in the suite moves with
+  // it.
   test("a domain skill reaches as many agents as the specs expect", async ({
     configure,
   }) => {
@@ -106,9 +91,8 @@ test.describe("catalog assumptions", () => {
     ).toHaveCount(DOMAIN_REACH.web)
   })
 
-  // The relationship data is upstream and can be re-authored, so the pair the
-  // incompatibility spec leans on gets its own guard: if the requirement chain
-  // is ever rewritten, this names it rather than the eight specs downstream.
+  // Relationships are upstream, so the incompatibility spec's pair gets its own
+  // guard.
   test("the incompatible pair still is one", async ({ configure }) => {
     const trigger = configure.skillIn(
       DOMAINS.web,

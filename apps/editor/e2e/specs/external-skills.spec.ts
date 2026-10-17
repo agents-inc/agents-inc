@@ -13,16 +13,8 @@ import {
 } from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
 
-// An added skill is a REAL CATALOG ENTRY (owner ruling, 2026-08-16), and its
-// content travels inline in the payload rather than as a reference the CLI
-// resolves later. Everything below is that ruling seen from the browser.
-//
-// These are the six defects EDITOR-15 to EDITOR-20 named, asked as questions
-// rather than as patches: does the skill ride the payload, come back from a
-// link, land beside its neighbours, take part in pick-one, survive a filter
-// chip, and install the only way a third-party skill may. Each of them used to
-// be a way the second code path for "added" skills went wrong; there is no
-// second path any more, which is why they are asked together.
+// An added skill is a real catalogue entry, and its content travels inline in
+// the payload.
 
 // The index entry the specs stage, and the repository the content stub serves.
 const [BRAINSTORMING] = SKILL_INDEX.skills
@@ -50,10 +42,8 @@ test.describe("adding an external skill", () => {
     stubSkillContents(page)
   })
 
-  // CLI-412's editor half. The category is the user's decision, so nothing is
-  // pre-chosen and nothing can be added without one: `categoriseRepo` used to
-  // guess from the repository name and file everything it missed under
-  // Uncategorized, which is the multi-tier fallback EDITOR-17 bans.
+  // The category is the user's decision: nothing is pre-chosen and nothing is
+  // added without one.
   test("the confirm stays shut until a category is chosen", async ({
     configure,
   }) => {
@@ -82,8 +72,6 @@ test.describe("adding an external skill", () => {
     ).toBeAttached()
   })
 
-  // EDITOR-17: it lands where the user filed it, among the skills it belongs
-  // with. There is no Added section left to render into.
   test("the skill lands in the category it was given", async ({
     configure,
   }) => {
@@ -107,16 +95,12 @@ test.describe("adding an external skill", () => {
     await dialog.confirm()
 
     const cell = configure.skillIn(DOMAINS.web, CATEGORY, SKILL_NAME)
-    // The cell rather than the pressable: since EDITOR-58 the selection target
-    // is a transparent overlay and carries no text.
+    // The cell rather than the pressable: the selection target is a text-less
+    // overlay.
     await expect(cell.cell).toContainText("added")
   })
 
-  // EDITOR-19 is closed twice over and the claim is kept as the WEAKER of the
-  // two: an added skill is filed under a real domain, so the strip reaches it
-  // like its neighbours. The defect itself can no longer recur — the skill used
-  // to sit outside every domain, so any domain filter at all erased it, and a
-  // pick has not filtered anything since EDITOR-79.
+  // Filed under a real domain, so the strip reaches it like its neighbours.
   test("a domain tab keeps it rather than erasing it", async ({
     configure,
   }) => {
@@ -133,8 +117,8 @@ test.describe("adding an external skill", () => {
     ).toBeVisible()
   })
 
-  // EDITOR-18: pick-one is a property of the category, and the skill is in one
-  // now — so it evicts its siblings and is evicted by them, in both directions.
+  // Pick-one belongs to the category, so it evicts its siblings and is evicted
+  // by them.
   test("it takes part in its category's pick-one rule", async ({
     configure,
   }) => {
@@ -162,9 +146,8 @@ test.describe("adding an external skill", () => {
     expect(await added.isSelected()).toBe(false)
   })
 
-  // EDITOR-20: a third-party skill is ALWAYS eject (owner, 2026-08-09) — a
-  // plugin install serves their content as-is and we cannot write our metadata
-  // into their repository, so plugin is not a mode this skill has.
+  // A third-party skill is always eject: a plugin would serve their content
+  // without our metadata.
   test("it installs by ejecting, and the control says so", async ({
     configure,
   }) => {
@@ -185,15 +168,8 @@ test.describe("adding an external skill", () => {
     await expect(added.options.segment("plugin")).toBeDisabled()
   })
 
-  // EDITOR-45. The badge on an eject-only skill is a STATEMENT rather than a
-  // control — there is no plugin form to flip to — so it renders as a span with
-  // no handler, and the press went straight through it to the cell underneath
-  // and DESELECTED the skill. The same-looking badge on a catalogue skill flips
-  // install mode and touches selection not at all, so one target had two
-  // outcomes depending on which kind of skill was under it.
-  //
-  // Doing nothing is the answer. A badge that cannot flip must also not select,
-  // because the thing it says about itself is that there is nothing to press.
+  // On an eject-only skill the badge is a statement, not a control, and must
+  // not pass the press to the cell.
   test("clicking its install badge neither flips it nor deselects the skill", async ({
     configure,
   }) => {
@@ -236,10 +212,8 @@ test.describe("adding an external skill", () => {
     expect(await added.isSelected()).toBe(false)
   })
 
-  // Journey 26: `external-` separates these from marketplaces, not from one
-  // another, so two skills of one name in one category is a real collision.
-  // Detectable at add time with the id in hand, so the intake refuses the
-  // second and names what already holds it.
+  // `external-` separates these from marketplaces, not from each other, so the
+  // second is refused.
   test("a second skill claiming a held id is refused, naming the holder", async ({
     configure,
   }) => {
@@ -263,9 +237,8 @@ test.describe("resolving an external skill's content", () => {
     stubSkillIndex(page)
   })
 
-  // The bytes are fetched at add time, not at install time. That is the whole
-  // trade: the payload becomes self-contained, so `--from` never reaches into a
-  // repository that may since have moved, gone private or changed.
+  // Fetched at add time, so `--from` never reaches into a repository that may
+  // have changed.
   test("the whole directory travels in the payload", async ({
     configure,
     page,
@@ -296,8 +269,6 @@ test.describe("resolving an external skill's content", () => {
     expect(carried.repo).toBe(EXTERNAL_SKILL.repo)
   })
 
-  // EDITOR-15: the dialog used to list a skill and hand over a command that
-  // could not install it, because every consumer of the payload dropped the id.
   test("the install dialog lists it beside the catalogue's own", async ({
     configure,
     page,
@@ -317,15 +288,8 @@ test.describe("resolving an external skill's content", () => {
     await expect(configure.installDialog.skillsPane).toContainText(SKILL_NAME)
   })
 
-  // A repository the content stub does not serve — it answers 404 for one, the
-  // way GitHub does. Refused at the moment of adding, where the fix is, rather
-  // than silently adding a skill with no body.
-  //
-  // The stub is installed here on purpose, and it was not before: without it
-  // this test reached the live api.github.com, and what it was really asserting
-  // was that `anthropics/skills/skills/docx` weighs 1.1 MB. That passed for as
-  // long as a third party kept a directory big, which is not a claim this suite
-  // gets to make.
+  // Refused at add time. Stubbed, so this never reaches the live
+  // api.github.com.
   test("a directory that cannot be read is refused rather than added", async ({
     configure,
     page,
@@ -359,10 +323,8 @@ test.describe("resolving an external skill's content", () => {
   })
 })
 
-// EDITOR-16: a shared link used to come back quietly smaller — the ids the
-// sharer's own added skills wore were pruned on arrival, because the receiving
-// catalogue had never heard of them. The payload's content is what registers
-// them before the pruning runs.
+// The payload's content registers the sharer's added skills before pruning
+// runs.
 test.describe("importing a link carrying external skills", () => {
   test("the skill arrives with the configuration and stays selected", async ({
     configure,

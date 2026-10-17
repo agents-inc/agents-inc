@@ -7,30 +7,15 @@ import {
   postToConfigStore,
 } from "../support/sharing"
 
-// The two statuses `POST /configs` answers with, WRITTEN OUT rather than
-// imported. `@workspace/api-mocks` keeps both of them private, and importing
-// them if it did not would be worse than restating them: a spec that takes its
-// expected value from the module it is checking moves whenever that module
-// moves, so it could never disagree with it. This is the same reason
-// `packages/cli`'s `e2e/pages/constants.ts` mirrors the product's strings
-// instead of importing them.
+// Written out, not imported: an expected value from the module under test could
+// never disagree.
 const MINTED = 201
 const REFUSED = 400
 
 const REACT_ID = "web-framework-react"
 
-// A body carrying the two keys a skill no longer has — `model` and `effort`
-// belong to the sub-agent now. `seedSkillSchema` is a plain object schema, so a
-// parse STRIPS them silently rather than refusing, which is what makes this the
-// body that tells the two possible doubles apart: one that records what it was
-// handed, and one that records what it parsed. `sharing.spec.ts`'s "posts the
-// v2 shape" asserts a skill carries neither key, and that assertion goes
-// vacuous — passing for free, whatever the app sent — the moment the second one
-// is installed.
-//
-// Installable otherwise, so the answer under test is the mint rather than a
-// refusal for some second reason: `STORED_PAYLOAD` pins `web-developer` into
-// the project, which is where a project-scoped skill can reach it.
+// `seedSkillSchema` strips these keys silently, which tells a recording double
+// from a parsing one.
 const SEED_CARRYING_STRIPPABLE_KEYS = {
   ...STORED_PAYLOAD,
   skills: {
@@ -44,19 +29,8 @@ const SEED_CARRYING_STRIPPABLE_KEYS = {
   },
 }
 
-// CLI-861. `captureCreateConfig` is the resting answer every spec that captures
-// a POST stands in front of (`grep -rn captureCreateConfig e2e/specs`), and it
-// used to answer `mintedConfig()` for any body at all — installed AHEAD of the
-// validating handlers it re-passes, so its permissiveness was the one that
-// counted. A double more permissive than the route it stands in for cannot
-// fail, and one that cannot fail is not a test of whatever posts to it: the
-// editor's own pre-POST guard (CLI-851) could regress in full while every spec
-// built on this stub stayed green.
-//
-// These drive the stub rather than the app on purpose. The app can no longer
-// produce a body the write contract refuses, which is exactly why the stub's
-// refusal needs a spec of its own — the guard that makes it unreachable is the
-// thing this stub exists to catch the loss of.
+// `captureCreateConfig` stands in front of every captured POST, so it must
+// refuse what the route refuses.
 test.describe("the config store double", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/")
@@ -75,9 +49,8 @@ test.describe("the config store double", () => {
     expect(answer.body).toMatchObject({ success: false })
   })
 
-  // The control the refusal above means nothing without: a refusal on its own
-  // cannot tell a correctly-scoped gate from one that has swallowed the route,
-  // and both read the same from a spec that only ever posts a bad body.
+  // The control: a refusal alone cannot tell a scoped gate from one that
+  // swallowed the route.
   test("mints for a configuration it can take", async ({ page }) => {
     captureCreateConfig(page)
 
@@ -87,11 +60,8 @@ test.describe("the config store double", () => {
     expect(answer.body).toStrictEqual({ id: STORED_ID })
   })
 
-  // What was SENT, not what was accepted. `scope-reach.spec.ts` reads an empty
-  // request log as "the app posted nothing", and that reading is only true
-  // while a refused body still lands in it — a stub that recorded successes
-  // alone would let the same assertion be satisfied by an app posting the very
-  // payload the guard exists to stop.
+  // What was sent, not what was accepted: `scope-reach.spec.ts` reads an empty
+  // log as "posted nothing".
   test("records a body it refused", async ({ page }) => {
     const posted = captureCreateConfig(page)
 

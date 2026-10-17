@@ -16,12 +16,9 @@ const MATRIX_ROLE = "dev"
 // on it.
 const FIRST_META_AGENT = "agent-summoner"
 
-// A ring is only proven by pixels: a parent's clip once hid every pixel of a
-// ring whose computed box-shadow read back fine. So the neighbourhood is
-// photographed with the ring and with its colour made transparent; identical
-// pictures mean nobody could see it. Focus arrives by keyboard, because
-// Chromium matches `:focus-visible` on a programmatic move only when the
-// element it left matched too.
+// A ring is only proven by pixels: photographed with it and with its colour
+// transparent, identical pictures mean nobody could see it. Focus by keyboard,
+// for `:focus-visible`.
 const RING_ROOM = 4
 
 const focusRing = async (locator: Locator) => {
@@ -145,8 +142,8 @@ test.describe("skill options panel", () => {
     await expect(skill.root).toHaveAttribute("aria-pressed", "true")
   })
 
-  // Install mode rather than scope: every sub-agent rests at global, so a
-  // project scope would leave no assignment to unmake (EDITOR-08).
+  // Install mode rather than scope: every sub-agent rests at global, so project
+  // would leave no assignment.
   test("options set before selecting survive being selected", async ({
     configure,
   }) => {
@@ -463,8 +460,7 @@ const panelToDockGap = async (configure: ConfigurePage) => {
   return dock.y - (panel.y + panel.height)
 }
 
-// A panel on the column's last cell once grew the page past the frame, lifting
-// the rail and drawing its foot below the dock.
+// A panel on the column's last cell must not grow the page past the frame.
 test.describe("an options panel at the foot of the column", () => {
   test.beforeEach(async ({ configure }) => {
     await configure.openLastSkillOptions()

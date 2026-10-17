@@ -31,34 +31,10 @@ import type { Matrix, SeedPayload } from "@workspace/matrix"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 
-// THE OTHER HALF OF THE PREVIEW'S CLAIM, RUN FOR REAL.
-//
-// The output preview says it draws what `agents-inc init --from <id>` writes.
-// Every other spec in this directory checks the preview against itself or
-// against `@workspace/compile` called directly, so none of them can see the
-// preview and the install disagree. This module runs the CLI this repository
-// builds against the same id the browser opens, so a spec can hold the two
-// outputs against each other.
-//
-// What the CLI reaches is stood in for by ONE local server, in the two roles
-// the browser's are stubbed in: the worker (`GET /configs/<id>`, answered by
-// `@workspace/api-mocks`' own handlers through `answerFor`, exactly as
-// packages/cli's `seed-config-store.ts` answers them) and GitHub (the tarball
-// giget downloads a `github:` marketplace from). GitHub is reached through
-// `GIGET_GITHUB_URL`, which is giget's own setting for a GitHub host other
-// than github.com — so the marketplace the CLI installs from is named exactly
-// as the payload names it, `github:<owner>/<repo>`, and nothing about the
-// install is redirected but the host.
-//
-// The marketplace is BUILT, not written out: its source goes through
-// `build plugins` and `build marketplace`, so the `catalog.json` the browser
-// seats is the one an author publishes, and the tarball the CLI unpacks is the
-// repository that published it.
-//
-// The public catalogue is the one exception, and the seat every visitor starts
-// on: a payload naming no marketplace installs from the CLI's default, which
-// the same GitHub stand-in serves once such a payload is published — see
-// `buildPublicCatalogue`.
+// Runs the CLI this repository builds against the id the browser opens, so a
+// spec can compare preview and install. One local server stands in for the
+// worker and for GitHub (via `GIGET_GITHUB_URL`); the marketplace is built with
+// `build plugins` and `build marketplace`.
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..")
 const CLI_PACKAGE = path.join(REPO_ROOT, "packages/cli")
@@ -75,14 +51,12 @@ const MARKETPLACE_OWNER = "harbor"
 const MARKETPLACE_REPO = "skills"
 export const MARKETPLACE_REF = `github:${MARKETPLACE_OWNER}/${MARKETPLACE_REPO}`
 
-// The marketplace's own name, which `build marketplace` reads off package.json
-// and which prefixes every id it ships (CLI-498).
+// The marketplace's own name, which prefixes every id it ships.
 const MARKETPLACE_NAME = "harbor"
 
 // giget's default ref for a `github:` source that names none.
 const DEFAULT_REF = "main"
 
-/** One skill the marketplace ships, as its author wrote it. */
 type AuthoredSkill = {
   id: string
   category: string
@@ -189,7 +163,6 @@ const PUBLIC_REPO = "skills"
 const installsFromPublicCatalogue = (payload: SeedPayload) =>
   payload.marketplace === undefined
 
-/** The public catalogue's checkout, on disk — what the tarball holds. */
 type PublicCatalogue = { dir: string; cleanup: () => Promise<void> }
 
 type PublicSkill = NonNullable<
@@ -220,7 +193,6 @@ const publicMetadataYaml = (skill: PublicSkill, domain: string) =>
     "",
   ].join("\n")
 
-/** The domain a skill's category is filed under in the public catalogue. */
 const publicDomainOf = (skill: PublicSkill) => {
   const domain = MATRIX.categories[skill.category]?.domain
   if (domain === undefined) {
@@ -252,19 +224,8 @@ const writePublicSkill = async (
 }
 
 /**
- * The public catalogue as the CLI's default source reads it.
- *
- * Not built, because the CLI does not build it: for its default marketplace it
- * takes the matrix from its own vendored `BUILT_IN_MATRIX` — which
- * `@workspace/matrix` vendors for the editor as `MATRIX` — and reads only each
- * skill's files off the checkout: the directory an eject copies, and the
- * SKILL.md whose description a compiled sub-agent's activation table shows. So
- * every catalogue skill is written at the path its id spells, `src/skills/<id>`,
- * and its SKILL.md states the sentence `generate:types` copied out of the real
- * one into the vendored table the preview reads.
- *
- * The table is imported here rather than at the top of the module, so the
- * crossings that never install from the public catalogue load without it.
+ * The CLI takes its default marketplace's matrix from its vendored copy and
+ * reads only each skill's files off the checkout, so only those are written.
  */
 const buildPublicCatalogue = async (): Promise<PublicCatalogue> => {
   const { ACTIVATION_DESCRIPTIONS } =
@@ -285,7 +246,6 @@ const buildPublicCatalogue = async (): Promise<PublicCatalogue> => {
   return { dir, cleanup: () => rm(root, { recursive: true, force: true }) }
 }
 
-/** What one spawned run of the CLI said, and how it ended. */
 export type CliRun = { exitCode: number | null; output: string }
 
 // Long enough for a cold `init --from` on a loaded machine, short enough that a
@@ -294,15 +254,9 @@ export type CliRun = { exitCode: number | null; output: string }
 const CLI_RUN_LIMIT_MS = 60_000
 
 /**
- * The CLI as a user runs it, in an environment holding nothing of the machine
- * running the suite.
- *
- * Built from nothing rather than from `process.env`, for the reason
- * packages/cli's `CLI.run` clears its list one name at a time: every variable
- * the CLI or giget reads is a knob a developer's shell may carry, and a run
- * whose result depends on one belongs to the machine rather than to the code.
- * `AGENTS_INC_API_URL` is always set, because left unset the CLI reaches the
- * production worker.
+ * Built from nothing, not `process.env`, so the run cannot depend on the
+ * developer's shell. `AGENTS_INC_API_URL` is always set, or the CLI reaches
+ * production.
  */
 const runCli = (
   args: readonly string[],
@@ -320,8 +274,7 @@ const runCli = (
     // Both beat HOME in the tools that read them, so both are pinned under it.
     CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
     CODEX_HOME: path.join(home, ".codex"),
-    // oclif's update check spawns a detached child that writes into HOME after
-    // the run returns. packages/cli's `NO_BACKGROUND_VERSION_CHECK` says why.
+    // oclif's update check writes into HOME after the run returns.
     AGENTS_INC_SKIP_NEW_VERSION_CHECK: "1",
     NO_COLOR: "1",
     // An unreachable address unless a stand-in is named: never the real worker.
@@ -347,7 +300,6 @@ const runCli = (
   })
 }
 
-/** The marketplace, built and on disk, and the catalogue it published. */
 export type BuiltMarketplace = {
   /** The repository's working tree after both builds — what the tarball holds. */
   dir: string
@@ -386,9 +338,8 @@ export const buildMarketplace = async (): Promise<BuiltMarketplace> => {
     }
   }
 
-  // Parsed rather than cast, through the schema the editor's own fetch reads
-  // it with: a catalogue the build wrote and the browser refuses is a finding
-  // about the two of them, and it should surface here, by name.
+  // Parsed with the editor's own schema, so a catalogue the browser would
+  // refuse fails here by name.
   const catalog = matrixSchema.parse(
     JSON.parse(
       await readFile(path.join(dir, ".claude-plugin/catalog.json"), "utf8")
@@ -415,7 +366,6 @@ export const stubBuiltMarketplace = (page: Page, catalog: Matrix) =>
     ),
   ])
 
-/** The worker and GitHub, as the spawned CLI reaches them. */
 export type StandIns = {
   url: string
   /**
@@ -431,9 +381,8 @@ const NOT_MODELLED = 501
 const tarballPath = (owner: string, repo: string) =>
   `/repos/${owner}/${repo}/tarball/${DEFAULT_REF}`
 
-// A tarball and its identity. giget and the CLI's own cache both ask for the
-// etag, and a fixed one is what lets a second load in the same HOME read the
-// cached copy.
+// giget and the CLI's cache both ask for the etag; a fixed one lets a second
+// load read the cache.
 type Tarball = { body: Buffer; etag: string }
 
 const packTarball = async (dir: string): Promise<Buffer> => {
@@ -541,9 +490,8 @@ export type Installed = CliRun & {
   files: Record<string, string>
 }
 
-// Where the CLI keeps what it fetched — giget's tarball and the CLI's unpacked
-// copy of the marketplace. Neither is part of the install; both are a cache the
-// next command reads.
+// giget's tarball and the CLI's unpacked marketplace: a cache, not part of the
+// install.
 const FETCH_CACHE_DIR = ".cache/"
 
 // The project's own manifest, which the spec writes so the directory reads as

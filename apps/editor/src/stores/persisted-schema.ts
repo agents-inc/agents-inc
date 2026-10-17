@@ -13,8 +13,8 @@ import { activeCatalog, activeStacks } from "./catalog-store"
 
 import type { Provider } from "@workspace/compile"
 
-// The roster is the vendored one whichever catalogue is seated: marketplaces
-// do not ship sub-agents (owner, 2026-08-09).
+// The roster is the vendored one whichever catalogue is seated: marketplaces do
+// not ship sub-agents.
 
 // Bump when the persisted shape changes; older blobs are discarded on load.
 export const PERSIST_VERSION = 8
@@ -174,7 +174,7 @@ export const resolveAgentOptions = (
 
 type ModelChoice = { value: AgentModel | CodexModelName; label: string }
 
-// No `inherit` on Codex (Q5): nothing pressed is the session's own model.
+// No `inherit` on Codex: nothing pressed is the session's own model.
 const MODEL_CHOICES = {
   claude: AGENT_MODELS.map((model) => ({ value: model, label: model })),
   codex: CODEX_MODEL_NAMES.map((model) => ({
@@ -183,7 +183,7 @@ const MODEL_CHOICES = {
   })),
 } satisfies Record<Provider, readonly ModelChoice[]>
 
-// Both pins live on one entry and each provider reads its own (ruling 3).
+// Both pins live on one entry and each provider reads its own.
 export const modelChoicesFor = (provider: Provider): readonly ModelChoice[] =>
   MODEL_CHOICES[provider]
 
@@ -199,8 +199,7 @@ export const modelPatchFor = (
     ? { codexModel: codexModelChoiceSchema.parse(value) }
     : { model: agentModelSchema.parse(value) }
 
-// Project skills never reach global sub-agents. The rule is the wire
-// contract's, which the CLI reads too (EDITOR-08).
+// Project skills never reach global sub-agents; the CLI reads the same rule.
 export const isScopePairCompatible = (
   skillScope: SkillOptions["scope"],
   agentScope: AgentScope
@@ -216,8 +215,7 @@ export const reachesAgent = (
   isScopePairCompatible(skillScope, resolveAgentOptions(agents, agentId).scope)
 
 // An explicit pin wins; otherwise an agent is on when it holds an enabled
-// skill. `reachesAgent` is not asked (EDITOR-08): the agent stays on so its
-// card can fix the pair, and `summarize` gates Install and Share instead.
+// skill. Scope is not asked: `summarize` gates Install and Share instead.
 export const isAgentOn = (
   config: Pick<PersistedConfig, "skills" | "agents">,
   agentId: string
@@ -250,8 +248,8 @@ export const persistedUiSchema = z.object({
 
 export type PersistedUi = z.infer<typeof persistedUiSchema>
 
-// Drops references the seated catalogue does not know. An added skill is in
-// it once its content is seated, which `adoptSeedPayload` orders (EDITOR-03).
+// Drops references the seated catalogue does not know; `adoptSeedPayload` seats
+// added skills first.
 const isKnownSkill = (skillId: string) => skillId in activeCatalog().skillsById
 const isKnownAgent = (agentId: string) => agentId in SUB_AGENTS_BY_ID
 const isKnownStack = (stackId: string | null) =>

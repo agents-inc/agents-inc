@@ -13,13 +13,7 @@ const { name: EXCLUSIVE, first: REACT, second: VUE } = EXCLUSIVE_CATEGORY
 const MATRIX_DOMAIN = "Web"
 const MATRIX_ROLE = "dev"
 
-// Deselecting must not be destructive. One click removes a skill; the
-// configuration behind it can be a dozen, and the cell gives no warning
-// because deselect reads as "not included" rather than "erase my work".
-//
-// The rule is deliberately one sentence with no special case per category: a
-// skill remembers how you configured it, and a skill you have never configured
-// starts blank.
+// Deselecting must not be destructive: a skill remembers how it was configured.
 test.describe("configuration survives deselection", () => {
   test("re-selecting restores install mode and scope", async ({
     configure,
@@ -60,9 +54,7 @@ test.describe("configuration survives deselection", () => {
     await expect(configure.roster.skillRow(REACT, "web-developer")).toBeHidden()
   })
 
-  // The same promise as the badges above, made through the panel instead —
-  // model and effort used to be the pair tested here, and they belong to the
-  // sub-agent now, so install mode and scope are what the panel still holds.
+  // The panel's own options: install mode and scope.
   test("re-selecting restores options set in the panel", async ({
     configure,
   }) => {
@@ -96,8 +88,7 @@ test.describe("configuration survives deselection", () => {
     await configure.chooseStack(STACKS.nextjs)
     const react = configure.skillIn(web, EXCLUSIVE, STACK_MEMBER_SKILL)
 
-    // Counted off the roster, which is where the assignments are legible now —
-    // the cell's own `N agents` label was removed on 2026-09-07.
+    // Counted off the roster, where the assignments are legible.
     const assigned = await configure.roster
       .skillRowsFor(STACK_MEMBER_SKILL)
       .count()

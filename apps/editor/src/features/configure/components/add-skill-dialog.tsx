@@ -35,22 +35,16 @@ import { useUiStore } from "@/stores/ui-store"
 import type { Catalog, SeedSkillTree } from "@workspace/matrix"
 import type { SkillIndexEntry } from "@workspace/matrix/skill-index"
 
-// Filtering is instant — the whole index is in memory — so this delay is the
-// analytics' own rather than the search's: a funnel wants one event per
-// search, not one per keystroke.
+// Analytics only: one event per search, not per keystroke.
 const SEARCH_SETTLE_MS = 350
 
-// The dropdown's resting option. A category is a decision the user makes
-// (CLI-412), so nothing is pre-chosen and nothing can be added without one —
-// `categoriseRepo` used to guess from the repository name and file everything
-// it could not match under Uncategorized, which is the multi-tier fallback the
-// repository bans.
+// Nothing is pre-chosen: a category is the user's decision.
 const NO_CATEGORY = ""
 
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
-// Keeps the term itself in the result, so the matches can be wrapped.
+// The capture group keeps the term in the result, so matches can be wrapped.
 const splitAroundTerm = (text: string, term: string) =>
   text.split(new RegExp(`(${escapeRegExp(term)})`, "ig"))
 
@@ -72,10 +66,6 @@ function Highlight({ text, term }: { text: string; term: string }): ReactNode {
   )
 }
 
-// The dialog's one status line, in the treatment the search already used for
-// "searching…". Loading, a failure, an index still filling and a filter that
-// matched nothing are all the same statement — why the list below is missing,
-// or shorter than it might be.
 function Note({
   children,
   alert = false,
@@ -97,32 +87,16 @@ function Note({
   )
 }
 
-// One repository holds many skills — the real index carries dozens across
-// three — so the repository alone would hand every skill in it the same id.
-// The directory within it is what tells two apart.
+// One repository holds many skills; the path tells them apart.
 const skillCoordinate = (entry: SkillIndexEntry) =>
   `${entry.repo}/${entry.path}`
 
-/**
- * Whether this result can be added at all.
- *
- * Five of the fifty-eight indexed skills cannot — `canvas-design` is 5.4 MB and
- * `docx`, `xlsx` and `pptx` are around 1.1 MB each, against the 256 KB a shared
- * link carries per skill. The refusal was always correct and always arrived
- * last, because nothing here knew a skill's weight until the editor had listed
- * the repository itself; the index carries it now.
- *
- * It does not replace the late refusal in `skill-contents.ts`. That one reads a
- * listing made just now and is the authority; this reads a crawl's snapshot,
- * and its job is to stop a visitor spending the whole funnel on a row that was
- * never addable.
- */
+// An early refusal from the index's snapshot; `skill-contents.ts` stays the
+// authority.
 const isTooLargeToAdd = (entry: SkillIndexEntry) =>
   isPastCarryLimit(entry.bytes)
 
-// A skill staged for adding: the index entry it came from, and the category the
-// user has picked for it. Its id follows from the two, so it does not exist
-// until the placement does.
+// Its id follows from entry and category, so it has none until placed.
 type StagedSkill = { entry: SkillIndexEntry; categoryId: string }
 
 const stagedId = (staged: StagedSkill) =>
@@ -130,9 +104,7 @@ const stagedId = (staged: StagedSkill) =>
     ? undefined
     : externalSkillId(staged.categoryId, staged.entry.name)
 
-// Every category of the loaded catalogue, in the grid's own order, labelled by
-// the domain it sits under — `web · framework` — because a bare "Framework"
-// appears in more than one domain and the two are different placements.
+// Labelled with the domain: a bare "Framework" appears in several.
 const categoryOptions = () =>
   activeCatalog().domains.flatMap((domain) =>
     domain.categories.map((category) => ({
@@ -141,15 +113,8 @@ const categoryOptions = () =>
     }))
   )
 
-/**
- * What already answers to the id this staging would mint, if anything does.
- *
- * Journey 26: `external-` separates these from marketplaces, not from one
- * another, so two skills of one name in one category really is one id. It is
- * detectable here with the id in hand — which is the moment the ruling names —
- * and the alternative is discovering it when the CLI writes the second one over
- * the first.
- */
+// Two skills of one name in one category share an id; caught here, or the CLI
+// writes one over the other.
 const holderOf = (
   staging: StagedSkill,
   staged: StagedSkill[],
@@ -158,8 +123,7 @@ const holderOf = (
   const id = stagedId(staging)
   if (id === undefined) return undefined
 
-  // The catalogue covers both the skills already added and the ids it shipped:
-  // an added skill IS a catalogue entry, so one lookup answers both.
+  // Added skills are catalogue entries, so one lookup covers both.
   const seated = catalog.skillsById[id]
   if (seated) return seated.displayName
 
@@ -177,8 +141,6 @@ const toExternalSkill = (
 ): ExternalSkill => ({
   id: externalSkillId(categoryId, entry.name),
   displayName: entry.name,
-  // The index serves an empty description where the SKILL.md offered neither
-  // frontmatter nor a heading — a thin result rather than an invalid one.
   description: entry.description || "Added from GitHub",
   categoryId,
   repo: entry.repo,
@@ -189,14 +151,7 @@ const toExternalSkill = (
 type Resolution =
   { ok: true; skills: ExternalSkill[] } | { ok: false; error: string }
 
-/**
- * Every staged skill's directory, or the first reason one could not be read.
- *
- * In parallel, because they are independent reads off a CDN. All or nothing,
- * because adding the ones that resolved would leave the grid showing a skill
- * the payload cannot carry — which is the exact shape of the defect this whole
- * row exists to close.
- */
+// All or nothing: a partial add would show a skill the payload cannot carry.
 const resolveStaged = async (staged: StagedSkill[]): Promise<Resolution> => {
   const fetched = await Promise.all(
     staged.map(async (item) => ({
@@ -214,9 +169,6 @@ const resolveStaged = async (staged: StagedSkill[]): Promise<Resolution> => {
   return { ok: true, skills }
 }
 
-// Name and description — the same two fields the grid's own search reads. Not
-// the repository: this dialog searches skills rather than repositories, which
-// is the whole reason it stopped calling GitHub's repository search.
 const matchesTerm = (entry: SkillIndexEntry, needle: string) =>
   entry.name.toLowerCase().includes(needle) ||
   entry.description.toLowerCase().includes(needle)
@@ -232,38 +184,25 @@ type IndexState =
   | { status: "ready"; skills: SkillIndexEntry[]; freshness: IndexFreshness }
   | { status: "failed"; error: string }
 
-// What is happening while the confirm is pressed: the directories are being
-// fetched, or one of them could not be.
 type CommitState =
   | { status: "idle" }
   | { status: "resolving" }
   | { status: "failed"; error: string }
 
-// The whole external index arrives in one response and is filtered here, in
-// the browser — which is what removes the request per keystroke, the debounce
-// and the rate limit the old repository search had to design around.
-//
-// Adding ends with two things the old dialog had neither of: a CATEGORY the
-// user confirmed, which is what makes the skill a real catalogue entry rather
-// than an orphan, and the skill's whole DIRECTORY, fetched here so the shared
-// payload can carry it and `--from` never has to reach GitHub at all.
+// The whole index is filtered in the browser. Adding fetches each skill's
+// directory so the payload carries it and `--from` never reaches GitHub.
 export function AddSkillDialog() {
   const dialog = useUiStore((state) => state.dialog)
   const setDialog = useUiStore((state) => state.setDialog)
   const addExternal = useCatalogStore((state) => state.addExternal)
-  // Subscribed rather than read once: the category list is the loaded
-  // catalogue's, so swapping the marketplace changes what may be chosen.
+  // Subscribed: a marketplace swap changes the categories.
   const catalog = useCatalogStore((state) => state.catalog)
 
   const [query, setQuery] = useState("")
   const [staged, setStaged] = useState<StagedSkill[]>([])
   const [index, setIndex] = useState<IndexState>({ status: "loading" })
   const [commit, setCommit] = useState<CommitState>({ status: "idle" })
-  // Where the caret goes as the dialog opens. Handed to the dialog rather than
-  // taken by the field with `autoFocus`, and that is the whole of the way back:
-  // a field focused as it MOUNTS is focused before the dialog records what had
-  // focus, so the dialog recorded the field — gone by the time it closes — and
-  // dropped focus to `<body>` instead of handing it back to Add skill.
+  // Not `autoFocus`, or focus would not return to Add skill on close.
   const searchField = useRef<HTMLInputElement>(null)
 
   const open = dialog === "add"
@@ -271,20 +210,13 @@ export function AddSkillDialog() {
   const results =
     index.status === "ready" ? filterIndex(index.skills, trimmed) : []
 
-  // A fresh index is the current whole picture, so it is fetched once and
-  // reused for the rest of the session. A stale one explicitly is not — "this
-  // list is not everything, ask again later" is the header's whole meaning —
-  // so the next open asks again, as does an open after a failure. Nothing
-  // refetches while the dialog is open: the list would move under the pointer
-  // for no reason.
+  // A fresh index is kept for the session; a stale or failed one is refetched
+  // on the next open, never while open.
   const settled = index.status === "ready" && index.freshness === "fresh"
 
   useEffect(() => {
     if (!open || settled) return
 
-    // What is on screen stays on screen while this runs. A reopen that has to
-    // ask again already has a list to show, and blanking it to "loading" would
-    // be a flash rather than information.
     let live = true
 
     void fetchSkillIndex().then((result) => {
@@ -300,8 +232,7 @@ export function AddSkillDialog() {
       )
     })
 
-    // The request is not aborted, only ignored: it is one small GET, and
-    // letting it finish warms the browser cache for the next open.
+    // Ignored, not aborted: finishing warms the cache for the next open.
     return () => {
       live = false
     }
@@ -313,10 +244,7 @@ export function AddSkillDialog() {
     if (!open || !trimmed || index.status !== "ready") return
 
     const timer = setTimeout(() => {
-      // The count, never the query. A search that returns nothing is someone
-      // asking the catalog for a skill it does not have, which is the closest
-      // thing here to a feature request — but the words they typed are theirs,
-      // and are the one free-text field in the app.
+      // The count, never the query: what users type stays theirs.
       track({ name: "skill_searched", resultCount })
     }, SEARCH_SETTLE_MS)
 
@@ -325,9 +253,7 @@ export function AddSkillDialog() {
     }
   }, [open, trimmed, index.status, resultCount])
 
-  // The index is deliberately not cleared. It is the same list next time, and
-  // whether it is asked for again is decided by its freshness rather than by
-  // the dialog closing.
+  // The index is kept: its freshness decides whether it is refetched.
   const close = () => {
     setDialog("none")
     setQuery("")
@@ -382,8 +308,6 @@ export function AddSkillDialog() {
     }
 
     addExternal(resolved.skills)
-    // Repository names, which are public by definition — this is what the
-    // catalog is missing, in the words of the people reaching outside it.
     for (const skill of resolved.skills) {
       track({ name: "skill_added", fullName: skill.id })
     }
@@ -413,15 +337,7 @@ export function AddSkillDialog() {
             </div>
           )}
 
-          {/* A LABEL rather than a div, and that is the whole of the box being
-              the field here. The other three fields hand the box's padding to
-              the input and are done; this one cannot, because the glyph and the
-              caret bar are inside the border too and the horizontal padding is
-              what places them. So the input owns the vertical padding — the
-              part nothing else is standing in — and the label carries the rest:
-              a press on the glyph, on the bar, or in either corner reaches the
-              field, which is what the marketplace dialog's own field has done
-              all along. */}
+          {/* A label, so a press anywhere in the box reaches the field. */}
           <label className="mb-0.5 flex items-center gap-[0.5625rem] border border-field-border px-3">
             <span aria-hidden className="font-mono text-11 text-faint">
               ⌕
@@ -461,9 +377,6 @@ export function AddSkillDialog() {
               ) : (
                 <LatticeRows
                   className="mt-3.5"
-                  // A named group, so the rows inside it can be asked for by
-                  // role: the staged half of the dialog names the same skills,
-                  // and `Remove docx` is a button whose name holds `docx` too.
                   role="group"
                   aria-label="Search results"
                 >
@@ -474,25 +387,10 @@ export function AddSkillDialog() {
                       <LatticeRow
                         key={skillCoordinate(entry)}
                         selected={stagedHere}
-                        // Otherwise the name is every string in the row run
-                        // together — including the stage marker, so it would
-                        // change under the visitor as they staged. The
-                        // repository is in it because the row is a button and
-                        // therefore a leaf: one name can be all assistive
-                        // technology is given, and two repositories can carry a
-                        // skill of the same name.
+                        // Two repositories can carry a skill of the same name.
                         aria-label={`${entry.name} from ${entry.repo}`}
-                        // Shown and not hidden, the way an incompatible skill is
-                        // in the grid: a result missing without explanation is
-                        // the search failing, and the whole point is that the
-                        // reason is legible. `aria-disabled` rather than
-                        // removing the handler alone, so the row announces that
-                        // it cannot be acted on rather than quietly ignoring a
-                        // click.
                         aria-disabled={tooLarge || undefined}
-                        // The refusal is printed in the row, which the leaf
-                        // above hides — `title` is the accessible DESCRIPTION,
-                        // which is where a reason belongs.
+                        // `title` carries the refusal the button hides.
                         title={
                           tooLarge ? carryLimitRefusal(entry.bytes) : undefined
                         }
@@ -513,12 +411,7 @@ export function AddSkillDialog() {
                             </div>
                           )}
                           {tooLarge && (
-                            /* The weight and the limit, in the words the late
-                               refusal uses for the same skill — shared from
-                               `skill-contents.ts` so the two cannot drift. Not
-                               `role="alert"`: this is standing content on a
-                               list, and a dozen alerts firing as the list
-                               renders would say nothing anyone could follow. */
+                            /* Not `role="alert"`: standing content on a list. */
                             <div
                               data-slot="too-large"
                               className="pt-[0.1875rem] font-mono text-9 font-medium text-brand-ink"
@@ -531,12 +424,6 @@ export function AddSkillDialog() {
                           <span className="font-mono text-9 font-medium whitespace-nowrap text-muted-foreground">
                             {formatStars(entry.stars)} ★
                           </span>
-                          {/* Provenance: which repository this skill was
-                              crawled from, in the slot the language pip used to
-                              hold. GitHub's whole `owner/name` — the owner is
-                              the informative half for `anthropics/skills`, and
-                              it is who a reader is deciding whether to trust.
-                              At text-9 mono it fits the one-line row. */}
                           <span className="flex items-center gap-[0.3125rem] font-mono text-9 font-medium whitespace-nowrap text-muted-foreground">
                             <span
                               aria-hidden
@@ -544,22 +431,12 @@ export function AddSkillDialog() {
                             />
                             {entry.repo}
                           </span>
-                          {/* Looks like a Chip but cannot be one — the whole row is
-                              already the click target, so this must not nest a
-                              button. The shared CVA keeps the two in step.
-                              Absent entirely on a row nothing can add: an
-                              affordance that does nothing is worse than none,
-                              and the reason is already on the row. */}
+                          {/* Chip styling without a button: the row is one. */}
                           {!tooLarge && (
                             <span
                               className={chipVariants({
                                 size: "stage",
                                 active: stagedHere,
-                                // The mark is a drawn glyph rather than a text
-                                // character now, so it is a flex item and needs
-                                // the row's own gap; `＋` carried its spacing
-                                // in the font, which is exactly why it never
-                                // sat level with anything beside it.
                                 className:
                                   "inline-flex items-center gap-[0.1875rem]",
                               })}
@@ -606,11 +483,7 @@ export function AddSkillDialog() {
   )
 }
 
-// One staged skill, waiting on its placement. A native `<select>`: the design
-// system has no dropdown, and the platform's own is keyboard-navigable,
-// screen-reader-announced and typeahead-searchable for free — none of which a
-// hand-rolled listbox would be without a great deal more code than a category
-// picker is worth.
+// A native `<select>`: the design system has no dropdown.
 function StagedRow({
   staged,
   holder,
@@ -634,8 +507,6 @@ function StagedRow({
       <span className="truncate">{name}</span>
 
       <label className="flex items-center gap-1.5">
-        {/* A real label rather than an `aria-label`, so the text is the
-            accessible name once and clicking it reaches the control. */}
         <span className="sr-only">Category for {name}</span>
         <select
           value={staged.categoryId}

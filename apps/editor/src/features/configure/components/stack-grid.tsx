@@ -97,8 +97,7 @@ const accountCells = (
     request: { kind: "remote", configId: saved.configId },
   }))
 
-// `unwritable` never comes back on its own: the write contract refuses the
-// pair before the request (CLI-851), so its words name the fix.
+// `unwritable` never comes back on its own, so its words name the fix.
 const WHY_NOT_ADOPTED = {
   unwritable:
     "a project-scoped skill is assigned to a sub-agent resting at global scope. Apply it, then fix the marked rows under assign skills",
@@ -120,7 +119,6 @@ const countByRefusal = (unadopted: Unadopted) =>
     new Map<AdoptionRefusal, number>()
   )
 
-// One sentence per reason, each saying how many saves it kept.
 const unadoptedNotice = (unadopted: Unadopted) =>
   [...countByRefusal(unadopted)]
     .map(
@@ -198,8 +196,7 @@ export function StackGrid() {
 
   return (
     <>
-      {/* Not dismissible (EDITOR-73): hiding it would hide the saves it
-          explains. Located by slot, since `main` already draws an alert. */}
+      {/* Not dismissible: hiding it would hide the saves it explains. */}
       {hasRefusals && (
         <p
           data-slot="adoption-notice"
