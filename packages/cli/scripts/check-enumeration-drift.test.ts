@@ -1,15 +1,6 @@
 /**
- * Contract for `scripts/check-enumeration-drift.ts` — the scan that a document claiming to
- * enumerate a source symbol exhaustively still names what that symbol actually holds.
- *
- * Two halves, like every check beside it. The first drives the check against fixture packages,
- * because the shapes that matter (a document naming a deleted symbol, a source member no document
- * lists, a registry row pointing at a section that has moved) must not exist in this repository at
- * all — the second half is the assertion that none of them does.
- *
- * The guards get a test each, and that is deliberate. Every check in this repository that has
- * failed us failed by declining to judge rather than by judging wrongly, and a row that silently
- * judges nothing reads exactly like a row that passed.
+ * Drives the check against fixture packages, then asserts this repository is clean. Each guard
+ * gets a test, since a row that silently judges nothing reads like a pass.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
@@ -41,19 +32,9 @@ import {
 } from "./check-enumeration-drift.js";
 import { expectRefusal } from "./refusal-expectations.js";
 
-/** This package's root, so a claim about a file in it is read from the file rather than a fixture. */
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 
-/**
- * The declarations that state markdown's cell escape, spelt as both files that carry them spell
- * them. `scripts/check-enumeration-drift.ts` copied them verbatim from
- * `src/cli/lib/__tests__/helpers/journey-page.ts`, and until one module can hold the rule for both
- * this is the only thing that makes the pair move together.
- *
- * The rule is a fact about how markdown is rendered rather than about either reader, so the two
- * have the same reason to change and no reason to change apart — which is what separates this from
- * a value each site restates so its own subject stays observable.
- */
+/** Copied verbatim from journey-page.ts; this keeps the two copies equal. */
 const ESCAPE_RULE_DECLARATIONS = [
   "const CELL_SEPARATOR = /(?<!\\\\)\\|/;",
   'const ESCAPED_PIPE = "\\\\|";',
@@ -71,14 +52,13 @@ const SECTION_CLOSES = "**Everything else**";
 
 const SENTINELS = "SENTINELS";
 
-/** A directory of modules plus the barrel that re-exports them, which is the shape of `factories/`. */
+/** The shape of `factories/`: modules plus a barrel. */
 const SOURCE_DIRECTORY = "src/kit";
 const KIT_ALPHA = `${SOURCE_DIRECTORY}/alpha-kit.ts`;
 const KIT_BRAVO = `${SOURCE_DIRECTORY}/bravo-kit.ts`;
 const KIT_BARREL = `${SOURCE_DIRECTORY}/index.ts`;
 const KIT_SPEC = `${SOURCE_DIRECTORY}/alpha-kit.test.ts`;
 
-/** A tree of oclif command modules, one per topic level, which is the shape of `commands/`. */
 const COMMAND_DIRECTORY = "src/commands";
 
 const OBJECT_SOURCE = [
@@ -96,13 +76,11 @@ const UNION_SOURCE = [`export type ${SENTINELS} = "alpha" | "bravo";`, ``].join(
 
 const EMPTY_OBJECT_SOURCE = [`export const ${SENTINELS} = {} as const;`, ``].join("\n");
 
-/** `as const satisfies` — this codebase's house style for a vocabulary array. */
 const SATISFIES_ARRAY_SOURCE = [
   `export const ${SENTINELS} = ["alpha", "bravo"] as const satisfies readonly string[];`,
   ``,
 ].join("\n");
 
-/** A `satisfies` with no `as const` beneath it, which is how the canonical test fixtures declare. */
 const SATISFIES_OBJECT_SOURCE = [
   `export const ${SENTINELS} = {`,
   `  ALPHA: "alpha",`,
@@ -111,7 +89,7 @@ const SATISFIES_OBJECT_SOURCE = [
   ``,
 ].join("\n");
 
-/** A constraint naming a member the literal does not hold, so reading it would over-report by one. */
+/** Reading the constraint instead of the literal would over-report by one. */
 const WIDER_CONSTRAINT_SOURCE = [
   `export const ${SENTINELS} = {`,
   `  ALPHA: "alpha",`,
@@ -120,7 +98,6 @@ const WIDER_CONSTRAINT_SOURCE = [
   ``,
 ].join("\n");
 
-/** Consts and functions in one module, so the two module-level readers can be told apart. */
 const MIXED_MODULE_SOURCE = [
   `export const ALPHA = { ONE: "one" } as const;`,
   `export const BRAVO = "bravo";`,
@@ -135,7 +112,6 @@ const MIXED_MODULE_SOURCE = [
   ``,
 ].join("\n");
 
-/** A sibling of the barrel: its own declarations are what the directory exports through it. */
 const KIT_ALPHA_SOURCE = [
   `export const ALPHA_DEFAULT = "alpha";`,
   ``,
@@ -147,7 +123,7 @@ const KIT_ALPHA_SOURCE = [
   ``,
 ].join("\n");
 
-/** A second sibling, one of whose exports the barrel does NOT re-export — as `helpers/` has. */
+/** One of its exports is not re-exported by the barrel. */
 const KIT_BRAVO_SOURCE = [
   `export function bravo(): string {`,
   `  return "bravo";`,
@@ -159,7 +135,6 @@ const KIT_BRAVO_SOURCE = [
   ``,
 ].join("\n");
 
-/** Named re-exports and nothing of its own, which is what makes the barrel enumerate nothing. */
 const KIT_BARREL_SOURCE = [
   `export { ALPHA_DEFAULT, alpha } from "./alpha-kit.js";`,
   `export type { AlphaOptions } from "./alpha-kit.js";`,
@@ -167,19 +142,11 @@ const KIT_BARREL_SOURCE = [
   ``,
 ].join("\n");
 
-/** A spec beside the modules: it is not part of the directory's export surface. */
 const KIT_SPEC_SOURCE = [`export const SPEC_ONLY = "spec";`, ``].join("\n");
 
-/** A whole-module re-export, whose members the reader cannot name without resolving the module. */
 const KIT_STAR_BARREL_SOURCE = [`export * from "./alpha-kit.js";`, ``].join("\n");
 
-/**
- * A helper module written the way `e2e/helpers/test-utils.ts` is, which is the shape the re-export
- * reader exists for: names imported from elsewhere and handed on through a BARE block, names
- * re-exported straight from their origin, types among both, and the module's own declarations
- * beside all of it. One of the bare names is aliased, because the export clause's spelling is what
- * a consumer imports and the origin's is not.
- */
+/** Shaped like e2e/helpers/test-utils.ts: bare and direct re-exports, aliases and types. */
 const HELPER_MODULE_SOURCE = [
   `import { alpha, ALPHA_DEFAULT } from "./alpha-kit.js";`,
   `import type { AlphaOptions } from "./alpha-kit.js";`,
@@ -197,7 +164,6 @@ const HELPER_MODULE_SOURCE = [
   ``,
 ].join("\n");
 
-/** The same module handing on a name it DECLARED, which neither reader answers for. */
 const HELPER_EXPORTING_ITS_OWN_DECLARATION = [
   `import { alpha } from "./alpha-kit.js";`,
   ``,
@@ -209,10 +175,6 @@ const HELPER_EXPORTING_ITS_OWN_DECLARATION = [
   ``,
 ].join("\n");
 
-/**
- * An object whose VALUES are what a document's second column states, which is `E2E_SKILL_TITLES`'s
- * shape: a key nothing renders and a title everything does.
- */
 const TITLED_OBJECT_SOURCE = [
   `export const ${SENTINELS} = {`,
   `  alpha: "First Sentinel",`,
@@ -222,7 +184,6 @@ const TITLED_OBJECT_SOURCE = [
   ``,
 ].join("\n");
 
-/** A value spelt as a template with a substitution, which is how `SCHEMA_PATHS` writes all seven. */
 const TEMPLATE_VALUE_SOURCE = [
   `const PREFIX = "First";`,
   `export const ${SENTINELS} = {`,
@@ -231,7 +192,6 @@ const TEMPLATE_VALUE_SOURCE = [
   ``,
 ].join("\n");
 
-/** A value spelt as a name declared elsewhere, which is how `STANDARD_FILES.METADATA_YAML` is. */
 const IDENTIFIER_VALUE_SOURCE = [
   `const SECOND_SENTINEL = "Second Sentinel";`,
   `export const ${SENTINELS} = {`,
@@ -241,7 +201,6 @@ const IDENTIFIER_VALUE_SOURCE = [
   ``,
 ].join("\n");
 
-/** A value holding a pipe, which no document can write in a table cell except as the escape `\|`. */
 const PIPED_VALUE_SOURCE = [
   `export const ${SENTINELS} = {`,
   `  alpha: "First | Sentinel",`,
@@ -250,7 +209,6 @@ const PIPED_VALUE_SOURCE = [
   ``,
 ].join("\n");
 
-/** A spread, which carries no name in this literal for either half of a pair to be read from. */
 const SPREAD_VALUE_SOURCE = [
   `const OTHERS = { charlie: "Third Sentinel" } as const;`,
   `export const ${SENTINELS} = {`,
@@ -276,7 +234,6 @@ const TABLE_ROWS_CLAIM = {
   states: "table-rows",
 } as const satisfies DocumentClaim;
 
-/** The heading the tables of a partitioned enumeration share, and the one a bystander uses. */
 const PARTITION_COLUMN = "Export";
 const BYSTANDER_COLUMN = "Union";
 
@@ -288,15 +245,10 @@ const PARTITIONED_TABLES_CLAIM = {
   column: PARTITION_COLUMN,
 } as const satisfies DocumentClaim;
 
-/**
- * The two headings a pairs row names and the one standing between them, which is the shape of the
- * table this was written for: a slug, an id the row binds nothing to, and a display title.
- */
 const KEY_COLUMN = "Key";
 const MIDDLE_COLUMN = "Id";
 const VALUE_COLUMN = "Title";
 
-/** A pipe in the column standing between the two a row names, escaped as markdown requires. */
 const PIPED_MIDDLE_CELL = "alpha-id \\| bravo-id";
 
 const TABLE_PAIRS_CLAIM = {
@@ -308,7 +260,6 @@ const TABLE_PAIRS_CLAIM = {
   valueColumn: VALUE_COLUMN,
 } as const satisfies DocumentClaim;
 
-/** A prose run of backticked names, which is how both `STEP_TEXT` documents state their list. */
 function documentNaming(names: string[]): string {
   return [
     `## A Section`,
@@ -320,7 +271,6 @@ function documentNaming(names: string[]): string {
   ].join("\n");
 }
 
-/** A table keyed by its first column. */
 function documentTabulating(keys: string[]): string {
   return [
     `## A Section`,
@@ -336,12 +286,6 @@ function documentTabulating(keys: string[]): string {
   ].join("\n");
 }
 
-/**
- * A table stating one member per row, with a column between the two the row names.
- *
- * `middleCell` is what that column carries when a test cares — nothing reads it, so what a row
- * writes there can only matter by changing where the cells around it end.
- */
 function documentPairing(rows: [key: string, value: string][], middleCell?: string): string {
   return [
     `## A Section`,
@@ -361,7 +305,6 @@ function documentPairing(rows: [key: string, value: string][], middleCell?: stri
   ].join("\n");
 }
 
-/** One markdown table, keyed by the heading its first column carries. */
 function tableKeyedBy(column: string, keys: string[]): string[] {
   return [
     `| ${column} | Purpose |`,
@@ -371,10 +314,6 @@ function tableKeyedBy(column: string, keys: string[]): string[] {
   ];
 }
 
-/**
- * An enumeration a document splits across several tables, with a table on another subject standing
- * between them.
- */
 function documentPartitioning(groups: string[][], bystanders: string[]): string {
   return [
     `## A Section`,
@@ -604,11 +543,6 @@ describe("what the source is read from", () => {
   });
 });
 
-/**
- * A directory's own export surface. It could not be expressed while a row named one file: a barrel
- * declares nothing of its own, and there is no file whose members are "the commands under this
- * tree".
- */
 describe("a source enumeration that is a directory", () => {
   const KIT_FILES = {
     [KIT_ALPHA]: KIT_ALPHA_SOURCE,
@@ -777,22 +711,6 @@ describe("a source enumeration that is a directory", () => {
   });
 });
 
-/**
- * A file's RE-EXPORT surface — what a consumer imports from a module that did not write it. The
- * fourth shape: the two file readers answer what a module DECLARES, and the directory reader answers a different and
- * larger set from a subject no row naming a file can name.
- *
- * **The design question it turns on: what does a locally-imported-then-re-exported name resolve
- * to?** To the export clause's own spelling, and nothing is followed to say so. The table is a list
- * of what a spec writes in its import statement, and the origin module is prose in the row beside
- * it — so `export { a as b }` answers `b`, and thirteen of the thirty-one names, which reach the
- * block through a local import, answer exactly as they are written there.
- *
- * The imports are read for ONE purpose, and it is the refusal below: a bare block can hand on a
- * name the module DECLARED, and such a declaration carries no export modifier, so `exports:
- * "function"` cannot see it either. The name would fall through both readers and be reported by
- * neither, which is the silent under-report this file refuses everywhere else.
- */
 describe("a source enumeration that is a file's re-exports", () => {
   it("reads the names of a bare export block, which no reader could reach from a row naming a file", async () => {
     const packageRoot = await writeFixturePackage({
@@ -928,22 +846,7 @@ describe("a source enumeration that is a file's re-exports", () => {
   });
 });
 
-/**
- * A member bound together with its VALUE, which is the half a key-only reading can never judge.
- *
- * The defect was proved on 2026-08-19: `E2E_SKILL_TITLES` was registered, `check()` answered
- * `agrees` over ten members and reported the run clean, and five of the document's Display-title
- * cells were wrong. Neither half of the check could see them — the source side read
- * `property.name.text` and never reached an initializer, and the document side read the first cell
- * of a row and could not reach a second column. A fixture-title rename passed it untouched, and the
- * two halves went on agreeing about the only thing either of them read.
- *
- * **Pairs rather than values, and the reason is the SWAP.** Two rows exchanging their titles leave
- * a values-only set identical and every count intact, so a check reading values alone is blind to
- * the one edit most likely to be made by hand; the set of pairs moves by four members. Pairs also
- * leave the verdict's shape alone — a `string[]` compared in both directions — so nothing
- * downstream of `judgeEntry` learns a second vocabulary to say what a value is.
- */
+/** A values-only set cannot see a swap; pairs can. */
 describe("an enumeration bound as key-value pairs rather than keys alone", () => {
   it("is clean when the two named columns state what the members hold", async () => {
     const packageRoot = await writeFixturePackage({
@@ -1144,22 +1047,7 @@ describe("an enumeration bound as key-value pairs rather than keys alone", () =>
   });
 });
 
-/**
- * Markdown gives a table cell one escape and no other way to hold a pipe — `\|`, resolved before
- * the cell's inline markup is parsed, which is why it works inside a code span where no other
- * backslash escape does. A reader splitting on a bare `|` therefore disagrees with every renderer
- * of the same page about where a correctly-written cell ends: the row comes out one cell too wide
- * and every column after the escape shifts by one.
- *
- * The two readers that resolve a column POSITIONALLY answer from the shifted row rather than
- * refusing, so the failure is a confident wrong answer — the checker reports a correct document as
- * drifted, and the repair it invites is to edit the document. The key readers beside them take the
- * first cell and are shifted only by a pipe in the member name itself.
- *
- * The separator is spelt exactly as `__tests__/helpers/journey-page.ts` spells it, which reads the
- * journey tables the same way. Two escape-aware readers that disagreed about where a cell ends
- * would be worse than one naive one.
- */
+/** Positional readers would answer confidently from a row shifted by an unescaped split. */
 describe("a table cell that holds a pipe", () => {
   it("reads the value column through an escaped pipe standing in the column before it", async () => {
     const packageRoot = await writeFixturePackage({
@@ -1270,10 +1158,6 @@ describe("what the document is read from", () => {
   });
 });
 
-/**
- * An enumeration a document states as several tables rather than one. `table-rows` reads the first
- * and stops, so without this the row could not be written at all.
- */
 describe("a document that partitions one enumeration across several tables", () => {
   it("reads every table the section keys the same way", async () => {
     const packageRoot = await writeFixturePackage({

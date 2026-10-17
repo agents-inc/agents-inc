@@ -1,17 +1,4 @@
-/**
- * Contract for `scripts/check-mirrored-constants.ts` — the scan that every structural value
- * `e2e/pages/constants.ts` mirrors still reads what the product declares.
- *
- * Two halves, like every check beside it. The first drives the check against fixture packages,
- * because a drifted mirror must not exist in this repository at all — the second half is the
- * assertion that none does.
- *
- * The guards get a test each. A mirror that silently stops being judged — a renamed symbol, a
- * withdrawn key, a value that became a reference — reads exactly like a mirror that agrees, and
- * these values are ones whose drift does not announce itself: a wrong `EXIT_CODES.CANCELLED`
- * fails an assertion against the number it expected, and a wrong `TERMINAL_SIZE.SHORT.rows`
- * does not fail at all — every spec using it hangs on the resize prompt until its budget runs out.
- */
+/** Drives the check against fixture packages, then asserts this repository is clean. */
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,11 +22,10 @@ const PRODUCT_FILE = "src/exit-codes.ts";
 const SYMBOL = "EXIT_CODES";
 const NAME = "EXIT_CODES";
 
-/** A code the product declares and the mirror must match — the one direction that is drift. */
 const SHARED_KEY = "CANCELLED";
 const SHARED_VALUE = 4;
 
-/** A code the MIRROR adds and the product never emits: the shell's, not the CLI's. */
+/** The shell's command-not-found status, which the CLI never emits. */
 const MIRROR_ONLY = `  UNKNOWN_COMMAND: 127,`;
 
 const RECORD_MIRROR: Mirror = {
@@ -108,13 +94,6 @@ describe("check-mirrored-constants", () => {
       });
     });
 
-    /**
-     * The direction that is NOT drift, and the reason the comparison walks the product's members
-     * rather than comparing the two records outright. Without this the E2E tree could not name a
-     * status the CLI never emits, and `UNKNOWN_COMMAND: 127` — what a spec sees when `dist/` is
-     * absent and the shell answers instead of the binary — would have to be deleted or faked into
-     * production.
-     */
     it("permits a code the mirror adds and the product never emits", async () => {
       const packageRoot = await packageWith({
         [MIRROR_FILE]: record(SHARED_VALUE, MIRROR_ONLY),
@@ -124,7 +103,6 @@ describe("check-mirrored-constants", () => {
       expect(check({ packageRoot, mirrors: [RECORD_MIRROR] }).clean).toBe(true);
     });
 
-    /** The other direction: a code the product GAINS and the mirror lacks is drift. */
     it("reports a code the product declares and the mirror lacks", async () => {
       const packageRoot = await packageWith({
         [MIRROR_FILE]: record(SHARED_VALUE),
@@ -211,10 +189,6 @@ describe("check-mirrored-constants", () => {
       expectRefusal(() => check({ packageRoot, mirrors: [VALUE_MIRROR] }), NO_KEY);
     });
 
-    /**
-     * A computed value is a claim about how the value is BUILT rather than what it is. Comparing
-     * one to a literal would pass while the two differ, so it is refused rather than read.
-     */
     it("refuses a value that is a reference rather than a literal", async () => {
       const packageRoot = await packageWith({
         [MIRROR_FILE]: `const GATE = 20;\nexport const TERMINAL_SIZE = { SHORT: { rows: GATE, cols: 100 } } as const;`,

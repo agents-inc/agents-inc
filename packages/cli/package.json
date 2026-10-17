@@ -2,9 +2,9 @@
   "name": "agents-inc",
   "version": "0.170.1",
   "description": "CLI for managing Agents Inc. skills, stacks, and agents for Claude Code",
-  "//generate": "The write path for all four generators, in dependency order: generate:types reads the skills marketplace and writes src/cli/types/generated/, then generate:schemas copies SKILL_SLUGS and CATEGORIES out of it into metadata.schema.json's enums, then generate:matrix vendors the same directory into packages/matrix, then generate:compile vendors this package's own src/agents/ partials and templates into packages/compile. A marketplace change drifts the first three, and .github/workflows/regenerate-catalog.yml runs those three step by step; generate:compile is not on that chain, because an agent-partial edit drifts it and a marketplace change does not. It replaces the write path only: the :check variants stay separate because CI deliberately runs different subsets of them in different jobs.",
-  "//no-shared-vitest-config": "A three-project suite — unit, integration and commands, each with its own include and the retry that separates them — behind one root config that also carries vitest.setup.ts, disableConsoleIntercept for @oclif/test and ink-testing-library, and its own timeouts. @workspace/vitest-config is a single-project node config that turns globals off, which this suite needs on, so merging it in would contradict as much as it contributed. e2e/vitest.config.ts stands under the same decision. Read by scripts/check-shared-vitest-config.ts in packages/cli.",
-  "//test:smoke": "The second half of e2e/vitest.config.ts, which is now two named projects over one tree: `test:e2e` runs `*.e2e.test.ts` and this runs `*.smoke.test.ts`. Before this pair existed no command ran the smoke files at all — the old single `include` excluded them, vitest has no `--include` flag, and reaching them took a hand-written config nobody had. They sat outside every gate for months and rotted exactly as you would expect: a marketplace fixture the Claude CLI has always rejected sat under a spec named 'should add a marketplace from a local directory source' that had never once added one. It DOES run in CI, and deliberately, and what it proves there now has TWO halves that must not be conflated. The Claude probes are `describe.skipIf(!claudeAvailable)` and the runner has no `claude`, so nothing they assert is coverage of the Claude CLI and must not be reported as such — for that, run them on a machine that has the binary. What a skipped run still proves is that the files collect, import and resolve their helpers, which is the whole of what rotted. The Codex probe does NOT skip: `e2e/smoke/codex-lane.smoke.test.ts` runs the pinned @openai/codex devDependency for real on every runner, so its assertions are coverage. `grep -L 'describe.skipIf' e2e/smoke/*.smoke.test.ts` is which files are which — a bare `skipIf` does not separate them, because codex-lane's docblock says in prose that it carries none.",
+  "//generate": "Runs all four generators in dependency order; the :check variants stay separate because CI runs different subsets.",
+  "//no-shared-vitest-config": "A three-project suite with globals on and its own setup and timeouts; the shared single-project, globals-off config would contradict it.",
+  "//test:smoke": "Runs e2e *.smoke.test.ts; the Claude probes skip without the binary, the Codex probe runs for real.",
   "type": "module",
   "main": "dist/index.js",
   "exports": {
@@ -44,7 +44,7 @@
     "prompt-engineering",
     "ai-tools"
   ],
-  "//sideEffects": "compile-seat.ts is imported bare to seat @workspace/compile's warnings; with plain false, esbuild drops that import and every warning the compile package raises goes nowhere.",
+  "//sideEffects": "compile-seat.ts is imported bare for its side effect, which plain false would let esbuild drop.",
   "sideEffects": [
     "./src/cli/lib/compile-seat.ts"
   ],
@@ -76,7 +76,7 @@
     "dev": "tsup --watch",
     "agentsinc": "node dist/index.js",
     "agentsinc:dev": "bun src/cli/index.ts",
-    "//test": "No `pretest` hook, deliberately, and removing it fixed a real defect. turbo.json already orders `build` before `test` and `test:e2e` via dependsOn, so an npm pre-hook is a SECOND build — and turbo runs those tasks concurrently, so `turbo run test test:e2e` fired three tsup builds and two of them raced on one dist/. tsup builds with clean:true, so the loser died with `ENOENT ... unlink dist/chunk-*.js` out of pretest:e2e; measured 2026-08-23 at 3 tsup invocations per invocation, now 1. That race aborted a push with no legible error, four hundred lines up in interleaved output. Running vitest directly is unaffected and stays a refusal rather than a rebuild: assertDistIsFresh in src/cli/lib/testing/dist-staleness.ts names a stale or absent dist and says to run `bun run build` — which is the posture that file argues for, since a direct `vitest run` should stay fast and stay something you asked for. A SECOND thing the two suites share, and it is not the dist/ one: each keeps a fixture at a FIXED os.tmpdir() path — the E2E source tree, and the unit suite's checkout of the default marketplace — because globalSetup runs in vitest's own process while the specs run in forked workers, so neither side can be handed the location and both compute it. A fixed path belongs to the machine and not to the run, so the rule it costs is that a fixture is written by the runner that owns it and by nothing else. shared-source.test.ts broke that for months: collected by the `unit` project, it rebuilt and removed the E2E fixture on the real path in six specs and an afterEach, and both suites stayed green while it deleted the tree the E2E specs read. src/cli/lib/__tests__/shared-fixture-writers.test.ts holds the rule against a walk of the tree, and src/cli/lib/__tests__/helpers/shared-source.ts states it in full.",
+    "//test": "No pretest hook: turbo already builds before test, and a second build races tsup on dist/.",
     "test": "vitest run",
     "test:e2e": "vitest --config e2e/vitest.config.ts --run --project e2e",
     "test:smoke": "vitest --config e2e/vitest.config.ts --run --project smoke",
@@ -131,7 +131,7 @@
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
-  "//devDependencies": "@workspace/matrix, @workspace/compile and @workspace/api are private and never installed by a consumer, so all three are devDependencies and tsup bundles them (see `noExternal`). matrix is the one home of the seed wire contract, which src/cli/lib/seed/ used to hand-vendor; compile is the one home of the config-pair and compiled-agent renderers, which the editor's output preview draws with; api is the one home of the typed client both front doors reach the worker through, which src/cli/lib/seed/fetch-seed.ts used to hand-write a fetch for. api pulls `hono/client` in with it, and `hono` is deliberately NOT a dependency here: tsup externalises exactly what `dependencies` names, so leaving it out is what inlines it into the bundle rather than adding a runtime install to a CLI that makes one GET. The cost of that was measured before it was accepted — `find dist -name '*.js' -not -name '*.map' | xargs du -cb | tail -1` is the number. @workspace/api-mocks and msw are a different case and are named in neither `noExternal` nor this rule: nothing under src/cli/ imports them, so they reach no bundle at all — they are the one description of the worker this suite's network mocks are resolved from, and the editor's suites read the same one.",
+  "//devDependencies": "The private @workspace packages are devDependencies so tsup bundles them (see noExternal); hono is omitted from dependencies so it is inlined too.",
   "devDependencies": {
     "@eslint/js": "^10",
     "@lydell/node-pty": "^1.2.0-beta.3",

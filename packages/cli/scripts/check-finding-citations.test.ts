@@ -1,12 +1,3 @@
-/**
- * Contract for `scripts/check-finding-citations.ts` — the scan that a finding named outside
- * `.ai-docs/` is a finding that still exists.
- *
- * Two halves, like the checks beside it. The first drives it against fixture trees, because the
- * shapes that decide the answer — a link versus a mention, a name that is a substring of a longer
- * filename, a name truncated with an ellipsis — cannot all be present in the real tree at once. The
- * second runs it against this repository, which is the assertion that holds the rule.
- */
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -44,7 +35,6 @@ const A_PLAN_NOBODY_WROTE = "2026-08-19-a-plan-nobody-ever-wrote";
 const TRACKER = "cli.md";
 const RELEASE_NOTE = "0.99.0.md";
 
-/** A spec cites in a comment, and its tree holds no markdown at all — hence the `.ts` suffix. */
 const SPEC = "lifecycle/a-journey.e2e.test.ts";
 
 const roots: string[] = [];
@@ -53,10 +43,6 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(cleanupTempDir));
 });
 
-/**
- * A tree with the finding directory and every scope, written from one description so a test states
- * only the documents whose text it is about.
- */
 async function writeFixtureTree(documents: Record<string, string>): Promise<string> {
   const root = await createTempDir("finding-citations-");
   roots.push(root);
@@ -68,7 +54,6 @@ async function writeFixtureTree(documents: Record<string, string>): Promise<stri
 
   for (const [document, text] of Object.entries(documents)) {
     const documentPath = path.join(root, document);
-    // A spec sits in a subdirectory of its scope, which no scope root above has created.
     mkdirSync(path.dirname(documentPath), { recursive: true });
     writeFileSync(documentPath, text);
   }
@@ -151,11 +136,6 @@ describe("a tracker naming a finding", () => {
   });
 });
 
-/**
- * `todo/plans/` names its plans and their lane folders date-first, so a plan's name has exactly a
- * finding's shape. What separates the two is the disk, not the path a link points along: a dated
- * name a plan carries resolves, and one that nothing carries is still a dangling citation.
- */
 describe("a tracker naming a dated plan", () => {
   it("says nothing when the name is a plan document on disk", async () => {
     const root = await writeFixtureTree({
@@ -195,13 +175,6 @@ describe("a tracker naming a dated plan", () => {
   });
 });
 
-/**
- * The scope split `agent-findings/INDEX.md` states and the one exception it carries. A release note
- * naming a finding is a dated statement about a past version and stays true after the file goes;
- * rewriting one would falsify the record of what the release said. A LINK is different — it offers
- * a reader a pointer that resolves to nothing — and twenty-seven of them were de-linked for exactly
- * that reason.
- */
 describe("a changelog naming a finding", () => {
   it("is left alone when the name is plain text", async () => {
     const root = await writeFixtureTree({
@@ -318,12 +291,6 @@ describe("the scan", () => {
   });
 });
 
-/**
- * The spec scope, and the one thing about it that is not shared with the two above: its tree holds
- * no markdown. A scope reader that judged documents by a `.md` suffix would walk 274 specs, read
- * none of them, and report a clean tree — which is the vacuous pass this file's `examined` count
- * exists to make impossible, arriving one level lower where that count cannot see it.
- */
 describe("a spec citing a finding", () => {
   it("is read at all, though the citation is in TypeScript rather than markdown", async () => {
     const root = await writeFixtureTree({
@@ -355,37 +322,7 @@ describe("a spec citing a finding", () => {
   });
 });
 
-/**
- * What each scope cites today, which is the thing one repository-wide `examined > 0` could not say.
- * The trackers and the changelogs satisfied that count between them, so `packages/cli/e2e` could
- * read nothing at all while the `it` filtering dangling citations to it asserted over an empty list
- * and passed.
- *
- * The spec scope's zero WAS stated rather than assumed, and it has moved twice. It first read zero
- * because four specs had cited two findings an old prune removed, and repairing them deleted the
- * four sentences rather than repointing them. On 2026-08-21 three lifecycle specs cited
- * `2026-08-21-three-specs-pressed-space-at-a-wizard-that-refuses.md` from the KNOWN GAP comments
- * the closed-loop Space confirmation forced them to carry, this line reddened exactly as it said
- * it would, and the value moved. It moved back on 2026-08-24, when a product removal deleted
- * `STEP_TEXT.ONLY_SKILL_IN_CATEGORY` from `e2e/pages/constants.ts` and the comment above it went
- * with the constant — by then that comment was the spec tree's last citation. The second look this
- * line asks for was taken, and the ruling is that the value follows the citation: one attached to a
- * behaviour that no longer exists is right to go with it, and manufacturing a replacement to hold
- * the old value would leave this line asserting about prose written to satisfy it. Moving it either
- * way is worth that second look rather than a silent edit.
- *
- * It moved a third time on 2026-09-03, this time for good reason rather than a repair that
- * happened to touch the last citation. `compile` seating the merged matrix (local skills included)
- * before rendering closed the sibling defect `.ai-docs/agent-findings/2026-09-03-a-fixture-modeling-
- * a-skill-absent-from-the-matrix-stops-being-absent-once-compile-seats-locals.md` describes, which
- * left `warn-suppression-stops-at-the-harness.e2e.test.ts`'s fixture modeling a state `compile` no
- * longer produces. The rebuilt fixture's JSDoc cites that finding by basename to say why the fixture
- * changed shape, which is itself a citation — the spec scope's first.
- *
- * It moved back on 2026-10-02, under the same ruling: the stack warning that spec existed to carry
- * to a user was deleted on the owner's word, the option suppressing it went with it, and so did the
- * spec — and its JSDoc was the spec tree's only citation.
- */
+/** Each scope's population on its own; a spec-tree change here follows the citation, not the other way round. */
 type ScopePopulation = "cites findings" | "cites none today";
 
 const SCOPE_POPULATIONS: Record<string, ScopePopulation> = {
@@ -394,7 +331,6 @@ const SCOPE_POPULATIONS: Record<string, ScopePopulation> = {
   [SPECS]: "cites none today",
 };
 
-/** One scope read on its own, so no scope's silence can be covered by another's population. */
 function populationOf(scope: CitationScope): ScopePopulation {
   return check({ scopes: [scope] }).examined > 0 ? "cites findings" : "cites none today";
 }
@@ -435,18 +371,7 @@ describe("this repository", () => {
   });
 });
 
-/**
- * Where this package's gates say what they read, against what the task running them says it hashes.
- *
- * The scans above are only evidence if they RAN. `todo/` sits outside every workspace, so turbo's
- * default input set — every file in the package — cannot reach it, and a change confined to a
- * tracker leaves `agents-inc#test`'s hash byte-identical. The cached pass that replays then
- * describes a tree the scan never opened, which is the same green a fully-resolving tree gives.
- *
- * The required entries are DERIVED from the gates' own exported paths rather than listed here, so a
- * scope row added to {@link SCOPES} that reaches outside this package fails this assertion instead
- * of quietly leaving the cache stale.
- */
+/** `todo/` is outside every workspace, so the test task must hash it or a cached pass replays. */
 const TURBO_CONFIG = "turbo.json";
 
 const THIS_PACKAGE = "packages/cli/";
@@ -454,12 +379,10 @@ const THIS_PACKAGE = "packages/cli/";
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REPOSITORY_ROOT = path.resolve(PACKAGE_ROOT, "../..");
 
-/** Only the shape this assertion reads — the rest of the task's declaration is not its business. */
 const turboConfigSchema = z.object({
   tasks: z.object({ test: z.object({ inputs: z.array(z.string()).optional() }) }),
 });
 
-/** Every repository-relative path this package's gates open, taken from the gates themselves. */
 function everyTreeTheGatesRead(): string[] {
   return [
     ...SCOPES.map((scope) => scope.directory),
@@ -473,7 +396,6 @@ function isOutsideThisPackage(repositoryPath: string): boolean {
   return !repositoryPath.startsWith(THIS_PACKAGE);
 }
 
-/** How the task must spell a path it cannot reach by default: relative to the package, and whole. */
 function turboInputFor(repositoryPath: string): string {
   const fromPackage = `../../${repositoryPath}`;
   return statSync(path.join(REPOSITORY_ROOT, repositoryPath)).isDirectory()
@@ -481,11 +403,7 @@ function turboInputFor(repositoryPath: string): string {
     : fromPackage;
 }
 
-/**
- * Parsed rather than searched for as text. `turbo.json` carries `//` comments explaining itself, so
- * a substring check for an entry is satisfied by a comment mentioning it — the shape where a gate
- * proves nothing because the thing it looked for is prose.
- */
+/** Parsed, not grepped: a comment mentioning an entry would satisfy a text search. */
 function declaredTestInputs(): string[] {
   const configPath = path.join(PACKAGE_ROOT, TURBO_CONFIG);
   const { config, error } = ts.parseConfigFileTextToJson(
@@ -502,7 +420,6 @@ function declaredTestInputs(): string[] {
   return turboConfigSchema.parse(parsed).tasks.test.inputs ?? [];
 }
 
-/** The trees a gate reads that the task running it does not hash — each one a replayable green. */
 function unhashedTreesTheGatesRead(): string[] {
   const declared = new Set(declaredTestInputs());
 

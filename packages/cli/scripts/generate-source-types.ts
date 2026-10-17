@@ -1,17 +1,6 @@
 /**
- * Generates TypeScript types from skills source and agent metadata — the writer of every file in
- * `src/cli/types/generated/`.
- *
- * Phase 1: source-types.ts (unions, SKILL_MAP, const arrays)
- * Phase 2: matrix.ts (full MergedSkillsMatrix + derived lookup maps)
- * Phase 3: activation-descriptions.ts (each skill's SKILL.md description, by id)
- *
- * Run: bun run generate:types [skills-source-path] — or generate:types:check, which reports drift
- * and writes nothing. Both go through scripts/run-generate-source-types.ts: nothing runs at module
- * scope here, so importing this file writes no files.
- *
- * Unlike its two siblings this generator reads a checkout outside the repository, which is why its
- * check runs at publish and in the catalogue-regeneration workflow rather than in ci.yml.
+ * Writes `src/cli/types/generated/` from a skills checkout and this package's agent metadata.
+ * Importing this file writes nothing.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
 import path from "path";
@@ -19,7 +8,6 @@ import { format, resolveConfig } from "prettier";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
-// Phase 2 imports — pure logic, no circular dependencies
 import { GENERATED_AT_BUILD } from "../src/cli/consts";
 import { defaultCategories } from "../src/cli/lib/configuration/default-categories";
 import { defaultStacks } from "../src/cli/lib/configuration/default-stacks";
@@ -32,13 +20,10 @@ import { bytewise } from "../src/cli/utils/string";
 import type { ExtractedSkillMetadata, ResolvedStack, SkillId } from "../src/cli/types";
 import type { Options as PrettierOptions } from "prettier";
 
-/** Where the generator reads agent metadata from when no other root is given. */
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 
-/** Prettier's parser for the `.ts` files this generator emits. */
 const TYPESCRIPT_PARSER = "typescript";
 
-/** Emitted paths, relative to the output directory and in emission order. */
 const SOURCE_TYPES_FILE = "source-types.ts";
 const MATRIX_FILE = "matrix.ts";
 const ACTIVATION_DESCRIPTIONS_FILE = "activation-descriptions.ts";
@@ -47,35 +32,20 @@ export type AgentEntry = {
   id: string;
 };
 
-/** One file the generator owns. `path` is relative to the output directory. */
+/** `path` is relative to the output directory. */
 type EmittedFile = { path: string; content: string };
 
-/** Where the generator reads. Both are parameters so the suite can drive it against fixtures. */
 type SourceRoots = { skillsSource: string; cliRoot?: string };
 
-/** Where it reads, plus where it writes or compares. */
 type GeneratorRoots = SourceRoots & { outDir: string };
 
-/** What one generation round read, for the runner to report. */
 type CatalogueCounts = { skills: number; categories: number; domains: number; agents: number };
 
-/** Everything one round produces: the files to write or compare, and what it read to build them. */
 type Emission = { files: EmittedFile[]; counts: CatalogueCounts };
 
 /**
- * What this generator reads is hand-authored in the skills repository, so it is
- * the least trustworthy input in the package — and `parseYaml` types it `any`,
- * which made every field below an unchecked read. These schemas are the parse
- * boundary: deliberately loose, because the generator's own `throw`s already
- * name the two fields a skill cannot ship without, and the id-shaped fields are
- * cast to their unions further down where the vocabulary is known.
- *
- * Loose about which fields must be PRESENT, that is — not about a present key
- * holding `undefined`, which is why every field below is `.exactOptional()`
- * rather than the plain spelling `typescript-types-bible.md` § 4a rules out at
- * a parse boundary. It costs the loose reading nothing: YAML cannot express
- * `undefined` at all, and an empty value parses as `null`, which both
- * spellings reject alike.
+ * Parse boundary for hand-authored skills-repo YAML. Loose about presence; required fields are
+ * checked by the throws below.
  */
 const skillMetadataSchema = z.object({
   custom: z.boolean().exactOptional(),
@@ -88,10 +58,7 @@ const skillMetadataSchema = z.object({
   author: z.string().exactOptional(),
 });
 
-/** `name` is required: a SKILL.md without one has no id, and an id of
- * `undefined` written into the generated unions is a compile error a long way
- * from its cause. `description` is the sentence a compiled sub-agent's
- * skill-activation table shows, because compile reads SKILL.md itself. */
+/** `name` is the skill id; `description` feeds the compiled agent's skill-activation table. */
 const skillFrontmatterSchema = z.object({
   name: z.string(),
   description: z.string().exactOptional(),
@@ -103,8 +70,7 @@ const agentMetadataSchema = z.object({
   domain: z.string().exactOptional(),
 });
 
-/** Parses YAML against a schema, naming the directory the bad file is in —
- * which is the one thing a zod message cannot say for itself. */
+/** Names the offending file, which a zod message cannot. */
 function parseMetadata<T>(schema: z.ZodType<T>, raw: string, describe: string): T {
   const result = schema.safeParse(parseYaml(raw));
   if (!result.success) {
@@ -112,8 +78,6 @@ function parseMetadata<T>(schema: z.ZodType<T>, raw: string, describe: string): 
   }
   return result.data;
 }
-
-// -- Extract skills ----------------------------------------------------------
 
 export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[] {
   const skillsDir = path.join(skillsSourcePath, "src/skills");
@@ -136,9 +100,8 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
     }
 
     const metadata = parseMetadata(skillMetadataSchema, metadataRaw, `${dir.name}/metadata.yaml`);
-    if (metadata.custom) continue; // custom skills register at runtime
+    if (metadata.custom) continue;
 
-    // Extract name + description from SKILL.md frontmatter
     const fmMatch = skillMdRaw.match(/^---\n([\s\S]*?)\n---/);
     if (!fmMatch) {
       console.warn(`  ⚠ Skipping ${dir.name}: no frontmatter in SKILL.md`);
@@ -159,7 +122,7 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
       throw new Error(`Skill ${dir.name} is missing required 'displayName' in metadata.yaml`);
     }
 
-    // Boundary casts: YAML strings narrowed to union types at parse boundary
+    // Parse boundary: YAML strings narrowed to the generated unions.
     entries.push({
       slug: metadata.slug as ExtractedSkillMetadata["slug"],
       id: frontmatter.name as ExtractedSkillMetadata["id"],
@@ -167,8 +130,7 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
       domain: metadata.domain as ExtractedSkillMetadata["domain"],
       displayName: metadata.displayName,
       description: metadata.cliDescription,
-      // The rule `extractAllSkills` applies when it writes catalog.json, so the two catalogues
-      // agree on every skill they both read.
+      // Same rule `extractAllSkills` applies to catalog.json.
       ...(frontmatter.description && { activationDescription: frontmatter.description }),
       ...(metadata.usageGuidance !== undefined && { usageGuidance: metadata.usageGuidance }),
       author: metadata.author || "",
@@ -180,13 +142,10 @@ export function extractSkills(skillsSourcePath: string): ExtractedSkillMetadata[
   return entries;
 }
 
-// -- Extract agents ----------------------------------------------------------
-
 export function extractAgents(cliRootPath: string): AgentEntry[] {
   const agentsDir = path.join(cliRootPath, "src/agents");
   const agents: AgentEntry[] = [];
 
-  // Walk two levels: src/agents/{group}/{agent}/metadata.yaml
   for (const group of readdirSync(agentsDir, { withFileTypes: true })) {
     if (!group.isDirectory() || group.name === "_templates") continue;
     const groupDir = path.join(agentsDir, group.name);
@@ -217,8 +176,6 @@ export function extractAgents(cliRootPath: string): AgentEntry[] {
   return agents;
 }
 
-// -- Phase 1: Generate source-types.ts ---------------------------------------
-
 function assertUnique(values: string[], label: string): void {
   if (new Set(values).size === values.length) return;
 
@@ -226,10 +183,8 @@ function assertUnique(values: string[], label: string): void {
   throw new Error(`Duplicate ${label}: ${[...new Set(dupes)].join(", ")}`);
 }
 
-/** One quoted-and-comma'd line per value — the body of an emitted `[...]` or `{...}` literal. */
 const quotedLines = (values: readonly string[]) => values.map((value) => `"${value}",`);
 
-/** The TypeScript source of `source-types.ts`, before Prettier. */
 export function renderSourceTypes(
   skills: ExtractedSkillMetadata[],
   agentEntries: AgentEntry[],
@@ -249,7 +204,6 @@ export function renderSourceTypes(
   const domains = [...new Set(skills.map((s) => s.domain))].sort();
   const skillIds = [...new Set(skills.map((s) => s.id))].sort();
 
-  // The emitted file, top to bottom.
   const lines: string[] = [
     "// AUTO-GENERATED from skills source and agent metadata — do not edit manually",
     "// Run: bun run generate:types",
@@ -302,9 +256,6 @@ export function renderSourceTypes(
   return lines.join("\n");
 }
 
-// -- Helpers ------------------------------------------------------------------
-
-/** Groups entries by a derived key, sorting both outer keys and inner value arrays. */
 export function sortedGroupBy<T>(
   entries: [string, T][],
   keyFn: (value: T) => string,
@@ -321,66 +272,39 @@ export function sortedGroupBy<T>(
   );
 }
 
-// -- Phase 2: Generate matrix.ts ---------------------------------------------
-
-/**
- * A skill as `BUILT_IN_MATRIX` records it: without the sentence
- * {@link renderActivationDescriptions} carries.
- */
+/** Strips the sentence {@link renderActivationDescriptions} carries. */
 const withoutActivationDescription = ({
   activationDescription: _carriedSeparately,
   ...recorded
 }: ExtractedSkillMetadata): ExtractedSkillMetadata => recorded;
 
-/**
- * The TypeScript source of `matrix.ts`, before Prettier.
- *
- * Each skill's SKILL.md description is left out. The editor vendors `BUILT_IN_MATRIX` into its
- * first paint, and only its output preview reads that sentence, behind a click — so it is emitted
- * as a file of its own, which the preview loads with itself.
- */
+/** SKILL.md descriptions are emitted separately, keeping them out of the editor's first paint. */
 export function renderMatrix(skills: ExtractedSkillMetadata[], skillIdSet: Set<string>): string {
-  // Emission order is a promise, not an accident. matrix.skills takes its key
-  // order from this array, and the array arrives in readdirSync order — a
-  // property of the filesystem, not of the marketplace. The first live CI
-  // regeneration proved it: same skills commit,
-  // byte-different matrix.ts, 17,300-line pull request of pure reordering.
-  // Byte-wise comparison rather than localeCompare, deliberately: localeCompare
-  // with no locale argument reads the process's default collation from LC_ALL /
-  // LANG, not the ICU build, so a contributor whose desktop language orders
-  // these ids differently regenerates this file in a different order.
+  // Byte order, not readdirSync or locale order, so regeneration is machine-independent.
   const sortedSkills = skills
     .map(withoutActivationDescription)
     .sort((a, b) => bytewise(a.id, b.id));
 
-  // Through the same arrangement the CLI's own loader makes of these three inputs: the
-  // built-in rules narrowed to the slugs this catalogue ships, then merged. Reaching
-  // `defaultRules` directly instead left every rule the catalogue cannot express in the
-  // emitted matrix, so a smaller catalogue than the public one generated a file recording
-  // dangling slugs that the CLI, loading the very same directory, would never see.
+  // Mirrors the CLI loader: rules narrowed to the slugs this catalogue ships, then merged.
   const relationships = relationshipsForSource(sortedSkills);
   const matrix = mergeMatrixWithSkills(defaultCategories, relationships, sortedSkills);
 
-  // A written matrix records a build, not a moment — see GENERATED_AT_BUILD
   matrix.generatedAt = GENERATED_AT_BUILD;
 
-  // Resolve stacks from defaultStacks
   matrix.suggestedStacks = defaultStacks.map((stack) => resolveStack(stack, skillIdSet));
 
-  // Build derived lookup maps (grouped + sorted by key and values)
   const sortedSkillIdsByCategory = sortedGroupBy(
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops `| undefined` from the value type, but a slot can still be explicitly undefined
     Object.entries(matrix.skills).filter(([, s]) => s != null),
     (skill) => skill.category,
   );
 
   const sortedCategoriesByDomain = sortedGroupBy(
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops `| undefined` from the value type, but a slot can still be explicitly undefined
     Object.entries(matrix.categories).filter(([, d]) => d?.domain != null),
     (cat) => cat.domain!,
   );
 
-  // Serialize to TypeScript
   const lines: string[] = [
     "// AUTO-GENERATED from skills source — do not edit manually",
     "// Run: bun run generate:types",
@@ -411,15 +335,10 @@ export function renderMatrix(skills: ExtractedSkillMetadata[], skillIdSet: Set<s
   return lines.join("\n");
 }
 
-/** A skill's `[id, sentence]` row, or none for a skill whose SKILL.md states no description. */
 const activationDescriptionEntry = ({ id, activationDescription }: ExtractedSkillMetadata) =>
   activationDescription === undefined ? [] : [[id, activationDescription] as const];
 
-/**
- * The TypeScript source of `activation-descriptions.ts`, before Prettier: each skill's SKILL.md
- * description by id, in id order — the sentence a compiled sub-agent's skill-activation table
- * shows. {@link renderMatrix} says why it is not on `BUILT_IN_MATRIX`.
- */
+/** Each skill's SKILL.md description by id; see {@link renderMatrix}. */
 function renderActivationDescriptions(skills: ExtractedSkillMetadata[]): string {
   const descriptionsById = Object.fromEntries(
     [...skills].sort((a, b) => bytewise(a.id, b.id)).flatMap(activationDescriptionEntry),
@@ -436,13 +355,7 @@ function renderActivationDescriptions(skills: ExtractedSkillMetadata[]): string 
   ].join("\n");
 }
 
-// -- Stack resolution --------------------------------------------------------
-
-/**
- * Converts a Stack to a ResolvedStack, validating skill IDs against the known set.
- * Equivalent to convertStackToResolvedStack in source-loader.ts but uses skillIdSet
- * instead of isValidSkillId() from schemas.ts (no schema dependency).
- */
+/** convertStackToResolvedStack without the schemas.ts dependency. */
 export function resolveStack(
   stack: (typeof defaultStacks)[number],
   skillIdSet: Set<string>,
@@ -450,13 +363,13 @@ export function resolveStack(
   const skills: Record<string, Record<string, string[]>> = {};
 
   for (const [agentId, agentConfig] of Object.entries(stack.agents)) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops `| undefined` from the value type, but a slot can still be explicitly undefined
     if (!agentConfig) continue;
 
     const agentSkills: Record<string, string[]> = {};
 
     for (const [category, assignments] of Object.entries(agentConfig)) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops `| undefined` from the value type, but a slot can still be explicitly undefined
       if (!assignments || !Array.isArray(assignments) || assignments.length === 0) continue;
       const validIds = assignments
         .filter((a: { id: string }) => skillIdSet.has(a.id))
@@ -476,23 +389,14 @@ export function resolveStack(
     id: stack.id,
     name: stack.name,
     description: stack.description,
-    // Boundary casts: agent/category keys come from source stack data and skill IDs
-    // are validated against skillIdSet above — narrowed to the generated unions here.
+    // Cast: ids were validated against skillIdSet above.
     skills: skills,
     allSkillIds: allSkillIds as SkillId[],
     philosophy: stack.philosophy || "",
   };
 }
 
-// -- Emission ----------------------------------------------------------------
-
-/**
- * This package's own Prettier settings, resolved from this file rather than from the destination.
- *
- * The emitted bytes are a property of the generator, not of where they land: resolving from the
- * output directory would give a fixture in `os.tmpdir()` a different config — or none — and the
- * check would then compare formatted committed files against unformatted emitted ones.
- */
+/** Resolved from this file, not the destination, so a fixture dir in os.tmpdir() formats the same. */
 async function packagePrettierOptions(): Promise<PrettierOptions> {
   const options = await resolveConfig(import.meta.filename);
   if (options === null) {
@@ -515,13 +419,11 @@ async function formatEmitted(files: EmittedFile[]): Promise<EmittedFile[]> {
   );
 }
 
-/** Every file the generator owns, formatted exactly as it is committed. */
 async function emittedFiles({ skillsSource, cliRoot = CLI_ROOT }: SourceRoots): Promise<Emission> {
   const skills = extractSkills(skillsSource);
   const agentEntries = extractAgents(cliRoot);
 
-  // Phase 1 first: it is where duplicate slugs and ids throw, and phase 2 below builds the matrix
-  // out of the same list.
+  // First, because it throws on duplicate slugs and ids.
   const sourceTypes = renderSourceTypes(skills, agentEntries);
   const skillIds = new Set(skills.map((skill) => skill.id));
   const matrix = renderMatrix(skills, skillIds);
@@ -552,13 +454,10 @@ function writeEmittedFile(outDir: string, file: EmittedFile): void {
   writeFileSync(path.join(outDir, file.path), file.content);
 }
 
-/** A file that does not exist counts as drifted — the committed set is incomplete. */
 function matchesCommitted(outDir: string, file: EmittedFile): boolean {
   const target = path.join(outDir, file.path);
   return existsSync(target) && readFileSync(target, "utf-8") === file.content;
 }
-
-// -- Entry points ------------------------------------------------------------
 
 export async function generate({ outDir, ...roots }: GeneratorRoots): Promise<{
   written: string[];

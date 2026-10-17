@@ -1,96 +1,9 @@
 /**
- * Every finding in `.ai-docs/agent-findings/` opens with a YAML block a parser can read, declares a
- * `root_cause` `TEMPLATE.md` offers, is not a second copy of the file beside it, names no file that
- * is gone, and pins no lifecycle claim to a symbol the tree does not declare.
+ * Every finding in `.ai-docs/agent-findings/` has parseable frontmatter, a `root_cause` from
+ * `TEMPLATE.md`, no duplicate filing, no dangling file reference and no undeclared symbol.
  *
- * It exists because ten of them did not parse, and nothing said so. `TEMPLATE.md` defines a status
- * rollup, a link-integrity scan and a lifecycle-pairing check, all of them over parsed frontmatter
- * — so a finding whose block does not parse is skipped by every one of them while still reading, to
- * a human, exactly like its neighbours. A rollup that cannot read a `status:` field has no way to
- * say so, and a count over the files it could read is worth less than a scan that fails on the
- * files it could not.
- *
- * **One character sequence causes the whole class: a bare `: ` inside an unquoted value.** A plain
- * YAML scalar cannot contain colon-space — the parser reads it as a nested key and gives up. The
- * damage lands precisely on `resolved_by:` and `partial_note:`, the two fields `TEMPLATE.md` calls
- * REQUIRED, because they are the only ones carrying a paragraph of prose and prose is where a colon
- * turns up: a ratio, a time, a `key: value` quoted from source. Short enum fields cannot break this
- * way. Wrap prose in double quotes or write it as a `>-` block scalar.
- *
- * The second-order symptom is what surfaced it: Prettier does not leave an unreadable block alone,
- * it stops recognising the file as having frontmatter at all and reformats the block as Markdown.
- * `format:check` then reports a style violation, which reads as cosmetic and is not.
- *
- * **The two scans beside the parse are the ones a frontmatter-drift audit of this directory asked
- * for and nothing performed.** Both are about a finding that parses perfectly and is still
- * invisible to a reader who groups the directory:
- *
- *   - A `root_cause` outside the enum. One finding carried `scope-boundary-preserved`, which was
- *     defensible enough that the enum was widened rather than the value changed — and that IS the
- *     rule (`TEMPLATE.md` #4: widen the enum HERE rather than inventing an ad-hoc value). Until
- *     someone does, the finding is in no group. The enum is READ from `TEMPLATE.md` rather than
- *     restated, so widening it there widens this scan and there is no second copy to drift.
- *   - Two findings sharing `(affected_files, root_cause, date)`. That is one piece of work filed
- *     twice, or one whose file list is stale — and the pair the directory holds today is both.
- *     Reported rather than refused: the tuple names a PAIR, and which half is wrong is not knowable
- *     from the frontmatter, so the suite beside this file pins the pair by name.
- *
- * A pair that cross-links (`supersedes` / `superseded_by` / `blocked_by`) is not reported. That is
- * the discovery-then-fix lineage the same finding describes, and the link is what makes it legible.
- *
- * **The two scans after those read the VALUES rather than the shape, and each closes a scan that
- * was scoped to three keys or to no keys at all:**
- *
- *   - Every value that names a file resolves on disk. `TEMPLATE.md` rule 3a asks this of
- *     `supersedes`, `superseded_by` and `blocked_by`, and the scan that ran it covered exactly
- *     those three — so `affected_files:` and `standards_docs:` dangled unseen, and a deletion batch
- *     left 64 dangling citations of which the mandated scan caught one. Stated here as a property
- *     of the VALUE rather than as a list of keys, so a key added to `TEMPLATE.md` tomorrow is
- *     covered today.
- *   - Every symbol a lifecycle note names is one the tree declares. A `partial_note` is the field a
- *     reader takes as current state, and nothing had ever read one against source: one claimed an
- *     observability fix was pending for four months after it shipped, in terms of a call site that
- *     had been renamed. This catches the rename half, which is the half a scanner can see.
- *
- * **The scan also says whether its own inputs held still, because this directory is written by the
- * same multi-agent sessions that run the check.** It reddened once on a finding another process was
- * halfway through writing, and was green the moment that write completed — nothing was wrong, which
- * is the defect: a red meaning "someone is typing" reads exactly like a red meaning "a finding is
- * malformed", and the documented response to the second is to re-derive a pin and edit it. Acting
- * on the first writes a phantom into the record permanently, and a check that cries wolf gets
- * silenced, which is worse than not having one.
- *
- * So `inFlight` names every file whose bytes moved between the moment the scan opened it and the
- * moment the scan finished — EVIDENCE that a write landed under the run, rather than a guess about
- * one. Two guesses were considered and are refused:
- *
- *   - **Tolerating a parse failure as unknown** retires the whole check. Ten findings did not parse
- *     and nothing said so; a scan that answers "unknown" to that answers it for the settled ones
- *     too, permanently, and they are the ones it exists for.
- *   - **Skipping a file whose mtime is within a few seconds** skips precisely the file the run is
- *     about. The commonest moment to run this check is straight after writing a finding, so the
- *     window would swallow the one filing a session could still fix, and it would do it silently.
- *
- * The fingerprint catches a write that finishes anywhere near the run, which is what an ordinary
- * `writeFile` from another process looks like, and it arrives WITH the red it explains rather than
- * instead of it. `clean` still answers only for the frontmatter — folding two different facts into
- * one boolean is the ambiguity this field exists to remove.
- *
- * **It does not catch a writer that stalls for longer than the scan**, and that was measured rather
- * than reasoned about: driven against a real 20-second stall on a copy of this directory, the
- * witness and the verify saw the same truncated bytes and `inFlight` came back empty over a file
- * that was plainly cut off. So the SHAPE of the cut is the second signal, and it needs no timing —
- * an unterminated fence is reported apart from an absent one, because a file that opens a block and
- * never closes it has been truncated where a file with no block was written before the convention.
- * Neither signal is total, and a run with both silent can still have read a body mid-write; what
- * they buy is that the commonest transient names itself instead of impersonating a defect.
- *
- * Every finding is read ONCE per run for the same reason. Three scans each opened the file
- * separately, so a single call could judge three different versions of one file and report a tuple
- * from one against a symbol from another.
- *
- * Nothing runs at module scope here — the suite beside it is the enforcement, and every directory
- * the check reads is a parameter so it can be driven against a fixture.
+ * `inFlight` names files whose bytes moved during the run, so a red caused by a concurrent write
+ * says so instead of reading as a malformed finding. Each finding is read once per run.
  */
 import { spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
@@ -103,33 +16,25 @@ import { getErrorMessage } from "../src/cli/utils/errors.ts";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 
-/** Where a `todo/` path is written from, and the tree a symbol has to be declared somewhere in. */
 const REPOSITORY_ROOT = path.resolve(PACKAGE_ROOT, "../..");
 
-/** Where the check reads from when no other directory is given. */
 const FINDINGS_DIR = path.join(PACKAGE_ROOT, ".ai-docs/agent-findings");
 
 const MARKDOWN_EXTENSION = ".md";
 
-/** The schema every finding is judged against. */
 export const TEMPLATE_FILE = "TEMPLATE.md";
 
-/** The registry naming every finding. It cannot be a member of itself, so it is not judged as one. */
 export const INDEX_FILE = "INDEX.md";
 
-/** The directory's own apparatus: the schema, and the registry of what the directory holds. */
 const APPARATUS_FILES = [TEMPLATE_FILE, INDEX_FILE];
 
-/** The frontmatter block: `---`, the YAML, `---`, all at the very top of the file. */
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
 
-/** How that block opens. A file carrying this and no closing fence was cut off part-way. */
+/** A file opening this with no closing fence was cut off part-way. */
 const FRONTMATTER_OPENS = "---\n";
 
-/** How `TEMPLATE.md` writes an enum: the values of one field, separated by pipes. */
 const ENUM_SEPARATOR = "|";
 
-/** The keys that make two findings over the same work a lineage rather than a duplicate. */
 const CROSS_LINK_KEYS = ["supersedes", "superseded_by", "blocked_by"];
 
 export const NO_FRONTMATTER = "opens with no --- frontmatter block";
@@ -138,26 +43,17 @@ export const ROOT_CAUSE_OUTSIDE_ENUM = "declares a root_cause TEMPLATE.md does n
 export const NO_ROOT_CAUSE_ENUM = `${TEMPLATE_FILE} states no root_cause enum`;
 export const NO_INDEX = `${INDEX_FILE} is not in the findings directory`;
 
-/**
- * How a finding is named: the day it was filed, then its subject. `README.md` carries the
- * directory's apparatus rather than a filing, so it asks for no row and is not a member.
- */
 const FILED_ON_A_DAY = /^\d{4}-\d{2}-\d{2}-/;
 
-/** A finding as the INDEX names one — backticked, with the `.md` optional; it writes both forms. */
 const INDEXED_FINDING = /`(\d{4}-\d{2}-\d{2}-[^`]+?)(?:\.md)?`/g;
 
-/** One finding's answer: its frontmatter parses and passes, or it does not and this is why. */
 export type FindingVerdict =
   { file: string; outcome: "readable" } | { file: string; outcome: "unreadable"; problem: string };
 
-/** One piece of work filed more than once — the files, and the tuple they agree on. */
 export type DuplicateFiling = { files: string[]; rootCause: string; date: string };
 
-/** A value naming a file this repository carries, which no root it could be written from holds. */
 export type UnresolvedReference = { file: string; key: string; value: string };
 
-/** A name a lifecycle note pins its claim to, which nothing in the tree declares. */
 export type UndeclaredSymbol = { file: string; key: string; symbol: string };
 
 export type CheckResult = {
@@ -170,7 +66,6 @@ export type CheckResult = {
   inFlight: string[];
 };
 
-/** The three fields the tuple scan reads by name, beyond the parse itself. */
 const ROOT_CAUSE = "root_cause";
 export const AFFECTED_FILES = "affected_files";
 const DATE = "date";
@@ -185,9 +80,8 @@ export function check({
   findingsDir?: string | undefined;
   referenceRoots?: string[] | undefined;
   sourceRoots?: string[] | undefined;
-  /** A reference that climbs out of this is one the repository does not carry. */
   repositoryRoot?: string | undefined;
-  /** Whether git ignores this path, present or not. Injected so a test needs no git repository. */
+  /** Injected so a test needs no git repository. */
   isIgnored?: ((file: string) => boolean) | undefined;
 } = {}): CheckResult {
   const files = findingFiles(findingsDir);
@@ -212,19 +106,11 @@ export function check({
   };
 }
 
-/** What one file looked like at a moment: absent, or these bytes last written then. */
 export type FileWitness = { file: string; fingerprint: string };
 
-/** A file the directory does not hold. One arriving under the scan is a change like any other. */
 const ABSENT = "absent";
 
-/**
- * What every named file looks like now, so a write landing under the scan can be seen afterwards.
- *
- * The apparatus is witnessed alongside the findings, because a half-written `INDEX.md` reports
- * every finding in the directory as unlisted at once and a half-written `TEMPLATE.md` refuses the
- * run outright — the two loudest reds this check can produce, from files nobody has touched.
- */
+/** Witnesses the apparatus too: a half-written INDEX or TEMPLATE makes the loudest reds. */
 export function witnessOf(findingsDir: string, files: string[]): FileWitness[] {
   return files.map((file) => ({
     file,
@@ -232,7 +118,6 @@ export function witnessOf(findingsDir: string, files: string[]): FileWitness[] {
   }));
 }
 
-/** Every witnessed file whose bytes have moved since — which is a write this run did not see whole. */
 export function changedSince(findingsDir: string, witnessed: FileWitness[]): string[] {
   return witnessed
     .filter(({ file, fingerprint }) => fingerprintOf(path.join(findingsDir, file)) !== fingerprint)
@@ -246,30 +131,14 @@ function fingerprintOf(filePath: string): string {
   return `${stats.size}:${stats.mtimeMs}`;
 }
 
-/**
- * Every finding on disk the INDEX names nowhere.
- *
- * ONE direction, deliberately. A row naming a file that is GONE is the record working as intended —
- * the INDEX grades a finding and keeps the judgement after the file is deleted, and its own header
- * says exactly that — so failing on that direction would fight the protocol and report the hundreds
- * of rows a grading pass exists to leave behind. A finding with no row is the direction that loses
- * information: it is invisible to every pass that groups this directory, and nothing on the way IN
- * looks, which is how a finding written today is already unreachable by tomorrow's rollup.
- */
+/** One direction only: an INDEX row naming a deleted finding is the record working as intended. */
 function unlistedFindingsIn(findingsDir: string, files: string[]): string[] {
   const named = findingsNamedIn(findingsDir);
 
   return files.filter((file) => FILED_ON_A_DAY.test(file) && !named.has(nameOf(file)));
 }
 
-/**
- * Every finding the INDEX names, as basenames.
- *
- * Read as text rather than as rows: the INDEX names findings in prose paragraphs as well as in
- * tables, and a row is not the only place a name is a reference. The name is matched to its closing
- * backtick rather than by a character class, because a class of the lower-case ones a first pass
- * writes reports `registerProjectPath` and `HOME` as unnamed while the INDEX names both.
- */
+/** Read as text, not rows: the INDEX names findings in prose as well as tables. */
 function findingsNamedIn(findingsDir: string): Set<string> {
   const indexPath = path.join(findingsDir, INDEX_FILE);
   if (!existsSync(indexPath)) throw new Error(NO_INDEX);
@@ -283,7 +152,6 @@ function nameOf(file: string): string {
   return file.slice(0, -MARKDOWN_EXTENSION.length);
 }
 
-/** The values `TEMPLATE.md` offers for `root_cause`, which is the only definition of that enum. */
 function rootCauseEnumOf(findingsDir: string): string[] {
   const template = frontmatterOf(readFileSync(path.join(findingsDir, TEMPLATE_FILE), "utf-8"));
   const declared = template === undefined ? undefined : rootCauseLineIn(template);
@@ -292,10 +160,7 @@ function rootCauseEnumOf(findingsDir: string): string[] {
   return declared.split(ENUM_SEPARATOR).map((value) => value.trim());
 }
 
-/**
- * Read as text rather than through the YAML parser: `a | b | c` is one scalar to YAML, and the
- * enum's own separator is what has to be split on.
- */
+/** Not YAML-parsed: `a | b | c` is one scalar to YAML. */
 function rootCauseLineIn(block: string): string | undefined {
   const prefix = `${ROOT_CAUSE}:`;
   const line = block.split("\n").find((candidate) => candidate.startsWith(prefix));
@@ -309,11 +174,7 @@ function findingFiles(findingsDir: string): string[] {
     .sort();
 }
 
-/**
- * One finding as the scan read it: its frontmatter parsed, or the reason no parser could reach it.
- *
- * Every scan below reads this rather than the file, so one run judges ONE version of each finding.
- */
+/** Every scan reads this rather than the file, so one run judges one version of each finding. */
 type ReadFinding =
   | { file: string; outcome: "parsed"; frontmatter: unknown }
   | { file: string; outcome: "unparsed"; problem: string };
@@ -331,14 +192,7 @@ function readFinding(findingsDir: string, file: string): ReadFinding {
   }
 }
 
-/**
- * Which of the two a file with no readable block is, and the distinction is the one the fingerprint
- * cannot make. A file that opens a fence and never closes it has been CUT OFF, which is what a
- * finding another process is still writing looks like; a file with no fence at all was written
- * before the convention existed. Evidence of truncation rather than proof of it — a fence someone
- * deleted reads the same — and the repair is the same edit either way, so this changes the message
- * and nothing else.
- */
+/** An unclosed fence suggests a write in progress, which the fingerprint misses for a stalled writer. */
 function missingBlockProblem(source: string): string {
   return source.startsWith(FRONTMATTER_OPENS) ? UNTERMINATED_FRONTMATTER : NO_FRONTMATTER;
 }
@@ -357,12 +211,6 @@ function judgeFinding(reading: ReadFinding, enumValues: string[]): FindingVerdic
   return { file, outcome: "readable" };
 }
 
-/**
- * Every group of findings agreeing on all three fields, in filename order.
- *
- * A file whose frontmatter did not parse contributes nothing — the verdict above already reports it,
- * and reporting it twice under a tuple read out of a broken block would name the wrong defect.
- */
 function duplicateFilingsIn(readings: ReadFinding[]): DuplicateFiling[] {
   const filings = readings.flatMap(filingOf);
   const grouped = new Map<string, typeof filings>();
@@ -404,7 +252,6 @@ function filingOf(reading: ReadFinding): Filing[] {
   ];
 }
 
-/** Every filename this finding names as a predecessor, replacement or blocker. */
 function crossLinksOf(parsed: unknown): string[] {
   return CROSS_LINK_KEYS.flatMap((key) => {
     const value = fieldOf(parsed, key);
@@ -432,18 +279,10 @@ function toDuplicateFiling(group: Filing[]): DuplicateFiling {
   };
 }
 
-/** One field of a frontmatter block, read without knowing which keys the schema offers. */
 type FrontmatterField = { key: string; value: unknown };
 
-/** One finding's frontmatter as key/value pairs — what the two scans below read, once each. */
 type ParsedFinding = { file: string; fields: FrontmatterField[] };
 
-/**
- * Every finding whose frontmatter parses, as fields.
- *
- * A file that does not parse contributes nothing: the verdict above already reports it, and a value
- * read out of a broken block would name a defect the file does not have.
- */
 function parsedFindingsIn(readings: ReadFinding[]): ParsedFinding[] {
   return readings.flatMap((reading) =>
     reading.outcome === "parsed"
@@ -458,20 +297,13 @@ function fieldsOf(parsed: unknown): FrontmatterField[] {
   return Object.keys(parsed).map((key) => ({ key, value: fieldOf(parsed, key) }));
 }
 
-/** Where a reference may be written from, and how to tell which files the repository carries. */
 type ReferenceScope = {
   roots: string[];
   repositoryRoot: string;
   isIgnored: (file: string) => boolean;
 };
 
-/**
- * Every frontmatter value, under any key, that names a file this repository carries and does not
- * resolve. Stated as a property of the value rather than a list of keys, because `TEMPLATE.md` rule
- * 3a's three keys left `affected_files:` and `standards_docs:` dangling unseen.
- *
- * Resolution is asked first only because it is a stat, where asking about an absent file spawns git.
- */
+/** Judged by value under any key. Resolution is filtered first: a stat is cheaper than spawning git. */
 function unresolvedReferencesIn(
   findings: ParsedFinding[],
   scope: ReferenceScope,
@@ -486,15 +318,11 @@ function unresolvedReferencesIn(
   );
 }
 
-/**
- * Whether every checkout of this repository holds what the reference names, so its absence means
- * the same on every machine. A sibling checkout, or a file git ignores, is on some machines only.
- */
+/** A sibling checkout or a git-ignored file exists on some machines only, so is not judged. */
 function isCarriedByRepository(
   reference: string,
   { roots, repositoryRoot, isIgnored }: ReferenceScope,
 ): boolean {
-  // The repository root decides: read from an inner root, a climb out of it lands back inside.
   if (isOutside(repositoryRoot, path.join(repositoryRoot, reference))) return false;
 
   return !roots.some((root) => isIgnored(path.join(root, reference)));
@@ -506,16 +334,7 @@ function isOutside(directory: string, file: string): boolean {
   return relative === ".." || relative.startsWith(`..${path.sep}`);
 }
 
-/**
- * Which values under a key name a file. Two clauses, each with its own reason:
- *
- *   - Every member of a SEQUENCE is one. In this schema a list is always a file list, so an entry
- *     that does not resolve is a defect whatever it looks like — a summary sentence included, which
- *     is what `TEMPLATE.md` rule 6 forbids when it calls the list the grep's output pasted.
- *   - A SCALAR is one only when it reads as one: a single token carrying a separator or a file
- *     extension. `partial_note:` and `resolved_by:` are paragraphs that quote paths inside
- *     sentences, and judging those would report every note in the directory.
- */
+/** Every list member is a file reference; a scalar only when it is one path-shaped token. */
 function referencesIn(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value !== "string") return [];
@@ -523,7 +342,6 @@ function referencesIn(value: unknown): string[] {
   return isPathShaped(value) ? [value] : [];
 }
 
-/** Extensions a frontmatter value carries when it names a file rather than describing one. */
 const REFERENCE_EXTENSIONS = [".md", ".ts", ".tsx", ".js", ".mjs", ".json", ".yaml", ".yml"];
 
 function isPathShaped(value: string): boolean {
@@ -532,25 +350,10 @@ function isPathShaped(value: string): boolean {
   return value.includes("/") || REFERENCE_EXTENSIONS.some((extension) => value.endsWith(extension));
 }
 
-/**
- * Whether any root the value could be written from holds it — the findings directory for a bare
- * cross-link basename, the package for a `src/` or `.ai-docs/` path, the repository for a `todo/`
- * one. An absolute path resolves under none of them, which is the leading-slash check the same
- * finding asked for and `CLAUDE.md` already bans, arriving for free.
- */
 function resolvesUnder(reference: string, roots: string[]): boolean {
   return roots.some((root) => existsSync(path.join(root, reference)));
 }
 
-/**
- * Every name a lifecycle note pins its claim to that the tree does not declare.
- *
- * A `partial_note` is prose about code and no scanner can evaluate whether the work it calls
- * pending has landed — one sat four months claiming an observability fix was pending after it
- * shipped in two commands. What a scanner CAN do is ask whether the names survive, which catches
- * the rename half of the class: the same note called `writeScopedConfigs` a call site, a name
- * the code had already replaced.
- */
 function undeclaredSymbolsIn(findings: ParsedFinding[], declared: Set<string>): UndeclaredSymbol[] {
   return findings.flatMap(({ file, fields }) =>
     fields.flatMap(({ key, value }) =>
@@ -561,23 +364,9 @@ function undeclaredSymbolsIn(findings: ParsedFinding[], declared: Set<string>): 
   );
 }
 
-/**
- * A backticked span the whole of which is one identifier. A span carrying anything else — a quoted
- * `key: value`, a CLI flag, a sentence — is prose that happens to be in code font, and is not a
- * claim about a symbol.
- */
 const BACKTICKED_IDENTIFIER = /`([A-Za-z_][A-Za-z0-9_]*)`/g;
 
-/**
- * Whether the name is one this codebase would give a symbol, which is the difference between a
- * claim and a word in code font. Functions here are camelCase, types PascalCase and constants
- * SCREAMING_SNAKE, so every symbol carries a case boundary or an underscore; a bare lowercase word
- * carries neither, and `tsc` and `satisfies` are both backticked in notes as exactly that.
- *
- * The cost is a lowercase single-word function going unchecked, and it is worth paying: the
- * alternative reports every ordinary English word an author put in backticks, and a scan whose hits
- * are mostly noise is one nobody reads.
- */
+/** camelCase, PascalCase or SNAKE; a bare lowercase word in backticks is prose, not a symbol. */
 function isSymbolShaped(name: string): boolean {
   return /_/.test(name) || /[a-z][A-Z]/.test(name) || /^[A-Z]/.test(name);
 }
@@ -590,28 +379,14 @@ function symbolsNamedIn(value: unknown): string[] {
     .filter(isSymbolShaped);
 }
 
-/** Extensions this repository's modules are written in. */
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs"];
 
-/** Configuration whose keys are names the repository declares as surely as a module does. */
 const DATA_EXTENSION = ".json";
 
-/**
- * Directories holding nothing anyone authored. `dist/` is the one that matters: it carries the
- * names of the tree that produced it, so a deleted symbol goes on resolving there until the next
- * build.
- */
+/** `dist/` matters most: a deleted symbol keeps resolving there until the next build. */
 const UNAUTHORED_DIRECTORIES = ["node_modules", "dist", ".git", "coverage", ".turbo"];
 
-/**
- * Every name the tree declares — the identifiers its modules parse to, plus its JSON keys.
- *
- * Read from the PARSE rather than as words, and that is load-bearing rather than fastidious: a
- * scan that counted every word would find each of these names in the suite beside this file, which
- * pins them as the strings it expects to be missing. The pin would then declare what it asserts is
- * undeclared and pass on its own evidence. An identifier is a token the parser puts in code
- * position; a name inside a string or a comment is not one.
- */
+/** Parsed identifiers plus JSON keys; parsed, so names in the suite's strings don't count as declared. */
 function declaredNamesUnder(roots: string[], isIgnored: (file: string) => boolean): Set<string> {
   return new Set(roots.flatMap((root) => namesUnder(root, isIgnored)));
 }
@@ -633,16 +408,9 @@ function namesUnder(root: string, isIgnored: (file: string) => boolean): string[
 }
 
 /**
- * Whether git ignores a path. Asked of git because `UNAUTHORED_DIRECTORIES` cannot track
- * `.gitignore`, and while it decided alone the scan answered differently per machine.
- *
- * A present path is answered from one `ls-files --ignored` listing per root: `check-ignore` per
- * path is correct and cost 5 seconds across the walk. The listing names only what is on disk, so an
- * absent path asks `check-ignore`, which reads the patterns alone — otherwise a reference to an
- * ignored file is reported on every machine that never generated it, CI included.
- *
- * Outside a working tree git fails and nothing is ignored, which is right for the temp trees this
- * is tested against.
+ * A present path is answered from one cached `ls-files --ignored` listing per root (per-path
+ * `check-ignore` is slow); an absent path asks `check-ignore`, which reads patterns alone. Outside a
+ * working tree nothing is ignored.
  */
 function gitIgnoresUnder(): (file: string) => boolean {
   const perRoot = new Map<string, string[]>();
@@ -658,7 +426,6 @@ function isListedAsIgnored(perRoot: Map<string, string[]>, file: string): boolea
   return listing.some((ignored) => file === ignored || file.startsWith(`${ignored}${path.sep}`));
 }
 
-/** `git check-ignore` exits 0 when a pattern ignores the path, 1 when none does. */
 const IGNORED_BY_A_PATTERN = 0;
 
 function matchesIgnorePattern(file: string): boolean {
@@ -710,7 +477,6 @@ function isModule(name: string): boolean {
   return MODULE_EXTENSIONS.some((extension) => name.endsWith(extension));
 }
 
-/** Deduped per file, so the whole-tree walk never holds one array of every name in the repository. */
 function identifiersIn(filePath: string): string[] {
   const file = ts.createSourceFile(
     filePath,
@@ -729,11 +495,7 @@ function identifiersIn(filePath: string): string[] {
   return [...names];
 }
 
-/**
- * A key in a JSON document, read lexically because several of them carry comments and are not JSON
- * to a parser. `prepublishOnly` is a name this repository declares in `package.json` and a note
- * citing it is naming a script rather than a symbol.
- */
+/** Lexical, because several JSON files here carry comments. */
 const JSON_KEY = /"([A-Za-z_][A-Za-z0-9_-]*)"\s*:/g;
 
 function keysIn(source: string): string[] {
@@ -750,7 +512,6 @@ function frontmatterOf(source: string): string | undefined {
   return FRONTMATTER.exec(source)?.[1];
 }
 
-/** A YAML error's own message plus a source excerpt; only the first line names the fault. */
 function firstLineOf(message: string): string {
   return message.split("\n")[0] ?? message;
 }

@@ -1,18 +1,4 @@
-/**
- * Contract for `scripts/check-spawn-doors.ts` — the scan that every site starting the built binary
- * hands it every one of the harness's defaults, `GUARD_CONSTANTS`.
- *
- * Two halves, like every check beside it. The first drives the scan against fixture packages,
- * because an unguarded door must not exist in this repository at all — the second half is the
- * assertion that none does, and a scan whose only input is a tree with nothing wrong in it has
- * never been shown to report anything.
- *
- * The fixtures are the three real doors' own shapes rather than invented ones: the guard spread
- * inline into the call's `env`, which is how `runCLI` and `CLI.run` are written, and the guard
- * reached through two local variables, which is how the PTY harness is written. The second is the
- * one that decides whether this scan is usable at all — a reader that only looked inside the call
- * would condemn `TerminalSession`, and a check whose hits are wrong is one that gets silenced.
- */
+/** Fixtures copy the real doors: the guard spread inline, or reached through two locals. */
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,18 +17,13 @@ import { expectRefusal } from "./refusal-expectations.js";
 const DOOR_FILE = "e2e/helpers/runner.ts";
 const GENERATED_FILE = "e2e/helpers/handrun.gen.mjs";
 
-/** Every guard, spread — the way each door hands them over — and imported, for the fixtures' headers. */
 const GUARDS = GUARD_CONSTANTS.map((name) => `...${name}`).join(", ");
 const IMPORTED_GUARDS = GUARD_CONSTANTS.join(", ");
 
-/** The env `runCLI` passes, and the same env with the guards deleted — the drift under test. */
 const GUARDED_ENV = `{ ${GUARDS}, ...options?.env, HOME: home }`;
 const UNGUARDED_ENV = "{ ...options?.env, HOME: home }";
 
-/**
- * The spawn `runCLI` and `CLI.run` both make, verbatim apart from the env handed to it. Two
- * arguments before the options object, the binary reached through `BIN_RUN` inside an array.
- */
+/** The spawn `runCLI` and `CLI.run` both make, apart from the env. */
 function doorSpawningInline(env: string): string {
   return [
     `import { execa } from "execa";`,
@@ -60,10 +41,7 @@ function doorSpawningInline(env: string): string {
   ].join("\n");
 }
 
-/**
- * The PTY harness's shape: the env is assembled into one local, filtered into a second, and the
- * spawn is handed the second. Nothing about the call names the guard, and the door is guarded.
- */
+/** The PTY harness: the spawn gets a filtered local, so the call never names the guard. */
 function doorSpawningThroughLocals(env: string): string {
   return [
     `import pty from "@lydell/node-pty";`,
@@ -80,7 +58,6 @@ function doorSpawningThroughLocals(env: string): string {
   ].join("\n");
 }
 
-/** A door passing no env at all, which inherits whatever ran the suite and names nothing. */
 const DOOR_WITH_NO_ENV = [
   `import { execa } from "execa";`,
   ``,
@@ -92,11 +69,7 @@ const DOOR_WITH_NO_ENV = [
   ``,
 ].join("\n");
 
-/**
- * The shape that makes this scan call-scoped rather than module-scoped: the guard is imported and
- * spread, into an env that no door is handed. A reader asking only whether the FILE mentions the
- * constant calls this guarded, and the door beneath it spawns bare.
- */
+/** The guard is spread into an env no door is handed, so a file-level check would pass it. */
 const DOOR_BESIDE_AN_UNRELATED_SPREAD = [
   `import { execa } from "execa";`,
   ``,
@@ -110,11 +83,7 @@ const DOOR_BESIDE_AN_UNRELATED_SPREAD = [
   ``,
 ].join("\n");
 
-/**
- * A door that spells the binary's path rather than naming the constant — the shape that was read
- * as no door at all. `path.join` is how `BIN_RUN` itself is built one file away, so this is the
- * same expression with the name taken off it.
- */
+/** Spells the binary's path instead of naming `BIN_RUN`. */
 const DOOR_SPELLING_THE_PATH = [
   `import { execa } from "execa";`,
   `import path from "path";`,
@@ -128,7 +97,6 @@ const DOOR_SPELLING_THE_PATH = [
   ``,
 ].join("\n");
 
-/** The same door with the path in a template literal, whose pieces sit around a substitution. */
 const DOOR_SPELLING_THE_PATH_IN_A_TEMPLATE = [
   `import { execa } from "execa";`,
   ``,
@@ -140,15 +108,7 @@ const DOOR_SPELLING_THE_PATH_IN_A_TEMPLATE = [
   ``,
 ].join("\n");
 
-/**
- * The shape that NAMES the guard while handing the child nothing out of it: the constant's own
- * identifier written as an environment key, rather than its contents spread. The constant is an
- * object whose single key is the variable oclif reads, so the two are not interchangeable and the
- * mistake is invisible at the call site.
- *
- * Not invented. An ad-hoc hand-run script appeared in the package root doing exactly this, and the
- * scan reported it guarded while oclif's update plugin was never suppressed for it at all.
- */
+/** Writes the guard's name as an env key instead of spreading it, which suppresses nothing. */
 const DOOR_NAMING_THE_GUARD_AS_A_KEY = [
   `import pty from "@lydell/node-pty";`,
   ``,
@@ -163,10 +123,8 @@ const DOOR_NAMING_THE_GUARD_AS_A_KEY = [
   ``,
 ].join("\n");
 
-/** A variable the roster in `e2e-runner-environment.test.ts` requires every door to clear. */
 const CLEARED_VARIABLE = "VITEST";
 
-/** A door that clears the variable in the env literal it hands the spawn. */
 const DOOR_CLEARING_INLINE = [
   `import { execa } from "execa";`,
   ``,
@@ -181,12 +139,7 @@ const DOOR_CLEARING_INLINE = [
   ``,
 ].join("\n");
 
-/**
- * The shape a substring scan cannot tell from the one above: the door clears nothing, and a
- * comment beside it spells the clearing line out. Not an invented shape — `src/cli/utils/logger.ts`
- * already carries that exact sentence in prose, and the roster this feeds was measured passing on
- * a `runCLI` whose clearing line had been replaced by one.
- */
+/** Clears nothing; only a comment names the clearing, which a substring scan would accept. */
 const DOOR_NAMING_THE_VARIABLE_IN_PROSE = [
   `import { execa } from "execa";`,
   ``,
@@ -355,12 +308,6 @@ describe("the scan", () => {
   });
 });
 
-/**
- * The second question asked of the same doors. `NO_BACKGROUND_VERSION_CHECK` is one constant a door
- * either reaches or does not; the environment roster is a list of variables each door must set to
- * `undefined`, and until this existed the only reader of it asked whether the runner's SOURCE TEXT
- * contained `<NAME>: undefined` anywhere. That passes on a comment, and a comment clears nothing.
- */
 describe("the variables a door clears for the child", () => {
   it("names one the call sets to undefined in the env it hands over", async () => {
     const root = await writeFixturePackage({ [DOOR_FILE]: DOOR_CLEARING_INLINE });
@@ -397,13 +344,6 @@ describe("the variables a door clears for the child", () => {
   });
 });
 
-/**
- * The three doors this repository has, named rather than counted, each with the guard.
- *
- * Named because a count cannot see a swap, and because the roster IS the subject: the whole reason
- * this scan exists is that nothing made a FOURTH door inherit what the three carry, and its only
- * detector was a flaky red in one spec. A door arriving here fails this line and has to be judged.
- */
 const DOORS_ON_DISK: DoorVerdict[] = [
   guarded("e2e/fixtures/cli.ts", "execa"),
   guarded("e2e/helpers/terminal-session.ts", "pty.spawn"),

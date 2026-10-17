@@ -1,7 +1,5 @@
-// Bundles and runs the hand-run driver. The bundle lands beside the e2e helpers
-// so that CLI_ROOT, which is derived from import.meta.url, still resolves to the
-// package root — a bundle placed elsewhere silently points the spawned binary at
-// the wrong tree.
+// Bundles and runs the hand-run driver beside the e2e helpers, so CLI_ROOT (from
+// import.meta.url) still resolves to the package root.
 import { build } from "esbuild";
 import path from "path";
 import fs from "fs";

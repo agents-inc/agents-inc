@@ -1,13 +1,3 @@
-/**
- * Contract for `scripts/check-shared-vitest-config.ts` — the cross-workspace check that every
- * workspace running Vitest either extends `@workspace/vitest-config` or records why it does not.
- *
- * Two halves, like its tsconfig sibling. The first drives the check against fixture repositories,
- * because the shapes that matter (a standalone config, a re-export, a config that names the shared
- * package only in the comment explaining why it does not use it, an opt-out) cannot all exist in
- * this repository at once. The second runs it against this repository, which is the assertion that
- * actually holds the rule.
- */
 import { spawnSync } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
@@ -61,7 +51,6 @@ const CONFIG_NAMING_THE_SHARED_PACKAGE_IN_A_COMMENT = [
   `export default defineConfig({ test: { browser: { enabled: true } } })`,
 ].join("\n");
 
-/** One workspace to write into a fixture repository. */
 type FixtureWorkspace = {
   directory: string;
   declaresSharedConfig?: boolean;
@@ -228,9 +217,7 @@ describe("a workspace that records why it stands alone", () => {
 });
 
 describe("the entry point", () => {
-  // Spawned rather than imported: the exit code is the thing under test, and the runner sets it at
-  // module scope. `bun` is what runs every script in this package and what CI installs, so it is
-  // available wherever this suite is.
+  // Spawned: the runner sets the exit code at module scope.
   it("exits non-zero and names the workspace when one has diverged", async () => {
     const root = await writeFixtureRepo([
       { directory: WORKSPACE_DIR, configs: { [VITEST_CONFIG_TS]: STANDALONE_CONFIG } },
@@ -257,10 +244,6 @@ describe("the entry point", () => {
     expect(result.stdout).toContain(SHARED_CONFIG_PACKAGE);
   });
 
-  // The floor that makes this test possible lives in `check()` rather than in this file, so every
-  // caller inherits it. With it here only, all three runners printed `✓ 0 workspaces` and exited 0
-  // against a root whose globs match nothing — and `bun run deps:check` is what CI and both hooks
-  // run, so the gate a fixture-less root reached was a green one.
   it("exits non-zero on a root matching no workspace, rather than reporting zero of them clean", async () => {
     const root = await writeFixtureRepo([]);
 
@@ -290,17 +273,12 @@ describe("this repository", () => {
       .verdicts.filter((verdict) => verdict.outcome === "bound")
       .map((verdict) => verdict.workspace);
 
-    // Named rather than counted. A list pinned to today's membership is a limit that breaks the
-    // next time the repository grows a workspace, which says nothing about this rule.
     expect(bound).toContain("apps/editor");
     expect(
       bound,
       "the standalone config that prompted this check must stay bound to the shared one",
     ).toContain("apps/server");
     expect(bound).toContain("packages/matrix");
-    // Joined the rule on 2026-08-29, when SERVER-02 gave it a suite of its own.
-    // Named here rather than merely removed from the list below, so the move is
-    // asserted in both directions.
     expect(bound).toContain("packages/api-mocks");
     expect(bound).toContain("packages/api");
   });
@@ -310,11 +288,7 @@ describe("this repository", () => {
       .verdicts.filter((verdict) => verdict.outcome === "no-suite")
       .map((verdict) => verdict.workspace);
 
-    // Named rather than counted, and named at all because `no-suite` is an EXIT
-    // as well as an exemption: deleting a workspace's vitest.config.ts moves it
-    // from `bound` to here, which passes. The repository-level test below cannot
-    // see that, so this list and the `bound` list above are between them the only
-    // thing that notices a workspace leaving the rule.
+    // Deleting a vitest.config.ts moves a workspace here and passes, so this list catches it.
     expect(unjudged).toContain("apps/www");
     expect(unjudged).toContain("packages/eslint-config");
     expect(unjudged).toContain("packages/prettier-config");

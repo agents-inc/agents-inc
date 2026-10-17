@@ -1,22 +1,3 @@
-/**
- * Contract for `scripts/generate-compile-package.ts` — the CLI-side generator that vendors the
- * agent template corpus into `packages/compile` as string data.
- *
- * A browser has no `src/agents/`, so the editor's output preview cannot read the partials and
- * templates a compile is assembled from. Vendoring them is what lets one renderer serve both
- * sides; the acceptance criterion is that the vendored copy renders the SAME BYTES the disk copy
- * does, which is the last spec in this file and the only one that says the vendoring is faithful.
- *
- * The shape is its sibling's — `generate-matrix-package.ts` — for the reasons that file's tests
- * record: roots are parameters so the suite can drive the generator against a fixture checkout,
- * importing the module writes nothing, `check` compares in memory and reports a file it emits
- * that is not committed at all, and the emission order is a comparator's rather than the
- * collation of whichever machine ran it.
- *
- * Nothing here writes a count. `find src/agents -name '*.md'` and `find src/agents -name
- * '*.liquid'` are what the corpus is measured against, run at assertion time on both sides.
- */
-
 import { cpSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
 import path from "path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -48,12 +29,11 @@ const COMPILE_ROOT = path.resolve(CLI_ROOT, "../compile");
 const COMPILE_SRC = path.join(COMPILE_ROOT, "src");
 const AGENTS_DIR = path.join(CLI_ROOT, "src/agents");
 
-/** Emitted paths are relative to the compile package root, POSIX-separated. */
 const CORPUS_FILE = "src/generated/corpus.ts";
 
 const DRIFTED_CONTENT = "// hand-edited after generation\n";
 
-/** The sub-agent the fidelity spec renders. Any real one does; this one ships every optional partial. */
+/** Ships every optional partial. */
 const FIDELITY_AGENT = "web-developer";
 const FIDELITY_AGENT_PATH = "developer/web-developer";
 
@@ -71,8 +51,6 @@ const readEmitted = (root: string, relativePaths: string[]): Record<string, stri
   Object.fromEntries(
     relativePaths.map((rel) => [rel, readFileSync(path.join(root, rel), "utf-8")]),
   );
-
-// -- Module shape ------------------------------------------------------------
 
 describe("generate-compile-package module", () => {
   it("exports generate and check, and importing it writes nothing", async () => {
@@ -92,8 +70,6 @@ describe("generate-compile-package module", () => {
     ).toStrictEqual(modifiedBefore);
   });
 });
-
-// -- Generating against the repository ---------------------------------------
 
 describe("generating against the repository", () => {
   let outputRoot: string;
@@ -126,28 +102,11 @@ describe("generating against the repository", () => {
     const markdown = listFilesRecursive(AGENTS_DIR, ".md");
     const liquid = listFilesRecursive(AGENTS_DIR, ".liquid");
 
-    // Both rosters are read off disk at assertion time rather than written down.
-    // A count here could not see a swap, and a number would go stale the first
-    // time a partial is added.
     expect(markdown.length, "src/agents holds no markdown partials at all").toBeGreaterThan(0);
     expect(liquid.length, "src/agents holds no Liquid templates at all").toBeGreaterThan(0);
 
-    // The markdown half is held by CONTENT rather than by key. The corpus is
-    // keyed by the id an agent's own metadata declares, disk keys by
-    // `<role>/<directory>/<partial>.md`, and reconstructing either from the
-    // other here would be a second copy of the generator's own walk — which
-    // would then agree with it about whatever it got wrong.
-    //
-    // Only this direction needs asserting. A corpus entry with no file behind
-    // it is what `check` already catches: it regenerates and byte-compares, so
-    // a deleted partial shrinks the fresh corpus and the committed one stops
-    // matching. What regenerating CANNOT see is a partial the generator never
-    // reads — both sides agree, the gate stays clean, and the browser renders a
-    // sub-agent assembled from fewer files than the disk render uses.
-    // Read through the DECLARED shape rather than the generated literal. The corpus is emitted
-    // `as const satisfies Record<AgentName, CorpusAgentPartials>`, so every partial's type is the
-    // string it happens to hold; `typedValues` binds one `V` across the whole record and would
-    // fix it to whichever agent sorts first. The widening is what the `satisfies` already proved.
+    // Matched by content, since corpus keys are metadata ids. Widened to the declared shape so
+    // `typedValues` does not fix `V` to the first agent's literal types.
     const corpus: Record<AgentName, CorpusAgentPartials> = AGENT_CORPUS;
     const vendored = new Set(typedValues(corpus).flatMap(typedValues));
 
@@ -172,14 +131,7 @@ describe("generating against the repository", () => {
     }
   });
 
-  /**
-   * `readAgentFiles` falls back to `<flavor>/output.md` when the agent's own directory has none.
-   *
-   * The gap is that NO SHIPPED AGENT takes that branch — every one of the eighteen carries its
-   * own `output.md`, which this asserts rather than leaves implied. So the generator's fallback
-   * is untested by the corpus itself, and the day an agent is added without one, this spec is
-   * what says the fallback has acquired a subject and needs covering.
-   */
+  /** No shipped agent uses the `<flavor>/output.md` fallback, so the corpus leaves it untested. */
   it("names the read-set fallback as having no subject in the shipped tree", () => {
     const agentsWithoutOwnOutput = readdirSync(AGENTS_DIR, { withFileTypes: true })
       .filter((flavor) => flavor.isDirectory() && !flavor.name.startsWith("_"))
@@ -218,8 +170,6 @@ describe("generating against the repository", () => {
   });
 });
 
-// -- Determinism -------------------------------------------------------------
-
 describe("regenerating into the same output root", () => {
   let outputRoot: string;
 
@@ -241,8 +191,6 @@ describe("regenerating into the same output root", () => {
     expect(readEmitted(outputRoot, secondRun.written)).toStrictEqual(firstBytes);
   });
 });
-
-// -- Check mode --------------------------------------------------------------
 
 describe("check mode", () => {
   it("reports no drift against the committed compile package", () => {
@@ -270,8 +218,6 @@ describe("check mode", () => {
   it("reports a file it emits that the target does not hold at all", async () => {
     const emptyRoot = await createTempDir("compile-check-empty-");
 
-    // `git diff` cannot see this case, which is the reason the sibling generator
-    // compares in memory rather than regenerating and diffing.
     expect(check({ compileRoot: emptyRoot })).toStrictEqual({
       clean: false,
       drifted: [CORPUS_FILE],
@@ -307,8 +253,6 @@ describe("check mode", () => {
   });
 });
 
-// -- Wiring ------------------------------------------------------------------
-
 describe("the gate is wired where its sibling is", () => {
   const manifest = JSON.parse(readFileSync(path.join(CLI_ROOT, "package.json"), "utf8")) as {
     scripts: Record<string, string>;
@@ -340,26 +284,10 @@ describe("the gate is wired where its sibling is", () => {
   });
 });
 
-// -- Fidelity ----------------------------------------------------------------
-
-/**
- * The one assertion that says the vendoring is faithful.
- *
- * Everything above proves the corpus matches the files on disk as TEXT. None of it proves the
- * engine built over a plain record resolves a `{% render %}` the way the engine rooted on a
- * directory does — partial lookup, extension handling and the layered-root order are all the
- * engine's, and a mismatch there produces a preview that is wrong in exactly the way this whole
- * phase exists to prevent: plausible, and different from the file the CLI writes.
- *
- * The two renders are handed the same `CompiledAgentData` and the same version, so the only
- * variable left between them is where the bytes came from.
- */
+/** Same context and version on both sides, so only the template source differs. */
 describe("a browser render of a vendored sub-agent", () => {
   it("is byte-identical to the render the CLI writes from disk", async () => {
-    // Neither skill carries a `source`, so `compileAgentForHost`'s per-skill
-    // `pluginRef` mapping is the identity and the corpus render needs no mapping
-    // to match it. One preloaded and one lazy, because the split is order-preserving
-    // and a single-skill agent would exercise neither side of it.
+    // One preloaded and one lazy skill, to exercise both sides of the split.
     const skills = [
       createMockSkillEntry(SKILLS.react.id, true),
       createMockSkillEntry(SKILLS.tailwind.id, false),
@@ -381,8 +309,6 @@ describe("a browser render of a vendored sub-agent", () => {
       version,
     );
 
-    // Subject guard: an empty render on both sides would satisfy the comparison
-    // for free, and a Liquid engine that resolves no template renders empty.
     expect(
       fromDisk.length,
       "the disk render produced nothing, so the comparison below has no subject",

@@ -1,21 +1,6 @@
 /**
- * Contract for `scripts/check-symbol-citations.ts` — the walk that every `@link` citation in this
- * package's TypeScript resolves to a symbol.
- *
- * Two halves, like every check beside it. The first drives it against fixture packages, because the
- * forms that decide the answer cannot all be present in this repository at once — the second half
- * is the assertion that none of them is.
- *
- * **Each non-resolving form gets its own case, and the reason is that they fail differently.** A
- * name that is simply absent is what any instrument would look for. A bare module path parses to no
- * NAME at all, so there is nothing for a name-based instrument to report on — which is exactly how
- * one survived a repair pass that fixed nine of its siblings. And a name declared in a module this
- * file does not import resolves for a reader who greps and for nobody else.
- *
- * Nothing here spells a citation inside a string that this package's own walk then reads: the
- * fixture sources are built from {@link CITATION}, which assembles the opener at runtime. Written
- * out, every fixture in this file would be a citation in this file, and the real-tree half below
- * would report its own test data.
+ * Fixture sources are built with {@link CITATION} so this file's own citations stay out of the
+ * real-tree check at the bottom.
  */
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
@@ -40,14 +25,6 @@ import {
 } from "./check-symbol-citations.js";
 import { expectRefusal } from "./refusal-expectations.js";
 
-/**
- * The citation opener, assembled rather than written.
- *
- * A test file is source, so a citation written out here is a citation this package's own walk finds
- * — and the real-tree half at the bottom would then report every fixture above it as a defect.
- * Building the opener from its parts is what keeps the fixtures out of the population they are
- * testing, and it is why no line in this file can be copied into a docblock as-is.
- */
 function CITATION(entity: string): string {
   return `{${"@"}link ${entity}}`;
 }
@@ -61,14 +38,7 @@ const DECLARED = "aDeclaredSymbol";
 const NEVER_DECLARED = "aSymbolNothingDeclares";
 const IN_THE_SIBLING = "aSymbolTheSiblingDeclares";
 
-/**
- * A base and a child that inherits its `include` and nothing else, so a chain that is not resolved
- * yields a program with no files rather than a smaller one.
- *
- * That is the shape the whole check rests on: `tsconfig.scripts.json` and `e2e/tsconfig.json` both
- * take their strictness from a base two levels up, and a program built from the child alone would
- * answer about a different language.
- */
+/** The child inherits only `include`, so an unresolved extends yields no files, not fewer. */
 const BASE_TSCONFIG = JSON.stringify({
   compilerOptions: {
     strict: true,
@@ -82,10 +52,8 @@ const BASE_TSCONFIG = JSON.stringify({
 
 const CHILD_TSCONFIG = JSON.stringify({ extends: `./${BASE_CONFIG}` });
 
-/** A module whose only export is the name the sibling-module cases cite. */
 const SIBLING_SOURCE = `export const ${IN_THE_SIBLING} = 1;\n`;
 
-/** A declaration with a docblock above it, which is the only place a citation can live. */
 function subjectSource(docblock: string[], declaration = `export const ${DECLARED} = 1;`): string {
   return ["/**", ...docblock.map((line) => ` * ${line}`), " */", declaration, ""].join("\n");
 }
@@ -109,7 +77,6 @@ async function writeFixturePackage(files: Record<string, string>): Promise<strin
   return root;
 }
 
-/** A package holding one subject module, with the base/child chain every case is judged through. */
 async function writeSubjectPackage(
   subject: string,
   extra: Record<string, string> = {},
@@ -357,16 +324,6 @@ describe("the roster read out of the manifest", () => {
   });
 });
 
-/**
- * Every tree of this package that carries citations today.
- *
- * A roster rather than a count, and asserted rather than derived: a count says something changed
- * and only members say which tree stopped being read. A project quietly dropped from
- * {@link PROJECTS}, or an `include` that has narrowed, takes its whole tree out of this list.
- *
- * If one of these three legitimately stops citing, that is worth a second look rather than a silent
- * edit — it means every docblock in that tree stopped offering a reader a jump.
- */
 const TREES_THAT_CITE = ["e2e", "scripts", "src"];
 
 describe("this repository", () => {

@@ -1,16 +1,6 @@
 /**
- * Contract for `scripts/generate-json-schemas.ts` — the writer of every generated file in
- * `src/schemas/`.
- *
- * The check these specs pin is deliberately not the one `generate:schemas:check` used to run.
- * That was `bun run generate:schemas && git diff --exit-code src/schemas/`, which answers "does
- * this differ from what is staged or committed" rather than "is this stale against source", is
- * blind to a path git has never seen, and cannot be run at all by an agent working under the
- * no-write-git rule. So the assertions below name a drifted file, catch a newly emitted path that
- * is not on disk, and reach both verdicts in a directory outside any repository.
- *
- * Testability is part of the contract: the output directory is a parameter, and importing the
- * module must write nothing.
+ * The check compares in memory, so it catches a never-committed emitted path and runs outside any
+ * repository.
  */
 import { cpSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "fs";
 import path from "path";
@@ -23,7 +13,7 @@ import { check, generate } from "./generate-json-schemas.js";
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 const SCHEMAS_DIR = path.join(CLI_ROOT, "src/schemas");
 
-/** Every file the generator owns, in the order `SCHEMA_ENTRIES` declares them. */
+/** In `SCHEMA_ENTRIES` order. */
 const GENERATED_SCHEMAS = [
   "agent.schema.json",
   "agent-frontmatter.schema.json",
@@ -37,13 +27,12 @@ const GENERATED_SCHEMAS = [
   "stack.schema.json",
 ];
 
-/** Committed to `src/schemas/` and written by hand — the generator must neither emit nor judge them. */
 const HAND_MAINTAINED_SCHEMAS = ["project-config.schema.json", "project-source-config.schema.json"];
 
 const DRIFTED_FILE = "metadata.schema.json";
 const DRIFTED_CONTENT = '{ "hand-edited after generation": true }\n';
 
-/** Stands in for a path the generator emits that git has never seen — absent from disk. */
+/** Stands in for an emitted path git has never seen. */
 const ABSENT_FILE = "stack.schema.json";
 
 const listFiles = (root: string): string[] =>
@@ -54,14 +43,11 @@ const listFiles = (root: string): string[] =>
 
 const modifiedAt = (filePath: string): bigint => statSync(filePath, { bigint: true }).mtimeNs;
 
-/** A copy of the committed schemas in `os.tmpdir()` — untracked, and outside every repository. */
 async function copyCommittedSchemas(prefix: string): Promise<string> {
   const root = await createTempDir(prefix);
   cpSync(SCHEMAS_DIR, root, { recursive: true });
   return root;
 }
-
-// -- Module shape ------------------------------------------------------------
 
 describe("generate-json-schemas module", () => {
   it("exports generate and check, and importing it writes nothing", async () => {
@@ -79,8 +65,6 @@ describe("generate-json-schemas module", () => {
     ).toStrictEqual(modifiedBefore);
   });
 });
-
-// -- Generating against the repository ---------------------------------------
 
 describe("generating into a fresh directory", () => {
   it("emits exactly the schemas it owns, and neither hand-maintained file", async () => {
@@ -112,8 +96,6 @@ describe("generating into a fresh directory", () => {
     await cleanupTempDir(outputRoot);
   });
 });
-
-// -- Check mode --------------------------------------------------------------
 
 describe("check mode", () => {
   it("reports no drift against the committed schemas", async () => {

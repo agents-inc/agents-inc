@@ -1,12 +1,3 @@
-/**
- * Contract for `scripts/refusal-expectations.ts` — the assertion a refusal is proved by, and the
- * scan that says every suite under `scripts/` uses it.
- *
- * Two halves, like every check beside it. The first drives both readers against fixture sources,
- * because the shape that matters — an assertion that cannot tell the refusal it names from any
- * other failure — must not exist in this package's own gates at all; the second half is the
- * assertion that none does.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -19,11 +10,7 @@ import {
 
 const FIXTURE = "scripts/check-fixture.test.ts";
 
-/**
- * Two refusals of the shape every check in this package writes, kept short on purpose: vitest
- * elides a long expected value in its own failure text, and the delegation tests below read that
- * text to prove the message reached the matcher.
- */
+/** Short, because vitest elides long expected values in the failure text read below. */
 const REFUSAL = "names no source file";
 const OTHER_REFUSAL = "enumerates nothing";
 
@@ -33,7 +20,6 @@ function throwing(message: string): () => never {
   };
 }
 
-/** How every suite under `scripts/` reaches its check's refusal constants. */
 const IMPORTS_A_REFUSAL = `import { check, NO_SOURCE_FILE } from "./check-fixture.js";`;
 
 function fixtureSource(assertion: string): string {

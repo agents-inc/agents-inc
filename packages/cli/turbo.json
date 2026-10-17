@@ -2,31 +2,8 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    // The default input set is every file in the package, and this package is
-    // mostly files the build never reads: reference docs, changelogs, the e2e
-    // suite, and the tests that sit beside the code they cover. Editing one
-    // line of prose was rebuilding dist. The negations keep the hash to what
-    // tsup actually consumes — src/agents/ stays IN because onSuccess copies
-    // it into dist verbatim, so its markdown genuinely is build input.
-    //
-    // What looks missing here and is not: packages/matrix. tsup inlines that
-    // package into the bundle (noExternal), so its source is build input as
-    // surely as src/ is — and it has no `build` script, so there is seemingly
-    // nothing for `^build` to hang on. Its files are in this hash anyway.
-    // turbo puts a task node in the graph for a dependency that does not
-    // implement the task: `turbo run build --dry=json --filter=agents-inc`
-    // shows `@workspace/matrix#build` with `"command": "<NONEXISTENT>"`, all 35
-    // of its files hashed, listed among `agents-inc#build`'s dependencies — and
-    // that node's hash feeds this one. Measured on turbo 2.10.8, because the
-    // opposite was assumed and filed as a bug (CLI-458): appending one comment
-    // line to packages/matrix/src/read-model/domains.ts turns a >>> FULL TURBO
-    // replay of this task into a re-run, and moves `agents-inc#test`'s hash
-    // with it. Editing a package the CLI does NOT depend on (packages/ui)
-    // leaves both hashes byte-identical, so it is the dependency edge doing
-    // this rather than the global hash. `"../matrix/src/**"` in the inputs
-    // above is accepted by turbo and does hash the 23 files it matches, but it
-    // would hash them a second time under a second name and would need another
-    // line for every workspace dependency this package ever gains.
+    // Hash only what tsup consumes; src/agents/ stays in because onSuccess copies it.
+    // packages/matrix is covered by the dependency edge, not by these inputs.
     "build": {
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -41,43 +18,13 @@
         "!*.md"
       ]
     },
-    // Deliberately `build`, NOT `^build` — do not "fix" the missing caret.
-    // The root declares test:e2e as `^build`, meaning "build my dependencies",
-    // which is right for the editor: its Playwright config boots a dev server
-    // and never reads its own dist. The CLI's e2e suite is the opposite. It
-    // spawns bin/run.js under node through a pseudo-terminal, and oclif
-    // resolves commands from ./dist/commands, so the suite fails outright
-    // unless THIS package has been built. Without the caret, turbo builds this
-    // package (and, via the root build's own ^build, its dependencies too).
+    // `build`, not `^build`: oclif resolves commands from this package's own dist/.
     "test:e2e": {
       "dependsOn": ["build"],
       "cache": false
     },
-    // Same reason, and it is easy to miss because it only bites on a clean
-    // checkout. The `commands` suites drive oclif in-process rather than
-    // spawning it, so they look like ordinary unit tests — but oclif still
-    // resolves command modules from ./dist/commands, and dist is gitignored.
-    // Locally a stale dist makes them pass; in CI 205 tests across 17 files
-    // failed with exit 127 the first time this ran on a fresh clone.
-    //
-    // The inputs are `$TURBO_DEFAULT$` plus two trees this package's own gates
-    // READ but do not contain. The default set is every file in the package and
-    // stops at its boundary, so a change confined to todo/ or to the root
-    // CLAUDE.md leaves this task's hash byte-identical — and
-    // check-finding-citations.test.ts (which walks todo/) and
-    // check-briefing-contract.test.ts (which follows the root CLAUDE.md's
-    // links) then replay a cached pass describing a tree they never opened. A
-    // gate answered from cache about its own subject is not evidence. Verified
-    // with `turbo run test --dry=json --filter=agents-inc`: before, 1366 files
-    // hashed and none of them under todo/; after, 2315 including the root
-    // CLAUDE.md. Note that .ai-docs/ needs no entry and never did — the default
-    // set already carries its 226 files, because it IS inside the package.
-    // "test" is where these belong rather than "build": the build excludes
-    // .ai-docs/ and *.md deliberately above, and nothing here is build input.
-    // The assertion that keeps this list honest derives it from the checkers'
-    // own exported paths — see "the task that runs these scans" in
-    // scripts/check-finding-citations.test.ts — so a scope reaching outside the
-    // package fails that test rather than silently going stale here.
+    // The commands suites also load dist/. The extra inputs are trees the checkers
+    // read outside this package, so a change there invalidates the cached run.
     "test": {
       "dependsOn": ["build"],
       "inputs": ["$TURBO_DEFAULT$", "../../todo/**", "../../CLAUDE.md"]

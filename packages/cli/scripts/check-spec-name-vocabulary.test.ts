@@ -1,11 +1,3 @@
-/**
- * Contract for `scripts/check-spec-name-vocabulary.ts` — the scan that a name a spec calls itself
- * still names something this package holds.
- *
- * Two halves, like every check beside it. The first drives the scan against fixture packages,
- * because a spec named after a withdrawn constant must not exist in this repository at all — the
- * second half is the assertion that none does.
- */
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -23,7 +15,6 @@ const WITHDRAWN = "WITHDRAWN_CONSTANT";
 
 const MODULE_HOLDING_LIVE = `export const ${LIVE} = "live";\n`;
 
-/** The withdrawn name mentioned only in prose, which is the shape that vouched for itself once. */
 const MODULE_NAMING_WITHDRAWN_IN_A_COMMENT = [
   `/** Superseded ${WITHDRAWN}, which nothing reads any more. */`,
   `export const ${LIVE} = "live";`,
@@ -171,15 +162,7 @@ describe("the names a spec gives itself", () => {
   });
 });
 
-/**
- * What the whole-tree scan is allowed to take.
- *
- * Measured 2026-08-21 on an idle machine: ~2.1s to parse every spec and scan every module — 431
- * and 299 of them — so the budget is ~30x, for the reason `clean-code-standards.md` 6.26 gives.
- * Unlike the escape-shape gate there, this one's dimensions cannot be multiplied out where the
- * timeout is declared: they are whatever the two globs find on disk, and a scan that grows because
- * the package grew is exactly what this headroom is for.
- */
+/** Generous headroom over a whole-tree scan whose size grows with the package. */
 const WHOLE_TREE_SCAN_TIMEOUT_MS = 60_000;
 
 describe("this package", () => {
@@ -188,8 +171,7 @@ describe("this package", () => {
     () => {
       const { specs, modules, unresolved } = check();
 
-      // Both rosters guard the judgement below, and they are asserted in the same `it` because the
-      // scan is a whole-tree read: a second one to hold them separately would double its cost.
+      // Asserted in one `it` because a second whole-tree scan would double the cost.
       expect(specs.length, "a scan that read no spec judged nothing").toBeGreaterThan(1);
       expect(
         modules.length,

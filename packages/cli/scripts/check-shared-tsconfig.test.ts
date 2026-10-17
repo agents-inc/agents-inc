@@ -1,12 +1,3 @@
-/**
- * Contract for `scripts/check-shared-tsconfig.ts` — the cross-workspace check that every workspace
- * either extends a config from `packages/typescript-config` or records why it does not.
- *
- * Two halves. The first drives the check against fixture repositories, because the shapes that
- * matter (a config that extends nothing, a solution-style config, an array of bases, an opt-out)
- * cannot all exist in this repository at once. The second runs it against this repository, which
- * is the assertion that actually holds the rule.
- */
 import { spawnSync } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
@@ -36,17 +27,11 @@ const SHARED_BASE_CONFIG = `${SHARED_CONFIG_PACKAGE}/base.json`;
 const DECLARED_VERSION = "workspace:*";
 const OPT_OUT_REASON = "ships plain JavaScript — there is no TypeScript here to type-check";
 
-/**
- * A value TypeScript's JSONC reader cannot convert. It answers this with the key PRESENT and its
- * value `undefined` — the one input `TsconfigSchema`'s `.exactOptional()` fields reject — and
- * reports an error beside it, which is the error `readTsconfig` throws on.
- */
+/** The JSONC reader answers this with the key present but `undefined`, plus an error. */
 const UNCONVERTIBLE_TSCONFIG = '{ "extends": someExpression }';
 
-/** What the throw has to say: which file could not be read, and a non-empty reason why. */
 const UNREADABLE_MESSAGE = /tsconfig\.json could not be read: \S/;
 
-/** One workspace to write into a fixture repository. */
 type FixtureWorkspace = {
   directory: string;
   declaresSharedConfig?: boolean;
@@ -247,9 +232,7 @@ describe("a workspace that reaches the shared config", () => {
 });
 
 describe("a tsconfig TypeScript's own reader cannot convert", () => {
-  // The schema never sees this file: `readTsconfig` throws on the reader's error first. That order
-  // is what keeps a present-but-`undefined` key away from `TsconfigSchema`, whose fields are
-  // `.exactOptional()` and reject one — so the exactness rests on this throw.
+  // The throw keeps a present-but-`undefined` key away from the `.exactOptional()` schema.
   it("aborts the check naming the file and a reason, rather than reading the key as absent", async () => {
     const root = await writeFixtureRepo([
       { directory: WORKSPACE_DIR, configs: { "tsconfig.json": UNCONVERTIBLE_TSCONFIG } },
@@ -277,9 +260,7 @@ describe("a workspace that records why it does not extend", () => {
 });
 
 describe("the entry point", () => {
-  // Spawned rather than imported: the exit code is the thing under test, and the runner sets it at
-  // module scope. `bun` is what runs every script in this package and what CI installs, so it is
-  // available wherever this suite is.
+  // Spawned: the runner sets the exit code at module scope.
   it("exits non-zero and names the workspace when one has diverged", async () => {
     const root = await writeFixtureRepo([
       {
@@ -312,10 +293,6 @@ describe("the entry point", () => {
     expect(result.stdout).toContain(SHARED_CONFIG_PACKAGE);
   });
 
-  // The floor that makes this test possible lives in `check()` rather than in this file, so every
-  // caller inherits it. With it here only, all three runners printed `✓ 0 workspaces` and exited 0
-  // against a root whose globs match nothing — and `bun run deps:check` is what CI and both hooks
-  // run, so the gate a fixture-less root reached was a green one.
   it("exits non-zero on a root matching no workspace, rather than reporting zero of them clean", async () => {
     const root = await writeFixtureRepo([]);
 
@@ -327,16 +304,8 @@ describe("the entry point", () => {
 });
 
 /**
- * Which workspaces extend a shared config and which record why they do not — the whole membership,
- * named rather than counted, because a divergence moves a workspace BETWEEN the two sets and
- * neither `clean` nor the diverged list can see that move. Inserting `"//no-shared-tsconfig"` into
- * `packages/cli` takes it out of the bound set, leaves nothing diverged and keeps the check clean:
- * the workspace stops being held to the rule and the suite says nothing, which is the silence an
- * opt-out exists to break.
- *
- * `toStrictEqual` rather than the `toContain` the two sibling checks use. A workspace arriving in
- * this repository has to be classified either way, and a red line naming it is how that decision
- * gets made rather than defaulted.
+ * The whole membership, strictly: an opt-out moves a workspace between sets while the check stays
+ * clean, and a new workspace must be classified.
  */
 const WORKSPACES_ON_A_SHARED_CONFIG = [
   "apps/editor",

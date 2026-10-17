@@ -1,22 +1,6 @@
 /**
- * Cross-workspace check: every workspace that runs Vitest either extends the shared config in
- * `packages/vitest-config`, or records in its own `package.json` why it does not.
- *
- * The third axis of `bun run deps:check`, and it exists for the reason its tsconfig sibling gives:
- * no per-workspace gate can see this class of defect. Vitest reads whatever config it is handed, so
- * a suite that has quietly stopped agreeing with its siblings — globals switched back on, a
- * different include, mocks no longer cleared between tests — is green in its own workspace and
- * invisible from everywhere else. Comparing workspaces to each other is the only thing that sees
- * it. `apps/server` is what prompted this one: a standalone config restating three of the shared
- * config's settings by hand, with nothing anywhere recording whether that was a decision.
- *
- * Only the config at a workspace's root is judged. A nested one — `packages/cli/e2e/vitest.config.ts`
- * — is a project inside a workspace's own suite rather than that workspace's answer, and is covered
- * by whatever its root config says.
- *
- * Run: `bun run deps:check` from the repository root. Nothing runs at module scope here — argv, the
- * console output and the exit code live in `scripts/run-check-shared-vitest-config.ts`, and the
- * roots are parameters so the suite can drive the check against a fixture repository.
+ * Refuses a workspace whose root Vitest config neither extends `packages/vitest-config` nor
+ * records in its `package.json` why not. Run via `bun run deps:check`.
  */
 import { existsSync, readFileSync } from "fs";
 import path from "path";
@@ -25,42 +9,24 @@ import fg from "fast-glob";
 import ts from "typescript";
 import { z } from "zod";
 
-/** Where the check reads from when no other root is given. */
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 
 const PACKAGE_JSON = "package.json";
 
-/** Vitest's own config filenames. Every one in this repository is `.ts`; the rest are its to allow. */
 const VITEST_CONFIG_BASENAME = "vitest.config";
 const CONFIG_EXTENSIONS = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"];
 
-/** The package that ships the shared config. Its one entry point today is `/node`. */
 export const SHARED_CONFIG_PACKAGE = "@workspace/vitest-config";
 
-/**
- * A workspace with a defensible reason to stand alone records it under this key in its own
- * `package.json`, beside the `//no-shared-tsconfig` the other cross-workspace check reads. Same
- * shape for the same reasons: the `//` prefix matches the comment keys the root `package.json`
- * already uses, the value is the reason, and the runner prints it — so a suite that does not extend
- * is a recorded decision rather than an absence.
- */
+/** Opt-out key in a workspace's `package.json`; its value is the reason, which the runner prints. */
 export const OPT_OUT_KEY = "//no-shared-vitest-config";
 
 export const NO_SHARED_IMPORT = `${VITEST_CONFIG_BASENAME}.* imports nothing from ${SHARED_CONFIG_PACKAGE}`;
 export const MISSING_DEPENDENCY = `${PACKAGE_JSON} does not declare ${SHARED_CONFIG_PACKAGE}`;
 
-/**
- * A root matching no workspace has not been checked, whatever it answers about the workspaces in
- * it. The floor lives here rather than in the suite because `bun run deps:check` is what CI and
- * both hooks run: with it in the test file only, all three runners printed `✓ 0 workspaces` and
- * exited 0 against a root whose globs match nothing, which is the shape of a passing gate.
- */
+/** Refused here, not only in the suite, so a root matching nothing cannot pass in CI. */
 export const NO_WORKSPACES = "matches no workspace";
 
-/**
- * The globs are read rather than restated, for the reason `.syncpackrc.cjs` gives for omitting
- * `source`: one statement of which directories are workspaces cannot drift from itself.
- */
 const RootManifestSchema = z.object({ workspaces: z.array(z.string()) });
 
 const ManifestSchema = z.object({
@@ -70,7 +36,6 @@ const ManifestSchema = z.object({
 });
 type Manifest = z.infer<typeof ManifestSchema>;
 
-/** One workspace's answer: bound to the shared config, excused, running no suite, or none of those. */
 export type WorkspaceVerdict =
   | { workspace: string; outcome: "bound"; via: string }
   | { workspace: string; outcome: "opted-out"; reason: string }
@@ -110,8 +75,6 @@ function judgeWorkspace(repoRoot: string, workspace: string): WorkspaceVerdict {
     return { workspace, outcome: "opted-out", reason: optOutReason };
   }
 
-  // A workspace with no Vitest config runs no suite, so there is nothing here to agree or disagree
-  // with — and no reason for it to declare a package it would never import.
   const configPath = findConfig(path.join(repoRoot, workspace));
   if (configPath === undefined) {
     return { workspace, outcome: "no-suite" };
@@ -137,15 +100,7 @@ function findConfig(workspaceRoot: string): string | undefined {
   ).find((candidate) => existsSync(candidate));
 }
 
-/**
- * The shared specifier this config reaches, if any. Both spellings in use here count: `apps/editor`
- * imports `nodeConfig` to merge into its own, and `packages/matrix` re-exports it as its entire
- * config.
- *
- * Parsed rather than searched for. `packages/ui/vitest.config.ts` names this package four times in
- * the comment explaining why it does not use it, and a text match would read that as compliance —
- * which is the one mistake that would make this whole check worthless.
- */
+/** Parsed rather than text-searched, so a comment naming the package does not count as compliance. */
 function findSharedImport(configPath: string): string | undefined {
   return moduleSpecifiers(configPath).find(isSharedConfig);
 }
@@ -154,7 +109,6 @@ function isSharedConfig(specifier: string): boolean {
   return specifier === SHARED_CONFIG_PACKAGE || specifier.startsWith(`${SHARED_CONFIG_PACKAGE}/`);
 }
 
-/** Every module the config imports or re-exports at its top level. */
 function moduleSpecifiers(configPath: string): string[] {
   const source = ts.createSourceFile(
     configPath,
@@ -165,7 +119,6 @@ function moduleSpecifiers(configPath: string): string[] {
   return source.statements.flatMap(specifiersOf);
 }
 
-/** The one module a statement names, or none: `export { x }` re-exports nothing and imports nothing. */
 function specifiersOf(statement: ts.Statement): string[] {
   if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) return [];
 

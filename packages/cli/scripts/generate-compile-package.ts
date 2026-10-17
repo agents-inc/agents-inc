@@ -1,19 +1,6 @@
 /**
- * Vendors the agent template corpus into `packages/compile` as string data: every markdown
- * partial a sub-agent is assembled from, and every Liquid template they render through.
- *
- * A browser has no `src/agents/`, so the editor's output preview cannot read what a compile
- * assembles a sub-agent out of. Vendoring is what lets ONE renderer serve both sides — and the
- * claim that matters is not that the text matches but that the render does, which
- * `scripts/generate-compile-package.test.ts` settles by comparing a corpus render against a disk
- * render byte for byte.
- *
- * Run: bun run generate:compile — or generate:compile:check, which reports drift and writes
- * nothing. Both go through scripts/run-generate-compile-package.ts: nothing runs at module scope
- * here, so importing this file writes no files.
- *
- * Every input is in this repository — this package's agent partials, templates and version — which
- * is what lets CI check the output by regenerating it.
+ * Vendors the agent partials and Liquid templates into `packages/compile` as string data, so the
+ * editor's browser preview renders what the CLI compiles. Importing this file writes nothing.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import path from "path";
@@ -24,7 +11,6 @@ import { bytewise } from "../src/cli/utils/string.ts";
 
 import type { AgentYamlConfig } from "../src/cli/types/index.ts";
 
-/** Where the generator reads from when no other root is given. */
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 
 /** Agent roles starting with this are scaffolding, not agents (`_templates`). */
@@ -35,19 +21,16 @@ const TEMPLATES_PREFIX = `${path.basename(DIRS.templates)}/`;
 
 const LIQUID_EXTENSION = ".liquid";
 
-/** Emitted path, relative to the compile package root and POSIX-separated. */
 const CORPUS_FILE = "src/generated/corpus.ts";
 
-/** One file the generator owns. `path` is relative to the compile package root. */
+/** `path` is relative to the compile package root. */
 type EmittedFile = { path: string; content: string };
 
 /** `cliRoot` is a parameter so the suite can drive the generator against a fixture checkout. */
 type GeneratorRoots = { compileRoot: string; cliRoot?: string };
 
-/** An agent's directory, and where under src/agents/ it was found. */
 type AgentSource = { flavor: string; agent: string; agentDir: string; metadataPath: string };
 
-/** The five partials `readAgentFiles` assembles a sub-agent from. */
 type AgentPartials = {
   identity: string;
   playbook: string;
@@ -77,7 +60,6 @@ const directoryNames = (dir: string): string[] =>
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
 
-/** Every src/agents/<flavor>/<agent>/, skipping the reserved template directory. */
 function findAgentSources(agentsRoot: string): AgentSource[] {
   return directoryNames(agentsRoot)
     .filter((flavor) => !flavor.startsWith(RESERVED_FLAVOR_PREFIX))
@@ -92,19 +74,11 @@ function findAgentSources(agentsRoot: string): AgentSource[] {
     .filter((source) => existsSync(source.metadataPath));
 }
 
-/** An optional partial, absent as the empty string — `readFileOptional(path, "")`'s answer. */
 function readOptional(filePath: string): string {
   return existsSync(filePath) ? readFileSync(filePath, "utf-8") : "";
 }
 
-/**
- * The read set `readAgentFiles` in `src/cli/lib/compiler.ts` performs, fallback included.
- *
- * `output.md` is looked up in the agent's own directory first and in its role directory
- * second. No shipped agent takes the second branch today — the generator's test asserts that
- * and says so — but a generator that dropped the fallback would render an agent that did take
- * it differently in the browser than on disk, which is the one thing this vendoring must not do.
- */
+/** Mirrors `readAgentFiles` in src/cli/lib/compiler.ts, including its role-level output.md fallback. */
 function readAgentPartials(source: AgentSource, agentsRoot: string): AgentPartials {
   const ownOutput = readOptional(path.join(source.agentDir, STANDARD_FILES.OUTPUT_MD));
 
@@ -122,7 +96,6 @@ function readAgentPartials(source: AgentSource, agentsRoot: string): AgentPartia
   };
 }
 
-/** Every `*.liquid` under a directory, as paths relative to it, POSIX-separated. */
 function liquidTemplatePaths(agentsRoot: string): string[] {
   return readdirSync(agentsRoot, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(LIQUID_EXTENSION))
@@ -132,20 +105,13 @@ function liquidTemplatePaths(agentsRoot: string): string[] {
     .sort(bytewise);
 }
 
-/**
- * The key the engine resolves a template under.
- *
- * `createEngineFromTemplates` roots the record at the templates directory, exactly as the CLI's
- * `createLiquidEngine` roots its filesystem engine there — so `_templates/` comes off the front
- * and the extension stays on, because that is what liquidjs joins onto a `{% render %}` name.
- */
+/** Rooted at the templates directory with the extension kept, as liquidjs resolves a render name. */
 function templateKey(relativePath: string): string {
   return relativePath.startsWith(TEMPLATES_PREFIX)
     ? relativePath.slice(TEMPLATES_PREFIX.length)
     : relativePath;
 }
 
-/** One entry of an emitted object literal — a quoted key, and every field JSON-encoded. */
 function serializeAgentPartials(id: string, partials: AgentPartials): string {
   const fields = Object.entries(partials)
     .map(([key, value]) => `    ${JSON.stringify(key)}: ${JSON.stringify(value)},`)
@@ -154,9 +120,9 @@ function serializeAgentPartials(id: string, partials: AgentPartials): string {
   return `  ${JSON.stringify(id)}: {\n${fields}\n  },`;
 }
 
-/** The sub-agent id its own metadata declares — never the directory name it happens to sit in. */
+/** The id the metadata declares, never the directory name. */
 function agentIdOf(source: AgentSource): string {
-  // Parse boundary: these are the CLI's own metadata.yaml files, shaped by src/schemas/agent.schema.json.
+  // Parse boundary: the CLI's own metadata.yaml.
   const metadata = parseYaml(readFileSync(source.metadataPath, "utf-8")) as AgentYamlConfig;
   return metadata.id;
 }
@@ -166,8 +132,7 @@ function corpusFile(cliRoot: string): EmittedFile {
 
   const agents = findAgentSources(agentsRoot)
     .map((source) => ({ id: agentIdOf(source), partials: readAgentPartials(source, agentsRoot) }))
-    // Committed output, byte-compared by `check` — so the order has to be the comparator's
-    // rather than the collation of whichever machine ran the generator.
+    // Byte order keeps the committed output machine-independent.
     .sort((a, b) => bytewise(a.id, b.id));
 
   const templates = liquidTemplatePaths(agentsRoot).map((relativePath) => ({
@@ -199,20 +164,13 @@ export const CORPUS_CLI_VERSION = ${JSON.stringify(readOwnVersion())}
   };
 }
 
-/**
- * This package's own published version.
- *
- * Read from the generator's own root rather than from `cliRoot`, because it is the identity of
- * the release rather than a property of the tree the partials were read from — and the suite's
- * fixture roots hold `src/agents/` and nothing else.
- */
+/** Read from the generator's own root, not `cliRoot`: fixture roots hold only src/agents/. */
 function readOwnVersion(): string {
   const manifest = readFileSync(path.join(CLI_ROOT, STANDARD_FILES.PACKAGE_JSON), "utf-8");
   // Parse boundary: this package's own manifest.
   return (JSON.parse(manifest) as { version: string }).version;
 }
 
-/** Every file the generator owns, in emission order. */
 function emittedFiles(cliRoot: string): EmittedFile[] {
   return [corpusFile(cliRoot)];
 }
@@ -223,7 +181,6 @@ function writeEmittedFile(compileRoot: string, file: EmittedFile): void {
   writeFileSync(target, file.content);
 }
 
-/** A file that does not exist counts as drifted — the committed corpus is incomplete. */
 function matchesCommitted(compileRoot: string, file: EmittedFile): boolean {
   const target = path.join(compileRoot, file.path);
   return existsSync(target) && readFileSync(target, "utf-8") === file.content;

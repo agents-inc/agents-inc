@@ -1,13 +1,3 @@
-/**
- * Contract for `scripts/check-findings-frontmatter.ts` — the scan that every finding's YAML
- * frontmatter is readable by a parser and not merely shaped like one.
- *
- * Two halves, like the cross-workspace checks beside it. The first drives the check against fixture
- * directories, because the shapes that matter (a bare `: ` inside a prose scalar, a plain scalar
- * wrapped onto a second line, the quoted and block-scalar forms that fix them) cannot all exist in
- * the real directory at once — the whole point of the second half is that none of them does. The
- * second runs it against this repository, which is the assertion that actually holds the rule.
- */
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,10 +28,6 @@ const NOT_MARKDOWN = "notes.txt";
 
 const BODY = "\n## What Was Wrong\n\nSomething.\n";
 
-/**
- * The schema every fixture directory needs, because the enum is read from it rather than restated
- * here — a second copy of the six values in this file would agree with any list it grew.
- */
 const TEMPLATE = [
   "---",
   "type: anti-pattern | standard-gap | convention-drift | audit | missing-standard | architectural-drift",
@@ -50,7 +36,6 @@ const TEMPLATE = [
   "---",
 ].join("\n");
 
-/** The value one finding actually carried, before the enum was widened rather than the value kept. */
 const INVENTED_ROOT_CAUSE = "scope-boundary-preserved";
 
 function finding(fields: Record<string, string>): string {
@@ -62,7 +47,6 @@ function finding(fields: Record<string, string>): string {
 const A_FILE = "src/cli/lib/installation/local-installer.ts";
 const ANOTHER_FILE = "src/cli/lib/configuration/config-writer.ts";
 
-/** Two findings filed the same day, over the same file, for the same reason — and unlinked. */
 function sameDayFiling(fields: Record<string, string> = {}): string {
   return [
     "---",
@@ -77,7 +61,6 @@ function sameDayFiling(fields: Record<string, string> = {}): string {
   ].join("\n");
 }
 
-/** The offender, in the field it always lands in: a bare colon-space inside an unquoted value. */
 const PROSE_WITH_A_BARE_COLON = [
   "---",
   "type: anti-pattern",
@@ -86,12 +69,7 @@ const PROSE_WITH_A_BARE_COLON = [
   "---",
 ].join("\n");
 
-/**
- * The adjacent failure: a plain scalar wrapped onto a second line, with the colon-space on the
- * continuation rather than the first line. Wrapping alone is legal — this is a plain multi-line
- * scalar and YAML folds it — so the fixture has to carry the colon to fail, which is exactly the
- * shape two of the real ten had.
- */
+/** Wrapping alone is legal YAML; the colon-space on the continuation is what fails. */
 const PROSE_WRAPPED_WITHOUT_A_BLOCK_SCALAR = [
   "---",
   "type: anti-pattern",
@@ -120,15 +98,9 @@ const PROSE_IN_A_BLOCK_SCALAR = [
   "---",
 ].join("\n");
 
-/** One readable finding exactly as `writeFixtureDir` lays it down, for a test to write by hand. */
 const WRITTEN_WHOLE = `${PROSE_IN_DOUBLE_QUOTES}${BODY}`;
 
-/**
- * The same finding as a writer mid-write leaves it on disk: the fence opened, and nothing has
- * closed it yet. Not a shape anyone authors — it is what a reader sees when it opens a file
- * another process is still filling, and it parses as `NO_FRONTMATTER` exactly like a finding
- * written before the convention existed.
- */
+/** What a reader sees mid-write: the fence opened and not yet closed. */
 const HALF_WRITTEN = `${WRITTEN_WHOLE.split("\n").slice(0, 2).join("\n")}\n`;
 
 const NO_FRONTMATTER_AT_ALL = "# A finding written before the frontmatter convention\n";
@@ -139,11 +111,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(cleanupTempDir));
 });
 
-/**
- * A fixture directory is judged against itself and against nothing else. Both scans that read
- * outside the frontmatter — file resolution and symbol declaration — take a root, and leaving
- * either at its default would have a fixture assertion depend on this repository's own tree.
- */
+/** Every root points at the fixture, so no assertion depends on this repository's tree. */
 function checkFixture(root: string, sourceRoot = root): CheckResult {
   return check({
     findingsDir: root,
@@ -153,11 +121,7 @@ function checkFixture(root: string, sourceRoot = root): CheckResult {
   });
 }
 
-/**
- * The registry a fixture directory carries unless the test replaces it, naming every file the test
- * wrote. Written by default because an absent INDEX is a refusal rather than an empty answer, so a
- * fixture without one would fail every assertion in this file for a reason none of them is about.
- */
+/** Written by default: an absent INDEX is a refusal. */
 function indexNaming(files: string[]): string {
   return [
     "---",
@@ -251,12 +215,6 @@ describe("a finding whose prose is quoted or written as a block scalar", () => {
   });
 });
 
-/**
- * The second scan the frontmatter-drift audit of this directory asked for. A finding that invents
- * a value is not a defect the author saw — `scope-boundary-preserved` was defensible and the enum
- * was widened for it — but a value in neither list is invisible to every rollup that groups by
- * `root_cause`, and nothing said so.
- */
 describe("a finding whose root_cause is not one TEMPLATE.md offers", () => {
   it("is reported, naming the value and the enum it is outside", async () => {
     const root = await writeFixtureDir({
@@ -309,12 +267,6 @@ describe("a finding whose root_cause is not one TEMPLATE.md offers", () => {
   });
 });
 
-/**
- * The third scan the same audit asked for, over the class it named "same-day overlapping
- * findings": two files covering the same work, with nothing cross-linking them. Reported rather
- * than refused, because the tuple names a PAIR and which half is wrong is not knowable from the
- * frontmatter — a stale `affected_files`, an absent cross-link, or one filing written twice.
- */
 describe("two findings filed over the same files, cause and day", () => {
   it("reports the pair, so neither reads as the only record of its claim", async () => {
     const root = await writeFixtureDir({
@@ -393,24 +345,8 @@ describe("the scan", () => {
 });
 
 /**
- * The hazard this checker's subject has that no other one's does: `.ai-docs/agent-findings/` is
- * written by the same multi-agent sessions that run the checker, so a scan can open a finding
- * another process is halfway through writing. It reddened for exactly that on 2026-08-19 and was
- * green the moment the write completed — and **nothing was wrong, which is the defect**. A red
- * meaning "someone is typing" reads identically to a red meaning "a finding is malformed", and the
- * documented response to the second is to re-derive a pin and edit it. Editing a pin on the
- * strength of the first writes a phantom into the record permanently.
- *
- * So the scan says which it is, from EVIDENCE rather than from a guess: it fingerprints every file
- * before it reads and again after, and a file whose bytes moved in between was written under the
- * scan. A torn read cannot happen without that fingerprint moving — for a read to be torn the write
- * must still be running when the read lands, so it necessarily continues past it — which is what
- * makes the in-flight report and the parse red arrive together rather than instead of each other.
- *
- * Driven at the two halves rather than through `check`, and that is forced rather than a shortcut:
- * the state under test is a write landing BETWEEN the witness and the verify, and `check` is
- * synchronous, so there is no moment inside one call for a test to write in. Every write below is a
- * real one against a real file in the real window.
+ * Driven through `witnessOf` / `changedSince` rather than `check`: `check` is synchronous, so a test
+ * has no moment inside one call to write in.
  */
 describe("a finding written while the scan is reading the directory", () => {
   it("is reported in flight, so a red that means someone is typing says so", async () => {
@@ -466,18 +402,7 @@ describe("a finding written while the scan is reading the directory", () => {
     expect(changedSince(root, witnessed)).toStrictEqual([FINDING_FILE]);
   });
 
-  /**
-   * The residual the fingerprint cannot reach, measured rather than assumed: a scan of this
-   * repository takes a second or two, and a writer that opens a file, writes a chunk and STALLS
-   * for longer than that leaves the same bytes at the witness and at the verify. Driven against a
-   * real 20-second stall on a copy of the real directory, `inFlight` came back empty over a file
-   * that was plainly cut off.
-   *
-   * So the shape of the cut is the second signal, and it needs no timing at all: a file that opens
-   * a fence and never closes it has been TRUNCATED, where a file with no fence at all was written
-   * before the convention. Evidence rather than proof — a fence someone deleted reads the same —
-   * but it is the difference between a message a reader recognises and one they act on.
-   */
+  /** A writer stalling longer than the scan leaves identical fingerprints, so the fence shape is the signal. */
   it("names an unterminated fence apart from an absent one, which is what a cut-off file looks like", async () => {
     const truncated = await writeFixtureDir({ [FINDING_FILE]: HALF_WRITTEN });
     const preConvention = await writeFixtureDir({ [FINDING_FILE]: NO_FRONTMATTER_AT_ALL });
@@ -501,14 +426,6 @@ describe("a finding written while the scan is reading the directory", () => {
   });
 });
 
-/**
- * The reference scan's two clauses, driven against a fixture tree that carries one real file.
- *
- * Both halves are here because the property the check states has two: a member of a YAML SEQUENCE
- * is a path whatever it looks like, and a SCALAR is a path only when it reads as one. The first
- * clause is what makes a prose sentence sitting in `affected_files:` a defect rather than a value
- * the reader skips; the second is what keeps `partial_note:` out of the scan entirely.
- */
 const A_REAL_FILE = "src/cli/lib/exit-codes.ts";
 const A_DELETED_FILE = "src/cli/lib/stacks/stack-installer.ts";
 
@@ -589,12 +506,7 @@ describe("a frontmatter value that names a file", () => {
   });
 });
 
-/**
- * The reference scan judges only what this repository would carry, so its answer cannot depend on
- * the machine running it. Laid out like the real tree, because a climbing reference written from the
- * repository root lands back inside the repository when resolved from the package or the findings
- * directory, and escapes it only from the root it was written from.
- */
+/** Laid out like the real tree: a climb out of the repository only escapes from the root it was written from. */
 const SIBLING_REPOSITORY_FILE = "../skills/src/skills/web-state-zustand/examples/core.md";
 const GENERATED_FILE = "e2e/helpers/handrun.gen.mjs";
 
@@ -709,12 +621,6 @@ describe("a frontmatter value naming a path this repository does not carry", () 
   });
 });
 
-/**
- * The symbol scan `2026-08-19-a-partial-note-claims-a-pending-fix-and-nothing-re-derives-it-against-source`
- * asked for, and the reason its own subject went unread for four months: a `partial_note` is prose
- * about code, and no scanner can evaluate the claim — but it CAN ask whether the names it pins the
- * claim to still exist. Deliberately weaker than re-deriving the claim, and mechanical.
- */
 const A_DECLARED_SYMBOL = "writeConfigByScope";
 const A_DELETED_SYMBOL = "writeScopedConfigs";
 
@@ -755,20 +661,7 @@ describe("a backticked symbol inside a lifecycle note", () => {
     expect(checkFixture(root, path.join(root, "source")).undeclared).toStrictEqual([]);
   });
 
-  /**
-   * The scan must answer about the REPOSITORY, not about the machine.
-   *
-   * It walks the filesystem, so any file lying in the tree contributes names — including files
-   * git ignores. Three ignored locations in this repository (a `.cache/`, a generated `.gen.mjs`
-   * and an ignored scratch directory) still declared two constants deleted on 2026-08-22, so the
-   * scan answered 10 locally and 12 on a clean checkout: **CI was red on this assertion from the
-   * 0.157.0 push through 0.158.0 while every local run passed.** A gate whose verdict depends on
-   * what a machine happens to carry trains people to disbelieve it.
-   *
-   * `isIgnored` is injected rather than shelled out to in the test, deliberately: proving this
-   * with a real `.gitignore` would mean creating a git repository from a test, and the predicate
-   * is the whole of what the scan needs to know.
-   */
+  /** A git-ignored file must not declare names, or the verdict depends on the machine. */
   it("ignores a name declared only in a file the repository does not carry", async () => {
     const root = await writeSymbolFixture({
       [FINDING_FILE]: finding({
@@ -792,7 +685,6 @@ describe("a backticked symbol inside a lifecycle note", () => {
     ).toStrictEqual([{ file: FINDING_FILE, key: "partial_note", symbol: A_DECLARED_SYMBOL }]);
   });
 
-  /** The control: the same symbol, the same file, counted when the repository does carry it. */
   it("counts a name from a file the repository does carry", async () => {
     const root = await writeSymbolFixture({
       [FINDING_FILE]: finding({
@@ -827,15 +719,7 @@ describe("a backticked symbol inside a lifecycle note", () => {
   });
 });
 
-/**
- * The membership scan, in ONE direction. `INDEX.md` names findings by basename, and nothing on the
- * way in looks — a finding can join the directory and be invisible to every pass that groups it.
- *
- * The reverse direction is deliberately not asserted, and that is the whole design of these cases.
- * The INDEX's own header calls a row naming a file that is gone "the record working as intended —
- * the file is gone, the judgement is not", so a scan that failed on those would fight the protocol
- * rather than enforce it, and would report the 300-odd rows the grading pass exists to keep.
- */
+/** One direction only: an INDEX row naming a deleted finding is the record working as intended. */
 const FINDING_NAME = FINDING_FILE.replace(/\.md$/, "");
 const A_DELETED_FINDING = "2026-01-03-a-finding-that-has-been-deleted";
 const README = "README.md";
@@ -902,43 +786,17 @@ describe("a finding the INDEX names nowhere", () => {
   });
 });
 
-/**
- * Every dangling frontmatter reference on disk, named rather than counted, and the worklist for
- * whoever repairs them. The repair is one line per row and belongs to the `.ai-docs/` owners; this
- * pin is what makes the set a fact rather than a claim, and it reddens on the next one added as well
- * as the next one fixed.
- *
- * A reference outside the repository, or onto a path git ignores, is never judged, so it never
- * belongs here: a red listing one is the scan depending on the machine, not a pin to re-derive.
- */
+/** Named, not counted. References outside the repository or git-ignored are never judged, so never belong here. */
 const UNRESOLVED_REFERENCES_ON_DISK: UnresolvedReference[] = [];
 
-/**
- * Every name a lifecycle note pins its claim to that nothing in the repository declares. Each is a
- * note asserting something about code, in terms of a symbol a reader cannot find, which is the
- * rename half of the class and the half a scanner can see. Re-derive the population from the diff
- * this assertion prints rather than from a count written here, which rots on the next deletion.
- *
- * `writeScopedConfigs` is deliberately NOT in this list and is the reason the scan is written the
- * weaker way: a test-local shim still declares it, so a note naming it resolves. The scan catches
- * renames, not landed fixes — re-deriving the claim itself is a reader's job, and `TEMPLATE.md`
- * binds it to the act of editing a finding at all.
- */
+/** Re-derive from the diff this assertion prints, not from a count. */
 const UNDECLARED_SYMBOLS_ON_DISK: UndeclaredSymbol[] = [];
 
-/**
- * Read once for the whole block rather than per assertion. The symbol scan parses every module in
- * the repository to answer what the tree declares, which is a second of work — five re-derivations
- * of one census buy nothing, since no assertion below changes what the previous one read.
- */
+/** Read once: the symbol scan parses every module in the repository. */
 describe("this repository", () => {
   const repository = check();
 
-  /**
-   * FIRST, and that placement is the point: every assertion below reads a directory this session
-   * may be writing into, and a red here says the inputs moved under the scan. The response is to
-   * RE-RUN — never to re-derive a pin, which is what every other red in this block asks for.
-   */
+  /** First: a red here means re-run, never re-derive a pin. */
   it("was not written into while this scan read it", () => {
     expect(
       repository.inFlight,
@@ -980,12 +838,7 @@ describe("this repository", () => {
     expect(repository.undeclared).toStrictEqual(UNDECLARED_SYMBOLS_ON_DISK);
   });
 
-  /**
-   * Asserted EMPTY rather than pinned to a named worklist, unlike the two above. Those record
-   * drift nobody is repairing, so naming it is the most a scan can do; a finding with no INDEX row
-   * is repaired by writing the row, which is one line and is happening. A pin would go red the day
-   * the rows land and read as a regression the repair caused.
-   */
+  /** Empty rather than pinned: a missing row is repaired by writing it. */
   it("has no finding the INDEX names nowhere", () => {
     expect(
       repository.unlisted,

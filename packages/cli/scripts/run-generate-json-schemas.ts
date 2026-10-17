@@ -1,9 +1,4 @@
-/**
- * Entry point for `bun run generate:schemas` and `bun run generate:schemas:check`.
- *
- * The generator exports functions and runs nothing on import, so argv, the console output and
- * the exit code live here rather than beside it.
- */
+/** Entry point for `bun run generate:schemas` and `generate:schemas:check`. */
 import path from "path";
 
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";

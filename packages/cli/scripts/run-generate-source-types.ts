@@ -1,10 +1,4 @@
-/**
- * Entry point for `bun run generate:types [skills-source-path]` and
- * `bun run generate:types:check`.
- *
- * The generator exports functions and runs nothing on import, so argv, the console output and
- * the exit code live here rather than beside it.
- */
+/** Entry point for `bun run generate:types [skills-source-path]` and `generate:types:check`. */
 import path from "path";
 
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";
@@ -15,10 +9,9 @@ const CHECK_FLAG = "--check";
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 const OUT_DIR = path.join(CLI_ROOT, "src/cli/types/generated");
 
-/** The marketplace checkout, a sibling of the monorepo root — the local layout, not CI's. */
+/** The marketplace checkout beside the monorepo root (local layout). */
 const DEFAULT_SKILLS_SOURCE = path.resolve(CLI_ROOT, "../../../skills");
 
-/** The one positional argument: where to read the marketplace from. */
 function skillsSourceFromArgv(): string {
   const positional = process.argv.slice(2).find((arg) => arg !== CHECK_FLAG);
   return positional ?? DEFAULT_SKILLS_SOURCE;

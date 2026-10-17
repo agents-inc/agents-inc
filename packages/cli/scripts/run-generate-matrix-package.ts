@@ -1,9 +1,4 @@
-/**
- * Entry point for `bun run generate:matrix` and `bun run generate:matrix:check`.
- *
- * The generator exports functions and runs nothing on import, so argv, the console output and
- * the exit code live here rather than beside it.
- */
+/** Entry point for `bun run generate:matrix` and `generate:matrix:check`. */
 import path from "path";
 
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";
@@ -14,13 +9,7 @@ import { check, generate, matrixShapeIssues } from "./generate-matrix-package.ts
 const CHECK_FLAG = "--check";
 const MATRIX_ROOT = path.resolve(import.meta.dirname, "../../matrix");
 
-/**
- * Refuses to vendor — or to pass — a catalogue that is no longer a matrix.
- *
- * It runs on both branches deliberately. On `--check` it is the gate; on the write it stops the
- * generator handing `packages/matrix` an artefact whose read models fail at import, which is a
- * package away from whatever emitted it.
- */
+/** Runs on both branches: the write must not vendor a matrix that fails at import. */
 function refuseMalformedMatrix(): void {
   const issues = matrixShapeIssues(BUILT_IN_MATRIX);
   if (issues.length === 0) return;

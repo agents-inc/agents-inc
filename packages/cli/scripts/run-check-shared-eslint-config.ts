@@ -1,9 +1,4 @@
-/**
- * Entry point for the ESLint half of `bun run deps:check`.
- *
- * The check exports a function and runs nothing on import, so argv, the console output and the
- * exit code live here rather than beside it.
- */
+/** Entry point for the ESLint half of `bun run deps:check`. */
 import { EXIT_CODES } from "../src/cli/lib/exit-codes.ts";
 
 import {
@@ -13,7 +8,7 @@ import {
   type WorkspaceVerdict,
 } from "./check-shared-eslint-config.ts";
 
-/** `--root <dir>`, so the suite can drive this whole entry point against a fixture repository. */
+/** Lets the suite drive this entry point against a fixture repository. */
 const ROOT_FLAG = "--root";
 
 function repoRootFromArgv(argv: string[]): string | undefined {

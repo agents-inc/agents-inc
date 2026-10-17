@@ -1,16 +1,5 @@
 /**
- * Contract for `scripts/generate-source-types.ts`, the writer of `src/cli/types/generated/`.
- *
- * Everything here runs against fixture roots, deliberately: the generator reads a `skills`
- * marketplace checkout that no CI job in this repository has, so a spec pointed at the real one
- * would be green on one machine and unrunnable on every other. The staleness question for the
- * committed artefacts is `generate:types:check`'s to answer, not this suite's.
- *
- * The check these specs pin is not the one `generate:types:check` used to run. That was
- * `bun run generate:types && git diff --exit-code src/cli/types/generated/`, which answers "does
- * this differ from what is staged or committed" rather than "is this stale against source", is
- * blind to a path git has never seen, and cannot be run at all by an agent working under the
- * no-write-git rule.
+ * Runs against fixture roots only: no CI job has the skills checkout the generator reads.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
 import { mkdirSync, statSync, unlinkSync, writeFileSync, readFileSync, readdirSync } from "fs";
@@ -40,18 +29,16 @@ import { firstElement } from "../src/cli/lib/__tests__/helpers/element-at.js";
 const CLI_ROOT = path.resolve(import.meta.dirname, "..");
 const GENERATED_DIR = path.join(CLI_ROOT, "src/cli/types/generated");
 
-/** Every file the generator owns, in emission order. */
 const EMITTED_FILES = ["source-types.ts", "matrix.ts", "activation-descriptions.ts"];
 
 const DRIFTED_FILE = "source-types.ts";
 const DRIFTED_CONTENT = "// hand-edited after generation\n";
 
-/** Stands in for a path the generator emits that git has never seen — absent from disk. */
+/** Stands in for an emitted path git has never seen. */
 const ABSENT_FILE = "matrix.ts";
 
 const modifiedAt = (filePath: string): bigint => statSync(filePath, { bigint: true }).mtimeNs;
 
-/** One `<skills-source>/src/skills/<id>/` pair, as the marketplace ships them. */
 function writeFixtureSkill(
   skillsSource: string,
   id: SkillId,
@@ -63,14 +50,11 @@ function writeFixtureSkill(
   writeFileSync(path.join(skillDir, "SKILL.md"), renderSkillMd(id, String(metadata.displayName)));
 }
 
-/** One `<cli-root>/src/agents/<group>/<agent>/metadata.yaml`. */
 function writeFixtureAgent(cliRoot: string, group: string, id: string, domain: string): void {
   const agentDir = path.join(cliRoot, "src/agents", group, id);
   mkdirSync(agentDir, { recursive: true });
   writeFileSync(path.join(agentDir, "metadata.yaml"), stringifyYaml({ id, domain }));
 }
-
-// -- sortedGroupBy -----------------------------------------------------------
 
 describe("sortedGroupBy", () => {
   it("groups entries by key function, sorts both keys and values", () => {
@@ -104,8 +88,6 @@ describe("sortedGroupBy", () => {
   });
 });
 
-// -- resolveStack ------------------------------------------------------------
-
 describe("resolveStack", () => {
   const KNOWN_SKILL_IDS = new Set<SkillId>([
     "web-framework-react",
@@ -113,8 +95,7 @@ describe("resolveStack", () => {
     "api-framework-hono",
   ]);
 
-  /** A real skill ID deliberately absent from KNOWN_SKILL_IDS — models a stack
-   * referencing a skill the current skills source no longer provides. */
+  /** A real skill ID absent from KNOWN_SKILL_IDS. */
   const UNKNOWN_SKILL_ID: SkillId = "web-framework-svelte";
 
   it("resolves valid skill IDs from stack assignments", () => {
@@ -214,8 +195,6 @@ describe("resolveStack", () => {
     expect(result.philosophy).toBe("");
   });
 });
-
-// -- extractSkills -----------------------------------------------------------
 
 describe("extractSkills", () => {
   let tempDir: string;
@@ -386,12 +365,7 @@ describe("extractSkills", () => {
     expect(firstElement(result).usageGuidance).toBe("Use when building React apps");
   });
 
-  /**
-   * This extractor feeds the vendored catalogue, which is the editor's default seat, and the
-   * output preview draws each skill's activation row from what it carries. An install writes the
-   * SKILL.md description into that row, and the catalog.json extractor already carries it, so the
-   * two must agree on it when they read the same skill.
-   */
+  /** Must match the catalog.json extractor, which the editor's preview reads. */
   it("carries the SKILL.md description an install writes, as the catalog.json extractor does", async () => {
     const skillMdDescription = "What SKILL.md says, and what the install writes";
     createSkillDir(
@@ -416,8 +390,6 @@ describe("extractSkills", () => {
     expect(firstElement(extractSkills(tempDir)).activationDescription).toBe(skillMdDescription);
   });
 });
-
-// -- extractAgents -----------------------------------------------------------
 
 describe("extractAgents", () => {
   let tempDir: string;
@@ -496,8 +468,6 @@ describe("extractAgents", () => {
   });
 });
 
-// -- renderSourceTypes -------------------------------------------------------
-
 describe("renderSourceTypes", () => {
   it("generates valid source-types.ts content with SKILL_MAP", () => {
     const skills = [
@@ -572,15 +542,12 @@ describe("renderSourceTypes", () => {
 
     const content = renderSourceTypes(skills, agents);
 
-    // Categories
     expect(content).toContain('"api-api"');
     expect(content).toContain('"web-framework"');
 
-    // Domains
     expect(content).toContain('"api"');
     expect(content).toContain('"web"');
 
-    // Agent names
     expect(content).toContain('"api-developer"');
     expect(content).toContain('"web-developer"');
   });
@@ -591,15 +558,9 @@ describe("renderSourceTypes", () => {
 
     const content = renderSourceTypes(skills, agents);
 
-    // The whole emitted declaration, byte for byte. A regex count over a slice of the
-    // file stood here: it said how many times a name occurred somewhere after the
-    // opening bracket, which is a number rather than a shape — it could not tell a
-    // duplicate from a reordering, and it read the file's whole tail as the block.
     expect(content).toContain(`export const AGENT_NAMES = [\n"web-developer",\n] as const;`);
   });
 });
-
-// -- renderMatrix ------------------------------------------------------------
 
 describe("renderMatrix", () => {
   it("generates matrix.ts with BUILT_IN_MATRIX export", () => {
@@ -667,8 +628,6 @@ describe("renderMatrix", () => {
   });
 });
 
-// -- Built-in relationship narrowing -----------------------------------------
-
 describe("renderMatrix relationship narrowing", () => {
   it("records no unresolved slug for a catalogue smaller than the built-in rules describe", () => {
     const skills = [createMockExtractedSkill("web-framework-react")];
@@ -696,8 +655,6 @@ describe("renderMatrix relationship narrowing", () => {
   });
 });
 
-// -- Deterministic emission --------------------------------------------------
-
 describe("renderMatrix determinism", () => {
   it("emits byte-identical matrix.ts regardless of input enumeration order", () => {
     const skills = [
@@ -714,8 +671,6 @@ describe("renderMatrix determinism", () => {
   });
 });
 
-// -- Module shape ------------------------------------------------------------
-
 describe("generate-source-types module", () => {
   it("exports generate and check, and importing it writes nothing", async () => {
     const committedFiles = readdirSync(GENERATED_DIR).map((name) => path.join(GENERATED_DIR, name));
@@ -731,8 +686,6 @@ describe("generate-source-types module", () => {
     ).toStrictEqual(modifiedBefore);
   });
 });
-
-// -- Check mode --------------------------------------------------------------
 
 describe("check mode", () => {
   let skillsSource: string;
@@ -758,7 +711,6 @@ describe("check mode", () => {
     for (const dir of outDirs) await cleanupTempDir(dir);
   });
 
-  /** A directory holding exactly what the fixture marketplace generates, in `os.tmpdir()`. */
   async function generatedFixture(prefix: string): Promise<string> {
     const outDir = await createTempDir(prefix);
     outDirs.push(outDir);

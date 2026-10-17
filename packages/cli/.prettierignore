@@ -1,43 +1,23 @@
-# Build output
 dist/
 
-# Dependencies
 node_modules/
 
-# Cache
 .cache/
 *.cache
 
-# Coverage
 coverage/
 
-# Compiled output
 *.js.map
 
-# Emitted by scripts/handrun.mjs, which bundles the hand-run and its whole
-# dependency tree with esbuild. Mostly vendored third-party source, so
-# reformatting it is churn against code nobody here can edit — and its own
-# style is not this package's. Gitignored at the repository root; the ESLint
-# globalIgnores carries the matching entry.
+# Bundled by scripts/handrun.mjs; mostly vendored third-party source.
 e2e/helpers/*.gen.mjs
 
-# The reserved prefix for scratch material — a verification harness or throwaway
-# probe written into this package during a run. Gitignored at the repository root,
-# and restated here for the same reason the private working files below are: a
-# `prettier --check .` started from this directory never reads that file, so
-# without this line an untracked harness fails the format gate for the whole
-# package. The ESLint globalIgnores carries the matching entry.
+# Scratch material; restated because Prettier here does not read the root .gitignore.
 .scratch*
 
-# Backup files
 .claude_backup/
 
-# Private working files. These used to be hidden from Prettier by the .gitignore
-# that sat here back when this package WAS the repository root — Prettier reads
-# .gitignore by default, but only the one in its working directory. The rules now
-# live in the root .gitignore re-anchored as `packages/cli/todo/*`, which Prettier
-# never sees when `format`/`format:check` run from this directory. Restating them
-# here keeps `prettier --check .` agreeing with git from either place.
+# Private working files, ignored in the root .gitignore, which Prettier here does not read.
 CLAUDE.md
 todo/*
 !todo/TODO.md

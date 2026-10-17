@@ -1,42 +1,19 @@
 /**
- * Every structural value `e2e/pages/constants.ts` mirrors still reads what the product declares.
- *
- * **The mirroring is deliberate and stays; what was missing is a third party comparing it.** A
- * spec that imported the constant under test would move both sides at once and assert nothing. `EXIT_CODES` is the clearest case — an e2e spec asserting
- * `toBe(EXIT_CODES.CANCELLED)` is stating that this command cancels, and if the product renumbered
- * `CANCELLED` the imported form would agree with the new number and stay green.
- *
- * **The rule the file header states, enforced here.** `e2e/pages/constants.ts` carried a flat
- * "NO imports from src/cli" for years while 233 imports from `src/` lived across every other
- * directory in the E2E tree — so it read as a rule nobody applied rather than as the one file
- * where duplication buys something. Three of its values named their production original in a
- * comment and asked the reader to keep them in step by hand, and `TERMINAL_SIZE.SHORT`'s said
- * outright that a drift there hangs every spec that uses it rather than failing one.
- *
- * **`EXIT_CODES` is a SUPERSET, not a copy**, and the comparison is one-directional for that
- * reason: every code the product declares must be mirrored with the same value, and the E2E side
- * may hold codes of its own. `UNKNOWN_COMMAND: 127` is the live example — the shell's
- * command-not-found status, which a spec sees when `dist/` is absent and the CLI never emits.
- *
- * Nothing runs at module scope — the suite beside it is the enforcement, as with
- * `check-enumeration-drift.ts`, and the package root is a parameter so it can be driven against a
- * fixture.
+ * Refuses a value `e2e/pages/constants.ts` mirrors that no longer equals the product's. Mirrored
+ * rather than imported, so an assertion cannot move with the value it checks. `EXIT_CODES` is a
+ * superset: the E2E side may add codes of its own.
  */
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 
 import ts from "typescript";
 
-/** Where the check reads from when no other root is given. */
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 
 const E2E_CONSTANTS = "e2e/pages/constants.ts";
 const EXIT_CODES_MODULE = "src/cli/lib/exit-codes.ts";
 const CONSTS = "src/cli/consts.ts";
-/**
- * The path vocabulary's own home. `src/cli/consts.ts` re-exports these names and declares none of
- * them, so a mirror bound there would compare against a re-export and say nothing about the value.
- */
+/** consts.ts only re-exports the path names; this declares them. */
 const COMPILE_PATHS = "../compile/src/paths.ts";
 
 export const NO_SOURCE_FILE = "names a source file that does not exist";
@@ -44,15 +21,13 @@ export const NO_SYMBOL = "names a symbol its source file does not declare";
 export const NO_KEY = "names a key its symbol does not hold";
 export const NOT_A_LITERAL = "names a key holding something other than a string or a number";
 
-/** A value's address: the symbol that declares it, and the keys to walk from there. */
 export type ValueAddress = {
   file: string;
   symbol: string;
-  /** Keys walked from the symbol's initializer. Empty for a bare `const NAME = <literal>`. */
+  /** Empty for a bare `const NAME = <literal>`. */
   path: readonly string[];
 };
 
-/** A record's address — the symbol alone, whose every member is compared. */
 export type RecordAddress = { file: string; symbol: string };
 
 export type Mirror =
@@ -64,14 +39,7 @@ export type MirrorVerdict =
 
 export type CheckResult = { clean: boolean; verdicts: MirrorVerdict[] };
 
-/**
- * The registered mirrors.
- *
- * `TERMINAL_SIZE.SHORT` contributes its `rows` and NOT its `cols`: the constant's own docblock
- * says `rows` must track the gate exactly — one lower and every spec using it hangs on the resize
- * prompt — while `cols: 100` sits deliberately above `MIN_TERMINAL_SIZE.COLS: 80`, wide enough to
- * render normally. Registering `cols` would assert an equality the design does not want.
- */
+/** `TERMINAL_SIZE.SHORT.cols` is deliberately wider than the gate, so only `rows` is mirrored. */
 export const MIRRORS: Mirror[] = [
   {
     name: "EXIT_CODES",
@@ -91,29 +59,13 @@ export const MIRRORS: Mirror[] = [
     e2e: { file: E2E_CONSTANTS, symbol: "SOURCE_PATHS", path: ["PLUGINS_DIST"] },
     product: { file: CONSTS, symbol: "PLUGINS_DIST_PATH", path: [] },
   },
-  /**
-   * The source folder's root name. It is the name `expectNoSourceFolder` asks after when neither provider folder is present, and
-   * an uninstall that leaves an emptied `.agents-inc/` behind is exactly what that assertion is
-   * for — so a mirror that drifted here would turn a cleanup claim into one about a directory
-   * nothing creates. `DIRS.SOURCE_CLAUDE` beside it stays unregistered on purpose: its production
-   * counterpart is `sourceDirName(provider)`, a function, and this check compares literals.
-   */
+  // DIRS.SOURCE_CLAUDE is unregistered: its product counterpart is a function, not a literal.
   {
     name: "DIRS.SOURCE_ROOT",
     kind: "value",
     e2e: { file: E2E_CONSTANTS, symbol: "DIRS", path: ["SOURCE_ROOT"] },
     product: { file: COMPILE_PATHS, symbol: "SOURCE_ROOT_DIR", path: [] },
   },
-  /**
-   * Added 2026-09-01, after this exact pair drifted through a whole apex migration unnoticed.
-   *
-   * The editor moved from `agentsinc.sh` to `agentsinc.sh/editor` and the mirror kept the old
-   * value. Nothing failed, because the spec that reads it asserted `toContain("agentsinc.sh")` —
-   * a substring of BOTH the right address and the wrong one — so `init --ui` printing a link to
-   * the marketing page was green. That spec now reads `STEP_TEXT.EDITOR_URL`, which is what makes
-   * this row worth having: the assertion is only as true as the mirror, and nothing else checks
-   * the mirror.
-   */
   {
     name: "STEP_TEXT.EDITOR_URL",
     kind: "value",
@@ -152,13 +104,7 @@ function judgeValue(
   };
 }
 
-/**
- * Every member the product declares, against the mirror's.
- *
- * One-directional: a member the MIRROR adds is not drift, because the E2E tree legitimately names
- * statuses the CLI never emits. A member the PRODUCT adds and the mirror lacks is, because a spec
- * reaching for it finds nothing.
- */
+/** One-directional: a member only the mirror holds is not drift. */
 function judgeRecord(
   packageRoot: string,
   mirror: Extract<Mirror, { kind: "record" }>,
@@ -190,7 +136,6 @@ function literalAt(packageRoot: string, address: ValueAddress, subject: string):
   return literalValue(target, address, subject);
 }
 
-/** Every member of one object literal, as a flat map. */
 function recordAt(
   packageRoot: string,
   address: RecordAddress,
@@ -211,7 +156,6 @@ function recordAt(
   );
 }
 
-/** What a symbol is declared as, with `as const` and parentheses stripped. */
 function initializerOf(packageRoot: string, address: ValueAddress, subject: string): ts.Expression {
   const filePath = path.join(packageRoot, address.file);
   if (!existsSync(filePath)) throw refusal(subject, NO_SOURCE_FILE, address.file);
@@ -230,7 +174,6 @@ function initializerOf(packageRoot: string, address: ValueAddress, subject: stri
   return unwrap(declared);
 }
 
-/** The initializer of the first top-level `const <symbol> = ...` in a file. */
 function declarationOf(file: ts.SourceFile, symbol: string): ts.Expression | undefined {
   for (const statement of file.statements) {
     if (!ts.isVariableStatement(statement)) continue;
@@ -263,12 +206,7 @@ function memberOf(
   throw refusal(subject, NO_KEY, addressOf(address));
 }
 
-/**
- * A literal's value, refused unless it is a plain string or number.
- *
- * A computed value — a reference, a call, a template literal — is a claim about how the value is
- * built rather than what it is, and comparing one to a literal would pass while the two differ.
- */
+/** A computed value is refused: comparing it to a literal could pass while the two differ. */
 function literalValue(
   node: ts.Expression,
   address: ValueAddress,
@@ -281,7 +219,6 @@ function literalValue(
   throw refusal(subject, NOT_A_LITERAL, addressOf(address));
 }
 
-/** `as const` assertions and parentheses, which carry no value of their own. */
 function unwrap(node: ts.Expression): ts.Expression {
   if (ts.isAsExpression(node) || ts.isParenthesizedExpression(node)) return unwrap(node.expression);
   return node;

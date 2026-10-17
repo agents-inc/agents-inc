@@ -1,18 +1,6 @@
 /**
- * Cross-workspace check: every workspace either extends one of the shared configs in
- * `packages/typescript-config`, or records in its own `package.json` why it does not.
- *
- * It exists because no other gate can see this class of defect. `packages/cli/tsconfig.json`
- * extended nothing until 2026-08-06 — it restated target, module, strict and the rest inline, and
- * pulled DOM into a Node CLI by setting no `lib` — while `tsc --noEmit` three times, `eslint .`,
- * both suites, `tsup` and `turbo typecheck` stayed green the whole time. Each of those reads
- * whatever the config happens to say, so a config that has stopped agreeing with its siblings is
- * invisible to all of them. Comparing workspaces to each other is the only thing that sees it,
- * which is why this check sits beside `syncpack lint` rather than inside a workspace's own gates.
- *
- * Run: `bun run deps:check` from the repository root. Nothing runs at module scope here — argv,
- * the console output and the exit code live in `scripts/run-check-shared-tsconfig.ts`, and the
- * roots are parameters so the suite can drive the check against a fixture repository.
+ * Refuses a workspace that neither extends a `packages/typescript-config` base nor records in its
+ * `package.json` why not. Run via `bun run deps:check`.
  */
 import { existsSync, readFileSync, statSync } from "fs";
 import path from "path";
@@ -21,42 +9,25 @@ import fg from "fast-glob";
 import ts from "typescript";
 import { z } from "zod";
 
-/** Where the check reads from when no other root is given. */
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
 
 const PACKAGE_JSON = "package.json";
 const TSCONFIG_JSON = "tsconfig.json";
 const JSON_EXTENSION = ".json";
 
-/** The package that ships the shared configs, and the prefix every one of its specifiers carries. */
 export const SHARED_CONFIG_PACKAGE = "@workspace/typescript-config";
 const SHARED_CONFIG_PREFIX = `${SHARED_CONFIG_PACKAGE}/`;
 
-/**
- * A workspace with a defensible reason not to extend records it under this key in its own
- * `package.json` — the one file every workspace has, including the four that carry no TypeScript
- * at all and so have no tsconfig to put it in. The `//` prefix matches the comment keys the root
- * `package.json` already uses for its documented decisions. The value is the reason, and it is
- * printed by the runner, so the next divergence is a recorded decision rather than an absence.
- */
+/** Opt-out key in a workspace's `package.json`; its value is the reason, which the runner prints. */
 export const OPT_OUT_KEY = "//no-shared-tsconfig";
 
 export const MISSING_TSCONFIG = `has no ${TSCONFIG_JSON}`;
 export const NO_SHARED_BASE = `${TSCONFIG_JSON} reaches no ${SHARED_CONFIG_PREFIX}* config through its extends or references`;
 export const MISSING_DEPENDENCY = `${PACKAGE_JSON} does not declare ${SHARED_CONFIG_PACKAGE}`;
 
-/**
- * A root matching no workspace has not been checked, whatever it answers about the workspaces in
- * it. The floor lives here rather than in the suite because `bun run deps:check` is what CI and
- * both hooks run: with it in the test file only, all three runners printed `✓ 0 workspaces` and
- * exited 0 against a root whose globs match nothing, which is the shape of a passing gate.
- */
+/** Refused here, not only in the suite, so a root matching nothing cannot pass in CI. */
 export const NO_WORKSPACES = "matches no workspace";
 
-/**
- * The globs are read rather than restated, for the reason `.syncpackrc.cjs` gives for omitting
- * `source`: one statement of which directories are workspaces cannot drift from itself.
- */
 const RootManifestSchema = z.object({ workspaces: z.array(z.string()) });
 
 const ManifestSchema = z.object({
@@ -72,7 +43,6 @@ const TsconfigSchema = z.object({
 });
 type Tsconfig = z.infer<typeof TsconfigSchema>;
 
-/** One workspace's answer: bound to a shared base, excused by a recorded reason, or neither. */
 export type WorkspaceVerdict =
   | { workspace: string; outcome: "bound"; via: string }
   | { workspace: string; outcome: "opted-out"; reason: string }
@@ -130,13 +100,7 @@ function judgeWorkspace(repoRoot: string, workspace: string): WorkspaceVerdict {
   return { workspace, outcome: "bound", via };
 }
 
-/**
- * The shared specifier this config reaches, if any. `extends` may be a string or an array, and a
- * relative entry is another config to follow — `packages/cli/tsconfig.scripts.json` inherits the
- * base that way. A solution-style config (`references` and no `extends`, which is what
- * `apps/editor/tsconfig.json` is) is followed through the projects it points at, because those
- * are the files that actually compile.
- */
+/** Follows relative `extends` and solution-style `references` to the configs that compile. */
 function findSharedBase(configPath: string, visited: Set<string>): string | undefined {
   if (visited.has(configPath) || !existsSync(configPath)) return undefined;
   visited.add(configPath);
@@ -160,7 +124,6 @@ function basesOf(config: Tsconfig): string[] {
   return typeof config.extends === "string" ? [config.extends] : config.extends;
 }
 
-/** The configs in this repository that this one is built from: relative bases, then references. */
 function localConfigsBehind(config: Tsconfig, configPath: string): string[] {
   const relativeBases = basesOf(config).filter((base) => base.startsWith("."));
   const referencedProjects = (config.references ?? []).map((reference) => reference.path);
@@ -188,10 +151,7 @@ function declaresSharedConfig(manifest: Manifest): boolean {
   );
 }
 
-/**
- * TypeScript's own reader, because these files are JSONC: every tsconfig in this repository
- * carries `//` comments recording why it says what it says, and `JSON.parse` cannot read one.
- */
+/** tsconfigs are JSONC, which `JSON.parse` cannot read. */
 function readTsconfig(configPath: string): Tsconfig {
   const read: { config?: unknown; error?: ts.Diagnostic } = ts.readConfigFile(
     configPath,

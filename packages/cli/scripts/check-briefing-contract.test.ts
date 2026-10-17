@@ -1,12 +1,4 @@
-/**
- * Contract for `scripts/check-briefing-contract.ts` — the scan that the rules an agent is handed
- * stay reachable from the files an agent is told to open.
- *
- * Two halves, like the checks beside it. The first drives it against fixture trees, because the
- * shapes that decide the answer — a link that resolves, a URL that is nobody's promise here, a
- * document that stops linking the contract — cannot all be present in the real tree at once. The
- * second runs it against this repository, which is the assertion that holds the rule.
- */
+/** Drives the check against fixture trees, then asserts this repository is clean. */
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,7 +22,6 @@ const PACKAGE_CLAUDE_MD = "packages/cli/CLAUDE.md";
 
 const A_PATH_NOTHING_HOLDS = "todo/plans/a-programme-that-never-ran.md";
 
-/** What each `CLAUDE.md` says when the tree is exactly as the rule wants it. */
 const BINDS_THE_CONTRACT: Record<string, string> = {
   [ROOT_CLAUDE_MD]: `See [briefing](./${BRIEFING_CONTRACT}).\n`,
   [PACKAGE_CLAUDE_MD]: `See [briefing](./.ai-docs/standards/briefing.md).\n`,
@@ -42,10 +33,6 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(cleanupTempDir));
 });
 
-/**
- * A tree with both binding documents and the contract, written from one description so a test
- * states only the documents whose text it is about.
- */
 async function writeFixtureTree(documents: Record<string, string> = {}): Promise<string> {
   const root = await createTempDir("briefing-contract-");
   roots.push(root);

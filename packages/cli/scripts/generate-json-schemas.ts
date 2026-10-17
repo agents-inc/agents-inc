@@ -1,12 +1,6 @@
 /**
- * Generates JSON Schema files from Zod schemas — the writer of every generated file in
- * `src/schemas/`. The two hand-maintained schemas beside them, `project-config.schema.json` and
- * `project-source-config.schema.json`, have no `SCHEMA_ENTRIES` entry and are neither emitted nor
- * judged here; `format:check` is what keeps them Prettier-clean.
- *
- * Run: bun run generate:schemas — or generate:schemas:check, which reports drift and writes
- * nothing. Both go through scripts/run-generate-json-schemas.ts: nothing runs at module scope
- * here, so importing this file writes no files.
+ * Generates the JSON Schemas in `src/schemas/` from Zod. `project-config.schema.json` and
+ * `project-source-config.schema.json` are hand-maintained and not touched here.
  */
 import { z } from "zod";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
@@ -28,16 +22,13 @@ import { CATEGORIES } from "../src/cli/types/generated/source-types.ts";
 
 import type { Options as PrettierOptions } from "prettier";
 
-/** Prettier's parser for the `.json` files this generator emits. */
 const JSON_PARSER = "json";
 
-/** All valid category values for stack configs */
 const STACK_SUBCATEGORY_ENUM = [...CATEGORIES];
 
-/** One file the generator owns. `path` is relative to the schemas directory. */
+/** `path` is relative to the schemas directory. */
 type EmittedFile = { path: string; content: string };
 
-/** `schemasDir` is a parameter so the suite can drive the generator against a fixture directory. */
 type GeneratorRoots = { schemasDir: string };
 
 type SchemaEntry = {
@@ -48,22 +39,12 @@ type SchemaEntry = {
     title: string;
     description: string;
   };
-  /** Optional post-processor to fix generated JSON schema quirks */
   postProcess?: (schema: Record<string, unknown>) => void;
 };
 
 /**
- * Injects propertyNames enum constraints for stackAgentConfig objects.
- *
- * The Zod schema uses z.record(z.string()).superRefine() for runtime key validation
- * (because z.record(z.enum()) requires ALL enum values as mandatory properties).
- * But z.toJSONSchema() cannot represent superRefine constraints, so we inject the
- * propertyNames enum into the generated JSON schema for IDE validation.
- *
- * Targets objects that have:
- * - type: "object"
- * - propertyNames: { type: "string" } (plain string, no enum yet)
- * - additionalProperties with skill assignment patterns (anyOf with SkillId pattern)
+ * Adds the category enum to stackAgentConfig's propertyNames. The Zod side validates keys with
+ * superRefine (z.record(z.enum()) would make every key mandatory), which JSON Schema cannot express.
  */
 function injectSubcategoryPropertyNames(obj: unknown): void {
   if (obj === null || typeof obj !== "object") return;
@@ -73,8 +54,6 @@ function injectSubcategoryPropertyNames(obj: unknown): void {
   }
   const record = obj as Record<string, unknown>;
 
-  // Detect stackAgentConfig objects: have propertyNames: { type: "string" } and
-  // additionalProperties with the skill assignment anyOf pattern
   const propNames = record.propertyNames as Record<string, unknown> | undefined;
   const additionalProps = record.additionalProperties as Record<string, unknown> | undefined;
   if (
@@ -85,14 +64,13 @@ function injectSubcategoryPropertyNames(obj: unknown): void {
     additionalProps &&
     additionalProps.anyOf
   ) {
-    // Check if additionalProperties contains the skill ID pattern (confirms this is a stackAgentConfig)
+    // The skill id pattern is what identifies a stackAgentConfig.
     const json = JSON.stringify(additionalProps);
     if (json.includes("(web|api|cli|mobile|infra|meta|security)-.+-.+")) {
       propNames.enum = STACK_SUBCATEGORY_ENUM;
     }
   }
 
-  // Recurse into all values
   for (const value of Object.values(record)) {
     injectSubcategoryPropertyNames(value);
   }
@@ -153,7 +131,7 @@ const SCHEMA_ENTRIES: SchemaEntry[] = [
       description:
         "Schema for custom skill metadata.yaml files with relaxed category and slug validation.",
     },
-    // Custom skills may have extra fields — remove top-level additionalProperties: false
+    // Custom skills may carry extra fields.
     postProcess: (schema) => {
       delete schema.additionalProperties;
     },
@@ -184,8 +162,6 @@ const SCHEMA_ENTRIES: SchemaEntry[] = [
       title: "Stacks Configuration",
       description: "Schema for config/stacks.ts defining agent groupings.",
     },
-    // stackAgentConfigSchema uses superRefine for runtime key validation (not representable
-    // in JSON schema), so inject propertyNames enum for IDE validation
     postProcess: injectSubcategoryPropertyNames,
   },
   {
@@ -199,13 +175,9 @@ const SCHEMA_ENTRIES: SchemaEntry[] = [
   },
 ];
 
-// -- Emission ----------------------------------------------------------------
-
-/** One entry's JSON Schema, with the metadata overlay and any post-processing applied. */
 function schemaDocument(entry: SchemaEntry): Record<string, unknown> {
   const jsonSchema = z.toJSONSchema(entry.schema, { target: "draft-07" });
 
-  // Overlay metadata
   const output: Record<string, unknown> = {
     $schema: jsonSchema.$schema,
     $id: entry.metadata.$id,
@@ -219,13 +191,7 @@ function schemaDocument(entry: SchemaEntry): Record<string, unknown> {
   return output;
 }
 
-/**
- * This package's own Prettier settings, resolved from this file rather than from the destination.
- *
- * The emitted bytes are a property of the generator, not of where they land: resolving from the
- * output directory would give a fixture in `os.tmpdir()` a different config — or none — and the
- * check would then compare formatted committed files against unformatted emitted ones.
- */
+/** Resolved from this file, not the destination, so a fixture dir in os.tmpdir() formats the same. */
 async function packagePrettierOptions(): Promise<PrettierOptions> {
   const options = await resolveConfig(import.meta.filename);
   if (options === null) {
@@ -237,7 +203,6 @@ async function packagePrettierOptions(): Promise<PrettierOptions> {
   return options;
 }
 
-/** Every file the generator owns, formatted exactly as it is committed. */
 async function emittedFiles(): Promise<EmittedFile[]> {
   const options = await packagePrettierOptions();
 
@@ -256,13 +221,10 @@ function writeEmittedFile(schemasDir: string, file: EmittedFile): void {
   writeFileSync(path.join(schemasDir, file.path), file.content);
 }
 
-/** A file that does not exist counts as drifted — the committed set is incomplete. */
 function matchesCommitted(schemasDir: string, file: EmittedFile): boolean {
   const target = path.join(schemasDir, file.path);
   return existsSync(target) && readFileSync(target, "utf-8") === file.content;
 }
-
-// -- Entry points ------------------------------------------------------------
 
 export async function generate({ schemasDir }: GeneratorRoots): Promise<{ written: string[] }> {
   const files = await emittedFiles();
