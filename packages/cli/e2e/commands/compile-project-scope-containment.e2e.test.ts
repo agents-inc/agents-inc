@@ -17,19 +17,10 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 const SECOND_PROJECT_DIR_NAME = "project-b";
 
 /**
- * A compile run inside a project writes nothing outside that project — the
- * ruled containment. Propagation belongs to global operations; a
- * project-scope compile is not one.
- *
- * Both registered projects are set up with `init --from` over the global
- * installation, so the global config genuinely carries two registrations and the
- * fan-out this pins has somewhere to go. The snapshots carry each file's mtime alongside its bytes:
- * the out-of-scope writes this guards against rewrite unchanged configs and
- * unchanged agents, so a bytes-only comparison cannot see them at all — they
- * are visible in the command's log and in nothing else.
+ * A compile inside a project writes nothing outside it. Snapshots carry mtimes, since the
+ * out-of-scope writes rewrite unchanged bytes.
  */
 
-/** The E2E stack with every skill and sub-agent global — what each run below installs. */
 const ALL_GLOBAL_ID = "AllGlobal1";
 
 describe("compile inside a project is contained to that project", () => {

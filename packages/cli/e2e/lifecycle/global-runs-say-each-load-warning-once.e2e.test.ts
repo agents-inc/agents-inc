@@ -31,43 +31,23 @@ import { DIRS, EXIT_CODES, FILES, SOURCE_PATHS, STEP_TEXT, TIMEOUTS } from "../p
 import type { AgentName, ProjectConfig, SkillSlug } from "../../src/cli/types/index.js";
 
 /**
- * A global run says each warning its marketplace raises once, however many projects are
- * registered under it.
- *
- * A global `compile` or `edit --from` loads the marketplace for itself, then fans the change out
- * to every registered project, and each project's rewrite and its recompile load that project's
- * catalogue again. Every load said what it found, so one unparseable `metadata.yaml` was printed
- * 1 + 2N times for N registered projects, where `init --from` prints it once — the same cause
- * repeated with nothing new beside it. `doctor` loads twice and said it twice, and said each
- * health finding twice more: its validation re-read the findings the load had already said.
- *
- * Two projects, because one cannot tell "once per run" from "once per project". The fan-out is
- * asserted as having visited both, so a run that never reached them cannot pass for free. Each
- * run is also held to what it does to the installation — saying less must not come from doing
- * less.
- *
- * The global installation's own skills are the same files for every project too: a skill copied
- * into `~/.claude/skills` with no metadata.yaml was judged once by the run and once more per
- * project its recompile reached, so it was said 1 + N times.
- *
- * Observed red against the unfixed build: compile and edit --from said the unparseable file 5
- * times, doctor said it twice and the health finding twice. Compile and edit --from said the
- * global skill with no metadata.yaml 3 times.
+ * A global `compile`, `edit --from` or `doctor` says each marketplace load warning once, however
+ * many projects its fan-out reloads. Two projects, asserted as visited, and each run held to what
+ * it does to the installation, so saying less cannot come from doing less.
  */
 
-/** A skill the marketplace ships whose metadata.yaml no YAML parser reads. Selected by nobody. */
+/** Unparseable metadata.yaml, selected by nobody. */
 const BROKEN_SKILL_ID = e2eSkillId("web-broken-metadata");
 
-/** The file the warning names, relative to the marketplace's skills directory. */
 const BROKEN_FILE = `${BROKEN_SKILL_ID}/${FILES.METADATA_YAML}`;
 
-/** A catalogue slug the marketplace's own rules name and it does not ship: a health finding. */
+/** Named by the marketplace's own rules but not shipped: a health finding. */
 const DANGLING_SLUG = "angular-standalone" satisfies SkillSlug;
 
 const UNPARSEABLE_SAID = `${BROKEN_FILE}': ${STEP_TEXT.MARKETPLACE_METADATA_UNPARSEABLE}`;
 const HEALTH_FINDING_SAID = `${STEP_TEXT.MATRIX_HEALTH_SAID} ${STEP_TEXT.UNRESOLVED_SLUG} '${DANGLING_SLUG}'`;
 
-/** A skill directory copied into the global installation by hand, with no metadata.yaml. */
+/** Copied into the global installation by hand, with no metadata.yaml. */
 const STRAY_SKILL = "hand-copied-skill";
 
 const STRAY_SAID = `'${DIRS.CLAUDE}/${DIRS.SKILLS}/${STRAY_SKILL}/' ${STEP_TEXT.INSTALLED_SKILL_METADATA_MISSING}`;
@@ -75,28 +55,24 @@ const STRAY_SAID = `'${DIRS.CLAUDE}/${DIRS.SKILLS}/${STRAY_SKILL}/' ${STEP_TEXT.
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 
-/** The global install: the E2E stack at global scope. */
 const GLOBAL_STACK_ID = "Warn39G1";
 
-/** Each project's install: the same, with API Developer in the project so it compiles its own. */
+/** API Developer in the project, so each project compiles its own. */
 const PROJECT_AGENT_ID = "Warn39P1";
 
-/** The global edit: the global configuration without Web Developer, which every project inlines. */
+/** Without Web Developer, which every project inlines. */
 const WITHOUT_WEB_DEV_ID = "Warn39E1";
 
 const PROJECTS = ["project-one", "project-two"] as const;
 
-/** What the fan-out reports once it has visited both projects and recompiled neither. */
 const BOTH_PROJECTS_VISITED = `${STEP_TEXT.PROPAGATED_RECOMPILE} 0 registered projects, 2 ${STEP_TEXT.UNCHANGED}`;
 
-/** One scope as a run leaves it: its config as loaded, and its compiled sub-agents byte for byte. */
 type ScopeState = {
   config: ProjectConfig;
   activeAgents: AgentName[];
   compiled: Record<string, string>;
 };
 
-/** The global scope and each registered project, read the same way before a run and after it. */
 type EveryScope = { global: ScopeState; projects: ScopeState[] };
 
 async function readScopeState(dir: string): Promise<ScopeState> {
@@ -107,11 +83,7 @@ async function readScopeState(dir: string): Promise<ScopeState> {
   };
 }
 
-/**
- * Both trees one scope's installation lives in, with every file's mtime: the config pair, and
- * the skills, agents and settings under `.claude/`. Not the whole of HOME, which is also where
- * oclif's update-check plugin keeps its version cache.
- */
+/** Not the whole of HOME, where oclif's update-check plugin also keeps its version cache. */
 type InstalledTrees = {
   configPair: Record<string, TreeSnapshotEntry>;
   claude: Record<string, TreeSnapshotEntry>;
@@ -124,7 +96,6 @@ async function readInstalledTrees(dir: string): Promise<InstalledTrees> {
   };
 }
 
-/** `fragment` is in what a run said, and only once. */
 function expectSaidOnce(said: string, fragment: string, output: string): void {
   expect(said).toContain(fragment);
   expect(said.indexOf(fragment), `said once, not once per load:\n${output}`).toBe(

@@ -15,19 +15,12 @@ import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config
 import { RETIRED_SOURCE_FOLDER } from "../../src/cli/lib/installation/install-layout.js";
 
 /**
- * The retired source folder is ignored, and named once at startup.
- *
- * An installation is `.agents-inc/<provider>/` and nothing else, so a folder in the retired place
- * holds no installation. What the user is owed instead is one line, printed before the command
- * runs, wherever the project or HOME holds the folder. Each spec that pins the line is paired with
- * one where the folder is absent and the line is not printed, because a line that only ever
- * appears cannot tell a check of the disk from an unconditional print.
- *
- * The folder's name comes from the product's one declaration of it rather than being spelled here.
+ * The retired source folder holds no installation: it is ignored and named once at startup. Each
+ * spec pinning the line is paired with one where the folder is absent.
  */
 const NOTICE = `${RETIRED_SOURCE_FOLDER}/ ${STEP_TEXT.RETIRED_SOURCE_FOLDER_UNSUPPORTED}`;
 
-/** A file the user keeps in the retired folder: whatever a run does, it must not touch it. */
+/** A user's file in the retired folder, which no run may touch. */
 const KEPT_IN_THE_RETIRED_FOLDER = path.join("agents", "my-agent", "identity.md");
 const KEPT_IN_THE_RETIRED_FOLDER_BODY = "An agent the user wrote under the retired folder.\n";
 
@@ -51,7 +44,6 @@ describe("the retired source folder", () => {
     await mkdir(home, { recursive: true });
   }
 
-  /** An installation on the only layout there is. */
   async function install(root: string, name: string): Promise<void> {
     await writeProjectConfigIn(
       root,
@@ -61,7 +53,6 @@ describe("the retired source folder", () => {
     await writeConfigTypes(root, DIRS.SOURCE_CLAUDE);
   }
 
-  /** What an old installation left behind: a config pair, and a file of the user's own. */
   async function retiredFolderIn(root: string, name: string): Promise<void> {
     await writeProjectConfigIn(
       root,

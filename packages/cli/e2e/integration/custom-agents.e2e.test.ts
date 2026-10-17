@@ -18,16 +18,9 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
-/**
- * A fabricated skill id: nothing writes it to disk, and only the config names it. Held as the
- * string a fixture config accepts rather than cast into the `SkillId` union.
- */
+// Fabricated and never written to disk; a string, not cast into `SkillId`.
 const E2E_COMPILE_SKILL = "web-testing-e2e-compile";
 
-/**
- * Writes a custom agent structure under <source folder>/agents/<agentName>/
- * with metadata.yaml, identity.md, and optionally playbook.md.
- */
 async function createCustomAgent(
   projectDir: string,
   agentName: string,
@@ -76,7 +69,6 @@ describe("custom sub-agents", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Create a custom agent structure
       await createCustomAgent(projectDir, "my-custom-agent", {
         identityContent: "E2E-CUSTOM-AGENT-INTRO",
         playbookContent: "E2E-CUSTOM-AGENT-WORKFLOW",
@@ -84,13 +76,12 @@ describe("custom sub-agents", () => {
         domain: "web",
       });
 
-      // Update config to reference the custom agent
       await writeProjectConfig(
         projectDir,
         buildProjectConfig({
           name: "e2e-custom-agent-test",
           skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
-          // "my-custom-agent" is a fabricated E2E test ID
+          // Cast: a custom agent name is outside the `AgentName` union.
           agents: buildAgentConfigs(["web-developer", "my-custom-agent" as AgentName], {
             scope: "project",
           }),
@@ -101,7 +92,6 @@ describe("custom sub-agents", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Verify the custom agent was compiled with valid frontmatter and custom content
       await expect({ dir: projectDir }).toHaveCompiledAgent("my-custom-agent");
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("my-custom-agent", {
         contains: ["E2E-CUSTOM-AGENT-INTRO", "E2E-CUSTOM-AGENT-WORKFLOW"],
@@ -116,7 +106,6 @@ describe("custom sub-agents", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Create a custom agent that overrides the built-in web-developer
       await createCustomAgent(projectDir, "web-developer", {
         identityContent: "E2E-OVERRIDE-INTRO",
         playbookContent: "E2E-OVERRIDE-WORKFLOW",
@@ -128,7 +117,6 @@ describe("custom sub-agents", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Should contain the custom override content, not the built-in intro
       await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
         contains: ["E2E-OVERRIDE-INTRO", "E2E-OVERRIDE-WORKFLOW"],
@@ -140,7 +128,6 @@ describe("custom sub-agents", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Create a custom agent
       await createCustomAgent(projectDir, "my-custom-agent", {
         identityContent: "E2E-CUSTOM-ONLY-CONTENT",
         playbookContent: "E2E-CUSTOM-ONLY-WORKFLOW",
@@ -148,13 +135,12 @@ describe("custom sub-agents", () => {
         domain: "web",
       });
 
-      // Config includes both built-in and custom agents
       await writeProjectConfig(
         projectDir,
         buildProjectConfig({
           name: "e2e-coexistence-test",
           skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
-          // "my-custom-agent" is a fabricated E2E test ID
+          // Cast: a custom agent name is outside the `AgentName` union.
           agents: buildAgentConfigs(["web-developer", "my-custom-agent" as AgentName], {
             scope: "project",
           }),
@@ -165,11 +151,9 @@ describe("custom sub-agents", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Both agent files should exist with valid frontmatter
       await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
       await expect({ dir: projectDir }).toHaveCompiledAgent("my-custom-agent");
 
-      // Custom agent content should only appear in the custom agent file (no cross-contamination)
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("my-custom-agent", {
         contains: ["E2E-CUSTOM-ONLY-CONTENT", "name: my-custom-agent"],
       });
@@ -189,10 +173,9 @@ describe("custom sub-agents", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Create a custom agent without playbook.md
       await createCustomAgent(projectDir, "incomplete-agent", {
         identityContent: "E2E-INCOMPLETE-AGENT-INTRO",
-        // playbook.md intentionally omitted (undefined means skip creation)
+        // No playbookContent: playbook.md is not created.
         description: "An agent with missing playbook.md",
         domain: "web",
       });
@@ -202,17 +185,14 @@ describe("custom sub-agents", () => {
         buildProjectConfig({
           name: "e2e-missing-workflow-test",
           skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
-          // "incomplete-agent" is a fabricated E2E test ID
+          // Cast: a custom agent name is outside the `AgentName` union.
           agents: buildAgentConfigs(["incomplete-agent" as AgentName], { scope: "project" }),
         }),
       );
 
       const { exitCode, output } = await CLI.run(["compile"], { dir: projectDir });
 
-      // "Gracefully" is the contract: readAgentFiles() calls readFile() (not
-      // readFileOptional) for playbook.md, so the missing file fails THAT agent —
-      // recompileAgents records it in `failed` and compile.ts reports it without
-      // aborting the run. One broken custom agent must not sink the whole compile.
+      // The missing playbook fails only that agent; compile reports it and still succeeds.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toMatch(/failed|error|playbook/i);
     });
@@ -222,7 +202,6 @@ describe("custom sub-agents", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // An empty metadata.yaml (missing every required field) — the subject, named here.
       await createCustomAgent(projectDir, "broken-agent", {
         metadataYaml: "",
         identityContent: "Some intro",
@@ -234,15 +213,14 @@ describe("custom sub-agents", () => {
         buildProjectConfig({
           name: "e2e-empty-metadata-test",
           skills: buildSkillConfigs([E2E_COMPILE_SKILL], { scope: "project", origin: "eject" }),
-          // "broken-agent" is a fabricated E2E test ID
+          // Cast: a custom agent name is outside the `AgentName` union.
           agents: buildAgentConfigs(["broken-agent" as AgentName], { scope: "project" }),
         }),
       );
 
       const { output } = await CLI.run(["compile"], { dir: projectDir });
 
-      // loadProjectAgents warns about invalid metadata.yaml and skips the agent.
-      // The compile should either warn about the skipped agent or report it's not found.
+      // The agent with invalid metadata.yaml is skipped with a warning.
       expect(output).toMatch(/invalid|skip|not found/i);
     });
   });

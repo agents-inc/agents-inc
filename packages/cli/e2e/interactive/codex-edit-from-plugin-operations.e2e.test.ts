@@ -27,30 +27,16 @@ import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 import "../matchers/setup.js";
 
 /**
- * `edit --from`'s plugin operations, over a CODEX installation.
- *
- * **Why this file exists (CLI-894).** The Claude plugin specs carry
- * `describe.skipIf(!claudeAvailable)`, so on a machine with no `claude` — CI's runner — none of
- * them runs, and none of them ever reached Codex. Owner, 2026-09-26: _"otherwise we dont test this
- * at all for codex"_. This lane drives the pinned `@openai/codex` package, which is present
- * wherever `bun install` ran, so it carries no `skipIf`.
- *
- * `init --from` really registers the plugin with Codex, so an apply's removal is observed in
- * Codex's own `plugin list`: the plugin is there before and gone after.
- *
- * Codex offers plugin installs at GLOBAL scope only (`codex-offered-placements.e2e.test.ts`), so the
- * plugin skill here is global, and each configuration is applied at the home directory, where the
- * global installation is the one being edited. The ejected skill beside it keeps the configuration
- * non-empty once the plugin skill is gone, so the run is an edit rather than an emptying.
+ * `edit --from` plugin operations over a Codex installation, driven by the pinned `@openai/codex`,
+ * so no `skipIf`. Codex installs plugins only at global scope, so configurations are applied at
+ * home; the ejected skill keeps each configuration non-empty.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** A global skill on web-developer, installed the way `install` names. */
 const globalSkill = (install: SeedSkill["install"]): SeedSkill =>
   buildSeedSkill({ install, scope: "global", assignments: { [WEB_DEV]: "lazy" } });
 
-/** A configuration holding `skills`, with web-developer resting global. */
 const configurationOf = (skills: SeedPayload["skills"]): SeedPayload =>
   buildSeedPayload({ skills, agents: { [WEB_DEV]: { scope: "global" } } });
 
@@ -82,7 +68,6 @@ describe("edit --from over a Codex installation", () => {
     env = undefined;
   });
 
-  /** A Codex install holding one plugin skill (global) and one ejected skill, and the plugin's ref. */
   async function codexInstallWithAPluginSkill(
     id: string,
     reactInstall: "plugin" | "eject" = "plugin",
@@ -111,14 +96,12 @@ describe("edit --from over a Codex installation", () => {
     };
   }
 
-  /** What the pinned binary says is installed in this HOME, as one JSON string to search. */
   async function pluginsCodexReports(target: TestEnvironment): Promise<string> {
     const listed = await runCodex(target.fakeHome, ["plugin", "list"], target.projectDir);
     expect(listed.exitCode, listed.stderr).toBe(EXIT_CODES.SUCCESS);
     return JSON.stringify(listed.json);
   }
 
-  /** Publishes `configuration` and applies it at the home directory, answering yes. */
   async function applyAtHome(
     installed: TestEnvironment,
     id: string,
@@ -141,7 +124,7 @@ describe("edit --from over a Codex installation", () => {
     async () => {
       const { installed, ref } = await codexInstallWithAPluginSkill("CdxEdit1");
 
-      // Subject guard: the plugin really is registered with Codex before the apply runs.
+      // Subject guard: the plugin is registered with Codex before the apply.
       expect(await pluginsCodexReports(installed)).toContain(ref);
 
       const result = await applyAtHome(
@@ -184,15 +167,7 @@ describe("edit --from over a Codex installation", () => {
     },
   );
 
-  /**
-   * Switching a skill's install mode, in both directions — the Codex half of the
-   * `install-mode-*` specs. The mode a skill is in is read off Codex and off the disk, never off
-   * the narration: a plugin is one Codex lists, and an ejected skill is a directory under
-   * `$CODEX_HOME/skills`.
-   */
-  // Pinned `it.fails` until 2026-09-26 (CLI-895): the plugin was registered and the ejected copy
-  // under `$CODEX_HOME/skills` left behind, because `deleteLocalSkill` only knew Claude's
-  // `.claude/skills` — so Codex read the skill twice.
+  /** The mode is read off Codex and the disk, never the narration. */
   it(
     "switches an ejected skill to a plugin Codex lists, and removes the ejected copy",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
@@ -248,8 +223,6 @@ describe("edit --from over a Codex installation", () => {
     },
   );
 
-  // Pinned `it.fails` until 2026-09-26 for the same cause (CLI-895): a removed ejected skill left
-  // its copy under `$CODEX_HOME/skills`.
   it(
     "deletes the copy of an ejected skill the configuration leaves out",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
@@ -274,8 +247,7 @@ describe("edit --from over a Codex installation", () => {
     },
   );
 
-  // The control: the same install, applied again as it stands. An apply that removed every plugin
-  // it passed through would satisfy the removal case above.
+  // Control: re-applying as-is removes nothing.
   it(
     "leaves the plugin registered when the configuration changes nothing",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },

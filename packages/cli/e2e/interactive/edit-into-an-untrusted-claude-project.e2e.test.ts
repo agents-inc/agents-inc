@@ -27,30 +27,16 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 
 /**
- * Journey 79 through `edit --from`: an apply that lands a writing sub-agent in a Claude project
- * Claude Code has not been told to trust says the folder must be trusted, as `init` and `compile`
- * already say about the same tree.
- *
- * Compile gives every sub-agent holding `Write` or `Edit` a completion gate, a `Stop` hook, and
- * Claude Code drops a PROJECT sub-agent's hooks until its state file records the folder as
- * trusted, saying so nowhere a user reads. The apply is driven into an untrusted folder, and its
- * line is the assertion that carries the red against a binary whose `edit` never asks.
- *
- * Two controls sit beside it and pass either way, because each pins a state that must stay
- * silent: a trusted folder with the gate compiled, and an untrusted folder whose last gated
- * sub-agent the edit removed. The first catches a line printed regardless of trust; the second
- * catches one asked about the tree before the removed sub-agent's file is deleted.
- *
- * Reverting `src/` cannot show a silence assertion failing, so both were checked against a binary
- * that does speak: the trust control by dropping its trust record from the fixture, and the
- * removal control by asking before the stale file is deleted. Each went red on its own
- * `not.toContain` and on nothing else.
+ * An `edit --from` that lands a writing sub-agent in an untrusted Claude project must say the
+ * folder needs trusting, as `init` and `compile` do: Claude Code drops a project sub-agent's hooks
+ * until trusted. Controls: a trusted folder, and an untrusted one whose last gated sub-agent the
+ * edit removed.
  */
 
-/** The writing sub-agent a shared configuration adds: compile gives it the gate. */
+/** Holds a writing tool, so compile gives it the gate. */
 const WRITER = E2E_AGENT["web-developer"].name;
 
-/** A sub-agent holding neither tool, so compile gives it no gate and a project of it owes nothing. */
+/** Holds neither tool, so no gate and nothing owed. */
 const READER = E2E_BUILTIN_AGENT.reviewer.name;
 
 const SKILL = E2E_SKILL.react;
@@ -58,7 +44,6 @@ const SKILL = E2E_SKILL.react;
 const INSTALLED_ID = "TrustEd01";
 const APPLIED_ID = "TrustEd02";
 
-/** A project whose one sub-agent writes nothing, holding one ejected skill. */
 const READER_ONLY = buildSeedPayload({
   skills: {
     [SKILL.id]: buildSeedSkill({
@@ -70,7 +55,6 @@ const READER_ONLY = buildSeedPayload({
   agents: { [READER]: { on: true, scope: "project" } },
 });
 
-/** The same project with the writing sub-agent beside it, holding the same skill. */
 const READER_AND_WRITER = buildSeedPayload({
   skills: {
     [SKILL.id]: buildSeedSkill({
@@ -119,8 +103,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       store.publish(INSTALLED_ID, READER_ONLY);
       const installed = await runInitFrom(store, INSTALLED_ID, project, source.sourceDir);
       expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
-      // Nothing was owed yet: the one sub-agent writes nothing and carries no gate, so the edit
-      // below is the first run that has anything to say.
+      // Nothing owed yet, so the edit is the first run with something to say.
       await expect(project).toHaveAgentFrontmatter(READER, { completionGate: false });
       expect(installed.output).not.toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
 
@@ -131,7 +114,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
       await prompt.confirm();
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
-      // Raw, because the line is longer than the terminal is wide and the screen buffer wraps it.
+      // Raw: the line is wider than the terminal and wraps.
       const output = prompt.getRawOutput();
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
@@ -172,8 +155,8 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       const output = prompt.getRawOutput();
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // The gate is compiled and the run got to its end, so the trust record is the one input
-      // that can have silenced the line.
+      // The gate is compiled and the run finished, so only the trust record can have silenced the
+      // line.
       await expect(project).toHaveAgentFrontmatter(WRITER, { completionGate: true });
       expect(output).toContain(STEP_TEXT.EDIT_SUCCESS);
       expect(output).not.toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
@@ -191,7 +174,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       store.publish(INSTALLED_ID, READER_AND_WRITER);
       const installed = await runInitFrom(store, INSTALLED_ID, project, source.sourceDir);
       expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
-      // The folder is untrusted and the install said so, so only the edit below can change that.
+      // Untrusted and reported at install, so only the edit can change that.
       expect(installed.output).toContain(STEP_TEXT.CLAUDE_FOLDER_UNTRUSTED);
 
       store.publish(APPLIED_ID, READER_ONLY);
@@ -204,8 +187,7 @@ describe("edit into a Claude project Claude Code has not been told to trust", ()
       const output = prompt.getRawOutput();
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // The departure, on both surfaces: the writing sub-agent left the config and its compiled
-      // file was deleted, so the tree as it now stands holds no gate.
+      // The writing sub-agent left the config and its file was deleted, so no gate remains.
       expect(await readAgentEntries(project.dir)).toStrictEqual(
         buildAgentConfigs([READER], { scope: "project" }),
       );

@@ -18,30 +18,13 @@ import {
   renderUnparseableConfigTs,
 } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
-/**
- * Every command a user runs over an installation that reads its `config.ts`, driven the way the
- * user drives it — journey 38's subject, shared by the two specs that each break one of the two
- * configs a project reads.
- *
- * Two families, and the ruling treats them alike: the commands that WRITE (`compile`, `update`,
- * `eject`, `share`, `init` and `edit`) and the two that only read (`search`, `list`). Over a
- * config in play that exists and cannot be loaded, every one of them refuses with the same
- * message; with both configs readable, every one of them runs. `doctor` and `uninstall` are the
- * two that go on working over it, and each spec drives those itself, because what they owe
- * differs by which config is broken.
- */
+// Every command that reads config.ts. Over an existing but unloadable config each refuses with the
+// same message; `doctor` and `uninstall` keep working and are driven by each spec itself.
 
-/** A `config.ts` that is there and holds nothing — what `: > config.ts` leaves behind. */
 export const EMPTY_CONFIG_FILE = "";
 
-/**
- * The ways a `config.ts` can be there and unusable, each a file a user can be left holding.
- *
- * The schema-refused shape names the fixture marketplace beside its fault on purpose: it is the
- * one field a reader judging the file by its settings alone finds usable, so a command that reads
- * past the fault answers out of the fixture — recognisably, and without the network. Left without
- * one, that same command falls through to the public catalogue and fetches it.
- */
+// The schema-refused shape names the fixture marketplace, so a command reading past the fault
+// answers from the fixture rather than fetching the public catalogue.
 export const UNREADABLE_CONFIG_SHAPES = [
   { shape: "is empty", body: EMPTY_CONFIG_FILE },
   {
@@ -51,10 +34,8 @@ export const UNREADABLE_CONFIG_SHAPES = [
   { shape: "does not parse", body: renderUnparseableConfigTs() },
 ] as const;
 
-/** The fixture skill a search asks for, so an answer out of the fixture marketplace is recognisable. */
 const SEARCH_QUERY = E2E_SKILL.react.slug;
 
-/** The commands that take no terminal, in the order {@link runConfigReaders} runs them. */
 const NON_INTERACTIVE_CONFIG_READERS = [
   { name: "compile", args: ["compile"] },
   { name: "update", args: ["update"] },
@@ -64,23 +45,19 @@ const NON_INTERACTIVE_CONFIG_READERS = [
   { name: "list", args: ["list"] },
 ] as const;
 
-/** Every command {@link runConfigReaders} runs, by the name a spec reports it under. */
 export const CONFIG_READER_NAMES = [
   ...NON_INTERACTIVE_CONFIG_READERS.map(({ name }) => name),
   "share",
 ] as const;
 
-/** The two run in a terminal, where a refusal ends on its own. */
 export const TERMINAL_CONFIG_READERS = ["init", "edit"] as const;
 
 export type ConfigReaderName = (typeof CONFIG_READER_NAMES)[number];
 
-/** What one run left behind for a spec to assert on. */
 export type ConfigReaderRun = { exitCode: number; output: string };
 
 type NamedRun = ConfigReaderRun & { name: ConfigReaderName };
 
-/** Everything every command did over one broken config, and the installation either side of it. */
 export type RunsOverABrokenConfig = {
   runs: NamedRun[];
   shareRequests: SeedConfigRequest[];
@@ -90,27 +67,16 @@ export type RunsOverABrokenConfig = {
   treeAfter: Record<string, TreeSnapshotEntry>;
 };
 
-/** Everything every command did over the same installation with both configs readable. */
 export type RunsOverReadableConfigs = {
   runs: NamedRun[];
   templateEjected: boolean;
   dashboardScreen: string;
-  /** The bare `edit`, run without a terminal, and the ids it minted for the installation. */
   edit: ConfigReaderRun & { minted: string[] };
 };
 
-/** The installation a spec built, as these runners need it. */
 type Installation = { fakeHome: string; projectDir: string };
 
-/**
- * Copies the installation aside once, and hands back what puts it back exactly as it was.
- *
- * Each broken shape is driven over the installation as it was installed, rather than as the
- * shape before it left it: a command that wrongly went ahead over one shape — `eject templates`
- * writing its templates — would otherwise leave the next shape's run nothing to write, and its
- * byte-identity check nothing to catch. The copy sits beside the home directory, inside the temp
- * tree the spec's own cleanup removes.
- */
+// Restores the as-installed tree, so a command that wrongly wrote over one shape cannot mask the next.
 export async function setAsideInstallation(fakeHome: string): Promise<() => Promise<void>> {
   const aside = `${fakeHome}.as-installed`;
   await cp(fakeHome, aside, { recursive: true });
@@ -120,12 +86,7 @@ export async function setAsideInstallation(fakeHome: string): Promise<() => Prom
   };
 }
 
-/**
- * Runs every non-interactive command once, in table order, then `share` against `store`.
- *
- * Sequential rather than concurrent: each is a run of the binary over the same installation, and
- * a write one command makes is state the next one reads.
- */
+// Sequential: each run reads state the previous one may have written.
 async function runConfigReaders(
   { fakeHome, projectDir }: Installation,
   store: SeedConfigStore,
@@ -148,14 +109,7 @@ async function runConfigReaders(
   };
 }
 
-/**
- * Runs a command in a real terminal, and waits for it to end.
- *
- * Only for a run expected to END on its own, which is what a refusal does: one that opened its
- * dashboard instead stops here at {@link TIMEOUTS.EXIT_WAIT}. The output is the raw stream, so an
- * error box oclif wrapped at the terminal's width reads back whole once flattened. `store` answers
- * a run that went ahead and published.
- */
+// Only for runs that end on their own (a refusal); one that opens its dashboard times out here.
 async function runToExitInTerminal(
   args: string[],
   { fakeHome, projectDir }: Installation,
@@ -172,11 +126,7 @@ async function runToExitInTerminal(
   }
 }
 
-/**
- * Writes `body` as the config in `brokenDir` — the project's own or the home directory's — and
- * runs every command from the project over it, `doctor` last, with the whole installation
- * snapshotted either side. Nothing is restored: the caller decides what the next run starts from.
- */
+// Nothing is restored afterwards; the caller decides what the next run starts from.
 export async function runEveryReaderOverABrokenConfig(
   installation: Installation,
   brokenDir: string,
@@ -196,12 +146,7 @@ export async function runEveryReaderOverABrokenConfig(
   return { runs, shareRequests, terminal: { init, edit }, doctor, treeBefore, treeAfter };
 }
 
-/**
- * The same commands over an installation whose configs both load: the non-interactive ones run to
- * the end, `init` opens its dashboard — left by cancelling, so it writes nothing — and `edit` mints
- * an id for the installation without a terminal, so no browser opens. Whether `eject templates`
- * put its templates down is read off the disk.
- */
+// `init` is cancelled at its dashboard so it writes nothing; `edit` without a TTY mints an id only.
 export async function runEveryReaderOverReadableConfigs(
   installation: Installation,
   store: SeedConfigStore,
@@ -237,7 +182,6 @@ export async function runEveryReaderOverReadableConfigs(
   };
 }
 
-/** The run recorded for `name` — a missing one is the spec's own bug, so it throws. */
 export function runOf(runs: readonly NamedRun[], name: ConfigReaderName): ConfigReaderRun {
   const run = runs.find((recorded) => recorded.name === name);
   if (!run) throw new Error(`no run of '${name}' was recorded`);

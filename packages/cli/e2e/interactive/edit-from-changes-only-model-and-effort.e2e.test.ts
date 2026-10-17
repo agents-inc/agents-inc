@@ -21,24 +21,8 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
 import type { SeedAgent } from "@workspace/matrix/seed";
 
 /**
- * A shared configuration that differs from the installed one in a sub-agent's tuning ALONE: the
- * model it runs on and the effort it reasons at.
- *
- * Nothing else about the two is different: same skill at the same scope from the same source, same
- * sub-agent roster. `edit --from` decided whether it had anything to do by diffing the roster, the
- * sources and the scopes, so a configuration whose whole content was a retune read to it as no
- * change at all. It printed "No changes made." and the sub-agent went on running as it was.
- *
- * That is a silent loss of exactly the thing the link was shared for: the receiver applied the
- * sharer's configuration, the command said there was nothing to apply, and both ends believe the
- * retune travelled.
- *
- * Both halves are asserted, because neither alone is the claim: the run has to SAY there was a
- * change — a command that wrote the file while reporting nothing is the same failure seen from the
- * other side — and the config entry and the compiled frontmatter have to carry it.
- *
- * The retune names `haiku` because every sub-agent in the E2E source declares `opus` in its own
- * metadata, so a compiled `model: opus` could not tell the shared model from the default.
+ * A shared configuration differing only in a sub-agent's model and effort must be applied and
+ * reported, not "No changes made." `haiku` because every E2E sub-agent declares `opus`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -48,12 +32,8 @@ const INSTALLED_ID = "TuneEdit1";
 const RETUNED_ID = "TuneEdit2";
 
 /**
- * The configuration the project is installed from, and — with `tuning` — the one it is then asked
- * to match.
- *
- * Project scope throughout, so the apply has a project to be destructive about: at the home root
- * the two scopes are one directory and the command refuses a project-scoped configuration rather
- * than applying it somewhere else.
+ * Project scope, so the apply has a project to be destructive about; at the home root a
+ * project-scoped configuration is refused.
  */
 function payload(tuning: Pick<SeedAgent, "model" | "effort"> = {}) {
   return buildSeedPayload({
@@ -104,8 +84,8 @@ describe("edit --from a configuration that retunes only a sub-agent's model and 
       const installed = await runInitFrom(store, INSTALLED_ID, project, sourceDir);
       expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // The subject guard: unless the installation really runs on its metadata's model with no
-      // effort, the apply below has nothing to change and every assertion after it passes for free.
+      // Subject guard: the install runs on its metadata's model with no effort, so the apply has
+      // something to change.
       expect(await readAgentEntriesFor(project.dir, WEB_DEV)).toStrictEqual(
         buildAgentConfigs([WEB_DEV], { scope: "project" }),
       );
@@ -126,16 +106,15 @@ describe("edit --from a configuration that retunes only a sub-agent's model and 
       const output = prompt.getOutput();
       expect(exitCode, `apply failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // What the run SAID. A retune is a change to this project, and a run that reports none has
-      // told the person who applied the configuration that it carried nothing.
+      // What it said: a run reporting no change tells the applier the configuration carried
+      // nothing.
       expect(
         output,
         "the applied configuration retunes a sub-agent, so the run must not report that nothing changed",
       ).not.toContain(STEP_TEXT.EDIT_UNCHANGED);
       expect(output).toContain(STEP_TEXT.EDIT_CHANGES_HEADING);
 
-      // And what it WROTE, on both surfaces. Either alone can look right while the other lies: a
-      // config entry naming a model the compiled sub-agent does not run on, or the reverse.
+      // What it wrote, on both surfaces; either alone can look right.
       expect(await readAgentEntriesFor(project.dir, WEB_DEV)).toStrictEqual(
         buildAgentConfigs([WEB_DEV], { scope: "project", model: "haiku", effort: "high" }),
       );

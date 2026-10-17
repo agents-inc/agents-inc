@@ -23,14 +23,10 @@ import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * Edit global fallback E2E tests.
- *
- * Verifies that a bare `cc edit` launched from a project directory that has NO
- * project config (.agents-inc/claude/config.ts) falls back to the global
- * installation, hands that to the editor, and writes nothing.
+ * A bare `edit` from a project with no config of its own falls back to the global installation,
+ * hands that to the editor, and writes nothing.
  */
 
-/** The E2E stack, every skill ejected into the global installation. */
 const STACK_AT_HOME_ID = "StackHm3";
 
 describe("edit with global-only installation (no project config)", () => {
@@ -51,7 +47,6 @@ describe("edit with global-only installation (no project config)", () => {
     env = undefined;
   });
 
-  /** A global install and nothing in the project directory. */
   async function installGlobalOnly(): Promise<TestEnvironment> {
     const created = await createTestEnvironment();
     store.publish(STACK_AT_HOME_ID, e2eStackPayload({ scope: "global" }));
@@ -65,7 +60,7 @@ describe("edit with global-only installation (no project config)", () => {
     return created;
   }
 
-  /** A bare `edit` from the project directory, against the store; no TTY, so the link is printed. */
+  /** No TTY, so the link is printed. */
   function editFromProject({ fakeHome, projectDir }: TestEnvironment) {
     return CLI.run(
       ["edit"],
@@ -89,7 +84,6 @@ describe("edit with global-only installation (no project config)", () => {
       const { exitCode, output } = await editFromProject(env);
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
 
-      // The global installation is the one handed to the editor: one id minted for it.
       expect(store.minted).toHaveLength(1);
       expect(output).toContain(`Shared as ${firstElement(store.minted)}`);
 

@@ -33,53 +33,33 @@ import type { SeedPayload } from "@workspace/matrix/seed";
 import type { CategoryPath } from "../../src/cli/types/index.js";
 
 /**
- * `edit --from <id>` keeps the configuration's own skill assigned when a skill it may not remove
- * sits in the same category of the same sub-agent.
- *
- * A destructive apply puts back two kinds of installed skill it is not allowed to take away — one
- * written here, which no shared configuration carried, and one the configuration names that this
- * catalogue cannot place — and each comes back with the stack rows it had. Those rows used to
- * REPLACE the configuration's rows for the same category instead of joining them, so the skill the
- * configuration assigns there was installed and loaded by no sub-agent, and the plan said nothing
- * of it. Each leg below puts the kept skill beside the configuration's under one category, applies,
- * and holds the sub-agent to both: its config row, and the compiled file it is handed.
- *
- * A category that holds ONE skill cannot take both. There the configuration's skill takes the slot
- * and the kept skill stays installed, assigned nowhere in it, and the plan says so. Joining the two
- * produced a row the config writer refuses — after the yes, with the removals already made — so a
- * result the writer would refuse is refused before the question, with nothing touched.
+ * `edit --from` keeps the configuration's own skill assigned when a skill it may not remove
+ * (written here, or named but unplaceable) shares its category on the same sub-agent: rows join
+ * rather than replace. In a one-skill category the configuration's skill takes the slot, and a
+ * result the writer would refuse is refused before the question.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
-/** The configuration's own skill, assigned to the sub-agent by every id below. */
 const VITEST = E2E_SKILL.vitest.id;
-/** In the same category as Vitest, and written here by the first leg. */
 const VISUAL = E2E_SKILL["visual-regression"].id;
-/** Two skills of a category that holds one. */
 const REACT = E2E_SKILL.react.id;
 const VUE = E2E_SKILL["vue-composition-api"].id;
 const ZUSTAND = E2E_SKILL.zustand.id;
 /**
- * A real public-catalogue id in Vitest's category that the E2E source does not carry. Recorded in
- * the install with no files written for it, so the decode skips it while the configuration names
- * it — the catalogue's own limit, which a destructive apply may not read as an instruction.
+ * Recorded with no files, so the decode skips it while the configuration names it; a destructive
+ * apply may not read that as an instruction.
  */
 const UNPLACEABLE = "web-testing-react-testing-library";
 
 const INSTALLED_ID = "KeptCat01";
 const APPLY_ID = "KeptCat02";
 const UNPLACEABLE_APPLY_ID = "KeptCat03";
-/** React and Vitest on the sub-agent. */
 const REACT_INSTALLED_ID = "KeptCat04";
-/** Vue and Vitest: Vue is for the slot React holds. */
 const VUE_APPLY_ID = "KeptCat05";
-/** React, Zustand and Vitest on the sub-agent, and Vue on a second one. */
 const TWO_FRAMEWORKS_INSTALLED_ID = "KeptCat06";
-/** Vitest alone: it names no framework, and leaves Zustand and the second sub-agent out. */
 const VITEST_ONLY_APPLY_ID = "KeptCat07";
 
-/** A project skill on the sub-agent, loaded on demand. */
 const onWebDeveloper = buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } });
 const webDeveloperHere = {
   [WEB_DEV]: { on: true, scope: "project" },
@@ -99,7 +79,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
         agents: webDeveloperHere,
       }),
     );
-    // Vitest alone: the skill written here is one the configuration never speaks about.
+    // The skill written here is one the configuration never mentions.
     store.publish(
       APPLY_ID,
       buildSeedPayload({ skills: { [VITEST]: onWebDeveloper }, agents: webDeveloperHere }),
@@ -153,7 +133,6 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A fresh HOME with a project in it, installed from `id` the way a user installs one. */
   async function installedFrom(id: string): Promise<TestEnvironment> {
     const env = await createTestEnvironment();
     tempDirs.push(env.tempDir);
@@ -167,10 +146,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
     return env;
   }
 
-  /**
-   * Rewrites an installed skill's metadata.yaml with no `forkedFrom`, which is how a directory
-   * nobody installed reads — so the round trip does not own it and the apply may not remove it.
-   */
+  /** No `forkedFrom` reads as written here, so the apply may not remove it. */
   async function rewriteAsWrittenHere(
     projectDir: string,
     skill: (typeof E2E_SKILL)[keyof typeof E2E_SKILL],
@@ -189,10 +165,6 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
     );
   }
 
-  /**
-   * Applies `id` in `projectDir` at a real terminal, answering yes, and returns what the run
-   * printed before the question and in all.
-   */
   async function applyApproved(
     id: string,
     projectDir: string,
@@ -215,7 +187,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
     async () => {
       const env = await installedFrom(INSTALLED_ID);
       await rewriteAsWrittenHere(env.projectDir, E2E_SKILL["visual-regression"], "web-testing");
-      // The subject guard: both skills sit in one category of the one sub-agent before the apply.
+      // Subject guard: both skills share one category of the sub-agent.
       expect((await loadConfigOrFail(env.projectDir)).stack?.[WEB_DEV]).toStrictEqual({
         "web-testing": [sa(VITEST), sa(VISUAL)],
       });
@@ -248,21 +220,20 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
         stack: { [WEB_DEV]: { "web-testing": [sa(VITEST), sa(UNPLACEABLE)] } },
       });
       tempDirs.push(path.dirname(project.dir));
-      // Compiled first, as an install `init --from` made would be: an apply that changes nothing
-      // compiles nothing, so the sub-agent's file has to exist before it to be held after it.
+      // Compiled first: an apply that changes nothing compiles nothing.
       const compiled = await runCLI(["compile"], project.dir);
       expect(compiled.exitCode, `compile failed: ${compiled.combined}`).toBe(EXIT_CODES.SUCCESS);
 
       const { planned, output } = await applyApproved(UNPLACEABLE_APPLY_ID, project.dir);
 
-      // The subject guard: the skip was read as a skill kept, so its row is the one carried back.
+      // Subject guard: the skip was read as a skill kept.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE);
       expect(
         (await loadConfigOrFail(project.dir)).stack?.[WEB_DEV],
         "the configuration's skill must stay assigned beside the one this catalogue cannot place",
       ).toStrictEqual({ "web-testing": [sa(VITEST), sa(UNPLACEABLE)] });
       expect(output).not.toContain(STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT);
-      // The kept skill has no files to load, so the compiled sub-agent is held to the one it does.
+      // The kept skill has no files, so the compiled sub-agent holds only the other.
       await expect({ dir: project.dir }).toHaveAgentDynamicSkills(WEB_DEV, {
         skillIds: [VITEST],
       });
@@ -275,7 +246,6 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         const env = await installedFrom(REACT_INSTALLED_ID);
-        // The user's own framework skill, in the slot Vue is for.
         await rewriteAsWrittenHere(env.projectDir, E2E_SKILL.react, "web-framework");
         expect((await loadConfigOrFail(env.projectDir)).stack?.[WEB_DEV]).toStrictEqual({
           "web-framework": [sa(REACT)],
@@ -284,8 +254,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
         const keptFiles = await readTreeSnapshot(path.join(skillsPath(env.projectDir), REACT));
         expect(Object.keys(keptFiles), "the kept skill's directory must exist").not.toHaveLength(0);
 
-        // First, because it is the defect: both skills joined the one slot, and the config writer
-        // refused that after the yes, with the apply half made.
+        // First, because it is the defect: joining both into the slot was refused after the yes.
         const { planned } = await applyApproved(VUE_APPLY_ID, env.projectDir, env.fakeHome);
 
         expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED);
@@ -323,9 +292,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
           E2E_SKILL["vue-composition-api"],
           "web-framework",
         );
-        // Both in the one slot of one sub-agent, by hand. `compile` and `doctor` load this; only
-        // the writer refuses it. The configuration names neither, so neither may be removed, and
-        // it fills no framework slot of its own — so no skill of its own can take this one.
+        // Both in one slot by hand: `compile` and `doctor` load this; only the writer refuses it.
         const configPath = configTsPath(env.projectDir);
         const source = await readFile(configPath, "utf-8");
         await writeFile(
@@ -350,8 +317,7 @@ describe("edit --from <id> keeps the configuration's skill beside a kept one in 
         });
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
 
-        // First, because it is the defect: a run that asks here goes on, after the yes, to remove
-        // Zustand and the second sub-agent and only then meet the writer's refusal.
+        // First, because it is the defect: asking here leads to removals before the writer refuses.
         expect(
           prompt.getOutput(),
           "a result the config writer refuses must be refused before the user is asked to confirm it",

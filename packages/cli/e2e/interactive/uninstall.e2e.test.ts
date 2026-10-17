@@ -8,28 +8,8 @@ import { InteractivePrompt } from "../fixtures/interactive-prompt.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * E2E tests for the `uninstall` command interactive confirmation prompt.
- *
- * The uninstall command without --yes renders an Ink-based confirmation
- * prompt that shows what will be removed and asks "Are you sure you want
- * to uninstall?" using @inkjs/ui ConfirmInput (y/n keys).
- *
- * These tests spawn the actual CLI binary via PTY (zero mocks).
- *
- * It uses InteractivePrompt (which wraps TerminalSession internally).
- *
- * **The three cancellations pin `EXIT_CODES.CANCELLED` at the call site rather than through a
- * funnel, and that is a decision rather than an omission.** All three sites already await
- * `waitForExit`, so none of them is MISSING the check, and what was wrong was its strength.
- * `not.toBe(SUCCESS)` cannot tell a clean decline from a crash on the confirm prompt — 1 and 4
- * both satisfy it — which is exactly what a command whose whole job is deleting files must not be
- * ambiguous about. A funnel would also have to live in `fixtures/interactive-prompt.ts`, hoisting
- * the verdict into a page object shared by every prompt so that three specs could stop
- * writing one line each.
- *
- * The permitted case that makes these three mean anything is in this same file: "confirm with y"
- * exits SUCCESS and takes the directories with it. A refusal pinned alone cannot tell a guard that
- * is correctly scoped from one that declines everything.
+ * `uninstall`'s Ink confirmation through a PTY. Cancellations pin `EXIT_CODES.CANCELLED`, since
+ * `not.toBe(SUCCESS)` cannot tell a decline from a crash; "confirm with y" is the permitted case.
  */
 describe("uninstall interactive", () => {
   let tempDir: string;
@@ -96,7 +76,7 @@ describe("uninstall interactive", () => {
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
       await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
-      await prompt.pressEnter(); // Wait for stable render via transition delay
+      await prompt.pressEnter();
 
       await prompt.deny();
 
@@ -127,7 +107,7 @@ describe("uninstall interactive", () => {
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
       await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
-      await prompt.pressEnter(); // Wait for stable render via transition delay
+      await prompt.pressEnter();
 
       await prompt.deny();
 
@@ -151,7 +131,7 @@ describe("uninstall interactive", () => {
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
       await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
-      await prompt.pressEnter(); // Wait for stable render via transition delay
+      await prompt.pressEnter();
 
       await prompt.pressEnter();
 
@@ -211,7 +191,7 @@ describe("uninstall interactive", () => {
 
       expect(await directoryExists(skillsDir)).toBe(false);
       expect(await directoryExists(agentsDir)).toBe(false);
-      // The config manifest is now removed by default, emptying the source folder
+      // The manifest goes too, emptying the source folder.
       await expectNoSourceFolder(
         projectDir,
         "removing the config manifest empties the source folder, so uninstall takes it away",
@@ -254,7 +234,7 @@ describe("uninstall interactive", () => {
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
       await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
-      await prompt.pressEnter(); // Wait for stable render via transition delay
+      await prompt.pressEnter();
 
       await prompt.ctrlC();
 
@@ -281,7 +261,7 @@ describe("uninstall interactive", () => {
       prompt = new InteractivePrompt(["uninstall"], projectDir);
 
       await prompt.waitForText(STEP_TEXT.CONFIRM_UNINSTALL, TIMEOUTS.WIZARD_LOAD);
-      await prompt.pressEnter(); // Wait for stable render via transition delay
+      await prompt.pressEnter();
 
       await prompt.ctrlC();
 

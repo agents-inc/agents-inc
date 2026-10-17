@@ -3,11 +3,7 @@ import { createTempDir, cleanupTempDir, flattenCliOutput } from "../helpers/test
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
-/**
- * Why every help screen is asserted NOT to advertise the old spelling. Pre-1.0 ships no
- * compatibility shims, so `--source` is gone rather than aliased — help that still names it
- * is help that teaches a flag the parser refuses.
- */
+/** Pre-1.0 ships no shims, so `--source` is gone rather than aliased. */
 const WITHDRAWN_FLAG_REASON = "--source was withdrawn, not aliased, so no help screen names it";
 
 describe("help and version", () => {
@@ -157,11 +153,7 @@ describe("help and version", () => {
     ).not.toContain("--force");
   });
 
-  // `help <cmd>` is a routing claim, not a content one. Three `it`s previously ran
-  // `help compile` / `help init` / `help edit` and re-asserted substrings their
-  // `<cmd> --help` siblings already assert — which cannot tell the two entry points
-  // apart, because any command printing the same word satisfies both. Identity of
-  // the whole output is what "routes to the same place" means.
+  // A routing claim: the whole output must be identical.
   it("should route 'help <command>' to the same output as '<command> --help'", async () => {
     tempDir = await createTempDir();
 
@@ -224,7 +216,6 @@ describe("help and version", () => {
     tempDir = await createTempDir();
     const result = await CLI.run(["help", "nonexistent-command"], { dir: tempDir });
 
-    // oclif shows an error when the command is not found
     expect(result.exitCode).not.toBe(EXIT_CODES.SUCCESS);
     expect(result.output).toContain("not found");
   });

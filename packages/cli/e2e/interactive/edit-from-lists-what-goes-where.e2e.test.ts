@@ -18,31 +18,17 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `edit --from <id>` at a terminal: the confirm it already asks also says what goes into the
- * project and what into the global install.
- *
- * The question was always there, because the apply is destructive; what it showed was only the
- * removals. A configuration that brings a global skill and a global sub-agent with it reaches the
- * user's own global install, which every project on the machine reads, so the entries arriving
- * there are listed under their own heading beside the ones arriving in the project — the same two
- * lists `init --from` prints. At the home directory the run edits the global install itself, so
- * only the global list is printed.
- *
- * The question is waited on directly: it is asked today, and the lists are what is missing. The
- * no-terminal refusal is unchanged and stays pinned in `interactive/edit-from-apply-that-removes-nothing`.
+ * `edit --from`'s confirm lists what goes into the project and what into the global install, as
+ * `init --from` does; at home only the global list. The no-terminal refusal stays in
+ * `interactive/edit-from-apply-that-removes-nothing`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
-/** Installed in the project before the apply, and kept by it. */
 const PROJECT_SKILL = E2E_SKILL.react.id;
-/** What the apply adds to the project. */
 const NEW_PROJECT_SKILL = E2E_SKILL["visual-regression"].id;
-/** What the apply brings to the global install, on a global sub-agent it brings too. */
 const NEW_GLOBAL_SKILL = E2E_SKILL.vitest.id;
-/** Installed in the global install before the home-directory apply, and kept by it. */
 const GLOBAL_SKILL = E2E_SKILL.vitest.id;
-/** What the home-directory apply adds to the global install. */
 const ANOTHER_GLOBAL_SKILL = E2E_SKILL["research-methodology"].id;
 
 const PROJECT_INSTALLED_ID = "ListEdit01";
@@ -54,20 +40,19 @@ const ANYTHING = "[\\s\\S]*";
 const PROJECT_LIST = STEP_TEXT.SHARED_CONFIG_LIST_PROJECT;
 const GLOBAL_LIST = STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL;
 
-/** What the project gains, under the project heading and before the global one. */
+/** Under the project heading, before the global one. */
 const NEW_PROJECT_SKILL_LISTED_HERE = new RegExp(
   `${PROJECT_LIST}${ANYTHING}${NEW_PROJECT_SKILL}${ANYTHING}${GLOBAL_LIST}`,
 );
 const PROJECT_AGENT_LISTED_HERE = new RegExp(
   `${PROJECT_LIST}${ANYTHING}${WEB_DEV}${ANYTHING}${GLOBAL_LIST}`,
 );
-/** What the global install gains, under the global heading. */
 const NEW_GLOBAL_SKILL_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${NEW_GLOBAL_SKILL}`);
 const GLOBAL_AGENT_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${API_DEV}`);
 const ANOTHER_GLOBAL_SKILL_LISTED_GLOBALLY = new RegExp(
   `${GLOBAL_LIST}${ANYTHING}${ANOTHER_GLOBAL_SKILL}`,
 );
-/** The project's new skill printed after the global heading — under the wrong destination. */
+/** Printed after the global heading: the wrong destination. */
 const NEW_PROJECT_SKILL_LISTED_GLOBALLY = new RegExp(
   `${GLOBAL_LIST}${ANYTHING}${NEW_PROJECT_SKILL}`,
 );
@@ -135,7 +120,6 @@ describe("edit --from <id> at a terminal lists what goes where in its confirm", 
     env = undefined;
   });
 
-  /** An installation made by `init --from` at `dir`, under a HOME of its own. */
   async function installFrom(id: string, at: "project" | "home"): Promise<TestEnvironment> {
     const environment = await createTestEnvironment();
     env = environment;
@@ -151,7 +135,6 @@ describe("edit --from <id> at a terminal lists what goes where in its confirm", 
     return environment;
   }
 
-  /** Opens `edit --from <id>` at a real terminal, and what it showed with its question. */
   async function openApply(
     id: string,
     cwd: string,
@@ -186,7 +169,7 @@ describe("edit --from <id> at a terminal lists what goes where in its confirm", 
         "a project-scoped skill must not be listed as going into the global install",
       ).not.toMatch(NEW_PROJECT_SKILL_LISTED_GLOBALLY);
 
-      // Still the same question, and still answerable: the lists join it rather than replace it.
+      // The lists join the question rather than replace it.
       await session.deny();
       expect(await session.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.CANCELLED);
     },
@@ -206,8 +189,7 @@ describe("edit --from <id> at a terminal lists what goes where in its confirm", 
 
       expect(planned).toMatch(ANOTHER_GLOBAL_SKILL_LISTED_GLOBALLY);
       expect(planned).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
-      // The global list matched above is the positive subject guard: the same frame carries the
-      // lists, and the home directory has no project to list.
+      // The global list is the subject guard: home has no project to list.
       expect(planned, "the home directory is the global install, so no project list").not.toContain(
         PROJECT_LIST,
       );

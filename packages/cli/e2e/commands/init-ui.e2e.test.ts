@@ -17,12 +17,8 @@ import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories
 import { CLI_INVOKE_COMMAND, DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
- * `init --ui`, and the bare `init` that takes the same route where nothing is installed: the
- * editor is the way in, and the CLI's part is printing its address.
- *
- * The link is PRINTED rather than merely opened, and that is the assertion these specs can make:
- * a spawned process has no TTY, so no browser is launched, which is exactly the environment the
- * route has to stay usable in — over a pipe, in CI, on a machine with no desktop session.
+ * `init --ui`, and bare `init` with nothing installed, print the editor address; with no TTY no
+ * browser opens, which is the environment the route must work in.
  */
 describe("init --ui", () => {
   let tempDir: string;
@@ -31,7 +27,7 @@ describe("init --ui", () => {
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
-  /** A project folder and an empty HOME beside it, so neither scope holds an installation. */
+  /** An empty HOME beside the project, so neither scope holds an installation. */
   async function nothingInstalled(): Promise<{ projectDir: string; home: string }> {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -52,15 +48,13 @@ describe("init --ui", () => {
       );
 
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
-      // The whole address rather than a bare "agentsinc.sh": the host alone is a substring of
-      // both the right address and the wrong one.
+      // The whole address: the host alone is a substring of right and wrong ones.
       expect(stdout).toContain(`Build it at ${STEP_TEXT.EDITOR_URL}`);
     });
 
     /**
-     * The subject guard. Opening the editor is not a setup, so a run that leaves a source folder
-     * behind has done something this route never promised — and the address alone cannot tell the
-     * difference, since a completed install prints a link too.
+     * A completed install prints a link too, so the absence of a source folder is what tells them
+     * apart.
      */
     it("installs nothing, because opening the editor is not a setup", async () => {
       const { projectDir, home } = await nothingInstalled();
@@ -89,14 +83,7 @@ describe("init --ui", () => {
     });
   });
 
-  /**
-   * `--ui` opens whatever `--from` names, and the command's own subject when `--from` is absent.
-   * One rule across both commands (owner ruling 2026-08-24), which is what makes an id something
-   * a recipient can LOOK at rather than only apply blind.
-   *
-   * No publish happens on this path and none is needed: the id already exists, so this is
-   * `editorConfigUrl(id)` and nothing else. That is why it needs no store and no marketplace.
-   */
+  /** `--ui` opens whatever `--from` names: `editorConfigUrl(id)` only, no store or marketplace. */
   it("opens the id --from names, rather than this directory", async () => {
     tempDir = await createTempDir();
 
@@ -108,11 +95,7 @@ describe("init --ui", () => {
     expect(output).toContain("?fromId=se_ABC123");
   });
 
-  /**
-   * The command it offers instead has to be one that runs HERE. `init --from` installs an id into
-   * a directory with nothing installed, and refuses one holding its own installation — over that,
-   * `edit --from` is the command that applies an id, so that is the one offered.
-   */
+  /** The offered command must run here: over an existing installation that is `edit --from`. */
   it("offers init --from in a directory with nothing installed", async () => {
     tempDir = await createTempDir();
 
@@ -171,9 +154,8 @@ describe("init --ui", () => {
   });
 
   /**
-   * `--ui` sits above the config-readability refusal so a broken config cannot block the other
-   * front door, and choosing the command to offer reads that config — so the read must not
-   * refuse either. The file is there, so the directory counts as holding its own installation.
+   * `--ui` sits above the readability refusal, so choosing the offered command must not refuse
+   * either; the file's presence counts as an installation.
    */
   it("still opens the id over a config it cannot read", async () => {
     tempDir = await createTempDir();
@@ -195,7 +177,6 @@ describe("init --ui", () => {
     );
   });
 
-  /** The subject guard for the pairing: naming an id must not install it. */
   it("installs nothing when it opens an id", async () => {
     tempDir = await createTempDir();
 
@@ -208,9 +189,8 @@ describe("init --ui", () => {
   });
 
   /**
-   * The editor's address carries a configuration id and nothing else, so a marketplace named
-   * without `--from` is not handed over: the run opens the editor and says how to add it there. A
-   * folder on this machine is out of the editor's reach until it is pushed, and the line says so.
+   * The editor URL carries only a configuration id, so a `--marketplace` is not handed over; a
+   * local folder must be pushed first.
    */
   it("opens the editor beside --marketplace, saying a local folder has to be pushed first", async () => {
     tempDir = await createTempDir();
@@ -250,9 +230,8 @@ describe("init --ui", () => {
   });
 
   /**
-   * Over an installation made from another marketplace, naming one without `--from` takes the
-   * editor route too — with `--ui` and without — rather than refusing or showing the dashboard,
-   * which has nowhere to put a marketplace. The installation is left byte for byte as it was.
+   * Over another marketplace's installation, `--marketplace` without `--from` takes the editor
+   * route too and leaves the installation as it was.
    */
   it.each([[["init", "--ui", "--marketplace"]], [["init", "--marketplace"]]])(
     "%j opens the editor over an installation made from another marketplace, leaving it as it was",

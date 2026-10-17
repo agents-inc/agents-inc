@@ -25,35 +25,16 @@ import {
 } from "../helpers/type-check-probe.js";
 import "../matchers/setup.js";
 
-/**
- * `eject <type>` exists so the generated output can be customised. The claim it
- * makes is not "files appeared" but "what you changed comes back out of the next
- * compile" — and that claim is only worth anything against an installation the
- * user actually made, because the ejected copy has to win over the source's own
- * template and the CLI's bundled partials at the same time.
- *
- * Both specs here start from nothing: a real `init --from` builds the
- * installation, and every later step is the real binary. The existing
- * template-precedence coverage all begins from a `ProjectBuilder`-written config,
- * which cannot show that the state is reachable.
- *
- * The recompile is asserted on all four surfaces, and the two that are easy to
- * forget carry the weight: `config.ts` must come back byte-identical (a
- * customisation is not a configuration change) and `config-types.ts` must still
- * narrow afterwards (a compile that rewrote it from a customised template must
- * not have degraded the aliases it regenerates on the same pass).
- */
+// An ejected customisation must survive the next compile on a real `init --from` installation, with
+// config.ts byte-identical and config-types.ts still narrowing afterwards.
 
-/** Appended to the ejected template — a string nothing else in the pipeline emits. */
+/** A string nothing else in the pipeline emits. */
 const CUSTOM_TEMPLATE_MARKER = "<!-- e2e-ejected-template-customisation -->";
 
-/** Written into an ejected agent partial, for the same reason. */
 const CUSTOM_IDENTITY_MARKER = "e2e-ejected-identity-customisation";
 
-/** Where `eject agent-partials` writes the CLI's bundled `web-developer` tree. */
 const EJECTED_PARTIAL_CATEGORY = "developer";
 
-/** The aliases a compile regenerates on every pass, and must not collapse. */
 const GENERATED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
 describe("ejected customisations survive a recompile", () => {
@@ -77,10 +58,7 @@ describe("ejected customisations survive a recompile", () => {
     env = undefined;
   });
 
-  /**
-   * The E2E stack installed at the home directory, ejected. HOME === cwd, so the install, the
-   * ejected copy and the recompile all address one directory.
-   */
+  /** HOME === cwd, so install, ejected copy and recompile all address one directory. */
   async function installAtHome(): Promise<string> {
     env = await createTestEnvironment();
     const home = env.fakeHome;
@@ -98,7 +76,6 @@ describe("ejected customisations survive a recompile", () => {
     "compiles every agent through an edited ejected template without touching the configuration",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // The shape a user ejecting templates is in.
       const installDir = await installAtHome();
 
       const beforeEject = await readCompiledAgents(installDir);
@@ -129,8 +106,6 @@ describe("ejected customisations survive a recompile", () => {
       expect(compile.exitCode, compile.output).toBe(EXIT_CODES.SUCCESS);
       expect(compile.output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
 
-      // Surface 1: every agent came back through the edited template, and the
-      // roster is the same one — a customisation must not add or drop an agent.
       const afterCompile = await readCompiledAgents(installDir);
       expect(Object.keys(afterCompile).sort()).toStrictEqual(Object.keys(beforeEject).sort());
       for (const [file, content] of Object.entries(afterCompile)) {
@@ -139,14 +114,11 @@ describe("ejected customisations survive a recompile", () => {
         );
       }
 
-      // Surface 3: ejecting and recompiling is not a configuration change.
       expect(
         await readTestFile(configTsPath(installDir)),
         "customising the template must leave config.ts byte-identical",
       ).toBe(configBefore);
 
-      // Surface 4: the pass that rewrote the agents rewrote config-types.ts too,
-      // and the aliases it wrote must still reject a value that is not installed.
       const sourceFolder = path.dirname(configTypesTsPath(installDir));
       const typecheck = await typecheckGeneratedConfig(sourceFolder);
       expect(
@@ -159,8 +131,7 @@ describe("ejected customisations survive a recompile", () => {
         `a bogus literal must not type-check after the customised compile.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`, which is the degradation this probe exists to catch.
+      // Each alias, since one rejecting can mask others collapsed to `string`.
       expect(
         probe.rejected,
         `every generated alias must still reject its bogus literal after the customised compile.\ntsc output:\n${probe.output}`,
@@ -184,8 +155,6 @@ describe("ejected customisations survive a recompile", () => {
       expect(eject.exitCode, eject.output).toBe(EXIT_CODES.SUCCESS);
       expect(eject.output).toContain(STEP_TEXT.EJECT_SUCCESS);
 
-      // `eject agent-partials` writes the CLI's bundled tree, which nests each
-      // agent under its category directory.
       const identityPath = path.join(
         sourceFolderIn(installDir),
         DIRS.AGENTS,
@@ -200,15 +169,11 @@ describe("ejected customisations survive a recompile", () => {
       expect(compile.exitCode, compile.output).toBe(EXIT_CODES.SUCCESS);
       expect(compile.output).toContain(STEP_TEXT.CONFIG_TYPES_REFRESHED);
 
-      // Surface 1: the edited partial reached the compiled agent, and the agent
-      // is still a valid compiled agent rather than the partial's raw text.
       await expect({ dir: installDir }).toHaveCompiledAgentContent(agentName, {
         contains: [CUSTOM_IDENTITY_MARKER],
       });
       await expect({ dir: installDir }).toHaveAgentFrontmatter(agentName, { name: agentName });
 
-      // Surface 3 and 4, as above: a partial customisation changes neither the
-      // configuration nor the type surface it is checked against.
       expect(
         await readTestFile(configTsPath(installDir)),
         "customising a partial must leave config.ts byte-identical",
@@ -220,8 +185,7 @@ describe("ejected customisations survive a recompile", () => {
         `a bogus literal must not type-check after the customised compile.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`, which is the degradation this probe exists to catch.
+      // Each alias, since one rejecting can mask others collapsed to `string`.
       expect(
         probe.rejected,
         `every generated alias must still reject its bogus literal after the customised compile.\ntsc output:\n${probe.output}`,

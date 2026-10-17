@@ -17,22 +17,8 @@ import { isCategory } from "../../src/cli/utils/type-guards.js";
 import { typedKeys } from "../../src/cli/utils/typed-object.js";
 import type { CategoryPath, SkillId } from "../../src/cli/types/index.js";
 
-/**
- * A checkout of the DEFAULT public marketplace, seeded into the cache a run would fetch it into.
- *
- * It exists because nothing else can reach the default-source path. Every other source a spec names
- * is a directory on disk, and for those the matrix is BUILT FROM the directory — so the matrix and
- * the files agree by construction and can never disagree. The default source is the one where they
- * are two artefacts: the matrix is the vendored `BUILT_IN_MATRIX`, the files are whatever the fetch
- * brought back, and a user whose CLI predates a marketplace change holds a pair that disagrees.
- * `omitting` is how a spec produces exactly that state.
- *
- * Offline by construction, twice over. The copy is written where `fetchFromSource` looks, so no
- * download is attempted; and the record beside it carries a `tar` with NO `etag`, which is the one
- * shape `classifyCachedCopy` answers `current` to without asking the network anything. A seeded
- * copy with no record at all reads as `unrecorded` and is re-downloaded — the exact failure this
- * fixture exists to avoid — which is why `fetchRecordPath` is imported rather than spelled here.
- */
+// Seeds the default marketplace's fetch cache, the one source whose matrix (BUILT_IN_MATRIX) and files
+// can disagree; `omitting` produces that state. A record with a `tar` and no `etag` keeps it offline.
 export async function seedDefaultSourceCache(
   home: string,
   { omitting }: { omitting: SkillId },
@@ -57,17 +43,7 @@ export async function seedDefaultSourceCache(
   return cacheDir;
 }
 
-/**
- * One skill where the copy path reads it from: `<checkout>/src/<skill.path>/`.
- *
- * BOTH files, because a copy is not finished when the directory lands: `injectForkedFromMetadata`
- * reads the copy's own `metadata.yaml` to stamp provenance into it, so a skill written with only a
- * SKILL.md fails at the destination — a failure no checkout of a real marketplace can produce, and
- * one that would have filled this fixture's refusal with 200 lines that are the fixture's fault.
- *
- * Its taxonomy is READ from the catalogue entry rather than derived from the id, and the hash is
- * the file's own — the two things a published `metadata.yaml` actually carries.
- */
+// Writes metadata.yaml too: the copy stamps provenance into it and fails without one.
 async function writeCatalogueSkill(cacheDir: string, skillId: SkillId): Promise<void> {
   const skill = BUILT_IN_MATRIX.skills[skillId];
   if (skill === undefined) throw new Error(`seedDefaultSourceCache: no skill '${skillId}'`);
@@ -84,7 +60,6 @@ async function writeCatalogueSkill(cacheDir: string, skillId: SkillId): Promise<
       displayName: skill.displayName,
       slug: skill.slug,
       category: skill.category,
-      // A skill's domain is its CATEGORY's, stated once in the catalogue's own category table.
       domain: domainOfCategory(skill.category),
     }),
   );

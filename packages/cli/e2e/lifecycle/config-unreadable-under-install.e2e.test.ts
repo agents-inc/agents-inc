@@ -30,34 +30,9 @@ import { DIRS, EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * A global `config.ts` that EXISTS and cannot be loaded stops every command run from a project
- * under it, though the project's own config is fine — journey 38, driven from scratch.
- *
- * The installation is the product's own work: a real global install and a real project set up
- * under it, both by one `init --from`. Only the broken file is written by hand, because no command
- * writes one.
- *
- * **Every command that reads the configs refuses, and says the same thing.** The write commands
- * — `init`, `edit`, `compile`, `update`, `share` and `eject` — and the two that only read, `search`
- * and `list`. A project inherits the global config, so a broken global one is a config this folder
- * uses as surely as its own. Against the unfixed binary `init`, `edit` and `compile` refused while
- * `update`, `eject`, `share`, `search` and `list` went ahead over it — `share` published, `eject`
- * wrote, `search` answered.
- *
- * **The refusal says WHICH config, and where to recreate it from.** Recreating is `uninstall`,
- * then `init`, run from the broken config's own folder — the home directory here. A remedy naming
- * no folder, read from the project, sends the user to uninstall the project: the one config that
- * was fine. Against the unfixed binary the three commands that did refuse said neither.
- *
- * **`doctor` reports it and finishes; `uninstall` always works.** The first is pinned as a report
- * with its summary printed; the second runs from the home directory over the broken file and
- * removes the installation. The other half of the pair is the second describe: the same commands
- * over the same kind of installation with both configs readable, each of which runs. A guard that
- * had swallowed its whole domain would satisfy every refusal without it.
- *
- * Each shape is driven over the installation as the install left it — set aside once, put back
- * before every shape — so a command that went ahead over one shape cannot leave the next shape's
- * byte-identity check with nothing to catch.
+ * A global `config.ts` that exists but cannot be loaded stops every config-reading command run
+ * from a project under it, with a refusal naming that config and its folder; `doctor` reports it
+ * and `uninstall` still works. The second describe is the readable-configs control.
  */
 
 describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from its project", () => {
@@ -92,17 +67,13 @@ describe("a real installation whose GLOBAL config.ts cannot be loaded, seen from
     await cleanupTempDir(env.tempDir);
   });
 
-  /** What every command did over one shape, which the hook above recorded for every shape. */
   function brokenBy(shape: string): RunsOverABrokenConfig {
     const runs = broken.get(shape);
     if (!runs) throw new Error(`nothing was recorded for a global config that ${shape}`);
     return runs;
   }
 
-  /**
-   * The paths are compared compacted, both sides: oclif breaks a word longer than its line wherever
-   * the column runs out, and a temp path is one under any but a short `TMPDIR`.
-   */
+  /** Compacted, both sides: oclif wraps a long temp path wherever the column runs out. */
   function expectRefusalNamingTheGlobalConfig({ exitCode, output }: ConfigReaderRun): void {
     expect(exitCode, output).toBe(EXIT_CODES.ERROR);
     const compacted = compactCliOutput(output);
@@ -202,10 +173,7 @@ describe("the same installation with both configs readable", () => {
     expect(output).not.toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
   });
 
-  /**
-   * Whether `share` then publishes an all-ejected installation is another spec's subject — only
-   * that the config refusal is not what stops it is this one's, so its exit code is left alone.
-   */
+  /** Whether `share` then publishes is another spec's subject, so its exit code is left alone. */
   it("lets share past the config check", () => {
     expect(runOf(readable.runs, "share").output).not.toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
   });

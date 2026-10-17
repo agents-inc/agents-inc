@@ -29,48 +29,31 @@ import type { AgentName, AgentScopeConfig } from "../../src/cli/types/index.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 
 /**
- * `compile` over an installation whose sub-agents were pinned on with NO skill — the editor's
- * "no skills — base agent" — which `init --from` installs by compiling each one as a base agent.
- *
- * `compile` refused the same tree outright ("No skills found"), recompiling nothing, so a hand edit
- * to `model` or `effort` could never reach the compiled agent and a deleted one was never written
- * back. The CLI must consume what the editor produces, so the install here is `init --from` over a
- * payload shaped as the editor posts it, and what compile writes is held against what `init` wrote.
- *
- * The refusal is not gone, and the third spec is its control: a config that DECLARES skills none
- * of which is on disk is a lost installation rather than a skill-less one, and recompiling it would
- * strip every skill from every sub-agent. Either half alone is satisfied by a guard that swallowed
- * the other.
+ * `compile` recompiles sub-agents `init --from` installed with no skill. Control: a config
+ * declaring skills none of which is on disk is still refused.
  */
 
-/** Two project sub-agents: the one the second spec hand-edits, and its untouched control. */
 const EDITED_AGENT = "web-developer" as const satisfies AgentName;
 const CONTROL_AGENT = "api-developer" as const satisfies AgentName;
 
 /**
- * LITERAL — the completion gate every sub-agent holding `Write` or `Edit` is compiled with, as
- * `agent.liquid` writes it into frontmatter. Copied byte for byte from `GATE_HOOKS_LINE` in
- * `packages/compile/src/agent-source.test.ts` rather than composed, so a change to the record has
- * to be made here on purpose.
+ * Copied byte for byte from `GATE_HOOKS_LINE` in `packages/compile/src/agent-source.test.ts`, not
+ * composed.
  */
 const COMPLETION_GATE_LINE = String.raw`hooks: {"Stop":[{"hooks":[{"type":"command","command":"command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0; out=$(npm run --if-present --silent typecheck 2>&1) || { printf '%s\\n' \"$out\" >&2; exit 2; }"}]}]}`;
 
-/**
- * A model and an effort the installed sub-agents do not already carry, so the hand edit is a
- * change rather than a restatement — the second spec's subject guard holds it to that.
- */
+/** Values the installed sub-agents do not already carry, so the edit is a change. */
 const HAND_EDIT = {
   model: "haiku",
   effort: "high",
 } as const satisfies Pick<AgentScopeConfig, "model" | "effort">;
 
-/** LITERALS — how `agent.liquid` writes {@link HAND_EDIT} into frontmatter. */
+/** How `agent.liquid` writes {@link HAND_EDIT} into frontmatter. */
 const HAND_EDITED_LINES = ["\nmodel: haiku\n", "\neffort: high\n"] as const;
 
 const SKILL_LESS_ID = "NoSkill1";
 const LOST_SKILLS_ID = "LostSkl1";
 
-/** What the editor posts for two sub-agents pinned on with no skill. */
 const SKILL_LESS_PAYLOAD = buildSeedPayload({
   agents: {
     [EDITED_AGENT]: { on: true, scope: "project" },
@@ -78,7 +61,7 @@ const SKILL_LESS_PAYLOAD = buildSeedPayload({
   },
 });
 
-/** The same roster carrying one ejected skill, so its loss leaves a config that names it. */
+/** One ejected skill, so deleting it leaves a config that names it. */
 const ONE_SKILL_PAYLOAD = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -120,7 +103,6 @@ describe("compile over an installation whose sub-agents carry no skills", () => 
     return dir;
   }
 
-  /** A project installed by `init --from` under a HOME of its own, so nothing global is in play. */
   async function installedFrom(id: string, payload: unknown): Promise<ProjectHandle> {
     const project = { dir: await takeTempDir(), globalHome: await takeTempDir() };
     store.publish(id, payload);
@@ -136,9 +118,8 @@ describe("compile over an installation whose sub-agents carry no skills", () => 
     async () => {
       const project = await installedFrom(SKILL_LESS_ID, SKILL_LESS_PAYLOAD);
 
-      // The subject guards: the installation really declares no skill, and init really did write
-      // both sub-agents with their frontmatter whole — otherwise "compile wrote what init wrote"
-      // holds over nothing.
+      // Subject guards: no skill declared and both sub-agents written, else the comparison holds
+      // over nothing.
       expect((await loadConfigOrFail(project.dir)).skills).toStrictEqual([]);
       const installedAgents = await readCompiledAgents(project.dir);
       expect(Object.keys(installedAgents).sort()).toStrictEqual(

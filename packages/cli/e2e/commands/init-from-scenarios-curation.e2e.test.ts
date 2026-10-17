@@ -26,26 +26,13 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
 import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 
 /**
- * `init --from <id>`: what each sub-agent ends up holding.
- *
- * A payload's `assignments` map is per `(skill, sub-agent)` and carries a load state — this is the
- * promise the web app makes its users: a sub-agent gets exactly the skills assigned to it, at the
- * load state they were assigned. So `assignments` decides three things at once, and each has to be
- * asserted separately: WHICH sub-agents are selected, WHICH skills land in each one's stack entry,
- * and WHETHER each of those preloads.
- *
- * Every payload here pins its sub-agents to `scope: "project"` in the `agents` map, because that is
- * where curation is observable: a sub-agent that takes the shared selection default lands in the
- * user's own ~/.claude, and its stack entries for these project-scoped skills go with it — the
- * config model holds that a project skill never reaches a global sub-agent.
- *
- * Covers Phase 5 scenarios 1, 2, 6, 7 and 9 of the tracker's `--from` matrix.
+ * `init --from`: `assignments` decides which sub-agents are selected, which skills each holds, and
+ * whether each preloads. Sub-agents are pinned to the project, where curation is observable.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 
-/** A sub-agent entry that keeps its agent in the project rather than at the default scope. */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 describe("init --from <id>: per-sub-agent curation", () => {
@@ -72,8 +59,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
 
   it("installs a stack payload as the stack's own per-sub-agent expansion", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // The web app always sends the expansion: `stackId` is metadata, `assignments` is the data.
-    // This payload IS the E2E source's stack, written out skill by skill.
+    // The web app always sends the expansion: `stackId` is metadata, `assignments` the data.
     store.publish(
       "Stacked1",
       buildSeedPayload({
@@ -121,14 +107,11 @@ describe("init --from <id>: per-sub-agent curation", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     const config = await loadConfigOrFail(env.projectDir);
-    // The config has no `stackId` field: the stack's description is the whole of what a stack id
-    // leaves behind in config.ts. Recording it proves the id resolved rather than being ignored.
+    // config.ts has no `stackId`; the stack's description is what proves the id resolved.
     expect(config.description).toBe(E2E_STACK_DESCRIPTION);
 
-    // The curation assertion is the one that carries the red here. A stack id makes the CLI
-    // overlay the stack's own preloaded flags, which happen to agree with these assignments — so
-    // the frontmatter assertions below pass even while every sub-agent holds every skill. Do not
-    // simplify this spec down to the frontmatter half.
+    // This carries the red: the stack's preload flags agree with these assignments, so the
+    // frontmatter checks pass even when every sub-agent holds every skill.
     expect(config.stack).toStrictEqual({
       [WEB_DEV]: {
         "web-framework": [sa(E2E_SKILL.react.id, true)],
@@ -168,7 +151,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
       "Curated1",
       buildSeedPayload({
         skills: {
-          // Shared, but at different load states — the case a per-skill flag cannot express.
+          // Shared at different load states, which a per-skill flag cannot express.
           [E2E_SKILL.react.id]: buildSeedSkill({
             scope: "project",
             assignments: { [WEB_DEV]: "preloaded", [API_DEV]: "lazy" },
@@ -206,8 +189,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
       },
     });
 
-    // Frontmatter is the preload list Claude Code reads. Exact, not "contains": a fix that
-    // preloads everything an agent holds would satisfy a subset check.
+    // Exact: preloading everything would pass a subset check.
     await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, {
       exactSkills: [E2E_SKILL.react.id],
     });
@@ -215,9 +197,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
       exactSkills: [E2E_SKILL.hono.id],
     });
 
-    // The body carries the lazy half. The positive claim in each call is the subject guard for
-    // the negative beside it: `skillIds` reads the activation protocol's own entries, so a file
-    // whose protocol never rendered fails it rather than satisfying `noSkillIds` by absence.
+    // Each positive guards the negative beside it: a protocol that never rendered fails `skillIds`.
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(WEB_DEV, {
       skillIds: [E2E_SKILL.zustand.id],
       noSkillIds: [E2E_SKILL.hono.id],
@@ -230,8 +210,8 @@ describe("init --from <id>: per-sub-agent curation", () => {
 
   it("leaves a sub-agent switched on with no assignments holding nothing", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // `on: true` with no assignment anywhere is the ONLY way a skill-less sub-agent travels. It
-    // must arrive bare — inheriting the other sub-agent's skills is not what was shared.
+    // `on: true` with no assignment is the only way a skill-less sub-agent travels; it must arrive
+    // bare.
     store.publish(
       "Bare0002",
       buildSeedPayload({
@@ -263,9 +243,8 @@ describe("init --from <id>: per-sub-agent curation", () => {
 
     await expect({ dir: env.projectDir }).toHaveCompiledAgent(API_DEV);
     await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(API_DEV, { noSkills: true });
-    // The bare sub-agent's file must not carry the other one's skill either. The positive half on
-    // web-developer proves this fixture DOES inject skill ids into a compiled body, so the
-    // negative is a real absence rather than a section that never renders.
+    // The positive on web-developer proves this fixture renders skill ids, so the negative is a
+    // real absence.
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(WEB_DEV, {
       skillIds: [E2E_SKILL.react.id],
     });
@@ -288,8 +267,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
       sourceDir,
     );
 
-    // A sub-agent has front-matter, a prompt and a compiled file without owning a single skill,
-    // so an agent-only configuration is a real install, not the "nothing to install" error.
+    // A skill-less sub-agent is a real install, not the "nothing to install" error.
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
     const config = await loadConfigOrFail(env.projectDir);
@@ -299,7 +277,6 @@ describe("init --from <id>: per-sub-agent curation", () => {
 
     await expect({ dir: env.projectDir }).toHaveCompiledAgent(WEB_DEV);
     await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, { noSkills: true });
-    // No dynamic half either: with nothing assigned, the activation protocol has nothing to list.
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(WEB_DEV, {
       allPreloaded: true,
       noSkillIds: [E2E_SKILL.react.id],
@@ -345,7 +322,7 @@ describe("init --from <id>: per-sub-agent curation", () => {
       `'meta-reviewing': [\n      '${E2E_SKILL.reviewing.id}',\n      '${E2E_SKILL["cli-reviewing"].id}',\n    ]`,
     );
 
-    // The compact text and the array text load back to the same normalized shape.
+    // The compact and array forms load back to the same shape.
     const config = await loadConfigOrFail(env.projectDir);
     expect(config.stack).toStrictEqual({
       [WEB_DEV]: {

@@ -19,43 +19,9 @@ import {
 } from "../helpers/test-utils.js";
 import { DIRS, TIMEOUTS } from "../pages/constants.js";
 
-/**
- * The plugin-host contract, run against the real `claude` binary.
- *
- * It is the third of three layers, and the only one that can answer for the binary. Its siblings:
- * `src/cli/lib/hosts/__tests__/a-plugin-host-answers-one-contract.test.ts` runs the contract
- * against a fake host, which proves the interface is implementable by something that is not Claude;
- * `the-claude-host-spawns-what-it-spawns-today.test.ts` beside it records the argv, cwd and
- * environment of every call against a mocked `child_process`, which proves the wire did not move.
- * Neither can tell whether Claude still ANSWERS the way the classification assumes.
- *
- * **What only this file can hold.** `uninstallPlugin` answers `absent` by matching Claude's own
- * failure message — the wire spec asserts against a string recorded on 2026-09-21 from
- * `claude 2.1.278`:
- *
- * ```
- * ✘ Failed to uninstall plugin "nope@nowhere": Plugin "nope@nowhere" not found in installed plugins
- * ```
- *
- * A recorded string is a claim about a binary that ships on its own schedule. When Claude rewords
- * that line, the wire spec stays green — it asserts against its own fixture — and this file is what
- * goes red, because the real binary is what decides. That is the whole reason this is a smoke spec
- * rather than one more unit case.
- *
- * **Every call is pinned to a per-run config dir**, so the marketplace registration and the plugin
- * registry this file produces live in a temp tree and go with it. `home-isolation.smoke.test.ts` is
- * the spec that pins that mechanism; this one relies on it.
- *
- * **The removal pair is in this file rather than split across two.** An `absent`-only check cannot
- * tell a correct classification from a host that answers `absent` for everything: both leave the
- * assertion green while the second removes nothing and reports nothing wrong. So the plugin is
- * really installed, really removed, and then asked for a second time.
- *
- * NOTE: a smoke test for the `claude` binary's behaviour behind our seam, not an E2E test of a
- * command. It is skipped where `claude` is not installed.
- */
+// The plugin-host contract against the real `claude` binary: the only layer that notices when Claude
+// rewords the not-found message `uninstallPlugin` classifies. Skipped where `claude` is absent.
 
-/** A plugin reference that has never been installed anywhere, for the absent arm. */
 const NEVER_INSTALLED = "never-installed-plugin@never-registered-marketplace";
 
 const host: PluginHost = hostFor("claude");
@@ -112,18 +78,8 @@ describe.skipIf(!claudeAvailable)("the Claude host against the real binary", () 
     });
   });
 
-  /**
-   * The listing, and the one member whose pinned installation nothing else can answer for.
-   *
-   * `listPlugins` spawns nothing — Claude has no `plugin list --json`, so the installs come from
-   * `installed_plugins.json` and the switch from the project's settings — which means the wire
-   * spec beside it cannot see this call at all, and the unit spec can only prove which PATH was
-   * read. Whether that path is where the real binary actually writes when `CLAUDE_CONFIG_DIR` is
-   * pinned is a fact about `claude`, and this is the only layer that holds it.
-   *
-   * The pair is in one describe for the reason the removal pair below is: a listing that answered
-   * `[]` for everything would satisfy the negative and prove nothing.
-   */
+  // `listPlugins` spawns nothing (it reads installed_plugins.json), so only this layer proves that is
+  // where the real binary writes under a pinned CLAUDE_CONFIG_DIR.
   describe("listing what is installed, from the installation the caller pinned", () => {
     it("does not list a plugin this config tree has not installed", async () => {
       expect(

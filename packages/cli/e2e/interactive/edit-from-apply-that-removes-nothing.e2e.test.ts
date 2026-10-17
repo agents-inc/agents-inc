@@ -26,28 +26,16 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * The destructive apply from nothing, over the one plan shape no spec has ever driven: a
- * configuration that takes nothing away.
- *
- * `edit --from` makes the project MATCH the payload, and every spec of it so far has applied a
- * payload that leaves something out — so every one of them has read the removal heading. A
- * payload that only adds takes the other branch of `planHeading`, and the interesting claim is
- * that only the heading changes: the configuration is still applied whole, so the confirm is
- * still asked and a decline still has something to decline.
- *
- * The installation is made by `init --from` rather than written by a fixture, which is the
- * other half of what this file adds. Provenance is what decides whether the apply may remove a
- * directory at all, and a real install is the only thing that stamps it — a fixture has to be
- * told to, and a fixture told to do it agrees with whatever the installer does.
+ * `edit --from` with a configuration that removes nothing: only the plan heading changes, the
+ * confirm is still asked and a decline still changes nothing. Installed by `init --from` so
+ * provenance is the installer's own.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const INSTALLED_ID = "AddsOnly01";
 const ADDS_ONLY_ID = "AddsOnly02";
 
-/** What the install brings, and what the configuration below therefore already has. */
 const INSTALLED_SKILL = E2E_SKILL.react;
-/** What the applied configuration adds on top, and the only difference between the two. */
 const ADDED_SKILL = E2E_SKILL.vitest;
 
 describe("edit --from a configuration that removes nothing", () => {
@@ -74,7 +62,6 @@ describe("edit --from a configuration that removes nothing", () => {
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A configuration naming `skills`, all project-scoped and assigned to the one sub-agent. */
   function publish(id: string, skills: readonly string[]): void {
     store.publish(
       id,
@@ -90,13 +77,7 @@ describe("edit --from a configuration that removes nothing", () => {
     );
   }
 
-  /**
-   * A project installed from nothing by `init --from`, with a HOME of its own.
-   *
-   * The two roots are separate because the payload is project-scoped, and at the home root the
-   * two scopes are one directory — the command refuses a project-scoped configuration there
-   * rather than applying it somewhere else.
-   */
+  /** A HOME of its own: at the home root the command refuses a project-scoped configuration. */
   async function installFromNothing(): Promise<{ dir: string; globalHome: string }> {
     const env = await createTestEnvironment();
     tempDirs.push(env.tempDir);
@@ -109,7 +90,6 @@ describe("edit --from a configuration that removes nothing", () => {
     return project;
   }
 
-  /** Starts `edit --from <id>` in a real terminal, against the stub store. */
   function launch(id: string, project: { dir: string; globalHome: string }): InteractivePrompt {
     return new InteractivePrompt(["edit", "--from", id], project.dir, {
       env: { AGENTS_INC_API_URL: store.url, HOME: project.globalHome },
@@ -124,15 +104,12 @@ describe("edit --from a configuration that removes nothing", () => {
     await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_NOTHING_REMOVED, TIMEOUTS.WIZARD_LOAD);
 
     const planned = prompt.getOutput();
-    // The heading is a promise about the lines under it, so the removal one over an empty
-    // list would be a lie. The line matched above is the positive subject guard for this
-    // negative — both describe the same frame.
+    // A removal heading over an empty list would be a lie; the line above is the subject guard.
     expect(
       planned,
       "a configuration that takes nothing away must not open by promising removals",
     ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
-    // And it still asks: what is being confirmed is the whole configuration being applied,
-    // which is a change to this project whether or not anything leaves it.
+    // Still asks: applying the whole configuration is a change either way.
     expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
   });
 
@@ -149,8 +126,7 @@ describe("edit --from a configuration that removes nothing", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-      // Both surfaces, because either alone can look right while the other lies: a config entry
-      // for a directory nothing wrote, or a directory nothing declares.
+      // Both surfaces: config entry and directory can each look right alone.
       const config = await loadConfigOrFail(project.dir);
       expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual(
         [INSTALLED_SKILL.id, ADDED_SKILL.id].sort(),
@@ -175,8 +151,7 @@ describe("edit --from a configuration that removes nothing", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode).toBe(EXIT_CODES.CANCELLED);
-      // Not "the addition did not arrive" — nothing at all moved. A decline that rewrote
-      // config.ts or recompiled an agent would still be a change the user refused.
+      // Nothing at all moved: a decline must not rewrite config.ts or recompile.
       expect(await readTreeSnapshot(project.dir)).toStrictEqual(before);
     },
   );
@@ -191,8 +166,7 @@ describe("edit --from a configuration that removes nothing", () => {
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_NEEDS_TERMINAL);
-    // The refusal does not depend on what the configuration says, so a run that was already
-    // over must not first fetch it — and it must not have touched anything either.
+    // The refusal does not depend on the configuration, so it is not fetched.
     expect(store.requests.slice(spentInstalling)).toStrictEqual([]);
     expect(await readTreeSnapshot(project.dir)).toStrictEqual(before);
   });

@@ -16,17 +16,13 @@ import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * One installed skill whose metadata.yaml is syntactically broken must not
- * disable commands that read the local skill catalog. Local skill discovery
- * parses each installed metadata.yaml; a parse throw there escapes the whole
- * matrix load instead of being scoped to the one bad skill.
+ * One installed skill with a broken metadata.yaml must not disable commands that read the local
+ * catalog.
  */
 
-/** Skills installed into the fixture project. Only the second one is corrupted. */
 const HEALTHY_SKILL: string = E2E_SKILL.react.id;
 const BROKEN_SKILL: string = E2E_SKILL.vitest.id;
 
-/** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
 
 async function createProjectWithOneBrokenMetadata(source: string): Promise<{
@@ -102,7 +98,6 @@ describe("installed skill with unparseable metadata.yaml", () => {
     expect(output, "the offending skill must be named").toContain(BROKEN_SKILL);
     expect(output, "the offending file must be named").toContain(FILES.METADATA_YAML);
 
-    // search is read-only: config and filesystem must be byte-identical after.
     expect(await loadConfigOrFail(project.projectDir)).toStrictEqual(configBefore);
     expect(await listFiles(skillsPath(project.projectDir))).toStrictEqual(skillDirsBefore);
     expect(await readTestFile(project.brokenMetadataPath)).toBe(brokenMetadataBefore);
@@ -132,7 +127,6 @@ describe("installed skill with unparseable metadata.yaml", () => {
       EXIT_CODES.ERROR,
     );
 
-    // doctor is read-only: config and filesystem must be byte-identical after.
     expect(await loadConfigOrFail(project.projectDir)).toStrictEqual(configBefore);
     expect(await listFiles(skillsPath(project.projectDir))).toStrictEqual(skillDirsBefore);
   });

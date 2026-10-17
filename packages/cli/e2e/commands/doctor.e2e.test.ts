@@ -15,11 +15,7 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
-/**
- * The operational rows whose every check needs a loadable config. `doctor` skips
- * all of them together, so naming them is what tells a skip apart from a report
- * that stopped early.
- */
+/** Skipped together, so naming them tells a skip from a report that stopped early. */
 const CONFIG_DEPENDENT_ROWS = [
   STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED,
   STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED,
@@ -48,8 +44,6 @@ describe("doctor command", () => {
     expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
     expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_NOT_FOUND);
 
-    // Every row that needs a config is skipped, and the one that does not is
-    // still run — otherwise "skipped" cannot be told from "the report stopped".
     for (const row of CONFIG_DEPENDENT_ROWS) {
       expect(stdout).toMatch(
         new RegExp(
@@ -59,13 +53,7 @@ describe("doctor command", () => {
     }
     expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);
 
-    // The count, not the word: `toContain("error")` matches any text carrying it,
-    // including a skill id or a path.
-    //
-    // It went from 6 to 7 with the Placements Offered row, which is deliberately NOT among the
-    // config-dependent rows above: a directory with no config has nothing configured that no host
-    // can place, so the row answers truthfully rather than standing down. A config that exists and
-    // cannot be PARSED is the case it degrades on, and that is the Config row's finding.
+    // The count, not the word: `toContain("error")` matches any id or path.
     expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 7 passed, 0 warnings, 1 error`);
     expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_CREATE_CONFIG);
   });
@@ -101,19 +89,15 @@ describe("doctor command", () => {
   });
 
   describe("corrupt config file", () => {
-    // What the finding says, and why the operational layer is absent from it, is
-    // doctor-corrupt-config.e2e.test.ts's subject. This one keeps its original claim: the run
-    // survives the file and still produces a report.
     it("should not crash and should report config error with corrupt config.ts", async () => {
       tempDir = await createTempDir();
 
-      // writeProjectConfig() can only emit a config the product would have written, so the
-      // unparseable one goes through the error-path writer instead.
+      // writeProjectConfig() emits only valid configs, so the unparseable one uses the error-path
+      // writer.
       await writeCorruptConfig(tempDir, renderUnparseableConfigTs());
 
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
-      // Doctor should not crash -- it should report a config error
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_UNREADABLE);
       expect(stdout).toContain(FILES.CONFIG_TS);
@@ -125,7 +109,6 @@ describe("doctor command", () => {
     it("should validate global installation when no project config exists", async () => {
       tempDir = await createTempDir();
 
-      // Create a "global home" directory with valid .agents-inc/claude/config.ts
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(
         globalHome,
@@ -136,11 +119,9 @@ describe("doctor command", () => {
         }),
       );
 
-      // Create a project directory WITHOUT config
       const projectDir = path.join(tempDir, "project");
       await mkdir(projectDir, { recursive: true });
 
-      // Run doctor with HOME pointing to globalHome
       const { exitCode, stdout } = await CLI.run(
         ["doctor"],
         { dir: projectDir },
@@ -149,7 +130,6 @@ describe("doctor command", () => {
         },
       );
 
-      // Doctor should detect the global config and validate it
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);

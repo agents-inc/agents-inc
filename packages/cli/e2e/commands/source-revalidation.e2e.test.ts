@@ -11,42 +11,14 @@ import { cleanupTempDir, createTempDir, writeProjectConfig } from "../helpers/te
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * A remote source is revalidated on every load, so a marketplace that moved on is
- * picked up by the next command with no flag asked of the user.
- *
- * The `--refresh` flag this replaced put the freshness question to the person least
- * able to answer it: a user cannot know the marketplace published something, so the
- * flag was either passed always (and every load paid a full download) or never (and
- * the cache never moved). The CLI asks instead — one conditional request per source
- * per run — and only downloads when the answer is yes.
- *
- * WHY AN HTTP TARBALL AND NOT A LOCAL PATH. Local sources are read live and never
- * cached, so the staleness this file is about cannot occur for one. Only a remote is
- * cached, and only a served tarball lets a spec decide when the ETag moves — which is
- * the whole mechanism under test.
- *
- * WHAT THE ASSERTIONS COVER. `search` is a read-only browse: it writes no config and
- * installs nothing, so its two surfaces are what it printed and what it asked the
- * server for. The request log is the proof-of-execution half — an unchanged source
- * that is served from cache must still show the one HEAD that established that, and
- * must show no GET, or the spec would pass equally against a CLI that revalidated
- * nothing and against one that re-downloaded every time.
- *
- * ONE COMMAND, TWO LOADS — AND WHICH ASSERTION CARRIES THE RED. `search` loads its
- * source twice: once for the matrix, once for the marketplace label. Everything the
- * revalidation decides is therefore owed once per command, not once per load, and the
- * repeated-line assertions below are what hold that. The request log cannot hold it
- * for the changed arm under THIS fixture: the source is served over http, for which
- * `getGigetCacheDir` returns undefined and giget's own tarball cache is never cleared,
- * so a second download of the same run re-extracts what giget already holds and shows
- * up as extra HEADs rather than a second `GET 200`. Do not simplify the doubled-line
- * assertions down to a GET count — against a `github:` source the same defect is a
- * full duplicate download, and here it is only visible in what the user was told.
+ * A remote source is revalidated on every load with one conditional request, downloading only when
+ * it changed. A served tarball, since local sources are never cached. `search` loads its source
+ * twice, so revalidation lines are owed once per command; the doubled-line assertions hold that,
+ * and a GET count cannot here.
  */
 
 const SPARE = E2E_SKILL["visual-regression"];
 
-/** Every request one run made, as the fixture recorded them. */
 type RequestLog = string[];
 
 describe("remote source revalidation", () => {
@@ -70,8 +42,7 @@ describe("remote source revalidation", () => {
     after = await createE2ESource();
     server = await startTarballSourceServer(before.sourceDir);
     projectDir = await createTempDir();
-    // The installation names the server as its source: `search` has no flag and reads no
-    // environment override — naming a source is `init`'s decision, and this stands for it.
+    // `search` has no source flag or env, so the config names the server.
     await writeProjectConfig(projectDir, { name: "revalidation-fixture", marketplace: server.url });
 
     const search = (query: string) => CLI.run(["search", query], { dir: projectDir });

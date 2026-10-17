@@ -24,27 +24,14 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js";
 
 /**
- * `uninstall` from an installation this suite actually made.
- *
- * Every existing uninstall spec starts from a `ProjectBuilder`-written config, so
- * the suite could prove uninstall removes what a fixture wrote and never that it
- * removes what `init` installs. The difference is not cosmetic: a fixture writes
- * one scope's files, and a real install writes a global config, a project config,
- * a `config-types.ts` beside each, ejected skill directories and compiled agents
- * — the removal plan has to name all of them or leave the user half-uninstalled.
- *
- * The dual-scope spec is where the four surfaces are asserted in both forms at
- * once: gone at the scope the command ran in, and unchanged at the scope it must
- * not have touched. "The global install survived" is a claim, and an absent
- * assertion satisfies it for free. The single exception is stated as an equality
- * rather than tolerated: a project uninstall deregisters that project from the
- * global `projects[]` registry, and nothing else about the global config moves.
+ * `uninstall` from an installation `init` actually made: everything goes at the scope it ran in,
+ * and the other scope is unchanged except for the project's deregistration from `projects[]`.
  */
 
-/** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
+/** The loader throws while evaluating this file. */
 const SYNTAX_ERROR = `export default {{{ not valid typescript`;
 
-/** An agent file the user wrote, carrying no provenance marker — never this CLI's to delete. */
+/** Carries no provenance marker, so it is never this CLI's to delete. */
 const HAND_WRITTEN_AGENT = "my-custom-agent";
 
 describe("uninstall removes a from-scratch install, scope by scope", () => {
@@ -77,8 +64,7 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
 
       await installE2EStackGlobally(store, fakeHome);
 
-      // Everything the run must remove is there beforehand — otherwise the
-      // post-conditions are satisfied by a run that removed nothing.
+      // Present beforehand, or a run that removed nothing would satisfy the post-conditions.
       expect((await listFiles(skillsPath(fakeHome))).length).toBeGreaterThan(0);
       expect(Object.keys(await readCompiledAgents(fakeHome)).length).toBeGreaterThan(0);
       expect(await fileExists(configTsPath(fakeHome))).toBe(true);
@@ -90,18 +76,14 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
         { env: { HOME: fakeHome } },
       );
 
-      // Surface 2: the plan is printed before anything is removed, and it names
-      // the config manifest — a removal the user cannot see is one they cannot stop.
+      // The plan is printed before anything is removed, and names the config manifest.
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
       expect(output).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
       expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-      // Surfaces 1 and 3: skills, compiled agents and the config manifest go.
       await expectCleanUninstall(fakeHome, { removeConfig: true });
-      // Surface 4: the generated type surface goes with the config it describes —
-      // a config-types.ts outliving its config.ts is a file whose aliases name an
-      // installation that no longer exists.
+      // A config-types.ts outliving its config.ts names an installation that no longer exists.
       expect(
         await fileExists(configTypesTsPath(fakeHome)),
         "config-types.ts must not outlive the config it was generated from",
@@ -116,9 +98,7 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       env = await createDualScopeEnvFromSeed(store);
       const { fakeHome, projectDir } = env;
 
-      // The global side, captured on all four surfaces before the project-scope
-      // run — each snapshot is checked non-empty, or "unchanged" would hold
-      // trivially for a scope that had nothing in it.
+      // Each snapshot is checked non-empty, or "unchanged" would hold trivially.
       const globalAgentsBefore = await readCompiledAgents(fakeHome);
       const globalSkillsBefore = (await listFiles(skillsPath(fakeHome))).sort();
       const globalConfigBefore = await loadConfigOrFail(fakeHome);
@@ -142,14 +122,11 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-      // The project half is gone on every surface.
       await expectCleanUninstall(projectDir, { removeConfig: true });
       expect(await fileExists(configTypesTsPath(projectDir))).toBe(false);
       await expectNoSourceFolder(projectDir, "the project half is gone on every surface");
 
-      // The global half is untouched on every surface. Byte comparisons, not
-      // existence checks: a rewrite that kept the files but changed what they
-      // declare passes every "still there" assertion.
+      // Byte comparisons: a rewrite that kept the files but changed them passes existence checks.
       expect(
         await readCompiledAgents(fakeHome),
         "a project uninstall must not rewrite the global compiled agents",
@@ -158,12 +135,8 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
         (await listFiles(skillsPath(fakeHome))).sort(),
         "a project uninstall must not remove globally installed skills",
       ).toStrictEqual(globalSkillsBefore);
-      // The one intended change, stated exactly rather than tolerated: the
-      // project deregisters itself so future global edits stop propagating into
-      // a directory that no longer has an installation. Comparing the whole
-      // config against the before-state with only that field moved is what makes
-      // this both the "nothing else changed" assertion and the proof that the
-      // deregistration path fired at all.
+      // The one intended change: the project deregisters itself. Comparing the whole config with
+      // only that field moved proves both "nothing else changed" and that deregistration fired.
       expect(
         await loadConfigOrFail(fakeHome),
         "a project uninstall must deregister the project and change nothing else in the global config",
@@ -188,15 +161,12 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       const agentsBeforeUninstall = await readCompiledAgents(fakeHome);
       expect(Object.keys(agentsBeforeUninstall).length).toBeGreaterThan(0);
 
-      // A file the user wrote, in among the ones `init` compiled. It is the control for the
-      // sweep below: with no config to consult, "removed everything in the directory" and
-      // "removed what this CLI compiled" are the same claim until one file is neither.
+      // Control for the sweep below: with no config, "removed everything" and "removed what this
+      // CLI compiled" are the same claim until one file is neither.
       await writeAgentFile(fakeHome, HAND_WRITTEN_AGENT, { frontmatter: true });
       const handWrittenFile = path.join(agentsPath(fakeHome), `${HAND_WRITTEN_AGENT}.md`);
       const handWrittenBefore = await readTestFile(handWrittenFile);
 
-      // The state a user most needs to uninstall from, reached the way they reach
-      // it: a real installation whose config stopped loading.
       await writeCorruptConfig(fakeHome, SYNTAX_ERROR);
 
       const { exitCode, output } = await CLI.run(
@@ -212,8 +182,6 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       ).toContain(STEP_TEXT.UNINSTALL_GLOBAL_CONFIG_UNREADABLE);
       expect(output).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-      // The manifest and the ejected skills still go, which is the whole reason
-      // the command tolerates the fault instead of aborting.
       expect(await fileExists(configTsPath(fakeHome))).toBe(false);
       expect(await fileExists(configTypesTsPath(fakeHome))).toBe(false);
       await expectNoSourceFolder(
@@ -222,15 +190,8 @@ describe("uninstall removes a from-scratch install, scope by scope", () => {
       );
       await expect({ dir: fakeHome }).toHaveNoLocalSkills();
 
-      // And so do the compiled agents, which the config is no longer needed to name: `init`
-      // compiled every one of them, so every one carries the provenance marker, and the plan
-      // claims them on that authority instead of the config's. The degradation this used to
-      // pin — agent files left behind referencing skills that are gone — is what the marker
-      // was added to end.
-      //
-      // Both halves are asserted against the plan the user was shown as well as against disk,
-      // because the plan is the promise and the files are only the outcome: it names the
-      // compiled agents under the removals AND names the one it is leaving, with the reason.
+      // Compiled agents carry the provenance marker, so the plan claims them without the config.
+      // Asserted against the plan shown and against disk: it names the removals and the one kept.
       expect(output).toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
       expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_ONE);
       expect(output).toContain(STEP_TEXT.UNINSTALL_AGENTS_KEPT_REASON);

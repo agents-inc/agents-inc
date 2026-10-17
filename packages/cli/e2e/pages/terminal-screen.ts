@@ -1,21 +1,12 @@
 import { pollUntil } from "../helpers/test-utils.js";
 import type { TerminalSession } from "../helpers/terminal-session.js";
 
-/**
- * oclif's refusal for a flag the command does not declare. A session that printed it
- * has already exited, so every wait below would burn its whole budget — 45s a piece —
- * before reporting a timeout that says nothing about the cause. Seen once, the wait
- * fails immediately and quotes the refusal instead.
- */
+// oclif's unknown-flag refusal: the session has exited, so waits fail fast instead of timing out.
 const PARSE_REFUSAL = "Nonexistent flag";
 
 export class TerminalScreen {
   constructor(private session: TerminalSession) {}
 
-  /**
-   * Polls like {@link pollUntil}, but abandons the wait the moment the session shows a
-   * parse refusal — a frame that will never paint is not worth waiting for.
-   */
   private async waitUntil(
     isSatisfied: () => boolean,
     timeoutMs: number,
@@ -41,7 +32,6 @@ export class TerminalScreen {
     );
   }
 
-  /** Auto-retrying wait for text in the full output (xterm buffer). */
   async waitForText(text: string, timeoutMs: number): Promise<void> {
     await this.waitUntil(
       () => this.session.getFullOutput().includes(text),
@@ -55,7 +45,6 @@ export class TerminalScreen {
     );
   }
 
-  /** Auto-retrying wait for text in raw PTY output (no xterm processing). */
   async waitForRawText(text: string, timeoutMs: number): Promise<void> {
     await this.waitUntil(
       () => this.session.getRawOutput().includes(text),
@@ -68,7 +57,6 @@ export class TerminalScreen {
     );
   }
 
-  /** Auto-retrying wait for either of two texts in the full output. */
   async waitForEither(textA: string, textB: string, timeoutMs: number): Promise<void> {
     await this.waitUntil(
       () =>
@@ -84,21 +72,15 @@ export class TerminalScreen {
     );
   }
 
-  /**
-   * Delegates to {@link TerminalSession.getScreen}, so it returns scrollback PLUS the viewport
-   * rather than the visible area alone — safe for positive assertions about current content,
-   * unsound for absence. See that method's own comment for the range and the consequence.
-   */
+  // Scrollback plus viewport: sound for presence assertions, unsound for absence.
   getScreen(): string {
     return this.session.getScreen();
   }
 
-  /** Get all output including scrollback. */
   getFullOutput(): string {
     return this.session.getFullOutput();
   }
 
-  /** Get raw PTY output with ANSI stripped. */
   getRawOutput(): string {
     return this.session.getRawOutput();
   }

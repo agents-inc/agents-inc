@@ -26,10 +26,8 @@ import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 
 /**
- * A source switch driven from a PROJECT context, applied to skills that live at
- * GLOBAL scope: the recorded source and the on-disk install mode must not diverge. What keeps
- * the check from being vacuous is hono — the project-owned half the run genuinely does switch,
- * asserted first, which proves the source-switch path fired at all.
+ * A source switch from a PROJECT context over GLOBAL-scope skills must not let the recorded source
+ * and the on-disk install mode diverge. hono, the project-owned half, proves the switch fired.
  */
 
 const REACT_ID = E2E_SKILL.react.id;
@@ -70,8 +68,6 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       currentTempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      // Phase A: init at HOME against the plugin marketplace — every skill is
-      // global-scoped and plugin-sourced.
       await installFromSeed(
         store,
         "Plugins1",
@@ -80,8 +76,7 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
         pluginSource.sourceDir,
       );
 
-      // Phase B: establish a real project installation. hono moves G->P; sources stay
-      // plugin, so no source switch has happened yet.
+      // hono moves G->P; sources stay plugin, so no switch has happened yet.
       const project = { dir: projectDir, home: fakeHome };
       await installFromSeed(
         store,
@@ -91,15 +86,12 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
         pluginSource.sourceDir,
       );
 
-      // Pre-state: react is global, plugin-sourced, registered at user scope, and
-      // has no ejected copy under $HOME.
       const reactBefore = (await readAllSkillEntries(fakeHome)).find(
         (s) => s.id === REACT_ID && s.scope === "global" && s.excluded !== true,
       );
       expect(reactBefore, "global config must carry an active global react entry").toBeDefined();
       if (!reactBefore) return;
-      // The label recorded for the marketplace source (distinct from the
-      // marketplace.json name used to build plugin refs).
+      // Distinct from the marketplace.json name used to build plugin refs.
       const pluginSourceLabel = reactBefore.origin;
       expect(pluginSourceLabel, "react must start plugin-sourced").not.toBe(EJECT_SOURCE);
       expect(
@@ -108,11 +100,9 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
       ).toBe(false);
       await expect({ dir: fakeHome }).toHavePluginInRegistry(reactPluginRef, "user");
 
-      // Phase C: from the PROJECT directory, every source local.
       await applyFromSeed(store, "Ejected1", e2eStackPayload(DUAL_SCOPE), project);
 
-      // Proof the source-switch path fired: the PROJECT-scoped skill, which the
-      // project genuinely owns, records eject and has its copied directory.
+      // Proof the source-switch path fired, on the skill the project owns.
       const projectSkills = await readAllSkillEntries(projectDir);
       const honoAfter = projectSkills.find((s) => s.id === HONO_ID && s.scope === "project");
       expect(honoAfter?.origin, "project-owned hono must record the eject switch").toBe(
@@ -123,7 +113,6 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
         "project-owned hono must have an ejected copy in the project tree",
       ).toBe(true);
 
-      // The defect: the global-scoped skill. Config and disk must agree.
       const reactAfter = (await readAllSkillEntries(fakeHome)).find(
         (s) => s.id === REACT_ID && s.scope === "global" && s.excluded !== true,
       );
@@ -139,15 +128,13 @@ describe.skipIf(!claudeAvailable)("project-context source switch on global-scope
         "global-scoped react: the install mode on disk under $HOME must match the source recorded in the global config.ts",
       ).toBe(reactAfter.origin);
 
-      // The plugin registry must agree with the same recorded source.
       if (reactAfter.origin === EJECT_SOURCE) {
         await expect({ dir: fakeHome }).not.toHavePluginInRegistry(reactPluginRef, "user");
       } else {
         await expect({ dir: fakeHome }).toHavePluginInRegistry(reactPluginRef, "user");
       }
 
-      // Both configs must tell the same story about the global entry, and a
-      // global-scoped skill must never be ejected into the project tree.
+      // A global-scoped skill must never be ejected into the project tree.
       const reactInProjectView = projectSkills.find(
         (s) => s.id === REACT_ID && s.scope === "global" && s.excluded !== true,
       );

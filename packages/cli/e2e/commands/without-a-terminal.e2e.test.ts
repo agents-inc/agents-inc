@@ -30,21 +30,13 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * Commands run where there is no terminal — a CI job, a script, a pipe.
- *
- * `init` and `edit` need none: each opens the editor by printing its address, so both exit 0 and
- * write nothing. `uninstall` does need one, for its confirm, so it refuses cleanly rather than
- * dying on Ink's raw-mode error, naming `--yes` — the person answering the confirm in advance —
- * and that run is its control. The dashboard `init` prints over an installation is text and exits
- * 0 as well.
- *
- * `CLI.run` hands the child an inherited stdin, which under vitest is not a terminal, so every run
- * here is the CI case by construction.
+ * With no terminal, `init` and `edit` print the editor address and write nothing; `uninstall`
+ * refuses naming `--yes`, which is its control. Under vitest the inherited stdin is never a
+ * terminal.
  */
 
 const API_DEV = E2E_AGENT["api-developer"].name;
 
-/** A configuration somebody shared: one skill on one sub-agent, both pinned to the project. */
 const SHARED_CONFIGURATION = buildSeedPayload({
   v: PINNED_WIRE_VERSION,
   skills: {
@@ -79,7 +71,6 @@ describe("a command run without a terminal", () => {
     }
   });
 
-  /** A project installed by `init --from` under an empty global HOME. */
   async function installedWithoutATerminal(): Promise<TestEnvironment> {
     const made = await createTestEnvironment({ permissions: false });
     environment = made;

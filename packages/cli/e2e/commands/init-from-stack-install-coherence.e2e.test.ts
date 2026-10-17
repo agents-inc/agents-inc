@@ -41,30 +41,14 @@ import {
 import "../matchers/setup.js";
 
 /**
- * Installing a stack must both land that stack and leave a configuration that
- * type-checks.
- *
- * Two claims were each covered on their own and never together: that a stack's
- * declared roster is the installed one, and that a generated `config.ts` /
- * `config-types.ts` pair holds up under `tsc`. A stack install is exactly where
- * they meet — it is the one flow that writes a non-trivial skill list, an agent
- * list and a `stack` block in a single pass, so a coherence defect between them
- * has nowhere else to show up.
- *
- * All four surfaces are asserted at the scope the install lands in, and the
- * generated pair is checked at BOTH scopes: an install whose global half writes
- * an alias that accepts everything is one where the project half's own aliases
- * are absorbed by it, and neither file looks wrong on its own.
+ * A stack install lands its declared roster and leaves a config pair that type-checks, asserted on
+ * four surfaces. The pair is checked at both scopes, since a permissive global half absorbs the
+ * project's aliases.
  */
 
-/**
- * The generated aliases a stack install fills in. Every one of them is derived
- * from the installed stack, so a bogus literal must be rejected by each — an alias
- * that degraded to `string` accepts the literal and emits no diagnostic at all.
- */
+/** Each alias must reject a bogus literal; one collapsed to `string` emits no diagnostic. */
 const STACK_DERIVED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
-/** Everything an eject-mode install writes into its source folder. */
 const INSTALLED_SOURCE_FOLDER_ENTRIES = ["config-types.ts", "config.ts"];
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -80,8 +64,7 @@ describe("init --from — a stack install lands its roster and type-checks", () 
   beforeAll(async () => {
     source = await createE2ESource();
     store = await startSeedConfigStore();
-    // The web app always sends the expansion: `stackId` is metadata, `assignments` is the data.
-    // This payload IS the E2E source's stack, written out skill by skill, at the default scope.
+    // The web app always sends the expansion: `stackId` is metadata, `assignments` the data.
     store.publish(
       STACKED_ID,
       buildSeedPayload({
@@ -127,13 +110,9 @@ describe("init --from — a stack install lands its roster and type-checks", () 
       );
       expect(result.exitCode, `init failed:\n${result.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // --- Surface 2: what the run recorded. The stack id resolved, so the config assertions
-      // below are about the stack the run says it installed. ---
       expect((await loadConfigOrFail(projectDir)).description).toBe(E2E_STACK_DESCRIPTION);
 
-      // --- Surface 3: the persisted configuration, at both scopes it could have
-      // been written to. Default scope is global, so the skills and agents land
-      // in the global partition and the project records the same roster. ---
+      // Default scope is global, so the skills land in the global partition.
       expect(
         await readActiveAgentNames(projectDir),
         "the project config must name exactly the sub-agents the stack declares",
@@ -147,8 +126,6 @@ describe("init --from — a stack install lands its roster and type-checks", () 
         "the global config must carry exactly the skills the stack assigns",
       ).toStrictEqual(E2E_STACK_SKILL_IDS);
 
-      // --- Surface 1: the compiled agents on disk, compared as a whole roster
-      // rather than searched for names this spec happens to know. ---
       const compiled = await readCompiledAgents(globalHome);
       expect(
         Object.keys(compiled).sort(),
@@ -162,9 +139,7 @@ describe("init --from — a stack install lands its roster and type-checks", () 
         "every skill the stack assigns must be ejected onto disk",
       ).toStrictEqual(E2E_STACK_SKILL_IDS);
 
-      // --- Surface 4: the generated type surface the config is checked against.
-      // First that the config the CLI just wrote accepts itself — a pair that
-      // fails here tells the user their untouched installation is invalid. ---
+      // The config the CLI just wrote must accept itself.
       const globalSourceFolder = path.dirname(configTypesTsPath(globalHome));
       const projectSourceFolder = path.dirname(configTypesTsPath(projectDir));
       expect(await fileExists(configTypesTsPath(globalHome))).toBe(true);
@@ -181,9 +156,7 @@ describe("init --from — a stack install lands its roster and type-checks", () 
         `the project config.ts must type-check against its own config-types.ts.\ntsc output:\n${projectTypecheck.output}`,
       ).toBe(EXIT_CODES.SUCCESS);
 
-      // Then the property the aliases exist for: a value that is not installed
-      // must still be a type error. A pair that accepts its own config AND
-      // everything else has stopped checking anything.
+      // A value not installed must still be a type error.
       const globalProbe = await probeConfigTypesNarrowing(
         globalSourceFolder,
         STACK_DERIVED_ALIASES,
@@ -193,8 +166,8 @@ describe("init --from — a stack install lands its roster and type-checks", () 
         `a bogus literal must not type-check against the global config-types.ts.\ntsc output:\n${globalProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(globalProbe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`, which is the degradation this probe exists to catch.
+      // Each alias, not any: one rejecting while others collapse to `string` is the degradation
+      // caught here.
       expect(
         globalProbe.rejected,
         `every stack-derived alias must reject its bogus literal in the global config-types.ts.\ntsc output:\n${globalProbe.output}`,
@@ -214,8 +187,7 @@ describe("init --from — a stack install lands its roster and type-checks", () 
         `every stack-derived alias must reject its bogus literal in the project config-types.ts.\ntsc output:\n${projectProbe.output}`,
       ).toStrictEqual([...STACK_DERIVED_ALIASES]);
 
-      // Probing writes a file next to config-types.ts and removes it again, so
-      // both trees must be exactly what the install left.
+      // Probing writes and removes a file, so both trees must be as the install left them.
       expect(
         (await listFiles(globalSourceFolder)).sort(),
         "probing must leave the global source folder untouched",

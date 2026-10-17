@@ -37,30 +37,9 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 
 /**
- * `init --from <id>`: how a payload's per-skill `install` and `scope` land on disk, and what a
- * payload naming things this catalog does not have is allowed to do.
- *
- * `install` and `scope` are per SKILL, not per configuration, so one shared id can mix them —
- * and each combination routes files somewhere different: eject copies into a skills directory,
- * plugin registers with the Claude CLI instead, and global sends either to HOME rather than the
- * project. Unknown ids are never fatal: payloads carry catalog slugs precisely so a configuration
- * shared before a rename still installs everything else.
- *
- * Every payload here pins its sub-agent to `scope: "project"` in the `agents` map. A payload that
- * names no agent scope takes the shared selection default and lands in the user's own ~/.claude,
- * which would move the very directories and config halves these assertions read. Saying it on the
- * wire is also what keeps the skill-scope subject discriminating: the agent's destination has to be
- * fixed independently for "a global skill does not drag its agent with it" to mean anything.
- *
- * The report of where an ejected install landed is asserted beside where it did land. The copy
- * line named the skills directory relative to the SCOPE ROOT, so a run from a project that put
- * every skill under HOME printed `Copied 2 skills to .claude/skills/` — the project's own folder,
- * read where the command was typed, and empty. Both scopes are pinned, so a line naming one fixed
- * folder fails one of the two. Every count line also pluralised unconditionally (`Copied 1 skills`,
- * `Compiled 1 agents`), and a positive on the singular alone cannot catch that — `Selected 1 skill`
- * is a substring of `Selected 1 skills` — so those lines are pinned from both sides.
- *
- * Covers Phase 5 scenarios 8, 10 and 11 of the tracker's `--from` matrix.
+ * `init --from`: per-skill `install` and `scope` route files (eject copies, plugin registers with
+ * the Claude CLI, global goes to HOME); unknown ids are skipped, never fatal. Sub-agents are pinned
+ * to the project so skill scope is the only variable.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -68,17 +47,9 @@ const API_DEV = E2E_AGENT["api-developer"].name;
 const UNKNOWN_SKILL_ID = "web-framework-not-in-this-catalog";
 const UNKNOWN_AGENT_NAME = "not-a-sub-agent-either";
 
-/** A sub-agent entry that keeps its agent in the project rather than at the default scope. */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/**
- * The registry the Claude CLI keeps under the HOME it was run with, as a plain
- * map from plugin ref to its installation records.
- *
- * Read as text first and asserted on before parsing: a missing registry file
- * means the install never reached the Claude CLI at all, which is a different
- * (and more interesting) failure than a ref the registry does not carry.
- */
+/** Read as text first: a missing registry means the install never reached the Claude CLI. */
 async function readInstallPaths(home: string, ref: string): Promise<string[]> {
   const registryPath = path.join(home, DIRS.CLAUDE, DIRS.PLUGINS, FILES.INSTALLED_PLUGINS_JSON);
   expect(await fileExists(registryPath), `no plugin registry at ${registryPath}`).toBe(true);
@@ -98,13 +69,8 @@ async function readInstallPaths(home: string, ref: string): Promise<string[]> {
 }
 
 /**
- * Asserts the skill content really landed where the registry says it did.
- *
- * The registry entry and the copied files are two separate acts of
- * `claude plugin install`, and only the second one is the skill. Reading the
- * path back out of the registry (rather than rebuilding the cache layout here)
- * is what makes this an end-to-end check of the install rather than of the
- * CLI's own naming convention.
+ * Reads the path from the registry rather than rebuilding the cache layout, so the install itself
+ * is checked.
  */
 async function expectPluginContentInstalled(home: string, ref: string, skillId: string) {
   for (const installPath of await readInstallPaths(home, ref)) {
@@ -167,8 +133,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // The project config inlines the global entry, so it shows both — with the global one still
-    // marked global rather than silently re-homed into the project.
+    // The project config inlines the global entry, still marked global.
     const projectConfig = await loadConfigOrFail(env.projectDir);
     expect(projectConfig.skills).toStrictEqual([
       ...buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
@@ -176,16 +141,14 @@ describe("init --from <id>: install scopes and unknown ids", () => {
     ]);
     expect(projectConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
-    // The global config owns the global entry, and nothing else: a skill's scope never moves the
-    // sub-agent that holds it, which the payload pinned into the project on its own authority.
+    // A skill's scope never moves the sub-agent that holds it.
     const globalConfig = await loadConfigOrFail(env.fakeHome);
     expect(globalConfig.skills).toStrictEqual(
       buildSkillConfigs([E2E_SKILL.react.id], { scope: "global" }),
     );
     expect(globalConfig.agents).toStrictEqual([]);
 
-    // Exhaustive directory listings, not "contains": a skill copied to BOTH scopes would satisfy
-    // a subset check at either one.
+    // Exhaustive: a skill copied to both scopes would pass a subset check.
     expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([E2E_SKILL.vitest.id]);
     expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([E2E_SKILL.react.id]);
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual([`${WEB_DEV}.md`]);
@@ -218,9 +181,8 @@ describe("init --from <id>: install scopes and unknown ids", () => {
       sourceDir,
     );
 
-    // Skipping is never fatal — a catalog rename must not retroactively break every shared id.
+    // A catalog rename must not break every shared id.
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // Named rather than counted, on both axes: a count cannot be acted on.
     expect(flattenCliOutput(output)).toContain(UNKNOWN_SKILL_ID);
     expect(flattenCliOutput(output)).toContain(UNKNOWN_AGENT_NAME);
 
@@ -263,7 +225,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
     expect(said, "the folder the copies are in, not one spelled from the scope root").toContain(
       `Copied 2 skills to ${skillsPath(env.fakeHome)}/`,
     );
-    // The report's subject guard: the copies really are under HOME, and only there.
+    // Subject guard: the copies are under HOME, and only there.
     expect((await listFiles(skillsPath(env.fakeHome))).sort()).toStrictEqual(
       [E2E_SKILL.react.id, E2E_SKILL.vitest.id].sort(),
     );
@@ -306,8 +268,8 @@ describe("init --from <id>: install scopes and unknown ids", () => {
 
   it("drops a sub-agent switched off, and the assignments naming it", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // The web app never sends `on: false` — it omits an unselected sub-agent entirely. Defensive:
-    // an explicit "off" must win over an assignment that would otherwise select the sub-agent.
+    // The web app omits unselected sub-agents; an explicit `on: false` must still win over an
+    // assignment.
     store.publish(
       "SwitchOff",
       buildSeedPayload({
@@ -331,8 +293,7 @@ describe("init --from <id>: install scopes and unknown ids", () => {
 
     const config = await loadConfigOrFail(env.projectDir);
     expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
-    // The switched-off sub-agent's assignment said `preloaded` — that must not leak onto the
-    // sub-agent that IS installed, and must not mint a stack entry of its own.
+    // The switched-off sub-agent's `preloaded` must not leak or mint a stack entry.
     expect(config.stack).toStrictEqual({
       [WEB_DEV]: { "web-framework": [sa(E2E_SKILL.react.id)] },
     });
@@ -342,10 +303,8 @@ describe("init --from <id>: install scopes and unknown ids", () => {
 });
 
 /**
- * Plugin mode hands the install to the Claude CLI, so these need the real binary. The local E2E
- * source has no marketplace of its own — a payload asking for `install: "plugin"` against it fails
- * on marketplace resolution, which is its own (correct) error rather than anything this path
- * controls — so they run against a built plugin source instead.
+ * Plugin mode needs the real Claude binary and a built plugin source; the local E2E source has no
+ * marketplace.
  */
 describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () => {
   let fixture: E2EPluginSource;
@@ -401,8 +360,8 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
       );
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // "eject" is a source in its own right; anything else names the marketplace it came from,
-      // which is what tells a later uninstall which registry key it owns.
+      // Anything but "eject" names its marketplace, which tells uninstall which registry key it
+      // owns.
       const projectConfig = await loadConfigOrFail(env.projectDir);
       expect(projectConfig.skills).toStrictEqual([
         ...buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global" }),
@@ -410,26 +369,20 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
       ]);
       expect(projectConfig.marketplaceName).toBe(fixture.marketplaceName);
 
-      // A plugin skill is registered with the Claude CLI, never copied — so the project's skills
-      // directory holds nothing, and only the ejected global one reaches HOME.
       await expect({ dir: env.projectDir }).toHaveNoLocalSkills();
       expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([E2E_SKILL.vitest.id]);
 
-      // Three independent witnesses that the plugin really installed, because each
-      // one alone has a passing state the others would catch: the registry record
-      // (written even by an install that copied nothing), the content behind the
-      // path that record names, and the settings entry that makes Claude load it.
+      // Three witnesses, each catching what the others miss: the registry record, the content
+      // behind its path, and the settings entry.
       await expect({ dir: env.fakeHome }).toHavePluginInRegistry(reactRef);
       await expectPluginContentInstalled(env.fakeHome, reactRef, E2E_SKILL.react.id);
       await expect({ dir: env.projectDir }).toHavePlugin(reactRef);
 
-      // And that the CLI said so — the per-skill line, not the "N skill plugins"
-      // count, which reads the same whether one skill installed or none did.
+      // The per-skill line, not the count, which reads the same whether one or none installed.
       const said = flattenCliOutput(output);
       expect(said).toContain(`Installed ${reactRef}`);
 
-      // The two count lines of a mixed install, each about one skill: the copy names the folder
-      // it went to — HOME's, from this project — and neither counts its one as several.
+      // The copy names HOME's folder, and neither count pluralises one.
       expect(said).toContain(`Copied 1 local skill to ${skillsPath(env.fakeHome)}/`);
       expect(said).toContain("Installed 1 skill plugin");
       expect(said).not.toContain("Installed 1 skill plugins");
@@ -442,9 +395,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
     async () => {
       env = await createTestEnvironment({ permissions: false });
       const reactRef = buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName);
-      // The reported shape: `init --from` run at HOME against a real marketplace. The
-      // payload's `scope: "global"` is what maps to the Claude CLI's `user` scope, so
-      // the install is registered for every project rather than for this directory.
+      // `scope: "global"` maps to the Claude CLI's `user` scope.
       store.publish(
         "HomeMode1",
         buildSeedPayload({
@@ -463,8 +414,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
         }),
       );
 
-      // Home scope IS the collapse of project and global onto one directory: cwd,
-      // HOME and the install root are all fakeHome.
+      // At home, cwd, HOME and the install root are all fakeHome.
       const { exitCode, output } = await runInitFrom(
         store,
         "HomeMode1",
@@ -473,8 +423,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
       );
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Payload order, unlike the project case: a home install writes one config
-      // rather than splitting by scope, so nothing re-groups the entries.
+      // A home install writes one config, so entries stay in payload order.
       const homeConfig = await loadConfigOrFail(env.fakeHome);
       expect(homeConfig.skills).toStrictEqual([
         ...buildSkillConfigs([E2E_SKILL.react.id], {
@@ -485,7 +434,6 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
       ]);
       expect(homeConfig.marketplaceName).toBe(fixture.marketplaceName);
 
-      // Only the ejected skill is copied; the plugin one is registered instead.
       expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([E2E_SKILL.vitest.id]);
 
       await expect({ dir: env.fakeHome }).toHavePluginInRegistry(reactRef, "user");

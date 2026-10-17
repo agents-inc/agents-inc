@@ -33,23 +33,16 @@ import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js"
 import "../matchers/setup.js";
 
 /**
- * A config file that exists but cannot be parsed is precisely the state a user needs to uninstall
- * from, so `uninstall` must degrade rather than abort. It previously let `ConfigLoadError` escape
- * `detectUninstallTarget`, killing the command before a single file was removed and leaving the
- * user with no way out except deleting directories by hand.
- *
- * The command now warns and treats the config as absent: only the parts of the plan that need the
- * config degrade (the plugins and compiled agents it named can no longer be identified), while the
- * manifest and CLI-managed skills are still removed and the run still exits successfully.
+ * An unparseable config is the state a user uninstalls from, so `uninstall` warns and degrades: the
+ * manifest and CLI-managed skills still go, and the run succeeds.
  */
 
-/** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
 const SYNTAX_ERROR = renderUnparseableConfigTs();
 
-/** A file that parses cleanly but exports nothing, so the loader gets no config object at all. */
+/** Parses but exports nothing. */
 const NO_DEFAULT_EXPORT = "";
 
-/** Valid TypeScript whose shape the loader schema rejects (`skills` must be an array). */
+/** The schema rejects it: `skills` must be an array. */
 const SCHEMA_VIOLATION = renderSchemaViolatingConfigTs();
 
 describe("uninstall with an unreadable config", () => {
@@ -62,11 +55,7 @@ describe("uninstall with an unreadable config", () => {
     }
   });
 
-  /**
-   * Builds a project whose config.ts is corrupt but whose CLI-managed skill and config-types.ts
-   * companion are intact, then uninstalls it at genuine PROJECT scope (HOME kept distinct from the
-   * project dir, otherwise the command resolves to the global install instead).
-   */
+  /** HOME kept apart from the project, or the command resolves to the global install. */
   async function uninstallWithCorruptProjectConfig(configSource: string) {
     const project = await ProjectBuilder.editable({ forkedFrom: true });
     tempDir = path.dirname(project.dir);
@@ -84,10 +73,6 @@ describe("uninstall with an unreadable config", () => {
     return { project, result };
   }
 
-  /**
-   * Every corruption kind reaches the same guard, so each case asserts the same three things: the
-   * warning naming the degraded plan, a successful exit, and a manifest that is actually gone.
-   */
   async function expectManifestRemovedDespiteWarning(configSource: string) {
     const { project, result } = await uninstallWithCorruptProjectConfig(configSource);
 
@@ -117,15 +102,9 @@ describe("uninstall with an unreadable config", () => {
   });
 
   /**
-   * The removal plan is a promise about what this run is about to do. With no readable config to
-   * name them, the agent files are identified by the provenance marker the compiler stamps into
-   * each one — and this fixture's agent was written by hand, so it carries none and stays. The
-   * plan must therefore say the agent is kept and why, instead of naming its directory under the
-   * removals and then not making one.
-   *
-   * The skills beside them are identified by their own `forked-from` metadata rather than by the
-   * config, so they are still removed and their half of the section is still promised — which is
-   * what makes this an assertion about the agents item rather than about the section wholesale.
+   * With no config, agents are identified by the compiler's provenance marker; this one is
+   * hand-written, so the plan must say it is kept. Skills still go by their own `forked-from`
+   * metadata.
    */
   it("keeps the compiled agents out of the removal plan when nothing identifies them", async () => {
     const project = await ProjectBuilder.editable({ forkedFrom: true });
@@ -162,12 +141,8 @@ describe("uninstall with an unreadable config", () => {
   });
 
   /**
-   * The same state with nothing else CLI-managed on disk. With the agents item gone the
-   * `CLI-managed files:` section has no item left to carry, so the header must go with it — a
-   * header over an empty list promises nothing and reads as a removal all the same.
-   *
-   * `Config:` is the control beneath it: the manifest is identified by its own path rather than by
-   * anything inside it, so that section is still promised and still kept.
+   * With the agents item gone the `CLI-managed files:` header must go too; `Config:` beneath it is
+   * the control.
    */
   it("prints no CLI-managed files section when the kept agents were its only item", async () => {
     tempDir = await createTempDir();
@@ -203,10 +178,8 @@ describe("uninstall with an unreadable config", () => {
   });
 
   /**
-   * A global uninstall cannot prune the registered projects, because the `projects[]` registry
-   * lives in the very config it cannot read. That is the correct outcome — the warning says the
-   * content the config listed may be left behind — so the contract here is that the global manifest
-   * still goes, the run still succeeds, and no other project is touched on the way.
+   * The `projects[]` registry is in the unreadable config, so the global manifest goes and no
+   * project is touched.
    */
   it("removes the global manifest and leaves other projects untouched when the global config is unreadable", async () => {
     tempDir = await createTempDir();
@@ -246,17 +219,12 @@ describe("uninstall with an unreadable config", () => {
       "the global uninstall removed the manifest it could not read, and left no source folder behind",
     );
 
-    // No registry could be read, so nothing may be reported as pruned and the bystander project's
-    // config must come out byte-identical.
+    // Nothing could be read, so nothing is reported pruned.
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_PROJECTS_UPDATED_ONE);
     expect(await readTestFile(configTsPath(otherProject))).toBe(otherConfigBefore);
   });
 
-  /**
-   * The control. A config that is simply absent is a legitimate state, not a corruption, and must
-   * stay silent — this pins that making the corrupt path survivable did not make the clean path
-   * noisy. Without it, a guard that warned unconditionally would satisfy every test above.
-   */
+  /** Control: an absent config stays silent. */
   it("does not warn about an unreadable config when no config file exists at all", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");

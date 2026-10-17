@@ -12,11 +12,7 @@ export type DualScopeEnv = {
   destroy: () => Promise<void>;
 };
 
-/**
- * Read a skill's SkillConfig entries from the project's config.ts via a
- * structural load, sorted deterministically (scope, then excluded flag) so
- * assertions are order-independent.
- */
+// Sorted by scope, then excluded flag, so assertions are order-independent.
 export async function readSkillEntries(
   projectDir: string,
   skillId: string,
@@ -33,54 +29,35 @@ export async function readSkillEntries(
     });
 }
 
-/** Load a scope's config.ts structurally and return its agents array. */
 export async function readAgentEntries(dir: string): Promise<AgentScopeConfig[]> {
   const loaded = await loadInstalledConfig(dir);
   expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
   return loaded ? loaded.config.agents : [];
 }
 
-/** Load a scope's config.ts structurally and return the names of its active agents. */
 export async function readActiveAgentNames(dir: string): Promise<AgentName[]> {
   const loaded = await loadInstalledConfig(dir);
   expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
   return activeAgentNames(loaded?.config.agents ?? []);
 }
 
-/** Load a scope's config.ts structurally and return its full skills array. */
 export async function readAllSkillEntries(dir: string): Promise<SkillConfig[]> {
   const loaded = await loadInstalledConfig(dir);
   expect(loaded, `config.ts must exist at ${dir}`).not.toBeNull();
   return loaded ? loaded.config.skills : [];
 }
 
-/** Load a scope's config.ts structurally and return the ids in its skills array. */
 export async function readConfigSkillIds(dir: string): Promise<string[]> {
   return (await readAllSkillEntries(dir)).map((sc) => sc.id);
 }
 
-/** The temp directory triple a dual-scope test runs against. */
 export type TestEnvironment = {
   tempDir: string;
   fakeHome: string;
   projectDir: string;
 };
 
-/**
- * Creates the temp directory structure for a dual-scope test.
- *
- *   tempDir/
- *     fake-home/
- *       .claude/settings.json
- *       project/
- *         .claude/settings.json
- *
- * `permissions` (default true) writes the two `.claude/settings.json`
- * permission files. Pass `false` for flows that must start with no
- * `.claude` directory at either scope — the only on-disk difference is the
- * presence of those two settings.json files (and the `.claude` dirs holding
- * them).
- */
+// `projectDir` sits inside `fakeHome`; `permissions: false` skips both settings.json files.
 export async function createTestEnvironment(options?: {
   permissions?: boolean;
 }): Promise<TestEnvironment> {

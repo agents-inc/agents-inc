@@ -3,13 +3,7 @@ import { delay, pollUntil } from "../helpers/test-utils.js";
 import { TerminalScreen } from "../pages/terminal-screen.js";
 import { TIMEOUTS, INTERNAL_DELAYS } from "../pages/constants.js";
 
-/**
- * Page object for interactive prompts (the `uninstall` confirmation, the
- * question `init --from` and `edit --from` ask before writing).
- *
- * Wraps TerminalSession + TerminalScreen so test files do NOT import
- * TerminalSession directly.
- */
+// Specs use this rather than importing TerminalSession directly.
 export class InteractivePrompt {
   private session: TerminalSession;
   private screen: TerminalScreen;
@@ -35,13 +29,7 @@ export class InteractivePrompt {
     await this.screen.waitForRawText(text, timeoutMs);
   }
 
-  /**
-   * Waits until `text` is painted or the process has ended, whichever comes first.
-   *
-   * For a spec whose subject is whether a command stops to ask at all. Waiting on the question
-   * alone turns "it never asked" into a timeout naming nothing; this hands the spec a settled run,
-   * so the question's absence fails on the assertion that states it.
-   */
+  // For specs asking whether a command prompts at all: a missing question fails an assertion, not a timeout.
   async waitForTextOrExit(text: string, timeoutMs: number = TIMEOUTS.WIZARD_LOAD): Promise<void> {
     await pollUntil(
       () => this.session.hasExited() || this.session.getFullOutput().includes(text),

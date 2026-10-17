@@ -43,25 +43,10 @@ import type {
 import type { AgentName, ProjectConfig } from "../../src/cli/types/index.js";
 
 /**
- * `edit --from <id>` and a GLOBALLY installed skill the configuration leaves out — who it reaches.
- *
- * A global install is one installation shared by every registered project, so removing one from
- * inside project A would change projects B and C, which the person confirming is not looking at
- * and did not choose to be looking at. The ruling is that a project run does not do it: from a
- * project, `--from` never removes or changes anything global, so the global skill, the global
- * sub-agent and its rows stay, the global installation and the other registered project are
- * byte-identical, and the plan names no global removal and no other project — there is nothing
- * reaching them to name. It does name the global skill it keeps, because the configuration leaves
- * it out. The project's own rows still change, which is what proves the apply ran.
- *
- * Inside the global installation the case is different. The person ran the command at their home
- * directory, the location IS the global scope, so there the configuration is applied to the
- * global install itself and the skill it leaves out is removed — with the ordinary confirm, no
- * second acknowledgement and no enumeration. That half is the permitted counterpart of the
- * project half, and the two stay in one file so they cannot drift apart.
- *
- * Both surfaces are read on each side, because either alone can look right while the other lies:
- * the global `config.ts` declaring a skill, and `~/.claude/skills/<id>` holding it.
+ * `edit --from` and a global skill the configuration leaves out: from a project nothing global is
+ * removed or changed, the global install and the other registered project stay byte-identical, and
+ * the plan names the kept skill. At the home directory the global install itself is edited and the
+ * skill is removed under the ordinary confirm. Both halves stay in one file.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -70,7 +55,6 @@ const PROJECT_APPLY_ID = "GlobalReach1";
 const DECLINE_ID = "GlobalReach2";
 const AT_HOME_ID = "GlobalReach3";
 
-/** One global installation, the two projects registered against it, and their source. */
 type Fixture = {
   tempDir: string;
   home: string;
@@ -78,27 +62,22 @@ type Fixture = {
   projectB: string;
 };
 
-/** The bystander's own sub-agent preloads the GLOBAL skill, so its compiled agent tracks it. */
+/** The bystander's own sub-agent preloads the global skill, so its compiled agent tracks it. */
 const bystanderStack = {
   [WEB_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-/** The global installation's own sub-agent stack, which a project run has to leave as it is. */
 const globalStack = {
   [API_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-/** The compiled project-scope agent a registered project owns. */
 function bystanderAgentPath(dir: string): string {
   return path.join(agentsPath(dir), `${WEB_DEV}.md`);
 }
 
 /**
- * Every tree one run could write across the three scopes: each scope's configs and its content.
- *
- * Deliberately NOT the home directory whole. The update check drops a version cache under
- * `~/.cache/` on any run at all, which is not part of any installation — snapshotting around it
- * is what keeps "nothing moved" a statement about the install rather than about the process.
+ * Not the whole home directory: the update check drops a version cache under `~/.cache/` on any
+ * run.
  */
 function snapshotEveryScope(fixture: Fixture): Promise<Record<string, TreeSnapshotEntry>[]> {
   return Promise.all(
@@ -108,10 +87,7 @@ function snapshotEveryScope(fixture: Fixture): Promise<Record<string, TreeSnapsh
   );
 }
 
-/**
- * The scopes a project run in project A has no business writing: the global installation and the
- * other registered project. Project A itself is left out because the apply rightly changes it.
- */
+/** Project A is left out because the apply rightly changes it. */
 function snapshotGlobalAndBystander(
   fixture: Fixture,
 ): Promise<Record<string, TreeSnapshotEntry>[]> {
@@ -140,16 +116,8 @@ describe("edit --from <id> and a global install the configuration leaves out", (
   });
 
   /**
-   * A real global installation — a config pair at `$HOME`, the skill's own directory under
-   * `~/.claude/skills/`, a global sub-agent — plus two projects registered against it, each
-   * inlining the global rows exactly as a project write leaves them.
-   *
-   * The global copy carries `forkedFrom`, so the round trip owns it: without the stamp it would
-   * read as somebody's own work and be kept for a reason that has nothing to do with this file.
-   *
-   * Every config records `marketplaceName`, as an install from a built marketplace does: the
-   * source publishes a manifest, and a config written without its name is a legacy one that a
-   * project write fills in.
+   * The global copy carries `forkedFrom`, so the round trip owns it; every config records
+   * `marketplaceName`, as a built-marketplace install does.
    */
   async function takeInstallation(): Promise<Fixture> {
     const tempDir = await createTempDir();
@@ -196,7 +164,6 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     return { tempDir, home, projectA, projectB };
   }
 
-  /** A registered project as a project write leaves it: its own row, plus the global ones. */
   function registeredProjectConfig(name: string): FixtureProjectConfig {
     return buildProjectConfig({
       name,
@@ -215,7 +182,6 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     });
   }
 
-  /** A configuration naming the project's own skill alone, at the scope the project holds it. */
   function publishProjectScoped(id: string): void {
     store.publish(
       id,
@@ -231,10 +197,7 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     );
   }
 
-  /**
-   * The same configuration with every entry at GLOBAL scope, which is the only shape the home
-   * directory accepts — a global installation holds only global-scoped content.
-   */
+  /** Every entry global: the only shape the home directory accepts. */
   function publishGlobalScoped(id: string): void {
     store.publish(
       id,
@@ -269,8 +232,7 @@ describe("edit --from <id> and a global install the configuration leaves out", (
       fixture = await takeInstallation();
       publishProjectScoped(PROJECT_APPLY_ID);
 
-      // A real compile, so the artifact a global removal would have invalidated is product
-      // output rather than a hand-written file that could agree with the assertion by accident.
+      // A real compile, so the artifact is product output.
       await runCLI(["compile"], fixture.projectB, { env: { HOME: fixture.home } });
       preEditBystanderAgent = await readTestFile(bystanderAgentPath(fixture.projectB));
       globalConfigBefore = await loadConfigOrFail(fixture.home);
@@ -289,9 +251,7 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
     it("names no global removal and no other project in its plan, only the skill it keeps", () => {
-      // The question matched here is the positive subject guard for the negatives below: the
-      // plan is on screen, and nothing global arrives or leaves, so nothing reaches another
-      // project. The global install's being left as it is, is the byte-identity test below.
+      // The question is the subject guard for the negatives below.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
       expect(
         planned,
@@ -323,7 +283,7 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     it("keeps the skill in the global config and in the global skills directory", async () => {
       const globalConfig = await loadConfigOrFail(fixture.home);
 
-      // Both surfaces, because either alone can look right while the other lies.
+      // Both surfaces: either alone can look right.
       expect(
         globalConfig.skills.map((skill) => skill.id),
         "a project apply must not remove a skill from the global install",
@@ -364,8 +324,7 @@ describe("edit --from <id> and a global install the configuration leaves out", (
       expect(
         config.agents.filter((agent) => agent.scope === "project").map((agent) => agent.name),
       ).toStrictEqual([WEB_DEV]);
-      // The proof the apply ran: the project's own sub-agent now carries the configuration's
-      // skill, which the installation never assigned it.
+      // Proof the apply ran: the project's sub-agent carries the configuration's skill.
       expect(config.stack).toHaveProperty([WEB_DEV, "web-framework"]);
     });
   });
@@ -389,9 +348,7 @@ describe("edit --from <id> and a global install the configuration leaves out", (
         }
 
         expect(exitCode).toBe(EXIT_CODES.CANCELLED);
-        // Not "the global skill survived" — nothing at all moved, at any scope. A decline that
-        // rewrote one config or recompiled one agent would still be a change the user refused,
-        // and the scope it reached is exactly the one nobody was watching.
+        // Nothing at all moved, at any scope.
         expect(await snapshotEveryScope(fixture)).toStrictEqual(before);
       },
       TIMEOUTS.EXTENDED_LIFECYCLE,
@@ -421,9 +378,8 @@ describe("edit --from <id> and a global install the configuration leaves out", (
     }, TIMEOUTS.EXTENDED_LIFECYCLE);
 
     it("asks the ordinary question about the removal, with no second acknowledgement", () => {
-      // The location IS the global scope and the person chose it, so the global skill the
-      // configuration leaves out is planned as an ordinary removal, under the ordinary question —
-      // and the one yes below is all the run waits for.
+      // At home the location is the global scope, so the left-out skill is an ordinary removal
+      // under the ordinary question.
       expect(planned).toMatch(
         new RegExp(`${STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW}[\\s\\S]*${E2E_SKILL.vitest.display}`),
       );

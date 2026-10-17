@@ -44,46 +44,16 @@ import {
 import "../matchers/setup.js";
 
 /**
- * A custom marketplace, from `--marketplace` on the first run to every later command
- * reading it without being told again.
- *
- * `--marketplace` is the whole private-marketplace story: an organisation points one
- * `init` at its own repository and expects the installation to keep answering to
- * it. `eject` RECORDS one (`commands/eject`), but nothing else installed from a
- * custom source and then asked the other commands where they were reading from. The read-only commands are
- * where a silent fallback to the public marketplace would surface first — and
- * would look like success.
- *
- * `search` carries the discriminating negative: a skill the PUBLIC marketplace
- * has and this source does not must not be findable. Asserting only that the
- * custom source's own skills are found passes just as well for a run that merged
- * both catalogues.
- *
- * The refresh leg is honest about what an ejected install can be asked for:
- * `update` names the copies the user owns and reports that there is no
- * marketplace to refresh. The marketplace-refresh SUCCESS branch needs a real
- * registered marketplace and the Claude CLI — it is journey 10's blocked branch
- * and is not re-attempted here.
+ * A custom `--marketplace` install, then every later command reading that source without being
+ * told again. `search` must not find a public-only skill, which a merged catalogue would.
  */
 
-/**
- * A skill the real public marketplace ships and the E2E source does not. The
- * negative that tells "resolved the custom source" apart from "merged in the
- * default one".
- */
+/** Shipped by the public marketplace, not the E2E source. */
 const PUBLIC_ONLY_SEARCH_TERM = "playwright";
 
-/** The aliases an install fills in from whatever source it read. */
 const GENERATED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
-/**
- * Every read-only command that must resolve the source from the configuration
- * rather than from a flag, run against a finished install.
- *
- * Grouped into one helper because the claim is about the SET: a spec that runs
- * `list` alone cannot tell a stored source from a lucky default, and each of
- * these reaches the source through a different path.
- */
+/** Each reaches the source by a different path; the claim is about the set. */
 async function expectCommandsResolveCustomSource(
   project: ProjectHandle,
   sourceDir: string,
@@ -121,20 +91,11 @@ async function expectCommandsResolveCustomSource(
   expect(update.output).toContain(STEP_TEXT.UPDATE_NO_MARKETPLACES);
 }
 
-/**
- * The four-surface check every variant of this arc owes at its install scope.
- *
- * The roster is a parameter because the two variants compile different ones — a stack install
- * compiles what the stack declares, the stackless one the one sub-agent its configuration names —
- * and a single shared expectation would have to be loose enough to accept both.
- */
+/** The roster is a parameter: stack and stackless variants compile different ones. */
 async function expectInstallSurfaces(
   installDir: string,
   expectedAgents: readonly AgentName[],
 ): Promise<void> {
-  // Members, not a count: a count cannot detect a swap — one sub-agent removed and another added
-  // leaves `length` identical — and this arc's whole subject is which roster a CUSTOM source
-  // compiles. `share-round-trip-compiled-bodies` names its roster for the same reason.
   expect(
     Object.keys(await readCompiledAgents(installDir))
       .map((file) => path.basename(file, ".md"))
@@ -155,8 +116,7 @@ async function expectInstallSurfaces(
     `a bogus literal must not type-check against a custom-source install.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
   ).not.toBe(EXIT_CODES.SUCCESS);
   expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
-  // EACH alias, not any: the two above hold while one alias rejects and the others have
-  // collapsed to `string`.
+  // Each alias: the checks above hold while one rejects and the rest collapsed to `string`.
   expect(
     probe.rejected,
     `every alias asked for must reject its bogus literal.\ntsc output:\n${probe.output}`,
@@ -225,8 +185,7 @@ describe("a custom marketplace is stored by init and resolved by every later com
       const result = await runInitFrom(store, STACK_ID, project, sourceDir);
       expect(result.exitCode, `init failed:\n${result.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // Surface 2: the run installed, and never named the built-in catalogue that
-      // belongs to the public marketplace.
+      // Never names the public marketplace's built-in catalogue.
       expect(result.output).toContain(STEP_TEXT.INIT_SUCCESS);
       expect(
         result.output,
@@ -250,7 +209,6 @@ describe("a custom marketplace is stored by init and resolved by every later com
       // Surfaces 1 and 4.
       await expectInstallSurfaces(globalHome, E2E_STACK_AGENTS);
 
-      // Every later command resolves the stored source.
       await expectCommandsResolveCustomSource(project, sourceDir);
     },
   );
@@ -272,8 +230,7 @@ describe("a custom marketplace is stored by init and resolved by every later com
         "a marketplace shipping no stacks must not have the built-ins substituted into it",
       ).not.toContain(BUILT_IN_STACK_DISPLAY);
 
-      // Surface 3: a stackless install stores its source exactly as a stacked one
-      // does — the two differ in what was picked, not in what was remembered.
+      // Stores its source exactly as a stacked install does.
       expect(
         (await loadConfigOrFail(globalHome)).marketplace,
         "a stackless init must record the source it installed from",

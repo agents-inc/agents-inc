@@ -18,31 +18,16 @@ import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * An installed skill whose `metadata.yaml` exists but cannot be read is a hard
- * error under `compile`: the command exits naming WHICH skill is wrong and HOW
- * (the file and the parse reason), and writes nothing.
- *
- * The state it replaces: one pass loaded what the other skipped. `compile`'s
- * skill discovery only checked that `metadata.yaml` EXISTS, so it loaded the
- * skill from its `SKILL.md` frontmatter and compiled agents around it, while the
- * `config-types.ts` regeneration pass in the same run read the file, failed, and
- * skipped the same skill — one run printing `Loaded skill: X` and
- * `Skipping local skill 'X'` about the same file, exiting 0.
- *
- * `search` and `doctor` on the same corrupt file are pinned by
- * `local-skill-invalid-metadata-yaml.e2e.test.ts`: `search` stays usable and
- * names the skill, `doctor` reports it as a content error. This file is
- * `compile`'s half of that contract.
+ * An unreadable metadata.yaml is a hard `compile` error naming the skill, file and parse reason;
+ * nothing is written.
  */
 
-/** Installed into the fixture project. Only the second one gets corrupted. */
 const HEALTHY_SKILL: string = E2E_SKILL.react.id;
 const BROKEN_SKILL: string = E2E_SKILL.vitest.id;
 
-/** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
 
-/** A single token of the `yaml` parser's own reason, safe from output wrapping. */
+/** One token of the `yaml` parser's own reason, short enough to survive wrapping. */
 const PARSE_REASON_TOKEN = "mappings";
 
 type Fixture = {
@@ -91,10 +76,8 @@ describe("compile with an unreadable skill metadata.yaml", () => {
     );
     expect(combined, "the offending skill must be named").toContain(BROKEN_SKILL);
     expect(combined, "the offending file must be named").toContain(fixture.brokenMetadataPath);
-    // Flattened, not shortened: oclif wraps the refusal at the terminal width and
-    // prefixes each continuation with ` ›  `, so this sentence straddles a line break.
-    // A shorter fragment would move the brittleness rather than remove it — it would
-    // also pass on a message that had been truncated.
+    // Flattened, not shortened: oclif wraps with ` › `, and a shorter fragment would also pass on a
+    // truncated message.
     expect(
       flattenCliOutput(combined),
       "the refusal must say what is wrong with the file",

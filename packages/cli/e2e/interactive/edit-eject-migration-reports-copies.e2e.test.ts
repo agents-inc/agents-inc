@@ -19,19 +19,8 @@ import {
 import "../matchers/setup.js";
 
 /**
- * The eject direction of a mode switch, without the Claude CLI.
- *
- * `edit-from-plugin-migration.e2e.test.ts` drives the same switch against a real
- * plugin marketplace and is skipped wherever the Claude binary is absent, so on
- * its own it leaves this behaviour unguarded on those machines. Nothing in the
- * eject direction needs that binary to reach the copies: `executeMigration` copies
- * each skill BEFORE it attempts the plugin uninstall, and the uninstall is
- * best-effort, so the copy count is produced either way.
- *
- * What it must produce with it is the account of the work. The plugin direction
- * narrates per-skill installs and a count; this direction prints its intent and
- * then goes quiet, though `MigrationResult.ejectedSkills` has the answer and is
- * read by nobody.
+ * The eject direction of a mode switch, without the Claude CLI: copies happen before the
+ * best-effort plugin uninstall, so the copy account must be printed either way.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -45,7 +34,6 @@ describe("switching a skill to eject mode reports the copies it made", () => {
   beforeAll(async () => {
     source = await createE2ESource();
     store = await startSeedConfigStore();
-    // The installed skill, asked for as an ejected copy.
     store.publish(
       EJECTED_ID,
       buildSeedPayload({
@@ -75,8 +63,7 @@ describe("switching a skill to eject mode reports the copies it made", () => {
     "names the count of local copies, in the words the command already uses for one",
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
-      // An install whose skill is recorded against a marketplace, so switching it
-      // to eject is a genuine plugin -> eject migration.
+      // Recorded against a marketplace, so eject is a real plugin-to-eject migration.
       const project = await ProjectBuilder.pluginProject({
         marketplace: source.sourceDir,
         skills: [E2E_SKILL.react.id],
@@ -96,21 +83,15 @@ describe("switching a skill to eject mode reports the copies it made", () => {
 
       expect(exitCode, rawOutput).toBe(EXIT_CODES.SUCCESS);
 
-      // Proof of execution: the migration ran, in the eject direction, for one
-      // skill. Without this the count line could be asserted on a run that never
-      // switched anything.
+      // Proof the migration ran, eject direction, one skill.
       expect(rawOutput).toContain(
         `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
       );
-      // …and the copies it performed are named. No destination path: the
-      // migration splits its copies between the project and $HOME by each skill's
-      // own scope, so one directory would misname the other half.
+      // No destination path: copies split between project and HOME by each skill's scope.
       expect(rawOutput).toContain(
         `${STEP_TEXT.COPIED_LOCAL_SKILLS_PREFIX} 1 ${STEP_TEXT.COPIED_LOCAL_SKILLS_SUFFIX}`,
       );
 
-      // Both sides of the state change: the copy is on disk and the config records
-      // the new source.
       await expect(project).toHaveSkillCopied(E2E_SKILL.react.id);
       await expect(project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],

@@ -33,42 +33,28 @@ import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
 import { entryAt, firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
-/** The summary line `build plugins` prints for every skill the E2E source carries. */
 const SKILL_PLUGINS_COMPILED_LINE = `Compiled ${E2E_SKILL_IDS.length} skill plugins`;
 
 /**
- * A name the fixture source's skills do NOT belong to. Their ids carry
- * {@link E2E_MARKETPLACE_NAME}, so publishing under this one is exactly the mistake
- * the namespace validator exists to catch. It keeps {@link E2E_MARKETPLACE_PREFIX}
- * so the stale-registration sweep would still reach it if a run ever published it.
+ * Outside the fixture skills' namespace, so publishing under it trips the namespace validator.
+ * Keeps the E2E prefix so the stale-registration sweep still reaches it.
  */
 const FOREIGN_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}other-marketplace`;
 
-/**
- * The public catalogue's implicit namespace — reserved, and no author's to take.
- * Taken from the constant that names the catalogue rather than spelled out, so the
- * two cannot drift apart into a test that reserves a name nothing else uses.
- */
 const RESERVED_MARKETPLACE_NAME = DEFAULT_PUBLIC_SOURCE_NAME;
 
 /**
- * The name the flag and identity specs below publish under, and the namespace their one plugin
- * therefore carries: `validateSkillIdNamespace` refuses a plugin id outside its marketplace's
- * namespace, which is a different refusal from the ones those specs are about.
+ * The fixture plugin's namespace, so `validateSkillIdNamespace` does not refuse before the refusal
+ * under test.
  */
 const FIXTURE_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}build-marketplace`;
 const FIXTURE_PLUGIN_NAME = `${FIXTURE_MARKETPLACE_NAME}-web-framework-react`;
 
-/** The success line, which the command only reaches with at least one plugin to publish. */
 const MARKETPLACE_GENERATED_LINE = "Marketplace generated with 1 plugin!";
 
 /**
- * One built plugin in the default `dist/plugins` tree — the least a marketplace may hold, since
- * `marketplaceSchema` refuses an empty `plugins` array and `build marketplace` refuses to write one.
- *
- * Hand-written rather than compiled through `build plugins`: every spec that uses it is about a
- * flag or a package.json field, and running the compiler for those would make each of them wait on
- * a fixture source it does not otherwise need.
+ * `marketplaceSchema` refuses an empty `plugins` array, so one plugin is the minimum. Hand-written
+ * to avoid compiling a fixture source.
  */
 async function writeMarketplacePlugin(projectDir: string): Promise<void> {
   await writeTestPluginManifest(
@@ -91,9 +77,7 @@ describe("build commands", () => {
   });
 
   describe("build plugins", () => {
-    // A source with skills in it: an empty directory compiles zero plugins, and
-    // with nothing compiled neither --output-dir nor --verbose has an observable
-    // effect to assert.
+    // An empty source compiles nothing, leaving --output-dir and --verbose nothing to show.
     let source: E2ESource;
 
     beforeAll(async () => {
@@ -147,8 +131,6 @@ describe("build commands", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(customOutputDir);
       expect(stdout).toContain("Plugin compilation complete!");
-      // Echoing the path proves only that the flag was parsed. The plugins
-      // landing there is the behaviour the flag exists for.
       expect((await listFiles(customOutputDir)).sort()).toStrictEqual([...E2E_SKILL_IDS].sort());
       expect(await listFiles(path.join(source.sourceDir, SOURCE_PATHS.PLUGINS_DIST))).toStrictEqual(
         [],
@@ -157,8 +139,8 @@ describe("build commands", () => {
 
     it("should log per-skill compilation lines only under --verbose", async () => {
       const perSkillLinePrefix = `Compiling skill plugin: ${firstElement(E2E_SKILL_IDS)}`;
-      // Its own output directory, so the sibling spec's assertion that the
-      // default `dist/plugins` stayed empty does not depend on test order.
+      // Its own output directory, so the sibling spec's default-directory assertion does not depend
+      // on test order.
       const outputDir = path.join(source.sourceDir, "verbose-plugins");
 
       const quiet = await CLI.run(["build", "plugins", "--output-dir", outputDir], {
@@ -170,8 +152,7 @@ describe("build commands", () => {
 
       expect(quiet.exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(loud.exitCode).toBe(EXIT_CODES.SUCCESS);
-      // Both runs print the header, so the header cannot tell them apart. The
-      // per-skill line is emitted through `verbose()` and is the only difference.
+      // Both runs print the header; only the verbose per-skill line differs.
       expect(loud.stdout).toContain(perSkillLinePrefix);
       expect(quiet.stdout).not.toContain(perSkillLinePrefix);
       expect(quiet.stdout).toContain(SKILL_PLUGINS_COMPILED_LINE);
@@ -279,7 +260,6 @@ describe("build commands", () => {
       tempDir = await createTempDir();
       await writeTestPackageJson(tempDir, {
         name: FIXTURE_MARKETPLACE_NAME,
-        // Object-form author with URL; the schema accepts strings or objects
         author: {
           name: "Jane Doe",
           email: "jane@example.com",
@@ -312,8 +292,6 @@ describe("build commands", () => {
       const collapsed = output.replace(/›/g, " ").replace(/\s+/g, " ");
       expect(collapsed).toContain(RESERVED_MARKETPLACE_NAME);
       expect(collapsed).toContain("reserved");
-      // The way out this command has — `new marketplace` shares the refusal and has neither, so
-      // it offers its own; this is the half that must not be lost to that.
       expect(
         collapsed,
         "the build reads its name off package.json, and --name overrides it",
@@ -348,8 +326,7 @@ describe("build commands", () => {
         expect(collapsed).toContain(FOREIGN_MARKETPLACE_NAME);
         expect(collapsed).toContain(E2E_SKILL.react.id);
         expect(collapsed).toContain(`${FOREIGN_MARKETPLACE_NAME}-${E2E_SKILL.react.id}`);
-        // A skill's id is the `name` in its SKILL.md — metadata.yaml carries none — so that is
-        // the field the way out has to name, as the load-side refusal of the same ids does.
+        // A skill's id is the `name` in its SKILL.md, so that is the field to name.
         expect(collapsed, "the refusal must name the field a skill's id is read from").toContain(
           "Rename each skill directory and the 'name' in its SKILL.md",
         );
@@ -373,14 +350,14 @@ describe("build commands", () => {
     });
 
     describe("a marketplace repository whose own config cannot be read", () => {
-      // Its own directory rather than `tempDir`, which the outer `afterEach` deletes: the two specs
-      // below are one repository's history, a refused build and then a repaired one.
+      // Not `tempDir`, which `afterEach` deletes: the two specs below share one repository's
+      // history.
       let marketplaceDir: string;
       let manifestDir: string;
       let sourceRepoConfigPath: string;
       let previousBuild: Record<string, TreeSnapshotEntry>;
 
-      /** A release after the one the previous build published, so a write would change bytes. */
+      /** A later release, so a write would change bytes. */
       const NEXT_VERSION = "0.2.0";
 
       beforeAll(async () => {
@@ -412,7 +389,7 @@ describe("build commands", () => {
 
         expect(exitCode).toBe(EXIT_CODES.ERROR);
         expect(flattenCliOutput(output)).toContain(STEP_TEXT.CONFIG_LOAD_REASON);
-        // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+        // Compacted: oclif breaks a long path mid-word.
         expect(
           compactCliOutput(output),
           "the refusal names the marketplace's own config",
@@ -452,7 +429,6 @@ describe("build commands", () => {
 
     it("should error naming the missing field when package.json lacks 'version'", async () => {
       tempDir = await createTempDir();
-      // Write a package.json missing the required `version` field
       await writeFile(
         path.join(tempDir, "package.json"),
         JSON.stringify({ name: "no-version", description: "Missing version" }),
@@ -461,8 +437,7 @@ describe("build commands", () => {
       const { exitCode, output } = await CLI.run(["build", "marketplace"], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
-      // oclif wraps error text across lines and inserts " › " prefix on each wrap;
-      // strip wrap markers and collapse whitespace before asserting.
+      // oclif wraps errors with ` › ` prefixes; collapse before asserting.
       const collapsed = output.replace(/›/g, " ").replace(/\s+/g, " ");
       expect(collapsed).toContain("missing required fields");
       expect(collapsed).toContain("version");

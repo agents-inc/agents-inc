@@ -21,17 +21,8 @@ import {
 } from "../helpers/test-utils.js";
 
 /**
- * Install-mode lifecycle E2E tests -- bulk switching.
- *
- * Tests the full flow of switching EVERY skill's install mode mid-lifecycle:
- *   9a: Init local -> edit switch ALL to plugin -> verify plugin state
- *   9b: Init plugin -> edit switch ALL to local -> verify local state
- *
- * These tests require the Claude CLI for plugin install/uninstall operations.
- *
- * Both tests switch the SOURCE of default-scope (global) skills mid-edit, so both
- * phases run as the GLOBAL install: HOME == cwd == projectDir, and all content +
- * config collapse onto projectDir (which every assertion below reads).
+ * Switching EVERY skill's install mode mid-lifecycle, eject to plugin and back. Requires the Claude
+ * CLI. Both run as the global install (HOME === cwd === projectDir).
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -52,7 +43,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
     await cleanupFixture(fixture);
   });
 
-  /** A fresh directory that is both HOME and cwd for every run below. */
   async function globalRoot(): Promise<string> {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -75,7 +65,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         const projectDir = await globalRoot();
         const site = { dir: projectDir, home: projectDir };
 
-        // Phase 1: Init in eject mode
         const initResult = await installFromSeed(
           store,
           "Ejected1",
@@ -93,7 +82,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
           },
         );
 
-        // Phase 2: Edit -- every skill as a plugin
         const editResult = await applyFromSeed(
           store,
           "Plugins1",
@@ -115,9 +103,7 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
           `${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
         );
 
-        // The narration is what the run SAID; the install mode is what it DID, and
-        // that is this file's subject. A plugin-mode skill is registered in
-        // settings.json and its ejected copy is gone from .claude/skills/.
+        // A plugin-mode skill is registered in settings.json and has no ejected copy.
         await expect({ dir: projectDir }).toHavePlugin(
           `${E2E_SKILL.react.id}@${fixture.marketplaceName}`,
         );
@@ -137,7 +123,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
         const projectDir = await globalRoot();
         const site = { dir: projectDir, home: projectDir };
 
-        // Phase 1: Init in plugin mode
         const initResult = await installFromSeed(
           store,
           "Plugins2",
@@ -155,7 +140,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
           },
         );
 
-        // Phase 2: Edit -- every skill ejected
         const editResult = await applyFromSeed(
           store,
           "Ejected2",
@@ -177,13 +161,9 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- bulk switching"
           `${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.EJECT_LOCAL_COPY}`,
         );
 
-        // Same reasoning as the sibling above, in the other direction: the ejected
-        // copy is back on disk and the plugin registration is gone.
         await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
         await expect({ dir: projectDir }).toHaveNoPlugins();
 
-        // HOME, cwd and the install collapse onto projectDir (see the file header), so
-        // that is where the recompile has to land.
         await expect({ dir: projectDir }).toHaveCompiledAgent("web-developer");
       },
     );

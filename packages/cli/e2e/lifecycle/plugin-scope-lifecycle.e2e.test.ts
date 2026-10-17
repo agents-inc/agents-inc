@@ -18,9 +18,8 @@ import {
 } from "../helpers/test-utils.js";
 
 /**
- * Plugin scope lifecycle E2E test: Init with mixed scopes -> Verify agent content -> Compile -> Verify preservation.
- *
- * Requires Claude CLI (plugin mode). Skipped when not available.
+ * Plugin mode with mixed scopes: init, verify agent content, compile, verify it is preserved.
+ * Requires the Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -51,10 +50,6 @@ describe.skipIf(!claudeAvailable)(
       "should init with mixed scopes, verify agent content, and verify preservation",
       { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
       async () => {
-        // ================================================================
-        // Phase 1: Init with web-developer's half global, api-developer's in the project
-        // ================================================================
-
         await createPermissionsFile(fakeHome);
         await createPermissionsFile(projectDir);
 
@@ -70,25 +65,17 @@ describe.skipIf(!claudeAvailable)(
           fixture.sourceDir,
         );
 
-        // P1-B: the run announced the install.
         expect(initRaw).toContain(STEP_TEXT.INIT_SUCCESS);
 
-        // ================================================================
-        // Phase 2: Verify initial state
-        // ================================================================
-
-        // P2-A+B: Config scope split — global has web-developer, project has api-developer
         await expect({ dir: fakeHome }).toHaveConfig({ agents: ["web-developer"] });
         await expect({ dir: projectDir }).toHaveConfig({ agents: ["api-developer"] });
 
-        // --- Scope routing ---
         await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
         await expect({ dir: projectDir }).not.toHaveCompiledAgent("web-developer");
 
         await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
         await expect({ dir: fakeHome }).not.toHaveCompiledAgent("api-developer");
 
-        // --- Agent content assertions ---
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
           contains: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
           notContains: [E2E_SKILL.hono.id],
@@ -99,10 +86,6 @@ describe.skipIf(!claudeAvailable)(
           notContains: [E2E_SKILL.react.id],
         });
 
-        // ================================================================
-        // Phase 3: Run compile and verify scope preserved
-        // ================================================================
-
         const compileResult = await CLI.run(
           ["compile"],
           { dir: projectDir },
@@ -112,13 +95,11 @@ describe.skipIf(!claudeAvailable)(
           EXIT_CODES.SUCCESS,
         );
 
-        // Re-verify scope routing after recompilation
         await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
         await expect({ dir: projectDir }).not.toHaveCompiledAgent("web-developer");
         await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
         await expect({ dir: fakeHome }).not.toHaveCompiledAgent("api-developer");
 
-        // Re-verify content after recompilation
         await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
           contains: [E2E_SKILL.react.id],
           notContains: [E2E_SKILL.hono.id],

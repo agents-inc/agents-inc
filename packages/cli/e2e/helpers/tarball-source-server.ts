@@ -6,38 +6,20 @@ import path from "path";
 import { execa } from "execa";
 
 /**
- * A remote skills source the test controls: one gzipped tarball of a source
- * directory, served over HTTP with an ETag the test decides when to move.
- *
- * A local path is not a substitute. Local sources are read live and never
- * cached, so the whole question this exists to ask — does a load notice that the
- * remote it cached moved on — cannot be asked of one.
- *
- * The served bytes are packed once per {@link TarballSourceServer.publish} and
- * held, so the ETag stays put between publishes. Packing per request would move
- * it on every run (gzip stamps its own header), and every load would look like a
- * change.
+ * A cached remote source whose ETag moves only on `publish` (local sources are never cached).
+ * Packed once per publish: gzip stamps its header, so repacking would move the ETag.
  */
 export type TarballSourceServer = {
-  /** The source value naming this server — an `init --marketplace` value or a stored config source. */
   url: string;
-  /** Serve `sourceDir` from now on, under a new ETag — the source moving on. */
   publish: (sourceDir: string) => Promise<void>;
-  /** Every request the CLI made, in order, as `"<METHOD> <status>"`. */
+  /** In order, as `"<METHOD> <status>"`. */
   requests: string[];
-  /** Stop serving. Further loads see a refused connection. Safe to call twice. */
   close: () => Promise<void>;
 };
 
-/** Tarball name in the served URL. Must not end in `.json` — giget reads those as template info. */
+// Must not end in `.json`: giget reads those as template info.
 const TARBALL_NAME = "source.tar.gz";
 
-/**
- * Serves `sourceDir` as a tarball at `http://localhost:<port>/source.tar.gz`.
- *
- * The archive wraps the directory in one top-level entry, the shape a git host's
- * tarball has and the one giget strips on extract.
- */
 export async function startTarballSourceServer(sourceDir: string): Promise<TarballSourceServer> {
   let body = await packDirectory(sourceDir);
   let etag = etagFor(body);
@@ -57,6 +39,7 @@ export async function startTarballSourceServer(sourceDir: string): Promise<Tarba
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 
   return {
+    // A TCP listener's address() is always an AddressInfo.
     url: `http://localhost:${(server.address() as AddressInfo).port}/${TARBALL_NAME}`,
     requests,
     publish: async (nextSourceDir: string) => {

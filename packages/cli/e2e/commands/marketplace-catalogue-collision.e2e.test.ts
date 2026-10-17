@@ -22,31 +22,20 @@ import { EXIT_CODES, FILES, SOURCE_PATHS, TIMEOUTS } from "../pages/constants.js
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
 
 /**
- * A skill id is the directory the skill installs into, and Claude reads
- * `~/.claude` and `./.claude` together — so two marketplaces naming one id means
- * one silently shadows the other. The namespace rule makes that unrepresentable
- * by construction; this is the guard that catches a marketplace which never ran
- * the build that enforces it.
- *
- * The fixture marketplace publishes in its own namespace, so it is the positive
- * half: if the guard were a blanket refusal of every custom marketplace, the
- * second test here would fail rather than the whole suite going quiet.
+ * Two marketplaces naming one id would shadow each other, so a marketplace republishing a
+ * catalogue-owned id is refused at load. The fixture marketplace in its own namespace is the
+ * permitted half.
  */
 
-/** An id the shipped catalogue owns, asserted against the catalogue below. */
 const CATALOGUE_OWNED_ID = "web-framework-react";
 
-/** The word the refusal has to reach for, since a namespace is the fix. */
+/** The fix is a namespace, so the refusal must say so. */
 const NAMESPACE_REMEDY = "namespace";
 
-/** What `init --from` is asked to install from the colliding marketplace. */
 const STACK_ID = "Collide01";
 
 /**
- * Republishes one of the fixture's skills under an id the public catalogue owns.
- * The id a source registers a skill under is its SKILL.md frontmatter `name`, so
- * rewriting that one file is the whole of what a marketplace which skipped the
- * namespace rule looks like on disk.
+ * A source registers a skill under its SKILL.md `name`, so rewriting that file is the whole defect.
  */
 async function republishUnderCatalogueId(source: E2ESource): Promise<void> {
   const skillMdPath = path.join(
@@ -110,13 +99,13 @@ describe("a marketplace colliding with the public catalogue", () => {
     );
     const output = flattenCliOutput(combined);
     expect(output, "the colliding id must be named").toContain(CATALOGUE_OWNED_ID);
-    // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+    // Compacted: oclif breaks a long path mid-word.
     expect(compactCliOutput(combined), "the marketplace that shipped it must be named").toContain(
       compactCliOutput(collidingSource.sourceDir),
     );
     expect(output, "the refusal must name the fix, not just the fault").toContain(NAMESPACE_REMEDY);
 
-    // The refusal lands during the load, before anything is installed or written.
+    // The refusal lands during the load, before anything is written.
     expect(
       await readTreeSnapshot(projectDir),
       "a refused marketplace must leave the project exactly as it found it",

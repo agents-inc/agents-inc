@@ -30,11 +30,6 @@ import {
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-/**
- * Dual-scope edit lifecycle E2E test -- agent content and config integrity.
- *
- */
-
 describe("dual-scope edit lifecycle -- agent content and config integrity", () => {
   let store: SeedConfigStore;
   let testTempDir: string;
@@ -59,7 +54,6 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
     "Compiled agents contain only their assigned skills",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // Verify both scopes have correct config and compiled agents
       await expectDualScopeInstallation(fakeHome, projectDir, {
         global: {
           skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
@@ -71,8 +65,7 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
         },
       });
 
-      // web-developer (global) carries its own domain's skills alone — under
-      // relevance-scoped assignment the api skill never reaches it.
+      // Under relevance-scoped assignment the api skill never reaches web-developer.
       await expect({ dir: fakeHome }).toHaveAgentFrontmatter("web-developer", {
         skills: [E2E_SKILL.react.id],
       });
@@ -80,7 +73,6 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
         notContains: [E2E_SKILL.hono.id],
       });
 
-      // api-developer (project) mirrors it: its own skill, none of the web ones.
       await expect({ dir: projectDir }).toHaveAgentFrontmatter("api-developer", {
         skills: [E2E_SKILL.hono.id],
       });
@@ -95,12 +87,10 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
     "Cross-cutting meta skills appear in both agents compiled output",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // web-developer (global) contains both cross-cutting meta skills
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
         contains: [E2E_SKILL.reviewing.id, E2E_SKILL["research-methodology"].id],
       });
 
-      // api-developer (project) also contains both cross-cutting meta skills
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
         contains: [E2E_SKILL.reviewing.id, E2E_SKILL["research-methodology"].id],
       });
@@ -108,26 +98,14 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
   );
 });
 
-/**
- * Marketplace name for the plugin fixture, and therefore the exact value the saved
- * config's `origin` field carries for every plugin-installed skill.
- *
- * The fixture's own shared name, not `DEFAULT_PUBLIC_SOURCE_NAME`: a marketplace's
- * name is the namespace its skill ids are written in, and `agents-inc` is the
- * public catalogue's — reserved, and refused by `build marketplace`. The assertions
- * below only need the recorded value to be knowable, which any stable name gives.
- */
+/** Not `agents-inc`: that is the public catalogue's namespace, refused by `build marketplace`. */
 const MARKETPLACE_SOURCE = E2E_MARKETPLACE_NAME;
 
-/** Source value recorded for a skill installed as a local copy rather than a plugin. */
 const EJECT_SOURCE = "eject";
 
 /**
- * Every skill the Phase A global install owns. All seven are plugin-sourced when Phase A ends,
- * and a project init has no authority over any of them, so all seven must still be plugin-sourced
- * — with no local copy under HOME — when Phase B ends. api-framework-hono is on the list: Phase B
- * installs it at PROJECT scope as the project's own ejected copy, which leaves the global install
- * exactly as it was.
+ * Every skill the global install owns, all plugin-sourced. A project init has no authority over
+ * them, so all stay plugin-sourced; hono's project-scope ejected copy leaves the global one as is.
  */
 const GLOBAL_SKILL_IDS = [
   E2E_SKILL.hono.id,
@@ -139,14 +117,12 @@ const GLOBAL_SKILL_IDS = [
   E2E_SKILL.vitest.id,
 ];
 
-/** Order skill entries by id so assertions survive config re-serialization. */
+/** Sorted by id so assertions survive config re-serialization. */
 const sortedById = (entries: SkillConfig[]): SkillConfig[] =>
   [...entries].sort((a, b) => a.id.localeCompare(b.id));
 
-/** The stack at home, every skill installed as a plugin. */
 const PLUGIN_STACK_ID = "PlugStk1";
 
-/** The project's own configuration: the API skill ejected into it, on its own API sub-agent. */
 const PROJECT_HONO_ID = "ProjHon1";
 
 describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservation", () => {
@@ -196,7 +172,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
     "Config split preserves source fields after a project install",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // Phase A: Init global, every skill a plugin from the fixture marketplace
       const phaseA = await runInitFrom(
         store,
         PLUGIN_STACK_ID,
@@ -218,8 +193,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
       );
       const { skills: globalSkillsAfterA, ...globalRestAfterA } = await loadConfigOrFail(fakeHome);
 
-      // Pre-state: every global skill is installed from the marketplace, so the
-      // sources asserted after Phase B are compared against a known start.
       expect(sortedById(globalSkillsAfterA)).toStrictEqual([
         { id: E2E_SKILL.hono.id, scope: "global", origin: MARKETPLACE_SOURCE },
         {
@@ -234,7 +207,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
         { id: E2E_SKILL.vitest.id, scope: "global", origin: MARKETPLACE_SOURCE },
       ]);
 
-      // Phase B: Init the project with its own ejected API skill
       const phaseB = await runInitFrom(
         store,
         PROJECT_HONO_ID,
@@ -256,30 +228,21 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
         ...globalRestAfterB
       } = await loadConfigOrFail(fakeHome);
 
-      // The scope split records each skill's source truthfully, and a project init has no
-      // authority to change the sources of the GLOBAL install it inherits, so the global skills
-      // array comes out of Phase B exactly as Phase A left it.
+      // A project init has no authority over the sources of the global install it inherits.
       expect(sortedById(globalSkillsAfterB)).toStrictEqual(sortedById(globalSkillsAfterA));
 
-      // Filesystem agrees with the recorded source at global scope: nothing global was migrated,
-      // so no global skill has a local copy under HOME.
       for (const skillId of GLOBAL_SKILL_IDS) {
         await expect({ dir: fakeHome }).not.toHaveSkillCopied(skillId);
       }
 
-      // Proof the phase acted at all: hono is the one skill Phase B installs at project scope,
-      // where the project owns it, and its ejected copy lands in the project tree. Without this, every claim above would hold
-      // just as well for a Phase B that did nothing.
+      // Proof the phase acted at all: hono's ejected copy lands in the project tree.
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.hono.id);
 
-      // Registering the project is the one global-config change a project init
-      // is expected to make.
+      // Registering the project is the one global-config change a project init makes.
       expect(trackedProjects, "global config must track the initialised project").toStrictEqual([
         projectDir,
       ]);
 
-      // Nothing else moved: agents, selected agents, domains, stack, name and
-      // source all survive the project install intact.
       expect(
         globalRestAfterB,
         "a project init must not alter any non-skill part of the global config",

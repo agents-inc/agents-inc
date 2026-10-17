@@ -13,11 +13,8 @@ import { CLI } from "../fixtures/cli.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
 /**
- * Project-context compile hint.
- *
- * When the project pass resolves zero project agents but the config still
- * declares global-scope agents, `cc compile` must tell the user where those
- * agents recompile instead of printing a silent "No agents to recompile".
+ * A project compile that resolves no project agents names where the config's global agents
+ * recompile instead.
  */
 describe("compile project-context global-scope hint", () => {
   let tempDir: string;
@@ -56,8 +53,7 @@ describe("compile project-context global-scope hint", () => {
 
     await seedGlobalInstall(globalHome);
 
-    // Project install declares ONLY a global-scoped agent plus a project skill
-    // (so the project pass discovers skills and reaches the compile step).
+    // Only a global agent plus a project skill, so the project pass reaches the compile step.
     await writeProjectConfig(projectDir, {
       name: "project-test",
       skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
@@ -90,7 +86,6 @@ describe("compile project-context global-scope hint", () => {
 
     await seedGlobalInstall(globalHome);
 
-    // Project install has a project-scoped agent that DOES compile in the project pass
     await writeProjectConfig(projectDir, {
       name: "project-test",
       skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],

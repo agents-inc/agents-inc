@@ -22,44 +22,16 @@ import {
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * The six things a Codex agent role file cannot express, reported ONCE per compile.
- *
- * **Why reported at all, rather than quietly not emitted.** A frontmatter field with no Codex
- * expression cannot be guessed at: Codex's deserializer is strict, and one unlisted key drops the
- * WHOLE file. So the renderer omits these — and an omission the user is not told about is a
- * sub-agent whose permission mode, isolation or preloaded skills silently stopped applying. The
- * one that bites hardest today is `tools`: it is a configuration struct on Codex rather than an
- * allowlist, so **the five read-only sub-agents can still edit files there**, which is a fact
- * about the host and not a bug this CLI can fix.
- *
- * Measured against the pinned `@openai/codex` 0.155.1, 2026-09-22, each role file on its own under
- * a pinned HOME and CODEX_HOME with the global config deleted first:
- *
- *     tools = ["Read"]   -> data did not match any variant of untagged enum
- *                           WebSearchToolConfigInput          (whole file dropped)
- *     permissionMode     -> unknown field `permissionMode`    (whole file dropped)
- *     isolation          -> unknown field `isolation`         (whole file dropped)
- *     experimental       -> unknown field `experimental`      (whole file dropped)
- *     skills = ["a"]     -> invalid type: string "a", expected struct BundledSkillsConfig
- *     skills = { enabled = true }                             (accepted — a toggle, not a preload list)
- *
- * **Once per compile, not once per agent and not once per scope.** Sixteen sub-agents times two
- * scopes is thirty-two lines of one fact. The spec counts occurrences rather than asserting
- * presence, because presence is satisfied by thirty-two of them.
- *
- * **Paired with the Claude control in the same file.** Claude expresses all six, so the line must
- * be absent from a Claude run — without that leg, a notice printed unconditionally on every
- * provider reads exactly the same.
- *
- * Written before the Codex agent renderer existed. Red on the absent line.
+ * A Codex compile names each setting Codex cannot express exactly once per run (Codex drops a
+ * whole role file on one unknown key, so these are omitted, and the report is the only record).
+ * A Claude run, which expresses all six, names none.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** A sub-agent entry keeping its agent in the project, so scope is not a second variable. */
+// Pinned to the project so scope is not a second variable.
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/** How many times `needle` appears in `haystack`. */
 function occurrencesOf(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
@@ -85,7 +57,7 @@ describe("a Codex compile reports what Codex cannot express", () => {
     env = undefined;
   });
 
-  /** One ejected skill on one project sub-agent — the smallest payload that compiles an agent. */
+  // The smallest payload that compiles an agent.
   function publishOneAgent(id: string): void {
     store.publish(
       id,

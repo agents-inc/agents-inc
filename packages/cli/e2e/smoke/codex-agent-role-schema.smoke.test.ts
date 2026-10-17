@@ -24,57 +24,22 @@ import {
 } from "../helpers/test-utils.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
-/**
- * **The measurement C5's renderer is built on, encoded so it can stop being true.**
- *
- * Nothing in this file touches our CLI. It plants agent ROLE DEFINITION files by hand and asks the
- * PINNED `@openai/codex` 0.155.1 what it did with them — which is the only way any of these claims
- * can be checked at all, and the reason every one of them was wrong in the first draft of the plan
- * that produced this step.
- *
- * **Why it is a tripwire rather than a red-then-green spec.** These are facts about a third party's
- * deserializer, so they are GREEN the day they are written. Their value is the day they go red: the
- * renderer emits exactly the keys measured here, and one unlisted key drops the whole file, so a
- * Codex release that moves the schema turns sixteen working sub-agents into sixteen silently
- * missing ones with every other test in this repository still passing. The pin is exact
- * (`@openai/codex` is a devDependency at `"0.155.1"`), so this reddens on the day somebody bumps
- * it, which is when it is worth reading.
- *
- * **Calibrated both ways, in every test that uses the roster.** With no role registered,
- * `spawn_agent` has no `agent_type` parameter AT ALL. With one registered, it appears and names
- * the role. Without the negative half an assertion that a role is present cannot tell a working
- * rig from one that is looking in the wrong place — which is exactly how a captured request body
- * with no top-level `tools` key read as "Codex offers no roles" until the tools were found nested
- * inside an `additional_tools` item of `input`.
- *
- * **HOME, CODEX_HOME and the global config, every time.** Codex writes helper binaries under
- * `$CODEX_HOME/tmp/arg0` before it reads an argument, and `codex exec` under a writable sandbox
- * writes `[projects."<cwd>"] trust_level = "trusted"` into the global config ITSELF — so the tool
- * under test sets the independent variable unless every run starts from a deleted config and a
- * read-only sandbox. That contamination has already produced two contradictory measurements in
- * this programme. The machine's own `~/.codex` is checked around every test for the same reason
- * `codex-lane.smoke.test.ts` checks it.
- *
- * NOTE: smoke tests for the Codex CLI binary's agent-role schema, NOT E2E tests for our CLI.
- */
+// The pinned Codex binary's agent-role schema, measured by planting role files by hand: the Codex
+// renderer emits exactly these keys, and one unlisted key drops the whole file. Each roster check has
+// a negative control (no role registered means no `agent_type` parameter at all).
 
-/** The machine's own Codex state tree. Read before and after every test; never written. */
+/** Read before and after every test; never written. */
 const MACHINE_CODEX_HOME = codexHome(os.homedir());
 
-/** The prompt each turn carries. Its content is irrelevant; the request body is the subject. */
 const ANY_PROMPT = "summarise this repository";
 
-/** A control role that is valid by every measurement, so a subject's absence means something. */
+/** Valid by every measurement, so a subject's absence means something. */
 const CONTROL = {
   id: "control-role",
   file: "control.toml",
   body: ['name = "control-role"', 'description = "the control"', 'developer_instructions = "C"'],
 };
 
-/**
- * Every entry under `dir`, the directory itself included, keyed by relative path with its
- * modification time — `{}` when `dir` is absent.
- */
 async function modificationTimesUnder(dir: string): Promise<Record<string, number>> {
   if (!(await directoryExists(dir))) return {};
 
@@ -111,20 +76,11 @@ describe("the agent role schema of the pinned Codex binary", () => {
     ).toStrictEqual(machineCodexBefore);
   });
 
-  /** Writes one role file into this home's global agents directory. */
   async function plantRole(file: string, lines: readonly string[]): Promise<void> {
     await writeFile(path.join(codexHome(home), "agents", file), `${lines.join("\n")}\n`, "utf-8");
   }
 
-  /**
-   * Every startup warning `codex doctor` reports, as one string.
-   *
-   * **Its EXIT CODE is not a verdict and is deliberately not asserted.** `codex doctor --json`
-   * exits 1 in this rig whatever the agent roles look like, because its `auth` check fails with
-   * no Codex credentials — measured on 0.155.1, 2026-09-22, with a role file that was malformed
-   * and again with none at all. What is read instead is the report it still prints: a run that
-   * produced no report at all is caught by the schema guard rather than by the code.
-   */
+  // Exit code not asserted: `codex doctor` exits 1 here regardless, as auth fails without credentials.
   async function startupWarnings(): Promise<string> {
     const doctor = await runCodex(home, ["doctor"], project);
     const reported = JSON.stringify(doctor.json);
@@ -134,7 +90,6 @@ describe("the agent role schema of the pinned Codex binary", () => {
     return reported;
   }
 
-  /** The roles Codex offers the model, as the request body carries them. */
   async function rosterOnTheWire(): Promise<string> {
     mock = await startCodexResponsesMock((_request, requestNumber) =>
       respondWith(requestNumber, (responseId) => [assistantMessage(responseId, "ok")]),
@@ -192,7 +147,6 @@ describe("the agent role schema of the pinned Codex binary", () => {
 
     const sent = await rosterOnTheWire();
 
-    // The control proves the rig was looking; the subject's absence is the measurement.
     expect(sent).toContain(CONTROL.id);
     expect(
       sent,

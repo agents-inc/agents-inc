@@ -22,44 +22,18 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * A project-scoped skill whose CATEGORY the global install does not hold must widen the
- * project's own `Category` union, or the sibling `config.ts` the same run writes stops
- * type-checking against it.
- *
- * `buildProjectTypesExtras` derives `extraCategories` from every active entry of the effective
- * project view and `extraDomains` from those categories, and `generateProjectConfigTypesSource`
- * emits each as `GlobalCategory | …` / `GlobalDomain | …`. The unit tests for that function
- * no-op straight through the widening branch — their mock matrix carries no skill outside the
- * global roster's own categories — so nothing held the emitted text against an install where the
- * two scopes genuinely differ. This is that install.
- *
- * One install that puts react at global scope and hono at project scope produces the divergence
- * directly.
- *
- * The `Domain` union diverges too. A project install adds to the global config only the domains
- * its arriving global skills come from — react's `web` here — while the domains of its own skills
- * stay the project's own. So the global line names `web` alone and the project's extends it with
- * the rest, asserted verbatim for the reason the constants give.
+ * A project-scoped skill in a category the global install lacks widens the project's own
+ * `Category` and `Domain` unions, or the sibling `config.ts` stops type-checking.
  */
 
-/** `origin` recorded for an ejected skill. */
 const EJECT_SOURCE = "eject";
 
-/**
- * The category hono is filed under in the E2E source, and the reason it is the skill this spec
- * picks: it is the only one the fixture ships outside the `web` domain, so it is the only
- * project-scope selection that can name a category the global side does not hold.
- */
+/** The only category the fixture ships outside the `web` domain. */
 const NEW_CATEGORY = "api-api";
 
 /**
- * The union lines the install must emit, verbatim.
- *
- * Verbatim rather than a membership check, because the SHAPE of the emitted alias is the whole
- * subject: a `Category` that had degraded to `GlobalCategory`, to `string`, or to a union that
- * dropped `web-framework` while keeping `api-api` each satisfy `toContain("api-api")`, and each
- * is a different defect. The global pair is the control — an extension is only an extension if
- * the thing it extends lacks the member.
+ * Verbatim: a `Category` degraded to `GlobalCategory`, to `string`, or missing `web-framework`
+ * would each pass a membership check. The global pair is the control.
  */
 const GLOBAL_CATEGORY_LINE = `export type Category = 'web-framework'`;
 const GLOBAL_DOMAIN_LINE = `export type Domain = 'web'`;
@@ -69,11 +43,7 @@ const PROJECT_DOMAIN_LINE = `export type Domain = GlobalDomain | 'api' | 'web'`;
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 
-/**
- * One init in a project directory with no prior global install: react at GLOBAL scope on the
- * global web-developer, hono at PROJECT scope on a project api-developer. That one skill's scope
- * is the whole of the divergence.
- */
+/** Hono's project scope is the whole of the divergence. */
 async function initReactGlobalHonoProject(
   store: SeedConfigStore,
   options: { fakeHome: string; projectDir: string },
@@ -131,8 +101,7 @@ describe("a project-scoped skill in a category the global install lacks widens t
       });
       expect(install.exitCode, `Install failed: ${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // Config side, both scopes. Without this the union assertions below could hold over an
-      // install that never put a skill at project scope at all.
+      // Otherwise the union assertions could hold over an install with nothing at project scope.
       expect(
         await readAllSkillEntries(fakeHome),
         "the global config must hold react alone — the divergence is that it never sees hono",
@@ -145,8 +114,6 @@ describe("a project-scoped skill in a category the global install lacks widens t
         { id: E2E_SKILL.hono.id, scope: "project", origin: EJECT_SOURCE },
       ]);
 
-      // Filesystem side: each skill is copied under the scope its row claims, so the config
-      // describes an install that happened rather than one it merely recorded.
       expect(
         await listFiles(skillsPath(fakeHome)),
         "react must be copied into the global skills dir and nothing else with it",
@@ -159,8 +126,7 @@ describe("a project-scoped skill in a category the global install lacks widens t
       const globalTypes = await readTestFile(configTypesTsPath(fakeHome));
       const projectTypes = await readTestFile(configTypesTsPath(projectDir));
 
-      // The control. `api-api` is genuinely absent from the global union, which is what makes
-      // the project's line below an EXTENSION rather than a restatement.
+      // The control: absent globally, so the project's line is an extension.
       expect(
         globalTypes,
         "the global Category union must not name the project-only category — with it there, the project's extension proves nothing",
@@ -180,10 +146,7 @@ describe("a project-scoped skill in a category the global install lacks widens t
         "the project Domain union must extend GlobalDomain with every domain the effective view derives",
       ).toContain(PROJECT_DOMAIN_LINE);
 
-      // The reason the widening exists, asserted independently of its text: the project's own
-      // config.ts names hono's id and its stack category key, so a `SkillId` that had not been
-      // widened makes the file the CLI just wrote a type error (TS2322) and an unwidened
-      // `Category` makes it TS2353.
+      // Independently of the text: unwidened unions make the written config.ts a type error.
       const typecheck = await typecheckGeneratedConfig(path.dirname(configTypesTsPath(projectDir)));
       expect(
         typecheck.exitCode,

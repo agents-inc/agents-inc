@@ -37,14 +37,11 @@ import { provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import "../matchers/setup.js";
 
 /**
- * The sentence a project-owned fixture skill states for itself, and the whole of what
- * the compiled agent renders as that skill's cue. It differs from every answer a HOME
- * seat can give — the fixture ids are outside the public catalogue, so a catalogue that
- * has not merged this project's local skills answers with the per-category placeholder.
+ * Differs from every HOME answer: fixture ids are outside the public catalogue, so an unmerged
+ * catalogue answers with the placeholder.
  */
 const PROJECT_SKILL_USAGE = "Use when testing E2E scenarios";
 
-/** `origin` recorded for skills a fixture installs as local copies. */
 const EJECT_ORIGIN = "eject";
 
 describe("compile command", () => {
@@ -76,7 +73,6 @@ describe("compile command", () => {
       contains: ["name: api-developer"],
     });
 
-    // Compiled agent should start with YAML frontmatter
     const agentContent = await readTestFile(path.join(agentsPath(project.dir), "web-developer.md"));
     expect(agentContent).toMatch(/^---\n/);
   });
@@ -98,11 +94,8 @@ describe("compile command", () => {
   });
 
   /**
-   * The fixture's own skill has to be a skill the matrix can hold, or every spec that
-   * compiles this project compiles it around a skill nothing can be given. The generated
-   * `Category` union is where that is visible: it is emitted from the categories the
-   * discovered skills actually joined, so a dropped skill leaves it `never` while the
-   * compile still succeeds and still reports the skill as discovered.
+   * The `Category` union is emitted from the categories discovered skills joined, so a dropped
+   * skill leaves it `never` while compile still succeeds.
    */
   it("registers the project's local skill under the category its metadata states", async () => {
     const project = await ProjectBuilder.minimal();
@@ -129,9 +122,7 @@ describe("compile command", () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "empty-project");
     await mkdir(projectDir, { recursive: true });
-    // The config declares a skill that is not on disk: a lost installation, which compile
-    // refuses. A config declaring NO skill compiles its agents as base agents instead —
-    // compile-a-skill-less-installation.e2e.test.ts holds that half.
+    // A declared skill not on disk is a lost installation, which compile refuses.
     await writeProjectConfig(
       projectDir,
       buildProjectConfig({
@@ -146,7 +137,6 @@ describe("compile command", () => {
     expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain(STEP_TEXT.NO_SKILLS_FOUND);
 
-    // No agent files should be created on compile failure
     const agentsDirPath = agentsPath(projectDir);
     expect(
       await directoryExists(agentsDirPath),
@@ -158,8 +148,7 @@ describe("compile command", () => {
     it("should compile with multiple local skills", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      // Declare the agents so the project is a detected installation; the local
-      // skills under test are discovered from disk independently of the config.
+      // Agents declared so the project is a detected installation; local skills come from disk.
       await writeProjectConfig(
         projectDir,
         buildProjectConfig({
@@ -213,10 +202,8 @@ describe("compile command", () => {
         },
       );
 
-      // Both agents must exist with valid YAML frontmatter
       await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
       await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
-      // Agent frontmatter must have name field
       await expect({ dir: projectDir }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
         name: E2E_AGENT["web-developer"].name,
       });
@@ -253,8 +240,7 @@ describe("compile command", () => {
     it("should skip skill with missing metadata.yaml", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      // Declare the agents so the project is a detected installation; the local
-      // skills under test are discovered from disk independently of the config.
+      // Agents declared so the project is a detected installation; local skills come from disk.
       await writeProjectConfig(
         projectDir,
         buildProjectConfig({
@@ -267,7 +253,6 @@ describe("compile command", () => {
         }),
       );
 
-      // Create a valid skill
       await createLocalSkill(projectDir, "web-state-jotai", {
         description: "Valid skill",
         metadata: renderMetadataYaml({
@@ -276,7 +261,7 @@ describe("compile command", () => {
         }),
       });
 
-      // No `metadata` option, so the skill directory holds a SKILL.md and nothing else.
+      // SKILL.md only, no metadata.yaml.
       await createLocalSkill(projectDir, "web-state-mobx", {
         description: "Missing metadata",
         body: "# No Metadata",
@@ -321,10 +306,8 @@ describe("compile command", () => {
     it("should exit with error when .claude/skills/ directory does not exist", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      // Create project with .claude/ but no skills/ subdirectory
       await mkdir(path.join(projectDir, DIRS.CLAUDE), { recursive: true });
-      // The config declares a skill the missing skills/ directory would hold, so compile
-      // reaches the no-skills-found refusal rather than compiling base agents.
+      // Declares a skill, so compile refuses rather than compiling base agents.
       await writeProjectConfig(
         projectDir,
         buildProjectConfig({
@@ -351,7 +334,6 @@ describe("compile command", () => {
       const projectDir = project.dir;
       const agentsDir = agentsPath(project.dir);
 
-      // Place a pre-existing file in the agents directory
       const preExistingFile = "existing-notes.txt";
       await mkdir(agentsDir, { recursive: true });
       await writeFile(path.join(agentsDir, preExistingFile), "pre-existing content");
@@ -362,10 +344,8 @@ describe("compile command", () => {
 
       const outputFiles = await listFiles(agentsDir);
 
-      // Pre-existing file should still be present
       expect(outputFiles).toContain(preExistingFile);
 
-      // Compiled agent files should also be present with correct content
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer"],
       });
@@ -385,20 +365,15 @@ describe("compile command", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
       for (const agentName of MINIMAL_PROJECT_AGENT_NAMES) {
-        // This fixture's config assigns no skill to any sub-agent, so both of the body's
-        // skill lists must be empty — and the one local skill it DOES install, discovered
-        // by the same compile, must not have been swept into either of them. The template
-        // renders the skills note rather than the activation protocol on that arm, which
-        // is what `allPreloaded` reads.
+        // No skill is assigned, so both skill lists are empty and the one discovered local skill
+        // must not be swept in.
         await expect(project).toHaveAgentDynamicSkills(agentName, {
           allPreloaded: true,
           noSkillIds: [MINIMAL_PROJECT_SKILL_ID],
         });
 
-        // The body opens with the provenance marker and then a heading, rather than the
-        // frontmatter terminator being the last thing in the file. This is the half that
-        // says the file is more than its frontmatter; the two claims above are about
-        // what the body then puts in its skill lists.
+        // The body opens with the provenance marker and a heading, so the file is more than
+        // frontmatter.
         const agentContent = await readTestFile(
           path.join(agentsPath(project.dir), `${agentName}.md`),
         );
@@ -416,7 +391,6 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Verify each agent has its own name in frontmatter
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer"],
       });
@@ -424,7 +398,7 @@ describe("compile command", () => {
         contains: ["name: api-developer"],
       });
 
-      // Compare raw content to verify agents are distinct (no matcher for cross-file comparison)
+      // No matcher compares two files, so raw content is compared.
       const webDevContent = await readTestFile(path.join(agentsDir, "web-developer.md"));
       const apiDevContent = await readTestFile(path.join(agentsDir, "api-developer.md"));
       expect(webDevContent).not.toBe(apiDevContent);
@@ -457,9 +431,7 @@ describe("compile command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // The custom skill is the stack's only preloaded assignment, so the parsed
-      // frontmatter's skills list must be exactly it. `contains` on the whole
-      // file cannot tell frontmatter from body and so cannot make this claim.
+      // `contains` on the file cannot tell frontmatter from body.
       await expect({ dir: project.dir }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
         name: E2E_AGENT["web-developer"].name,
         exactSkills: [CUSTOM_PROJECT_SKILL_ID],
@@ -479,9 +451,7 @@ describe("compile command", () => {
     it("should compile from the marketplace the installation recorded", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
-      // Declare the agents so the project is a detected installation; the local
-      // skill under test is discovered from disk independently of the config.
-      // Create an E2E source directory (provides agent definitions + templates)
+      // Agents declared so the project is a detected installation; the local skill comes from disk.
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
 
@@ -498,7 +468,6 @@ describe("compile command", () => {
         }),
       );
 
-      // Create a local skill in the project
       await createLocalSkill(projectDir, E2E_SKILL.pinia.id, {
         description: "Skill for stored-source verification",
         metadata: renderMetadataYaml({
@@ -537,8 +506,7 @@ describe("compile command", () => {
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
 
-      // The home root holds the GLOBAL config. There is no project here, so the
-      // config the run reads is `~/.agents-inc/claude/config.ts` and nothing else.
+      // No project here, so the run reads only the global config.
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(
         globalHome,
@@ -618,8 +586,7 @@ describe("compile command", () => {
       expect(output, "the home root compiles the global installation").toContain(
         "Compiling global agents",
       );
-      // Scoped to the home directory by path: a verbose run also reads the SOURCE
-      // repository's own config, and that one is not global.
+      // Scoped by path: a verbose run also reads the source repository's own config.
       expect(output, "the verbose run names the config it read at the home root").toContain(
         `global config from ${globalHome}`,
       );
@@ -634,9 +601,7 @@ describe("compile command", () => {
       const { sourceDir, tempDir: srcTempDir } = await createE2ESource();
       sourceTempDir = srcTempDir;
 
-      // A home with no installation of its own, so the only config in play is the
-      // project's — the axis is which FILE the source came from, not which scope
-      // the entries in it carry.
+      // A home with no installation, so only the project's config is in play.
       const separateHome = path.join(tempDir, "home");
       await mkdir(separateHome, { recursive: true });
 
@@ -689,7 +654,6 @@ describe("compile command", () => {
     it("should use global installation paths when no project config exists", async () => {
       tempDir = await createTempDir();
 
-      // Create a "global home" directory with .agents-inc/claude/config.ts and .claude/skills/
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(
         globalHome,
@@ -703,7 +667,6 @@ describe("compile command", () => {
         }),
       );
 
-      // Create a local skill in the global home directory
       await createLocalSkill(globalHome, "web-testing-cypress-e2e", {
         description: "Global skill for compile fallback",
         metadata: renderMetadataYaml({
@@ -712,12 +675,10 @@ describe("compile command", () => {
         }),
       });
 
-      // Create a project directory WITHOUT config
       const projectDir = path.join(tempDir, "project");
       await mkdir(projectDir, { recursive: true });
 
-      // Run compile with HOME pointing to globalHome so detectInstallation falls back to global
-      // compile without --output uses detectInstallation() which falls back to global
+      // HOME at globalHome, so detection falls back to the global installation.
       const { exitCode, output } = await CLI.run(
         ["compile"],
         { dir: projectDir },
@@ -725,7 +686,6 @@ describe("compile command", () => {
       );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // When using global installation, dual-pass compile runs the global pass
       expect(output).toContain("Compiling global agents");
 
       await expect({ dir: globalHome }).toHaveCompiledAgentContent(
@@ -738,29 +698,11 @@ describe("compile command", () => {
   });
 
   /**
-   * A compiled sub-agent's `Use when` line is the catalogue's own words for the skill,
-   * and WHICH catalogue answers is decided by the matrix seated when the agent is
-   * rendered. A registered project's own local skills — and the skills of the
-   * marketplace ITS config names — are in that project's catalogue and in nobody
-   * else's.
-   *
-   * A global compile fans the global config out to every registered project and
-   * recompiles their agents, so that fan-out has to seat each project's own catalogue.
-   * Seated at HOME instead, every project-local skill's stated `usageGuidance` is
-   * replaced by the per-category placeholder, and the project's next `compile` writes
-   * it back — two commands that undo each other for as long as they are both run, each
-   * reporting a real rewrite.
-   *
-   * Which assertion carries the red: the project compile that FOLLOWS the global one
-   * reporting `1 project agents rewritten`. That is the ping-pong stated as an outcome
-   * rather than as a diff.
-   *
-   * Everything is arranged inside the `it` rather than in a `beforeAll`: each run
-   * mutates the tree the next one reads, so a retry against state a previous attempt
-   * already rewrote would compare the wrong pair of runs.
+   * A global fan-out must seat each registered project's own catalogue, or project-local
+   * `usageGuidance` becomes the placeholder and the next project compile writes it back. Arranged
+   * inside the `it`: each run mutates what the next reads.
    */
   describe("a global fan-out into a registered project", () => {
-    /** The project pass's summary for a run that found its one agent already correct. */
     const PROJECT_PASS_ALL_UNCHANGED = `0 project ${STEP_TEXT.AGENTS_REWRITTEN}, 1 ${STEP_TEXT.UNCHANGED}`;
 
     it(

@@ -26,10 +26,8 @@ import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config
 import "../matchers/setup.js";
 
 /**
- * Uninstall now always removes the CLI config manifest (.agents-inc/claude/config.ts +
- * config-types.ts, and the directory when it empties) and deregisters the
- * project from the global config's `projects` registry. The `--all` flag that
- * previously gated manifest removal no longer exists.
+ * Uninstall always removes the config manifest (config.ts, config-types.ts and the emptied
+ * directory) and deregisters the project from the global registry.
  */
 describe("uninstall config manifest removal", () => {
   let tempDir: string;
@@ -54,12 +52,10 @@ describe("uninstall config manifest removal", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // The plan lists the manifest before removing it, in the folder this install is on
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
     expect(stdout).toContain(".agents-inc/claude");
     expect(stdout).toContain(FILES.CONFIG_TS);
 
-    // Both manifest files are gone and the emptied directory is removed
     expect(await fileExists(configTsPath(projectDir))).toBe(false);
     expect(await fileExists(configTypesTsPath(projectDir))).toBe(false);
     await expectNoSourceFolder(
@@ -85,7 +81,7 @@ describe("uninstall config manifest removal", () => {
       }),
     );
 
-    // Proof-of-execution: the project is registered before uninstall
+    // Proof of execution: the project is registered before uninstall.
     const before = await loadConfigOrFail(globalHome);
     expect(before.projects).toContain(realProjectDir);
 
@@ -105,7 +101,7 @@ describe("uninstall config manifest removal", () => {
     const project = await ProjectBuilder.editable({ forkedFrom: true });
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
-    // A user-owned .claude/settings.json keeps .claude/ alive after uninstall
+    // A user-owned settings.json keeps .claude/ alive.
     await createPermissionsFile(projectDir);
 
     const { exitCode } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
@@ -116,7 +112,6 @@ describe("uninstall config manifest removal", () => {
     expect(await directoryExists(claudeDir)).toBe(true);
     expect(await fileExists(path.join(claudeDir, FILES.SETTINGS_JSON))).toBe(true);
 
-    // The config manifest is still removed even though .claude/ is preserved
     expect(await fileExists(configTsPath(projectDir))).toBe(false);
   });
 
@@ -149,26 +144,9 @@ describe("uninstall config manifest removal", () => {
 });
 
 /**
- * `.agents-inc/` groups one product's provider folders, so removing the last of them leaves a
- * directory that names a product with nothing installed. Uninstall's cleanup is leaf-first —
- * `removeDirIfEmpty` on the folder the config was in — and the parent one level up is the level
- * nothing looked at, so it survives every existing assertion: every spec that checks a source
- * folder is gone checks the LEAF, and a stranded `.agents-inc/` satisfies all of them.
- *
- * It is not cosmetic. A directory left where an install was is what a later `init` and `doctor`
- * read as a half-built layout, and the golden tree for the dual-scope journey records every empty
- * directory an install leaves behind — so a re-record taken before this lands writes
- * `project/.agents-inc` into the fixture as the expected behaviour.
- *
- * Both outcomes are here, in one file, because either alone is satisfied by the wrong product. A
- * cleanup that removed the parent unconditionally passes the first and deletes a consuming
- * repository's own state; one that never removes it passes the second and strands the directory.
- * Neither test means anything without the other.
- *
- * The installs are seeded on the NEW layout by hand rather than run through `init`, because this
- * is a question about cleanup rather than about which folder a fresh install is created in. R1
- * already teaches the CLI to READ a folder there, so the subject is reachable today and the red
- * below is about uninstall alone.
+ * Uninstall removes `.agents-inc/` once its last provider folder goes, and keeps it while it holds
+ * anything else; each outcome alone is satisfied by the wrong product. Seeded by hand on the new
+ * layout: the subject is cleanup, not where `init` creates the folder.
  */
 describe("uninstall and the source folder's parent", () => {
   let tempDir: string;
@@ -179,7 +157,6 @@ describe("uninstall and the source folder's parent", () => {
     }
   });
 
-  /** An install on the new layout, with `extra` written beside the provider folder when given. */
   async function seedNewLayoutInstall(extra?: { name: string; content: string }): Promise<string> {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -196,8 +173,7 @@ describe("uninstall and the source folder's parent", () => {
       await writeFile(path.join(projectDir, DIRS.SOURCE_ROOT, extra.name), extra.content, "utf-8");
     }
 
-    // Subject guard: the fixture really did put this install on the new layout, so the assertions
-    // below are about a parent that exists. Seeded at the old name they would pass for free.
+    // Subject guard: the install really is on the new layout.
     expect(
       await fileExists(path.join(projectDir, DIRS.SOURCE_CLAUDE, FILES.CONFIG_TS)),
       "the fixture did not seed an install on the folder this describe block is about",
@@ -231,8 +207,7 @@ describe("uninstall and the source folder's parent", () => {
       await fileExists(path.join(projectDir, DIRS.SOURCE_ROOT, gateState.name)),
       "uninstall removed a file under .agents-inc/ that this CLI never wrote",
     ).toBe(true);
-    // The roster rather than one `directoryExists` per name: what this leaves behind has to be
-    // the parent and NOTHING else, and a pair of booleans cannot see a third name appear.
+    // The roster, not booleans per name: a third name must not appear.
     await expectOnlySourceFolder(
       projectDir,
       [DIRS.SOURCE_ROOT],

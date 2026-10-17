@@ -14,21 +14,11 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `init --from <id>` revalidates the configuration it decoded against THIS catalog rather than
- * trusting the verdict of the app that built it.
- *
- * The decode is deliberately lenient — an id this catalog does not know is skipped, never fatal —
- * so a payload that was internally consistent where it was shared can arrive here with a real
- * unmet requirement. The source below binds React to a state library, which is the same shape: a
- * rule this catalog carries and the sharer's did not.
- *
- * The requirement target sits in a different category from React on purpose. A target in React's
- * own (exclusive) category would make the consistent payload carry two picks there, so the control
- * below would be silent about requirements while a category warning printed in its place — and a
- * control that passes for the wrong reason proves nothing.
+ * `init --from` revalidates the decoded configuration against this catalog. The requirement target
+ * is outside React's exclusive category, or the control would print a category warning instead.
  */
 
-/** One unmet requirement in any selection carrying React alone: this catalog binds it to Zustand. */
+/** This catalog binds React to Zustand. */
 const UNMET_REQUIREMENT_RULES = {
   requires: [
     {
@@ -39,10 +29,9 @@ const UNMET_REQUIREMENT_RULES = {
   ],
 };
 
-/** The line the validator owes, worded by the validator itself. */
 const EXPECTED_VALIDATION_WARNING = `${E2E_SKILL.react.display} ${STEP_TEXT.VALIDATION_REQUIRES} ${E2E_SKILL.zustand.display}`;
 
-/** An id this catalog does not know, so the decode skips it and says so by name. */
+/** Unknown to this catalog, so the decode skips it by name. */
 const UNKNOWN_SKILL_ID = "web-framework-does-not-exist";
 
 describe("init --from revalidates the decoded selection", () => {
@@ -91,11 +80,9 @@ describe("init --from revalidates the decoded selection", () => {
 
       const { exitCode, output } = await runInit("Unmet001");
 
-      // Advisory, not fatal: the configuration installs and the user is told what it costs.
+      // Advisory, not fatal.
       expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
       const said = flattenCliOutput(output);
-      // Cause and effect in one run: the id this catalog does not have, and the requirement
-      // this catalog does have and finds unmet.
       expect(said).toContain(UNKNOWN_SKILL_ID);
       expect(said).toContain(EXPECTED_VALIDATION_WARNING);
       expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
@@ -121,7 +108,7 @@ describe("init --from revalidates the decoded selection", () => {
       const { exitCode, output } = await runInit("Consist1");
 
       expect(exitCode, `init --from output:\n${output}`).toBe(EXIT_CODES.SUCCESS);
-      // The control that stops the assertion above passing on a warning printed unconditionally.
+      // Control: the warning is not printed unconditionally.
       expect(flattenCliOutput(output)).not.toContain(STEP_TEXT.VALIDATION_REQUIRES);
       expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
     },

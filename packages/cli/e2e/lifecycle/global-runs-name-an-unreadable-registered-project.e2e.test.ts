@@ -40,38 +40,24 @@ import { buildSkillConfig } from "../../src/cli/lib/__tests__/helpers/skill-conf
 import type { AgentName } from "../../src/cli/types/index.js";
 
 /**
- * A run at the home directory that fans a global change out to every registered project, and one
- * of those projects whose `config.ts` cannot be loaded — journey 38's file, met by journey 7's
- * fan-out.
- *
- * The fan-out skips that project, which is right: it cannot be rewritten from a file nobody can
- * read. What it owes is one line naming the project it skipped and why. A global `edit` said
- * nothing and counted only the projects it reached; a global `compile` warned in `uninstall`'s
- * words, about uninstalled content, when nothing was uninstalled.
- *
- * The installation is written from files and the change is made by `edit --from` — the wizard is
- * not this file's subject. Each run has a healthy registered project beside the broken one, which
- * the fan-out still reaches and does not name, so a line printed for every project reads as wrong.
+ * A home-directory fan-out skipping a registered project whose `config.ts` cannot be loaded names
+ * that project and why, once; a healthy project beside it is reached and not named.
  */
 
 const API_DEV = E2E_AGENT["api-developer"].name;
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const ADDS_A_GLOBAL_SKILL_ID = "SkipLine01";
 
-/** The global installation's own sub-agent stack. */
 const globalStack = {
   [API_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-/** The healthy project's own sub-agent stack. */
 const healthyProjectStack = {
   [WEB_DEV]: { "web-framework": [sa(E2E_SKILL.react.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-/** One global installation and the two projects registered against it, by registered path. */
 type Fixture = { home: string; broken: string; healthy: string };
 
-/** The one line a run owes for the project it could not rewrite. */
 function skipLine(projectPath: string): string {
   return compactCliOutput(
     `${STEP_TEXT.SKIPPED_REGISTERED_PROJECT} ${projectPath}: ${STEP_TEXT.REGISTERED_PROJECT_CONFIG_UNREADABLE}`,
@@ -95,7 +81,7 @@ describe("a run at the home directory over a registered project whose config.ts 
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A healthy registered project as a project write leaves it: its own row, plus the global one. */
+  /** As a project write leaves it: its own row, plus the global one. */
   function healthyProjectConfig(): FixtureProjectConfig {
     return buildProjectConfig({
       name: "healthy-project",
@@ -114,7 +100,7 @@ describe("a run at the home directory over a registered project whose config.ts 
     });
   }
 
-  /** One folder of the installation, by the real path a registration records. */
+  /** By the real path a registration records. */
   async function installationFolder(tempDir: string, name: string): Promise<string> {
     const dir = path.join(tempDir, name);
     await mkdir(path.join(dir, DIRS.CLAUDE, DIRS.AGENTS), { recursive: true });

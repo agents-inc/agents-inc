@@ -24,13 +24,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `init --from` registers each project's realpath in the global config's `projects` array via
- * `registerProjectPath`. Two projects under the same HOME must both be registered, each exactly
- * once, with neither overwriting the other.
- *
- * The global HOME install itself is NOT self-registered — only project-context installs append to
- * `projects`. Each project install carries a project-scoped skill and sub-agent, so it writes a
- * project config of its own beside the global one.
+ * `init --from` registers each project's realpath in the global config's `projects`: two projects
+ * under one HOME, each exactly once. The HOME install itself is not registered.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -91,12 +86,10 @@ describe("init --from registers each project exactly once in the global projects
       await createPermissionsFile(dir);
     }
 
-    // Phase A: the global install at HOME.
     const globalRes = await runInitFrom(store, GLOBAL_ID, { dir: fakeHome }, source.sourceDir);
     globalExit = globalRes.exitCode;
     projectsAfterGlobalInit = (await loadConfigOrFail(fakeHome)).projects;
 
-    // Phases B and C: one project install each, under the same HOME.
     const firstRes = await runInitFrom(
       store,
       PROJECT_ID,
@@ -129,9 +122,7 @@ describe("init --from registers each project exactly once in the global projects
   });
 
   it("does not self-register the global HOME install", () => {
-    // `toBeUndefined`, not `?? []` against `[]`. The fallback made the two states
-    // indistinguishable, and they are not the same claim: a global install writes no
-    // `projects` KEY at all, where `[]` would mean it wrote one and left it empty.
+    // A global install writes no `projects` key at all, which `[]` would not distinguish.
     expect(projectsAfterGlobalInit).toBeUndefined();
   });
 

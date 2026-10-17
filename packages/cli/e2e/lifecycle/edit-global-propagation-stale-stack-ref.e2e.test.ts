@@ -27,22 +27,13 @@ import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * Propagation gap: when a global skill is removed via `cc edit --from` at global scope,
- * `propagateGlobalChangesToProjects` rewrites each registered project's config.ts
- * via `retainReconciledSkills`/`retainReconciledAgents` (which filter skills[] and
- * agents[]) but never touches `.stack`. The inlined writer only filters the stack
- * down to project-scoped agent names — it does not drop references to skill ids
- * that no longer exist anywhere. A project-scoped agent whose stack referenced the
- * removed global skill is left with a dangling reference.
- *
- * The buildStackForSelection fix cleans the GLOBAL config's own stack, but the
- * propagation write path to registered projects is a separate code path that the
- * fix does not reach.
+ * Removing a global skill via `edit --from` must also drop it from a registered project's
+ * project-scoped agent `stack`, not only from its inlined skills[].
  */
 
 const REACT = E2E_SKILL.react.id;
 
-/** The global configuration with react left out: its sub-agent on, holding nothing. */
+/** Its sub-agent stays on, holding nothing. */
 const WITHOUT_REACT_ID = "NoReact1";
 
 const globalStack = {
@@ -51,8 +42,7 @@ const globalStack = {
   },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-// A project-scoped agent whose stack references the GLOBALLY-installed react.
-// Legitimate: global skills reach any agent per isScopeCompatible.
+// Legitimate: global skills reach any agent.
 const projectStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: REACT, preloaded: false }],
@@ -92,9 +82,6 @@ describe("global-scope skill removal propagates to registered projects", () => {
       await createPermissionsFile(dir);
     }
 
-    // Global install: react is web-developer's only skill / only stack entry.
-    // Two registered projects each own a project-scoped api-developer whose
-    // stack references the global react.
     const globalConfig = buildProjectConfig({
       name: "propagation-global",
       marketplace: E2E_SOURCE.sourceDir,
@@ -114,8 +101,6 @@ describe("global-scope skill removal propagates to registered projects", () => {
     await writeProjectConfig(projectA, buildRegisteredProjectConfig("project-a"));
     await writeProjectConfig(projectB, buildRegisteredProjectConfig("project-b"));
 
-    // Edit at global scope and remove react entirely. This triggers
-    // propagateGlobalChangesToProjects for the two registered projects.
     const { exitCode, output } = await applyEditFrom(store, WITHOUT_REACT_ID, { dir: globalHome });
     expect(exitCode, `global edit must succeed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
@@ -128,9 +113,7 @@ describe("global-scope skill removal propagates to registered projects", () => {
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
-  // Proof-of-execution: propagation actually rewrote each project (the removed
-  // global react is dropped from the inlined skills[]). If this regresses, the
-  // stack assertion below would be a vacuous pass on an untouched file.
+  // Proof propagation rewrote each project, or the stack assertion below would pass vacuously.
   it("drops the removed global skill from each registered project's inlined skills", () => {
     expect(
       projectAConfig.skills.map((s) => s.id),
@@ -142,9 +125,6 @@ describe("global-scope skill removal propagates to registered projects", () => {
     ).not.toContain(REACT);
   });
 
-  // A project-scoped agent's stack must not keep referencing a skill that no longer
-  // exists at any scope. propagateGlobalChangesToProjects reconciles .stack against
-  // the now-current global data, dropping the dangling reference.
   it("does not leave a stale global-skill reference in a project-scoped agent's stack", () => {
     expect(
       projectAConfig.stack?.[E2E_AGENT["api-developer"].name]?.["web-framework"],

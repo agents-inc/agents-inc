@@ -6,19 +6,7 @@ import { fileExists, directoryExists } from "../helpers/test-utils.js";
 import { expectNoSourceFolder } from "./source-folder-assertions.js";
 import "../matchers/setup.js";
 
-/**
- * `removeConfig` asked after ONE folder until 2026-09-20, and an install this release creates
- * never has that folder — so the check was true of every one of the eleven call sites whatever
- * uninstall had left behind, including an emptied `.agents-inc/` naming this product with nothing
- * in it. `expectNoSourceFolder` asks after every name a source folder is spelled in, the parent
- * included, and names the one it found rather than reporting a boolean.
- *
- * **"Preserved" means these and nothing else.** Until 2026-09-26 `preservedSkills` and
- * `preservedAgentFiles` asked only that each named entry was still there, so an uninstall that
- * removed NOTHING satisfied both — the preserved entry is present, and so is everything uninstall
- * should have taken. Each is now the whole roster of its directory.
- */
-
+// "Preserved" means the whole roster of each directory, so an uninstall that removed nothing fails.
 export async function expectCleanUninstall(
   dir: string,
   options?: {

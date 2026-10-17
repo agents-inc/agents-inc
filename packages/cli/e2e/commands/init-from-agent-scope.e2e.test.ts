@@ -27,12 +27,8 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * `init --from <id>`: where a shared configuration's sub-agents land.
- *
- * A scope on a sub-agent is not the same thing as a scope on a skill. A skill's scope decides which
- * `.claude/skills` directory holds its files; a sub-agent's decides which `.claude/agents`
- * directory holds its compiled `.md`, and therefore which projects can see it at all. One payload
- * can name both, independently, so each has to be asserted at its own destination.
+ * `init --from`: a sub-agent's scope decides which `.claude/agents` holds it, independently of its
+ * skills' scope, so each is asserted at its own destination.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -66,10 +62,7 @@ describe("init --from <id>: sub-agent scope", () => {
       "Scoped01",
       buildSeedPayload({
         v: PINNED_WIRE_VERSION,
-        // The skill row sits at its own (project) scope — the sub-agent's scope is the subject
-        // here. Eject, because the E2E source is local and has no marketplace — plugin mode
-        // legitimately refuses that, which is its own (correct) error rather than anything this
-        // path controls.
+        // Eject: the local E2E source has no marketplace for plugins.
         skills: {
           [E2E_SKILL.react.id]: buildSeedSkill({
             install: "eject",
@@ -77,12 +70,8 @@ describe("init --from <id>: sub-agent scope", () => {
             assignments: { [WEB_DEV]: "lazy" },
           }),
         },
-        // web-developer arrives through its assignment and is PINNED into the project — the only
-        // way a sub-agent stays there. api-developer names no scope at all and travels with no
-        // skills of its own, so it takes the shared selection default and lands in the user's own
-        // ~/.claude. The `agents` map is the only place a configuration can say either thing, and
-        // the two entries are what make "explicit" and "defaulted" separable here: with the
-        // default itself global, an unpinned agent could not tell the two apart.
+        // web-developer is pinned into the project; api-developer names no scope, so it takes the
+        // global default.
         agents: { [WEB_DEV]: { scope: "project" }, [API_DEV]: { on: true } },
       }),
     );
@@ -95,8 +84,7 @@ describe("init --from <id>: sub-agent scope", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // The project config inlines the global entry, so it shows both sub-agents — with the global
-    // one still marked global rather than silently re-homed into the project.
+    // The project config inlines the global entry, still marked global.
     expect(await readAgentEntriesFor(env.projectDir, WEB_DEV)).toStrictEqual(
       buildAgentConfigs([WEB_DEV], { scope: "project" }),
     );
@@ -104,8 +92,7 @@ describe("init --from <id>: sub-agent scope", () => {
       buildAgentConfigs([API_DEV], { scope: "global" }),
     );
 
-    // The global config owns the global sub-agent and nothing else: a sub-agent's scope moves the
-    // sub-agent, never the skills around it.
+    // A sub-agent's scope moves the sub-agent, never its skills.
     const globalConfig = await loadConfigOrFail(env.fakeHome);
     expect(globalConfig.agents).toStrictEqual(buildAgentConfigs([API_DEV], { scope: "global" }));
     expect(globalConfig.skills).toStrictEqual([]);
@@ -115,18 +102,15 @@ describe("init --from <id>: sub-agent scope", () => {
       buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: "eject" }),
     );
 
-    // Exhaustive directory listings, not "contains": a sub-agent compiled into BOTH scopes would
-    // satisfy a subset check at either one.
+    // Exhaustive listings: a sub-agent compiled into both scopes would pass a subset check.
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual([`${WEB_DEV}.md`]);
     expect(await listFiles(agentsPath(env.fakeHome))).toStrictEqual([`${API_DEV}.md`]);
 
-    // Each file is a real compiled agent rather than an empty placeholder...
     await expect({ dir: env.projectDir }).toHaveCompiledAgent(WEB_DEV);
     await expect({ dir: env.fakeHome }).toHaveCompiledAgent(API_DEV);
 
-    // ...and the globally-scoped one arrived bare. The positive half on web-developer proves this
-    // fixture DOES inject skill ids into a compiled body, so the negative is a real absence rather
-    // than a section that never renders.
+    // The positive on web-developer proves this fixture renders skill ids, so the negative is a
+    // real absence.
     await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(WEB_DEV, {
       skillIds: [E2E_SKILL.react.id],
     });
@@ -135,9 +119,7 @@ describe("init --from <id>: sub-agent scope", () => {
       noSkillIds: [E2E_SKILL.react.id],
     });
 
-    // Both destinations, at four-surface strength. A scope split writes a config AND a
-    // config-types.ts on each side, and each side's pair has to hold on its own: the one
-    // that ends up carrying no skills is exactly where the generated unions collapse.
+    // Each side's config pair must hold on its own; the skill-less side is where unions collapse.
     await expectFourSurfaces(env.projectDir, { globalHome: env.fakeHome });
     await expectFourSurfaces(env.fakeHome);
   });

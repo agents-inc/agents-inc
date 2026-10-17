@@ -18,33 +18,19 @@ import {
 } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
 /**
- * A configuration that exists and cannot be parsed is a state of its own, and `doctor` — the one
- * command whose entire job is to name the state — used to call it `not found` and tell the user to
- * run `init`, which does not clear it. `uninstall` does.
- *
- * The parse failure is a CONTENT finding: it is file-level validation of something on disk, and
- * every operational row underneath it would be a cascade of the same fact. That placement is also
- * what stops the loader's own `Failed to load project source config` line printing four times over
- * between the rows — the operational layer and the sources check are the readers that produced it,
- * and neither runs once the file has been reported as unreadable.
+ * An unparseable config is a content finding naming the file, with `uninstall` (not `init`) as the
+ * remedy; the operational rows are not run on it.
  */
 
-/** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
 const SYNTAX_ERROR = renderUnparseableConfigTs();
 
-/** A file that parses cleanly but exports nothing, so the loader gets no config object at all. */
+/** Parses but exports nothing. */
 const NO_DEFAULT_EXPORT = "";
 
-/**
- * How a config under the user's own home is rendered in a finding — `~/`-relative, as they say it.
- *
- * A literal folder name: this is text doctor prints, and an assertion built from the constant the
- * product renders it from would move with it and could never fail. These fixtures are installs
- * this release created, so the folder is the one it creates.
- */
+/** A literal: this is text doctor prints, so it is not built from the product's constant. */
 const GLOBAL_CONFIG_DISPLAY_PATH = path.join("~", ".agents-inc", "claude", FILES.CONFIG_TS);
 
-/** Valid TypeScript whose shape the loader schema rejects (`skills` must be an array). */
+/** The schema rejects it: `skills` must be an array. */
 const SCHEMA_VIOLATION = renderSchemaViolatingConfigTs();
 
 describe("doctor with an unreadable config", () => {
@@ -57,11 +43,6 @@ describe("doctor with an unreadable config", () => {
     }
   });
 
-  /**
-   * Every corruption kind reaches the same finding, so each case asserts the same four things:
-   * the file named, the real state named, the false one gone, and the remedy that actually
-   * applies in place of the one that does not.
-   */
   async function expectFindingNaming(configSource: string) {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -69,8 +50,7 @@ describe("doctor with an unreadable config", () => {
     await mkdir(projectHome, { recursive: true });
     await writeCorruptConfig(projectDir, configSource);
 
-    // HOME is kept distinct from the project, so the only config in play is the corrupt one and
-    // the finding names it by its own absolute path rather than the `~/`-relative global form.
+    // HOME apart from the project, so the finding names the corrupt file by absolute path.
     const { exitCode, stdout } = await CLI.run(
       ["doctor"],
       { dir: projectDir },
@@ -105,15 +85,7 @@ describe("doctor with an unreadable config", () => {
   });
 
   /**
-   * The reason was never absent from the old output — it arrived as repeated unstructured loader
-   * lines spliced between the check rows. It belongs to the finding now, and only to the finding.
-   *
-   * This asserted the ABSENCE of that loose loader line until 2026-08-20, when the unreadable-config
-   * ruling turned the `verbose()` it was copied from into a throw. Nothing emits the string any
-   * more, so the absence could no longer fail and the spec was green for a reason unrelated to its
-   * name. The claim worth pinning is the surviving half, and it is a positive one: the finding
-   * carries the reason ITSELF. Asserted as one string so the adjacency is the assertion — a reason
-   * printed loose between the rows again would not sit against the state label.
+   * Asserted as one string: the reason must sit against the state label, not loose between rows.
    */
   it("carries the loader's reason inside the finding, on the row that names the state", async () => {
     const stdout = await expectFindingNaming(SYNTAX_ERROR);
@@ -124,9 +96,8 @@ describe("doctor with an unreadable config", () => {
   });
 
   /**
-   * The operational layer reads the config for every one of its rows, so its findings on an
-   * unreadable one are cascades. This is the ONLY content error that stands the whole layer down —
-   * every other one is scoped to the rows the failing pass names in its `blocks` list.
+   * The only content error that stands the whole operational layer down; others stand down only
+   * their `blocks`.
    */
   it("skips the operational layer rather than reporting cascades of the same fault", async () => {
     const stdout = await expectFindingNaming(SYNTAX_ERROR);
@@ -135,10 +106,6 @@ describe("doctor with an unreadable config", () => {
     expect(stdout).not.toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
   });
 
-  /**
-   * The global config is inlined into every project write, so an unreadable one is a finding about
-   * this project too — and naming the file is the whole point when two are in play.
-   */
   it("names the global config when that is the unreadable one", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -157,18 +124,12 @@ describe("doctor with an unreadable config", () => {
     );
 
     expect(exitCode, `doctor output:\n${stdout}`).toBe(EXIT_CODES.ERROR);
-    // Under the user's own home the finding names the file the way the user does. Asserted
-    // explicitly because the absolute path also rides along inside some loader reasons and not
-    // others — this pins the finding's own naming rather than the reason's.
+    // The absolute path rides along in some loader reasons, so this pins the finding's own naming.
     expect(stdout).toContain(GLOBAL_CONFIG_DISPLAY_PATH);
     expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_UNREADABLE);
   });
 
-  /**
-   * The control that stops every assertion above passing on a guard that fires unconditionally.
-   * An absent config is a legitimate state with its own message and its own remedy — `init` is
-   * the right advice there, and only there.
-   */
+  /** Control: an absent config keeps its own message and the `init` tip. */
   it("keeps the not-found message and the init tip when no config exists at all", async () => {
     tempDir = await createTempDir();
 
@@ -180,7 +141,6 @@ describe("doctor with an unreadable config", () => {
     expect(stdout).not.toContain(STEP_TEXT.DOCTOR_CONFIG_UNREADABLE);
   });
 
-  /** The other control: a readable config reaches the operational layer as it always did. */
   it("reaches the operational layer when the config loads", async () => {
     tempDir = await createTempDir();
     await writeProjectConfig(
@@ -195,11 +155,8 @@ describe("doctor with an unreadable config", () => {
   });
 
   /**
-   * The state that reaches the operational layer and has nothing to install: the file loads, and
-   * declares neither skills nor agents. `detectInstallation` answers "is there an installation
-   * here" and hands back the same `null` an absent file produces, which the row printed as
-   * `not found` — four lines under the content layer's own `1 config validated` about that very
-   * file. One screen, two verdicts, and the one the reader can act on was the false one.
+   * `detectInstallation` returns null for a config declaring nothing, as for an absent file; the
+   * row must not call it missing.
    */
   it("names a config that loads and declares nothing instead of calling it missing", async () => {
     tempDir = await createTempDir();
@@ -223,16 +180,10 @@ describe("doctor with an unreadable config", () => {
       STEP_TEXT.DOCTOR_TIP_CREATE_CONFIG,
     );
 
-    // A valid file with nothing in it is not a fault: `init` writes exactly this shape as the
-    // blank global pair on every project setup. Nothing needs repairing, so nothing fails.
+    // `init` writes exactly this shape as the blank global pair, so nothing fails.
     expect(exitCode, `doctor output:\n${stdout}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  /**
-   * The rows underneath used to read `Skipped (config invalid)` about a config that is valid —
-   * the same falsehood one layer down, and five times over. They run on it now and say what is
-   * true of an empty config.
-   */
   it("runs the rows underneath rather than skipping them as invalid", async () => {
     tempDir = await createTempDir();
     await writeProjectConfig(

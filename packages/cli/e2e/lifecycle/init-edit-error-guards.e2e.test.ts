@@ -17,28 +17,21 @@ import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
 
-/** The `source-fetcher` message for a marketplace path that is not a directory. */
 const LOCAL_MARKETPLACE_NOT_FOUND = "Local marketplace not found:";
-/** The two paths these guards name, so the message is proved to be ABOUT them. */
+/** Named back in the message, proving it is about them. */
 const MISSING_INIT_SOURCE_PATH = "/tmp/not-a-real-source-path-xyz";
 const MISSING_EDIT_SOURCE_PATH = "/nonexistent/path/xyz";
 
-/** The id every `--from` run here fetches; what it names never matters, as no run reaches it. */
+/** No run reaches it, so what it names never matters. */
 const CONFIG_ID = "Guards01";
 
-/** The three spellings of the flag, each driven through the binary. */
 const MARKETPLACE_FLAG_SPELLINGS = [
   ["separate argument", ["--marketplace", MISSING_INIT_SOURCE_PATH]],
   ["equals form", [`--marketplace=${MISSING_INIT_SOURCE_PATH}`]],
   ["short form", ["-m", MISSING_INIT_SOURCE_PATH]],
 ] as const satisfies readonly (readonly [string, readonly string[]])[];
 
-/**
- * Error guard E2E tests for init, compile, and edit commands.
- *
- * Covers: invalid source flag handling, missing skills directory,
- * empty skills config, and edit with nonexistent source path.
- */
+/** Error guards: bad source flags, missing skills directory, empty config, missing source path. */
 
 describe("init/edit error guards", () => {
   let tempDir: string;
@@ -77,8 +70,7 @@ describe("init/edit error guards", () => {
         { env: { HOME: tempDir, AGENTS_INC_API_URL: store.url } },
       );
 
-      // Naming the path back is the proof the flag reached the loader: a spelling that
-      // did not would fall through to the configuration's own marketplace.
+      // Naming the path back proves the flag reached the loader.
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
       expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
       expect(combined).toContain(MISSING_INIT_SOURCE_PATH);
@@ -115,14 +107,12 @@ describe("init/edit error guards", () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
 
-      // Create config referencing a skill, but do NOT create .claude/skills/
       await writeProjectConfig(projectDir, {
         name: "test-missing-skills",
         skills: [{ id: E2E_SKILL.react.id, scope: "project", origin: "eject" }],
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
-      // Create .claude/ directory without skills/ subdirectory
       await mkdir(path.join(projectDir, DIRS.CLAUDE), { recursive: true });
 
       const { exitCode, combined } = await runCLI(["compile"], projectDir, {
@@ -141,8 +131,6 @@ describe("init/edit error guards", () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
 
-      // A content-less config (no skills, no agents) is not a real installation,
-      // so compile fails gracefully with a not-installed error.
       await writeProjectConfig(projectDir, {
         name: "test-empty-skills",
         skills: [],
@@ -158,11 +146,7 @@ describe("init/edit error guards", () => {
     },
   );
 
-  /**
-   * Same guard, same load path, reached through the command that CANNOT be pointed at a
-   * source: `edit --from` takes no `--marketplace`, so the path it fails on is the one its own
-   * config records — the install whose marketplace has since been moved or deleted.
-   */
+  /** `edit --from` takes no `--marketplace`, so it fails on the path its own config records. */
   it(
     "edit whose stored source no longer exists should error",
     { timeout: TIMEOUTS.INSTALL },
@@ -170,7 +154,6 @@ describe("init/edit error guards", () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
 
-      // Create a minimal installation so detectProject() succeeds
       await writeProjectConfig(projectDir, {
         name: "test-edit-bad-source",
         marketplace: MISSING_EDIT_SOURCE_PATH,
@@ -194,7 +177,6 @@ describe("init/edit error guards", () => {
       const combined = prompt.getOutput();
 
       expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-      // Same reasoning as the init guard above: name the failure, not its length.
       expect(flattenCliOutput(combined)).toContain(LOCAL_MARKETPLACE_NOT_FOUND);
       expect(flattenCliOutput(combined).replace(/ /g, "")).toContain(MISSING_EDIT_SOURCE_PATH);
     },

@@ -2,7 +2,6 @@ import { expect } from "vitest";
 import { EXIT_CODES } from "../pages/constants.js";
 import "../matchers/setup.js";
 
-/** Verify a command phase completed successfully with expected state */
 export async function expectPhaseSuccess(
   result: { project: { dir: string }; exitCode: number | Promise<number> },
   expectations: {

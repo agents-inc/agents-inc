@@ -22,71 +22,35 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * A project-scope install must not disable type checking of config.ts.
- *
- * The config gate splits the merged config by scope. When every selected
- * skill is project-scoped the GLOBAL partition comes out with `skills: []`, and
- * that empty partition is still handed to `writeGlobalPair` ->
- * `generateConfigTypesSource`. Its union formatters return the literal `"string"`
- * for an empty member list, so the global `config-types.ts` is emitted as
- * `export type SkillId = string`. The project's own types then extend those
- * aliases (`SkillId = GlobalSkillId | "web-framework-react"`), and a union with
- * `string` in it absorbs every literal — so the project's config.ts silently
- * loses all type safety.
- *
- * The sibling writer for the same empty state
- * (`generateBlankGlobalConfigTypesSource` in config-writer.ts) emits `never`, so
- * the two writers disagree about what an empty install means.
- *
- * These specs assert the property the generated aliases exist for rather than
- * the text they are printed as: a skill id / category that is not installed must
- * be a type error. The project-scope spec fails on current main; the
- * global-scope spec is the control and passes.
+ * A project-scope install must not disable type checking of config.ts: an empty global partition
+ * must not emit `SkillId = string`, which the project's extending union would absorb everything
+ * into. Asserted as "an uninstalled id is a type error"; the global-scope spec is the control.
  */
 
-/**
- * Aliases that collapse when the global partition is empty. `AgentName` and
- * `Domain` survive this particular flow because agents default to global scope
- * and `config.domains` is carried through independently — they are excluded so
- * a failure here can only mean the skill/category unions degraded.
- */
+/** `AgentName` and `Domain` survive this flow, so a failure can only mean these degraded. */
 const SKILL_SCOPED_ALIASES = ["SkillId", "Category"] as const;
 
 /**
- * The probe takes the NAMES of the aliases to import and supplies its own bogus literal, so a
- * literal handed over in their place is a compile error rather than a passing run. The two are
- * indistinguishable at runtime and not at all in what they prove: a skill id renders
- * `import type { web-framework-react }`, which tsc rejects as a SYNTAX error, so the exit code
- * is non-zero for a reason that has nothing to do with narrowing — and the collapse this file
- * exists to catch produces exactly the same non-zero exit. Pinned against the parameter itself
- * rather than the alias union's name: widening it back to `readonly string[]` must fail here.
+ * The probe takes alias NAMES: a skill id there renders invalid syntax, a non-zero exit
+ * indistinguishable from the collapse. Pinned so widening the parameter to `string[]` fails here.
  */
 const _aLiteralIsNotAnAliasName: Parameters<typeof probeConfigTypesNarrowing>[1] = [
-  // @ts-expect-error a skill id is a MEMBER of SkillId, never the name of an alias to import
+  // @ts-expect-error a skill id is a member of SkillId, not an alias name
   E2E_SKILL.react.id,
 ];
 
-/** Everything an eject-mode install writes into its source folder. */
 const INSTALLED_SOURCE_FOLDER_ENTRIES = ["config-types.ts", "config.ts"];
 
-/** `origin` recorded for an ejected skill. */
 const EJECT_SOURCE = "eject";
 
-/** Emitted alias text that means "this union accepts anything". */
 const COLLAPSED_SKILL_ID = "export type SkillId = string;";
 const COLLAPSED_CATEGORY = "export type Category = string;";
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /**
- * Fresh init in a PROJECT directory with no prior global install, of a single skill and the
- * global web-developer, so the scope of that one skill decides whether the global partition
- * ends up empty.
- *
- * `skillScope: "project"` leaves the global partition with zero skills — the state that
- * triggers the collapse; a project skill never reaches the global sub-agent, so it is assigned
- * to none. `skillScope: "global"` puts the skill on web-developer, so the global partition has
- * one skill and the unions are built normally.
+ * A fresh project init of one skill plus the global web-developer. `skillScope: "project"` leaves
+ * the global partition empty (the collapse trigger); `"global"` builds the unions normally.
  */
 async function initSingleSkillProject(
   store: SeedConfigStore,
@@ -144,10 +108,7 @@ describe("generated config types keep narrowing after a project-scope install", 
         EXIT_CODES.SUCCESS,
       );
 
-      // Config side: react is the project's only skill and it is project-scoped,
-      // and the global config carries no skills at all. This is the precondition
-      // that makes the empty-union path fire — without it the assertions below
-      // would pass vacuously against a normally-built union.
+      // Precondition: no global skills at all, or the assertions below pass vacuously.
       const projectSkills = await readAllSkillEntries(projectDir);
       expect(projectSkills, "project config.ts must record react at project scope").toStrictEqual([
         { id: E2E_SKILL.react.id, scope: "project", origin: EJECT_SOURCE },
@@ -157,8 +118,6 @@ describe("generated config types keep narrowing after a project-scope install", 
         "global config.ts must carry no skills after an all-project-scope install",
       ).toStrictEqual([]);
 
-      // Filesystem side: the skill really is installed under the project and not
-      // under the home scope.
       expect(
         await listFiles(skillsPath(projectDir)),
         "react must be copied into the project skills dir",
@@ -177,8 +136,6 @@ describe("generated config types keep narrowing after a project-scope install", 
         true,
       );
 
-      // The invariant those aliases exist for: an id that is not installed must
-      // be a type error in the project's config.ts.
       const projectProbe = await probeConfigTypesNarrowing(
         path.dirname(projectTypesPath),
         SKILL_SCOPED_ALIASES,
@@ -188,15 +145,12 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the project's config-types.ts.\ntsc output:\n${projectProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(projectProbe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`.
+      // Each alias: the checks above hold while one rejects and the rest collapsed to `string`.
       expect(
         projectProbe.rejected,
         `every alias asked for must reject its bogus literal.\ntsc output:\n${projectProbe.output}`,
       ).toStrictEqual([...SKILL_SCOPED_ALIASES]);
 
-      // Same invariant at the scope the collapse originates from: a global config
-      // with zero installed skills must reject every skill id, not accept all.
       const globalProbe = await probeConfigTypesNarrowing(
         path.dirname(globalTypesPath),
         SKILL_SCOPED_ALIASES,
@@ -206,15 +160,13 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the global config-types.ts.\ntsc output:\n${globalProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(globalProbe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`.
+      // Each alias: the checks above hold while one rejects and the rest collapsed to `string`.
       expect(
         globalProbe.rejected,
         `every alias asked for must reject its bogus literal.\ntsc output:\n${globalProbe.output}`,
       ).toStrictEqual([...SKILL_SCOPED_ALIASES]);
 
-      // Secondary, on the emitted text: pins the exact defect signature so the
-      // failure names the mechanism, not just the symptom.
+      // Names the mechanism, not just the symptom.
       const globalTypes = await readTestFile(globalTypesPath);
       expect(globalTypes, "generated SkillId must not degrade to `string`").not.toContain(
         COLLAPSED_SKILL_ID,
@@ -242,14 +194,11 @@ describe("generated config types keep narrowing after a project-scope install", 
         EXIT_CODES.SUCCESS,
       );
 
-      // Config side: the mirror image of the spec above — react lands in the
-      // global partition, so the global unions are built from a non-empty list.
       expect(
         await readAllSkillEntries(fakeHome),
         "global config.ts must record react at global scope",
       ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE }]);
 
-      // Filesystem side.
       expect(
         await listFiles(skillsPath(fakeHome)),
         "react must be copied into the global skills dir",
@@ -273,8 +222,7 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the global config-types.ts.\ntsc output:\n${globalProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(globalProbe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`.
+      // Each alias: the checks above hold while one rejects and the rest collapsed to `string`.
       expect(
         globalProbe.rejected,
         `every alias asked for must reject its bogus literal.\ntsc output:\n${globalProbe.output}`,
@@ -289,15 +237,13 @@ describe("generated config types keep narrowing after a project-scope install", 
         `A bogus SkillId/Category literal must not type-check against the project's config-types.ts.\ntsc output:\n${projectProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(projectProbe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`.
+      // Each alias: the checks above hold while one rejects and the rest collapsed to `string`.
       expect(
         projectProbe.rejected,
         `every alias asked for must reject its bogus literal.\ntsc output:\n${projectProbe.output}`,
       ).toStrictEqual([...SKILL_SCOPED_ALIASES]);
 
-      // Filesystem side: probing is a read-only act. Both source-folder trees must
-      // be exactly what the install wrote, with no probe artifact left behind.
+      // Probing is read-only: no probe artifact left behind.
       expect(
         await listFiles(path.dirname(projectTypesPath)),
         "probing must leave the project source-folder tree untouched",

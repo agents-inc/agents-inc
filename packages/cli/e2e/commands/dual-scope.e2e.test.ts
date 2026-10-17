@@ -30,8 +30,7 @@ describe("dual-scope compile", () => {
     const { project, globalHome } = await ProjectBuilder.dualScope();
     tempDir = path.dirname(project.dir);
 
-    // The global agents belong to the home-context run; the project run below
-    // must leave them exactly as that one wrote them.
+    // The project run below must leave the home run's global agents as written.
     const global = await CLI.run(
       ["compile"],
       { dir: globalHome.dir },
@@ -55,7 +54,6 @@ describe("dual-scope compile", () => {
       },
     );
 
-    // Global agent should NOT contain project-scoped skill
     await expect({ dir: globalHome.dir }).toHaveCompiledAgentContent(
       E2E_AGENT["web-developer"].name,
       {
@@ -80,7 +78,6 @@ describe("dual-scope compile", () => {
       contains: ["web-mocks-msw", "web-testing-cypress-e2e"],
     });
 
-    // Project agent should NOT contain web-only skills (different domain)
     await expect({ dir: project.dir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
       notContains: [E2E_SKILL.react.id],
     });
@@ -89,7 +86,6 @@ describe("dual-scope compile", () => {
   it("should work with global-only installation", async () => {
     tempDir = await createTempDir();
 
-    // Only global home has a config — project dir is bare
     const globalHome = path.join(tempDir, "global-home");
     const projectDir = path.join(tempDir, "project");
     await mkdir(projectDir, { recursive: true });
@@ -131,7 +127,6 @@ describe("dual-scope compile", () => {
   it("should work with project-only installation", async () => {
     tempDir = await createTempDir();
 
-    // Fake HOME has no .agents-inc/claude/ — only project dir has config
     const globalHome = path.join(tempDir, "global-home");
     const projectDir = path.join(tempDir, "project");
     await mkdir(globalHome, { recursive: true });
@@ -166,24 +161,19 @@ describe("dual-scope compile", () => {
 
     await expect({ dir: projectDir }).toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
 
-    // The global agents directory is now always created (ensureDir is unconditional),
-    // but for a project-only install no agent .md files should be written there.
+    // The global agents directory is always created, but a project-only install writes no agents
+    // there.
     const globalAgentFiles = await listFiles(agentsPath(globalHome));
     const globalMdFiles = globalAgentFiles.filter((f) => f.endsWith(".md"));
     expect(globalMdFiles.length).toBe(0);
   });
 
-  // Kept rather than folded into `compile-scope-filtering`'s global-skill-discovery
-  // spec, which the audit named as covering it: that fixture gives the project its
-  // OWN local skills, so it never exercises a project whose skills directory is
-  // empty. Same claim, different path into the loader.
   it("should include global-only skills in project agent when project has no local skills", async () => {
     tempDir = await createTempDir();
 
     const globalHome = path.join(tempDir, "global-home");
     const projectDir = path.join(tempDir, "project");
 
-    // Global installation: one global skill
     await writeProjectConfig(globalHome, {
       name: "global-test",
       skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
@@ -204,7 +194,6 @@ describe("dual-scope compile", () => {
       }),
     });
 
-    // Project installation: agent references the global skill but has NO local skills
     await writeProjectConfig(projectDir, {
       name: "project-test",
       skills: [{ id: "web-testing-cypress-e2e", scope: "global", origin: "eject" }],
@@ -225,8 +214,6 @@ describe("dual-scope compile", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // The project agent must contain the global skill even though the project
-    // directory has no local skills — the compiler must discover ~/.claude/skills/.
     await expect({ dir: projectDir }).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
       contains: ["web-testing-cypress-e2e"],
     });

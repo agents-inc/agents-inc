@@ -34,39 +34,20 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * The name a `marketplace.json` publishes under is the namespace Claude Code registers
- * every plugin in, and the CLI piggybacks on what Claude Code accepts (owner ruling
- * 2026-08-20). `marketplaceSchema` has held the name to kebab-case since; what this file
- * pins is that the refusal REACHES the person running the command, on the two surfaces
- * that resolve a marketplace without reading a full installation.
- *
- * The discriminating assertion is `doctor`'s own row rather than the warning: a warning
- * about the manifest was printed all along, directly above `Marketplaces ✓ 1 marketplace
- * validated`, and the tick beside it was the defect.
- *
- * Every leg has its accepted-name twin in this same file. A guard scoped to the name and
- * one that has swallowed every manifest leave an all-refusal file reading identically, and
- * the second marketplace here differs from the first in exactly this one field.
- *
- * The second block is a name of the right SHAPE that is reserved: `eject`, the `origin` a
- * config records for a skill copied into an installation rather than installed as a plugin.
- * Every skill such a marketplace installed was recorded as an ejected copy, so a configuration
- * asking for a plugin got `Install mode: Eject (local copy)`, a copy on disk and exit 0, with
- * nothing said about the swap. It is refused on load in the reserved-name words
- * `build marketplace` refuses to publish it with.
+ * A `marketplace.json` name must be kebab-case, and the refusal reaches the load and `doctor`'s
+ * Marketplaces row; each leg has its accepted twin. The second block is the reserved name `eject`,
+ * which made plugin installs silently eject.
  */
 
-/** A name Claude Code registers no plugin under, and the same name written the way it does. */
 const NAME_REFUSED = "Acme_Skills";
 const NAME_ACCEPTED = "acme-skills";
 
-/** The word the refusal has to reach for, since the rule — not the regex — is the fix. */
+/** The rule, not the regex, is the fix. */
 const RULE_STATED = "kebab-case";
 
-/** The Marketplaces row's clean verdict, which a refused manifest must not earn. */
+/** A refused manifest must not earn this verdict. */
 const MARKETPLACES_ROW_CLEAN = "marketplace validated";
 
-/** Publishes the fixture marketplace under `name`, replacing whatever manifest it had. */
 async function publishUnder(source: E2ESource, name: string): Promise<void> {
   const manifestDir = path.join(source.sourceDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR);
   await mkdir(manifestDir, { recursive: true });
@@ -165,19 +146,16 @@ describe("a marketplace whose manifest names it something Claude Code cannot reg
   });
 });
 
-/** The name the installer reads back as "copied, not installed". */
+/** Read back by the installer as "copied, not installed". */
 const EJECT_MARKER_NAME = "eject";
 
-/** The plan line an install that asked for a plugin must print. */
 const PLUGIN_PLAN = `Install mode: ${STEP_TEXT.PLUGIN_NATIVE}`;
-/** The plan line the defect printed in its place. */
+/** What the defect printed instead. */
 const EJECT_PLAN = `Install mode: ${STEP_TEXT.EJECT_LOCAL_COPY}`;
 
 /**
- * The accepted twin is the SAME built marketplace under its own name, the built manifest with only
- * its name replaced — so the plugins it lists are the ones `build plugins` wrote. It asserts the
- * install PLAN rather than the finished install: the plan line is what the defect falsified, and
- * finishing a plugin install is the Claude CLI's subject, covered by the plugin-install specs.
+ * The same built marketplace under its own name; asserts the install plan, which is what the defect
+ * falsified.
  */
 describe("a marketplace whose manifest names it after the ejected-copy marker", () => {
   const webDev = E2E_AGENT["web-developer"].name;
@@ -273,11 +251,8 @@ describe("a marketplace whose manifest names it after the ejected-copy marker", 
 });
 
 /**
- * The reserved name reaching a load the other way: the installation's own `config.ts` recorded it
- * as `marketplaceName`, over a manifest whose name is fine. The refusal is about that config, so it
- * names the field and the file holding it — sending the reader to rename the marketplace sends them
- * to the one file with nothing wrong in it. The accepted twin is the same installation recording
- * the manifest's own name.
+ * The reserved name recorded in config.ts as `marketplaceName`: the refusal names that field and
+ * file, not the manifest.
  */
 describe("an installation whose config.ts recorded a reserved name its manifest does not carry", () => {
   let source: E2ESource;

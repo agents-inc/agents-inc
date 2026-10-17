@@ -24,22 +24,11 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * E2E tests using the REAL local skills repository.
- *
- * These tests verify the full end-to-end flow with actual marketplace data
- * instead of the synthetic E2E test source. They use --marketplace pointed at the
- * local clone to avoid network calls while still exercising real skill content.
- *
- * Set SKILLS_SOURCE env var to override the default location. The suite is
- * automatically skipped when the directory is absent (e.g. on CI or other
- * machines).
- *
- * A single beforeAll runs `init --from` once; subsequent tests verify different
- * aspects of the installed project.
+ * `init --from` against the real local skills repository (`--marketplace` at the local clone, so
+ * no network). Skipped when that directory is absent; `SKILLS_SOURCE` overrides it.
  */
 
-// Resolve the skills repo: env override, or sibling to the monorepo root (a separate
-// checkout, hence MONOREPO_ROOT rather than the CLI package root)
+// A sibling checkout of the monorepo, hence MONOREPO_ROOT rather than the CLI package root.
 const SKILLS_SOURCE = process.env.SKILLS_SOURCE ?? path.resolve(MONOREPO_ROOT, "../skills");
 
 const REAL_INSTALL_TIMEOUT = TIMEOUTS.PLUGIN_INSTALL;
@@ -47,11 +36,8 @@ const REAL_INSTALL_TIMEOUT = TIMEOUTS.PLUGIN_INSTALL;
 const hasSkillsSource = await directoryExists(path.join(SKILLS_SOURCE, SOURCE_PATHS.SKILLS_DIR));
 
 /**
- * The two skill refs this run installs, as the install prints them.
- *
- * A ref names the marketplace that resolved it, which is the discriminating form of "the real
- * marketplace was used" — a bare `toContain("agents-inc")` is this CLI's own binary name and
- * passes whichever marketplace answered.
+ * A ref names the marketplace that resolved it; a bare `toContain("agents-inc")` is this CLI's own
+ * name and passes whichever marketplace answered.
  */
 const INSTALLED_SKILL_REFS = [
   "web-framework-react@agents-inc",
@@ -61,7 +47,6 @@ const INSTALLED_SKILL_REFS = [
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const INSTALLED_ID = "RealMkt1";
 
-/** One of the real catalogue's skills, installed as a plugin onto the one sub-agent. */
 const pluginOnWebDev = buildSeedSkill({
   install: "plugin",
   scope: "global",
@@ -72,9 +57,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
   let projectDir: string;
   let store: SeedConfigStore;
   let initOutput: string;
-  // Default-scope install content (compiled agents) lands in HOME. Thread ONE
-  // shared HOME through the init and every follow-up CLI.run so they resolve the
-  // same global root; config.ts stays under projectDir.
+  // One shared HOME for the init and every follow-up run, so they resolve the same global root.
   let sharedHome: string;
 
   beforeAll(async () => {
@@ -171,9 +154,7 @@ describe.skipIf(!hasSkillsSource)("real marketplace", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).not.toContain(STEP_TEXT.NO_INSTALLATION);
-      // `list` prints a summary rather than a roster, so the COUNTS are what it can be held to —
-      // and they discriminate where the section labels did not. The roster itself is asserted by
-      // name in "should have installed exactly the sub-agents the configuration names" above.
+      // `list` prints a summary, so the counts are what it can be held to.
       expect(stdout).toMatch(new RegExp(`Skills:\\s+${INSTALLED_SKILL_REFS.length}`));
       expect(stdout).toMatch(/Agents:\s+1\b/);
     });

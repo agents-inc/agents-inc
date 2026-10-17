@@ -11,53 +11,35 @@ import type { ProjectHandle } from "./project-handle.js";
 import type { MockedAnswer } from "@workspace/api-mocks";
 import type { RequestHandler } from "msw";
 
-/** What a handler said, as opposed to why it said nothing. */
 type ServedAnswer = Extract<MockedAnswer, { served: true }>;
 
-/** One request the CLI made to the stub, in arrival order. */
 export type SeedConfigRequest = {
   url: string;
   userAgent: string | undefined;
   method: string | undefined;
-  /** The request body, for the POST half; empty for a GET. */
   body: string;
 };
 
 export type SeedConfigStore = {
-  /** What the CLI must be given as `AGENTS_INC_API_URL`. */
+  /** Passed to the CLI as `AGENTS_INC_API_URL`. */
   url: string;
-  /** Requests received so far, in arrival order. Emptied by {@link SeedConfigStore.reset}. */
   readonly requests: SeedConfigRequest[];
-  /** Ids minted for posted configurations, in arrival order. Emptied by `reset`. */
   readonly minted: string[];
-  /**
-   * Serve `payload` under `id`. A string is served verbatim so a spec can pin a body the
-   * schema must refuse; anything else is JSON-encoded.
-   */
+  /** A string is served verbatim (to pin a body the schema refuses); anything else is JSON-encoded. */
   publish(id: string, payload: unknown): void;
-  /** Forget every published id and every recorded request. */
   reset(): void;
   close(): Promise<void>;
 };
 
 const LOOPBACK = "127.0.0.1";
 const ANY_PORT = 0;
-/** The worker truncates its content address to this many base64url characters. */
 const ID_LENGTH = 8;
 const CREATED = 201;
-/**
- * A route these handlers do not describe. Loud on purpose: answering 404 would make a request this
- * store has nothing to say about indistinguishable from an id it really does not hold.
- */
+// Not 404, which would read as "id not held" rather than "route not described".
 const NOT_MODELLED = 501;
-/** The resolver itself failed — this store's own bug, reported as one rather than as a hang. */
 const RESOLVER_FAILED = 500;
 
-/**
- * The id a posted body gets, derived exactly as the worker derives it: the SHA-256 of the body,
- * base64url, truncated. Content-addressing is what makes a re-share of the same configuration
- * return the same id, so a spec that asserts it can only do so against the same rule.
- */
+// As the worker derives it, so a re-share of the same configuration returns the same id.
 function contentAddress(body: string): string {
   return createHash("sha256")
     .update(body)
@@ -66,7 +48,6 @@ function contentAddress(body: string): string {
     .slice(0, ID_LENGTH);
 }
 
-/** The whole request body as text. */
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
@@ -75,35 +56,20 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-/**
- * One id this store holds, answering with the bytes it was given.
- *
- * `storedConfigHandlerFor` in `@workspace/api-mocks` is the same idea and is deliberately not used
- * here: it is handed a VALUE and JSON-encodes it, where a store holds BYTES — which is what KV
- * holds, what a POST arrives as, and what lets `publish` serve a string verbatim so a spec can pin
- * a body the schema must refuse.
- */
+// Serves stored bytes as-is, unlike api-mocks' `storedConfigHandlerFor`, which JSON-encodes a value.
 const heldBytesHandler = (id: string, bytes: string): RequestHandler =>
   route.get(
     `${CONFIGS_URL}/${id}`,
     () => new HttpResponse(bytes, { headers: { "content-type": "application/json" } }),
   );
 
-/** The mint — the one request that changes what this store holds. */
 const isMint = (req: http.IncomingMessage): boolean => req.method === "POST";
 
-/** Hands the caller what a handler said, headers and all. */
 function sendAnswer(res: http.ServerResponse, answer: ServedAnswer): void {
   res.writeHead(answer.status, answer.headers);
   res.end(Buffer.from(answer.body));
 }
 
-/**
- * Hands the caller a refusal naming the request no handler claimed, and why.
- *
- * Loud rather than a 404, because the two are not the same thing: a 404 says this store does not
- * hold that id, and this says nobody has described the route at all.
- */
 function sendNotModelled(
   res: http.ServerResponse,
   req: http.IncomingMessage,
@@ -113,58 +79,25 @@ function sendNotModelled(
   res.end(`No mocked answer for ${req.method ?? "GET"} ${req.url ?? "/"} (${reason})`);
 }
 
-/**
- * The mint, which is the one route `@workspace/api-mocks` cannot answer for this store.
- *
- * `configHandlers` answers `POST /configs` with one fixed id, because that package describes what
- * the worker SAYS and deliberately stores nothing. A store has to hand back the id it filed the
- * body under, and this one files it where the worker does — under the body's own hash.
- */
+// `configHandlers` mints one fixed id; a store must return the id it filed the body under.
 const mintedHandler = (id: string): RequestHandler =>
   route.post(CONFIGS_URL, () => HttpResponse.json({ id }, { status: CREATED }));
 
-/**
- * A local stand-in for the agentsinc.sh config store: `GET /configs/<id>` returns the payload
- * published under that id and 404s an id that was never published, exactly as the worker does.
- *
- * A real server rather than a module mock, because the specs that use it exist to cover the whole
- * path — argument parsing, network, decode, mapping, and the write/install/compile pipeline. A
- * mocked fetch would skip the two seams most likely to break: the flag reaching the command, and
- * the payload surviving the wire. It also could not be one: the e2e suite spawns
- * `bin/run.js`, and nothing in this process can intercept a child's network.
- *
- * What it ANSWERS with comes from `@workspace/api-mocks` all the same, resolved through `answerFor`
- * — so the worker's words are stated once for this suite and the editor's alike. They had already
- * diverged where they were written twice: the 404 body here read `"No config under this id"` and
- * the CLI's own unit fixture for the same response read `"no config"`.
- */
+// A real HTTP server, since specs spawn bin/run.js and no in-process mock reaches a child's network.
+// Answers come from `@workspace/api-mocks`, so the worker's responses are stated once.
 export async function startSeedConfigStore(): Promise<SeedConfigStore> {
   const held = new Map<string, string>();
   const requests: SeedConfigRequest[] = [];
   const minted: string[] = [];
 
-  /**
-   * What this store answers with right now. Rebuilt per request because its contents move, and
-   * ordered as `use()` orders handlers: the ids it holds claim their own routes first, then the
-   * mint for the id this request is filing, and `configHandlers` answers everything else — which
-   * is where an id nobody published gets the worker's own 404, and where a POST that was never
-   * filed (an invalid body — see `isInstallable` below) gets the worker's own 400.
-   */
+  // Rebuilt per request; held ids first, then the mint, then `configHandlers` for 404s and 400s.
   const handlersNow = (mintedId: string | undefined): RequestHandler[] => [
     ...[...held].map(([id, bytes]) => heldBytesHandler(id, bytes)),
     ...(mintedId === undefined ? [] : [mintedHandler(mintedId)]),
     ...configHandlers,
   ];
 
-  /**
-   * Whether a posted body is one the write contract would take — the same question
-   * `configHandlers`'s own `createConfig` asks of it a moment later. Asked here only to decide
-   * whether this store must remember the body under an id: a body that fails is left unfiled, so
-   * `mintedId` below stays `undefined` and the request falls through to `configHandlers`, which
-   * answers it exactly as the worker's 400 does. That is what lets this store restate no rule of
-   * its own (CLI-849) — before this it filed and minted an id for any body at all, which is not
-   * what the worker does for one `installableSeedPayloadSchema` refuses.
-   */
+  // An uninstallable body is left unfiled, so `configHandlers` answers it with the worker's 400.
   const isInstallable = (body: string): boolean => {
     try {
       return installableSeedPayloadSchema.safeParse(JSON.parse(body)).success;
@@ -173,7 +106,6 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     }
   };
 
-  /** Files a posted body under its content address, and reports the id it was filed under. */
   const file = (body: string): string => {
     const id = contentAddress(body);
     held.set(id, body);
@@ -181,7 +113,6 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
     return id;
   };
 
-  /** Notes one request in the terms a spec reads them back in. */
   const record = (req: http.IncomingMessage, body: string): void => {
     requests.push({
       url: req.url ?? "",
@@ -207,9 +138,7 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
   }
 
   const server = http.createServer((req, res) => {
-    // Answered rather than left to an unhandled rejection: a throw in here would leave the socket
-    // open and the spawned CLI waiting on it, which reaches a spec as a 45-second timeout naming
-    // nothing at all.
+    // A throw here would leave the spawned CLI waiting on an open socket until the spec times out.
     void serve(req, res).catch((error: unknown) => {
       if (res.headersSent) {
         res.end();
@@ -243,7 +172,6 @@ export async function startSeedConfigStore(): Promise<SeedConfigStore> {
   };
 }
 
-/** Runs `init --from <id>` against `store`, with the source the spec built. */
 export function runInitFrom(
   store: SeedConfigStore,
   id: string,
@@ -255,27 +183,16 @@ export function runInitFrom(
   });
 }
 
-/** Runs `share` against `store`, minting an id for whatever `project` has installed. */
 export function runShare(store: SeedConfigStore, project: ProjectHandle): Promise<CLIResult> {
   return CLI.run(["share"], project, { env: { AGENTS_INC_API_URL: store.url } });
 }
 
-/**
- * Runs `edit --ui` against `store`: the same mint, handed to the editor rather than reported.
- * The spawned process has no TTY, so no browser is launched and the link is only printed —
- * which is exactly the environment this flag has to stay usable in.
- */
+// No TTY in the spawned process, so the editor link is printed rather than opened.
 export function runEditUi(store: SeedConfigStore, project: ProjectHandle): Promise<CLIResult> {
   return CLI.run(["edit", "--ui"], project, { env: { AGENTS_INC_API_URL: store.url } });
 }
 
-/**
- * Runs `edit --from <id>` against `store` in a spawned process, which has no TTY.
- *
- * That is the whole point of this runner rather than a limitation of it: the command applies a
- * shared configuration destructively, so it refuses where there is nobody to confirm the
- * removals. The approving half needs a real terminal and runs under the PTY harness instead.
- */
+// No TTY, so the command refuses its destructive apply; the approving half runs under the PTY harness.
 export function runEditFrom(
   store: SeedConfigStore,
   id: string,

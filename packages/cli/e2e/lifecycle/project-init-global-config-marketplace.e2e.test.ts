@@ -19,23 +19,9 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
 
 /**
- * The global config written during a PROJECT-scope init must carry the
- * `marketplace` field, because it is the only record tying globally-installed
- * plugins back to the marketplace they came from.
- *
- * `uninstall` resolves which plugins it owns via `getCliInstalledPluginKeys`.
- * Its primary key is `<id>@<skill.source>`, and `skill.source` is the
- * selected source label (the default public source name), NOT the marketplace
- * the plugin was actually registered under. Only the `config.marketplace`
- * variant key produces `<id>@<marketplace>`, which is the key the Claude plugin
- * registry uses. When the global config omits `marketplace`, no key matches: a
- * global `uninstall --yes` finds no CLI-owned plugins, skips the plugin branch
- * entirely, and then removes the source folder's config manifest — destroying the
- * only record of plugins that remain registered and enabled.
- *
- * The A/B control (init run FROM the home root) writes the config directly and
- * is expected to carry `marketplace` and `source`, isolating the defect to the
- * project-init scope-split path.
+ * The global config written by a PROJECT-scope init must carry `marketplace` (and `source`):
+ * without it no plugin key matches, so a global `uninstall --yes` skips the plugins and removes
+ * the only record of them. The home-root init is the control.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -62,7 +48,6 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
     await cleanupFixture(fixture);
   });
 
-  /** The E2E stack as plugins, every skill and sub-agent at the default global scope. */
   function installPlugins(dir: string, home: string) {
     return installFromSeed(
       store,
@@ -85,9 +70,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
       const globalConfig = await loadConfigOrFail(fakeHome);
       const reactPluginKey = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
 
-      // Proof of execution: the project init really did route global-scoped,
-      // marketplace-sourced skills into the global config, so the merge branch
-      // that owns `marketplace` actually ran with non-empty incoming data.
+      // Proof the merge that owns `marketplace` ran with non-empty incoming data.
       expect(
         globalConfig.skills.filter((s) => s.scope === "global" && !s.excluded).map((s) => s.id),
         "global config must own the globally-scoped skills the project init installed",
@@ -97,12 +80,10 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
         "global skill entry must be marketplace-sourced, not eject",
       ).not.toBe(EJECT_SOURCE);
 
-      // Pre-condition: the plugins are genuinely registered and enabled at global scope.
       await expect({ dir: fakeHome }).toHavePluginInRegistry(reactPluginKey);
       await expect({ dir: fakeHome }).toHavePlugin(reactPluginKey);
 
-      // The invariant under test. `source` travels with `marketplace` on the
-      // scope split and is dropped by the same merge, so both are pinned here.
+      // `source` travels with `marketplace` on the scope split and is dropped by the same merge.
       expect(
         globalConfig.marketplaceName,
         "global config.ts must record the marketplace its plugins came from",
@@ -123,7 +104,6 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
         "a global uninstall that owns plugins must report the plugin removal",
       ).toContain("Uninstalled plugin");
 
-      // Filesystem: the plugin is gone from both the enablement list and the registry.
       await expect({ dir: fakeHome }).not.toHavePlugin(reactPluginKey);
       await expect({ dir: fakeHome }).not.toHavePluginInRegistry(reactPluginKey);
     },

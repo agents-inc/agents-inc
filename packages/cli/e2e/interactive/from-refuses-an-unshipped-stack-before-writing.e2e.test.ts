@@ -38,60 +38,28 @@ import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
 /**
- * A shared configuration naming a stack its marketplace does not ship is refused before anything
- * is written — by `init --from` and by `edit --from` alike.
- *
- * A payload's `stackId` is metadata: its skills and their assignments are the data, and the stack
- * supplies only the `description` the installed `config.ts` records. The editor writes a
- * marketplace's own stack id into every configuration it mints from that marketplace, so an id
- * minted before the marketplace's author renamed or dropped the stack names one the marketplace no
- * longer ships — as does a built-in stack id over any marketplace but the default one.
- *
- * Both producers looked the id up only when they came to write the configuration — after the run
- * had registered the marketplace and installed and enabled its plugins, or copied its skills. So
- * the refusal landed on a half-finished install: plugins enabled in the project with no
- * `.agents-inc/` beside them, or skill directories no configuration names. Every other `--from`
- * refusal is decided before the run lists what it would install, which
- * `interactive/from-refusals-come-before-the-question` holds, and this one has to be as well.
- *
- * Each refusal is paired, in this file, with the run it must still allow: the same configuration
- * naming the stack the marketplace DOES ship installs from `init --from` and records that stack's
- * description, and `edit --from` shows its plan and asks.
- *
- * Which assertion carries the red against the unfixed build differs by door. With no terminal
- * `init --from` installs and then refuses, so it is the snapshot. `edit --from` needs a terminal,
- * where a run reaches its writes only through a yes, and a refusal decided before the question
- * leaves no question to answer — so there it is the question.
+ * A configuration naming a stack its marketplace does not ship is refused before anything is
+ * written, by `init --from` and `edit --from`. Each refusal is paired with the shipped stack
+ * installing or asking. Against the unfixed build the snapshot carries the red for `init --from`,
+ * the question for `edit --from`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/**
- * A stack the marketplace does not ship: the id a configuration minted before the marketplace's
- * author renamed the stack still carries. Composed from the id it does ship, so the two cannot
- * coincide.
- */
+/** Composed from the shipped id, so the two cannot coincide. */
 const UNSHIPPED_STACK_ID = `${E2E_STACK_ID}-before-the-rename`;
 
-/** React in the project: the installation `edit --from` is applied over. */
 const REACT_ONLY_ID = "ReactOnly1";
-/** React ejected into the project, under the unshipped stack. */
 const UNSHIPPED_EJECT_ID = "UnshippedEject1";
-/** React installed as a plugin into the project, under the unshipped stack. */
 const UNSHIPPED_PLUGIN_ID = "UnshippedPlugin1";
-/** React ejected into the project, under the stack the marketplace ships. */
 const SHIPPED_EJECT_ID = "ShippedEject1";
-/** React as installed, and Vitest added beside it, under the unshipped stack. */
 const UNSHIPPED_APPLY_ID = "UnshippedApply1";
-/** The same apply, under the stack the marketplace ships. */
 const SHIPPED_APPLY_ID = "ShippedApply1";
 
-/** A skill in the project, on web-developer. */
 function projectSkill(install: SeedSkill["install"] = "eject"): SeedSkill {
   return buildSeedSkill({ install, scope: "project", assignments: { [WEB_DEV]: "lazy" } });
 }
 
-/** A configuration with web-developer pinned to the project, beside the skills it is handed. */
 function projectConfiguration(
   stackId: SeedPayload["stackId"],
   skills: SeedPayload["skills"],
@@ -153,22 +121,17 @@ describe("--from refuses a stack its marketplace does not ship before writing an
     env = undefined;
   });
 
-  /**
-   * Every file the environment holds, by content and mtime: the project, and the HOME its
-   * installations, the plugin registry and the Claude CLI's own state all live under. Read whole
-   * rather than folder by folder, because "nothing was written" is a claim about all of it.
-   */
+  /** Everything, by content and mtime: "nothing was written" is a claim about all of it. */
   async function snapshotEverything(
     environment: TestEnvironment,
   ): Promise<Record<string, TreeSnapshotEntry>> {
     const snapshot = await readTreeSnapshot(environment.tempDir);
-    // `readTreeSnapshot` answers `{}` for a directory that is not there, so two reads of the wrong
-    // path would agree for free. The environment's two permission files are always here.
+    // `readTreeSnapshot` answers `{}` for a missing directory; the two permission files are always
+    // here.
     expect(Object.keys(snapshot).length).toBeGreaterThan(0);
     return snapshot;
   }
 
-  /** `edit --from <id>` in a real terminal, in the project, under the environment's HOME. */
   function launchEdit(environment: TestEnvironment, id: string): InteractivePrompt {
     return new InteractivePrompt(["edit", "--from", id], environment.projectDir, {
       env: { AGENTS_INC_API_URL: store.url, HOME: environment.fakeHome },
@@ -187,8 +150,7 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         E2E_SOURCE.sourceDir,
       );
 
-      // The subject guard for the snapshot below: the run reached its decision and refused for
-      // this reason, naming the stack it was asked for.
+      // Subject guard: the run refused for this reason, naming the stack.
       expect(exitCode, output).toBe(EXIT_CODES.ERROR);
       const said = flattenCliOutput(output);
       expect(said).toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
@@ -222,8 +184,8 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         expect(said).toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);
         expect(said).toContain(`'${UNSHIPPED_STACK_ID}'`);
 
-        // HOME whole holds the Claude CLI's plugin registry and the marketplaces it knows, and the
-        // project holds the settings that enable a plugin, so this one comparison covers all three.
+        // HOME holds the plugin registry and known marketplaces and the project holds settings, so
+        // one comparison covers all three.
         expect(
           await readTreeSnapshot(env.tempDir),
           "a configuration naming a stack its marketplace does not ship must be refused before a marketplace is registered or a plugin installed",
@@ -255,7 +217,6 @@ describe("--from refuses a stack its marketplace does not ship before writing an
   });
 
   describe("edit --from", () => {
-    /** An installation in the project, made the way a user makes one. */
     async function installReactIntoProject(environment: TestEnvironment): Promise<void> {
       const installed = await runInitFrom(
         store,
@@ -275,13 +236,11 @@ describe("--from refuses a stack its marketplace does not ship before writing an
         const before = await snapshotEverything(env);
 
         prompt = launchEdit(env, UNSHIPPED_APPLY_ID);
-        // The question OR the exit: a run that asks waits for an answer, so waiting for the exit
-        // alone would end in a timeout that names nothing.
+        // The question or the exit: waiting on the exit alone would time out naming nothing.
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
         const shown = prompt.getOutput();
 
-        // First, because it is the defect: a yes to this question copies the skill and only then
-        // refuses, leaving it on disk with no configuration naming it.
+        // First, because it is the defect: a yes copies the skill and only then refuses.
         expect(
           shown,
           "a configuration naming a stack its marketplace does not ship must be refused before the user is asked to apply it",
@@ -291,8 +250,7 @@ describe("--from refuses a stack its marketplace does not ship before writing an
           "a refused apply must not first show a plan for what it would install",
         ).not.toContain(STEP_TEXT.SHARED_CONFIG_LIST_PROJECT);
 
-        // The subject guard for the two negatives: the run reached its decision and refused for
-        // this reason, rather than never starting.
+        // Subject guard: the run reached its decision and refused for this reason.
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
         const said = flattenCliOutput(prompt.getOutput());
         expect(said).toContain(STEP_TEXT.SHARED_CONFIG_STACK_NOT_OFFERED);

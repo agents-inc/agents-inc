@@ -22,21 +22,13 @@ import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js
 import type { SeedExternalSkill } from "@workspace/matrix/seed";
 
 /**
- * A skill added in the editor keeps its whole description through a carry-back.
- *
- * Installing a carried skill writes a `metadata.yaml` whose `cliDescription` is a SHORT label —
- * cut to the length `doctor` accepts — beside the SKILL.md that states the description whole. A
- * re-mint reads the directory back into the entry it arrived as, and the description it sends is
- * what the next receiver installs the skill with. Sent from the label, every round trip would cut
- * the skill's own description to the label's length.
- *
- * `edit --ui` is the mint that reaches it: `share` refuses an installation holding ejected skills,
- * and a carried skill is always one.
+ * A carried skill keeps its whole description through a re-mint, though the installed metadata.yaml
+ * holds only a short `cliDescription` label. `edit --ui` is the mint: `share` refuses ejected
+ * skills.
  */
 
-/** A skill added in the editor from outside the catalogue, in a non-exclusive category. */
 const EXTERNAL_ID = "external-web-tooling-systematic-debugging";
-/** Longer than the label `doctor` accepts, so the install cuts the label it writes. */
+/** Longer than the label `doctor` accepts, so the install cuts the label. */
 const LONG_DESCRIPTION =
   "Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes";
 
@@ -51,7 +43,6 @@ function externalEntry(): SeedExternalSkill {
   });
 }
 
-/** What the store received as the mint, parsed — the body `edit --ui` posted. */
 type PostedPayload = { external?: Record<string, SeedExternalSkill> };
 
 describe("edit --ui carries an added skill's whole description", () => {
@@ -86,8 +77,7 @@ describe("edit --ui carries an added skill's whole description", () => {
     expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
     store.reset();
 
-    // The subject guard, both halves: the short label the install wrote is cut, and the skill's
-    // own manifest still states the description whole.
+    // Subject guard: the label is cut, and SKILL.md still states the description whole.
     const skillDir = path.join(skillsPath(origin), EXTERNAL_ID);
     expect(await readTestFile(path.join(skillDir, FILES.METADATA_YAML))).not.toContain(
       LONG_DESCRIPTION,

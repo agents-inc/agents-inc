@@ -26,18 +26,9 @@ import {
 import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 
 /**
- * `edit --from <id>` from a project, over a global install whose sub-agents the configuration
- * names differently.
- *
- * From a project a run only adds to the global install (owner ruling 2026-10-02): every entry the
- * global install holds stays as installed, and what it lacks arrives whole — a new skill's row on
- * a held sub-agent included. So the two held sub-agents here end up apart. The configuration gives
- * api-developer a new skill, Vitest, which joins it beside the Zustand row it keeps. It names
- * web-tester with no new skill, so web-tester is left exactly as installed.
- *
- * The confirm and the change summary must say which is which. Calling api-developer "kept as
- * installed" and then rewriting it is the contradiction this file exists for; web-tester, named
- * as kept and left byte-for-byte alone, is the permitted half beside it.
+ * `edit --from` from a project only adds to the global install: api-developer gains Vitest beside
+ * its Zustand row, web-tester is named with no new skill and left exactly as installed. The confirm
+ * and summary must say which is which.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -46,7 +37,7 @@ const WEB_TESTER = E2E_BUILTIN_AGENT["web-tester"].name;
 const INSTALLED_ID = "AddsToGlb1";
 const EDITED_ID = "AddsToGlb2";
 
-/** Regex-safe: the `+` the added-to line opens with is a quantifier otherwise. */
+/** Regex-safe: the leading `+` is a quantifier otherwise. */
 function addedToLine(agentName: string, skillId: string): string {
   return `sub-agent ${agentName}: \\+ ${skillId}`;
 }
@@ -86,7 +77,7 @@ describe("edit --from <id> from a project, where a new skill joins a held global
         },
       }),
     );
-    // The same, with Zustand left out and Vitest added to api-developer alone.
+    // Zustand left out, Vitest added to api-developer alone.
     store.publish(
       EDITED_ID,
       buildSeedPayload({

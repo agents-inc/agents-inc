@@ -14,16 +14,8 @@ import {
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
- * D-224 — completing the G→P→G cycle cleanly. When a globally-installed skill
- * moves G→P (producing `{scope:"project"}` + `{scope:"global", excluded:true}`
- * tombstone), and later the SAME skill moves P→G, the tombstone MUST be removed
- * so the skill ends up at pure global scope again: exactly ONE `{react,
- * scope:"global"}` entry in the project config (no tombstone, no project entry),
- * and the skill physically at the global scope path and NOT at the project scope
- * path.
- *
- * Every scenario drives the real `init --from` + `edit --from` pipeline — no
- * manual writes to `config.ts` or skill directories.
+ * A skill moved G->P (project entry plus global tombstone) and then P->G again must end at pure
+ * global scope: one global entry, no tombstone, files only at the global path.
  */
 
 describe("edit — tombstone cleanup after P→G restoration", () => {
@@ -43,7 +35,6 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
     env = undefined;
   });
 
-  /** React G→P: a project React beside the global one, assigned to no sub-agent. */
   function moveReactIntoProject(): Promise<unknown> {
     if (!env) throw new Error("no environment to edit");
     return applyFromSeed(
@@ -54,7 +45,6 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
     );
   }
 
-  /** React P→G, or any edit naming the configuration as globally installed. */
   function applyAllGlobal(id: string): Promise<unknown> {
     if (!env) throw new Error("no environment to edit");
     return applyFromSeed(store, id, e2eStackPayload(), {
@@ -67,7 +57,6 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
     "Scenario B: full G→P→G cycle roundtrip — each phase asserted on config and filesystem",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // Phase 1: install globally. Assert pure global state, no tombstone.
       env = await createGlobalOnlyEnvFromSeed(store);
       const { fakeHome, projectDir } = env;
 
@@ -75,9 +64,7 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
 
-      // After a pure-global init with no project overrides, the project config
-      // file may not exist at all (the skill is inherited). If it does exist,
-      // it must carry no tombstone and no project-scoped entry for react.
+      // With no project overrides the project config may not exist; if it does, no tombstone.
       if (await fileExists(projectConfigPath)) {
         const entriesPhase1 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
         expect(entriesPhase1.filter((entry) => entry.excluded === true)).toStrictEqual([]);
@@ -86,7 +73,6 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
       expect(await directoryExists(globalSkillDir)).toBe(true);
       expect(await directoryExists(projectSkillDir)).toBe(false);
 
-      // Phase 2: G→P. Assert active project + global tombstone.
       await moveReactIntoProject();
 
       const entriesPhase2 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
@@ -100,8 +86,6 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
       expect(await directoryExists(globalSkillDir)).toBe(true);
       expect(await directoryExists(projectSkillDir)).toBe(true);
 
-      // Phase 3: P→G. Assert ONLY global active, no tombstone, no
-      // project entry. This is the failure point this suite guards.
       await applyAllGlobal("AllGlobal1");
 
       const entriesPhase3 = await readSkillEntries(projectDir, E2E_SKILL.react.id);
@@ -125,21 +109,16 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
     "Scenario C: no-op edit between G→P and P→G does not leave orphaned state",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // Phase 1: install globally.
       env = await createGlobalOnlyEnvFromSeed(store);
       const { fakeHome, projectDir } = env;
 
-      // Phase 2: G→P.
       await moveReactIntoProject();
 
-      // Phase 3: no-op edit — MUST NOT leave orphaned state that would interfere
-      // with the subsequent P→G move.
+      // A no-op edit must leave no orphaned state that would interfere with the P->G move.
       await moveReactIntoProject();
 
-      // Phase 4: P→G. Must produce the same clean end-state as Scenario B.
       await applyAllGlobal("AllGlobal2");
 
-      // Config assertion: exactly ONE react entry at global scope, no tombstone.
       const reactEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
 
       expect(reactEntries).toHaveLength(1);
@@ -151,7 +130,6 @@ describe("edit — tombstone cleanup after P→G restoration", () => {
       expect(reactEntries.filter((entry) => entry.excluded === true)).toStrictEqual([]);
       expect(reactEntries.filter((entry) => entry.scope === "project")).toStrictEqual([]);
 
-      // Filesystem assertion.
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.react.id);
       const projectSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       expect(

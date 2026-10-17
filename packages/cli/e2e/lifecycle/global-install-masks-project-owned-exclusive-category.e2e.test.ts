@@ -33,18 +33,9 @@ import type { AgentName, SkillConfig } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * Category exclusivity across scopes.
- *
- * `web-framework` is an exclusive category: a project may hold at most one
- * active framework skill. Cross-scope reconciliation, however, is keyed
- * on skill-id equality and knows nothing about categories, so a project that
- * owns Vue at PROJECT scope keeps that entry active while a GLOBAL install of
- * React is re-inlined as a SECOND active entry — two active skills in one
- * exclusive category inside the project's config.ts.
- *
- * Expected shape: the project's own skill wins locally and the global install is
- * masked with a `{ scope: "global", excluded: true }` tombstone, exactly as a
- * same-id dual-scope `[P][G]` pair is written today.
+ * A project owning Vue at project scope in the exclusive `web-framework` category, when React is
+ * added globally, keeps Vue active and masks React with a global tombstone rather than holding two
+ * active framework skills.
  */
 
 const globalStack = {
@@ -73,7 +64,6 @@ const vitestMetadata = renderMetadataYaml({
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** The global install with React added beside vitest, as `edit --from` at HOME applies it. */
 const GLOBAL_WITH_REACT = buildSeedPayload({
   skills: {
     [E2E_SKILL.vitest.id]: buildSeedSkill({ scope: "global", assignments: { [WEB_DEV]: "lazy" } }),
@@ -111,10 +101,7 @@ describe("global install masks a project-owned skill in an exclusive category", 
       await createPermissionsFile(dir);
     }
 
-    // Global install: vitest only. No framework skill is active globally yet, so
-    // the Phase-2 edit ADDS React to the exclusive web-framework category — the
-    // genuine project-then-global collision. The project is pre-registered so
-    // the global save fans out to it.
+    // No framework skill is global yet, so the edit adds React to the exclusive category.
     const globalConfig: FixtureProjectConfig = buildProjectConfig({
       name: "exclusivity-global",
       skills: buildSkillConfigs([E2E_SKILL.vitest.id], { scope: "global", origin: "eject" }),
@@ -130,8 +117,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
       metadata: vitestMetadata,
     });
 
-    // Registered project P: owns Vue at PROJECT scope in the exclusive
-    // web-framework category, and inherits vitest from the global install.
     const projectConfig: FixtureProjectConfig = buildProjectConfig({
       name: "exclusivity-project",
       skills: [
@@ -149,8 +134,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
       metadata: vueMetadata,
     });
 
-    // Phase 2: `edit --from` at HOME, add React at global scope. The global save
-    // propagates to the registered project.
     ({ exitCode: editExitCode, output: editRawOutput } = await applyFromSeed(
       store,
       "AddReact1",
@@ -181,8 +164,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
     expect(editExitCode, `global edit must succeed: ${editRawOutput}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  // Proof the collision was actually created: React is now a single active
-  // global framework skill, backed by a real install on disk.
   it("adds the framework skill at global scope in the global config", () => {
     expect(globalReact).toStrictEqual([
       { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
@@ -193,14 +174,11 @@ describe("global install masks a project-owned skill in an exclusive category", 
     expect(globalReactInstalled).toBe(true);
   });
 
-  // Proof-of-execution: propagation reached the registered project and inlined
-  // a global entry for React. Holds on both the buggy and the fixed code — it
-  // only asserts propagation FIRED, not the shape it wrote.
+  // Proves propagation fired, not the shape it wrote.
   it("inlines the new global framework skill into the registered project", () => {
     expect(projectReact.map((entry) => entry.scope)).toStrictEqual(["global"]);
   });
 
-  // The project's own framework skill is untouched by a global change.
   it("leaves the project-owned framework skill active at project scope", () => {
     expect(projectVue).toStrictEqual([
       { id: E2E_SKILL["vue-composition-api"].id, scope: "project", origin: "eject" },
@@ -215,8 +193,6 @@ describe("global install masks a project-owned skill in an exclusive category", 
     expect(projectReactInstalled).toBe(false);
   });
 
-  // RED on current main: React is inlined as a second ACTIVE entry, so the
-  // project holds two active skills in one exclusive category.
   it("masks the colliding global framework skill with a tombstone", () => {
     expect(projectReact).toStrictEqual([
       { id: E2E_SKILL.react.id, scope: "global", origin: "eject", excluded: true },

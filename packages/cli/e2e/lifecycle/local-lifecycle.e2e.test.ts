@@ -10,14 +10,7 @@ import { installE2EStackGlobally } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { createTempDir, cleanupTempDir } from "../helpers/test-utils.js";
 
-/**
- * Full lifecycle E2E test for eject mode: Init -> Compile -> Uninstall.
- *
- * Phase 1: init --from creates config, compiles agents, copies skills
- * Phase 2: Compile recompiles agents from existing installation
- * Phase 3: Uninstall --yes removes skills and agents
- * Phase 4: Verify clean state (config preserved, artifacts removed)
- */
+/** Eject-mode lifecycle: `init --from`, then `compile`, then `uninstall --yes`. */
 
 describe("eject mode lifecycle: init -> compile -> uninstall", () => {
   let store: SeedConfigStore;
@@ -39,18 +32,9 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
     "should complete full lifecycle: init -> compile -> uninstall",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // ================================================================
-      // Phase 1: Init -- verify config + agents + skills
-      // ================================================================
-
-      // Eject mode installs to the default (global) scope. Model it as the
-      // GLOBAL install (HOME === cwd === projectDir) so every artifact — config,
-      // compiled agents, ejected skills — collapses onto projectDir and the
-      // follow-up compile/uninstall commands (which resolve targets from cwd)
-      // find the same content.
+      // Modelled as the global install (HOME === cwd) so the follow-up commands, which resolve
+      // targets from cwd, find the same content.
       const initResult = await installE2EStackGlobally(store, projectDir);
-
-      // --- Phase 1 Verification ---
 
       await expectPhaseSuccess(
         { project: { dir: projectDir }, exitCode: initResult.exitCode },
@@ -62,7 +46,6 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         },
       );
 
-      // P1-C/D: Agents compiled with correct content
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("web-developer", {
         contains: ["name: web-developer", E2E_SKILL.react.id],
       });
@@ -70,15 +53,7 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         contains: ["name: api-developer"],
       });
 
-      // P1-G: the install announced completion. The generic absences that stood
-      // here ("Failed to archive", "ENOENT") could not tell a clean install from
-      // one that failed with different wording, and the exit code beside them
-      // already carries "did not crash".
       expect(initResult.output).toContain(STEP_TEXT.INIT_SUCCESS);
-
-      // ================================================================
-      // Phase 2: Compile -- recompile agents from existing installation
-      // ================================================================
 
       const compileResult = await CLI.run(
         ["compile"],
@@ -88,11 +63,9 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         },
       );
 
-      // The install compiled these agents moments ago, so recompiling them is a
-      // no-op — and the summary has to say that rather than count the roster again.
+      // Just compiled, so the recompile is a no-op and the summary must say so.
       expect(compileResult.output).toMatch(/0 global agents rewritten, [1-9]\d* unchanged/);
 
-      // P2-A/B/C: Config preserved, agent still compiled with correct content
       await expectPhaseSuccess(
         { project: { dir: projectDir }, exitCode: compileResult.exitCode },
         {
@@ -108,10 +81,6 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
         contains: ["name: api-developer"],
       });
 
-      // ================================================================
-      // Phase 3: Uninstall --yes -- remove skills and agents
-      // ================================================================
-
       const uninstallResult = await CLI.run(
         ["uninstall", "--yes"],
         { dir: projectDir },
@@ -123,11 +92,6 @@ describe("eject mode lifecycle: init -> compile -> uninstall", () => {
       expect(uninstallResult.exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(uninstallResult.stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-      // ================================================================
-      // Phase 4: Verify clean state
-      // ================================================================
-
-      // Skills, agents, and the config manifest should all be removed by default
       await expectCleanUninstall(projectDir, { removeConfig: true });
     },
   );

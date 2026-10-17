@@ -15,24 +15,11 @@ import {
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * What `compile` says about a skill a sub-agent's stack names in `config.ts` and that is installed
- * nowhere — no files on disk, and not in the marketplace the installation reads.
- *
- * One line is true and stays: the skill "is configured but was not found". A second line said the
- * same id was "not found in matrix. It may be a custom or local skill" — and there is no custom or
- * local copy, which is exactly what the first line had just said. The owner ruled that second
- * line deleted wherever it is printed, and this is `compile`'s.
- *
- * The true line is the positive subject guard for the absence: it names the same id in the same
- * output, so a run that printed nothing about the skill cannot pass. The id is a real catalogue
- * skill the E2E fixture does not ship, so it is unknown to the matrix this installation loads
- * rather than an id no schema would accept.
- *
- * Observed red against the unfixed build: both lines printed. The compiled sub-agent and the
- * untouched `config.ts` are green there and must stay green.
+ * `compile` over a stack skill installed nowhere prints only the "configured but was not found"
+ * line, which also guards the absence of the "not found in matrix" one.
  */
 
-/** Named by the stack and the config, shipped by no marketplace this installation reads. */
+/** A real catalogue skill the E2E fixture does not ship. */
 const INSTALLED_NOWHERE = "web-styling-tailwind";
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;

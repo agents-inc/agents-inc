@@ -30,14 +30,8 @@ import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * Dual-scope partial removal: skill X is installed at BOTH scopes — a global copy
- * (in the global config, referenced by a global agent's stack) and the project's
- * own independent project-scoped copy (referenced by a project-scoped agent's
- * stack). Removing ONLY the global copy (`edit --from` at global scope) must strip X from
- * the global config while leaving the project's own project-scope entry — in both
- * skills[] and stack — completely untouched. The project is registered so global
- * propagation actually runs against it, proving it does not clobber the project's
- * own copy.
+ * Removing a skill's GLOBAL copy via `edit --from` strips it from the global config while the
+ * registered project's own project-scope copy (skills[], stack and directory) is untouched.
  */
 
 const globalStack = {
@@ -61,7 +55,7 @@ const vitestMetadata = renderMetadataYaml({
   contentHash: "c3d4e5f",
 });
 
-/** The global configuration with vitest left out: its sub-agent on, holding nothing. */
+/** Its sub-agent stays on, holding nothing. */
 const WITHOUT_VITEST_ID = "NoVitst3";
 
 describe("edit at global scope removes only the global copy of a dual-scope skill", () => {
@@ -93,13 +87,6 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
     "strips the global copy and leaves the project-scope copy untouched",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // ================================================================
-      // Phase 1: Seed a GLOBAL install (HOME === globalHome) that owns a global
-      // vitest referenced by web-developer's stack, plus a registered project
-      // that owns its OWN project-scoped vitest referenced by api-developer's
-      // stack (and inlines the inherited global vitest in its skills[]).
-      // ================================================================
-
       tempDir = await createTempDir();
       const globalHome = path.join(tempDir, "home");
       const projectDir = path.join(tempDir, "project");
@@ -124,8 +111,6 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
         metadata: FORKED_FROM_METADATA,
       });
 
-      // Project config inlines the inherited global vitest AND carries its own
-      // project-scoped vitest. api-developer (project-scoped) references it.
       const projectConfig = buildProjectConfig({
         name: "dual-scope-project",
         skills: [
@@ -141,39 +126,21 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
         metadata: vitestMetadata,
       });
 
-      // ================================================================
-      // Phase 2: Run `cc edit --from` at global scope, leaving vitest out. This
-      // removes the GLOBAL copy only and triggers propagation to the project.
-      // ================================================================
-
       const result = await applyEditFrom(store, WITHOUT_VITEST_ID, { dir: globalHome });
       expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
-
-      // ================================================================
-      // Phase 3a: Global config — vitest gone from skills[] and stack.
-      // ================================================================
 
       const g = await loadConfigOrFail(globalHome);
       expect(g.skills.map((s) => s.id)).not.toContain(E2E_SKILL.vitest.id);
       expect(g.stack?.[E2E_AGENT["web-developer"].name]?.["web-testing"]).toBeUndefined();
 
-      // ================================================================
-      // Phase 3b: Project config — the project's OWN project-scope vitest entry
-      // (skills[] and stack) is completely untouched. Proof-of-execution: the
-      // inherited global vitest is dropped, showing propagation actually ran.
-      // ================================================================
-
       const p = await loadConfigOrFail(projectDir);
 
-      // Proof-of-execution: propagation rewrote the project, dropping the stale
-      // inherited global vitest. Without this, the assertions below could pass
-      // vacuously on an untouched file.
+      // Proof propagation ran, or the assertions below could pass on an untouched file.
       expect(
         p.skills.filter((s) => s.scope === "global").length,
         "propagation must drop the inherited global vitest from the project",
       ).toBe(0);
 
-      // The project's own project-scope vitest survives, unchanged.
       const projectVitest = p.skills.find(
         (s) => s.id === E2E_SKILL.vitest.id && s.scope === "project",
       );
@@ -182,13 +149,11 @@ describe("edit at global scope removes only the global copy of a dual-scope skil
         "project's own project-scope vitest must survive the global removal",
       ).toStrictEqual({ id: E2E_SKILL.vitest.id, scope: "project", origin: "eject" });
 
-      // The project agent's stack still references its project-scope vitest.
       expect(
         p.stack?.[E2E_AGENT["api-developer"].name]?.["web-testing"],
         "project agent stack must still reference the project-scope vitest",
       ).toStrictEqual([{ id: E2E_SKILL.vitest.id, preloaded: false }]);
 
-      // Filesystem side: the project's own eject skill dir is untouched.
       expect(
         await directoryExists(path.join(skillsPath(projectDir), E2E_SKILL.vitest.id)),
         "project's own vitest skill dir must remain",

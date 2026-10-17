@@ -30,46 +30,23 @@ import {
 import type { SkillId } from "../../src/cli/types/index.js";
 
 /**
- * A run from a project that adds nothing to the global install registers the project there, and
- * changes nothing else in the global config.
- *
- * The global `config.ts` is the machine's: every registered project inherits it. A project run
- * that only touches the project has no business rewriting it, and the one line it does owe it is
- * the project's own registration in `projects`. What it wrote instead was the marketplace NAME
- * of the catalogue the project was set up from, filled into a global config that recorded none
- * — the global install's own `marketplace` left standing beside it, so the pair named two
- * different catalogues at once. That fill is right where the run ADDS global entries, because
- * those entries came from that marketplace; the last spec here is that case, in the same file so
- * the two move together.
- *
- * The global install is made from the DEFAULT public marketplace, which is the one install that
- * records no marketplace name: the name is read out of a marketplace's own manifest, and the
- * default catalogue is vendored into the binary rather than read off disk. That is the state the
- * hand-run found (a global install from `github:agents-inc/skills` with no `marketplaceName`),
- * reached offline through the seeded cache. The project is set up from the E2E marketplace, whose
- * manifest names it {@link E2E_MARKETPLACE_NAME}.
+ * A project run adding nothing global only registers the project in the global config; it must
+ * not fill in the project marketplace's name. A run that does add global entries does fill it.
+ * The global install is from the default marketplace, which records no name.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 const REVIEWER = E2E_BUILTIN_AGENT.reviewer.name;
 
-/** The global install's one skill, from the default catalogue. */
 const GLOBAL_SKILL = "shared-tooling-git-hooks" as const satisfies SkillId;
 
-/**
- * The skill the seeded checkout leaves out. The fixture's own parameter, and nothing here names
- * it, so which skill it is does not matter beyond being one no payload below asks for.
- */
+/** The fixture's own parameter; it only has to be a skill no payload below asks for. */
 const NOT_IN_THE_CHECKOUT = "meta-reviewing-infra-reviewing" as const satisfies SkillId;
 
-/** The global install: one default-catalogue skill on one bundled sub-agent, both global. */
 const GLOBAL_INSTALL_ID = "GlobalOnly1";
-/** React on web-developer, both in the project — nothing global. */
 const PROJECT_ONLY_ID = "ProjectOnly1";
-/** The same project, plus Vitest — still nothing global. */
 const PROJECT_GROWS_ID = "ProjectGrows1";
-/** React in the project, and Vitest on api-developer in the global install. */
 const ADDS_GLOBAL_ID = "AddsGlobal1";
 
 describe("a project run that adds nothing global", () => {
@@ -149,17 +126,14 @@ describe("a project run that adds nothing global", () => {
     env = undefined;
   });
 
-  /** A fresh HOME holding a checkout of the default marketplace, so installing from it is offline. */
+  /** Holds a checkout of the default marketplace, so installing from it is offline. */
   async function takeEnvironment(): Promise<TestEnvironment> {
     const environment = await createTestEnvironment();
     await seedDefaultSourceCache(environment.fakeHome, { omitting: NOT_IN_THE_CHECKOUT });
     return environment;
   }
 
-  /**
-   * The global install, made at HOME from the default marketplace: no `--marketplace`, and a
-   * payload naming none, which is what leaves its config without a marketplace name.
-   */
+  /** No `--marketplace` and a payload naming none, which leaves the config without a name. */
   async function installGlobalFromTheDefaultMarketplace(home: string): Promise<void> {
     const installed = await CLI.run(
       ["init", "--from", GLOBAL_INSTALL_ID],
@@ -171,7 +145,6 @@ describe("a project run that adds nothing global", () => {
     );
   }
 
-  /** `init --from <id>` in the project, from the E2E marketplace. */
   async function installIntoProject(environment: TestEnvironment, id: string): Promise<void> {
     const installed = await runInitFrom(
       store,
@@ -184,7 +157,6 @@ describe("a project run that adds nothing global", () => {
     );
   }
 
-  /** The global install's content: its skills and its compiled sub-agents. */
   function globalContent(home: string): Promise<Record<string, unknown>> {
     return readTreeSnapshot(path.join(home, DIRS.CLAUDE));
   }
@@ -197,17 +169,14 @@ describe("a project run that adds nothing global", () => {
       await installGlobalFromTheDefaultMarketplace(env.fakeHome);
 
       const globalBefore = await loadConfigOrFail(env.fakeHome);
-      // The precondition the defect needs, held rather than assumed: a global install that
-      // records no marketplace name, under a project whose marketplace has one.
+      // Precondition: a nameless global install under a named project marketplace.
       expect(globalBefore.marketplaceName).toBeUndefined();
       const typesBefore = await readTestFile(configTypesTsPath(env.fakeHome));
       const contentBefore = await globalContent(env.fakeHome);
 
       await installIntoProject(env, PROJECT_ONLY_ID);
 
-      // The subject guard: the project really was set up from a marketplace with a name, so a
-      // global config that stays unnamed is the merge declining to copy it, not a name that was
-      // never there to copy.
+      // Subject guard: there was a name to copy.
       expect((await loadConfigOrFail(env.projectDir)).marketplaceName).toBe(E2E_MARKETPLACE_NAME);
 
       expect(
@@ -224,9 +193,7 @@ describe("a project run that adds nothing global", () => {
     { timeout: TIMEOUTS.INTERACTIVE },
     async () => {
       env = await takeEnvironment();
-      // The project first, so its registration is already in the global config and this edit
-      // has no line of its own to add there. A project install onto a machine with nothing
-      // global writes the blank global pair and registers itself in it.
+      // The project first, so its registration is already in the global config.
       await installIntoProject(env, PROJECT_ONLY_ID);
       await installGlobalFromTheDefaultMarketplace(env.fakeHome);
 
@@ -246,8 +213,7 @@ describe("a project run that adds nothing global", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
       expect(exitCode, `edit failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
 
-      // The subject guard: the edit really changed the project, so an untouched global config is
-      // the edit leaving it alone rather than an edit that wrote nothing at all.
+      // Subject guard: the edit really changed the project.
       expect(
         (await loadConfigOrFail(env.projectDir)).skills
           .filter((skill) => skill.scope === "project")
@@ -258,8 +224,7 @@ describe("a project run that adds nothing global", () => {
         await loadConfigOrFail(env.fakeHome),
         "a project edit that adds nothing global must not change the global config",
       ).toStrictEqual(globalBefore);
-      // Content and mtime of both files in the global folder: a rewrite that produced the same
-      // bytes is a write all the same.
+      // Content and mtime: a same-bytes rewrite is a write all the same.
       expect(await readTreeSnapshot(path.dirname(configTypesTsPath(env.fakeHome)))).toStrictEqual(
         globalFolderBefore,
       );
@@ -272,8 +237,7 @@ describe("a project run that adds nothing global", () => {
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       env = await createTestEnvironment();
-      // A project-only install first leaves the blank global config, registered and naming no
-      // marketplace — so what the second install writes is a fill, through the same merge.
+      // The first install leaves a blank, nameless global config, so the second writes a fill.
       const first = path.join(env.fakeHome, "first-project");
       await mkdir(first);
       const installedFirst = await runInitFrom(
@@ -293,7 +257,6 @@ describe("a project run that adds nothing global", () => {
 
       const globalAfter = await loadConfigOrFail(env.fakeHome);
       expect(globalAfter.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.vitest.id]);
-      // The entries this run added came from the E2E marketplace, so the global config says so.
       expect(globalAfter.marketplace).toBe(E2E_SOURCE.sourceDir);
       expect(globalAfter.marketplaceName).toBe(E2E_MARKETPLACE_NAME);
       expect(globalAfter.projects).toStrictEqual([

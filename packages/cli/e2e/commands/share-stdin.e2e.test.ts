@@ -14,9 +14,8 @@ import {
 import { SEED_VERSION, type SeedPayload } from "@workspace/matrix/seed";
 
 /**
- * `share --stdin` turns a payload the caller holds into an id, with no installation. It serves
- * producers such as `meta-config-stack-detect`; the CLI publishes so `SEED_VERSION`, the API URL
- * override and the user-agent live in one place.
+ * `share --stdin` turns a piped payload into an id with no installation, so `SEED_VERSION`, the API
+ * URL override and the user-agent stay in one place.
  */
 
 /** Built with the factories, so a wire-shape change reddens at the factory. */
@@ -28,7 +27,6 @@ const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/** Shared by the refusal and its control, which differ only in where the sub-agent rests. */
 const ASSIGNED_TO_WEB_DEV = { [WEB_DEV]: "lazy" } as const;
 
 describe("share --stdin", () => {
@@ -66,7 +64,6 @@ describe("share --stdin", () => {
     expect(output).toContain(`?fromId=${id}`);
   });
 
-  /** A bare `share` resolves the installation, project then global; `--stdin` must read none. */
   it("reads no installation, so an empty directory publishes only what was piped", async () => {
     tempDir = await createTempDir();
 
@@ -85,7 +82,7 @@ describe("share --stdin", () => {
     expect(Object.keys(posted.skills)).toStrictEqual([E2E_SKILL.react.id]);
   });
 
-  /** Asserted on the empty request log: a write is the store's scarce half. */
+  /** A write is the store's scarce half. */
   it("refuses a body that is not a payload without spending a write", async () => {
     tempDir = await createTempDir();
 
@@ -104,10 +101,7 @@ describe("share --stdin", () => {
     );
   });
 
-  /**
-   * The one that reached a user: a project skill on a sub-agent resting at the sparse default of
-   * global passed the local gate and was refused by the store. Asserted on the empty request log.
-   */
+  /** This passed the local gate once and was refused by the store. */
   it("refuses a project skill on a global sub-agent without spending a write", async () => {
     tempDir = await createTempDir();
 
@@ -139,10 +133,7 @@ describe("share --stdin", () => {
     expect(said).toContain(`nowhere to be written on '${WEB_DEV}', which rests at global scope`);
   });
 
-  /**
-   * The control: the same skill, scope and assignment with the sub-agent pinned to project. A
-   * refusal alone cannot tell a scoped guard from one refusing every assignment.
-   */
+  /** Control: the same pair with the sub-agent pinned to project. */
   it("shares that same pair once the sub-agent is pinned to project", async () => {
     tempDir = await createTempDir();
 
@@ -167,7 +158,7 @@ describe("share --stdin", () => {
 
     expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain(`init --from ${firstElement(store.minted)}`);
-    // The whole posted body: a guard that stripped the assignment would also exit 0.
+    // The whole body: a guard that stripped the assignment would also exit 0.
     expect(JSON.parse(firstElement(store.requests).body)).toStrictEqual(writable);
   });
 

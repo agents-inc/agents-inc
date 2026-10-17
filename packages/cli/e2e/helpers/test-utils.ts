@@ -59,89 +59,36 @@ import { DIRS, FILES, e2eSkillId } from "../pages/constants.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/** Absolute path to the CLI package root (`packages/cli`) — not the monorepo root two levels above */
+/** `packages/cli`, not the monorepo root. */
 export const CLI_ROOT = path.resolve(__dirname, "../..");
 
-/**
- * Absolute path to the monorepo root — the git checkout that holds `packages/cli`.
- *
- * Use this, never CLI_ROOT, for anything resolved against a SIBLING of the repository:
- * the skills repository is a separate checkout next to this one and was not part of the
- * monorepo merge, so it is `../skills` from here. The two constants were the same path
- * until the CLI moved from the repository root into `packages/cli`; since that move, a
- * sibling resolved off CLI_ROOT lands inside `packages/` instead.
- */
+// Resolve siblings of the checkout (e.g. `../skills`) from here, never from CLI_ROOT.
 export const MONOREPO_ROOT = path.resolve(CLI_ROOT, "../..");
 
-/** Absolute path to the built binary (requires `bun run build` first) */
+/** Requires `bun run build` first. */
 export const BIN_RUN = path.join(CLI_ROOT, "bin", "run.js");
 
-/**
- * The source folder a scope is ON, resolved the way the product resolves it — the provider read
- * off the disk, and that provider's folder under `.agents-inc/`.
- *
- * Every helper below that has to name a file inside a source folder asks this rather than naming
- * a spelling, so it answers before the install exists and goes on answering after it. A fixture
- * whose subject IS a particular folder names it outright, through {@link writeProjectConfigIn}.
- */
+// The scope's source folder as the product resolves it, from the provider on disk.
 export function sourceFolderIn(dir: string): string {
   return sourceFolderInUse(dir, providerInUse(dir)).dir;
 }
 
-/** The same folder as a user writes it, relative to `dir`: `.agents-inc/claude`. */
+/** Relative to `dir`, e.g. `.agents-inc/claude`. */
 export function sourceFolderRelIn(dir: string): string {
   return sourceFolderInUse(dir, providerInUse(dir)).relName;
 }
 
-/**
- * The environment that stops a spawned CLI leaving a background writer behind it.
- *
- * `@oclif/plugin-warn-if-update-available`'s init hook ends by spawning a DETACHED,
- * `unref`'d child which writes `<cacheDir>/version`. Nothing awaits it, so the write lands
- * AFTER the CLI process has exited — and under a fake HOME the cache dir sits inside the very
- * tree a spec is watching. Every run of this suite has therefore been racing a writer it never
- * declared: `edit --from`'s byte-identical snapshot compares one project tree before and after
- * a refused run, and caught `.cache/agents-inc/version` appearing between the two reads.
- *
- * `AGENTS_INC_SKIP_NEW_VERSION_CHECK` is oclif's scoped key for this package, composed from
- * `oclif.bin` — `Config.scopedEnvVarKey("SKIP_NEW_VERSION_CHECK")` returns it rather than it
- * being guessed. The plugin's `refreshNeeded()` returns false on it, so the child is never
- * spawned at all; measured against a temp HOME, the version file that reliably appeared 16ms
- * after the parent exited does not appear within 5s, and no `get-version` process enters the
- * process table.
- *
- * There is no single door to set it at. Three sites spawn the binary — `runCLI` below,
- * `CLI.run`, and `TerminalSession` — so each spreads this one definition. It goes in FIRST at
- * each, ahead of the caller's own `env`: it is a default the harness owes every run, not a pin
- * like HOME, and a spec that ever needs to exercise the update warning must be able to drop it.
- */
+// Stops oclif's update plugin spawning a detached child that writes into the fake HOME after the
+// run exits. Spread first at each spawn door so a spec can still override it.
 export const NO_BACKGROUND_VERSION_CHECK = { AGENTS_INC_SKIP_NEW_VERSION_CHECK: "1" };
 
-/**
- * The seed API every spawned CLI is pointed at unless a spec names a store of its own.
- *
- * Clearing `AGENTS_INC_API_URL` is not enough: the product falls back to
- * `https://api.agentsinc.sh` when it is unset, so a run that reaches the network without a store
- * reaches production. A bare `edit` publishes the installation it opens, and one spec minted a real
- * id there before this existed. Port 1 on the loopback refuses at once, so such a run fails fast
- * and locally instead. Spread ahead of the caller's own `env` at every door, like
- * {@link NO_BACKGROUND_VERSION_CHECK}: a spec that starts `startSeedConfigStore` names its URL and
- * wins.
- */
+// Unset, the product falls back to the production API; loopback port 1 fails fast instead.
 export const NO_LIVE_SEED_API = { AGENTS_INC_API_URL: "http://127.0.0.1:1" };
 
 const E2E_TEMP_PREFIX = "ai-e2e-";
 const AUTO_HOME_PREFIX = "ai-e2e-home-";
 
-/**
- * Standard forkedFrom metadata block for E2E plugin/uninstall tests.
- * Represents a skill forked from web-framework-react in the E2E source.
- *
- * Carries the full descriptive field set a real fork copies from its origin, not
- * just the fork provenance: `doctor`'s content layer validates every installed
- * metadata.yaml against the strict schema, so a fixture missing them reads as a
- * broken install rather than a forked one.
- */
+// The full field set, since doctor validates installed metadata.yaml against the strict schema.
 export const FORKED_FROM_METADATA = renderMetadataYaml({
   author: "@agents-inc",
   displayName: "web-framework-react",
@@ -157,12 +104,6 @@ export const FORKED_FROM_METADATA = renderMetadataYaml({
   },
 });
 
-/**
- * The config shapes a fixture builds, with their skill ids widened to `string` —
- * the seam where the fixture marketplace's namespace meets the production types.
- * Re-exported here because every E2E fixture reaches them through this module;
- * skill-config-builders.ts owns them, beside the factory that first has to name one.
- */
 export type {
   FixtureProjectConfig,
   FixtureSkillConfig,
@@ -174,62 +115,33 @@ export async function createTempDir(): Promise<string> {
   return createTempDirBase(E2E_TEMP_PREFIX);
 }
 
-/** A fake HOME plus the Claude CLI config tree that belongs to it. */
 export type IsolatedClaudeHome = {
-  /** What a spawned CLI's `os.homedir()` resolves to. */
   home: string;
-  /** `<home>/.claude` — pass as `CLAUDE_CONFIG_DIR` or `{ configDir }`. */
+  /** Pass as `CLAUDE_CONFIG_DIR` or `{ configDir }`. */
   configDir: string;
 };
 
-/**
- * Allocates a fake HOME and names the Claude config tree inside it.
- *
- * The config dir is not a second isolation mechanism beside the fake HOME — it
- * is the directory that HOME already implies, said out loud. Two things make
- * saying it necessary. `CLAUDE_CONFIG_DIR` BEATS `HOME` in the Claude CLI, so an
- * exported one silently overrides every fake HOME in the suite; and a helper
- * called in-process (a worker importing `claudePlugin*` directly) has no fake
- * HOME to inherit at all, so its writes land in the developer's own
- * installation. `<home>/.claude` is also exactly where our CLI reads the plugin
- * registry from under the same HOME, so both binaries see one installation.
- *
- * Cleanup is `cleanupTempDir(home)`: the registry files live inside the tree, so
- * removing it removes every registration the run made.
- */
+// `CLAUDE_CONFIG_DIR` beats `HOME`, and in-process callers have no fake HOME, so name it explicitly.
 export async function createIsolatedClaudeHome(): Promise<IsolatedClaudeHome> {
   const home = await createTempDir();
   return { home, configDir: claudeConfigDir(home) };
 }
 
-/** The Claude CLI config tree belonging to a HOME. */
 export function claudeConfigDir(home: string): string {
   return path.join(home, CLAUDE_DIR);
 }
 
-/**
- * The Codex CLI state tree belonging to a HOME — what `CODEX_HOME` names.
- *
- * {@link claudeConfigDir}'s twin, for the same reason: `CODEX_HOME` beats `HOME` in Codex, so a
- * developer's exported value sends every Codex call a spawned binary makes into their real
- * installation, past the fake HOME entirely. Every door pins it to this after the caller's own
- * environment, and `e2e/fixtures/codex.ts` hands it to the Codex binary it starts directly.
- */
+// `CODEX_HOME` beats `HOME` in Codex, so every door pins it.
 export function codexHome(home: string): string {
   return path.join(home, DIRS.CODEX);
 }
 
-/** Wait for the given number of milliseconds. Shared delay utility for PTY-based tests. */
 export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 const POLL_INTERVAL_MS = 50;
 
-/**
- * Polls `isSatisfied` until it returns true, or throws `buildTimeoutError()`
- * once `timeoutMs` has elapsed. Shared skeleton for all PTY wait helpers.
- */
 export async function pollUntil(
   isSatisfied: () => boolean,
   timeoutMs: number,
@@ -244,29 +156,11 @@ export async function pollUntil(
   }
 }
 
-/**
- * Removes a fixture's temp dir, tolerating a fixture that was never built.
- *
- * The `let fixture: E2ESource;` / assign-in-`beforeAll` shape reads as definitely
- * assigned to the type checker — it has no flow analysis across hook callbacks — but
- * `beforeAll` can throw before the assignment lands, and then `afterAll` would mask the
- * real setup failure with a TypeError. The guard belongs here, where the parameter type
- * says what the value can actually be, rather than at ~50 call sites where the checker
- * insists it is redundant.
- */
+// Tolerates `undefined`: a throwing `beforeAll` leaves the fixture unassigned.
 export async function cleanupFixture(fixture: { tempDir: string } | undefined): Promise<void> {
   if (fixture !== undefined) await cleanupTempDir(fixture.tempDir);
 }
 
-/**
- * Removes an isolated Claude home, tolerating one that was never allocated.
- *
- * The `cleanupFixture` reasoning, for the other resource a plugin spec allocates
- * in `beforeAll`: `let isolated: IsolatedClaudeHome;` reads as definitely
- * assigned, so an inline `if (isolated)` is both a lint error and no guard at
- * all — while a `beforeAll` that throws before the assignment leaves `afterAll`
- * masking the real setup failure with a TypeError.
- */
 export async function cleanupIsolatedClaudeHome(
   isolated: IsolatedClaudeHome | undefined,
 ): Promise<void> {
@@ -294,21 +188,8 @@ export {
   writeTestPluginManifest,
 };
 
-/**
- * Records `source` in an install's config.ts, the way `init --marketplace` leaves it.
- *
- * `baseDirs` is searched in resolution order — the project directory, then the global HOME —
- * because that is the order `resolveSource` reads them in: the first config that exists is the
- * one a later command's source comes out of, and recording behind it would change nothing.
- *
- * Naming a source is an install-time decision: `--marketplace` is `init`'s flag alone and
- * `CC_MARKETPLACE` is `init`'s environment, so every later command reads the source out of
- * the config. A fixture that hand-writes an install therefore has to leave the source
- * where those commands look, and this is that step.
- *
- * A config that already names one is left untouched — re-rendering somebody else's config
- * through the fixture renderer is not this helper's business.
- */
+// Records `source` as `init --marketplace` would, in the first config of `baseDirs` (resolution
+// order). A config that already names one is left untouched.
 export async function recordInstallSource(baseDirs: string[], source: string): Promise<void> {
   for (const baseDir of baseDirs) {
     const loaded = await loadInstalledConfig(baseDir);
@@ -325,32 +206,7 @@ export async function recordInstallSource(baseDirs: string[], source: string): P
   );
 }
 
-/**
- * Write a `config.ts` into the source folder the given base dir is ON, **through the product's own
- * writer**.
- *
- * The folder comes from {@link sourceFolderIn} rather than from a constant, so a fixture is seeded
- * where this release installs for the provider already on disk. A fixture whose subject IS a
- * particular folder names it outright with {@link writeProjectConfigIn}.
- *
- * `generateConfigSource` rather than `renderConfigTs`, and that is the whole point: a fixture that
- * renders its own JSON writes a file shape the CLI never produces, and every assertion over it is
- * then pinned to the fixture rather than to the product. The two disagreed on all four of the
- * things an assertion can see — field order (the writer canonicalises; `JSON.stringify` keeps
- * insertion order), entry spacing and quoting (`{"id":"x"}` against `{ id: 'x' }`, which decides
- * whether a `toContain("scope: 'project'")` matches at all), the typed named variables it hoists
- * above the export, and the stack compaction in `compactStackAssignments` that writes an unflagged
- * assignment as a bare id and drops an exclusive category's array wrapper. A spec built on the
- * fixture shape passes over a writer that has changed underneath it, which is the divergence this
- * helper existed to create.
- *
- * The STANDALONE form, which is what the writer emits for a config that does not extend a global
- * one. A fixture wanting the project-extends-global shape passes `options` straight through.
- *
- * No `config-types.ts` is needed beside it: the writer's `import type` and `satisfies` are both
- * type-only and erased before the loader ever evaluates the module. {@link writeConfigTypes} exists
- * for the specs that ASSERT on that companion file, not for loading.
- */
+// Written through the product's own writer, so specs assert on the shape the CLI really emits.
 export async function writeProjectConfig(
   baseDir: string,
   config: Partial<FixtureProjectConfig> & Pick<FixtureProjectConfig, "name">,
@@ -359,15 +215,7 @@ export async function writeProjectConfig(
   await writeProjectConfigIn(baseDir, sourceFolderRelIn(baseDir), config, options);
 }
 
-/**
- * The same config, written into a source folder the caller NAMES.
- *
- * The folder is a parameter because which one a spec wants is the spec's subject: a provider's
- * folder (`DIRS.SOURCE_CLAUDE`, `DIRS.SOURCE_CODEX`), or another a spec seeds to prove nothing
- * reads it. `sourceFolder` is a relative name as a user writes it, one segment or
- * two. {@link writeProjectConfig} binds the folder `sourceFolderRelIn` RESOLVES for its `baseDir`
- * instead; come through here only when which folder gets the config is the spec's own claim.
- */
+// For specs whose subject is which folder holds the config.
 export async function writeProjectConfigIn(
   baseDir: string,
   sourceFolder: string,
@@ -377,37 +225,15 @@ export async function writeProjectConfigIn(
   const resolved: FixtureProjectConfig = { skills: [], agents: [], ...config };
   const configDir = path.join(baseDir, sourceFolder);
   await mkdir(configDir, { recursive: true });
+  // Fixture ids are `string`; the writer only serialises them.
   const source = generateConfigSource(resolved as ProjectConfig, matrix, options);
   const configPath = path.join(configDir, STANDARD_FILES.CONFIG_TS);
   await writeFile(configPath, source);
   await refuseUnreachableConfig(baseDir, configPath, source, options);
 }
 
-/**
- * Refuses a fixture config the product would not have written.
- *
- * Rendering through `generateConfigSource` proves the FORM; this proves the CONTENT is reachable.
- * The writer emits whatever it is handed, so a fixture can still describe a state the product
- * refuses — reading it back is what asks that, because the loader NORMALISES. A config the CLI
- * would have written comes back byte-identical; one it would not either drifts or throws.
- *
- * It shipped as an env-gated diagnostic on 2026-08-24 because four files failed it, and became
- * this the same day once they were repaired. What it found is the reason it is now a refusal
- * rather than a report: thirteen stack literals filed a skill under a category the catalogue
- * contradicts — `"web-testing"` for ids the catalogue puts in `"web-e2e"` — derived from the id's
- * prefix, which `packages/cli/CLAUDE.md` forbids in fixtures as much as in product code. Nothing
- * saw it because `normalizeStackRecord` relocates the assignment on LOAD, so the written key had
- * no reader; and two of those relocations collided in an EXCLUSIVE category, which means one spec
- * asserted a compiled sub-agent body no CLI-written configuration can produce.
- *
- * Measured at zero cost: the full E2E suite runs in the same 318s with this on as without it.
- *
- * **It asks its question of the file it WROTE, and the product's own answer is what says which
- * that is.** Where the file just written is not the one the product reads — a config seeded under
- * one provider while the scope reads another — there is nothing to
- * read it back through and this proves nothing about it; the SPEC seeding it is asserting that the
- * product ignores it, which is a claim about the resolver rather than about the writer.
- */
+// Load-and-rewrite must round-trip byte-identically, or the fixture states something the product
+// would normalise away. Skipped when the product reads a different file than the one written.
 async function refuseUnreachableConfig(
   baseDir: string,
   configPath: string,
@@ -428,13 +254,6 @@ async function refuseUnreachableConfig(
   );
 }
 
-/**
- * Write a minimal config-types.ts stub to the source folder the given base dir is ON.
- * `writeProjectConfig` emits only config.ts; tests that assert on the companion config-types.ts
- * (e.g. uninstall manifest removal) seed it with this.
- *
- * `sourceFolder` is still a parameter, for the fixture that is building one layout on purpose.
- */
 export async function writeConfigTypes(
   baseDir: string,
   sourceFolder: string = sourceFolderRelIn(baseDir),
@@ -447,62 +266,19 @@ export async function writeConfigTypes(
   );
 }
 
-/**
- * Write arbitrary text as the config.ts of whichever source folder `baseDir` is on — the
- * error-path counterpart of {@link writeProjectConfig}, which can only emit a well-formed config.
- * Used to reproduce a config file that EXISTS but cannot be loaded (syntax error, no default
- * export, schema violation), the state the loader reports as `ConfigLoadError` rather than as a
- * missing file.
- *
- * The folder is resolved rather than named, because writing an unloadable config at a folder the
- * CLI does not read turns every one of those specs into the MISSING-file case while their names
- * and their assertions go on saying "corrupt" — a whole file of specs that pass having exercised
- * the other branch.
- */
+// The folder is resolved, so an unloadable config lands where the CLI actually reads.
 export async function writeCorruptConfig(baseDir: string, source: string): Promise<void> {
   const configDir = sourceFolderIn(baseDir);
   await mkdir(configDir, { recursive: true });
   await writeFile(path.join(configDir, STANDARD_FILES.CONFIG_TS), source);
 }
 
-/** Strip ANSI escape sequences from CLI output */
 export function stripAnsi(text: string): string {
   return stripVTControlCharacters(text);
 }
 
-/**
- * Run a CLI command via the built binary and return stripped output.
- *
- * Wraps the common `execa("node", [BIN_RUN, ...args], { cwd, reject: false })`
- * pattern used across all non-interactive E2E command tests. All output fields
- * are pre-stripped of ANSI escape sequences.
- *
- * HOME defaults to a freshly-created sibling temp directory, distinct from
- * cwd, so os.homedir() never collapses onto the project directory (which would
- * silently force a project command into global scope) while still isolating
- * tests from the user's real global config (~/.agents-inc/claude/config.ts). The
- * auto-created directory is removed after the run. Callers that need a specific
- * HOME override via options.env.HOME; an explicit value always wins and is
- * never auto-removed.
- *
- * `CC_MARKETPLACE`, `XDG_CACHE_HOME` and `GIGET_AUTH` are the CLI's own overrides —
- * every variable `src/cli/` reads by name that is not the harness's, bar the seed API,
- * which {@link NO_LIVE_SEED_API} defaults — and each is cleared ahead of `options.env`, so
- * a spec that needs a value still names its own. `VITEST` is the harness's own, and cleared
- * beside them so a spawned binary sees a user's environment. This door carried none of the
- * five for its whole life, because the gate that answers for them —
- * `src/cli/lib/__tests__/e2e-runner-environment.test.ts` — named the other two doors and
- * stated its roster by hand. It derives the roster from `scripts/check-spawn-doors.ts`
- * now, so a fourth door arrives at both gates at once.
- *
- * `CLAUDE_CONFIG_DIR` is derived from whichever HOME wins, and is not
- * overridable, for the same reason `CLI.run` clears `CC_MARKETPLACE`: it is the
- * Claude CLI's own config override, it BEATS `HOME`, and a developer's exported
- * value would send every `claude plugin` call this command makes into their real
- * installation. A value disagreeing with the effective HOME is the bug, not a
- * configuration. `CODEX_HOME` is pinned beside it for the same reason — Codex's own state
- * override, which beats `HOME` in the same way.
- */
+// HOME defaults to a fresh temp dir (removed after the run), never cwd, so a project command is not
+// forced into global scope. Env hygiene matches `CLI.run`; e2e-runner-environment.test.ts checks it.
 export async function runCLI(
   args: string[],
   cwd: string,
@@ -544,7 +320,6 @@ export async function runCLI(
   }
 }
 
-/** The HOME a `runCLI` uses, and whether this call is the one that must remove it. */
 async function resolveRunHome(
   explicitHome: string | undefined,
 ): Promise<{ home: string; autoCreated: boolean }> {
@@ -564,22 +339,12 @@ export async function readTestFile(filePath: string): Promise<string> {
   return readFile(filePath, "utf-8");
 }
 
-/**
- * Reads and parses a generated marketplace.json file.
- *
- * Used by `build marketplace` / `new marketplace` E2E tests to assert on the
- * generated marketplace contents.
- */
 export async function readMarketplaceJson(outputPath: string): Promise<Marketplace> {
   const content = await readFile(outputPath, "utf-8");
-  // Boundary cast: JSON.parse returns `unknown`, caller consumes as Marketplace
+  // Boundary cast over parsed JSON.
   return JSON.parse(content) as Marketplace;
 }
 
-/**
- * Reads a compiled plugin's manifest from
- * `<pluginsDir>/<pluginName>/.claude-plugin/plugin.json`.
- */
 async function readPluginManifestJson(
   pluginsDir: string,
   pluginName: string,
@@ -591,19 +356,11 @@ async function readPluginManifestJson(
     STANDARD_FILES.PLUGIN_JSON,
   );
   const content = await readFile(manifestPath, "utf-8");
-  // Boundary cast: JSON.parse returns `unknown`, caller consumes as PluginManifest
+  // Boundary cast over parsed JSON.
   return JSON.parse(content) as PluginManifest;
 }
 
-/**
- * Maps each named plugin to the `version` its `.claude-plugin/plugin.json` declares,
- * so a spec can compare every compiled plugin's version in one `toStrictEqual`
- * instead of asserting the bumped skill and trusting the rest.
- *
- * `build plugins` bumps a plugin's major version whenever its skill's content hash
- * changes, so the whole map is the contract — a version that moved when it should
- * not have is as much a failure as one that did not move when it should have.
- */
+// The whole map is the contract: a version that moved wrongly fails as much as one that did not move.
 export async function readPluginVersions(
   pluginsDir: string,
   pluginNames: readonly string[],
@@ -616,19 +373,9 @@ export async function readPluginVersions(
   return Object.fromEntries(entries);
 }
 
-/** What a fixture says about the local skill it is planting. */
 type LocalSkillOptions = { description?: string; body?: string; metadata?: string };
 
-/**
- * Creates a local skill directory under `<projectDir>/.claude/skills/<skillId>/`
- * with SKILL.md and optional metadata.yaml.
- *
- * Returns the absolute path to the skill directory.
- *
- * Claude's layout, by its `.claude/skills` name: a fixture on another provider's layout — where
- * an ejected PROJECT skill is `<repo>/.agents/skills` rather than this — passes that directory to
- * {@link createLocalSkillIn} instead of composing `.claude/skills` for every host.
- */
+// Claude's `.claude/skills` layout; for another provider use `createLocalSkillIn`.
 export async function createLocalSkill(
   projectDir: string,
   skillId: string,
@@ -641,18 +388,6 @@ export async function createLocalSkill(
   );
 }
 
-/**
- * The same skill, in a skills directory the caller NAMES.
- *
- * Every byte {@link createLocalSkill} writes, with the one thing that is not a fact about the
- * skill — where the host reads it — moved to the call site. `createLocalSkill` composes
- * `.claude/skills` and therefore describes a Claude installation only, which is the same
- * host-blindness the product's own read path was carrying until the layout answered it: on Codex
- * an ejected project skill lives at `<repo>/.agents/skills/<id>/`, so a fixture that reaches for
- * the Claude helper plants a skill no run will discover and reads as an empty installation.
- *
- * Returns the absolute path to the skill directory.
- */
 export async function createLocalSkillIn(
   skillsDir: string,
   skillId: string,
@@ -677,36 +412,14 @@ export async function createLocalSkillIn(
 const AGENT_STUB_BODY = "Test agent content.\n";
 
 type AgentFileOptions = {
-  /**
-   * Exact file body. Written verbatim after the frontmatter block (or as the
-   * whole file when `frontmatter` is false), so callers control trailing
-   * newlines themselves.
-   */
+  /** Written verbatim after the frontmatter (or as the whole file). */
   body?: string;
-  /**
-   * Prefix the body with a `---\nname: <agentName>\ndescription: Test <agentName> agent\n---\n`
-   * block.
-   */
   frontmatter?: boolean;
-  /**
-   * Stamp the provenance marker the compiler writes into every agent it produces. Frontmatter
-   * alone is the shape of a compile, not the claim: once no configuration names the file, the
-   * marker is the only thing that says this CLI wrote it, and both `doctor`'s unowned-install
-   * row and `uninstall`'s removal plan decide on it.
-   */
+  /** The marker doctor and uninstall use to tell CLI-written agents from the user's. */
   provenance?: boolean;
 };
 
-/**
- * Write an agent .md file to `<baseDir>/.claude/agents/`, creating the
- * directory if needed.
- *
- * Defaults to a bare `# <agentName>` heading with no frontmatter — the shape of a
- * hand-authored file the CLI never wrote. Pass `frontmatter: true` for the shape a
- * compile leaves behind: `name` AND `description`, both of which
- * `agentFrontmatterValidationSchema` requires, so `doctor`'s content layer accepts
- * the file instead of reporting it as an invalid agent.
- */
+// Default is a hand-authored shape; `frontmatter: true` gives the `name` + `description` a compile writes.
 export async function writeAgentFile(
   baseDir: string,
   agentName: string,
@@ -723,27 +436,15 @@ export async function writeAgentFile(
   await writeFile(path.join(agentsDir, `${agentName}.md`), content);
 }
 
-/**
- * Writes minimal compiled-agent stubs (frontmatter carrying `name` and `description`) into
- * `<projectDir>/.claude/agents/`, as left behind by a prior compile.
- */
 export async function writeAgentStubs(projectDir: string, agents: string[]): Promise<void> {
   for (const agent of agents) {
     await writeAgentFile(projectDir, agent, { frontmatter: true, body: AGENT_STUB_BODY });
   }
 }
 
-/**
- * Ensures `.claude/settings.json` grants the default allow permission.
- *
- * MERGES rather than overwrites: when the file already exists (e.g. a plugin
- * install wrote `enabledPlugins` / `extraKnownMarketplaces`), every existing field is preserved
- * and only `permissions.allow` is ensured to contain "Read(*)". A file that
- * already grants it is left byte-identical. Invalid JSON is a hard error —
- * never silently clobber a corrupt settings file.
- */
 const DEFAULT_ALLOW_PERMISSION = "Read(*)";
 
+// Merges into an existing settings.json; invalid JSON is a hard error.
 export async function createPermissionsFile(projectDir: string): Promise<void> {
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
   await mkdir(claudeDir, { recursive: true });
@@ -758,33 +459,22 @@ export async function createPermissionsFile(projectDir: string): Promise<void> {
   await writeFile(settingsPath, JSON.stringify(settings));
 }
 
-/** Parses an existing settings.json, or starts from an empty object when the file is absent. */
 async function readSettingsOrEmpty(settingsPath: string): Promise<Record<string, unknown>> {
   if (!(await fileExists(settingsPath))) return {};
+  // Boundary cast over parsed JSON; callers narrow each field.
   return JSON.parse(await readFile(settingsPath, "utf-8")) as Record<string, unknown>;
 }
 
-/** Narrows an unknown settings field to a record, treating any other shape as absent. */
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
-/** Narrows an unknown settings field to an array, treating any other shape as absent. */
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? (value as unknown[]) : [];
 }
 
-/**
- * Accepts Claude Code's trust prompt for `projectDir` the way a user does by opening Claude Code
- * there: by recording it in the state file, the record the CLI reads, and never writes, to
- * decide whether to say the folder needs trusting. Keyed by the realpath, because that is the
- * working directory a CLI started inside `projectDir` reports. Inside a git repository Claude Code
- * 2.1.288 keys the record by the repository's root instead, so a caller below one passes the root.
- *
- * The state file is `$CLAUDE_CONFIG_DIR/.claude.json` while that variable is set, and every door
- * pins it to {@link claudeConfigDir}, so that is where Claude Code would write this record for a
- * run the doors start — not `<home>/.claude.json`, which it uses only while the variable is unset.
- */
+// Keyed by realpath (inside a git repo Claude Code keys by the repo root, so pass that). Written under
+// CLAUDE_CONFIG_DIR, which every door pins.
 export async function acceptClaudeTrustPrompt(home: string, projectDir: string): Promise<void> {
   await mkdir(claudeConfigDir(home), { recursive: true });
   await writeFile(
@@ -793,26 +483,15 @@ export async function acceptClaudeTrustPrompt(home: string, projectDir: string):
   );
 }
 
-/** Returns the path to compiled agents dir in a project. */
 export function agentsPath(dir: string): string {
   return path.join(dir, CLAUDE_DIR, "agents");
 }
 
-/** Returns the path to installed skills dir in a project. */
 export function skillsPath(dir: string): string {
   return path.join(dir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
 }
 
-/**
- * Snapshot every compiled agent under a scope as a filename -> file-contents map.
- *
- * `listFiles(agentsPath(dir))` compares the ROSTER; this compares the BYTES, which is
- * what a "must not rewrite the compiled agents" claim needs — a rewrite that swaps an
- * agent's skills or model keeps the roster identical. Returns `{}` when the dir is
- * absent, so callers asserting a scope stays empty need no special case; callers
- * asserting a scope is unchanged should check the snapshot is non-empty first, or an
- * absent dir would satisfy the comparison on both sides.
- */
+// Compares bytes, not the roster. `{}` for an absent dir, so check non-empty before asserting "unchanged".
 export async function readCompiledAgents(dir: string): Promise<Record<string, string>> {
   const agentDir = agentsPath(dir);
   const files = (await listFiles(agentDir)).filter((file) => file.endsWith(".md"));
@@ -822,26 +501,13 @@ export async function readCompiledAgents(dir: string): Promise<Record<string, st
   return Object.fromEntries(entries);
 }
 
-/** One file in a tree snapshot: what it holds, and when it was last written. */
 export type TreeSnapshotEntry = {
   content: string;
   modifiedAtMs: number;
 };
 
-/**
- * Snapshot an entire directory tree as a relative-path -> {content, mtime} map.
- *
- * Both fields are load-bearing for "this scope was not written to". Content
- * alone cannot see a rewrite that produced identical bytes — which is exactly
- * what an unwanted recompile of an unchanged config does, and why an
- * out-of-scope write can be invisible in a diff while being plainly visible in
- * the command's own log. The mtime is what makes such a write observable.
- *
- * Returns `{}` when the directory is absent, so a caller asserting a scope
- * stays empty needs no special case; a caller asserting a scope is UNCHANGED
- * must check the snapshot is non-empty first, or an absent tree satisfies the
- * comparison on both sides.
- */
+// mtime catches a rewrite with identical bytes. `{}` for an absent dir, so check non-empty before
+// asserting "unchanged".
 export async function readTreeSnapshot(dir: string): Promise<Record<string, TreeSnapshotEntry>> {
   if (!(await directoryExists(dir))) return {};
 
@@ -857,24 +523,14 @@ export async function readTreeSnapshot(dir: string): Promise<Record<string, Tree
   return Object.fromEntries(snapshot);
 }
 
-/**
- * Returns the path to config.ts in a project or global scope dir, inside whichever source folder
- * that scope is on — the same answer `getProjectConfigPath` gives the product.
- */
 export function configTsPath(dir: string): string {
   return path.join(sourceFolderIn(dir), STANDARD_FILES.CONFIG_TS);
 }
 
-/** Returns the path to config-types.ts in a project or global scope dir, resolved the same way. */
 export function configTypesTsPath(dir: string): string {
   return path.join(sourceFolderIn(dir), STANDARD_FILES.CONFIG_TYPES_TS);
 }
 
-/**
- * Load a scope's config.ts structurally, throwing when it is absent or fails
- * to parse. There is no meaningful default config, so a missing one is always
- * a test bug — never silently substitute an empty config.
- */
 export async function loadConfigOrFail(dir: string): Promise<ProjectConfig> {
   const loaded = await loadInstalledConfig(dir);
   if (!loaded) {
@@ -883,7 +539,6 @@ export async function loadConfigOrFail(dir: string): Promise<ProjectConfig> {
   return loaded.config;
 }
 
-/** Load a scope's config.ts and return every agent entry named `agentName`. */
 export async function readAgentEntriesFor(
   dir: string,
   agentName: AgentName,
@@ -892,17 +547,7 @@ export async function readAgentEntriesFor(
   return config.agents.filter((agent) => agent.name === agentName);
 }
 
-/**
- * Add forkedFrom metadata to one installed skill — typically the one
- * `ProjectBuilder.editable()` wrote.
- *
- * This marks the skill as CLI-managed so `uninstall` will remove it
- * instead of skipping it as user-created.
- *
- * `skillId` is named by the caller rather than defaulted here: the directory it
- * addresses is the fixture marketplace's namespaced id, and this module cannot
- * reach the fixture's own constants without an import cycle.
- */
+// Marks the skill CLI-managed, so `uninstall` removes it rather than skipping it as user-created.
 export async function addForkedFromMetadata(projectDir: string, skillId: string): Promise<void> {
   const metadataPath = path.join(
     projectDir,
@@ -914,10 +559,6 @@ export async function addForkedFromMetadata(projectDir: string, skillId: string)
   await writeFile(metadataPath, FORKED_FROM_METADATA);
 }
 
-/**
- * Injects the marketplace NAME field into an existing config.ts.
- * Used by lifecycle tests that need to switch from local to plugin source.
- */
 export async function injectMarketplaceIntoConfig(
   baseDir: string,
   marketplaceName: string,
@@ -941,14 +582,10 @@ export async function injectMarketplaceIntoConfig(
   await writeFile(configPath, patched, "utf-8");
 }
 
-/** Returns the path to the ejected agent.liquid template in a project. */
 export function getEjectedTemplatePath(projectDir: string): string {
   return path.join(sourceFolderIn(projectDir), "agents", "_templates", "agent.liquid");
 }
 
-// The list an E2E spec runs against the real binary, held against every message in `src/cli/`
-// by the unit gate that sits beside it. One definition, so the run cannot drift from the
-// messages it is about.
 export { HANDED_OUT_INVOCATIONS } from "../../src/cli/lib/__tests__/helpers/handed-out-invocations.js";
 export {
   compactCliOutput,
@@ -958,17 +595,7 @@ export {
 export { createE2ESource, E2E_AGENT_TITLES } from "./create-e2e-source.js";
 export type { E2ESource } from "./create-e2e-source.js";
 
-/**
- * The Claude host's own functions, which the harness drives DIRECTLY rather than through
- * `PluginHost`.
- *
- * That is deliberate and is the one place the seam is stepped around: the suite registers and
- * sweeps marketplaces of its own, and `claudePluginMarketplaceList` and
- * `claudePluginMarketplaceRemove` are on no host interface — no command removes a marketplace,
- * because a marketplace is user-level state shared across every project under one HOME. A spec
- * about what the CLI does through the seam uses `hostFor("claude")` instead;
- * `e2e/smoke/plugin-host-contract.smoke.test.ts` is the one that does.
- */
+// Driven directly rather than through `PluginHost`: marketplace list/remove are on no host interface.
 export {
   isClaudeCLIAvailable,
   claudePluginMarketplaceAdd,

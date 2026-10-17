@@ -34,50 +34,23 @@ import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * D-256 (regression coverage for D-240): a plugin -> eject source change made at
- * GLOBAL scope must reach a registered project's COMPILED agents, not just its
- * config.ts.
- *
- * `propagateGlobalChangesToProjects` (local-installer.ts) rewrites each
- * registered project's own `config.ts` and `config-types.ts` after a
- * global change, but never recompiles that project's `.claude/agents/*.md`.
- * `compileAgentsAllScopes` only covers the CURRENT context (home + the current
- * project), never the other registered projects. So after the toggle the
- * registered project's config correctly records `source: "eject"` while its
- * compiled agent still emits the plugin form `<id>:<id>`, which no longer
- * resolves.
- *
- * Shape of the fixture:
- *   - HOME owns react (global scope, marketplace source) and a GLOBAL
- *     api-developer whose stack preloads react.
- *   - The registered project owns a PROJECT-scoped web-developer whose stack
- *     preloads the same global react.
- *
- * The project's stale `.claude/agents/web-developer.md` is produced by a real
- * `cc compile` run (not hand-written), so the plugin-form reference under test
- * is exactly what the product emits while react is marketplace-sourced.
- *
- * The Claude CLI is not required: a plugin -> eject migration copies the skill
- * locally and treats the plugin uninstall as best-effort.
+ * A plugin -> eject source change at global scope must reach a registered project's COMPILED
+ * agents, not just its config.ts. The stale agent is a real `compile`'s output. No Claude CLI
+ * needed: the plugin uninstall is best-effort.
  */
 
 const REACT_PLUGIN_REF = `${E2E_SKILL.react.id}:${E2E_SKILL.react.id}`;
 
-/** Marketplace label recorded as react's source, i.e. plugin (non-eject) form. */
 const MARKET = "test-marketplace";
 
-// The GLOBAL agent's stack preloads react at global scope, so its own compiled
-// output tracks react's source and proves the current context WAS recompiled.
+// Tracks react's source, proving the current context was recompiled.
 const globalStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-// The registered project's own PROJECT-scoped agent preloads the same global
-// react, so its compiled frontmatter carries react in whichever form the global
-// source dictates. Global skills legitimately reach any agent per
-// isScopeCompatible.
+// Preloads the same global react, so its frontmatter carries whichever form the source dictates.
 const projectStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -95,14 +68,8 @@ const reactMetadata = renderMetadataYaml({
   contentHash: "b2c3d4e",
 });
 
-/** The global installation's own configuration, with react ejected rather than marketplace-sourced. */
 const REACT_EJECTED_ID = "ReactEj1";
 
-/**
- * The registered project as an install leaves it: the global react
- * skill is inlined verbatim from the global config (marketplace-sourced), and
- * the project owns a project-scoped agent whose stack references it.
- */
 function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   return buildProjectConfig({
     name,
@@ -149,8 +116,6 @@ describe("global-scope source change propagates to registered projects", () => {
       await createPermissionsFile(dir);
     }
 
-    // Global install: react at global scope sourced from a marketplace (plugin
-    // form), a global api-developer preloading it, and the project registered.
     await writeProjectConfig(
       fakeHome,
       buildProjectConfig({
@@ -163,9 +128,7 @@ describe("global-scope source change propagates to registered projects", () => {
         projects: [realpathSync(projectDir)],
       }),
     );
-    // Skill content lives at the global scope that owns it; the ref FORMAT is
-    // driven purely by the config `source` string, independent of content
-    // location (see dual-scope-mixed-source-compiled-ref.e2e.test.ts).
+    // The ref format follows the config `source` string, not where the content lives.
     await createLocalSkill(fakeHome, E2E_SKILL.react.id, {
       description: "Global react copy",
       metadata: reactMetadata,
@@ -173,9 +136,6 @@ describe("global-scope source change propagates to registered projects", () => {
 
     await writeProjectConfig(projectDir, buildRegisteredProjectConfig("project-a"));
 
-    // Phase 1: a real compile of the registered project while react is still
-    // marketplace-sourced, producing the genuine plugin-form artifact this test
-    // expects the global toggle to invalidate.
     const compiled = await runCLI(["compile"], projectDir, {
       env: { HOME: fakeHome },
     });
@@ -185,10 +145,7 @@ describe("global-scope source change propagates to registered projects", () => {
       path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`),
     );
 
-    // Phase 2: `edit --from` at GLOBAL scope (HOME and cwd both the fake home,
-    // otherwise this becomes a project edit) of a configuration ejecting react.
-    // This rewrites the global config and fires propagateGlobalChangesToProjects
-    // for the registered project.
+    // HOME and cwd both the fake home, or this becomes a project edit.
     ({ exitCode: editExitCode, output: editOutput } = await applyEditFrom(store, REACT_EJECTED_ID, {
       dir: fakeHome,
     }));
@@ -201,8 +158,6 @@ describe("global-scope source change propagates to registered projects", () => {
     if (tempDir) await cleanupTempDir(tempDir);
   });
 
-  // Pre-state: the artifact the global toggle must invalidate is a genuine
-  // product output, not a hand-written fixture.
   it("compiles the registered project's agent in plugin-ref form while react is marketplace-sourced", () => {
     expect(compileExitCode, `project compile must succeed: ${compileOutput}`).toBe(
       EXIT_CODES.SUCCESS,
@@ -217,9 +172,7 @@ describe("global-scope source change propagates to registered projects", () => {
     expect(editExitCode, `global edit must succeed: ${editOutput}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  // The same switch as the summary reports it. A plugin -> eject move keeps the skill
-  // installed, so the Changes block carries one amber `~` line; a `-`/`+` pair would
-  // read as an uninstall plus an unrelated install of something else.
+  // A switch keeps the skill installed, so one `~` line; a `-`/`+` pair would read as two changes.
   it("reports the install-mode switch as one ~ line in the change summary", () => {
     expect(
       editOutput,
@@ -233,10 +186,7 @@ describe("global-scope source change propagates to registered projects", () => {
     );
   });
 
-  // Proof-of-execution: propagation actually rewrote the registered project's
-  // config.ts with the new source. Without this the compiled-agent assertions
-  // below could pass or fail for setup reasons rather than the missing
-  // recompile.
+  // Proof propagation rewrote the project, so the compiled-agent assertions test the recompile.
   it("records the new eject source in the registered project's inlined skills", () => {
     expect(
       projectConfig.skills.filter((s) => s.id === E2E_SKILL.react.id),
@@ -246,8 +196,7 @@ describe("global-scope source change propagates to registered projects", () => {
     );
   });
 
-  // The current context IS recompiled: the global agent's own compiled output
-  // switches to the bare id. This is what the registered project never gets.
+  // What the registered project never got.
   it("recompiles the current context's global agent to the bare skill reference", async () => {
     await expect({ dir: fakeHome }).toHaveAgentFrontmatter(E2E_AGENT["api-developer"].name, {
       skills: [E2E_SKILL.react.id],

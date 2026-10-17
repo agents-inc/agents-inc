@@ -3,12 +3,7 @@ import { cleanupTempDir, createTempDir } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
-/**
- * Smoke tests for the CLI binary and E2E infrastructure.
- *
- * These verify that the CLI binary exists, can be spawned,
- * and produces expected output for non-interactive commands.
- */
+/** Smoke tests: the binary spawns and answers non-interactive commands. */
 describe("CLI smoke tests", () => {
   let projectDir: string;
 

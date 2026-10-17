@@ -13,22 +13,8 @@ import {
 import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 
 /**
- * `eject` invents a `config.ts` when the directory has none. The
- * generated file opens with `import type { ProjectConfig } from "./config-types"`
- * — so writing it alone hands the user a config that cannot resolve its own
- * types. `config.ts` and `config-types.ts` are one artifact and every write of
- * either owes the other.
- *
- * Run at $HOME (cwd === HOME), the global scope, where the invented config
- * becomes the global manifest every project's generated types import from — the
- * scope where a half-written pair does the most damage.
- *
- * `agent-partials` rather than `skills`, and the eject type is not incidental: a
- * directory with no config has no source either — `--marketplace` and `CC_MARKETPLACE` are
- * `init`'s alone (CLI-466), so nothing can point this run at the E2E fixture — and
- * `agent-partials` is the eject that reads no skills source at all. It writes the
- * same invented pair through the same `ensureMinimalConfig`, offline, instead of
- * ejecting the default public marketplace over the network.
+ * `eject` at $HOME invents config.ts and must write config-types.ts beside it, since the config
+ * imports its types. `agent-partials` because it reads no skills source, so the run stays offline.
  */
 describe("eject at the home directory writes a complete config pair", () => {
   let tempDir: string | undefined;
@@ -51,8 +37,7 @@ describe("eject at the home directory writes a complete config pair", () => {
     expect(exitCode, `eject at HOME failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
     expect(output).toContain(STEP_TEXT.EJECT_SUCCESS);
 
-    // Pre-condition for everything below: eject genuinely invented a config in a
-    // directory that had none, and that config imports its own types.
+    // Pre-condition: eject really invented a config that imports its own types.
     expect(
       await fileExists(configTsPath(fakeHome)),
       "eject must leave a config.ts in a directory that had none",

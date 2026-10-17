@@ -46,10 +46,8 @@ describe("uninstall command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain("Remove");
     expect(stdout).toContain("--yes");
-    // The --all flag was removed; the config manifest is now always uninstalled
     expect(stdout).not.toContain("--all");
-    // The description qualifies WHICH skills it removes — "matched by source" is the one
-    // place this command's help names the thing an installation reads from.
+    // "matched by source" is where the help names what an installation reads from.
     expect(
       stdout,
       "the description names the marketplace its matching is against, not a source",
@@ -65,15 +63,11 @@ describe("uninstall command", () => {
     expect(output).toContain(STEP_TEXT.UNINSTALL_NOTHING_TO_UNINSTALL);
     expect(output).toContain(STEP_TEXT.UNINSTALL_NOT_INSTALLED);
     expect(output).toContain(STEP_TEXT.UNINSTALL_NO_CHANGES_MADE);
-    // The discriminating negative: the same three lines would be printed by a run
-    // that had deleted everything and then reported an empty directory.
+    // A run that deleted everything and reported an empty directory would print the same three
+    // lines.
     expect(output).not.toContain(STEP_TEXT.UNINSTALL_SUCCESS);
   });
 
-  // One scenario, one run. Four `it`s previously built the same
-  // `ProjectBuilder.editable()` + `addForkedFromMetadata` fixture, ran the same
-  // `uninstall --yes`, and each ended in `expectCleanUninstall`; every pre-check
-  // and every unique output assertion from those four is folded in here.
   it("should remove skills, agents and the config manifest with --yes", async () => {
     const project = await ProjectBuilder.editable();
     tempDir = path.dirname(project.dir);
@@ -81,7 +75,7 @@ describe("uninstall command", () => {
 
     await addForkedFromMetadata(projectDir, E2E_SKILL.react.id);
 
-    // Overwrite config with source field so skills match
+    // Source field so skills match.
     await writeProjectConfig(
       projectDir,
       buildProjectConfig({
@@ -92,8 +86,7 @@ describe("uninstall command", () => {
       }),
     );
 
-    // Every directory the run must remove is there beforehand — otherwise the
-    // post-conditions below are satisfied by a run that removed nothing.
+    // Everything to remove exists first, or the post-conditions pass on a no-op.
     const configDir = sourceFolderIn(projectDir);
     expect(await directoryExists(skillsPath(projectDir))).toBe(true);
     expect(await directoryExists(agentsPath(projectDir))).toBe(true);
@@ -103,13 +96,10 @@ describe("uninstall command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
-    // The plan names the agents directory as the CLI's to delete.
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_CLI_COMPILED);
 
-    // Skills, agents, and the config manifest should all be removed by default
     await expectCleanUninstall(projectDir, { removeConfig: true });
 
-    // Config directory removed (config.ts was the only .agents-inc/claude content)
     expect(await directoryExists(configDir)).toBe(false);
   });
 
@@ -118,19 +108,15 @@ describe("uninstall command", () => {
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
 
-    // ProjectBuilder.editable() generates config with agents: ["web-developer"]
-    // Add an extra agent file NOT in the config
     await writeAgentFile(projectDir, "my-custom-agent", { body: "# Custom Agent" });
 
     const { exitCode } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // Custom agent should be preserved (not in config.agents)
     const agentsDir = agentsPath(projectDir);
     expect(await fileExists(path.join(agentsDir, "my-custom-agent.md"))).toBe(true);
 
-    // CLI-managed agent (web-developer) should be removed
     expect(await fileExists(path.join(agentsDir, `${E2E_AGENT["web-developer"].name}.md`))).toBe(
       false,
     );
@@ -141,7 +127,6 @@ describe("uninstall command", () => {
     tempDir = path.dirname(project.dir);
     const projectDir = project.dir;
 
-    // Create a user-created skill with no forkedFrom metadata
     await createLocalSkill(projectDir, "my-custom-skill", {
       description: "User created",
       body: "# My Custom Skill",
@@ -158,11 +143,9 @@ describe("uninstall command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // User-created skill should be skipped
     expect(output).toContain("Skipping");
     expect(output).toContain("my-custom-skill");
 
-    // User skill should still exist, CLI-managed skill should be removed
     await expectCleanUninstall(projectDir, {
       preservedSkills: ["my-custom-skill"],
     });
@@ -171,7 +154,7 @@ describe("uninstall command", () => {
   it("should skip all skills when only user-created skills exist", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
-    // No `forkedFrom` in its metadata, so nothing marks it as this CLI's.
+    // No `forkedFrom`, so nothing marks it as this CLI's.
     const userSkillDir = await createLocalSkill(projectDir, "my-custom-skill", {
       description: "User created",
       body: "# My Custom Skill",
@@ -200,12 +183,8 @@ describe("uninstall command", () => {
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // --yes should print what will be removed (without interactive prompt)
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_PREVIEW_HEADING);
     expect(stdout).toContain("CLI-managed files:");
-    // The plan lists the config manifest that is now always removed. A literal, not the
-    // constant the product builds the line from: text the CLI renders, and an assertion that
-    // imported that constant would move with it and could never fail.
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_CONFIG_SECTION);
     expect(stdout).toContain(".agents-inc/claude/config.ts");
   });
@@ -217,7 +196,6 @@ describe("uninstall command", () => {
     await mkdir(globalHome, { recursive: true });
     await mkdir(emptyDir, { recursive: true });
 
-    // Global home has config but no skills/agents
     await writeProjectConfig(
       globalHome,
       buildProjectConfig({ name: "global-test", skills: [], agents: [] }),
@@ -230,19 +208,13 @@ describe("uninstall command", () => {
     );
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // No local skills or agents in the empty project dir
     expect(output).toContain(STEP_TEXT.UNINSTALL_NOTHING_TO_UNINSTALL);
   });
 
   /**
-   * A compiled-agents directory nobody can identify is not a removal: `removeMatchingAgents`
-   * matches on-disk basenames against `config.agents`, so with no config to read the run leaves
-   * every file exactly where it is. With those agents the only thing installed, the plan is left
-   * with no removal to carry — and the heading it would be printed under, along with the success
-   * line at the end, each report a removal this run never makes.
-   *
-   * HOME is kept distinct from the project dir, otherwise the command resolves this as the global
-   * install and takes the other branch entirely.
+   * With no config, `removeMatchingAgents` cannot identify the agents and leaves them, so there is
+   * nothing to uninstall and no removal heading. HOME apart from the project, or the global branch
+   * runs.
    */
   it("should report nothing to uninstall when unidentifiable agents are all that is installed", async () => {
     tempDir = await createTempDir();
@@ -280,7 +252,6 @@ describe("uninstall command", () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
-    // Write only config — no skills or agents directories
     await writeProjectConfig(
       projectDir,
       buildProjectConfig({ name: "config-only-test", skills: [], agents: [] }),
@@ -295,7 +266,6 @@ describe("uninstall command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // Config dir, skills, and agents should all be removed by default
     await expectCleanUninstall(projectDir, { removeConfig: true });
   });
 });

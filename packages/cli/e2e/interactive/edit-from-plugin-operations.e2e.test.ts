@@ -29,15 +29,9 @@ import type { ProjectHandle } from "../fixtures/project-handle.js";
 import "../matchers/setup.js";
 
 /**
- * `edit --from` in plugin mode on a Claude installation: a skill the configuration adds is
- * installed as a plugin, one it leaves out is uninstalled, an apply that changes nothing installs
- * nothing, and a declined apply installs and records nothing.
- *
- * The installation is made by `init --from`, so its plugins are really registered with the Claude
- * CLI and a removal is one the host can observe. The Codex half is
- * `codex-edit-from-plugin-operations.e2e.test.ts`.
- *
- * The entire suite is skipped when the Claude CLI is not available.
+ * `edit --from` in plugin mode on Claude: additions install plugins, omissions uninstall, a no-op
+ * apply installs nothing, a decline records nothing. Installed by `init --from`; skipped without
+ * the Claude CLI. Codex half: `codex-edit-from-plugin-operations.e2e.test.ts`.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -51,7 +45,6 @@ const projectPlugin = buildSeedSkill({
   assignments: { [WEB_DEV]: "lazy" },
 });
 
-/** A configuration holding `skills`, with web-developer pinned to the project. */
 const configurationOf = (skills: SeedPayload["skills"]): SeedPayload =>
   buildSeedPayload({ skills, agents: { [WEB_DEV]: { on: true, scope: "project" } } });
 
@@ -79,7 +72,6 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
     env = undefined;
   });
 
-  /** A project installed by `init --from` with `skills` as project plugins, under its own HOME. */
   async function installedWith(
     skills: SeedPayload["skills"],
   ): Promise<{ project: ProjectHandle; home: string }> {
@@ -92,7 +84,6 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
     return { project, home: env.fakeHome };
   }
 
-  /** Opens `edit --from <id>` over `project` at a real terminal, up to its question. */
   async function openApply(
     { project, home }: { project: ProjectHandle; home: string },
     id: string,
@@ -107,7 +98,6 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
     return prompt;
   }
 
-  /** Applies `configuration` over the installation, answering yes. */
   async function applyApproved(
     installation: { project: ProjectHandle; home: string },
     id: string,
@@ -129,7 +119,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
       });
       const { project, home } = installation;
       const vitestRef = buildMarketplacePluginRef(E2E_SKILL.vitest.id, fixture.marketplaceName);
-      // Subject guard: the plugin the apply must take away really is registered.
+      // Subject guard: the plugin to remove really is registered.
       await expect({ dir: home }).toHavePluginInRegistry(vitestRef);
 
       const result = await applyApproved(
@@ -200,10 +190,7 @@ describe.skipIf(!claudeAvailable)("edit --from — plugin mode operations", () =
     },
   );
 
-  /**
-   * The one pending change is an ADD, the case above where the install happens, so a declined
-   * apply that committed anyway would show it as a plugin install.
-   */
+  /** The pending change is an add, so a decline that committed would show a plugin install. */
   it(
     "installs nothing and records nothing when an apply adding a plugin skill is declined",
     { timeout: TIMEOUTS.PLUGIN_TEST },

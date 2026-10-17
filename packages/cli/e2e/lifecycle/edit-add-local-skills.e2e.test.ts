@@ -25,34 +25,16 @@ import {
 import { E2E_SKILL, E2E_STACK_AGENTS, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
 
 /**
- * Edit: add new local-source skills lifecycle E2E test.
- *
- * Verifies that `cc edit --from` copies a skill switched to `source: "eject"`
- * to the `.claude/skills/` directory.
- *
- * Phase 1: Init with plugin source (all skills as plugin).
- * Phase 2: Edit — switch ONE existing skill to eject.
- *          This is a source migration (plugin → local), handled by executeMigration.
- * Phase 3: Assert the local-sourced skill was copied to `.claude/skills/`.
- *
- * Requires Claude CLI for plugin install/uninstall operations.
+ * `edit --from` switching a plugin skill to `source: "eject"` copies it into `.claude/skills/`.
+ * Requires the Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-/**
- * The stack's whole sub-agent roster as compiled filenames, derived from the stack
- * definition rather than retyped. Phase 1 installs that stack, so the recompile phase 2
- * drives is held to the same roster: the parameterless `toHaveCompiledAgents()` that
- * stood here proved only that the directory held at least one `.md`, which phase 1's own
- * install satisfies whatever phase 2 does to it.
- */
 const COMPILED_AGENT_FILES = E2E_STACK_AGENTS.map((agent) => `${agent}.md`);
 
-/** The stack, every skill a plugin. */
 const PLUGIN_STACK_ID = "PlugStk3";
 
-/** The same stack with react ejected. */
 const REACT_EJECTED_ID = "PlugStk4";
 
 describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
@@ -93,13 +75,7 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       const projectDir = tempDir;
       await createPermissionsFile(projectDir);
 
-      // This test switches a skill's SOURCE (plugin -> eject) during edit.
-      // Default-scope skills are GLOBAL, so both phases edit the GLOBAL install:
-      // HOME == cwd == projectDir, and all content + config collapse onto
-      // projectDir (asserted below).
-      // ================================================================
-      // Phase 1: Init — all skills as plugin
-      // ================================================================
+      // Default-scope skills are global, so both phases edit the global install (HOME === cwd).
 
       const initResult = await runInitFrom(
         store,
@@ -109,32 +85,17 @@ describe.skipIf(!claudeAvailable)("edit: add new local-source skills", () => {
       );
       expect(initResult.exitCode, initResult.output).toBe(EXIT_CODES.SUCCESS);
 
-      // Phase 1 verification
       const configPath = configTsPath(projectDir);
       expect(await fileExists(configPath)).toBe(true);
       const configAfterInit = await readTestFile(configPath);
-      // All skills should be plugin (not eject)
       expect(configAfterInit).not.toContain("origin: 'eject'");
-
-      // ================================================================
-      // Phase 2: Edit — switch react to eject source. This tests that edit
-      // correctly copies a skill that switches from plugin to eject source.
-      // ================================================================
 
       const editResult = await applyEditFrom(store, REACT_EJECTED_ID, { dir: projectDir });
       expect(editResult.exitCode, editResult.output).toBe(EXIT_CODES.SUCCESS);
 
-      // ================================================================
-      // Phase 3: Assertions
-      // ================================================================
-
       const configAfterEdit = await readTestFile(configPath);
-      // The switched skill should now have source "eject"
       expect(configAfterEdit).toContain("origin: 'eject'");
 
-      // The eject-sourced skill should be copied to .claude/skills/. Under the
-      // global-edit model HOME == projectDir, so global content lands here.
-      // This validates the source migration path (plugin → eject) in edit.
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
       expect(Object.keys(await readCompiledAgents(projectDir)).sort()).toStrictEqual(
         COMPILED_AGENT_FILES,

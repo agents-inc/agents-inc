@@ -29,37 +29,18 @@ import { EXIT_CODES, FILES, SOURCE_PATHS, STEP_TEXT, TIMEOUTS } from "../pages/c
 import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * A skill a marketplace ships whose SKILL.md frontmatter does not parse is warned about by every
- * command that loads the marketplace — as a skill whose `metadata.yaml` does not parse already is.
- *
- * Both are skipped by the same scan (`extractAllSkills`), one file apart. The `metadata.yaml` case
- * warns, naming the file; the SKILL.md case said nothing outside `--verbose`, so the skill simply
- * was not there and no command but `doctor` said why. The owner: "yes, this should be warned".
- *
- * The marketplace here ships one of each beside its healthy skills, and every run is read for
- * both. The `metadata.yaml` line is the control and the positive subject guard at once: it proves
- * this command loaded the marketplace and prints what the load warns, so the SKILL.md line's
- * absence is a skip that went unsaid rather than a run that never got as far. The assertion is the
- * broken file's own path under the skills directory, `<dir>/SKILL.md` — any sentence that names
- * the file to fix carries it, and nothing else this run prints does.
- *
- * `init --from` is the third door, and it depends on the `--from` runs printing what their load
- * captured at all — `commands/from-prints-load-warnings` is that half.
- *
- * Observed red against the unfixed build: every command printed the `metadata.yaml` line and
- * nothing about the SKILL.md.
+ * A shipped skill whose SKILL.md frontmatter does not parse is warned about by every command that
+ * loads the marketplace, as a broken metadata.yaml is; the metadata.yaml line is the control and
+ * subject guard. The assertion is the broken file's path.
  */
 
-/** Ships a metadata.yaml that reads, beside a SKILL.md whose frontmatter does not. */
 const BROKEN_FRONTMATTER_ID = e2eSkillId("web-broken-frontmatter");
 
-/** Ships a SKILL.md that reads, beside a metadata.yaml that does not — the class already warned. */
 const BROKEN_METADATA_ID = e2eSkillId("web-broken-metadata");
 
 const BROKEN_FRONTMATTER_FILE = `${BROKEN_FRONTMATTER_ID}/${FILES.SKILL_MD}`;
 const BROKEN_METADATA_FILE = `${BROKEN_METADATA_ID}/${FILES.METADATA_YAML}`;
 
-/** Every command run against the installation, with the arguments it needs to load the marketplace. */
 const COMMANDS_THAT_LOAD_THE_MARKETPLACE = [
   ["compile", ["compile"]],
   ["search", ["search", E2E_SKILL.react.slug]],
@@ -160,8 +141,6 @@ describe("a marketplace skill whose SKILL.md frontmatter does not parse", () => 
 
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
-      // The SKILL.md line first: it is this file's subject, and it stays red until both it and
-      // the `--from` replay exist. The metadata.yaml line after it is that replay's own pin.
       const said = flattenCliOutput(output);
       expect(
         said,

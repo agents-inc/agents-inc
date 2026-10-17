@@ -31,37 +31,20 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `init --from <id>` and `edit --from <id>` say what loading the marketplace raised, as every
- * other command that loads one does.
- *
- * The load runs with its warnings captured, and what it captured went nowhere: a skill the
- * marketplace ships with a `metadata.yaml` that will not parse was reported only as one "this
- * catalog does not know", with the cause — the file, and what is wrong with it — held and dropped.
- * The same goes for two folders claiming one id, a stack naming a skill the catalogue lacks, and a
- * stale cached copy served because the marketplace is offline; the unparseable `metadata.yaml`
- * stands for the class here, because it is the one whose effect a `--from` run also prints.
- *
- * The cause is asserted above the effect: a skill this catalogue "does not know" is often one it
- * ships with a file that will not parse, and the line saying so is what explains the skip below
- * it. The clean marketplace is the control — the capture also holds the band's own narration
- * ("Loaded N skills"), and a run that replayed everything it captured would print that as well.
- *
- * Observed red against the unfixed build: both `--from` runs printed the effect and not the cause.
- * The clean control, the installed files and the declined apply are green there and must stay so.
+ * `init --from` and `edit --from` print the marketplace load's warnings, cause above effect; an
+ * unparseable metadata.yaml stands for the class. The clean marketplace is the control: the capture
+ * also holds narration that must not be replayed.
  */
 
-/** A skill the marketplace ships whose metadata.yaml no YAML parser reads. */
 const BROKEN_SKILL_ID = e2eSkillId("web-broken-metadata");
 
-/** The file the load names as the cause, relative to the marketplace's skills directory. */
 const BROKEN_FILE = `${BROKEN_SKILL_ID}/${FILES.METADATA_YAML}`;
 
-/** What the decode says about the same id: the effect the cause explains. */
+/** The effect the cause explains. */
 const EFFECT = `${STEP_TEXT.CATALOG_DOES_NOT_KNOW} ${BROKEN_SKILL_ID}`;
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** Ships the broken skill into a marketplace: a SKILL.md that reads, beside a metadata.yaml that does not. */
 async function shipSkillWithUnparseableMetadata(sourceDir: string): Promise<void> {
   await createLocalSkillIn(path.join(sourceDir, SOURCE_PATHS.SKILLS_DIR), BROKEN_SKILL_ID, {
     description: "Shipped with a broken metadata.yaml",

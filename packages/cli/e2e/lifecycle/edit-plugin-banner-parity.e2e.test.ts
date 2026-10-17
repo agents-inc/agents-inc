@@ -24,37 +24,17 @@ import {
 } from "../helpers/test-utils.js";
 
 /**
- * `edit` narrates a plugin install the way `init` does, because it is the same
- * operation.
- *
- * Both runs below install the same skill as a plugin against the same
- * marketplace — `init` as a fresh plugin-mode install, `edit` as an eject→plugin
- * switch — so every informational line one prints about that operation the other
- * owes. The spec asserts the strings against BOTH outputs rather than against
- * `edit` alone: a line that drifts on one side only is the divergence this pins,
- * and a one-sided assertion would let the pair fall apart the moment `init`
- * rewords something.
- *
- * The install is real (the Claude CLI is required, and the plugin registration is
- * asserted), so the narration cannot be satisfied by printing a banner over work
- * that never happened.
+ * `edit` narrates a plugin install the way `init` does: the same skill installed as a plugin by
+ * both, every narration line asserted against BOTH outputs. Real install; requires the Claude CLI.
  */
 
-/**
- * The line that closes a plugin install. Matched as a pattern rather than a
- * `STEP_TEXT` literal because the count differs by run — a fresh install carries
- * the whole selection, a mode switch carries only what was switched — and it is
- * the sentence, not the number, that has to be the same on both paths. The noun
- * follows the count, so a run carrying one says `skill plugin`.
- */
+/** A pattern, not a literal: the count differs by run, and the noun follows it. */
 const INSTALLED_PLUGIN_TOTAL = /Installed \d+ skill plugins?\b/;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-/** The stack, every skill a plugin. */
 const PLUGIN_STACK_ID = "PlugStk5";
 
-/** The stack, every skill ejected. */
 const EJECT_STACK_ID = "EjctStk1";
 
 describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init does", () => {
@@ -86,8 +66,6 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       tempDir = await createTempDir();
       const reactPluginRef = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
 
-      // --- The reference: a plugin-mode init installing the same skill. ---
-
       const initDir = path.join(tempDir, "init-project");
       await createPermissionsFile(initDir);
       const pluginInitResult = await runInitFrom(
@@ -106,8 +84,6 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       expect(initOutput).toContain(STEP_TEXT.PLUGIN_NATIVE);
       expect(initOutput).toContain(`Installed ${reactPluginRef}`);
       expect(initOutput).toMatch(INSTALLED_PLUGIN_TOTAL);
-
-      // --- The subject: an edit performing that same install. ---
 
       const editDir = path.join(tempDir, "edit-project");
       await createPermissionsFile(editDir);
@@ -131,7 +107,6 @@ describe.skipIf(!claudeAvailable)("edit narrates a plugin install the way init d
       );
       const editOutput = editResult.output;
 
-      // The install really happened, so the narration below describes real work.
       await expect({ dir: editDir }).toHavePlugin(reactPluginRef);
 
       expect(

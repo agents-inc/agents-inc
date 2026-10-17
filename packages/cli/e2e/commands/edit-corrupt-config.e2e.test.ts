@@ -25,23 +25,16 @@ import { expectNoSourceFolder } from "../assertions/source-folder-assertions.js"
 import "../matchers/setup.js";
 
 /**
- * A configuration that exists but cannot be read is not migrated and not repaired — it is
- * recreated. `edit` therefore refuses it outright, and says what the way out is: `uninstall` (which
- * deliberately still works on an unreadable config) and then `init`, or a configuration built
- * in the editor and installed by id.
- *
- * The refusal is checked BEFORE any work, which is the point: an unreadable GLOBAL config
- * used to surface only at the config write, after the wizard had already copied skills and
- * installed plugins, as a warning that the write never happened.
+ * `edit` refuses an unreadable config before any work and names the way out: `uninstall` then
+ * `init`, or an editor-built config installed by id.
  */
 
-/** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
 const SYNTAX_ERROR = renderUnparseableConfigTs();
 
-/** A file that parses cleanly but exports nothing, so the loader gets no config object at all. */
+/** Parses but exports nothing. */
 const NO_DEFAULT_EXPORT = "";
 
-/** Valid TypeScript whose shape the loader schema rejects (`skills` must be an array). */
+/** The schema rejects it: `skills` must be an array. */
 const SCHEMA_VIOLATION = renderSchemaViolatingConfigTs();
 
 describe("edit with an unreadable config", () => {
@@ -54,11 +47,7 @@ describe("edit with an unreadable config", () => {
     }
   });
 
-  /**
-   * An installed project whose config.ts has been replaced with `configSource`, run at genuine
-   * PROJECT scope (HOME kept distinct from the project dir, otherwise the command resolves to
-   * the global install instead).
-   */
+  /** HOME kept apart from the project, or the command resolves to the global install. */
   async function editWithCorruptProjectConfig(configSource: string) {
     const project = await ProjectBuilder.editable({ forkedFrom: true });
     tempDir = path.dirname(project.dir);
@@ -72,25 +61,17 @@ describe("edit with an unreadable config", () => {
     return { project, projectHome, result };
   }
 
-  /**
-   * Every corruption kind reaches the same guard, so each case asserts the same refusal: the
-   * offending file named, the recreate instruction, the editor URL, a non-zero exit — and the
-   * config left exactly as it was, since a command that refuses to read it must not rewrite it.
-   */
+  /** The config must be left as it was: a command that refuses to read it must not rewrite it. */
   async function expectRefusalNaming(configSource: string) {
     const { project, result } = await editWithCorruptProjectConfig(configSource);
 
     expect(result.exitCode, `edit output:\n${result.output}`).toBe(EXIT_CODES.ERROR);
-    // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+    // Compacted: oclif breaks a long path mid-word.
     expect(compactCliOutput(result.output)).toContain(compactCliOutput(configTsPath(project.dir)));
     expect(result.output).toContain(STEP_TEXT.CONFIG_UNREADABLE_RECREATE);
     expect(result.output).toContain(STEP_TEXT.EDITOR_URL);
-    // The third way out, and the last to become true: doctor reports this same file rather than
-    // calling it missing and sending the reader back to a command that refuses it.
     expect(result.output).toContain(STEP_TEXT.CONFIG_UNREADABLE_DOCTOR);
 
-    // The misleading "no installation" line the swallowed load error used to produce must be
-    // gone.
     expect(result.output).not.toContain(STEP_TEXT.NO_INSTALLATION);
     expect(result.output).not.toContain(STEP_TEXT.EDIT_SUCCESS);
 
@@ -111,9 +92,8 @@ describe("edit with an unreadable config", () => {
   });
 
   /**
-   * The global config is read and inlined by every project write, so an unreadable one is just
-   * as fatal to an edit as the project's own — and used to be worse, because a valid project
-   * config carried the run all the way past the wizard before the write failed.
+   * The global config is inlined by every project write, so an unreadable one is as fatal as the
+   * project's own.
    */
   it("refuses when the global config is the unreadable one and the project config is intact", async () => {
     const project = await ProjectBuilder.editable({ forkedFrom: true });
@@ -138,10 +118,7 @@ describe("edit with an unreadable config", () => {
     expect(await listFiles(agentsPath(project.dir))).toStrictEqual([]);
   });
 
-  /**
-   * The refusal and the way out, end to end: the same unreadable config `edit` will not touch
-   * is one `uninstall` still clears. Without this pairing the guard would be a dead end.
-   */
+  /** Without this pairing the guard would be a dead end. */
   it("leaves a config uninstall can still remove", async () => {
     const { project, projectHome, result } = await editWithCorruptProjectConfig(SYNTAX_ERROR);
     expect(result.exitCode).toBe(EXIT_CODES.ERROR);
@@ -165,11 +142,7 @@ describe("edit with an unreadable config", () => {
     await expect(project).toHaveNoLocalSkills();
   });
 
-  /**
-   * The control. A config that is simply absent is a legitimate state, not a corruption, and
-   * must keep its own message — without this, a guard that fired unconditionally would satisfy
-   * every case above.
-   */
+  /** Control: an absent config keeps its own message. */
   it("keeps the no-installation message when no config file exists at all", async () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -190,9 +163,8 @@ describe("edit with an unreadable config", () => {
 });
 
 /**
- * `init` reads the same two configs before it decides whether to show the dashboard, and used
- * to let the raw `ConfigLoadError` escape — a stack-shaped message with
- * no way out in it. It refuses with the same guidance now, and still writes nothing.
+ * `init` reads the same two configs before choosing the dashboard, so it refuses with the same
+ * guidance and writes nothing.
  */
 describe("init with an unreadable config", () => {
   let tempDir: string;

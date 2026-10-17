@@ -40,73 +40,30 @@ import {
 import { EXIT_CODES, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * The claim no file on disk can settle: **Codex reads what we wrote.**
- *
- * Every assertion here asks the PINNED `@openai/codex` 0.155.1 rather than this CLI. A role file
- * that is well-formed to us and malformed to Codex is dropped at startup with a warning nothing in
- * a normal run shows — so "the file is there" and "the sub-agent exists" are different claims, and
- * only the second one matters.
- *
- * **Two instruments, and neither is `debug prompt-input`.** That subcommand does NOT list agent
- * roles, which is what made an earlier pass in this programme conclude they did not exist at all.
- * What this file uses instead:
- *
- * 1. **The roster on the wire.** The installed roles travel in `spawn_agent`'s `agent_type`
- *    parameter description, under `Available roles:`, inside an `additional_tools` item of the
- *    Responses request body. The real binary composes one turn against a scripted stand-in and the
- *    spec reads what it sent. Calibrated BOTH WAYS in every test: with nothing registered,
- *    `agent_type` is absent from `spawn_agent` entirely — so an assertion that a role is present
- *    cannot pass on a rig that is simply not looking.
- * 2. **`codex doctor`'s startup warnings.** A malformed role bumps the TOTAL and leaves every
- *    named counter at zero — skills, hooks, plugins, MCP and deprecated all stay 0 — so the check
- *    reads the total and the messages and never a category counter.
- *
- * **The role id is the `name` key, not the filename.** Measured twice on 0.155.1, 2026-09-22: a
- * global role written to `web-developer-role.toml` whose `name` was `web-developer` reached the
- * roster as `web-developer`, and a project role in `anything.toml` whose `name` was `proj-role`
- * reached it as `proj-role`. The spec below asserts the roster names the AGENT, and separately
- * that the file's own `name` key carries it — those are the two halves that make the id claim
- * checkable without pinning a filename convention Codex does not care about.
- *
- * **A project's roles need a trust entry in the user's GLOBAL config, and the install writes it.**
- * Four silent kill switches, each measured across one sweep: no `[projects]` entry;
- * `trust_level = "untrusted"`; a trailing slash on the path key; and the entry declared in the
- * project's OWN `.codex/config.toml`, which Codex refuses as self-authorisation. All four register
- * nothing, with no warning anywhere. So the install writes the entry and prints what it wrote
- * (owner, 2026-09-26, CLI-893), and leaves an answer the user already gave. _Until then it only
- * detected the state and printed the line for the user to add._
- *
- * **What no offline rig can answer, and what therefore goes on the owner's hand-check list rather
- * than into an assertion here:** whether a SPAWNED sub-agent's context actually receives its
- * `developer_instructions`, whole and untruncated, and where they sit against Codex's own prompt,
- * `AGENTS.md` and skills. Registration is provable offline; delivery is not.
- *
- * NOTE: this file drives the real pinned binary. It carries no `skipIf` — Codex is a devDependency
- * at one exact version, so it is present wherever `bun install` ran, and a skip would read green.
- *
- * Written before the Codex agent renderer existed. Red on an empty agents directory, and on
- * `agent_type` never appearing.
+ * The pinned Codex binary reads the role files we wrote: the role is in `spawn_agent`'s
+ * `agent_type` roster on the wire (absent when nothing is registered), and `codex doctor` reports
+ * no malformed role. The role id is the `name` key, not the filename. A project's roles need a
+ * trust entry in the global config, which the install writes; an answer the user gave is kept.
+ * No `skipIf`: Codex is a pinned devDependency, and a skip would read green.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** A sub-agent entry keeping its agent in the project, so scope is not a second variable. */
+// Pinned to the project so scope is not a second variable.
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/** Codex's own global configuration file, spelled as every other Codex spec spells it. */
 const CODEX_CONFIG_TOML = "config.toml";
 
 function codexGlobalConfig(home: string): string {
   return path.join(codexHome(home), CODEX_CONFIG_TOML);
 }
 
-/** A global Codex config the user wrote before this CLI ever ran. */
 async function writeCodexGlobalConfig(home: string, content: string): Promise<void> {
   await mkdir(codexHome(home), { recursive: true });
   await writeFile(codexGlobalConfig(home), content, "utf-8");
 }
 
-/** The prompt each turn carries. Its content is irrelevant; the request body is the subject. */
+/** Irrelevant; the request body is the subject. */
 const ANY_PROMPT = "summarise this repository";
 
 describe("Codex reads the agent roles a Codex compile wrote", () => {
@@ -138,7 +95,6 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
     env = undefined;
   });
 
-  /** One turn against the mock, returning everything the binary put on the wire. */
   async function whatCodexSent(home: string, cwd: string): Promise<string> {
     mock = await startCodexResponsesMock((_request, requestNumber) =>
       respondWith(requestNumber, (responseId) => [assistantMessage(responseId, "ok")]),
@@ -154,7 +110,6 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
     return runCodex(home, readOnlyExecArgs(against, ANY_PROMPT), cwd);
   }
 
-  /** The global-scope payload: one ejected skill, one sub-agent, both resting at global. */
   function publishGlobal(id: string): void {
     store.publish(
       id,
@@ -171,7 +126,7 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
     );
   }
 
-  /** The project-scope payload, which is the one that needs a trust entry to be read at all. */
+  /** The one that needs a trust entry to be read at all. */
   function publishProject(id: string): void {
     store.publish(
       id,
@@ -267,8 +222,7 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
         fixture.sourceDir,
       );
 
-      // Subject guard: an empty agents directory draws no complaint either, which is the state
-      // this spec was written against and would otherwise read as a clean bill of health.
+      // Subject guard: an empty agents directory draws no complaint either.
       expect(
         Object.keys(await readCodexAgentRoles(codexGlobalAgentsDir(env.fakeHome))),
         "the compile wrote no role file, so Codex had nothing to complain about",
@@ -277,28 +231,19 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
       const doctor = await runCodex(env.fakeHome, ["doctor"], env.projectDir);
       const reported = JSON.stringify(doctor.json);
 
-      // `codex doctor --json` exits 1 in this rig whatever the roles look like — its `auth` check
-      // fails with no credentials — so the report is read and the exit code is not. A run that
-      // printed nothing would satisfy every negative below.
+      // `codex doctor --json` exits 1 here (no auth), so the report is read, not the exit code.
       expect(reported, `codex doctor printed no report: ${doctor.stderr}`).toContain(
         "schemaVersion",
       );
 
-      // The TOTAL and the messages. A malformed agent role bumps the total and leaves
-      // `startup warning skills/hooks/plugins/MCP/deprecated` all at 0, so a category counter
-      // cannot see it.
+      // A malformed role bumps the total and leaves every category counter at 0.
       expect(reported).not.toContain("malformed agent role definition");
       expect(reported).not.toContain("must define `developer_instructions`");
       expect(reported).not.toContain("unknown field");
     },
   );
 
-  /**
-   * **The install trusts the project itself, and says what it wrote** — owner, 2026-09-26: _"it
-   * should be automated on install"_ (CLI-893). This case asserted the opposite until then: that
-   * the CLI left the user's global config alone and printed the line for them to add. Nothing is
-   * trusted by hand here, so Codex offering the role is the install's own doing.
-   */
+  /** The install trusts the project itself and says what it wrote; nothing is trusted by hand. */
   it(
     "trusts a project at install, says what it wrote, and Codex then offers the project's roles",
     { timeout: TIMEOUTS.PLUGIN_TEST },
@@ -322,21 +267,16 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
         `[projects."${env.projectDir}"]\ntrust_level = "trusted"`,
       );
 
-      // It said so, naming the project and the file it wrote into.
       expect(said).toContain(STEP_TEXT.CODEX_PROJECT_TRUSTED);
       expect(said).toContain(env.projectDir);
 
-      // And Codex agrees: the role is on the wire with no trust written by hand.
       const sent = await whatCodexSent(env.fakeHome, env.projectDir);
       expect(sent).toContain(ROSTER_PARAMETER);
       expect(sent).toContain(WEB_DEV);
     },
   );
 
-  /**
-   * An answer the user already gave is theirs. `"untrusted"` is a decision, not a gap, so the
-   * install leaves it, says so — and Codex, reading that answer, offers no roles.
-   */
+  /** `"untrusted"` is the user's decision: the install leaves it, and Codex offers no roles. */
   it(
     "leaves a project the user marked untrusted as it is, says so, and Codex offers nothing",
     { timeout: TIMEOUTS.PLUGIN_TEST },
@@ -367,9 +307,8 @@ describe("Codex reads the agent roles a Codex compile wrote", () => {
   );
 
   /**
-   * The user's own table for this project, holding something other than trust. A second
-   * `[projects."<dir>"]` table is a duplicate Codex refuses to load — every setting in the file
-   * with it — so the key has to land inside theirs. Codex offering the role is the proof it parsed.
+   * The user's own table for this project: a second `[projects."<dir>"]` would be a duplicate Codex
+   * refuses, so the key lands inside theirs.
    */
   it(
     "adds the trust inside the user's own table for the project, which Codex still reads",

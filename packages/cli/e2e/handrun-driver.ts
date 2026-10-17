@@ -1,5 +1,3 @@
-/** Transcript printing for the hand-run. */
-
 export function section(title: string): void {
   process.stdout.write(`\n${"=".repeat(74)}\n${title}\n${"=".repeat(74)}\n`);
 }
@@ -12,7 +10,6 @@ export function verdict(claim: string, held: boolean): void {
   process.stdout.write(`  ${held ? "HOLDS" : "BROKEN"}  ${claim}\n`);
 }
 
-/** Runs a journey so a failure is reported and the rest of the run continues. */
 export async function attempt(label: string, journey: () => Promise<void>): Promise<void> {
   try {
     await journey();

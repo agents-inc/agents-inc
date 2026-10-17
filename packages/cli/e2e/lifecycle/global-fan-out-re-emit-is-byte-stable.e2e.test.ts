@@ -25,38 +25,17 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * A `compile` at the home directory fans the global config out to every
- * registered project, rewriting each project's `config.ts` from the values
- * already on that project's disk. Nothing about those values changes, so the
- * file must come back byte-for-byte identical, which is the reason
- * `writeIfChanged` can skip a write at all.
- *
- * Running the same fan-out twice is the smallest way to state it: the second
- * run's input is the first run's own output, so a writer whose field order
- * depends on how the in-memory object was assembled — rather than on what the
- * config says — hands the user a diff on a project it never touched.
- *
- * Which assertion carries the red: the project's `config.ts` differing between
- * the two runs. The compiled-agent assertions do NOT go red before the fix — a
- * project's stack is propagated verbatim, so its agents really are unchanged
- * either way. They are here as the filesystem half of the state check, and as
- * the guard that a fix which canonicalises emission does not start churning
- * compiled agents instead.
- *
- * Everything is arranged inside the `it` rather than in a `beforeAll`: the run
- * MUTATES the project it reads, so a retry against state a previous attempt
- * already rewrote would compare a second fan-out with a third.
+ * A home-directory `compile` fanning out twice must rewrite a registered project's `config.ts`
+ * byte-for-byte identically: the second run's input is the first run's output. Arranged inside the
+ * `it`, since the run mutates the project it reads and a retry would compare different fan-outs.
  */
 
-/** The skill installed at the home directory and inherited by the project. */
 const GLOBAL_SKILL = E2E_SKILL.react;
 
-/** The skill the project owns at project scope, and the agent that carries it. */
 const PROJECT_SKILL = E2E_SKILL.vitest;
 const PROJECT_AGENT = E2E_AGENT["api-developer"];
 const GLOBAL_AGENT = E2E_AGENT["web-developer"];
 
-/** `source` recorded for skills a fixture installs as local copies. */
 const EJECT_SOURCE = "eject";
 
 /** The one scalar the project's own config carries; the global config carries three. */
@@ -82,11 +61,8 @@ describe("a global fan-out re-emits an unaffected project's config byte-identica
         await createPermissionsFile(dir);
       }
 
-      // The global install: one global skill on one global agent, plus three
-      // scalars. The project below carries only ONE of those scalars, so the two
-      // halves of the inlined snapshot are genuinely asymmetric — which is the
-      // state a first emission leaves behind, since it writes every global
-      // scalar into the project's own file.
+      // The project carries only one of the three global scalars, the asymmetry a first emission
+      // leaves behind.
       await writeProjectConfig(
         globalHome,
         buildProjectConfig({
@@ -148,9 +124,6 @@ describe("a global fan-out re-emits an unaffected project's config byte-identica
       expect(firstRun.exitCode, `First compile at HOME failed: ${firstRun.output}`).toBe(
         EXIT_CODES.SUCCESS,
       );
-      // Proof of execution: the fan-out actually reached the registered project,
-      // so the comparison below is between two writer outputs and not between
-      // two files nothing ever wrote.
       expect(firstRun.output, "the fan-out must have reached the registered project").toContain(
         STEP_TEXT.PROPAGATED_RECOMPILE_ONE,
       );
@@ -165,7 +138,6 @@ describe("a global fan-out re-emits an unaffected project's config byte-identica
         PROJECT_SKILL.id,
       );
 
-      // Nothing changed between the runs — same configs, same skills on disk.
       const secondRun = await CLI.run(
         ["compile"],
         { dir: globalHome },

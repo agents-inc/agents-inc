@@ -4,11 +4,7 @@ import { parse as parseYaml } from "yaml";
 import { DIRS } from "../pages/constants.js";
 import { fileExists, parseCompiledAgentSections } from "../helpers/test-utils.js";
 
-/**
- * Parses compiled-agent frontmatter with the real YAML parser. Compiled agents
- * are consumed by Claude Code itself, so their frontmatter is guaranteed valid
- * YAML; a parse failure is a genuine product defect, surfaced via null.
- */
+// Null on a parse failure: compiled frontmatter must be valid YAML. The cast follows the object check.
 function parseYamlFrontmatter(yaml: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = parseYaml(yaml);
@@ -24,10 +20,8 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
-/** The events a completion gate is declared under: compile's own, and a sub-agent's own. */
 const COMPLETION_GATE_EVENTS = ["Stop", "SubagentStop"] as const;
 
-/** Whether a parsed `hooks` value holds at least one hook under a completion-gate event. */
 function carriesCompletionGate(hooks: unknown): boolean {
   if (typeof hooks !== "object" || hooks === null) return false;
 
@@ -42,61 +36,29 @@ export type AgentFrontmatterExpectations = {
   description?: string;
   model?: string;
   effort?: string;
-  /**
-   * No `effort` key at all. An agent's effort has no default — it is emitted only when a config
-   * or the agent's own metadata names one — so "absent" is a distinct outcome from any value and
-   * needs its own expectation. Read off the parsed YAML rather than the raw text, because
-   * `effort` occurs in agent prose too.
-   */
+  /** No `effort` key at all; effort has no default, so absence is its own outcome. */
   noEffort?: boolean;
   tools?: readonly string[];
-  /** Preloads that must be present. Extra entries pass — use `exactSkills` to forbid them. */
+  /** Subset check; use `exactSkills` to forbid extras. */
   skills?: readonly string[];
-  /**
-   * The whole preload list, in order. `skills` is a subset check, so it passes on an agent that
-   * preloads everything it holds — the exact failure mode a preload-fidelity spec exists to catch.
-   */
+  /** The whole preload list, in order. */
   exactSkills?: readonly string[];
   hasSkills?: boolean;
   noSkills?: boolean;
-  /**
-   * Whether the sub-agent carries a completion gate: a `hooks` record holding at least one hook
-   * under `Stop`, which compile writes for every sub-agent holding `Write` or `Edit`, or under
-   * `SubagentStop`, which a sub-agent may declare as its own gate instead. `false` asserts neither
-   * event holds a hook. Read off the parsed YAML rather than the raw text, because both event
-   * names occur in agent prose too.
-   */
+  /** A hook under `Stop` or `SubagentStop`, read off the parsed YAML. */
   completionGate?: boolean;
 };
 
 export type AgentDynamicSkillsExpectations = {
-  /**
-   * Ids that must appear as DYNAMIC entries — the `### ` headings of the activation
-   * protocol, which carry the bare id in plugin and eject mode alike.
-   *
-   * Read off the parsed section rather than scanned for. `body.includes(id)` was
-   * satisfied by an id sitting inside a longer id, inside a preload's `id:id` ref, and
-   * inside the agent's own prose, and every compiled body in the tree carries prose
-   * naming skills.
-   */
+  /** Ids that must be `### ` headings of the activation protocol, read off the parsed section. */
   skillIds?: readonly string[];
-  /**
-   * Ids that must appear in NEITHER list: not preloaded in the frontmatter — in either
-   * ref form — and not activated in the body.
-   */
+  /** Ids neither preloaded (either ref form) nor activated. */
   noSkillIds?: readonly string[];
-  /** No activation protocol at all, which is the arm the template renders when nothing is lazy. */
+  /** No activation protocol at all. */
   allPreloaded?: boolean;
 };
 
-/**
- * `agentName` is `string` on both matchers below, not `AgentName`. A user-authored agent
- * compiles to `.claude/agents/` under a name the generated union cannot contain, so the
- * union would make a supported product behaviour inexpressible; the measurement that
- * refused the narrowing is above the `declare module "vitest"` block in setup.ts.
- */
 export const agentMatchers = {
-  /** Verify parsed YAML frontmatter fields of a compiled agent */
   async toHaveAgentFrontmatter(
     received: { dir: string },
     agentName: string,
@@ -223,7 +185,6 @@ export const agentMatchers = {
     };
   },
 
-  /** Verify dynamic skill activation section in agent body */
   async toHaveAgentDynamicSkills(
     received: { dir: string },
     agentName: string,
@@ -278,7 +239,6 @@ export const agentMatchers = {
   },
 };
 
-/** Whether a preload list names this skill, in the plugin `id:id` form or as the bare id. */
 function preloads(refs: readonly string[], id: string): boolean {
   return refs.includes(id) || refs.includes(`${id}:${id}`);
 }

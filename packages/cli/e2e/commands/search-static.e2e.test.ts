@@ -14,11 +14,8 @@ import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../src/cli/consts.j
 import type { SkillId } from "../../src/cli/types/index.js";
 
 /**
- * A skill that lives only in the project's `.claude/skills/` — the E2E source
- * ships no `playwright-e2e`, so the merged matrix can only have reached it from
- * disk. That makes its Source cell the one the table cannot honestly answer with
- * the marketplace, and its display title deliberately unlike its id so the two
- * identity columns cannot be satisfied by the same string.
+ * Only on disk (the E2E source ships no `playwright-e2e`), with a title unlike its id so the two
+ * identity columns cannot match one string.
  */
 const LOCAL_ONLY_SKILL = {
   id: "web-mocks-msw",
@@ -28,11 +25,8 @@ const LOCAL_ONLY_SKILL = {
 } as const satisfies { id: SkillId; slug: string; display: string; description: string };
 
 /**
- * E2E tests for the `search` command.
- *
- * The search command takes a single required positional `query` arg and
- * prints a read-only table of matching skills from the one marketplace this
- * installation reads, plus the local skills already on disk. There are no flags.
+ * `search <query>`: a read-only table of matching skills from this installation's marketplace plus
+ * local skills. No flags.
  */
 describe("search command", () => {
   let tempDir: string;
@@ -44,10 +38,8 @@ describe("search command", () => {
   });
 
   /**
-   * An installation in `tempDir` whose config names a fresh E2E source.
-   *
-   * `search` has no flags and reads no `CC_MARKETPLACE` — naming a source is `init`'s decision —
-   * so the config is the only place the source it answers from can come from.
+   * `search` takes no marketplace flag or env, so the config is the only place its source comes
+   * from.
    */
   async function createSourceFixture(): Promise<void> {
     await writeProjectConfig(tempDir, {
@@ -56,7 +48,6 @@ describe("search command", () => {
     });
   }
 
-  /** Ejects {@link LOCAL_ONLY_SKILL} into the installation, the way an eject-mode install leaves it. */
   async function createLocalOnlySkill(): Promise<void> {
     await createLocalSkill(tempDir, LOCAL_ONLY_SKILL.id, {
       description: LOCAL_ONLY_SKILL.description,
@@ -144,7 +135,7 @@ describe("search command", () => {
       const { exitCode, stdout } = await CLI.run(["search", spare.slug], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // One match means the table body is one row, so both strings below are cells of it.
+      // One match means one table row, so both strings are its cells.
       expect(stdout).toContain(`Found 1 skill matching "${spare.slug}"`);
       expect(stdout).toContain(spare.id);
       expect(stdout).toContain(spare.display);
@@ -175,8 +166,8 @@ describe("search command", () => {
       const { exitCode, stdout } = await CLI.run(["search", spare.slug], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // One match is one row, so the cells below are that row's Origin — asserted as cells,
-      // because every id the fixture ships begins with the marketplace's own name.
+      // One match is one row; asserted as cells because every fixture id begins with the
+      // marketplace's name.
       expect(stdout).toContain(`Found 1 skill matching "${spare.slug}"`);
       expect(stdout).toContain(`│ ${E2E_MARKETPLACE_NAME} │`);
       expect(stdout).not.toContain(`│ ${DEFAULT_PUBLIC_SOURCE_NAME} │`);
@@ -207,7 +198,7 @@ describe("search command", () => {
       const { exitCode, stdout } = await CLI.run(["search", "framework"], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // E2E source has react (web-framework) and hono (api-api with "framework" in description)
+      // hono matches through "framework" in its description.
       expect(stdout).toContain("react");
       expect(stdout).toContain("hono");
     });

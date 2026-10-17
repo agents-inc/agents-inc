@@ -18,36 +18,11 @@ import type { AgentName, Category } from "../../src/cli/types/index.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * Preloaded flag preservation across init and edit lifecycle.
- *
- * Gaps 10, 11, 12: Verifies that `preloaded: true` flags from the stack
- * survive init and an edit that changes nothing.
- *
- * The E2E source stack assigns preloaded: true to web-framework-react (via
- * createMockSkillAssignment("web-framework-react", true)) and to
- * api-framework-hono (via createMockSkillAssignment("api-framework-hono", true)).
- *
- * Config.ts uses compact stack assignments: an assignment carrying a flag is
- * stored as { "id": "...", "preloaded": true }, while a flag-less one is stored
- * as a bare string. The generator only ever emits `preloaded` where it is true —
- * an assignment it did not preload has no key at all — so the bare form covers
- * both "never preloaded" and an explicit `preloaded: false` read off disk. This
- * test asserts on the presence of the full object form.
+ * The stack's `preloaded: true` flags (react, hono) survive init and an edit that changes nothing.
+ * The writer stores preloaded assignments as `{ id, preloaded: true }` and others as bare ids.
  */
 
-/**
- * Asserts that a given skill ID appears as a preloaded assignment within a
- * specific agent's category in the structurally-loaded config.ts stack.
- *
- * The rendered compact format stores preloaded skills as
- * { "id": "...", "preloaded": true } and flag-less ones as bare string IDs;
- * the loader normalizes both to { id, preloaded }, so the find below matches
- * exactly the preloaded entries.
- *
- * The stack for an agent is written to that agent's SCOPE config: a default
- * init scopes every agent global, so the stack lands in the GLOBAL config at
- * HOME/.agents-inc/claude — pass the shared global home here, not projectDir.
- */
+/** A default init scopes every agent global, so pass the global home, not projectDir. */
 async function assertPreloadedInStack(
   configDir: string,
   agentName: AgentName,
@@ -112,16 +87,10 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         tempDir = await createTempDir();
         const projectDir = tempDir;
 
-        // Default-scope content is GLOBAL (compiled agents land in HOME). Thread ONE
-        // shared HOME through both phases so the edit sees the init's global content;
-        // config.ts stays under projectDir.
+        // Default-scope content is global, so one shared HOME runs through both phases.
         sharedHome = await createTempDir();
         const site = { dir: projectDir, home: sharedHome };
         const stack = e2eStackPayload({ install: "plugin" });
-
-        // ================================================================
-        // Phase A: Stack-picked init
-        // ================================================================
 
         await installFromSeed(store, "Stacked1", stack, site, fixture.sourceDir);
 
@@ -132,7 +101,6 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         });
         await expect({ dir: sharedHome }).toHaveCompiledAgent("web-developer");
 
-        // Verify preloaded flags in config after init
         await assertPreloadedInStack(
           sharedHome,
           "web-developer",
@@ -141,13 +109,8 @@ describe.skipIf(!claudeAvailable)("preloaded preservation across init and edit",
         );
         await assertPreloadedInStack(sharedHome, "api-developer", "api-api", E2E_SKILL.hono.id);
 
-        // ================================================================
-        // Phase B: Edit passthrough (no changes)
-        // ================================================================
-
         await applyFromSeed(store, "Stacked2", stack, site);
 
-        // Verify preloaded flags survive edit passthrough
         await assertPreloadedInStack(
           sharedHome,
           "web-developer",

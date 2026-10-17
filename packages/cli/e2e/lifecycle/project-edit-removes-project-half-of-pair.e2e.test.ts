@@ -33,28 +33,14 @@ import {
   typecheckGeneratedConfig,
 } from "../helpers/type-check-probe.js";
 
-/** The aliases a skill-set change regenerates, and must not collapse. */
 const SCOPED_ALIASES = ["SkillId", "Category"] as const;
 
-/** A line the user adds to the project's own copy of the skill once it is installed. */
 const PROJECT_COPY_EDIT_MARKER = "## Section added to the project's copy after installation";
 
 /**
- * The project-owned half of a persisted `[P][G]` pair is the project's to drop —
- * the ruled behaviour. The guard that refuses changes from project
- * scope covers GLOBAL-owned halves; it must not swallow the half the project
- * itself created.
- *
- * The pair is set up by `init --from` with React in the project over a global
- * install of it; the removal by `edit --from` naming React at global scope only.
- *
- * "Leaves the global install whole" is held on the global copy's files, not its
- * name. The pair is seeded by copying the global skill into the project, so the
- * two copies start byte-identical and a drop that wrote the project's copy back
- * over the global one changed no byte and no directory name — this spec compared
- * only names and stayed green while every drop did exactly that. So the project's
- * copy is edited first, and the global folder is compared as a tree snapshot,
- * whose mtimes also catch a rewrite that happens to produce the same bytes.
+ * A project may drop the project-owned half of a `[P][G]` pair; the guard refusing project-scope
+ * changes covers only global-owned halves. The project's copy is edited first and the global folder
+ * compared as a tree snapshot, so a drop that wrote the project copy back over it is caught.
  */
 
 describe("project edit drops the project half of a dual-scope pair", () => {
@@ -82,8 +68,8 @@ describe("project edit drops the project half of a dual-scope pair", () => {
       const { fakeHome, projectDir } = env;
       const project = { dir: projectDir, home: fakeHome };
 
-      // The pair: React in the project over the global install of it. A project skill never
-      // reaches the global web-developer, so the project's React is assigned to no sub-agent.
+      // A project skill never reaches the global web-developer, so the project's React is
+      // assigned to no sub-agent.
       await installE2EStackGlobally(store, fakeHome);
       await installFromSeed(
         store,
@@ -158,10 +144,7 @@ describe("project edit drops the project half of a dual-scope pair", () => {
         "a project-scope removal must not write over the global copy of the skill",
       ).toStrictEqual(globalSkillBefore);
 
-      // Surface 4. The project's skill set just changed, so its unions were
-      // regenerated — and a regeneration that degraded them would leave a
-      // config.ts nothing checks. The global half's type surface is asserted the
-      // same way its config is: byte-identical, because nothing at that scope moved.
+      // The project's unions were regenerated; the global type surface must be byte-identical.
       const projectSourceFolder = path.dirname(configTypesTsPath(projectDir));
       const projectTypecheck = await typecheckGeneratedConfig(projectSourceFolder);
       expect(
@@ -174,8 +157,7 @@ describe("project edit drops the project half of a dual-scope pair", () => {
         `a bogus literal must not type-check against the regenerated project types.\ntsc output:\n${projectProbe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(projectProbe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`.
+      // Each alias: the checks above hold while one rejects and the rest collapsed to `string`.
       expect(
         projectProbe.rejected,
         `every alias asked for must reject its bogus literal.\ntsc output:\n${projectProbe.output}`,

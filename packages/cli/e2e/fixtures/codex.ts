@@ -13,7 +13,7 @@ import { cleanupTempDir, codexHome, createTempDir } from "../helpers/test-utils.
 
 const JSON_FLAG = "--json";
 
-/** The one subcommand whose `--json` prints a stream, one event per line. `e` is its alias. */
+/** `e` is `exec`'s alias. */
 const EVENT_STREAM_SUBCOMMANDS = ["exec", "e"];
 
 const codexManifestSchema = z.object({
@@ -30,13 +30,8 @@ const CODEX_ENTRY = path.join(path.dirname(CODEX_MANIFEST_PATH), CODEX_MANIFEST.
 
 export type CodexRun = {
   exitCode: number;
-  /** Every JSON value stdout carried: one document, or one event per line for `exec --json`. */
   json: unknown[];
-  /**
-   * For failure messages only. Under a `/tmp` `CODEX_HOME` every run opens with a harmless
-   * `WARNING: proceeding, even though we could not create PATH aliases`; the exit code is the
-   * verdict.
-   */
+  /** For failure messages only; the exit code is the verdict. */
   stderr: string;
 };
 
@@ -74,17 +69,12 @@ export async function runCodex(
   };
 }
 
-/** Validated structurally, so specs assert on the text rather than scanning it. */
 const promptInputMessageSchema = z.object({
   role: z.string(),
   content: z.array(z.object({ text: z.string() })),
 });
 
-/**
- * The only instrument for "does Codex read what we wrote". `debug prompt-input` refuses `--json`
- * and prints JSON unasked, so it bypasses {@link runCodex}. Assert content, never an `r0`-style
- * skill-root index: root order varies by home.
- */
+// `debug prompt-input` refuses `--json`. Assert content, never a skill-root index: root order varies.
 export async function readCodexPrompt(home: string, cwd: string): Promise<string> {
   const result = await startPinned(home, ["debug", "prompt-input"], cwd);
   if (result.exitCode !== 0) {

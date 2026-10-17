@@ -36,35 +36,26 @@ import {
 import type { AgentName } from "../../src/cli/types/index.js";
 
 /**
- * A run at the home directory that fans a global change out to every registered project, over the
- * projects it cannot rewrite for a reason other than an unreadable `config.ts`: a registered path
- * with nothing installed at it any more, a project on the other provider, and one whose rewrite
- * fails. Each gets its own line saying which and why. `uninstall` keeps its own sentence — "its
- * config may still reference the uninstalled global content" — only for the project where that is
- * true: its config is there and was not pruned. A healthy project beside them is reached and not
- * named, so a line printed for every project reads as wrong.
- *
- * The rewrite is made to fail by a read-only `config.ts`. A run as root writes it anyway, and the
- * failure line's assertion is what would report that rather than the spec passing quietly.
+ * A home-directory fan-out names each registered project it skips and why (path gone, other
+ * provider, failed rewrite); `uninstall`'s own sentence appears only where the config was left
+ * unpruned. A healthy project is reached and not named. The failed rewrite is a read-only file,
+ * a no-op under root.
  */
 
 const API_DEV = E2E_AGENT["api-developer"].name;
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** Denies the write bit on a file whose directory stays writable, so cleanup can still remove it. */
+/** The directory stays writable, so cleanup can still remove it. */
 const READ_ONLY_FILE = 0o444;
 
-/** The global installation's own sub-agent stack. */
 const globalStack = {
   [API_DEV]: { "web-testing": [sa(E2E_SKILL.vitest.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-/** A registered project's own sub-agent stack. */
 const projectStack = {
   [WEB_DEV]: { "web-framework": [sa(E2E_SKILL.react.id, true)] },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-/** One global installation and every project registered against it, by registered path. */
 type Fixture = {
   home: string;
   /** Registered, with nothing left at the path. */
@@ -76,12 +67,11 @@ type Fixture = {
   healthy: string;
 };
 
-/** The one line a global run owes for a project it skipped, saying why. */
 function skipLine(projectPath: string, why: string): string {
   return compactCliOutput(`${STEP_TEXT.SKIPPED_REGISTERED_PROJECT} ${projectPath}: ${why}`);
 }
 
-/** `uninstall`'s own sentence about a project, which is true only where its config was left as it was. */
+/** True only where the project's config was left as it was. */
 function uninstallsOwnLine(projectPath: string): string {
   return compactCliOutput(`${STEP_TEXT.UNINSTALL_PROJECT_SKIPPED} ${projectPath}`);
 }
@@ -100,7 +90,7 @@ describe("a run at the home directory over registered projects it cannot rewrite
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A Claude project as a project write leaves it: its own row, plus the global one. */
+  /** As a project write leaves it: its own row, plus the global one. */
   function claudeProjectConfig(name: string): FixtureProjectConfig {
     return buildProjectConfig({
       name,
@@ -119,7 +109,7 @@ describe("a run at the home directory over registered projects it cannot rewrite
     });
   }
 
-  /** One folder of the installation, by the real path a registration records. */
+  /** By the real path a registration records. */
   async function installationFolder(tempDir: string, name: string): Promise<string> {
     const dir = path.join(tempDir, name);
     await mkdir(path.join(dir, DIRS.CLAUDE, DIRS.AGENTS), { recursive: true });
@@ -181,7 +171,6 @@ describe("a run at the home directory over registered projects it cannot rewrite
     return { home, gone, codex, readOnly, healthy };
   }
 
-  /** What the run must leave as it found it: the other provider's folder, and the unwritable one. */
   async function untouchedFolders(fixture: Fixture): Promise<Record<string, TreeSnapshotEntry>[]> {
     return Promise.all([
       readTreeSnapshot(path.join(fixture.codex, DIRS.SOURCE_CODEX)),

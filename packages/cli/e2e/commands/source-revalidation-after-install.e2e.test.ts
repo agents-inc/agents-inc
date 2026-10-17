@@ -21,26 +21,12 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * Revalidation seen from an installation rather than from a browse.
- *
- * `commands/source-revalidation` proves the mechanism — a remote source that moved on is
- * re-fetched on the next load with no flag, and an unchanged one costs one HEAD and no body. It
- * proves it through `search` alone, from a config a fixture wrote, so it can only ever speak
- * about a directory nothing was installed into.
- *
- * The question an installed project actually has is the one this file adds: a source moving on
- * must reach the CATALOGUE the next command reads, and must reach nothing already on disk.
- * Those are one event seen from the two sides a user has, and the second has no subject at all
- * without an installation to leave alone.
- *
- * The install is made by `init --from` against the served tarball, so the source these later
- * commands revalidate is the one the install itself recorded — a fixture-written source value
- * would only prove the CLI can read a value the CLI never chose. HOME is a separate directory
- * from the project for the same reason it is in the reporting specs: the download cache lives
- * under HOME, and with the two collapsed the cache moving would read as the installation moving.
+ * Revalidation from an installed project: a source that moved on reaches the next command's
+ * catalogue and nothing already on disk. Installed by `init --from`, so the recorded source is the
+ * CLI's own. HOME is apart from the project because the download cache lives under HOME.
  */
 
-/** The skill the source has not published yet, and publishes between the two loads below. */
+/** Published between the two loads below. */
 const SPARE = E2E_SKILL["visual-regression"];
 const INSTALLED_ID = "Revalidate01";
 
@@ -98,11 +84,7 @@ describe("a source that moves on under an existing installation", () => {
     await Promise.all([before.tempDir, after.tempDir, tempDir].map(cleanupTempDir));
   });
 
-  /**
-   * The subject guard for both assertions below. An install that recorded no source, or the
-   * wrong one, leaves the later commands nothing to revalidate — and a `search` that resolved
-   * no source at all reads exactly like a `search` against a source that has not published yet.
-   */
+  /** Subject guard: a search with no source reads like one against an unpublished source. */
   it("resolves its source from what the install recorded, and finds what that source ships", () => {
     expect(control.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(control.output).toContain(E2E_SKILL.react.display);
@@ -122,10 +104,7 @@ describe("a source that moves on under an existing installation", () => {
   });
 
   it("changes nothing that is already installed", async () => {
-    // The half a browse cannot make. Re-fetching rewrites the CACHE; the skills on disk, the
-    // config that declares them and the compiled sub-agents are the user's installation and are
-    // not upstream's to move. Content and mtime both, so a rewrite with identical bytes is
-    // still a change this catches.
+    // Re-fetching rewrites the cache, never the installation; content and mtime both.
     expect(
       await readTreeSnapshot(project.dir),
       "a source publishing new content rewrote the installation that did not ask for it",

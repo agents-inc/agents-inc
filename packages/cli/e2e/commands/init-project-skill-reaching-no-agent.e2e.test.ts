@@ -21,18 +21,8 @@ import {
 import "../matchers/setup.js";
 
 /**
- * A project-scoped skill never reaches a global-scoped sub-agent. That rule is
- * correct, documented and enforced at four layers — and every one of them is
- * silent.
- *
- * Install one skill at project scope while every sub-agent rests global, and the
- * skill is copied to `<project>/.claude/skills/`, written into `config.ts`, and
- * assigned to nothing. The run reports `0 agents rewritten` and `doctor` is green,
- * so the one thing the user is never told is the one thing that matters: the skill
- * will never be loaded.
- *
- * This spec asserts the install AND the silence, so the shape survives even if the
- * warning's wording moves — see STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT.
+ * A project-scoped skill never reaches a global sub-agent, so with every sub-agent global it is
+ * installed and assigned to nothing; see STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -55,14 +45,14 @@ describe("a project-scoped skill installed alongside only global sub-agents", ()
       INSTALLED_ID,
       buildSeedPayload({
         skills: {
-          // Ejected, so the copy that lands with no assignment is observable on disk.
+          // Ejected, so the unassigned copy is observable on disk.
           [E2E_SKILL.react.id]: buildSeedSkill({ scope: "project" }),
           [E2E_SKILL.vitest.id]: buildSeedSkill({
             scope: "global",
             assignments: { [WEB_DEV]: "lazy" },
           }),
         },
-        // Every sub-agent at GLOBAL scope — the whole point.
+        // Every sub-agent global: the whole point.
         agents: {
           [WEB_DEV]: { on: true, scope: "global" },
           [API_DEV]: { on: true, scope: "global" },
@@ -94,9 +84,7 @@ describe("a project-scoped skill installed alongside only global sub-agents", ()
   it("installs the skill and records it at project scope", async () => {
     expect(initExitCode, initOutput).toBe(EXIT_CODES.SUCCESS);
 
-    // The filesystem half: the copy really landed under the project.
     await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
-    // The config half: it is a project-scoped entry of this project's own.
     await expect({ dir: projectDir }).toHaveConfig({ skillIds: [E2E_SKILL.react.id] });
   });
 
@@ -104,14 +92,10 @@ describe("a project-scoped skill installed alongside only global sub-agents", ()
     const projectStack = (await loadConfigOrFail(projectDir)).stack;
     const globalStack = (await loadConfigOrFail(fakeHome)).stack;
 
-    // The project side is the stronger claim and the one this journey is about: a skill that
-    // reaches no sub-agent leaves NO project stack at all, not one that merely omits the id.
+    // No project stack at all, not one that merely omits the id.
     expect(projectStack).toBeUndefined();
 
-    // The global side really is populated, so its negative discriminates. Asserted as the
-    // serialised form because the claim is that the id appears in NO agent's catalogue, which
-    // needs no structure to state — with the control above it, since an absent global stack
-    // would satisfy this for free too.
+    // The global stack is populated, so its negative discriminates.
     expect(globalStack).toBeDefined();
     expect(JSON.stringify(globalStack)).not.toContain(E2E_SKILL.react.id);
   });

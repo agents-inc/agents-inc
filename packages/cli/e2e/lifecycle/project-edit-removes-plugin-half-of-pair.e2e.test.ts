@@ -41,23 +41,9 @@ import {
 import { EJECT_SOURCE } from "../../src/cli/consts.js";
 
 /**
- * Journey 8 with a plugin on one side of the pair, or both: a project edit that drops the
- * project's half of a `[P][G]` skill removes the project's half and nothing else. The ejected
- * pair is `project-edit-removes-project-half-of-pair.e2e.test.ts`; this file is the other three
- * origin pairs.
- *
- * "Nothing else" is read off every place a global install lives: the global `config.ts` byte for
- * byte, `~/.claude/skills` as a tree snapshot (content and mtime), the compiled global agents,
- * `~/.claude/settings.json`, and the global plugin's user-scope record in Claude's registry, whose
- * timestamps move on any reinstall. The project's half is read off where it lives: its ejected
- * folder, or its project-scope registration and the project's `enabledPlugins`. And the run says
- * what it did, so the Changes block names the removal and announces no mode switch and no copy.
- *
- * Each pair is built with `init --from`: a global install, then the project's own Hono in the
- * install mode it is given, which each setup asserts it took. The drop is `edit --from` with a
- * configuration naming Hono at global scope only.
- *
- * Requires the Claude CLI: every plugin half is a real `claude plugin install`.
+ * Journey 8 with a plugin on one or both sides of a `[P][G]` pair: a project edit dropping the
+ * project's half removes that half and nothing global (config bytes, skills tree, agents,
+ * settings, registry timestamps), and reports only the removal. Requires the Claude CLI.
  */
 
 const HONO = E2E_SKILL.hono;
@@ -66,7 +52,6 @@ const claudeAvailable = await isClaudeCLIAvailable();
 
 type InstallMode = "local" | "plugin";
 
-/** Everything the global install is, read before the drop and compared after it. */
 type GlobalInstall = {
   config: string;
   skills: Record<string, TreeSnapshotEntry>;
@@ -108,16 +93,11 @@ describe.skipIf(!claudeAvailable)(
       return mode === "local" ? "eject" : "plugin";
     }
 
-    /** Every skill at global scope in `globalMode` — the global install, named from either root. */
     function globalStack(globalMode: InstallMode) {
       return e2eStackPayload({ install: installOf(globalMode) });
     }
 
-    /**
-     * A global install in `globalMode`, then the project's own copy of Hono in `projectMode`. A
-     * project skill never reaches the global api-developer, so the project's Hono is assigned to
-     * no sub-agent.
-     */
+    /** The project's own Hono, which no sub-agent carries: the global api-developer cannot. */
     async function pairHono(globalMode: InstallMode, projectMode: InstallMode) {
       const env = await createTestEnvironment();
       tempDirs.push(env.tempDir);
@@ -152,7 +132,6 @@ describe.skipIf(!claudeAvailable)(
       return env;
     }
 
-    /** A project edit naming Hono at global scope only, which drops the project's half. */
     function dropHono(env: TestEnvironment, globalMode: InstallMode) {
       return applyFromSeed(store, "Dropped1", globalStack(globalMode), {
         dir: env.projectDir,
@@ -172,7 +151,7 @@ describe.skipIf(!claudeAvailable)(
       };
     }
 
-    /** The Changes block a drop owes: the project half's removal, and no mode switch or copy. */
+    /** The project half's removal, and no mode switch or copy. */
     function expectOnlyTheRemovalReported(output: string): void {
       expect(output, "the drop must report the project half's removal").toContain(
         `${REMOVED_MARKER} ${HONO.display} [P]`,

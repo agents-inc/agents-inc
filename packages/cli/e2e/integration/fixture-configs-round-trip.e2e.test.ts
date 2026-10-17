@@ -19,26 +19,11 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { saUnflagged } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 
-/** A skill the catalogue declares under `web-e2e`, which is the category the control files it in. */
+/** Declared under `web-e2e`, the category the control files it in. */
 const CYPRESS_E2E_SKILL = "web-testing-cypress-e2e";
 
-/**
- * Every configuration a fixture writes must be one the CLI would have written.
- *
- * Rendering through `generateConfigSource` proves the FORM; this proves the CONTENT is reachable.
- * The writer emits whatever it is handed, so a fixture can still describe a state the product
- * refuses — and reading it back is what asks that question, because the loader normalises. A
- * config the CLI would have written comes back byte-identical; one it would not either DRIFTS or
- * makes the writer THROW.
- *
- * This was an env-gated diagnostic (`CONFIG_ROUNDTRIP_PROBE`) while four files failed it. They
- * filed a skill under a stack category the catalogue contradicts — `"web-testing"` for a skill
- * whose declared category is `"web-e2e"` — derived from the id's prefix, which is the derivation
- * `packages/cli/CLAUDE.md` forbids in fixtures as well as in product code. It was invisible
- * because `normalizeStackRecord` relocates the assignment on LOAD, so nothing read the key that
- * was written; and two of those relocations collided in an exclusive category, which means one
- * spec asserted a compiled sub-agent body no CLI-written configuration can produce.
- */
+// A fixture's config must be one the CLI would write: loading and re-writing it must be byte-identical
+// (the loader normalises, so a state the product refuses drifts or throws).
 describe("a fixture's config survives the product's own load-then-write cycle", () => {
   it("round-trips ProjectBuilder.dualScope's two configs byte for byte", async () => {
     const { project, globalHome } = await ProjectBuilder.dualScope();
@@ -58,7 +43,6 @@ describe("a fixture's config survives the product's own load-then-write cycle", 
     await cleanupTempDir(project.dir);
   });
 
-  /** The control: a fixture built from the catalogue's own categories must pass trivially. */
   it("round-trips a config whose stack names each skill's declared category", async () => {
     const dir = await createTempDir();
     await writeProjectConfig(

@@ -15,40 +15,16 @@ import { DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { UI_SYMBOLS } from "../../src/cli/consts.js";
 
 /**
- * `doctor`'s Config Valid row says whose config it read — journey 14's project half, driven from
- * a real global installation and a real project set up under it.
- *
- * A directory with no config of its own under a global installation inherits the global one:
- * detection falls back to it by design, and every command keeps working. The row used to name
- * this directory's path for the file it had just read out of the home directory, so a project
- * whose `config.ts` the user had deleted was told `.agents-inc/claude/config.ts is valid` — about
- * a file that was not there.
- *
- * **The ruling is a label and nothing else.** The row names the config it actually read, and
- * every Config Valid row leads with the scope it is about: `This project:` or
- * `The global installation:`, the nouns the Layout rows already lead with. What else `doctor`
- * reports over a deleted project config is out of scope, so nothing here pins it.
- *
- * The four states are read from one installation, in the order a user reaches them: the project
- * with its own config, the home directory, a directory under home that never had one, and the
- * project once its config is deleted. Each is the control for the others — a row that labelled
- * every config "This project" would pass the first and fail the second, and one that called
- * every inherited config the global one would fail the first.
- *
- * Against the unfixed binary the red is the label: every row printed the bare relative path, so
- * the deleted and the never-configured directories both claimed a project file was valid. The
- * no-write check cannot be reddened by reverting a fix, so it was checked by mutating the fixture
- * instead — a file written into the project between `doctor` and the second snapshot — and it
- * went red on its own assertion and nothing else new.
+ * `doctor`'s Config Valid row names whose config it read (`This project:` or
+ * `The global installation:`), across a project with its own config, the home directory, a
+ * never-configured directory, and the project once its config is deleted.
  */
 
-/** The Config Valid row's lead, up to the message the row carries. */
 const CONFIG_ROW_PASSING = `${STEP_TEXT.DOCTOR_CONFIG_CHECK}\\s+${UI_SYMBOLS.CHECK}\\s+`;
 
-/** The installation's config as `doctor` names it from the directory holding it. */
 const CONFIG_RELATIVE = `${DIRS.SOURCE_CLAUDE}/${FILES.CONFIG_TS}`;
 
-/** A directory under home that was never set up — it holds nothing and inherits the global config. */
+/** Never set up, so it inherits the global config. */
 const NEVER_CONFIGURED = "never-configured";
 
 describe("doctor's Config Valid row under a live global installation", () => {

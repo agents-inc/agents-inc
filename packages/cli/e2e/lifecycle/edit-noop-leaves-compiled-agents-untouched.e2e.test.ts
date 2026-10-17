@@ -19,33 +19,13 @@ import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * An edit the user changes nothing in must write nothing.
- *
- * This is the positive statement of a behaviour five specs used to depend on the OPPOSITE of.
- * `edit` hydrated its agent roster from a field most configs did not carry, fell back to the
- * wizard's default roster, and `detectConfigChanges` then found a diff nobody made — so a
- * passthrough rewrote config.ts and recompiled every agent. The specs riding on that phantom
- * write asserted `toHaveCompiledAgents()` and a substring of the emitted config, which held only
- * because a write had happened. Retargeting them at their real subjects removed the last
- * assertion touching this behaviour and left it stated nowhere.
- *
- * Both halves are needed and neither is sufficient:
- *
- *   - "No changes made." proves the run REACHED the decision. Without it a run that crashed
- *     before writing satisfies every unchanged-state assertion below for free.
- *   - The unchanged state proves the decision was ACTED ON. `readTreeSnapshot` carries each
- *     file's mtime beside its content, which is what separates "not rewritten" from "rewritten
- *     identically" — a recompile of an unchanged config produces the same bytes, so content
- *     alone cannot see it, and it is invisible in a diff while being plainly a write.
- *
- * From scratch: the install is a real `init --from`, and the edit applies that same configuration
- * again, so what it passes through is a tree the CLI wrote, not one a fixture described.
+ * An edit that changes nothing writes nothing. "No changes made." proves the run reached the
+ * decision; the mtime-carrying tree snapshot proves it was acted on, since an identical rewrite
+ * is invisible to content alone.
  */
 
-/** What a compiled sub-agent is called on disk: its name, and this. */
 const COMPILED_AGENT_SUFFIX = ".md";
 
-/** The E2E stack, every skill ejected into the global installation — installed, then re-applied. */
 const STACK_AT_HOME_ID = "StackHm4";
 
 describe("an edit that changes nothing leaves the installed scope untouched", () => {
@@ -65,7 +45,6 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     globalHome = await createTempDir();
     await createPermissionsFile(globalHome);
 
-    // Phase A — a real install, so the artefacts the edit must leave alone are the CLI's own.
     const install = await runInitFrom(
       store,
       STACK_AT_HOME_ID,
@@ -77,7 +56,6 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     compiledBefore = await readTreeSnapshot(agentsPath(globalHome));
     configBefore = await readTreeSnapshot(sourceFolderIn(globalHome));
 
-    // Phase B — the configuration the installation was made from, applied again.
     ({ exitCode: editExitCode, output: editOutput } = await applyEditFrom(store, STACK_AT_HOME_ID, {
       dir: globalHome,
     }));
@@ -91,10 +69,7 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     if (globalHome) await cleanupTempDir(globalHome);
   });
 
-  // The subject guard for both comparisons below. `readTreeSnapshot` answers `{}` for an absent
-  // directory, so an install that compiled nothing — or a scope read at the wrong path — would
-  // satisfy "unchanged" on both sides while comparing nothing at all. Named rather than counted,
-  // and off the stack object: the roster the edit must leave alone is the one the stack declares.
+  // Subject guard: `readTreeSnapshot` answers `{}` for an absent directory.
   it("installs compiled agents and a generated config for the edit to leave alone", () => {
     expect(
       Object.keys(compiledBefore).sort(),
@@ -109,8 +84,7 @@ describe("an edit that changes nothing leaves the installed scope untouched", ()
     );
   });
 
-  // Proof of execution. The report is the only observable saying the run got as far as comparing
-  // the configuration against the installed one — a crash on the way there leaves the same clean tree.
+  // Proof of execution: a crash before the comparison leaves the same clean tree.
   it("reports that it changed nothing", () => {
     expect(editOutput, `a passthrough must reach its decision and say so: ${editOutput}`).toContain(
       STEP_TEXT.EDIT_UNCHANGED,

@@ -26,21 +26,9 @@ import {
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 
 /**
- * `init --from <id>`: the model and reasoning effort a shared configuration carries per sub-agent.
- *
- * Both live on the sub-agent, never on a skill, and both are OVERRIDES: an absent key means "keep
- * whatever the sub-agent's own metadata says", which for effort means emitting no line at all.
- * Every value of both enums is exercised, because a mapper that forwards a whitelist is
- * indistinguishable from one that forwards everything until the whole enum is tried.
- *
- * Tuning is orthogonal to where a sub-agent is written, so no payload here names an agent scope:
- * every sub-agent takes the shared selection default and its compiled `.md` lands in the user's own
- * ~/.claude rather than in the project. That is why the front-matter assertions read `fakeHome`
- * while the config entries are read back from the project's own `config.ts`, which inlines the
- * global rows, and why the skills travel global too — see `skillFor`. The one exception is the
- * last spec, which pins its sub-agent into the project and says why on the spot.
- *
- * Covers Phase 5 scenarios 3, 4, 5, 12 and 13 of the tracker's `--from` matrix.
+ * `init --from`: per-sub-agent model and effort overrides; an absent key keeps the metadata's
+ * value, and effort then emits no line. Every enum value is exercised. Sub-agents rest at the
+ * global default, so frontmatter is read from `fakeHome`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -50,14 +38,7 @@ const REVIEWER = E2E_BUILTIN_AGENT["reviewer"].name;
 const CLI_DEV = E2E_BUILTIN_AGENT["cli-developer"].name;
 const API_TESTER = E2E_BUILTIN_AGENT["api-tester"].name;
 
-/**
- * One skill, assigned lazily to every sub-agent the payload wants tuned.
- *
- * Global-scoped, because the sub-agents here rest at the shared selection default: a
- * project-scoped skill assigned to a sub-agent resting there is a pair the config model cannot
- * express, and the decode refuses it rather than dropping the rows. A global skill reaches every
- * sub-agent whatever scope it rests at, which keeps tuning the only subject of these specs.
- */
+/** Global, because a project skill on a global-default sub-agent is refused by the decode. */
 function skillFor(...agents: string[]) {
   return buildSeedSkill({
     scope: "global",
@@ -89,12 +70,8 @@ describe("init --from <id>: sub-agent model and effort", () => {
 
   it("carries every model the contract allows onto its own sub-agent", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // Which sub-agent takes which row is arbitrary — the bundled roster is uniformly `opus`, so no
-    // choice of agent makes the OPUS row's frontmatter assertion discriminating: a mapper that
-    // dropped `opus` from what it forwards would still compile `model: opus` off the metadata.
-    // The config assertion below is what carries that row: an override that never arrived writes
-    // no `model` key, and `toStrictEqual` against one that names it fails. The other three rows
-    // name values no metadata declares, so their frontmatter assertions stand on their own.
+    // The roster is uniformly `opus`, so the OPUS row's frontmatter cannot discriminate; the config
+    // assertion carries it.
     store.publish(
       "Models01",
       buildSeedPayload({
@@ -125,7 +102,6 @@ describe("init --from <id>: sub-agent model and effort", () => {
     });
     await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(CLI_DEV, { model: "haiku" });
 
-    // config.ts is what a later edit or recompile reads back, so it has to agree.
     expect(await readAgentEntriesFor(env.projectDir, API_TESTER)).toStrictEqual(
       buildAgentConfigs([API_TESTER], { scope: "global", model: "opus" }),
     );
@@ -200,18 +176,13 @@ describe("init --from <id>: sub-agent model and effort", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // Model only: effort has no default, so no line at all rather than an invented one.
+    // Effort has no default, so no line rather than an invented one.
     await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(WEB_DEV, {
       model: "haiku",
       noEffort: true,
     });
-    // Effort only: the model stays whatever api-tester's own metadata declares. Dropping it
-    // instead renders `model: inherit` (`agent.liquid`'s fallback), and the sibling above pins
-    // `haiku` in the same payload, so an entry's model bleeding across sub-agents fails here too.
-    // What this cannot see, with the bundled roster uniformly `opus`: a resolver answering a
-    // hardcoded `opus` in place of reading the metadata. No E2E fixture can, because the roster it
-    // installs from is the shipped one. That failure mode belongs to the unit layer, where the
-    // definitions are the spec's own to pin off `opus`.
+    // Dropping the model renders `model: inherit`, and the sibling pins `haiku`, so a bleed fails
+    // here too. A hardcoded `opus` is invisible with this roster; that belongs to unit tests.
     await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_TESTER, {
       model: E2E_BUILTIN_AGENT["api-tester"].defaultModel,
       effort: "xhigh",
@@ -227,7 +198,6 @@ describe("init --from <id>: sub-agent model and effort", () => {
 
   it("keeps a sub-agent's metadata default when no entry names it", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // api-tester arrives via an assignment alone — the `agents` map says nothing about it.
     store.publish(
       "NoEntry1",
       buildSeedPayload({ skills: { [E2E_SKILL.react.id]: skillFor(API_TESTER) } }),
@@ -241,16 +211,12 @@ describe("init --from <id>: sub-agent model and effort", () => {
     );
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // A default that never reached the template renders `model: inherit`, which is what this
-    // catches; effort has no default at all, so its correct outcome is no key. The same uniform-
-    // roster limit as the spec above applies to the model half, and here there is not even a
-    // tuned sibling to rule out a bleed — the payload names one sub-agent, deliberately.
+    // A default that never reached the template renders `model: inherit`; effort's correct outcome
+    // is no key.
     await expect({ dir: env.fakeHome }).toHaveAgentFrontmatter(API_TESTER, {
       model: E2E_BUILTIN_AGENT["api-tester"].defaultModel,
       noEffort: true,
     });
-    // Nothing to override, so the config entry carries neither tuning key — and the scope it does
-    // carry is the shared selection default, which is what put the compiled file in HOME above.
     expect(await readAgentEntriesFor(env.projectDir, API_TESTER)).toStrictEqual(
       buildAgentConfigs([API_TESTER], { scope: "global" }),
     );
@@ -259,8 +225,8 @@ describe("init --from <id>: sub-agent model and effort", () => {
   it("refuses a second id over an installed first, leaving the first id's tuning in place", async () => {
     env = await createTestEnvironment({ permissions: false });
     const project = { dir: env.projectDir, globalHome: env.fakeHome };
-    // Both payloads pin the sub-agent into the project, unlike every other spec in this file, so
-    // the tuning under test is written where these assertions read it.
+    // Pinned into the project, unlike the rest of this file, so the tuning lands where these
+    // assertions read.
     const inProject = { scope: "project" } as const;
     store.publish(
       "Retune01",
@@ -279,8 +245,7 @@ describe("init --from <id>: sub-agent model and effort", () => {
 
     const first = await runInitFrom(store, "Retune01", project, sourceDir);
     expect(first.exitCode, `first install failed: ${first.output}`).toBe(EXIT_CODES.SUCCESS);
-    // Proof the second run had something to change: without this the assertions below could hold
-    // on an install that never carried the first id's tuning at all.
+    // Proof the first install carried tuning for a second run to change.
     await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, {
       model: "sonnet",
       effort: "low",
@@ -289,8 +254,7 @@ describe("init --from <id>: sub-agent model and effort", () => {
     const configBefore = await readTestFile(configTsPath(env.projectDir));
     const agentsBefore = await listFiles(agentsPath(env.projectDir));
 
-    // `--from` is greenfield-only: a second id does not re-tune an installation, it refuses it.
-    // Re-tuning a shared configuration means uninstalling and installing the new one.
+    // `--from` is greenfield-only: a second id is refused, not re-tuned.
     const second = await runInitFrom(store, "Retune02", project, sourceDir);
 
     expect(second.exitCode).toBe(EXIT_CODES.ERROR);
@@ -298,7 +262,6 @@ describe("init --from <id>: sub-agent model and effort", () => {
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_EXISTING_INSTALL);
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_UNINSTALL_HINT);
 
-    // The first install is byte-for-byte what it was, and still says what it said.
     expect(await readTestFile(configTsPath(env.projectDir))).toBe(configBefore);
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual(agentsBefore);
     await expect({ dir: env.projectDir }).toHaveAgentFrontmatter(WEB_DEV, {

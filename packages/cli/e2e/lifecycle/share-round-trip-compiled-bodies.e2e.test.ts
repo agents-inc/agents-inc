@@ -19,25 +19,9 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * The share round trip, compared on the artefact a user actually reads: the compiled sub-agent.
- *
- * `commands/share` already makes this trip and compares far more of it — config, skills
- * directory, agents directory, and four surfaces at EACH end. What it cannot do is see a
- * difference that is consistent within each installation.
- *
- * That let a real defect through. Several modules assemble a stack and only one ordered its
- * keys, so a configuration that matched field for field — seven skill entries, two sub-agent
- * entries, the same directories — compiled a `web-developer.md` with two rows of its
- * skill-activation table swapped. `agent.skills` is split into preloaded and
- * dynamic PRESERVING order, so the stack's key order in `config.ts` decides the order of the
- * table a sub-agent is handed; nothing else in the suite reads that.
- *
- * The comparison lived only in `handrun-journeys.ts`, which no script runs. This is the gate.
- *
- * The id is minted by `edit --ui` rather than `share`. The origin ejects its skills, which is
- * the one install that needs no Claude CLI, and `share` refuses ejected skills; `edit --ui` mints
- * the same payload through the same function and still opens them. The producer and the decoder
- * this spec holds to each other are the same either way.
+ * The share round trip compared on the compiled sub-agents at both ends: stack key order decides
+ * a body's skill-table order, which no config comparison can see. The id is minted by `edit --ui`,
+ * since the origin ejects and `share` refuses ejected skills.
  */
 describe("a share round trip compared on its compiled bodies", () => {
   let store: SeedConfigStore;
@@ -52,8 +36,7 @@ describe("a share round trip compared on its compiled bodies", () => {
     await store.close();
   });
 
-  // Both ends are allocated per attempt rather than per file, because the suite runs at
-  // `retry: 1` and both of them are directories the run INSTALLS into.
+  // Per attempt, not per file: under `retry: 1` both ends would be installed over.
   beforeEach(async () => {
     store.reset();
     origin = await createTempDir();
@@ -83,11 +66,7 @@ describe("a share round trip compared on its compiled bodies", () => {
         EXIT_CODES.SUCCESS,
       );
 
-      // The config side first, and it is here to say which assertion carries the red rather
-      // than to add reach: it held while the defect shipped. `skills` and `agents` are sorted
-      // by the generator at both ends, and `stack` — the record whose key order decides the
-      // compiled body — is compared key-order-insensitively by any deep equality. Everything a
-      // configuration comparison can see agreed; the bytes below did not.
+      // The config side held while the defect shipped; it says which assertion carries the red.
       const before = await loadConfigOrFail(origin);
       const after = await loadConfigOrFail(rebuilt);
       expect(after.skills).toStrictEqual(before.skills);
@@ -96,10 +75,7 @@ describe("a share round trip compared on its compiled bodies", () => {
       const originBodies = await readCompiledAgents(origin);
       const rebuiltBodies = await readCompiledAgents(rebuilt);
 
-      // `readCompiledAgents` answers `{}` for a directory that is not there, so two
-      // installations that compiled nothing satisfy the comparison below for free. The roster
-      // is named rather than counted for the usual reason — a count cannot see a swap, and a
-      // swap is the whole subject here.
+      // `readCompiledAgents` answers `{}` for a missing directory, so name the roster.
       expect(
         Object.keys(originBodies).sort(),
         "the origin compiled nothing, so the comparison below has no subject",

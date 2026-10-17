@@ -20,12 +20,8 @@ import {
 } from "../helpers/test-utils.js";
 
 /**
- * Install-mode lifecycle E2E tests -- per-skill switching.
- *
- * Tests the full flow of switching ONE skill's install mode mid-lifecycle:
- *   9c: Init local -> edit switch ONE skill to plugin -> verify mixed state
- *
- * These tests require the Claude CLI for plugin install/uninstall operations.
+ * Switching ONE skill's install mode mid-lifecycle (eject init, one skill to plugin) leaves a mixed
+ * state. Requires the Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -62,13 +58,9 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
         const projectDir = path.join(tempDir, "project");
         await mkdir(projectDir, { recursive: true });
 
-        // This test switches ONE skill's install MODE (eject -> plugin) mid-edit, of
-        // default-scope (global) skills, so both phases run as the GLOBAL install: HOME ==
-        // cwd == projectDir, and all content + config collapse onto projectDir (every
-        // assertion below reads it).
+        // Default-scope skills, so both phases run as the global install (HOME === cwd).
         const site = { dir: projectDir, home: projectDir };
 
-        // Phase 1: Init in eject mode
         const initResult = await installFromSeed(
           store,
           "Ejected1",
@@ -86,7 +78,6 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
           },
         );
 
-        // Phase 2: Edit -- ONLY React as a plugin.
         const editResult = await applyFromSeed(
           store,
           "ReactPlugin1",
@@ -95,18 +86,13 @@ describe.skipIf(!claudeAvailable)("install mode mid-lifecycle -- per-skill switc
         );
         expect(editResult.output).toContain(STEP_TEXT.EDIT_SUCCESS);
 
-        // Which direction the switch went, and how many skills it took. The
-        // alternation `/[Ss]witch|[Ii]nstall/` that stood here passed on either
-        // word, so it could not tell a switch to plugin mode from a switch back —
-        // nor a per-skill switch from the bulk one the sibling spec drives.
+        // The direction and the count: a bare /switch/ matches either way, bulk or per-skill.
         const rawOutput = editResult.output;
         expect(rawOutput).toContain(
           `${STEP_TEXT.SWITCHING_SKILLS_PREFIX} 1 ${STEP_TEXT.SWITCHING_SKILLS_SUFFIX} ${STEP_TEXT.PLUGIN_NATIVE}`,
         );
 
-        // Structural, not a substring of the whole config text: `toContain(name)`
-        // is satisfied by the config's `marketplace` field whether or not any
-        // skill's `origin` moved.
+        // Structural: the config's `marketplace` field contains the name either way.
         const switchedEntries = await readSkillEntries(projectDir, E2E_SKILL.react.id);
         expect(switchedEntries.map((entry) => entry.origin)).toStrictEqual([
           fixture.marketplaceName,

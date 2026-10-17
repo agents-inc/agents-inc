@@ -13,25 +13,16 @@ import type { AgentName, Domain } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 import type { ProjectHandle } from "./project-handle.js";
 
-/**
- * A plugin-mode project plus the fake HOME that owns the Claude plugin
- * registry. Plugin state lives in two files the CLI reads:
- *
- *   <project>/.claude/settings.json          -> enabledPlugins
- *   <home>/.claude/plugins/installed_plugins.json -> install paths
- *
- * Writing them directly reproduces a completed `claude plugin install` without
- * requiring the Claude CLI binary, so plugin-state tests run unconditionally.
- */
+// Writes settings.json `enabledPlugins` and the HOME's installed_plugins.json directly, reproducing
+// a completed `claude plugin install` without the Claude binary.
 export type PluginInstalledProject = {
   project: ProjectHandle;
   home: string;
-  /** `<skillId>@<marketplace>` keys written to settings.json and the registry. */
   pluginKeys: string[];
 };
 
 export type PluginInstalledProjectOptions = {
-  /** Built plugin output dir (`<sourceDir>/dist/plugins`); each subdir is a plugin root. */
+  /** `<sourceDir>/dist/plugins`; each subdir is a plugin root. */
   pluginsDir: string;
   marketplace: string;
   skillIds: string[];
@@ -44,13 +35,6 @@ const PLUGIN_VERSION = "1.0.0";
 const PLUGIN_INSTALLED_AT = "2026-01-01T00:00:00.000Z";
 const REGISTRY_VERSION = 1;
 
-/**
- * The key a skill's plugin is enabled and registered under — `<skillId>@<marketplace>`.
- *
- * Exported because two fixtures write it and every `toHavePlugin` assertion reads it, and
- * `settings.json` and the registry have to agree on the spelling for a plugin to be found
- * at all. `ProjectBuilder.pluginProject` is the second caller.
- */
 export function pluginKeyFor(skillId: string, marketplace: string): string {
   return `${skillId}@${marketplace}`;
 }
@@ -68,17 +52,7 @@ async function writeJson(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, JSON.stringify(value, null, 2));
 }
 
-/**
- * Reads a plugin-state file that a prior install must already have written.
- *
- * The object is left opaque: callers here only clear one known key and spread
- * the rest through, so modelling the remaining fields would only invite them to
- * be dropped. A missing file means install never ran — a test bug, not a state
- * to substitute an empty object for.
- *
- * `JSON.parse` returns `any`, which the return type annotation narrows without
- * a cast.
- */
+// Opaque on purpose: callers clear one key and spread the rest through.
 async function readJsonOrFail(filePath: string): Promise<Record<string, unknown>> {
   if (!(await fileExists(filePath))) {
     throw new Error(
@@ -88,17 +62,8 @@ async function readJsonOrFail(filePath: string): Promise<Record<string, unknown>
   return JSON.parse(await readTestFile(filePath));
 }
 
-/** One registration of a plugin, as `claude plugin install` records it. Opaque beyond its scope. */
 export type PluginRegistration = { scope: string } & Record<string, unknown>;
 
-/**
- * Every registration `<home>/.claude/plugins/installed_plugins.json` holds for one plugin, in the
- * order the registry lists them — the user-scope record of a global install and one project-scope
- * record per project that installed it, each with its own install and update timestamps. A spec
- * holding the user-scope record still across a project operation compares these, which is what
- * shows a global plugin was neither reinstalled nor removed. An absent registry or key reads as
- * none.
- */
 export async function readPluginRegistrations(
   home: string,
   pluginKey: string,
@@ -112,14 +77,7 @@ export async function readPluginRegistrations(
   return registry.plugins?.[pluginKey] ?? [];
 }
 
-/**
- * Creates a project whose skills are installed as Claude plugins: config.ts
- * declares them with the marketplace as `source`, settings.json enables the
- * plugin keys, and the registry in the fake HOME resolves them to built plugin
- * directories.
- *
- * Plugin mode never copies skills into `.claude/skills/`, so none are written.
- */
+// Plugin mode copies nothing into `.claude/skills/`.
 export async function createPluginInstalledProject(
   options: PluginInstalledProjectOptions,
 ): Promise<PluginInstalledProject> {
@@ -165,19 +123,7 @@ export async function createPluginInstalledProject(
   return { project: { dir: projectDir }, home, pluginKeys };
 }
 
-/**
- * Clears every plugin of the project the way `claude plugin uninstall` does:
- * settings.json keeps no `enabledPlugins` entries and the registry keeps no
- * plugin records.
- *
- * Both files are read-modify-written, so every key this fixture does not own
- * survives — `permissions` and `extraKnownMarketplaces` in settings.json, the
- * registry `version`. config.ts is left untouched, so it keeps declaring skills
- * that are no longer installed.
- *
- * Both files must already exist: this is an uninstall, so a missing file means
- * the project was never installed.
- */
+// As `claude plugin uninstall` leaves it: other keys survive, and config.ts still declares the skills.
 export async function uninstallProjectPlugins(installed: PluginInstalledProject): Promise<void> {
   const settingsFile = settingsPath(installed.project.dir);
   const registryFile = registryPath(installed.home);

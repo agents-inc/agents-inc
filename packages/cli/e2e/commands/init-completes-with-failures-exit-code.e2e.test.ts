@@ -29,40 +29,19 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
- * `init`'s third ending: the install landed, a sub-agent would not compile, and the exit code
- * says so.
- *
- * This is the same ending `edit` took on 2026-08-20, reached from the other side and in a worse
- * form. `init` read `compileResult.compiled` and NEVER `.failed` or `.warnings`, so it printed
- * `Compiled N agents` — counting successes only, which makes the number look right — then
- * `initialized successfully!` and exited 0. A sub-agent missing from a user's FIRST install
- * reached no surface at all: not the count, not a warning, not the exit code.
- *
- * The compile is the last thing `init` does, so a failure there cannot be answered by aborting:
- * the skills are copied, `config.ts` and `config-types.ts` are written, and there is nothing
- * left to continue to. What was missing is the other half of the report.
- *
- * `--from` is the driver: the sabotage is on disk before the process starts and the whole flow
- * is non-interactive, so what is asserted is the command's own output rather than a PTY frame's.
- *
- * **The clean pass is the control and is not optional.** Every assertion below reads the same
- * against a command that had simply started exiting non-zero for its own reasons, and only the
- * same flow over an unsabotaged tree separates "this failure is reported" from "this command
- * fails". It is first so a fixture that never compiled anything reddens there rather than
- * masquerading as coverage in the case beneath it.
+ * `init` whose install landed but a sub-agent would not compile reports the failure and exits
+ * non-zero. Driven by `--from` so the output is the command's own. The clean pass is the control
+ * and runs first.
  */
 
-/** The sub-agent whose compiled file the sabotage occupies, and the one that must survive it. */
 const SABOTAGED_AGENT = E2E_AGENT["web-developer"].name;
 const SURVIVING_AGENT = E2E_AGENT["api-developer"].name;
 
-/** A payload as the web app builds it. */
 function seedPayload() {
   return buildSeedPayload({
     v: PINNED_WIRE_VERSION,
     skills: {
-      // Eject, because the E2E source is local and has no marketplace — plugin mode legitimately
-      // refuses that, which is its own (correct) error rather than anything this path controls.
+      // Eject: the local E2E source has no marketplace for plugins.
       [E2E_SKILL.react.id]: buildSeedSkill({
         install: "eject",
         scope: "project",
@@ -74,8 +53,7 @@ function seedPayload() {
         assignments: { [SURVIVING_AGENT]: "lazy" },
       }),
     },
-    // Both pinned to the project, which is the only scope this fixture can sabotage: a sub-agent
-    // taking the shared default compiles into the user's own ~/.claude instead.
+    // Pinned to the project, the only scope this fixture can sabotage.
     agents: {
       [SABOTAGED_AGENT]: { scope: "project" },
       [SURVIVING_AGENT]: { scope: "project" },
@@ -106,10 +84,8 @@ describe("init completes its install and exits non-zero when a sub-agent would n
   });
 
   /**
-   * The state change every case here completes, asserted on the three surfaces the output is
-   * not. It is what makes this ending a partial APPLY rather than a refusal: the config the
-   * failure account tells the user to `compile` from is on disk and describes the roster the
-   * run just installed.
+   * The install landed on the surfaces the output is not, so this is a partial apply rather than a
+   * refusal.
    */
   async function expectTheInstallLanded(projectDir: string): Promise<void> {
     const config = await loadConfigOrFail(projectDir);
@@ -120,10 +96,9 @@ describe("init completes its install and exits non-zero when a sub-agent would n
       }),
     );
 
-    // Surface 4, and the half that makes the remedy real: `writeProjectConfig` emits the pair
-    // ahead of the compile, so the `compile` the failure account names has a type surface for
-    // THIS roster to check against. Both directions, because the presence alone is satisfied by
-    // a `string` collapse and the absence alone by an empty file.
+    // `writeProjectConfig` emits the types before compile, so the remedy's `compile` has a surface
+    // for this roster. Both directions: presence alone passes a `string` collapse, absence alone an
+    // empty file.
     const generated = await readTestFile(configTypesTsPath(projectDir));
     expect(generated, "the installed skill must be a legal SkillId").toContain(E2E_SKILL.react.id);
     expect(generated, "and the sub-agent roster must be a real union").toContain(SURVIVING_AGENT);
@@ -144,8 +119,7 @@ describe("init completes its install and exits non-zero when a sub-agent would n
     expect(output).toContain(STEP_TEXT.INIT_SUCCESS);
     expect(output).not.toContain(STEP_TEXT.COMPLETED_WITH_FAILURES);
 
-    // The subject guard for the case below: this flow really does compile both sub-agents into
-    // the project, so a sabotage that stops one of them is stopping something that happens.
+    // Subject guard: this flow really compiles both sub-agents.
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual(
       [`${SABOTAGED_AGENT}.md`, `${SURVIVING_AGENT}.md`].sort(),
     );
@@ -158,9 +132,8 @@ describe("init completes its install and exits non-zero when a sub-agent would n
     env = await createTestEnvironment({ permissions: false });
     store.publish("InitFailed1", seedPayload());
 
-    // A directory where the compiled `.md` belongs: writing that one sub-agent fails, every
-    // other agent in the same pass is written normally. Non-empty so nothing can quietly dispose
-    // of it on the way past.
+    // Occupies the compiled `.md` path so only that write fails; non-empty so nothing disposes of
+    // it.
     const occupiedAgentPath = path.join(
       env.projectDir,
       DIRS.CLAUDE,
@@ -179,14 +152,8 @@ describe("init completes its install and exits non-zero when a sub-agent would n
 
     expect(exitCode, `init output:\n${output}`).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
 
-    // Surface 2, and the whole of what this row is about: the failure is named, the remedy is
-    // named, and the tick that used to sit over both is withdrawn.
     expect(output).toContain(`${STEP_TEXT.AGENTS_NOT_COMPILED}: ${SABOTAGED_AGENT}`);
-    // The `(N failed)` qualifier `init` appends to its compile count. It went unpinned while it
-    // had no `STEP_TEXT` member, because adding one moves a count `check-enumeration-drift.ts`
-    // registers against two documents; the member landed with both, so the count is now held to
-    // the sabotage — exactly one sub-agent was stopped, and a run reporting any other number is
-    // wrong in a way a count-free fragment could not see.
+    // Held to the sabotage: exactly one sub-agent was stopped.
     expect(
       output,
       "the compile count must say how many sub-agents did not land, not just that some did",
@@ -197,16 +164,12 @@ describe("init completes its install and exits non-zero when a sub-agent would n
       output,
       "a tick over an install missing a sub-agent is the claim being withdrawn, not a line beside it",
     ).not.toContain(STEP_TEXT.INIT_SUCCESS);
-    // The failure report prints the pass's warnings, and the global pass — which has no sub-agent
-    // here, both are pinned to the project — used to contribute one, right under a count that
-    // says a sub-agent compiled.
+    // The global pass has no sub-agent here and must contribute no warning.
     expect(
       output,
       "a scope with nothing to compile is not a warning beside the one sub-agent that failed",
     ).not.toContain("No agents found to recompile");
 
-    // The install finished: the sub-agent the sabotage did not touch is compiled, the occupied
-    // path is still the directory it was, and the config pair describes what landed.
     await expect({ dir: env.projectDir }).toHaveCompiledAgent(SURVIVING_AGENT);
     expect(await directoryExists(occupiedAgentPath)).toBe(true);
     await expectTheInstallLanded(env.projectDir);

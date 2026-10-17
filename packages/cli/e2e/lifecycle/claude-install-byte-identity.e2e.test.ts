@@ -36,45 +36,17 @@ import {
 } from "../helpers/test-utils.js";
 
 /**
- * Every file a Claude install leaves behind, pinned byte for byte against a golden tree recorded
- * from the product as it stood before the Codex target work began.
- *
- * **What this is for.** Each later step of that work claims "no behaviour change for Claude users",
- * and the path-funnel refactor in particular moves every place an install path is spelled. The
- * existing specs each assert what THEY are about; none of them can see a file that moved, appeared
- * or changed by a byte outside its subject. These three journeys read the WHOLE tree — the fake
- * HOME and the project inside it — after each phase and compare it with the golden, so the claim
- * is checked rather than asserted.
- *
- * **A golden records behaviour, not correctness.** Whatever today's product writes is what the
- * golden holds, including anything a later fix is meant to change. A red here says the bytes
- * moved; whether they SHOULD have moved is the reader's call, and a deliberate change is
- * re-recorded on purpose with `-u` over the existing file — see {@link expectGoldenTree}.
- *
- * **What is normalised, and nothing else:** the temp roots, the CLI version inside a compiled
- * agent's `Compiled by` line, the date `eject` stamps into each copied skill's `forkedFrom`, the
- * ISO instants the Claude CLI's own plugin registry records, and where a long temp root broke a
- * `config.ts` line — each `config.ts` is formatted again once its roots are placeholders, after the
- * file as read is held to that same format. `readInstallTree` never reads an mtime.
- * `src/cli/lib/__tests__/helpers/golden-tree.test.ts` pins each rule, and the golden file names the
- * paths it leaves unpinned under `notPinned`.
- *
- * **Watched failing once**, per the mutation rule: in a scratch copy of this package, one byte of
- * `src/agents/_templates/agent.liquid` changed (`Skill tool` to `skill tool` in the
- * skill-activation lead-in) and the copy rebuilt, every journey went red on exactly that byte in
- * each agent it compiled, in every phase, and on nothing else.
+ * Every file a Claude install leaves, pinned byte for byte against golden trees, so "no behaviour
+ * change for Claude users" is checked. A golden records behaviour, not correctness; re-record
+ * deliberately with `-u`. Normalised: temp roots, version line, `forkedFrom` date, registry
+ * instants, and config.ts line breaks.
  */
 
-/** Where the golden trees live — one JSON file per journey. */
 const GOLDEN_TREES_DIR = path.join(CLI_ROOT, "e2e", "fixtures", "claude-golden-trees");
 
 /**
- * What the Claude CLI keeps about its OWN sessions beside a plugin install, relative to the HOME
- * it was handed: a first-start time, a machine id, the Claude version that wrote it, the lock it
- * takes on that record, and timestamped backups of it. Nothing this CLI does can move any of it,
- * and all of it moves with every run or every Claude release, so the plugin journey leaves it out
- * and records that it did. The plugin REGISTRY beside it is pinned: which plugins were installed,
- * at which scope and from where is what this CLI decided.
+ * The Claude CLI's own session state: nothing here moves it, and every run or release does. The
+ * plugin registry beside it is pinned.
  */
 const CLAUDE_SESSION_STATE = [
   path.posix.join(DIRS.CLAUDE, FILES.CLAUDE_SESSION_JSON),
@@ -82,7 +54,6 @@ const CLAUDE_SESSION_STATE = [
   path.posix.join(DIRS.CLAUDE, DIRS.CLAUDE_BACKUPS),
 ];
 
-/** One journey's recorded trees: each phase by name, and the paths the journey does not pin. */
 type GoldenTree = {
   notPinned: readonly string[];
   phases: Record<string, InstallTree>;
@@ -90,13 +61,10 @@ type GoldenTree = {
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-/** The stack, every skill ejected into the global installation. */
 const GLOBAL_EJECT_ID = "Golden01";
 
-/** The stack as plugins, with the API skill and sub-agent in the project. */
 const PROJECT_PLUGIN_ID = "Golden02";
 
-/** The dual-scope configuration with the spare added to the project's own API sub-agent. */
 const DUAL_SCOPE_PLUS_SPARE_ID = "Golden03";
 const DUAL_SCOPE_PAYLOAD = e2eStackPayload(DUAL_SCOPE);
 const DUAL_SCOPE_PLUS_SPARE_PAYLOAD = {
@@ -112,14 +80,9 @@ const DUAL_SCOPE_PLUS_SPARE_PAYLOAD = {
 };
 
 /**
- * The whole tree under `root`, normalised against the run that wrote it.
- *
- * `roots` names every machine-specific directory the run was handed; each is written as its
- * placeholder in both of its spellings, because a symlinked temp dir reaches the CLI resolved.
- *
- * Each `config.ts` is formatted after the swap, so a line a long `TMPDIR` broke compares equal to
- * the golden's one line. The file as read is held to that format first, which is what keeps its
- * formatting pinned once the golden no longer pins it byte for byte.
+ * `roots` are written as placeholders in both spellings, since a symlinked temp dir reaches the CLI
+ * resolved. Each `config.ts` is reformatted after the swap, so a line a long `TMPDIR` broke still
+ * compares equal; the file as read is held to that format first.
  */
 async function installTreeUnder(
   root: string,
@@ -144,32 +107,24 @@ async function installTreeUnder(
   );
 }
 
-/** A directory as it was handed out and as the filesystem resolves it — one entry when they agree. */
+/** One entry when the handed-out and resolved spellings agree. */
 async function everySpellingOf(dir: string): Promise<string[]> {
   return [...new Set([dir, await realpath(dir)])];
 }
 
-/** The compiled agents a tree holds under one scope directory (`""` for the root itself). */
 function compiledAgentFiles(tree: InstallTree, scopeDir: string): string[] {
   const agentsDir = path.posix.join(scopeDir, DIRS.CLAUDE, DIRS.AGENTS);
 
   return Object.keys(tree.files).filter((file) => path.posix.dirname(file) === agentsDir);
 }
 
-/** The file one compiled agent is written to under a scope directory. */
 function compiledAgentFile(scopeDir: string, agent: string): string {
   return path.posix.join(scopeDir, DIRS.CLAUDE, DIRS.AGENTS, `${agent}.md`);
 }
 
 /**
- * Compares one journey's trees with its golden file.
- *
- * The file must already exist. Vitest writes a missing file snapshot and passes, so a golden that
- * was deleted would otherwise be re-recorded from whatever the product does today — which is the
- * one thing a golden must never do. Re-recording is a deliberate act: `-u` over the existing file.
- *
- * The golden is serialised through this package's own Prettier config, so the file `-u` writes is
- * the one `format:check` accepts; `JSON.stringify` alone expands the short arrays Prettier folds.
+ * The file must already exist: vitest would write a missing one and pass. Serialised through
+ * Prettier so the file `-u` writes is the one `format:check` accepts.
  */
 async function expectGoldenTree(journey: string, golden: GoldenTree): Promise<void> {
   const goldenPath = path.join(GOLDEN_TREES_DIR, `${journey}.json`);
@@ -216,8 +171,7 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
 
     const afterInit = await installTreeUnder(home, { home, source: E2E_SOURCE.sourceDir });
 
-    // Subject guard: the install compiled its agents at global scope. A golden recorded from a
-    // run that compiled nothing would otherwise pin the absence and pass on every later run.
+    // Subject guard: a golden recorded from a run that compiled nothing would pin the absence.
     expect(compiledAgentFiles(afterInit, "")).toStrictEqual(
       E2E_AGENTS.WEB_AND_API.map((agent) => compiledAgentFile("", agent)),
     );
@@ -291,8 +245,7 @@ describe("a Claude install leaves every file byte-identical to its golden tree",
       );
       const afterUninstall = await installTreeUnder(fakeHome, roots);
 
-      // Subject guard: the setup really was dual-scope — agents compiled at both scopes — so the
-      // phases below start from the state the journey is named for.
+      // Subject guard: the setup really was dual-scope.
       expect(compiledAgentFiles(afterSetup, "")).toStrictEqual([
         compiledAgentFile("", E2E_AGENT["web-developer"].name),
       ]);

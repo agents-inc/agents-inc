@@ -31,28 +31,15 @@ import {
 import "../matchers/setup.js";
 
 /**
- * The word `source` withdraws from the user-facing surface, as a whole word. The refusal
- * under test names the marketplace it will not load and the builds that would make it one —
- * one noun for one thing, where it once spelled three. The refusal names a path the fixture
- * chose and this negative runs over the whole message, so `createE2ESource` owes it a
- * directory segment that spells neither noun.
+ * The refusal names the marketplace and its builds; the word `source` must not appear, so
+ * `createE2ESource` owes a directory segment spelling neither noun.
  */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
 
 /**
- * Hard-error coverage for plugin-install intent over a marketplace that cannot serve it.
- * Enforces the "never silently substitute eject for plugin" rule from
- * feedback_no_plugin_to_eject_fallback.md.
- *
- * The marketplace is a local directory with no `.claude-plugin/marketplace.json`. A custom
- * marketplace without a valid manifest is refused by every command that loads it (owner ruling
- * 2026-10-02), so `edit --from` stops at the load — before any plugin intent exists to substitute
- * — and what is held here is a non-zero exit, nothing installed, and the config and settings the
- * run found left exactly as it found them. `commands/marketplace-manifest-required` owns the
- * refusal's other commands and states, `init --from` among them.
- *
- * At a terminal, because `edit --from` refuses to apply where nobody can confirm it, and that
- * refusal would land before the load this spec is about.
+ * Plugin intent over a local marketplace with no `.claude-plugin/marketplace.json`: `edit --from`
+ * refuses at the load, exits non-zero, installs nothing and leaves config and settings as found; it
+ * never substitutes eject for plugin. At a terminal, since without one `edit --from` refuses first.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -62,11 +49,8 @@ const APPLIED_ID = "PlugHard1";
 
 describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () => {
   /**
-   * Project was built with plugin-sourced skills but config.ts was saved without the
-   * `marketplaceName` field (legacy state), and the marketplace it names is a plain local
-   * directory with no `.claude-plugin/marketplace.json`. `edit --from` loads that marketplace
-   * before it plans anything, so the refusal is the load's, and the project state must remain
-   * untouched.
+   * A legacy config without `marketplaceName`, naming a plain local directory: the refusal is the
+   * load's.
    */
   describe("edit --from over a local marketplace with no marketplace.json", () => {
     let fixture: E2EPluginSource;
@@ -75,9 +59,8 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
     let prompt: InteractivePrompt | undefined;
 
     beforeAll(async () => {
-      // fixture provides plugin-sourced skill IDs used in the seeded config.
+      // Supplies the plugin-sourced skill ids the seeded config uses.
       fixture = await createE2EPluginSource();
-      // A directory nobody has built — the marketplace the load refuses.
       unbuilt = await createE2ESource({ unbuilt: true });
       store = await startSeedConfigStore();
       store.publish(
@@ -119,7 +102,6 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
           omitMarketplaceField: true,
         });
 
-        // Snapshot state that must NOT change on hard-error.
         const configPath = configTsPath(project.dir);
         const settingsPath = path.join(project.dir, DIRS.CLAUDE, FILES.SETTINGS_JSON);
         const configBefore = await readTestFile(configPath);
@@ -144,7 +126,6 @@ describe.skipIf(!claudeAvailable)("plugin install intent: hard-error paths", () 
         ).not.toMatch(WITHDRAWN_NOUN);
         expect(output).not.toContain("Installed");
 
-        // State integrity: neither config nor settings may mutate on hard-error.
         const configAfter = await readTestFile(configPath);
         const settingsAfter = await readTestFile(settingsPath);
         expect(configAfter).toStrictEqual(configBefore);

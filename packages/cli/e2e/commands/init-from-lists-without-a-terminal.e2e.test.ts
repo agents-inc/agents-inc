@@ -17,15 +17,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `init --from <id>` with no terminal — a CI job or a script — prints the same two lists a
- * terminal run shows before its question, and then carries on without asking.
- *
- * There is nobody to answer, and `init --from` is the one install a pipeline can run, so it does
- * not stop; but what it put where is still worth a line in the job's log, and it is the same
- * statement the terminal run asks about. A run that asked here would hang or cancel a pipeline,
- * which is why the question's absence is asserted beside the lists.
- *
- * The terminal half is `interactive/init-from-lists-then-asks`.
+ * `init --from` with no terminal prints the same two lists a terminal run shows, then installs
+ * without asking. The terminal half is `interactive/init-from-lists-then-asks`.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -40,14 +33,13 @@ const ANYTHING = "[\\s\\S]*";
 const PROJECT_LIST = STEP_TEXT.SHARED_CONFIG_LIST_PROJECT;
 const GLOBAL_LIST = STEP_TEXT.SHARED_CONFIG_LIST_GLOBAL;
 
-/** The project's own skill and sub-agent, under the project heading and before the global one. */
+/** Project skill and sub-agent under the project heading, before the global one. */
 const PROJECT_SKILL_LISTED_HERE = new RegExp(
   `${PROJECT_LIST}${ANYTHING}${PROJECT_SKILL}${ANYTHING}${GLOBAL_LIST}`,
 );
 const PROJECT_AGENT_LISTED_HERE = new RegExp(
   `${PROJECT_LIST}${ANYTHING}${WEB_DEV}${ANYTHING}${GLOBAL_LIST}`,
 );
-/** The global skill and sub-agent, under the global heading. */
 const GLOBAL_SKILL_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${GLOBAL_SKILL}`);
 const GLOBAL_AGENT_LISTED_GLOBALLY = new RegExp(`${GLOBAL_LIST}${ANYTHING}${API_DEV}`);
 
@@ -116,13 +108,11 @@ describe("init --from <id> with no terminal", () => {
     expect(output).toMatch(PROJECT_AGENT_LISTED_HERE);
     expect(output).toMatch(GLOBAL_SKILL_LISTED_GLOBALLY);
     expect(output).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
-    // The lists matched above are the subject guard for this negative: the same output carries
-    // the statement, and nothing in it asks a question nobody is there to answer.
+    // The lists above are the subject guard for this negative.
     expect(output, "with no terminal there is nobody to ask").not.toContain(
       STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM,
     );
 
-    // It carried on: both halves are installed, each at its own scope.
     const projectConfig = await loadConfigOrFail(env.projectDir);
     expect(
       projectConfig.skills.filter((skill) => skill.scope === "project").map((s) => s.id),
@@ -146,7 +136,7 @@ describe("init --from <id> with no terminal", () => {
     expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
     expect(output).toMatch(GLOBAL_SKILL_LISTED_GLOBALLY);
     expect(output).toMatch(GLOBAL_AGENT_LISTED_GLOBALLY);
-    // The global list above is the subject guard: the home directory has no project to list.
+    // The global list above is the subject guard.
     expect(output, "the home directory is the global install, so no project list").not.toContain(
       PROJECT_LIST,
     );

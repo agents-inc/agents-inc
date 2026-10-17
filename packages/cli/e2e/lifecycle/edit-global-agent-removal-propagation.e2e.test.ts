@@ -36,42 +36,18 @@ import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * Agent-removal propagation to registered projects.
- *
- * When a GLOBAL agent is removed via `cc edit --from` at global scope,
- * `propagateGlobalChangesToProjects` (local-installer.ts) rewrites each
- * registered project's config.ts. The project's own `agents[]` copy is
- * reconciled by `retainReconciledAgents` (drops active-global entries that
- * are neither project-scoped nor live tombstones), and the inlined writer
- * (`generateProjectConfigWithInlinedGlobal` in config-writer.ts) separately
- * re-inlines whatever is CURRENTLY active in `globalConfig.agents` on every
- * write. Together these two mechanisms should make a removed global agent
- * disappear from the project's rendered `agents[]`.
- *
- * This test verifies, via a real CLI run (not by reading the code):
- *   1. The removed global agent is gone from the project's rendered agents[]
- *      AND from the SelectedAgentName union derived from it.
- *   2. A separate, genuinely project-scoped agent whose stack references a
- *      skill ALSO referenced by the removed global agent is left completely
- *      untouched (no cross-contamination — the skill itself was not removed).
- *   3. The registered project's agents ARE recompiled after propagation — its
- *      project-scoped agent is written to `.claude/agents/` — while the removed
- *      global agent's stale `.md` is left on disk. A compile pass writes the
- *      agents that remain and never prunes; deleting a deselected agent's
- *      compiled file is the editing context's own job (`cleanupStaleAgentFiles`
- *      resolves paths from cwd), so it never reaches another project's dir.
+ * Removing a global agent via `edit --from` drops it from a registered project's agents[] and
+ * SelectedAgentName, leaves a project-scoped agent sharing its skill untouched, and recompiles the
+ * project (which never prunes, so the removed agent's stale `.md` stays).
  */
 
-// The global (web-developer) agent's stack references react at global scope.
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
   },
 } satisfies Partial<Record<AgentName, FixtureStackAgentConfig>>;
 
-// A project-scoped agent whose stack references the SAME globally-installed
-// react that the removed global agent also references. Removing the global
-// AGENT (not the skill) must leave this project-scoped stack entry intact.
+// References the same global react the removed agent does; removing the agent must leave it.
 const projectStack = {
   [E2E_AGENT["api-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: false }],
@@ -87,15 +63,8 @@ const reactMetadata = renderMetadataYaml({
   contentHash: "b2c3d4e",
 });
 
-/** The global configuration keeping react, with the web-developer sub-agent left out. */
 const WITHOUT_WEB_DEV_ID = "NoWebDv1";
 
-/**
- * The registered project as it would appear after an install:
- * the global react skill and global web-developer agent are inlined, plus the
- * project's own project-scoped api-developer. selectedAgents mirrors the
- * inlined global + project union the writer produces.
- */
 function buildRegisteredProjectConfig(name: string): FixtureProjectConfig {
   return buildProjectConfig({
     name,
@@ -141,9 +110,6 @@ describe("global-scope agent removal propagates to registered projects", () => {
       await createPermissionsFile(dir);
     }
 
-    // Global install: web-developer (global) references react (global). The
-    // registered project owns a project-scoped api-developer whose stack also
-    // references the global react.
     const globalConfig = buildProjectConfig({
       name: "propagation-agent-removal-global",
       marketplace: E2E_SOURCE.sourceDir,
@@ -161,17 +127,12 @@ describe("global-scope agent removal propagates to registered projects", () => {
 
     await writeProjectConfig(projectDir, buildRegisteredProjectConfig("project-a"));
 
-    // Seed a previously-compiled web-developer.md in the PROJECT's agents dir.
-    // It is the only agent file present before the edit, so the api-developer.md
-    // that appears afterwards can only have come from the project's recompile.
+    // The only agent file before the edit, so api-developer.md afterwards proves the recompile.
     await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, {
       frontmatter: true,
       body: "Stale compiled agent body\n",
     });
 
-    // Edit at global scope: keep react, leave the web-developer AGENT out. This
-    // rewrites the global config and fires propagateGlobalChangesToProjects for
-    // the registered project.
     ({ exitCode: editExitCode, output: editRawOutput } = await applyEditFrom(
       store,
       WITHOUT_WEB_DEV_ID,
@@ -197,8 +158,6 @@ describe("global-scope agent removal propagates to registered projects", () => {
     expect(editExitCode, `global edit must succeed: ${editRawOutput}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  // Proof-of-execution + assertion 1a: the removed global agent must be gone
-  // from the project's inlined agents[].
   it("drops the removed global agent from the project's inlined agents[]", () => {
     expect(
       projectConfig.agents.filter((a) => !a.excluded).map((a) => a.name),
@@ -206,14 +165,8 @@ describe("global-scope agent removal propagates to registered projects", () => {
     ).not.toContain(E2E_AGENT["web-developer"].name);
   });
 
-  // Assertion 1b: the generated SelectedAgentName union must shrink with it.
-  // The union is derived from the project's own agents[] rather than from a
-  // separately-persisted flat list, so a name reconciliation drops from agents[]
-  // cannot survive in the types half — the drift the old flat list allowed is
-  // unrepresentable. Asserting on the emitted union rather than on a substring
-  // of the whole file: the agent name also appears in AgentName, so a
-  // whole-file `not.toContain` could not fail. The positive assertion pins the
-  // union non-empty, so the negative one cannot pass by reading nothing.
+  // Read off the emitted union: the name also appears in AgentName, so a whole-file negative could
+  // not fail. The positive assertion keeps the union non-empty.
   it("drops the removed global agent from the generated SelectedAgentName union", async () => {
     const configTypes = await readTestFile(configTypesTsPath(projectDir));
     const selectedAgentName = readGeneratedUnion(configTypes, "SelectedAgentName");
@@ -232,13 +185,6 @@ describe("global-scope agent removal propagates to registered projects", () => {
     ).not.toContain(E2E_AGENT["web-developer"].name);
   });
 
-  // Assertion 2: the project-scoped api-developer's stack referencing the
-  // still-present global react must be completely untouched (no
-  // cross-contamination). react was NOT removed — only the global AGENT was —
-  // so removedGlobalSkillIds is empty and retainReconciledStack returns the
-  // stack unchanged. loadProjectConfigFromDir parses the compacted `"react"`
-  // literal back into a { id, preloaded } SkillAssignment, so the loaded shape
-  // is the seeded entry verbatim.
   it("leaves the project-scoped agent's own stack entries untouched", () => {
     expect(
       projectConfig.stack?.[E2E_AGENT["api-developer"].name]?.["web-framework"],
@@ -253,13 +199,7 @@ describe("global-scope agent removal propagates to registered projects", () => {
     ).toContain(E2E_AGENT["api-developer"].name);
   });
 
-  // Assertion 3: propagation now recompiles each rewritten project, so the
-  // project's own api-developer.md is written (it was never seeded — only the
-  // stale web-developer.md was). That recompile writes the agents that remain
-  // and never prunes, and the editing context's stale-file cleanup resolves
-  // paths from cwd (the global home here), so the removed global agent's
-  // compiled .md survives in the project. Both facts belong together: without
-  // the first, the second would hold vacuously for lack of any recompile.
+  // Without the recompile, the stale-file half would hold vacuously.
   it("recompiles the project's own agent and leaves the removed global agent's .md in place", () => {
     expect(
       projectAgentMdExists,

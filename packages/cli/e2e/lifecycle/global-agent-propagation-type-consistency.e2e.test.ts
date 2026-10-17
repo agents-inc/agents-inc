@@ -22,48 +22,19 @@ import { applyEditFrom, e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { readGeneratedUnionMembers } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
 
 /**
- * Global-agent propagation — the propagated config pair's value and type sides
- * must stay in lockstep in every registered project.
- *
- * `ProjectConfig` persists no flat selected-agent list. The selected set is
- * derived from the non-excluded `config.agents[]` rows via `activeAgentNames`
- * (`src/cli/lib/configuration/scope-predicates.ts`), and the emitted
- * `SelectedAgentName` union in `config-types.ts` is derived from those same
- * rows (`config-types-writer.ts`, reached through `regenerateConfigTypes` in
- * the gate's `writeProjectConfigPair`). Both halves of a project's pair are
- * written from the same effective config in the same call, so after a global
- * change fans out, a project's active agent rows and its `SelectedAgentName`
- * union must name the same set — drift between them is the regression this
- * spec pins.
- *
- * Setup (exercises the real CLI pipeline end-to-end):
- *   1. `init --from` at HOME of the stack without api-developer — the global
- *      agents rows (and the union they seed) start without it.
- *   2. Register Project B with `init --from` of the same configuration with
- *      web-developer at project scope, so the project owns a sub-agent and
- *      every skill stays global. B's rows inherit the narrow global set.
- *   3. Register Project A the same way.
- *   4. `edit --from` in Project A of the configuration WITH api-developer at
- *      global scope. From a project the global install is only added to, and
- *      api-developer is what it lacks, so it arrives globally and
- *      `propagateGlobalChangesToProjects` rewrites Project B's config pair.
- *
- * Assertion: after propagation, Project B's active agent rows (via
- * `activeAgentNames` over its `config.ts`) and its `SelectedAgentName` union
- * in `config-types.ts` must both include api-developer and must match as sets.
+ * After a global change fans out, a registered project's active agent rows and its
+ * `SelectedAgentName` union must name the same set: api-developer promoted to global from project
+ * A must reach both halves of project B's config pair.
  */
 
 const WEB_DEVELOPER_AGENT = "web-developer";
 const API_DEVELOPER_AGENT = "api-developer";
 const SELECTED_AGENT_ALIAS = "SelectedAgentName";
 
-/** Phase 1: the stack at global scope, without api-developer. */
 const GLOBAL_WITHOUT_API_ID = "Lockstp1";
 
-/** Phases 2 and 3: the same, with web-developer in the project. */
 const PROJECT_WEB_ID = "Lockstp2";
 
-/** Phase 4: web-developer in the project, and api-developer at global scope. */
 const PROJECT_WEB_GLOBAL_API_ID = "Lockstp3";
 
 describe("global-agent propagation -- value and type sides stay in lockstep", () => {
@@ -103,11 +74,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
     "propagates a newly-globalized agent to both the agent rows AND the SelectedAgentName type of every registered project",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // ================================================================
-      // Phase 1: Build global install without api-developer, so the global
-      // agent rows (and the `SelectedAgentName` union they seed) start
-      // without it.
-      // ================================================================
       const env = await createTestEnvironment();
       tempDir = env.tempDir;
       const { fakeHome } = env;
@@ -132,10 +98,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(await fileExists(globalConfigPath)).toBe(true);
       expect(await fileExists(globalTypesPath)).toBe(true);
 
-      // Sanity: global starts WITHOUT api-developer. The set is the stack's
-      // declared roster minus the one agent the configuration leaves out —
-      // what matters here is that api-developer is absent
-      // and that the value/type sides agree on the initial narrow set.
+      // Sanity: api-developer absent, and the two sides agree on the narrow set.
       const globalTypesPhase1 = await readTestFile(globalTypesPath);
       const globalSelectedPhase1 = await readActiveAgentNames(fakeHome);
       const globalTypeUnionPhase1 = readGeneratedUnionMembers(
@@ -146,12 +109,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(globalSelectedPhase1).not.toContain(API_DEVELOPER_AGENT);
       expect([...globalTypeUnionPhase1].sort()).toStrictEqual([...globalSelectedPhase1].sort());
 
-      // ================================================================
-      // Phase 2: Register Project B with web-developer at project scope
-      // and every skill global, so Phase 4's promotion is the only global
-      // change in play. B's stored agent rows inherit from the narrow
-      // global verbatim.
-      // ================================================================
+      // Every skill global, so the later promotion is the only global change in play.
       const projectBRegistration = await runInitFrom(
         store,
         PROJECT_WEB_ID,
@@ -167,10 +125,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       expect(await fileExists(projectBConfigPath)).toBe(true);
       expect(await fileExists(projectBTypesPath)).toBe(true);
 
-      // Pre-condition: B starts without api-developer and the value/type
-      // sides agree. The exact contents follow the stack's declared roster —
-      // the invariant under test is symmetry and api-developer's absence,
-      // not the specific composition.
       const projectBTypesBefore = await readTestFile(projectBTypesPath);
       const projectBSelectedBefore = await readActiveAgentNames(projectBDir);
       const projectBTypeUnionBefore = readGeneratedUnionMembers(
@@ -190,12 +144,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         "Pre-condition: Project B value and type sides must be in lockstep before the promotion event",
       ).toStrictEqual([...projectBSelectedBefore].sort());
 
-      // ================================================================
-      // Phase 3: Register Project A the same way. Order matters only
-      // because A's Phase-4 edit propagates to every registered project
-      // that is NOT the current one — so B must be registered before
-      // the promotion edit is run.
-      // ================================================================
+      // A's edit propagates to every OTHER registered project, so B must be registered first.
       const projectARegistration = await runInitFrom(
         store,
         PROJECT_WEB_ID,
@@ -206,13 +155,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         EXIT_CODES.SUCCESS,
       );
 
-      // ================================================================
-      // Phase 4: Promote api-developer to global via `cc edit --from` in
-      // Project A. The apply adds a NEW global-scoped agent to global config
-      // (via splitConfigByScope → mergeGlobalConfigs), triggering
-      // `propagateGlobalChangesToProjects` for every other registered
-      // project — specifically Project B.
-      // ================================================================
       const projectBContentBefore = await readTestFile(projectBConfigPath);
       const phase4 = await applyEditFrom(store, PROJECT_WEB_GLOBAL_API_ID, {
         dir: projectADir,
@@ -220,9 +162,7 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
       });
       expect(phase4.exitCode, `Global edit failed: ${phase4.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // Sanity: propagation must actually have rewritten B's config.ts
-      // and the global config must actually have grown. Otherwise the
-      // lockstep assertions below would be vacuous passes.
+      // Propagation rewrote B and the global config grew, or the assertions below are vacuous.
       const projectBContentAfter = await readTestFile(projectBConfigPath);
       expect(
         projectBContentAfter,
@@ -235,10 +175,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         "Pre-condition: the global config's active agent rows must include api-developer after Phase 4",
       ).toContain(API_DEVELOPER_AGENT);
 
-      // ================================================================
-      // Phase 5: the assertion this spec exists for — the value AND type
-      // sides of Project B's config must both carry api-developer.
-      // ================================================================
       const projectBTypesAfter = await readTestFile(projectBTypesPath);
 
       const projectBSelectedAfter = await readActiveAgentNames(projectBDir);
@@ -247,7 +183,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         SELECTED_AGENT_ALIAS,
       );
 
-      // Value side: the active rows of config.ts::agents MUST contain api-developer.
       expect(
         projectBSelectedAfter,
         "Project B config.ts::agents must include an active api-developer row after global promotion",
@@ -257,7 +192,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         "Project B config.ts::agents must still include an active web-developer row",
       ).toContain(WEB_DEVELOPER_AGENT);
 
-      // Type side: config-types.ts::SelectedAgentName MUST contain api-developer.
       expect(
         projectBTypeUnionAfter,
         "Project B config-types.ts::SelectedAgentName must include api-developer after global promotion",
@@ -267,9 +201,6 @@ describe("global-agent propagation -- value and type sides stay in lockstep", ()
         "Project B config-types.ts::SelectedAgentName must still include web-developer",
       ).toContain(WEB_DEVELOPER_AGENT);
 
-      // Symmetry invariant: every active name in config.ts::agents must
-      // appear in config-types.ts::SelectedAgentName, and vice versa.
-      // Drift between the two writers is what this spec pins.
       expect(
         [...projectBTypeUnionAfter].sort(),
         `config.ts::agents (active) and config-types.ts::SelectedAgentName must match.

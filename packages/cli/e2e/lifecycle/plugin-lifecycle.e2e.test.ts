@@ -19,12 +19,8 @@ import {
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * Full lifecycle E2E test for plugin mode: Init -> Uninstall.
- *
- * Phase 1: init --from installs skills as Claude CLI plugins
- * Phase 2: Uninstall --yes removes agents and cleans up
- *
- * The entire suite is skipped when the Claude CLI is not available.
+ * Plugin-mode lifecycle: `init --from` installs skills as Claude CLI plugins, then
+ * `uninstall --yes` cleans up. Skipped without the Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -53,15 +49,8 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
     "should complete full plugin lifecycle: init -> uninstall",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // ================================================================
-      // Phase 1: Plugin Init -- install skills as Claude CLI plugins
-      // ================================================================
-
-      // A default plugin-mode init installs to the global scope. Model it as the
-      // GLOBAL install (HOME === cwd === projectDir) so the plugin registry,
-      // settings.json and compiled agents collapse onto projectDir and the
-      // follow-up uninstall command (which resolves its target from cwd) finds
-      // the same content.
+      // Modelled as the global install (HOME === cwd) so the follow-up uninstall, which resolves
+      // its target from cwd, finds the same content.
       const initResult = await installFromSeed(
         store,
         "Plugins1",
@@ -69,8 +58,6 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
         { dir: projectDir, home: projectDir },
         fixture.sourceDir,
       );
-
-      // --- Phase 1 Verification ---
 
       await expectPhaseSuccess(
         { project: { dir: projectDir }, exitCode: initResult.exitCode },
@@ -92,13 +79,8 @@ describe.skipIf(!claudeAvailable)("plugin mode lifecycle: init -> uninstall", ()
       expect(initOutput).toContain(`Installed ${E2E_SKILL.react.id}@${fixture.marketplaceName}`);
       expect(initOutput).not.toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
-      // The positive sentinel rather than a generic absence: the plugin install
-      // announced completion, which "Failed to" is absent from either way.
+      // "Failed to" is absent either way, so assert the positive sentinel.
       expect(initOutput).toContain(STEP_TEXT.INIT_SUCCESS);
-
-      // ================================================================
-      // Phase 2: Uninstall --yes -- remove agents and clean up
-      // ================================================================
 
       const uninstallResult = await CLI.run(
         ["uninstall", "--yes"],

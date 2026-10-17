@@ -18,12 +18,9 @@ import {
   typecheckGeneratedConfig,
 } from "../helpers/type-check-probe.js";
 
-/** The aliases a scope-split install fills in at each scope it writes. */
 const SPLIT_INSTALL_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
-/**
- * Global scope lifecycle E2E tests -- regression coverage for scope-blind bugs.
- */
+/** Scope-blind regressions across the global-scope lifecycle. */
 
 let store: SeedConfigStore;
 
@@ -35,7 +32,6 @@ afterAll(async () => {
   await store.close();
 });
 
-/** The dual-scope installation, in a fresh environment. */
 async function dualScopeEnv(): Promise<TestEnvironment> {
   const env = await createTestEnvironment();
   await installE2EStackDualScope(store, env);
@@ -64,13 +60,7 @@ describe("global scope lifecycle -- doctor command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).not.toContain(`${E2E_AGENT["web-developer"].name} (missing)`);
-    // `toContain("agents compiled")` is a fragment the PASS row and the WARN row
-    // both carry ("N/N agents compiled" vs "N agents need recompilation" plus its
-    // detail lines), so only the negative above discriminated. It was replaced by
-    // the back-reference below, which pins the two counts EQUAL and so cannot be
-    // satisfied by the warn row. An empty `toContain(``)` sat here between those
-    // two facts until 2026-08-23 — true of every string, and the residue of the
-    // removal rather than a fourth assertion.
+    // Pins the two counts equal; a bare "agents compiled" also matches the WARN row.
     expect(stdout).toMatch(/(\d+)\/\1 agents compiled/);
     expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
   });
@@ -140,8 +130,7 @@ describe("global scope lifecycle -- init with one skill in the project", () => {
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      // The stack at global scope, but React in the project. A project skill never reaches a
-      // global sub-agent, so React is assigned to none.
+      // A project skill never reaches a global sub-agent, so React is assigned to none.
       await installFromSeed(
         store,
         "ReactInProject1",
@@ -152,33 +141,25 @@ describe("global scope lifecycle -- init with one skill in the project", () => {
         { dir: projectDir, home: fakeHome },
       );
 
-      // --- Config content assertions ---
       await expect({ dir: projectDir }).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
         agents: ["web-developer"],
       });
 
-      // --- Agent compilation assertions ---
-      // The sub-agents rest at global scope, so the compiled agent lives at fakeHome,
-      // not projectDir.
+      // The sub-agents rest at global scope, so the compiled agent lives at fakeHome.
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("web-developer", {
         contains: ["name: web-developer"],
         notContains: [E2E_SKILL.react.id],
       });
 
-      // --- Scope-aware copy assertions ---
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.react.id);
       await expect({ dir: fakeHome }).toHaveSkillCopied(E2E_SKILL.vitest.id);
       await expect({ dir: fakeHome }).not.toHaveSkillCopied(E2E_SKILL.react.id);
       await expect({ dir: projectDir }).not.toHaveSkillCopied(E2E_SKILL.vitest.id);
 
-      // --- Generated type surface, at both scopes ---
-      // A split install writes one config.ts per scope and one config-types.ts
-      // beside each. The project's aliases EXTEND the global ones, so a global
-      // union that degraded to `string` would absorb the project's literals and
-      // neither file would look wrong on its own — which is why both are probed
-      // rather than just the scope this flow's assertions above are about.
+      // Both scopes probed: the project's aliases extend the global ones, so a global union
+      // degraded to `string` would absorb the project's literals unseen.
       for (const scopeDir of [fakeHome, projectDir]) {
         const sourceFolder = path.dirname(configTypesTsPath(scopeDir));
         const typecheck = await typecheckGeneratedConfig(sourceFolder);
@@ -192,8 +173,7 @@ describe("global scope lifecycle -- init with one skill in the project", () => {
           `a bogus literal must not type-check at ${scopeDir}.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
         ).not.toBe(EXIT_CODES.SUCCESS);
         expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
-        // EACH alias, not any: the two above hold while one alias rejects and the others have
-        // collapsed to `string`.
+        // Each alias: the checks above hold while one rejects and the rest collapsed to `string`.
         expect(
           probe.rejected,
           `every alias asked for must reject its bogus literal.\ntsc output:\n${probe.output}`,

@@ -27,17 +27,11 @@ import {
 import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 import { CLI_INVOKE_COMMAND, DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 
-/** The one sub-agent the installation below carries, pinned to the project it is installed in. */
 const INSTALLED_AGENT = E2E_AGENT["web-developer"].name;
 
 /**
- * `edit --ui --from <id>` — the pairing that makes a shared id something a recipient can LOOK at.
- *
- * The two flags were refused together until 2026-08-24, on the reading that they were opposite
- * ends of one round trip: `--ui` handed THIS installation out and `--from` applied one back. The
- * owner's ruling replaced that with one rule for both commands — **`--ui` opens whatever `--from`
- * names, and the command's own subject when `--from` is absent** — under which the combination is
- * the obvious thing rather than a contradiction.
+ * `edit --ui --from <id>`: `--ui` opens whatever `--from` names, or the command's own subject
+ * without it.
  */
 describe("edit --ui --from", () => {
   let tempDir: string;
@@ -57,15 +51,7 @@ describe("edit --ui --from", () => {
     expect(output).toContain("?fromId=se_XYZ789");
   });
 
-  /**
-   * No installation is required, and that is the owner's ruling rather than an oversight: opening
-   * an id in a browser reads no local state, so requiring one would be arbitrary. It is the same
-   * reasoning that puts `init --ui` above `ensureConfigReadable` — a directory's condition cannot
-   * decide whether you may look at somebody else's configuration.
-   *
-   * `edit` refuses a directory with nothing installed on every OTHER path, so this spec is what
-   * says the exemption is deliberate.
-   */
+  /** Opening an id reads no local state, so no installation is required. */
   it("needs no installation, because opening an id reads nothing local", async () => {
     tempDir = await createTempDir();
 
@@ -78,7 +64,6 @@ describe("edit --ui --from", () => {
     );
   });
 
-  /** Applying is what `--from` does WITHOUT `--ui`; naming an id to look at must change nothing. */
   it("applies nothing, because looking is not applying", async () => {
     tempDir = await createTempDir();
 
@@ -87,12 +72,7 @@ describe("edit --ui --from", () => {
     expect(await directoryExists(`${tempDir}/${DIRS.CLAUDE}`)).toBe(false);
   });
 
-  /**
-   * The command it offers instead has to be one that runs HERE. `edit --from` refuses a directory
-   * with nothing installed, so over one it offers `init --from`, the command that installs an id
-   * into an empty directory — and the case below is the other half: over a directory holding its
-   * own installation, `init --from` is the one that refuses, so it offers `edit --from`.
-   */
+  /** The offered command must run here: over an empty directory that is `init --from`. */
   it("offers init --from in a directory with nothing installed", async () => {
     tempDir = await createTempDir();
 
@@ -109,10 +89,7 @@ describe("edit --ui --from", () => {
     );
   });
 
-  /**
-   * The other half of the pair above. The installation is made the way a recipient makes one —
-   * `init --from` an id somebody shared — and then a SECOND id is opened over it.
-   */
+  /** Installed as a recipient would, with `init --from`, then a second id is opened over it. */
   describe("over a directory holding its own installation", () => {
     let sourceDir: string;
     let sourceTempDir: string;
@@ -142,7 +119,7 @@ describe("edit --ui --from", () => {
         "Installed1",
         buildSeedPayload({
           v: PINNED_WIRE_VERSION,
-          // Eject, because the E2E source is local and has no marketplace to install plugins from.
+          // Eject: the local E2E source has no marketplace to install plugins from.
           skills: {
             [E2E_SKILL.react.id]: buildSeedSkill({
               install: "eject",
@@ -169,9 +146,8 @@ describe("edit --ui --from", () => {
   });
 
   /**
-   * Choosing the command reads this directory's config, on a path that otherwise reads nothing
-   * local — so a config too broken to load must not cost the link. The file is there, so the
-   * directory counts as holding its own installation.
+   * Choosing the command reads the config, so a broken one must not cost the link; the file's
+   * presence still counts as an installation.
    */
   it("still opens the id over a config it cannot read", async () => {
     tempDir = await createTempDir();

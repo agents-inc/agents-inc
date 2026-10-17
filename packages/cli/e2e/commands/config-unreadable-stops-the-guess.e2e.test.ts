@@ -20,29 +20,14 @@ import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
- * A settings config that EXISTS and cannot be evaluated stops the commands that would otherwise
- * guess past it (owner ruling 2026-08-20).
- *
- * This is the SOURCE-config reader — `loadProjectSourceConfig` / `loadGlobalSourceConfig` in
- * `lib/configuration/config.ts` — and not the full-config reader the four `*-corrupt-config`
- * specs already cover. The distinction is the whole reason this file exists: `edit`, `init`,
- * `compile` and `uninstall` refuse an unreadable config at `BaseCommand.ensureConfigReadable`,
- * which reads `loadProjectConfigFromDir`. The commands here reach NEITHER of those guards, so
- * until the ruling landed they read a file they could not evaluate as a file that was not there
- * — and a `null` at that rung means "no marketplace named", which falls through to the public
- * catalogue. A config naming a private marketplace therefore produced answers out of a
- * marketplace nobody had chosen, with nothing anywhere saying so.
- *
- * **Each refusal is paired with the same command succeeding**, in this file rather than in a
- * neighbouring one. A refusal pinned alone cannot tell a correctly-scoped guard from one that
- * has swallowed its whole domain: both leave the tree byte-identical, and `search` refusing
- * EVERYTHING would satisfy every assertion under the refusal cases below.
+ * An unevaluable source config stops commands that would otherwise fall through to the public
+ * catalogue. This is the source-config reader, not the full-config reader the `*-corrupt-config`
+ * specs cover. Each refusal is paired with the same command succeeding.
  */
 
-/** A genuine TypeScript syntax error — the loader throws while evaluating the file. */
 const SYNTAX_ERROR = `export default {{{ not valid typescript`;
 
-/** The skill the E2E source carries, used as the query so a served answer is recognisable. */
+/** Used as the query so a served answer is recognisable. */
 const QUERY = E2E_SKILL.react.slug;
 
 describe("a settings config that exists and cannot be evaluated", () => {
@@ -64,13 +49,7 @@ describe("a settings config that exists and cannot be evaluated", () => {
     }
   });
 
-  /**
-   * A project directory and a HOME beside it, each free to hold a config or not.
-   *
-   * The two are kept apart deliberately: at the home root the file this reader loads IS the
-   * global config, so a fixture that let them collapse could not say which of the two a
-   * refusal came from.
-   */
+  /** Kept apart: at the home root this reader's file IS the global config. */
   async function makeProjectAndHome(): Promise<{ projectDir: string; home: string }> {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -97,7 +76,7 @@ describe("a settings config that exists and cannot be evaluated", () => {
 
       expect(exitCode, `search output:\n${output}`).toBe(EXIT_CODES.ERROR);
       const flattened = flattenCliOutput(output);
-      // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+      // Compacted: oclif breaks a long path mid-word.
       expect(
         compactCliOutput(output),
         "the refusal names the file it could not evaluate",
@@ -109,16 +88,12 @@ describe("a settings config that exists and cannot be evaluated", () => {
         STEP_TEXT.CONFIG_UNREADABLE_RECREATE,
       );
 
-      // The discriminating negative, and the whole defect: the public catalogue carries a React
-      // skill under this slug too, so a run that walked past the unreadable config would print a
-      // perfectly ordinary answer. The display title is the fixture's own, which is what
-      // separates "answered from the wrong marketplace" from "answered from no marketplace".
+      // The public catalogue has a React skill under this slug too; the fixture's display title
+      // tells which marketplace answered.
       expect(output).not.toContain(E2E_SKILL.react.display);
       expect(output).not.toContain(E2E_SKILL.react.id);
 
-      // Surfaces 1, 3 and 4 in the negative form: a command that refuses to read a file must
-      // not write one either, and `readTreeSnapshot` carries mtime beside content, so a rewrite
-      // producing identical bytes is still visible here.
+      // `readTreeSnapshot` carries mtimes, so a same-bytes rewrite still shows.
       expect(await readTreeSnapshot(projectDir)).toStrictEqual(before);
     });
 
@@ -146,15 +121,8 @@ describe("a settings config that exists and cannot be evaluated", () => {
 
   describe("eject", () => {
     /**
-     * `eject` reaches this reader through `ensureMinimalConfig`, which invents a `config.ts` for
-     * a project that has none so a later `compile` has something to read. The marketplace it
-     * records comes from `resolveSource`, which — with no project config — is answering out of
-     * the GLOBAL one. That is the reachable half of the eject ruling: the project has no config
-     * to be unreadable, so the file the refusal is about is always the global one.
-     *
-     * Since the 2026-10-02 ruling `eject` is one of the write commands that refuse up front over
-     * any config in play that cannot be loaded, so the refusal lands before the ejection rather
-     * than after it — the partial apply this leg pinned until then is now nothing applied at all.
+     * `eject` reaches this reader through `ensureMinimalConfig`; with no project config the
+     * unreadable file is always the global one, and the refusal lands before anything is ejected.
      */
     it("invents no configuration over a global one it cannot read", async () => {
       const { projectDir, home } = await makeProjectAndHome();
@@ -169,8 +137,6 @@ describe("a settings config that exists and cannot be evaluated", () => {
         },
       );
 
-      // A refusal, not a partial apply: nothing landed, so the run can be repeated once the
-      // global config is recreated — which is exactly what `ERROR` tells the caller.
       expect(exitCode, `eject output:\n${output}`).toBe(EXIT_CODES.ERROR);
       const flattened = flattenCliOutput(output);
       expect(
@@ -192,8 +158,7 @@ describe("a settings config that exists and cannot be evaluated", () => {
         "the refusal lands before the ejection, so no template is on disk",
       ).toBe(false);
 
-      // The subject of the ruling: the invented config would have named a marketplace read from
-      // nowhere, and it is exactly what must not appear.
+      // The invented config would have named a marketplace read from nowhere.
       expect(
         await fileExists(configTsPath(projectDir)),
         "a config invented over an unreadable one records a marketplace nobody chose",

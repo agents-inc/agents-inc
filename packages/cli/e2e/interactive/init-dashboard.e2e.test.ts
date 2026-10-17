@@ -36,12 +36,9 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import { browserOpenerCommand } from "../../src/cli/utils/open-url.js";
 
 /**
- * A bare `init` over an installation shows its dashboard; where nothing is installed it takes the
- * editor route instead. The dashboard offers four commands — Edit in the web editor, Compile,
- * Doctor and List — and Edit hands the installation to the editor as `edit --ui` does.
- *
- * Every launch that a misread key could carry into Edit points the CLI at the seed store, so a
- * failing run mints its id here rather than on agentsinc.sh.
+ * A bare `init` over an installation shows its dashboard (Edit, Compile, Doctor, List); with
+ * nothing installed it takes the editor route. Launches point at the seed store, so a misread key
+ * mints its id here.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -97,8 +94,7 @@ describe("init over an existing installation", () => {
     it("should show dashboard when project already has a config", async () => {
       tempDir = await createTempDir();
 
-      // A real installation: the project config declares a skill and an agent,
-      // so detectInstallation treats it as installed and init shows the dashboard.
+      // The config declares a skill and an agent, so detectInstallation treats it as installed.
       await writeProjectConfig(
         tempDir,
         buildProjectConfig({
@@ -112,8 +108,7 @@ describe("init over an existing installation", () => {
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
 
-      // The exit code alone cannot tell the dashboard from the editor route — both exit 0. The
-      // pair is what says which one `init` chose.
+      // Both routes exit 0; the output pair says which `init` chose.
       const output = dashboard.getOutput();
       expect(output).toContain(STEP_TEXT.DASHBOARD);
       expect(output).not.toContain(STEP_TEXT.EDITOR_URL);
@@ -126,7 +121,6 @@ describe("init over an existing installation", () => {
   });
 
   describe("dashboard on existing project", () => {
-    /** An installed project, launched below as a bare `init`. */
     async function createDashboardProject(
       options?: Parameters<typeof ProjectBuilder.editable>[0],
     ): Promise<string> {
@@ -145,7 +139,7 @@ describe("init over an existing installation", () => {
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
 
-      // The menu is the last thing on the screen, so anchoring both ends says there are four.
+      // The menu is last on screen, so anchoring both ends says there are four.
       expect(dashboard.getScreen()).toMatch(
         /\n\n❯ Edit in the web editor\n {2}Compile\n {2}Doctor\n {2}List$/,
       );
@@ -176,11 +170,7 @@ describe("init over an existing installation", () => {
       await dashboard.waitForExit();
     });
 
-    /**
-     * Down, Down, Enter written at once — a fast typist, or a paste — reaches the CLI as one chunk,
-     * and the dashboard handles the three keys with no frame painted between them. Two moves down
-     * from Edit is Doctor however fast they came; the paced walk is the spec above.
-     */
+    /** Keys written at once arrive as one chunk with no frame between them. */
     it("should run the option the keys land on when they arrive in one burst", async () => {
       const dashboardDir = await createDashboardProject({
         skills: [E2E_SKILL.react.id],
@@ -208,10 +198,7 @@ describe("init over an existing installation", () => {
       expect(output, "the burst must not open the option it started on").not.toContain("Shared as");
     });
 
-    /**
-     * Edit runs `edit --ui`: an id is minted for this installation and the editor link printed.
-     * The browser opener is stubbed on PATH, so a machine that has one opens no tab.
-     */
+    /** The browser opener is stubbed on PATH, so no tab opens. */
     it(
       "opens the installation in the web editor when Edit is chosen",
       { timeout: TIMEOUTS.INTERACTIVE },
@@ -284,16 +271,11 @@ describe("init over an existing installation", () => {
 
       const exitCode = await dashboard.waitForExit();
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // "Cleanly" is more than exit 0: leaving the dashboard is a read-only
-      // act, so nothing under the project may be rewritten. mtimes are in the
-      // snapshot, so a rewrite producing identical bytes still shows.
+      // Leaving the dashboard is read-only; mtimes catch a same-bytes rewrite.
       expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
     });
 
-    /**
-     * Ctrl+C cancels, as it does at every other prompt — where Escape, the spec above, only steps
-     * back out of the dashboard and exits 0. Neither writes anything.
-     */
+    /** Ctrl+C cancels; Escape only steps out and exits 0. Neither writes. */
     it("should exit as cancelled when pressing Ctrl+C", async () => {
       const dashboardDir = await createDashboardProject({
         skills: [E2E_SKILL.react.id],
@@ -332,10 +314,7 @@ describe("init over an existing installation", () => {
       expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
     });
 
-    /**
-     * A run with no command is, to oclif, a request for the root help — and the dashboard shown in
-     * its place has answered it. Whichever way the dashboard is left, the run ends there.
-     */
+    /** To oclif a run with no command asks for root help, which the dashboard has answered. */
     it("should end the run when Escape leaves the dashboard shown with no command", async () => {
       const dashboardDir = await createDashboardProject({
         skills: [E2E_SKILL.react.id],
@@ -357,11 +336,7 @@ describe("init over an existing installation", () => {
       expect(await readTreeSnapshot(dashboardDir)).toStrictEqual(treeBefore);
     });
 
-    /**
-     * Chosen one key at a time rather than in a burst: the burst is the spec above's subject, and a
-     * dashboard that misread one would open Edit and fail this spec on a timeout instead of on the
-     * help listing it is about.
-     */
+    /** One key at a time: a misread burst would open Edit and time out instead. */
     it("should end the run with the command chosen on the dashboard shown with no command", async () => {
       const dashboardDir = await createDashboardProject({
         skills: [E2E_SKILL.react.id],
@@ -378,7 +353,6 @@ describe("init over an existing installation", () => {
 
       await dashboard.chooseOneKeyAtATime(2, STEP_TEXT.DASHBOARD_DOCTOR_FOCUSED);
 
-      // A whole doctor run, so a real command's exit wait rather than a keypress's.
       const exitCode = await dashboard.waitForExit(TIMEOUTS.EXIT_WAIT);
       const output = dashboard.getOutput();
       expect(output, "the chosen command ran").toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
@@ -388,7 +362,6 @@ describe("init over an existing installation", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     });
 
-    /** The same dashboard through a pipe, which prints its text in place of the menu. */
     it("should end the run after the dashboard a pipe is shown with no command", async () => {
       const dashboardDir = await createDashboardProject({
         skills: [E2E_SKILL.react.id],
@@ -409,9 +382,7 @@ describe("init over an existing installation", () => {
     it("should show dashboard when global config exists but no project config", async () => {
       tempDir = await createTempDir();
 
-      // A real global installation: the global config declares a skill and an
-      // agent, so detectGlobalInstallation treats it as installed and init in a
-      // project without its own config falls back to it and shows the dashboard.
+      // With no project config, `init` falls back to a global config that declares content.
       await writeProjectConfig(
         tempDir,
         buildProjectConfig({
@@ -431,9 +402,8 @@ describe("init over an existing installation", () => {
 
       await dashboard.waitForText(STEP_TEXT.DASHBOARD, TIMEOUTS.WIZARD_TRANSITION);
 
-      // The positive/negative pair the sibling block below asserts in reverse:
-      // a global config with content routes to the dashboard, a blank one to
-      // the editor. Without the negative both specs assert "a screen appeared".
+      // The blank-global block below is the negative; without it both specs assert only that a
+      // screen appeared.
       const output = dashboard.getOutput();
       expect(output).toContain(STEP_TEXT.DASHBOARD);
       expect(output).not.toContain(STEP_TEXT.EDITOR_URL);
@@ -446,17 +416,12 @@ describe("init over an existing installation", () => {
   });
 
   describe("the editor route when only a blank global config exists", () => {
-    // The counterpart to "dashboard when only global config exists": a global config that
-    // declares no skills and no agents is content-less and must NOT count as an installation, so
-    // `init` in a fresh, uninitialized project takes the editor route, never the dashboard.
-    //
-    // `detectInstallationInDir` refuses a config that `declaresNoContent`, so
-    // `detectInstallation` has no blank global config to fall back to.
+    // `detectInstallationInDir` refuses a config that `declaresNoContent`, so a blank global config
+    // is not an installation.
     it("takes the editor route, not the dashboard, when the global config declares no skills or agents", async () => {
       tempDir = await createTempDir();
 
-      // Content-less global config in the fake home's own source folder: no skills and no
-      // agents, each stated, since the factory's defaults would otherwise supply one of each.
+      // No skills and no agents stated, since the factory's defaults would supply one of each.
       await writeProjectConfig(
         tempDir,
         buildProjectConfig({
@@ -466,7 +431,6 @@ describe("init over an existing installation", () => {
         }),
       );
 
-      // Fresh, uninitialized project directory with no config of its own.
       const projectDir = path.join(tempDir, "work");
       await mkdir(projectDir, { recursive: true });
 

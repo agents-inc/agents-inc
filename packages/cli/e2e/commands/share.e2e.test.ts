@@ -40,19 +40,9 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
 import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 
 /**
- * `share` end to end: the CLI turns the installation in this directory into a configuration the
- * store can hold, and hands back the id that installs it again.
- *
- * The claim worth proving here is the round trip, and it can only be proved by making it: install
- * a payload, share what was installed, then install the minted id into a second, untouched
- * directory and compare the two installations. A spec that only inspected the posted body would
- * pass on a payload the decoder cannot read.
- *
- * A share carries plugins only — `share-refuses-ejected.e2e.test.ts` owns the refusal of ejected
- * skills and the `edit --ui` that still opens them — so every installation shared here is a
- * plugin one. Where the spec only needs `share` to READ an installation, the configuration is
- * written as a plugin install records it, which needs no Claude CLI; the round trip installs real
- * plugins at both ends and needs one.
+ * `share` round trip: install, share, install the minted id into a fresh directory, compare. Shares
+ * carry plugins only; where `share` only reads, the config is written as a plugin install records
+ * it.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -76,14 +66,13 @@ describe("share", () => {
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A fresh directory, cleaned up after the spec that took it. Its own HOME, so its own scope. */
+  /** Its own HOME, so its own scope. */
   async function takeTempDir(): Promise<string> {
     const dir = await createTempDir();
     tempDirs.push(dir);
     return dir;
   }
 
-  /** A plugin installation from the public catalogue, as its config.ts records it. */
   async function writePluginInstallation(dir: string): Promise<void> {
     await writeProjectConfig(
       dir,
@@ -117,17 +106,14 @@ describe("share", () => {
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain("No installation found");
-    // An id for an empty configuration is a dead link, and minting one spends a write from the
-    // scarce half of the store's free tier.
+    // An empty configuration's id is a dead link, and minting spends a scarce store write.
     expect(store.requests).toStrictEqual([]);
   });
 });
 
 /**
- * The round trip on real plugins, which hands both installs to the Claude CLI — so, like every
- * plugin-mode spec, it needs the binary. The marketplace is the built E2E plugin source, a
- * custom marketplace, which is the case a share has to NAME: the receiver is given no
- * `--marketplace` of its own, so the payload's ref is all it has.
+ * Real plugins need the Claude binary. A custom marketplace, so the payload's ref is all the
+ * receiver has.
  */
 describe.skipIf(!claudeAvailable)("share, with plugins installed at both ends", () => {
   let fixture: E2EPluginSource;
@@ -187,14 +173,10 @@ describe.skipIf(!claudeAvailable)("share, with plugins installed at both ends", 
       expect(store.minted).toHaveLength(1);
       const mintedId = firstElement(store.minted);
       expect(shared.output).toContain(mintedId);
-      // A plugin from a custom marketplace installs only from that marketplace, so the payload
-      // has to say which one.
+      // A custom marketplace's plugin installs only from it, so the payload must name it.
       const posted: { marketplace?: string } = JSON.parse(firstElement(store.requests).body);
       expect(posted.marketplace).toBe(fixture.sourceDir);
 
-      // The other direction, in a directory that has never seen any of this and is given no
-      // marketplace: same skills at the same scopes, the same sub-agent roster, the same
-      // per-agent curation, and the same plugins registered.
       const rebuilt = await takeTempDir();
       const reinstalled = await CLI.run(
         ["init", "--from", mintedId],
@@ -218,15 +200,12 @@ describe.skipIf(!claudeAvailable)("share, with plugins installed at both ends", 
         await expect({ dir: rebuilt }).toHavePluginInRegistry(ref, "user");
         await expect({ dir: rebuilt }).toHavePlugin(ref);
       }
-      // The preload split the original payload asked for survives both directions. A plugin skill
-      // is preloaded under its plugin-qualified name, `<plugin>:<skill>`, and each skill is its
-      // own plugin.
+      // A plugin skill preloads as `<plugin>:<skill>`, one plugin per skill.
       await expect({ dir: rebuilt }).toHaveAgentFrontmatter(WEB_DEV, {
         exactSkills: [`${E2E_SKILL.vitest.id}:${E2E_SKILL.vitest.id}`],
       });
 
-      // Both ENDS at four-surface strength: the comparisons above are origin-against-rebuild, so
-      // two installations that are equally broken satisfy every one of them.
+      // Both ends at full strength: two equally broken installs pass the comparisons above.
       await expectFourSurfaces(origin);
       await expectFourSurfaces(rebuilt);
     },

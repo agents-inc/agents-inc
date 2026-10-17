@@ -33,32 +33,11 @@ import type { AgentScopeConfig, AgentName, SkillConfig } from "../../src/cli/typ
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * D-268 + D-259 (same root cause): a project that owns a skill/agent at PROJECT
- * scope while that same skill/agent is ACTIVE at GLOBAL scope must be reconciled
- * to the proper dual-scope shape when global changes propagate to it — the active
- * project entry PLUS a `{ scope: "global", excluded: true }` tombstone, rendering
- * `[P][G]`. `propagateGlobalChangesToProjects` (local-installer.ts) instead
- * re-inlines the global copy as a SECOND ACTIVE entry with no tombstone, leaving
- * the id/name active at BOTH scopes — the malformed "project-then-global leaves
- * both active" state.
- *
- * Setup drives the real `edit --from` pipeline (no code inspection):
- *   1. A registered project P owns web-testing-vitest at PROJECT scope and
- *      web-developer at PROJECT scope. The global install already has
- *      web-developer active at GLOBAL scope (the agent precondition); vitest is
- *      NOT yet global.
- *   2. `edit --from` at HOME adds vitest at GLOBAL scope — a genuine project-then-
- *      global transition for the skill — which fires propagation to P.
- *   3. After propagation, P's config.ts must carry the dual-scope pair for BOTH
- *      the owned skill and the owned agent.
- *
- * Expected to FAIL on current `main`: the tombstone is never written, so each
- * owned id/name is active at both scopes. The purely-inherited control skill
- * (react — owned only at global scope) already reconciles correctly and is the
- * working path this bug does NOT touch.
+ * A project owning a skill/agent at project scope that becomes active globally must, on
+ * propagation, keep its active project entry plus a global tombstone (`[P][G]`), not a second
+ * active global entry.
  */
 
-// The global web-developer agent's stack references react at global scope.
 const globalStack = {
   [E2E_AGENT["web-developer"].name]: {
     "web-framework": [{ id: E2E_SKILL.react.id, preloaded: true }],
@@ -76,7 +55,6 @@ const reactMetadata = renderMetadataYaml({
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** The global install with vitest added beside react, as `edit --from` at HOME applies it. */
 const GLOBAL_WITH_VITEST = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -114,9 +92,7 @@ describe("global-scope install tombstones project-owned skills and agents", () =
       await createPermissionsFile(dir);
     }
 
-    // Global install: react + web-developer at GLOBAL scope. vitest is
-    // deliberately absent so the Phase-2 edit ADDS it globally (a real
-    // project-then-global transition). The project is pre-registered.
+    // vitest is absent so the edit adds it globally: a real project-then-global transition.
     const globalConfig: FixtureProjectConfig = buildProjectConfig({
       name: "tombstone-project-owned-global",
       skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }),
@@ -132,11 +108,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
       metadata: reactMetadata,
     });
 
-    // Registered project P: owns vitest at PROJECT scope and web-developer at
-    // PROJECT scope. react is inherited from the global install; web-developer
-    // is ALSO active at global scope (see globalConfig above), so the project's
-    // own project-scoped web-developer is the agent precondition — a
-    // project-owned entry sitting under a live global install with no tombstone.
     const projectConfig: FixtureProjectConfig = buildProjectConfig({
       name: "tombstone-project-owned",
       skills: [
@@ -147,9 +118,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     });
     await writeProjectConfig(projectDir, projectConfig);
 
-    // Phase 2: `edit --from` at HOME, add vitest at global scope. Adding a new
-    // global skill forces the global write path and fires
-    // propagateGlobalChangesToProjects for the registered project.
     ({ exitCode: editExitCode, output: editRawOutput } = await applyFromSeed(
       store,
       "AddVitest1",
@@ -176,31 +144,23 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     expect(editExitCode, `global edit must succeed: ${editRawOutput}`).toBe(EXIT_CODES.SUCCESS);
   });
 
-  // Proof the transition happened: vitest is now a single active global skill.
   it("adds the selected skill at global scope in the global config", () => {
     expect(globalVitest).toStrictEqual([
       { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject" },
     ]);
   });
 
-  // Filesystem side of the same transition: the skill was physically installed
-  // at the global scope path, so the config claim above is backed by disk state.
   it("physically installs the newly-added skill at the global scope path", () => {
     expect(globalVitestInstalled).toBe(true);
   });
 
-  // Proof the agent precondition holds after the edit: web-developer is active
-  // at global scope, so the project's project-scoped web-developer sits under a
-  // live global install.
   it("keeps the project-owned agent active at global scope in the global config", () => {
     expect(globalWebDeveloper).toStrictEqual([
       { name: E2E_AGENT["web-developer"].name, scope: "global" },
     ]);
   });
 
-  // Proof-of-execution: propagation re-inlined a global entry for each owned
-  // item alongside the retained project entry. Passes on both the buggy and the
-  // fixed code — it only asserts propagation FIRED, not the tombstone shape.
+  // Proves propagation fired, not the tombstone shape.
   it("re-inlines both scopes of the project-owned skill into the registered project", () => {
     expect(projectVitest.map((entry) => entry.scope).sort()).toStrictEqual(["global", "project"]);
   });
@@ -212,17 +172,13 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     ]);
   });
 
-  // Control: a purely-inherited global skill (react, NOT owned at project scope)
-  // reconciles to a single active global entry — the already-correct path this
-  // bug does not affect.
+  // Control: the purely-inherited path.
   it("leaves a purely-inherited global skill as a single active global entry", () => {
     expect(projectReact).toStrictEqual([
       { id: E2E_SKILL.react.id, scope: "global", origin: "eject" },
     ]);
   });
 
-  // RED on current main: the owned skill is re-inlined as a SECOND active global
-  // entry instead of a tombstone, leaving vitest active at both scopes.
   it("writes a global tombstone for the project-owned skill, not a second active install", () => {
     expect(projectVitest).toStrictEqual([
       { id: E2E_SKILL.vitest.id, scope: "global", origin: "eject", excluded: true },
@@ -230,8 +186,6 @@ describe("global-scope install tombstones project-owned skills and agents", () =
     ]);
   });
 
-  // RED on current main: the owned agent is re-inlined as a SECOND active global
-  // entry instead of a tombstone, leaving web-developer active at both scopes.
   it("writes a global tombstone for the project-owned agent, not a second active install", () => {
     expect(projectWebDeveloper).toStrictEqual([
       { name: E2E_AGENT["web-developer"].name, scope: "global", excluded: true },

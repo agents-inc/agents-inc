@@ -40,74 +40,29 @@ import type { ProjectConfig } from "../../src/cli/types/index.js";
 import { typedKeys } from "../../src/cli/utils/typed-object.js";
 
 /**
- * `branding.name` is written by hand: no shared configuration carries it, so the config on disk is
- * the only place it lives. Every command that rewrites that config
- * has to carry it across, or a white-labelled install goes back to the shipped name after its
- * first edit and nothing says so.
- *
- * Three rewrites are driven here: `init --from` over a project config, and `edit --from` of the
- * global installation and inside a project. Each leg first
- * proves the rewrite happened — the roster it asked for is in the file and on disk — because a
- * file nobody rewrote keeps its name for free. Then it reads the name back out of the FILE, which
- * is the subject, and out of the next command's heading, which is where a person sees it.
- *
- * The other half is where the name must not go. A project's name is the project's own, and the
- * global config a project command writes is the whole machine's: a project's name carried into it
- * renames every installation that declares none of its own. The `edit --from` leg is the one that
- * writes the global config from a session holding the project's whole config, so its global half
- * is what sees a name kept by copying it to every scope.
- *
- * Mutation-checked three ways. Against a merge that drops the key, all three legs go red on the
- * `branding` read off the rewritten config, after their roster assertions pass. Against a merge
- * that keeps it while the global partition still spreads it, only the `edit --from` leg goes red,
- * on the global config carrying `{ name: 'Northwind' }`. Against one that also fills the global
- * config's name from the session, as it fills `marketplace`, the `init --from` leg's global half
- * goes red as well.
- *
- * The fourth leg is the same rule read from the global side. A project that declares no name
- * takes the global one at read time, field by field, so a copy of it in the project's own file is
- * a name the project declared — and keeping a file's name across rewrites, which the first three
- * legs demand, would then pin that copy for good, so a renamed global never reached the project.
- * Mutation-checked: with the merge and the split fixed but either the merge lending the global's
- * name to a project's first save, or the writer inlining it, the leg goes red on the project
- * config's `branding`, after its roster assertions pass. The same leg then uninstalls the global
- * installation: a project that only ever inherited the name has nothing left to inherit, so it
- * prints the shipped one (owner, 2026-10-02: an inherited name falls back to "Agents Inc.").
- *
- * The last leg is the same carry-forward for the five fields a source repository declares its own
- * layout with. They are hand-written as `branding` is, and the merge's fixed list of fields it
- * copies back from disk names none of them either. They stay in the file that carried them, so
- * the global config the apply writes takes none of them (orchestrator decision, 2026-10-02).
- *
- * A kept field has to be a field the file may declare: the first and last legs type-check the
- * rewritten `config.ts` against the `config-types.ts` written beside it, whose `ProjectConfig`
- * once declared neither `branding` nor the layout fields, so a config that kept them failed its
- * own `satisfies ProjectConfig` (TS2353) the moment the merge stopped dropping them.
+ * `branding.name` (and a source repository's five layout fields) are hand-written, so every
+ * command rewriting the config must carry them across: `init --from` over a project config, and
+ * `edit --from` at home and in a project. Each leg proves the rewrite happened first. A project's
+ * name must not reach the global config, and a project inheriting the global name must not pin a
+ * copy of it.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** The `name` every project config here carries — the config's own name, not the branding. */
+/** The config's own name, not the branding. */
 const PROJECT_NAME = "branded-project";
 
-/** The `name` of the global installation the `edit --from` leg at the home directory edits. */
 const GLOBAL_INSTALL_NAME = "branded-global-install";
 
-/** What each fixture configures by hand, and what each rewrite must leave in the file. */
 const WHITE_LABEL = { name: BRANDING.WHITE_LABEL_NAME };
 
-/** The ids the store publishes each leg's configuration under. Eight characters, as elsewhere. */
 const INIT_FROM_ID = "Rewrite1";
 const EDIT_FROM_ID = "Rewrite2";
 const FIRST_SAVE_ID = "Rewrite3";
 const LAYOUT_EDIT_FROM_ID = "Rewrite4";
 const GLOBAL_EDIT_FROM_ID = "Rewrite5";
 
-/**
- * A source repository's own layout, as its config declares it by hand: each field names a path
- * the repository chose over the default, so a config that lost one would send the next read of
- * that repository to a directory it does not use. No shared configuration sets any of them.
- */
+/** Each names a path the repository chose over the default; no shared configuration sets them. */
 const SOURCE_LAYOUT = {
   skillsDir: "catalogue/skills",
   agentsDir: "catalogue/agents",
@@ -117,9 +72,8 @@ const SOURCE_LAYOUT = {
 } satisfies Partial<ProjectConfig>;
 
 /**
- * React, ejected at GLOBAL scope — the shape every `init --from` spec installs, because the E2E
- * source carries no marketplace and a project-scoped skill on a sub-agent left at the shared
- * default is a pair the decode refuses.
+ * Global scope: the E2E source has no marketplace, and a project skill on a default-scope
+ * sub-agent is a pair the decode refuses.
  */
 const GLOBAL_REACT_PAYLOAD = buildSeedPayload({
   skills: {
@@ -131,10 +85,7 @@ const GLOBAL_REACT_PAYLOAD = buildSeedPayload({
   },
 });
 
-/**
- * React and Vitest at PROJECT scope. Applied over a project holding React alone it only adds, so
- * the plan removes nothing and the file still has to be rewritten.
- */
+/** Over React alone it only adds, so nothing is removed and the file still has to be rewritten. */
 const PROJECT_REACT_AND_VITEST_PAYLOAD = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -149,7 +100,7 @@ const PROJECT_REACT_AND_VITEST_PAYLOAD = buildSeedPayload({
   agents: { [WEB_DEV]: { scope: "project" } },
 });
 
-/** React and Vitest at GLOBAL scope: applied at the home directory over React alone, it adds. */
+/** Over React alone at the home directory, it adds. */
 const GLOBAL_REACT_AND_VITEST_PAYLOAD = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -185,7 +136,6 @@ describe("what a hand-written config declares, across the commands that rewrite 
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A HOME of its own with a project directory under it, removed after the test. */
   async function takeEnvironment(): Promise<TestEnvironment> {
     const env = await createTestEnvironment();
     tempDirs.push(env.tempDir);
@@ -197,7 +147,6 @@ describe("what a hand-written config declares, across the commands that rewrite 
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const env = await takeEnvironment();
-      // A project config that declares nothing but its own name and its branding.
       await writeProjectConfig(
         env.projectDir,
         buildProjectConfig({ name: PROJECT_NAME, skills: [], agents: [], branding: WHITE_LABEL }),
@@ -343,8 +292,7 @@ describe("what a hand-written config declares, across the commands that rewrite 
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
       const env = await takeEnvironment();
-      // A branded global config over a project directory with no config of its own, so the
-      // project's first save reads the global config in its place.
+      // No project config, so the project's first save reads the global one in its place.
       await writeProjectConfig(
         env.fakeHome,
         buildProjectConfig({
@@ -379,7 +327,7 @@ describe("what a hand-written config declares, across the commands that rewrite 
         WHITE_LABEL,
       );
 
-      // Renamed by hand, which is the only way a name is set, so nothing rewrites the project.
+      // Renamed by hand, the only way a name is set, so nothing rewrites the project.
       await writeProjectConfig(
         env.fakeHome,
         buildProjectConfig({
@@ -394,7 +342,7 @@ describe("what a hand-written config declares, across the commands that rewrite 
       );
       expect(doctor).not.toContain(`${BRANDING.WHITE_LABEL_NAME} ${BRANDING.DOCTOR_HEADING_NOUN}`);
 
-      // The global installation goes, and with it the only name this project ever had.
+      // Takes the only name this project ever had.
       const uninstalled = await CLI.run(["uninstall", "--yes"], { dir: env.fakeHome });
       expect(uninstalled.exitCode, `global uninstall output:\n${uninstalled.output}`).toBe(
         EXIT_CODES.SUCCESS,

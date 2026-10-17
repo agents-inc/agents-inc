@@ -37,63 +37,24 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * A global installation from one marketplace, and a project installed from another beside it.
- *
- * The namespace ruling keeps the two from ever naming one skill: ids carry their marketplace's
- * prefix. Slugs do not, and every `new marketplace` scaffold gives its example skill the same one,
- * so two scaffolds are the smallest real installation where two marketplaces meet on a slug. Both
- * are built here by the CLI's own scaffolder, exactly as an author starts one, published with
- * `build plugins` and `build marketplace`, and installed with `init --from` at each scope.
- *
- * Every skill in that installation is on a sub-agent at its own scope, and every command can find
- * both of them, so two things the CLI used to say there were false:
- *
- * - `init --from` in the project said the global installation's skill was assigned to no
- *   sub-agent, while the global `web-developer.md` loads it.
- * - every command that loads the project's marketplace said the slug was a duplicate and that it
- *   was "ignoring" the global skill, while `search` lists that skill and the global sub-agent
- *   still loads it.
- *
- * `doctor` in the project also counted the global installation's skill among those the project's
- * marketplace makes available: its `Marketplace Reachable` row counted the merged catalogue, which
- * holds the global installation's ejected skill from the other marketplace, while the
- * `Marketplaces` row in the same report counts what the marketplace ships. That test was observed
- * red against the build before its fix, with both of its subject guards green.
- *
- * Output is read through `flattenCliOutput`, because oclif wraps the unassigned warning across
- * lines and a negative assertion on the raw text cannot see a sentence the wrap has split. Each
- * negative stands beside a positive from the same run, so its silence is about a command that got
- * as far as the warning. The control at the bottom keeps the unassigned check honest: a skill the
- * project's configuration really hands to no sub-agent is still named.
- *
- * Observed red against the unfixed build: the unassigned test and all four duplicate-slug tests,
- * with the precondition, the generated files and the control green. Mutation-checked: silencing
- * the unassigned warning everywhere reddens the control alone. Deleting the duplicate-slug warning
- * outright is caught by `src/cli/lib/matrix/skill-resolution.test.ts`, which pins it for two skills
- * of ONE marketplace, so that control is not repeated here.
+ * A global install from one scaffolded marketplace and a project from another, sharing an example
+ * skill slug: no command may call the global skill unassigned or a duplicate, and `doctor` counts
+ * only what the project's marketplace ships. Output is flattened because oclif wraps the warning.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 
-/**
- * The marketplace the global installation comes from, and the one the project comes from. Inside
- * {@link E2E_MARKETPLACE_PREFIX} for the reason the `new-marketplace` spec gives.
- */
 const GLOBAL_MARKETPLACE = `${E2E_MARKETPLACE_PREFIX}acme`;
 const PROJECT_MARKETPLACE = `${E2E_MARKETPLACE_PREFIX}plain`;
 
-/**
- * The one skill each scaffold ships, in its own marketplace's namespace: two ids. Composed rather
- * than written out, so an id that stopped carrying its marketplace's name would not agree.
- */
+/** Composed, so an id that stopped carrying its marketplace's name would not agree. */
 const GLOBAL_SKILL = `${GLOBAL_MARKETPLACE}-example-skill`;
 const PROJECT_SKILL = `${PROJECT_MARKETPLACE}-example-skill`;
 
-/** The slug every scaffold gives its example skill. Not namespaced, so both skills carry it. */
+/** Not namespaced, so both skills carry it. */
 const SHARED_SLUG = "example-skill";
 
-/** The global installation: the first marketplace's skill on a sub-agent in `~/.claude`. */
 const GLOBAL_CONFIGURATION = buildSeedPayload({
   v: PINNED_WIRE_VERSION,
   skills: {
@@ -106,10 +67,7 @@ const GLOBAL_CONFIGURATION = buildSeedPayload({
   agents: { [WEB_DEV]: { scope: "global" } },
 });
 
-/**
- * The project installation: the second marketplace's skill on a sub-agent pinned to the project.
- * Nothing in it is global, which is what `init --from` requires over an existing global install.
- */
+/** Nothing in it is global, as `init --from` requires over an existing global install. */
 const PROJECT_CONFIGURATION = buildSeedPayload({
   v: PINNED_WIRE_VERSION,
   skills: {
@@ -122,7 +80,6 @@ const PROJECT_CONFIGURATION = buildSeedPayload({
   agents: { [API_DEV]: { scope: "project" } },
 });
 
-/** The same project installation with its skill handed to no sub-agent: what the warning is for. */
 const UNASSIGNED_PROJECT_CONFIGURATION = buildSeedPayload({
   v: PINNED_WIRE_VERSION,
   skills: {
@@ -145,8 +102,7 @@ describe("a global installation from one marketplace under a project from anothe
     for (const name of [GLOBAL_MARKETPLACE, PROJECT_MARKETPLACE]) {
       const scaffold = await CLI.run(["new", "marketplace", name], { dir: marketplacesDir });
       expect(scaffold.exitCode, scaffold.output).toBe(EXIT_CODES.SUCCESS);
-      // Published with the two builds an author runs: a marketplace without a valid
-      // `.claude-plugin/marketplace.json` is refused by every command that loads it.
+      // A marketplace without a valid `.claude-plugin/marketplace.json` is refused everywhere.
       const marketplaceDir = { dir: path.join(marketplacesDir, name) };
       const plugins = await CLI.run(["build", "plugins"], marketplaceDir);
       expect(plugins.exitCode, plugins.output).toBe(EXIT_CODES.SUCCESS);
@@ -295,8 +251,6 @@ describe("a global installation from one marketplace under a project from anothe
 
       expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
       const said = flattenCliOutput(output);
-      // The subject guard: the row reached the project's own marketplace, so the count it prints
-      // is a claim about what that marketplace ships.
       expect(said).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);
       expect(said).toContain(`${STEP_TEXT.DOCTOR_SOURCE_LOCAL} ${projectMarketplaceDir}`);
       expect(
@@ -377,8 +331,6 @@ describe("a global installation from one marketplace under a project from anothe
         "a skill this configuration selected and gave to no sub-agent is loaded by nothing, so the user is told",
       ).toContain(`Skill '${PROJECT_SKILL}' ${STEP_TEXT.SKILL_ASSIGNED_TO_NO_AGENT}`);
 
-      // What makes the warning true: the skill is installed, and the sub-agent switched on beside
-      // it does not carry it.
       expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([PROJECT_SKILL]);
       await expect({ dir: env.projectDir }).toHaveAgentDynamicSkills(API_DEV, {
         noSkillIds: [PROJECT_SKILL],

@@ -23,13 +23,7 @@ import {
 } from "../fixtures/e2e-stack-seed.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
-/**
- * Full lifecycle roundtrip E2E test: init (global + project) -> edit -> compile.
- *
- * Verifies that the three core commands work together in sequence with full
- * verification at each stage. No other test exercises all three commands
- * in a single lifecycle.
- */
+/** init (global + project), then edit, then compile, verified at each stage. */
 
 const API_DEV = E2E_AGENT["api-developer"].name;
 
@@ -55,13 +49,11 @@ describe("init-edit-compile roundtrip lifecycle", () => {
     "full lifecycle: init with eject, edit to change scope, compile to verify",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // Setup
       const env = await createTestEnvironment();
       testTempDir = env.tempDir;
       fakeHome = env.fakeHome;
       projectDir = env.projectDir;
 
-      // Phase A: Global init with eject
       await installE2EStackGlobally(store, fakeHome);
 
       const globalConfigPath = configTsPath(fakeHome);
@@ -78,7 +70,6 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       const globalAgentsDir = agentsPath(fakeHome);
       expect(await directoryExists(globalAgentsDir), "Global agents dir must exist").toBe(true);
 
-      // Phase B: Project init moving Hono and API Developer into the project
       await installFromSeed(
         store,
         "PhaseB1",
@@ -104,15 +95,14 @@ describe("init-edit-compile roundtrip lifecycle", () => {
 
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
 
-      // config-types.ts must be generated alongside config.ts
       const projectConfigTypesPath = configTypesTsPath(projectDir);
       expect(
         await fileExists(projectConfigTypesPath),
         "config-types.ts must exist after project init",
       ).toBe(true);
 
-      // Phase C: edit --from -- React into the project as well. A project skill never reaches
-      // the global web-developer, so the project's React is assigned to no sub-agent.
+      // A project skill never reaches the global web-developer, so the project's React is assigned
+      // to no sub-agent.
       await applyFromSeed(
         store,
         "PhaseC1",
@@ -124,7 +114,6 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         { dir: projectDir, home: fakeHome },
       );
 
-      // Verify project config has web-framework-react with project scope
       const projectConfigAfterEdit = await readTestFile(projectConfigPath);
       expect(projectConfigAfterEdit).toContain(E2E_SKILL.react.id);
       expect(projectConfigAfterEdit).toMatch(/web-framework-react[^}]*scope:\s*'project'/);
@@ -138,13 +127,11 @@ describe("init-edit-compile roundtrip lifecycle", () => {
         "Project must have web-framework-react skill after scope toggle",
       ).toBe(true);
 
-      // config-types.ts must be regenerated after scope change
       expect(
         await fileExists(projectConfigTypesPath),
         "config-types.ts must exist after scope change",
       ).toBe(true);
 
-      // Phase D: Compile from project dir
       const compileResult = await runCLI(["compile", "--verbose"], projectDir, {
         env: { HOME: fakeHome },
       });
@@ -154,13 +141,11 @@ describe("init-edit-compile roundtrip lifecycle", () => {
       );
       expect(compileResult.combined).toContain(STEP_TEXT.COMPILE_SUCCESS);
 
-      // Verify project api-developer.md exists with frontmatter
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
       await expect({ dir: projectDir }).toHaveAgentFrontmatter("api-developer", {
         skills: [E2E_SKILL.hono.id],
       });
 
-      // Verify global web-developer.md exists with frontmatter
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
       await expect({ dir: fakeHome }).toHaveAgentFrontmatter("web-developer", {
         skills: [E2E_SKILL.react.id],

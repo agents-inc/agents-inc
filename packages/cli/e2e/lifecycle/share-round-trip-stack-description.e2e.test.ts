@@ -13,28 +13,9 @@ import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * The one line a stack leaves behind, across a share round trip.
- *
- * A config records a stack's DESCRIPTION and never its id, so that sentence is the only trace an
- * applied stack leaves in `config.ts`. The payload used to carry neither: `configToSeedPayload`
- * writes `stackId: null` deliberately, and with no id to resolve the receiving install had nothing
- * to write, so a reinstall of a shared configuration silently described itself with nothing.
- *
- * **Recording the id instead is what this spec exists to rule out, not merely an alternative.**
- * `buildInstallConfig` spreads the loaded stack's own expansion first and lets the saved stack win
- * per agent, so a stack agent the sharer REMOVED would come back wholesale — which is the overlay
- * the `stackId: null` decision refuses, and it would regress `--from` in the direction that matters
- * most. Carrying the sentence carries the only thing a resolvable id ever supplied that the
- * assignments do not.
- *
- * `share-round-trip-compiled-bodies.e2e.test.ts` makes the same trip and compares `skills`,
- * `agents` and the compiled bodies. None of those can see this: a description is a config field
- * that reaches no compiled sub-agent, so both ends agreed on everything that spec reads while the
- * origin said "Minimal stack for E2E testing" and the rebuild said nothing at all.
- *
- * The id is minted by `edit --ui` rather than `share`, for the reason that spec gives: the origin
- * ejects its skills, `share` refuses ejected skills, and `edit --ui` mints the same payload
- * through the same function.
+ * A share round trip keeps the stack's description, the only trace a stack leaves in `config.ts`,
+ * while `stackId` stays null: an id would overlay the stack's whole expansion and resurrect agents
+ * the sharer removed. The id is minted by `edit --ui`, since `share` refuses ejected skills.
  */
 describe("a share round trip that starts from an applied stack", () => {
   let store: SeedConfigStore;
@@ -49,8 +30,7 @@ describe("a share round trip that starts from an applied stack", () => {
     await store.close();
   });
 
-  // Both ends are allocated per attempt rather than per file: the suite runs at `retry: 1` and
-  // both are directories the run INSTALLS into, so a retry would install over the first attempt.
+  // Per attempt, not per file: under `retry: 1` a retry would install over the first attempt.
   beforeEach(async () => {
     store.reset();
     origin = await createTempDir();
@@ -67,9 +47,7 @@ describe("a share round trip that starts from an applied stack", () => {
     async () => {
       await installE2EStackGlobally(store, origin);
 
-      // The control for everything below. If the origin ever stops writing the stack's
-      // description, the comparison at the bottom is satisfied by two configs that both say
-      // nothing, and this spec passes without a subject.
+      // Control: an origin with no description would satisfy the comparison below for free.
       const before = await loadConfigOrFail(origin);
       expect(
         before.description,
@@ -96,9 +74,6 @@ describe("a share round trip that starts from an applied stack", () => {
         "the wire carried no description and the payload names no stack to resolve one from, so the rebuild describes itself with nothing",
       ).toBe(E2E_STACK_DESCRIPTION);
 
-      // The id stays null through the trip. A payload that solved this by naming the stack would
-      // satisfy the assertion above and overlay the stack's whole expansion on the way in, which
-      // is the outcome the field exists to avoid.
       expect(
         after.stack,
         "a stack recorded on the way back in would come from the stack YAML rather than from the curation that was shared",

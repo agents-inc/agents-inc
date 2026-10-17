@@ -23,12 +23,8 @@ import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-con
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * Install-mode full cycle E2E test.
- *
- * Tests the complete round-trip: eject -> plugin -> eject, verifying that
- * skill selection is preserved and files are correctly managed at each phase.
- *
- * Requires Claude CLI for plugin install/uninstall operations.
+ * Install-mode round trip eject -> plugin -> eject keeps the selection and manages files at each
+ * phase. Requires the Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -58,21 +54,16 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
     "switching install mode from eject to plugin and back preserves skill selection",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // --- Setup: dual-scope environment with all skills ejected ---
       const env = await createTestEnvironment();
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
       await installE2EStackDualScope(store, env, pluginFixture.sourceDir);
 
-      // --- Phase A: Snapshot -- verify all sources are "eject" ---
       const projectConfigPath = configTsPath(projectDir);
       const configPhaseA = await readTestFile(projectConfigPath);
       expect(configPhaseA).toContain("'eject'");
 
-      // The entries the setup wrote, read structurally. An in-file regex extractor
-      // stood here with a `length > 0` floor beneath it — an untested parser whose
-      // output nothing checked, guarded by a check any non-empty result passes.
       const initialEntries = await readAllSkillEntries(projectDir);
       expect(
         initialEntries.map((entry) => entry.id),
@@ -81,7 +72,6 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
 
       const site = { dir: projectDir, home: fakeHome };
 
-      // --- Phase B: Edit -- the project's own skill as a plugin ---
       await applyFromSeed(
         store,
         "HonoPlugin1",
@@ -89,12 +79,8 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
         site,
       );
 
-      // The project's own hono entry is the half this session legitimately owns, so it is
-      // where the switch must land. Phase A left it on "eject" (`initialEntries`, compared
-      // exhaustively at the end), so naming the marketplace here is a claim about the change
-      // rather than about the pre-state — and it is the FIXTURE's marketplace, not the public
-      // default: `createE2EPluginSource` names it `e2e-test-<timestamp>`, so a literal
-      // "agents-inc" here can never be produced by this run and would pin nothing.
+      // The project's own hono is the half this session owns, so the switch lands there. The
+      // fixture's marketplace is `e2e-test-<timestamp>`, never the public default.
       const projectHonoPhaseB = (await readAllSkillEntries(projectDir)).find(
         (entry) => entry.id === E2E_SKILL.hono.id && entry.scope === "project",
       );
@@ -107,23 +93,16 @@ describe.skipIf(!claudeAvailable)("install mode full cycle -- eject to plugin an
         origin: pluginFixture.marketplaceName,
       });
 
-      // --- Phase C: Edit -- back to local (eject) ---
       await applyFromSeed(store, "HonoEject1", e2eStackPayload(DUAL_SCOPE), site);
 
-      // --- Final assertions ---
-
-      // 1+2. Every entry is back exactly as Phase A left it — same ids, same scopes,
-      // same sources. `ejectSources.length > 0` stood here and passed while every
-      // other entry stayed on the marketplace.
+      // Back exactly as the setup left it: same ids, scopes and sources.
       expect(
         await readAllSkillEntries(projectDir),
         "the round trip must restore every entry, not merely some of them",
       ).toStrictEqual(initialEntries);
 
-      // 3. Project skills directory has skill files (re-ejected)
       await expect({ dir: projectDir }).toHaveSkillCopied(E2E_SKILL.hono.id);
 
-      // 4. Compiled agents exist
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
     },
   );

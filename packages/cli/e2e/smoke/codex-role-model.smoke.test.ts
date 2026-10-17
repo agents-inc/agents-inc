@@ -21,13 +21,8 @@ import {
 import { cleanupTempDir, codexHome, createTempDir } from "../helpers/test-utils.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
-/**
- * The Codex models a sub-agent may be pinned to, held against the PINNED `@openai/codex`. A
- * guard: green the day it is written, red the day a pin bump retires an offered id, hides it, or
- * drops an effort the product can send with it.
- *
- * NOTE: smoke tests for the Codex binary, not E2E tests for our CLI.
- */
+// The Codex models a sub-agent may be pinned to, held against the pinned `@openai/codex`: reddens
+// when a pin bump retires or hides an offered id, or drops an effort the product sends with it.
 
 const ANY_PROMPT = "summarise this repository";
 

@@ -37,42 +37,20 @@ import { createMockMarketplace } from "../../src/cli/lib/__tests__/factories/plu
 import "../matchers/setup.js";
 
 /**
- * A custom marketplace — any marketplace other than the default public catalogue — must carry a
- * valid `.claude-plugin/marketplace.json`, and every command that loads one without it refuses.
- * Owner ruling 2026-10-02 (CLI-902, journey 18): "Why not just make it a requirement?", and an
- * invalid manifest is refused too.
- *
- * What it replaced: a folder nobody had built installed in Local mode, `search` labelled its
- * skills `agents-inc`, `doctor` passed without mentioning the file, and only a Plugin install
- * failed — after Confirm. So the refusal is pinned where a user meets it:
- *
- * - `init --from`, `search`, `edit --from` and `eject skills` refuse, write nothing, and name the
- *   two builds that write the file, in the order an author runs them;
- * - `doctor` reports the finding against the file itself and still finishes its report;
- * - `uninstall` removes the installation regardless, and `compile` and `list` keep working.
- *
- * "Not valid" is three states — absent, unparseable, and parsed but refused by the schema — and
- * the loader reaches them by three different routes, so each is driven through the binary rather
- * than one standing in for the others.
- *
- * Every refusal has its permitted twin in this file: the same marketplace carrying the manifest
- * its own builds wrote. A guard that had swallowed every custom marketplace leaves an all-refusal
- * file reading exactly like this one.
- *
- * `edit --from` asks before it applies, so it runs in a terminal; the refusal lands during the
- * load, before the question.
+ * A custom marketplace must carry a valid `.claude-plugin/marketplace.json`: `init --from`,
+ * `search`, `edit --from` and `eject skills` refuse naming the builds that write it; `doctor`
+ * reports it; `uninstall`, `compile` and `list` keep working. Absent, unparseable and
+ * schema-refused are each driven, and every refusal has its permitted twin.
  */
 
-/** A manifest that parses and that the schema refuses: a marketplace must list a plugin. */
+/** Parses, but the schema needs at least one plugin. */
 const MANIFEST_LISTING_NO_PLUGIN = JSON.stringify({
   ...createMockMarketplace([]),
   name: E2E_MARKETPLACE_NAME,
 });
 
-/** A manifest that does not parse at all. */
 const MANIFEST_UNPARSEABLE = "{ this is not json";
 
-/** The configuration every install and apply here is made from: the E2E stack, ejected. */
 const STACK_ID = "Manifest1";
 
 type ManifestDefect = "absent" | "unparseable" | "refused by the schema";
@@ -87,7 +65,6 @@ function manifestPathIn(source: E2ESource): string {
   return path.join(source.sourceDir, MARKETPLACE_MANIFEST_PATH);
 }
 
-/** Leaves `source`'s manifest in the state `defect` names, and the rest of the tree as built. */
 async function breakManifest(source: E2ESource, defect: ManifestDefect): Promise<void> {
   const manifestPath = manifestPathIn(source);
   if (defect === "absent") {
@@ -101,10 +78,6 @@ async function breakManifest(source: E2ESource, defect: ManifestDefect): Promise
   );
 }
 
-/**
- * The refusal as a user reads it: the command did not succeed, and it named the two builds that
- * write the file, `build plugins` first.
- */
 function expectRefusalNamingTheBuilds(exitCode: number, combined: string): void {
   const output = flattenCliOutput(combined);
   expect(
@@ -139,7 +112,6 @@ describe("init --from --marketplace over a marketplace with no valid marketplace
     tempDir = undefined;
   });
 
-  /** A fresh project under a HOME of its own, both inside `tempDir`. */
   async function freshProject(): Promise<{ dir: string; globalHome: string }> {
     tempDir = await createTempDir();
     const dir = path.join(tempDir, "project");
@@ -210,7 +182,6 @@ describe("an installation whose marketplace has no valid marketplace.json", () =
   let project: Required<ProjectHandle>;
   let builtManifest: string;
 
-  /** The installation's two roots, which a refused command must leave as it found them. */
   async function installationSnapshot(): Promise<unknown> {
     return {
       project: await readTreeSnapshot(project.dir),
@@ -218,7 +189,6 @@ describe("an installation whose marketplace has no valid marketplace.json", () =
     };
   }
 
-  /** Runs `args` over the installation and holds it to the refusal and to having written nothing. */
   async function expectRefusedWritingNothing(args: string[]): Promise<void> {
     const before = await installationSnapshot();
 
@@ -237,9 +207,7 @@ describe("an installation whose marketplace has no valid marketplace.json", () =
     store = await startSeedConfigStore();
     env = await createTestEnvironment();
 
-    // Installed the way a user installs, from the marketplace while it is still valid — ejected,
-    // so no Claude CLI is involved — and broken afterwards: the state a folder installed from
-    // before the rule, or one whose manifest was since removed, leaves behind.
+    // Installed while valid (ejected, no Claude CLI) and broken afterwards.
     project = { dir: env.projectDir, globalHome: env.fakeHome };
     await installFromSeed(
       store,
@@ -327,8 +295,7 @@ describe("an installation whose marketplace has no valid marketplace.json", () =
     });
   });
 
-  // The rule as the owner chose it keeps these two working: `compile` already carries on with the
-  // catalogue it has when the marketplace will not load, and `list` reads the installation alone.
+  // `compile` carries on with the catalogue it has, and `list` reads the installation alone.
   describe("still recompiled and listed, once its manifest is absent", () => {
     beforeAll(async () => {
       await breakManifest(source, "absent");
@@ -372,15 +339,8 @@ describe("uninstall over an installation whose marketplace has no marketplace.js
     await cleanupTempDir(source.tempDir);
   });
 
-  // A global installation with a project registered under it, because that is the one shape in
-  // which `uninstall` loads the marketplace at all: it rebuilds each registered project's view of
-  // the global entries it is removing. With nothing registered it never reads the marketplace,
-  // and this leg would hold for a reason that has nothing to do with the manifest.
-  //
-  // So the registered project is held to the same prune it gets from a marketplace that still
-  // carries its manifest (`uninstall-global-propagation`): every inlined global row gone, and
-  // every row the project owns kept. A HOME-only assertion stayed green while the prune was
-  // skipped with a warning, leaving the project naming a sub-agent and skills that were deleted.
+  // A registered project is the only shape in which `uninstall` loads the marketplace, so the
+  // project is held to the same prune as with a valid manifest.
   it(
     "removes a global installation regardless, and still prunes the project registered under it",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -447,12 +407,12 @@ describe("a remote marketplace served with no marketplace.json", () => {
     built = await createE2ESource();
     server = await startTarballSourceServer(unbuilt.sourceDir);
     tempDir = await createTempDir();
-    // A HOME of its own: a remote marketplace is fetched into the HOME's cache, which is the
-    // fetcher's business rather than the installation's, so the project is the tree held still.
+    // A HOME of its own: a remote marketplace is fetched into its cache, so the project is the tree
+    // held still.
     const home = path.join(tempDir, "home");
     await mkdir(home, { recursive: true });
     project = { dir: path.join(tempDir, "project"), globalHome: home };
-    // `search` takes no marketplace flag, so the installation names the server, as `init` would.
+    // `search` takes no marketplace flag, so the installation names the server.
     await writeProjectConfig(project.dir, {
       name: "remote-manifest-fixture",
       marketplace: server.url,

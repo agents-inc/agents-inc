@@ -14,16 +14,15 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 import type { RelationshipDefinitions } from "../../src/cli/types/index.js";
 
-/** Longer than CLI_DESCRIPTION_MAX_LENGTH, which downgrades to an advisory warning. */
+/** Longer than CLI_DESCRIPTION_MAX_LENGTH, which only warns. */
 const OVER_LENGTH_CLI_DESCRIPTION = "x".repeat(75);
 
 /** A slug the E2E fixture marketplace never ships, so a rule naming it resolves to nothing. */
 const DANGLING_RULE_SLUG = "angular-standalone";
 
 /**
- * A conflict rule pairing a slug the fixture ships with one it does not. A marketplace's own
- * rules are never narrowed to what it ships, so this is the shape an author's typo takes: the
- * reference is dropped and the rule containing it states nothing.
+ * A marketplace's own rules are not narrowed to what it ships, so a typo leaves a rule stating
+ * nothing.
  */
 const RULES_WITH_DANGLING_SLUG: Partial<RelationshipDefinitions> = {
   conflicts: [
@@ -34,7 +33,6 @@ const RULES_WITH_DANGLING_SLUG: Partial<RelationshipDefinitions> = {
   ],
 };
 
-/** Absolute path to one installed skill's metadata.yaml under the installation's global HOME. */
 async function firstInstalledSkillMetadata(globalHome: string): Promise<string> {
   const installedSkillsDir = path.join(globalHome, DIRS.CLAUDE, DIRS.SKILLS);
   const skillDirs = await readdir(installedSkillsDir);
@@ -42,10 +40,7 @@ async function firstInstalledSkillMetadata(globalHome: string): Promise<string> 
   return path.join(installedSkillsDir, firstElement(skillDirs), FILES.METADATA_YAML);
 }
 
-/**
- * One E2E stack installation per test, ejected at the default (global) scope from a project, so
- * its skills land under the HOME.
- */
+/** Ejected at the default (global) scope, so skills land under HOME. */
 function useStackInstallations(): (sourceDir: string) => Promise<Required<ProjectHandle>> {
   let store: SeedConfigStore;
   let env: TestEnvironment | undefined;
@@ -95,13 +90,6 @@ describe("doctor layered output", () => {
     },
   );
 
-  /**
-   * The two rows that name the same subject in the two layers — what the marketplace
-   * HOLDS, and whether it can be reached. They are the pair a vocabulary rename has to
-   * move together, and the only rows on the report whose old names are also ordinary
-   * English: a report that still heads them "Sources" / "Source Reachable" reads as a
-   * surface the rename skipped.
-   */
   it(
     "should head both marketplace rows with the marketplace noun",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -112,9 +100,7 @@ describe("doctor layered output", () => {
 
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_MARKETPLACES);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SOURCE_REACHABLE);
-      // Subject guard plus the negative: the row names are the only place "Source"
-      // appears capitalised at the head of a line, so the report is asserted to have
-      // reached both layers before either absence is claimed.
+      // Subject guard before the absences: the row names are the only place "Source" heads a line.
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_OPERATIONAL_SECTION);
       expect(stdout, "the withdrawn row headings must be gone, not merely joined").not.toMatch(
@@ -125,10 +111,8 @@ describe("doctor layered output", () => {
   );
 
   /**
-   * A corrupt installed skill is still an error and still exits non-zero, but only the row that
-   * resolves configured ids against the local-skill discovery pass is a cascade of it: that pass
-   * drops the skill it cannot read. The rows beside it read config.ts and the names of the files
-   * on disk, and one unreadable metadata.yaml leaves both of those answers unchanged.
+   * Only the row resolving configured ids against local-skill discovery is a cascade of a corrupt
+   * skill; the others read config.ts and file names.
    */
   it(
     "should stand down only the row a corrupt installed skill can mislead",
@@ -136,8 +120,6 @@ describe("doctor layered output", () => {
     async () => {
       const project = await installStack(E2E_SOURCE.sourceDir);
 
-      // Default-scope installs eject to the global HOME, so the installed skills live under
-      // globalHome/.claude.
       const metadataPath = await firstInstalledSkillMetadata(project.globalHome);
       await writeFile(metadataPath, ":\n  [unclosed: yaml\n    bad\n");
 
@@ -161,9 +143,8 @@ describe("doctor layered output", () => {
           `${STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED}\\s+${STEP_TEXT.DOCTOR_STATUS_SKIP}\\s+Skipped`,
         ),
       );
-      // The three negatives above and in the specs beside this one only say the BLANKET skip did
-      // not happen, and a row stood down by the wrong pass prints neither string — so nothing at
-      // this layer could tell the two skips apart without a positive naming the blocking pass.
+      // The negatives only show the blanket skip did not happen; this positive names the blocking
+      // pass.
       expect(
         stdout,
         "the row must name the pass that blocked it, not merely report itself skipped",
@@ -225,11 +206,6 @@ describe("doctor in a skills source repository", () => {
     },
   );
 
-  /**
-   * The author half of the ruling: standing in the repository that holds the typo, a rule that
-   * states nothing is a hard failure. They can open the file, and a run that passed would be
-   * telling them the marketplace they are about to publish is sound when it is not.
-   */
   it(
     "should fail the run for a slug the repository's own rules dangle",
     { timeout: TIMEOUTS.LIFECYCLE },
@@ -249,9 +225,8 @@ describe("doctor in a skills source repository", () => {
 });
 
 /**
- * The consumer half of the ruling. The same typo, in a marketplace the reader installed from and
- * cannot edit, changes nothing about whether their skills install or resolve — so it must not
- * fail their run, and the line must name the marketplace that shipped it.
+ * In an installed marketplace the reader cannot edit, the same typo only warns, naming the
+ * marketplace.
  */
 describe("doctor in a project whose marketplace dangles a slug", () => {
   const installStack = useStackInstallations();
@@ -280,11 +255,7 @@ describe("doctor in a project whose marketplace dangles a slug", () => {
     },
   );
 
-  /**
-   * A warning stands nothing down. `blocks: ["skills"]` is earned by a broken marketplace leaving
-   * skills OUT of the matrix; an unresolved rule slug leaves every skill in it, so the row that
-   * resolves configured ids has to keep answering for itself.
-   */
+  /** A warning stands nothing down: an unresolved rule slug leaves every skill in the matrix. */
   it(
     "should leave every operational row answering for itself",
     { timeout: TIMEOUTS.LIFECYCLE },

@@ -31,33 +31,9 @@ import {
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * A project's own `config.ts` that EXISTS and cannot be loaded stops every command run in that
- * project, under a global installation that is fine — journey 38's other config, driven from
- * scratch.
- *
- * The installation is the product's own work: a real global install and a real project set up
- * under it, both through `init --from`. Only the broken file is written by hand, because no
- * command writes one.
- *
- * **Every command that reads the configs refuses, and says the same thing** — the write commands
- * `init`, `edit`, `compile`, `update`, `share` and `eject`, and `search` and `list`. Against the
- * unfixed binary `eject` and `search` read an empty or schema-refused project config as ABSENT and
- * went on out of the marketplace the global one names, `eject templates` wrote whatever the shape,
- * and `list` died on a stack trace instead of a refusal.
- *
- * **The refusal says WHICH config, and where to recreate it from** — `uninstall`, then `init`,
- * run from this project, never from the home directory, whose installation is fine. Against the
- * unfixed binary the commands that did refuse said neither.
- *
- * **`doctor` reports it and finishes; `uninstall` always works.** `uninstall` runs in the project
- * over the broken file, removes the project's installation and leaves the global one's skills and
- * compiled agents alone. The other half of the pair is the second describe: the same commands
- * with both configs readable, each of which runs. A guard that had swallowed its whole domain
- * would satisfy every refusal without it.
- *
- * Each shape is driven over the installation as `init --from` left it — set aside once, put back
- * before every shape — so a command that went ahead over one shape cannot leave the next shape's
- * byte-identity check with nothing to catch.
+ * A project's own `config.ts` that exists but cannot be loaded stops every config-reading command
+ * in that project with a refusal naming that config and the way out, while `doctor` reports it and
+ * `uninstall` still works. The second describe is the readable-configs control.
  */
 
 describe("a real project whose own config.ts cannot be loaded, under a readable global one", () => {
@@ -97,17 +73,13 @@ describe("a real project whose own config.ts cannot be loaded, under a readable 
     await env.destroy();
   });
 
-  /** What every command did over one shape, which the hook above recorded for every shape. */
   function brokenBy(shape: string): RunsOverABrokenConfig {
     const runs = broken.get(shape);
     if (!runs) throw new Error(`nothing was recorded for a project config that ${shape}`);
     return runs;
   }
 
-  /**
-   * The paths are compared compacted, both sides: oclif breaks a word longer than its line wherever
-   * the column runs out, and a temp path is one under any but a short `TMPDIR`.
-   */
+  /** Compacted, both sides: oclif wraps a long temp path wherever the column runs out. */
   function expectRefusalNamingTheProjectConfig({ exitCode, output }: ConfigReaderRun): void {
     expect(exitCode, output).toBe(EXIT_CODES.ERROR);
     const compacted = compactCliOutput(output);
@@ -193,16 +165,14 @@ describe("a real project whose own config.ts cannot be loaded, under a readable 
 });
 
 /**
- * Both configs a project reads broken at once: its own, and the global one it inherits. The
- * refusal names each, with the folder its own way out is run from — naming only the first sends
- * the user round twice: recreate the project, run again, and only then learn of the global one.
+ * Both configs broken at once: the refusal names each, or the user learns of the second only
+ * after fixing the first.
  */
 describe("a real project whose own config.ts and the global one both cannot be loaded", () => {
   let store: SeedConfigStore;
   let env: DualScopeEnv;
   const refusals = new Map<string, CLIResult>();
 
-  /** One command that writes and one that only reads, each refused at the same guard. */
   const COMMANDS = ["compile", "list"] as const;
 
   beforeAll(async () => {
@@ -231,7 +201,6 @@ describe("a real project whose own config.ts and the global one both cannot be l
       if (!refusal) throw new Error(`nothing was recorded for '${command}'`);
       expect(refusal.exitCode, refusal.output).toBe(EXIT_CODES.ERROR);
 
-      // Compacted, both sides, for the reason the describes above give.
       const compacted = compactCliOutput(refusal.output);
       expect(compacted, "this project's config, by its path").toContain(
         compactCliOutput(
@@ -273,10 +242,7 @@ describe("the same project with both configs readable", () => {
     expect(output).not.toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
   });
 
-  /**
-   * Whether `share` then publishes an all-ejected installation is another spec's subject — only
-   * that the config refusal is not what stops it is this one's, so its exit code is left alone.
-   */
+  /** Whether `share` then publishes is another spec's subject, so its exit code is left alone. */
   it("lets share past the config check", () => {
     expect(runOf(readable.runs, "share").output).not.toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
   });

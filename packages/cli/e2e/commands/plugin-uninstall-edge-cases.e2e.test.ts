@@ -29,26 +29,13 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * Plugin-mode uninstall E2E tests — edge cases.
- *
- * P-UNINSTALL-3: Uninstall with plugin config but no real plugins installed.
- *   - Config references plugin-mode skills, but no plugins exist on disk.
- *   - Verifies uninstall completes gracefully and cleans up local files.
- *
- * Also tests:
- *   - Preserving non-CLI plugins in settings.json
- *   - Uninstall when Claude CLI is not on PATH
- *   - --all flag behavior
- *
- * Reference: e2e-framework-design.md, Section 4.3
+ * Plugin-mode uninstall edge cases: plugin config with no plugins installed, preserving non-CLI
+ * plugins in settings.json, no Claude CLI on PATH, and --all.
  */
 
 /**
- * Creates a standard uninstall test project with config, a skill, and agents.
- * Returns the project directory and paths to key directories for assertions.
- *
- * `enabledPlugins` writes a `.claude/settings.json` switching those plugin keys on; without it
- * the project has no settings file at all.
+ * `enabledPlugins` writes a `.claude/settings.json` switching those keys on; without it there is no
+ * settings file.
  */
 async function createUninstallableProject(
   tempDir: string,
@@ -113,7 +100,6 @@ describe("uninstall with plugin config but no installed plugins", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // Skills and agents should still be cleaned up even without real plugins
     expect(await directoryExists(skillDir)).toBe(false);
     expect(await directoryExists(agentsDir)).toBe(false);
   });
@@ -150,7 +136,6 @@ describe("uninstall with plugin config but no installed plugins", () => {
 
     expect(await directoryExists(skillDir)).toBe(false);
 
-    // Manual plugin entry should be preserved in settings.json
     const settingsPath = path.join(projectDir, DIRS.CLAUDE, FILES.SETTINGS_JSON);
     expect(await fileExists(settingsPath), "settings.json must exist after uninstall").toBe(true);
     const settingsContent = await readTestFile(settingsPath);
@@ -175,8 +160,7 @@ describe("uninstall with plugin config but no installed plugins", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.UNINSTALL_SUCCESS);
 
-    // "also" means on top of the skills and agents: assert the whole clean state,
-    // not just the config dir, so leftover skill dirs cannot survive unnoticed.
+    // "also" means on top of skills and agents, so the whole clean state is asserted.
     await expectCleanUninstall(projectDir, { removeConfig: true });
   });
 });
@@ -258,14 +242,11 @@ describe("uninstall without Claude CLI on PATH", () => {
     expect(await directoryExists(skillDir)).toBe(true);
     expect(await directoryExists(agentsDir)).toBe(true);
 
-    // A PATH holding node and sh alone, each linked to the one this suite found. Never a list of
-    // directories: node's own bin directory is where `npm i -g @anthropic-ai/claude-code` puts
-    // `claude`, so a PATH naming that directory hands the binary back on every machine that
-    // installed it that way — and this spec then passes without running the branch it is named for.
+    // Only node and sh, linked individually: node's bin directory is where a global npm install
+    // puts `claude`.
     const pathWithoutClaude = await pathHoldingOnly({ root: tempDir }, ["node", "sh"]);
 
-    // The subject guard, asked of the PATH the command is actually handed — `CLI.run` puts the
-    // pinned codex in front of whatever PATH it is given.
+    // Subject guard on the PATH the command gets: `CLI.run` prepends the pinned codex.
     expect(
       await foundByName("claude", withCodexOnIt(pathWithoutClaude)),
       "the uninstall below would run with a claude on its PATH, so it could not show the binary's absence is survived",
@@ -289,9 +270,7 @@ describe("uninstall without Claude CLI on PATH", () => {
 
     expect(await directoryExists(agentsDir)).toBe(false);
 
-    // The specific failure shapes a missing binary produces, not the word: a
-    // marketplace name, a cache path or any advice mentioning the CLI all carry
-    // "claude", so the generic absence fails on correct output.
+    // Specific failure shapes, not the word "claude", which correct output also carries.
     expect(stderr).not.toContain("command not found");
     expect(stderr).not.toContain("ENOENT");
     expect(stdout).not.toContain("claude: command not found");

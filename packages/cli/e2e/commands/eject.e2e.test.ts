@@ -49,10 +49,8 @@ import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js"
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * One agent partial, addressed by the category directory it lands under and its
- * own directory name. `eject agent-partials` writes the CLI's bundled
- * `src/agents/<category>/<agent>/` tree verbatim, so naming a member is the only
- * way an assertion can tell the right tree from any tree.
+ * Named because `eject agent-partials` copies the bundled tree verbatim; a member is what tells the
+ * right tree from any tree.
  */
 const EJECTED_PARTIAL_CATEGORY = "developer";
 const EJECTED_PARTIAL_AGENT = "web-developer";
@@ -60,7 +58,6 @@ const EJECTED_PARTIAL_AGENT = "web-developer";
 describe("eject command", () => {
   let tempDir: string;
   let readOnlyDir: string | undefined;
-  // Created once for the whole file — eject only reads from the source
   let sourceDir: string;
   let e2eSourceTempDir: string;
 
@@ -83,12 +80,8 @@ describe("eject command", () => {
   });
 
   /**
-   * A project directory whose HOME carries a global config naming `source`.
-   *
-   * `eject` declares no `--marketplace` and reads no `CC_MARKETPLACE` — naming a source is `init`'s
-   * decision — so the source it copies out of is one the machine already records. The project
-   * directory itself stays config-less, which is the state these specs are about: `eject`
-   * invents that config and records into it the source it read.
+   * `eject` takes no marketplace flag or env, so HOME's global config names the source; the project
+   * stays config-less for `eject` to invent one.
    */
   async function projectUnderGlobalSource(
     dir: string,
@@ -130,13 +123,9 @@ describe("eject command", () => {
     expect(stdout).toContain("Eject");
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
-    // Verify agent partials directory was created with content
     const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(agentsDir)).toBe(true);
-    // Name the partial that must be there rather than counting anything. The
-    // top level holds CATEGORY directories, so the old `entries.length > 0` plus
-    // "first non-underscore entry has children" was satisfied by any category
-    // holding any agent — it never reached an agent's own files.
+    // The top level holds category directories, so a named member is asserted rather than a count.
     expect(await listFiles(agentsDir)).toContain(EJECTED_PARTIAL_CATEGORY);
     const partialDir = path.join(agentsDir, EJECTED_PARTIAL_CATEGORY, EJECTED_PARTIAL_AGENT);
     const partialFiles = await listFiles(partialDir);
@@ -144,7 +133,6 @@ describe("eject command", () => {
     expect(partialFiles).toContain(FILES.PLAYBOOK_MD);
     expect(partialFiles).toContain(FILES.METADATA_YAML);
 
-    // Config should be created
     await expect({ dir: tempDir }).toHaveConfig();
   });
 
@@ -156,16 +144,13 @@ describe("eject command", () => {
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
-    // Verify the template file was actually created with liquid content
     await expect({ dir: tempDir }).toHaveEjectedTemplate();
     const templatePath = path.join(sourceFolderIn(tempDir), "agents", "_templates", "agent.liquid");
     const templateContent = await readTestFile(templatePath);
     expect(templateContent).toContain("---");
 
-    // Template must contain Liquid syntax
     expect(templateContent).toContain("{{");
 
-    // Config should be created
     await expect({ dir: tempDir }).toHaveConfig();
   });
 
@@ -181,15 +166,12 @@ describe("eject command", () => {
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
     expect(await directoryExists(outputDir)).toBe(true);
 
-    // Verify agent partial files were created in the custom directory
     const entries = await listFiles(outputDir);
     expect(entries.length).toBeGreaterThan(0);
 
-    // Verify content: at least one agent partial has files
     const partialFiles = await listFiles(path.join(outputDir, firstElement(entries)));
     expect(partialFiles.length).toBeGreaterThan(0);
 
-    // Default .agents-inc/claude/agents should NOT exist (output was redirected)
     const defaultAgentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(defaultAgentsDir)).toBe(false);
   });
@@ -237,27 +219,21 @@ describe("eject command", () => {
 
     const skillsDir = skillsPath(tempDir);
     expect(await directoryExists(skillsDir)).toBe(true);
-    // The whole roster, compared against the source's own skill list: a count
-    // passes on nine wrong directories, and the named subset below left five of
-    // the nine unpinned.
+    // The whole roster: a count passes on wrong directories.
     expect((await listFiles(skillsDir)).sort()).toStrictEqual([...E2E_SKILL_IDS].sort());
 
-    // Verify each ejected skill has SKILL.md with content
     await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.react.id);
     await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.vitest.id);
     await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.zustand.id);
     await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.hono.id);
 
-    // Verify SKILL.md content for a representative skill
     const skillMdPath = path.join(skillsDir, E2E_SKILL.react.id, FILES.SKILL_MD);
     const skillContent = await readTestFile(skillMdPath);
     expect(skillContent).toContain(E2E_SKILL.react.id);
 
-    // Verify config records the source the run actually read from
     await expect({ dir: tempDir }).toHaveConfig({ marketplace: sourceDir });
     expect(await readTestFile(configTsPath(tempDir))).toContain(sourceDir);
 
-    // `eject skills` ejects skills only — agent partials stay bundled.
     expect(await directoryExists(path.join(sourceFolderIn(tempDir), "agents"))).toBe(false);
   });
 
@@ -283,17 +259,10 @@ describe("eject command", () => {
   });
 
   /**
-   * A project set up from one marketplace, under a global installation of plugins from another
-   * that ships a skill the project's does not. Sessions in the project show and compile that
-   * global skill, but its files are in the other marketplace, so `eject skills` copies what the
-   * project's own marketplace carries and nothing else — and leaves the global installation alone.
-   *
-   * Observed red against a build that seated the global skill in the project's catalogue: the run
-   * copied the project marketplace's skills, then read the global skill out of that marketplace's
-   * folder and exited 1 on ENOENT.
+   * Project from one marketplace under global plugins from another: `eject skills` copies only what
+   * the project's marketplace carries and leaves the global installation alone.
    */
   describe("beside a global plugin installation from another marketplace", () => {
-    /** Shipped by the global installation's marketplace and not by the project's. */
     const ONLY_IN_GLOBAL_MARKETPLACE = E2E_SKILL["visual-regression"];
 
     let projectMarketplace: E2ESource;
@@ -366,23 +335,19 @@ describe("eject command", () => {
     expect(stdout).toContain("ejected");
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
-    // Verify agent partials were created with content
     const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
     expect(await directoryExists(agentsDir)).toBe(true);
     const agentEntries = await listFiles(agentsDir);
-    expect(agentEntries.length).toBeGreaterThan(1); // At least _templates + agent partials
+    expect(agentEntries.length).toBeGreaterThan(1);
 
-    // Verify templates were created with liquid content
     await expect({ dir: tempDir }).toHaveEjectedTemplate();
     const templatePath = path.join(agentsDir, "_templates", "agent.liquid");
     const templateContent = await readTestFile(templatePath);
     expect(templateContent).toContain("---");
 
-    // Verify skills were created with SKILL.md files
     await expect({ dir: tempDir }).toHaveLocalSkills([E2E_SKILL.react.id]);
     await expect({ dir: tempDir }).toHaveSkillCopied(E2E_SKILL.react.id);
 
-    // Verify config was created with source reference
     await expect({ dir: tempDir }).toHaveConfig({ marketplace: sourceDir });
   });
 
@@ -393,7 +358,6 @@ describe("eject command", () => {
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-    // Config file should exist with a project name (derived from the temp dir basename)
     const configContent = await readTestFile(configTsPath(tempDir));
     expect(configContent).toContain("name");
     expect(configContent).toContain("export default");
@@ -412,8 +376,8 @@ describe("eject command", () => {
     expect(stdout).toContain("all");
   });
 
-  // A directory holding no marketplace — no `.claude-plugin/marketplace.json` — is refused by every
-  // command that loads it, rather than ejected from as an empty marketplace and exited 0 over.
+  // A directory without `.claude-plugin/marketplace.json` is refused, not ejected from as an empty
+  // marketplace.
   it("should handle corrupt source without crashing", async () => {
     tempDir = await createTempDir();
     const corruptSourceDir = path.join(tempDir, "corrupt-source");
@@ -441,8 +405,7 @@ describe("eject command", () => {
       dir: tempDir,
     });
 
-    // Withdrawn, not ignored: silently accepting it would eject from one source while
-    // recording another in config.ts.
+    // Withdrawn, not ignored: accepting it would eject from one source and record another.
     expect(exitCode).toBe(EXIT_CODES.INVALID_ARGS);
     expect(output).toContain("--marketplace");
     expect(await directoryExists(skillsPath(tempDir))).toBe(false);
@@ -470,13 +433,10 @@ describe("eject command", () => {
     expect(stdout).toContain("Agent templates ejected");
     expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
 
-    // The agent.liquid template should exist
     await expect({ dir: tempDir }).toHaveEjectedTemplate();
 
-    // Agent partial directories (e.g., developer, reviewer) should NOT exist
     const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
     const contents = await listFiles(agentsDir);
-    // Only _templates should be present, not individual agent dirs
     expect(contents).toContain("_templates");
     const nonTemplateEntries = contents.filter((entry) => entry !== "_templates");
     expect(nonTemplateEntries.length).toBe(0);
@@ -512,10 +472,8 @@ describe("eject command", () => {
     expect(output).toContain("already exist");
   });
 
-  // BUG: The second eject with --force succeeds (exit 0) but reports
-  // "0 skills ejected" or skips the ejected-count log entirely. The --force
-  // flag bypasses the "already exist" guard but copySkillsToLocalFlattened
-  // returns an empty result on re-eject, so "skills ejected" is missing.
+  // Known bug: a re-eject with --force exits 0, but `copySkillsToLocalFlattened` returns nothing,
+  // so no "skills ejected" line.
   it.fails("should overwrite existing skills with --force", async () => {
     tempDir = await createTempDir();
 
@@ -547,13 +505,11 @@ describe("eject command", () => {
     expect(stdout).toContain("Output directory:");
     expect(await directoryExists(outputDir)).toBe(true);
 
-    // Verify the template file was created in the custom directory with content
     const entries = await listFiles(outputDir);
     expect(entries).toContain("agent.liquid");
     const templateContent = await readTestFile(path.join(outputDir, "agent.liquid"));
     expect(templateContent).toContain("---");
 
-    // Default template location should NOT exist (output was redirected)
     const defaultTemplatePath = path.join(sourceFolderIn(tempDir), "agents", "_templates");
     expect(await directoryExists(defaultTemplatePath)).toBe(false);
   });
@@ -573,7 +529,6 @@ describe("eject command", () => {
     expect(await directoryExists(outputDir)).toBe(true);
     expect((await listFiles(outputDir)).sort()).toStrictEqual([...E2E_SKILL_IDS].sort());
 
-    // Verify skill content in custom output directory
     const skillMdPath = path.join(outputDir, E2E_SKILL.react.id, FILES.SKILL_MD);
     expect(await fileExists(skillMdPath)).toBe(true);
     const skillContent = await readTestFile(skillMdPath);
@@ -594,16 +549,9 @@ describe("eject command", () => {
   });
 
   /**
-   * `eject skills` copies into the skills folder of the installation it is run against, which on
-   * Codex is not `.claude/skills` at either scope: `<repo>/.agents/skills` at project scope and
-   * `$CODEX_HOME/skills` at global.
-   *
-   * Observed red before the fix at all three: each run wrote `.claude/skills` — creating `.claude/`
-   * in a Codex-only project, and adding every catalogue skill to the CLAUDE installation's folder
-   * when `--provider codex` picked the Codex one out of a scope holding both.
-   *
-   * The first three install sub-agents with no skill, so nothing is already a copy and every
-   * catalogue skill is ejected on either provider. The last pair is about the copies.
+   * On Codex `eject skills` copies into `<repo>/.agents/skills` (project) or `$CODEX_HOME/skills`
+   * (global), never `.claude/skills`. The first three install sub-agents with no skill; the last
+   * pair is about the copies.
    */
   describe("on a Codex installation", () => {
     const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -717,8 +665,8 @@ describe("eject command", () => {
             readTreeSnapshot(path.join(env.fakeHome, DIRS.CODEX)),
           ]);
         const claudeBefore = await claudeSide();
-        // Subject guard: the Claude installation compiled its sub-agent into the project, so an
-        // unchanged snapshot below is a folder left alone rather than two empty reads.
+        // Subject guard: the Claude side compiled something, so an unchanged snapshot is not two
+        // empty reads.
         expect(Object.keys(claudeBefore[0]).length).toBeGreaterThan(0);
 
         const toCodex = await CLI.run(["eject", "skills", ...PROVIDER_CODEX], project);
@@ -731,7 +679,7 @@ describe("eject command", () => {
           claudeBefore,
         );
 
-        // The control: the same scope, the other provider named, and Claude's own folder fills.
+        // Control: same scope, the other provider named, and Claude's own folder fills.
         const codexBefore = await codexSide();
         const toClaude = await CLI.run(["eject", "skills", ...PROVIDER_CLAUDE], project);
 
@@ -763,10 +711,8 @@ describe("eject command", () => {
     );
 
     /**
-     * KNOWN GAP: the source load marks a skill local only when it finds it under
-     * `<root>/.claude/skills` (`discoverLocalSkills` in `lib/skills/local-skill-loader.ts`), so a
-     * Codex installation's copy in `$CODEX_HOME/skills` is never seen as one and React is copied
-     * into the project beside it. The Claude case above is the behaviour this pins.
+     * KNOWN GAP: `discoverLocalSkills` finds local copies only under `<root>/.claude/skills`, so a
+     * Codex global copy in `$CODEX_HOME/skills` is not seen and React is copied into the project.
      */
     it.fails(
       "leaves out the skill a Codex global already holds as its own copy",

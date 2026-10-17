@@ -27,24 +27,13 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * A global installation holds only global-scoped content, and `init --from` is the one producer
- * that never asked.
- *
- * The home directory IS the global scope — `resolveInstallPaths` sends both scopes to the same
- * directory there, and the config gate writes ONE config rather than splitting — so a payload's
- * `scope: "project"` entry does not land somewhere else, it lands in the global config wearing a
- * label that contradicts the file it is in. Nothing downstream can notice: `toClaudePluginScope`
- * maps the DECLARED scope, so what the boundary lets through becomes the truth, and a plugin skill
- * is registered against `$HOME` as a project rather than for the user.
- *
- * Two things this must NOT do, and each has its own spec: refuse an all-global payload at home (the
- * case the invariant exists to protect), and refuse a project-scoped payload anywhere else (project
- * scope is exactly right inside a project).
+ * At the home directory both scopes are one directory, so `init --from` must refuse project-scoped
+ * entries rather than write them into the global config. Controls: an all-global payload at home,
+ * and the same payload inside a project.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** A sub-agent entry that keeps its agent in the project rather than at the default scope. */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 describe("init --from <id>: project-scoped content at the global root", () => {
@@ -96,16 +85,13 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     const said = flattenCliOutput(output);
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_HINT);
-    // Named rather than counted, and both kinds: the skill and the sub-agent are separate
-    // decisions in the payload, and only the sharer knows which one they meant to move.
+    // Both kinds named: only the sharer knows which they meant to move.
     expect(said).toContain(`skill ${E2E_SKILL.react.id}`);
     expect(said).toContain(`sub-agent ${WEB_DEV}`);
 
-    // A refused run reports no success of any kind — the refusal lands before the install spine,
-    // not after it has already said the work was done.
+    // The refusal lands before the install, so no success line.
     expect(said).not.toContain(STEP_TEXT.INIT_SUCCESS);
 
-    // Nothing written, on every surface a home install writes to.
     await expectNoSourceFolder(
       env.fakeHome,
       "the refusal lands before the install, so the home holds nothing",
@@ -146,8 +132,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     const said = flattenCliOutput(output);
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
     expect(said).toContain(`skill ${E2E_SKILL.react.id}`);
-    // The global-scoped skill is not the problem and must not be listed as one — a sharer who
-    // moves it to fix this message has been sent to change the wrong entry.
+    // The global skill is not the problem and must not be listed.
     expect(said).not.toContain(`skill ${E2E_SKILL.vitest.id}`);
 
     await expectNoSourceFolder(
@@ -159,9 +144,8 @@ describe("init --from <id>: project-scoped content at the global root", () => {
 
   it("refuses a payload whose only project-scoped entry is a sub-agent", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // Every skill is global, so the skill half of the rule has nothing to say. A sub-agent pinned
-    // to the project still writes `scope: "project"` into the global config and compiles its `.md`
-    // into the same `~/.claude/agents/` a global one would, so the contradiction is identical.
+    // All skills global; a project-pinned sub-agent at home still writes `scope: "project"` into
+    // the global config.
     store.publish(
       "HomeAgt03",
       buildSeedPayload({
@@ -197,8 +181,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
 
   it("installs an all-global payload at the home directory", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // The case the invariant exists to protect. No `agents` entry, so the sub-agent rests at the
-    // shared selection default — which is global, and therefore correct here.
+    // No `agents` entry, so the sub-agent rests at the global default: correct here.
     store.publish(
       "HomeGlob4",
       buildSeedPayload({
@@ -231,8 +214,7 @@ describe("init --from <id>: project-scoped content at the global root", () => {
 
   it("installs the same project-scoped payload from a project directory", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // Byte-for-byte the payload the first spec refuses. What changed is where it was run, which is
-    // the whole of the rule: project scope is exactly right inside a project.
+    // The payload the first spec refuses, run inside a project.
     store.publish(
       "HomeProj1",
       buildSeedPayload({
@@ -262,8 +244,6 @@ describe("init --from <id>: project-scoped content at the global root", () => {
     expect(projectConfig.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
     expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([E2E_SKILL.react.id]);
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual([`${WEB_DEV}.md`]);
-    // Nothing project-scoped reached the home directory — the guard's subject is where the
-    // install root is, not where the content ends up being mentioned.
     expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([]);
   });
 });

@@ -32,42 +32,23 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * D-273 — a corrupt `config.ts` (a file that exists but cannot be
- * loaded/parsed) must not let `cc compile` run.
- *
- * Before the fix, `loadProjectConfigFromDir` collapsed BOTH "file missing" and
- * "file exists but unparseable" into `null`. `detectInstallationInDir` saw the
- * file on disk (`fileExists` true) plus a null load and built a phantom
- * eject-mode installation. `cc compile` then ran config-less: `compileAgents`
- * resolved EVERY built-in agent (~23) and wrote them to the scope's
- * `.claude/agents/`, resurrecting agents the user had deselected — printing a
- * clean "Global compile complete!" with zero warnings.
- *
- * The fix distinguishes missing (legitimate) from corrupt (an error): a corrupt
- * config makes the loader throw, `detectInstallationInDir` surfaces it, and
- * `cc compile` hard-errors with EXIT_CODES.ERROR naming the config path — and
- * writes no agents.
+ * A config.ts that exists but cannot be loaded makes `compile` hard-error naming the file and write
+ * no agents. A missing config is not corrupt.
  */
 
 const SKILL_ID = E2E_SKILL.react.id;
 
-/** The valid global install every case seeds, before the case corrupts it. */
 const GLOBAL_INSTALL = buildProjectConfig({
   name: "corrupt-config-fixture",
   skills: buildSkillConfigs([SKILL_ID], { scope: "global", origin: "eject" }),
   agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
 });
 
-/** That install with its `export default` removed — a valid-TS file that exports nothing. */
+/** A valid-TS file that exports nothing. */
 const MISSING_EXPORT_DEFAULT = renderConfigTsWithoutDefaultExport(GLOBAL_INSTALL);
 
-/** A genuine TypeScript syntax error — the loader throws while evaluating it. */
 const SYNTAX_ERROR = renderUnparseableConfigTs();
 
-/**
- * Seed a valid global install (config + discoverable local skill) under
- * `fakeHome`, then leave the config ready to be corrupted by the caller.
- */
 async function seedGlobalInstall(fakeHome: string): Promise<void> {
   await writeProjectConfig(fakeHome, GLOBAL_INSTALL);
   await createLocalSkill(fakeHome, SKILL_ID, {
@@ -94,7 +75,7 @@ describe("compile with a corrupt config", () => {
     await seedGlobalInstall(fakeHome);
     await writeCorruptConfig(fakeHome, MISSING_EXPORT_DEFAULT);
 
-    // Run from HOME itself so detection resolves to a single Global pass.
+    // From HOME itself, so detection resolves to a single global pass.
     const { exitCode, combined } = await runCLI(["compile"], fakeHome, {
       env: { HOME: fakeHome },
     });
@@ -102,15 +83,10 @@ describe("compile with a corrupt config", () => {
     expect(exitCode, `compile must reject a corrupt config; output:\n${combined}`).toBe(
       EXIT_CODES.ERROR,
     );
-    // The error must name the offending file so the user can fix it. Flattened first: oclif wraps
-    // at the terminal width and prefixes each continuation with ` › `, and the folder rename made
-    // the path long enough to push "could not be loaded" across a line break — a passing
-    // assertion turned red by the WRAP rather than by the message.
-    // The path compacted, both sides: a word longer than the line is broken mid-word, which
-    // flattening rejoins with a space.
+    // Flattened and compacted: oclif wraps at terminal width with ` › ` and breaks long paths
+    // mid-word.
     expect(compactCliOutput(combined)).toContain(compactCliOutput(configTsPath(fakeHome)));
     expect(flattenCliOutput(combined)).toContain(STEP_TEXT.CONFIG_LOAD_FAILED);
-    // It must NOT claim success.
     expect(combined).not.toContain(STEP_TEXT.COMPILE_COMPLETE);
   });
 
@@ -126,12 +102,10 @@ describe("compile with a corrupt config", () => {
     const { exitCode } = await runCLI(["compile"], fakeHome, { env: { HOME: fakeHome } });
     expect(exitCode).toBe(EXIT_CODES.ERROR);
 
-    // The bug wrote ~23 built-in agents here; the fix must write none.
     expect(
       (await listFiles(agentsPath(fakeHome))).sort(),
       "a corrupt config must not resurrect any agents",
     ).toStrictEqual(agentsBefore.sort());
-    // Compile must not rewrite the config.
     expect(await readTestFile(configTsPath(fakeHome))).toBe(configBefore);
   });
 
@@ -143,8 +117,7 @@ describe("compile with a corrupt config", () => {
     await seedGlobalInstall(projectDir);
     await writeCorruptConfig(projectDir, SYNTAX_ERROR);
 
-    // cwd is the project (distinct from HOME) so the corrupt config is detected
-    // in the PROJECT context, not the global one.
+    // cwd distinct from HOME, so the corrupt config is the project's.
     const { exitCode, combined } = await runCLI(["compile"], projectDir, {
       env: { HOME: cleanHome },
     });
@@ -155,7 +128,6 @@ describe("compile with a corrupt config", () => {
     expect(compactCliOutput(combined)).toContain(compactCliOutput(configTsPath(projectDir)));
     expect(combined).not.toContain(STEP_TEXT.COMPILE_COMPLETE);
 
-    // No agents written to the project scope.
     expect(await listFiles(agentsPath(projectDir))).toStrictEqual([]);
   });
 
@@ -178,9 +150,7 @@ describe("compile with a corrupt config", () => {
   it("keeps the existing no-installation behavior when no config file exists (green guard)", async () => {
     tempDir = await createTempDir();
     const fakeHome = path.join(tempDir, "global-home");
-    // A discoverable skill on disk but NO config file anywhere: missing config is
-    // NOT corrupt, so compile must fall back to its existing no-installation
-    // error rather than the corrupt-config error — and must not resurrect agents.
+    // A missing config is not corrupt: compile gives its no-installation error instead.
     await createLocalSkill(fakeHome, SKILL_ID, {
       description: "Local skill with no config present",
       metadata: renderMetadataYaml({

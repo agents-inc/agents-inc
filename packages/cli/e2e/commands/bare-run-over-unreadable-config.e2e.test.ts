@@ -19,23 +19,13 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { renderUnparseableConfigTs } from "../../src/cli/lib/__tests__/factories/unloadable-config-factories.js";
 
 /**
- * `agents-inc` with no command, over a `config.ts` that exists and cannot be loaded — journey 38's
- * refusal, reached through the one door that is not a command.
- *
- * The bare run shows the dashboard of the installation it finds, and finding it means loading the
- * config. Every named command refuses that file, naming it and the folder to recreate it from; the
- * bare run must do the same and exit as they do, not print the root help and exit 0 as though
- * nothing were installed.
- *
- * Both readers' files are driven: the global installation's, from the home directory, and a
- * project's own, from that project. The last spec is the permitted twin — the same project with
- * its config readable, which shows the dashboard and exits clean.
+ * `agents-inc` with no command over an unloadable config.ts must refuse as every named command
+ * does, not print the root help and exit 0. The last spec is the permitted twin.
  */
 
-/** One bare run, as a refusal is asserted on. */
 type BareRun = { exitCode: number; output: string };
 
-/** The refusal every named command prints over the file, read through oclif's wrapping. */
+/** The refusal every named command prints, read through oclif's wrapping. */
 function expectConfigRefusal(
   { exitCode, output }: BareRun,
   whose: string,
@@ -73,7 +63,7 @@ describe("agents-inc with no command over a config.ts that cannot be loaded", ()
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** An empty home directory, so a project's config is the only one in play. */
+  /** An empty home, so a project's config is the only one in play. */
   async function emptyHome(): Promise<string> {
     const tempDir = await createTempDir();
     tempDirs.push(tempDir);
@@ -82,7 +72,7 @@ describe("agents-inc with no command over a config.ts that cannot be loaded", ()
     return home;
   }
 
-  /** An installed project, whose config.ts is replaced by one that does not parse when asked. */
+  /** An installed project whose config.ts no longer parses when `broken`. */
   async function installedProject(options: { broken: boolean }): Promise<string> {
     const project = await ProjectBuilder.editable();
     tempDirs.push(path.dirname(project.dir));

@@ -13,8 +13,8 @@ import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config
 import "../matchers/setup.js";
 
 /**
- * The size gate is for a command that draws something needing room, and `uninstall` does not take
- * it. `uninstall --yes` prints a removal list and exits; held at the gate it would never finish.
+ * `uninstall --yes` prints and exits, so it skips the terminal size gate; held there it would never
+ * finish.
  */
 describe("uninstall on a terminal below the minimum size", () => {
   let tempDir: string | undefined;
@@ -39,14 +39,13 @@ describe("uninstall on a terminal below the minimum size", () => {
       );
       await writeConfigTypes(home);
 
-      // One row under the gate, which `TERMINAL_SIZE.SHORT` sits exactly on.
+      // One row under the gate, where `TERMINAL_SIZE.SHORT` sits.
       prompt = new InteractivePrompt(["uninstall", "--yes"], home, {
         rows: TERMINAL_SIZE.SHORT.rows - 1,
         cols: TERMINAL_SIZE.SHORT.cols,
         env: { HOME: home },
       });
-      // A run held at the size gate never exits, so the wait is bounded and its timeout read as
-      // the answer rather than thrown: the assertion below says why the run did not finish.
+      // Bounded wait read as the answer: a run held at the gate never exits.
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT).catch(() => undefined);
       const output = prompt.getRawOutput();
 

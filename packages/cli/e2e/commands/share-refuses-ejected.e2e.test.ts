@@ -43,25 +43,14 @@ import type { ProjectHandle } from "../fixtures/project-handle.js";
 import type { SeedSkill } from "@workspace/matrix/seed";
 
 /**
- * `share` shares plugins and nothing else. An ejected (Local) skill is a copy on this machine —
- * one the user may have edited, and one an editor-added skill always is — so while anything a
- * share would send is one, `share` refuses: it names the ejected skills, says they cannot be
- * shared and that only plugins can be, posts nothing and exits non-zero. From a project that
- * covers the ejected skills it inherits from HOME as well as its own.
- *
- * `edit --ui` is how a user reaches the editor to turn those skills into plugins, so it keeps
- * opening exactly the installations `share` refuses. Both halves live in this file on purpose:
- * a refusal pinned alone cannot tell a guard scoped to ejected skills from one that has swallowed
- * every share, so each refusal below has the allowed operation beside it.
+ * `share` shares plugins only: while any skill it would send is ejected, it names them, posts
+ * nothing and exits non-zero, including skills inherited from HOME. `edit --ui` still opens those
+ * installations, and each refusal has its allowed operation beside it.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/**
- * A skill added in the editor from outside the catalogue, as it reaches the receiver: minted id,
- * the category the sharer confirmed, and the whole directory inline. A NON-exclusive category,
- * for the reason `init-from-external-skills.e2e.test.ts` gives.
- */
+/** Non-exclusive, for the reason `init-from-external-skills.e2e.test.ts` gives. */
 const EXTERNAL_ID = "external-web-tooling-brainstorming";
 const EXTERNAL_REPO = "obra/superpowers";
 const EXTERNAL_PATH = "skills/brainstorming";
@@ -79,7 +68,6 @@ function externalEntry() {
   });
 }
 
-/** What the store received as the mint, parsed — the body `share` or `edit --ui` posted. */
 type PostedPayload = {
   skills: Record<string, SeedSkill>;
   external?: Record<string, { repo: string; path: string }>;
@@ -102,21 +90,19 @@ describe("share refuses ejected skills", () => {
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A fresh directory, cleaned up after the spec that took it. Its own HOME, so its own scope. */
+  /** Its own HOME, so its own scope. */
   async function takeTempDir(): Promise<string> {
     const dir = await createTempDir();
     tempDirs.push(dir);
     return dir;
   }
 
-  /** A fresh HOME with an empty project inside it, cleaned up after the spec that took it. */
   async function takeEnvironment(): Promise<TestEnvironment> {
     const env = await createTestEnvironment({ permissions: false });
     tempDirs.push(env.tempDir);
     return env;
   }
 
-  /** Installs `payload` under `id` through `init --from`, and forgets the requests it made. */
   async function installFrom(id: string, payload: unknown, project: ProjectHandle): Promise<void> {
     store.publish(id, payload);
     const installed = await runInitFrom(store, id, project, E2E_SOURCE.sourceDir);
@@ -124,7 +110,6 @@ describe("share refuses ejected skills", () => {
     store.reset();
   }
 
-  /** The one body the store was asked to mint. */
   function postedPayload(): PostedPayload {
     return JSON.parse(firstElement(store.requests.filter((r) => r.method === "POST")).body);
   }
@@ -154,14 +139,14 @@ describe("share refuses ejected skills", () => {
     expect(said).toContain(STEP_TEXT.SHARE_ONLY_PLUGINS);
     expect(said).toContain(E2E_SKILL.react.id);
     expect(said).toContain(E2E_SKILL.vitest.id);
-    // Nothing posted: the refusal is local, so it spends no write from the store's scarce half.
+    // Refused locally, so no store write is spent.
     expect(store.requests).toStrictEqual([]);
     expect(await readTreeSnapshot(origin)).toStrictEqual(before);
   });
 
   it("refuses, from a project, the ejected skills it inherits from HOME", async () => {
-    // The skill rests at global scope and its sub-agent is pinned into the project, so the
-    // ejected copy is HOME's and the project holds no skill of its own.
+    // The skill rests global with its sub-agent pinned to the project, so the ejected copy is
+    // HOME's.
     const env = await takeEnvironment();
     const project = { dir: env.projectDir, globalHome: env.fakeHome };
     await installFrom(
@@ -212,8 +197,7 @@ describe("share refuses ejected skills", () => {
   });
 
   it("shares an installation whose skills are plugins", async () => {
-    // The allowed half of every refusal above: the same two skills, installed as plugins from the
-    // public catalogue instead of ejected.
+    // The allowed half: the same skills as public-catalogue plugins.
     const origin = await takeTempDir();
     await writeProjectConfig(
       origin,
@@ -239,10 +223,8 @@ describe("share refuses ejected skills", () => {
   });
 
   it("does not refuse a skill the user wrote themselves, which it never shares", async () => {
-    // Two local directories, indistinguishable in config.ts — both `origin: "eject"` would read
-    // the same — but this one carries no `forkedFrom`: nothing ejected it, somebody wrote it by
-    // hand. It is outside the round trip, so it is neither sent nor a reason to refuse; the
-    // plugin beside it is what is shared.
+    // No `forkedFrom`: hand-written, outside the round trip, so neither sent nor a reason to
+    // refuse.
     const project = await ProjectBuilder.editable({
       skills: [E2E_SKILL.vitest.id],
       globalSkills: [E2E_SKILL.react.id],
@@ -274,8 +256,7 @@ describe("share refuses ejected skills", () => {
   });
 
   it("leaves edit --ui carrying an editor-added skill's bytes, and the id it mints installs it", async () => {
-    // The carry-back `share` no longer makes: the editor still needs the added skill's own bytes
-    // to show it, and an id it mints still has to install it in a directory that never saw it.
+    // The editor still needs the added skill's bytes to show it and to install it elsewhere.
     const origin = await takeTempDir();
     await installFrom(
       "Eject005",

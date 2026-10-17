@@ -1,13 +1,4 @@
-/**
- * The hand-run. Drives the real binary through journeys and prints a
- * transcript for a person to judge.
- *
- * Everything here is driven through the fixtures the E2E suite already uses —
- * `seed-config-store` for the `--from` seam. Nothing about standing up a store
- * is reimplemented.
- *
- * Run from `packages/cli`:  node scripts/handrun.mjs
- */
+/** Drives the real binary through journeys and prints a transcript; run node scripts/handrun.mjs */
 import {
   existsSync,
   readdirSync,
@@ -113,13 +104,7 @@ function mintedId(output: string): string | undefined {
   return /Shared as (\S+)/.exec(output)?.[1];
 }
 
-/**
- * A collection of config entries as one comparable string: every field of every
- * entry, serialised, then sorted so array order is not part of the claim.
- *
- * Order is deliberately excluded because the configuration is a set of entries
- * rather than a sequence. Everything else about an entry stays in.
- */
+// Sorted: the config is a set of entries, so order is not part of the claim.
 function canonicalEntries(values: readonly unknown[]): string {
   return values
     .map((value) => JSON.stringify(value))
@@ -127,28 +112,17 @@ function canonicalEntries(values: readonly unknown[]): string {
     .join("\n");
 }
 
-/**
- * A directory in the shared `.claude/skills/` tree that this CLI did not put
- * there — it has no `metadata.yaml`, so nothing in it can carry the `forkedFrom`
- * stamp that would make it this installation's.
- */
+// No metadata.yaml, so it cannot carry the `forkedFrom` stamp that would make it ours.
 const FOREIGN_SKILL_DIR = "context7-mcp";
 
-/**
- * An agent file in the shared `.claude/agents/` tree that this CLI did not
- * compile. Its claim would be the provenance marker rather than `forkedFrom`,
- * and it carries none — which is the whole of what makes it the user's own.
- */
+// Carries no provenance marker, so it is the user's own.
 const FOREIGN_AGENT_NAME = "my-own-reviewer";
 
-/** The marketplace journey 35 scaffolds, carrying the prefix the fixture sweep matches. */
 const CATALOGUE_MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}catalogue`;
 
-/** The one skill and the one stack a scaffold ships, in that marketplace's own namespace. */
 const CATALOGUE_SKILL_ID = `${CATALOGUE_MARKETPLACE_NAME}-example-skill`;
 const CATALOGUE_STACK_ID = `${CATALOGUE_MARKETPLACE_NAME}-starter`;
 
-/** Publishes `payload` under `id` and installs it with `init --from` at `at`. */
 function installSeed(
   store: SeedConfigStore,
   id: string,
@@ -160,7 +134,6 @@ function installSeed(
   return runInitFrom(store, id, at, sourceDir);
 }
 
-/** The E2E stack installed at `home` from nothing, every skill ejected. */
 function installStackGlobally(
   store: SeedConfigStore,
   home: string,
@@ -175,7 +148,6 @@ function installStackGlobally(
   );
 }
 
-/** Journey 1 — a global install from nothing. */
 async function journeyGlobalInstall(
   store: SeedConfigStore,
 ): Promise<{ project: ProjectHandle; sourceDir: string }> {
@@ -193,12 +165,7 @@ async function journeyGlobalInstall(
   return { project: { dir: home, globalHome: home }, sourceDir: source.sourceDir };
 }
 
-/**
- * Journeys 23 / 30 — mint an id, install it elsewhere, then re-mint from there.
- *
- * Minted by `edit --ui` rather than `share`: the install is ejected, and `share` refuses an
- * ejected skill by design (`commands/share-refuses-ejected`).
- */
+// Minted by `edit --ui`: the install is ejected, which `share` refuses by design.
 async function journeyRoundTrip(
   project: ProjectHandle,
   store: SeedConfigStore,
@@ -220,9 +187,7 @@ async function journeyRoundTrip(
     const ui = await runEditUi(store, { dir: fresh });
     const reminted = mintedId(ui.output);
     note(`edit --ui exit ${ui.exitCode}`, reminted ?? "(no id)");
-    // Ids are content hashes, so they match only when the payload matches. The
-    // share came from a GLOBAL install and the re-mint from a PROJECT one, so a
-    // difference here is the scope field doing its job, not a lost round trip.
+    // Ids are content hashes; a global share and a project re-mint differ by scope alone.
     const posted = store.requests.filter((r) => r.method === "POST").map((r) => r.body);
     const scopes = (body: string): string =>
       [...new Set([...body.matchAll(/"scope":"([a-z]+)"/g)].map((m) => m[1]))].join("+") ||
@@ -237,7 +202,6 @@ async function journeyRoundTrip(
   return id;
 }
 
-/** Journey 31 — the destructive apply refuses when nothing can answer the confirm. */
 async function journeyNonTtyRefusal(
   store: SeedConfigStore,
   id: string,
@@ -246,15 +210,14 @@ async function journeyNonTtyRefusal(
   section("Journey 31 — edit --from refuses with no terminal to confirm at");
   const dir = mkdtempSync(path.join(tmpdir(), "handrun-j31-"));
   try {
-    // Over an installation: where nothing is installed, that refusal comes first.
+    // Over an installation, or the nothing-installed refusal comes first.
     const installed = await runInitFrom(store, id, { dir }, sourceDir);
     note(`init --from exit ${installed.exitCode}`);
     const result = await runEditFrom(store, id, { dir });
     note(`exit ${result.exitCode}`);
     const line = result.output.split("\n").find((l) => l.includes("terminal"));
     note("what it said", line?.trim() ?? "(no mention of a terminal)");
-    // The line, not only the exit code: a run that failed for any other reason exits
-    // non-zero too, and this journey's claim is about WHAT was refused.
+    // The line too: any failure exits non-zero.
     verdict(
       "a destructive apply will not proceed unasked",
       result.exitCode !== 0 && line !== undefined,
@@ -264,7 +227,6 @@ async function journeyNonTtyRefusal(
   }
 }
 
-/** Journeys 5 / 17 — plugin mode, against a marketplace the real `claude` knows. */
 async function journeyPluginModeReal(store: SeedConfigStore): Promise<void> {
   section("Journeys 5 / 17 — plugin mode against a registered marketplace");
   const source = await createE2EPluginSource();
@@ -296,7 +258,6 @@ async function journeyPluginModeReal(store: SeedConfigStore): Promise<void> {
   );
 }
 
-/** Journey 32 — project-scoped content is refused at the home directory. */
 async function journeyHomeScopeRefusal(store: SeedConfigStore, sourceDir: string): Promise<void> {
   section("Journey 32 — project-scoped content refused at $HOME");
   const posted = store.requests.filter((r) => r.method === "POST").map((r) => r.body);
@@ -322,7 +283,6 @@ async function journeyHomeScopeRefusal(store: SeedConfigStore, sourceDir: string
   rmSync(home, { recursive: true, force: true });
 }
 
-/** Journey 13a — `init --from` refuses over an existing install. */
 async function journeyRefusesExistingInstall(
   store: SeedConfigStore,
   id: string,
@@ -337,7 +297,6 @@ async function journeyRefusesExistingInstall(
   verdict("greenfield stays greenfield", result.exitCode !== 0 && line !== undefined);
 }
 
-/** What {@link firstLine} answers when nothing in the output matched. */
 const NO_MATCHING_LINE = "(not found)";
 
 function firstLine(out: string, pattern: RegExp): string {
@@ -349,7 +308,6 @@ function firstLine(out: string, pattern: RegExp): string {
   );
 }
 
-/** Journeys 11 / 20 / 22 — the read-only and regeneration commands over a live install. */
 async function journeyCommandsOverInstall(home: string): Promise<void> {
   section("Journeys 10 / 11 / 20 / 22 — commands over a live install");
   const at: ProjectHandle = { dir: home, globalHome: home };
@@ -376,15 +334,9 @@ async function journeyCommandsOverInstall(home: string): Promise<void> {
   note(`search exit ${search.exitCode}`, firstLine(search.output, /react/i));
 }
 
-/** The line a dashboard prints in place of its menu where there is no terminal. */
 const DASHBOARD_TEXT_LINE = "  [Edit in the web editor]  [Compile]  [Doctor]  [List]";
 
-/**
- * Journeys 44 / 44a / 23 — a bare `init` and a bare `edit`, run with no terminal.
- *
- * On a store of its own, because later sections read the first configuration the shared store
- * was posted, and the bare `edit` here posts one.
- */
+// Own store: later journeys read the shared store's first post, and the bare `edit` posts one.
 async function journeyFrontDoors(sourceDir: string): Promise<void> {
   section("Journeys 44 / 44a / 23 — a bare init and a bare edit, with no terminal");
   const store = await startSeedConfigStore();
@@ -462,7 +414,6 @@ async function journeyFrontDoors(sourceDir: string): Promise<void> {
   }
 }
 
-/** Journeys 13 / 13b — a shared configuration carrying global-scoped content. */
 async function journeyGlobalScopedPayload(
   store: SeedConfigStore,
   sourceDir: string,
@@ -490,7 +441,6 @@ async function journeyGlobalScopedPayload(
   }
 }
 
-/** Journey 19 — uninstall from a real install, and what it declines to remove. */
 async function journeyUninstall(store: SeedConfigStore): Promise<void> {
   section("Journey 19 — uninstall from scratch");
   const source = await createE2ESource();
@@ -514,7 +464,6 @@ async function journeyUninstall(store: SeedConfigStore): Promise<void> {
   rmSync(home, { recursive: true, force: true });
 }
 
-/** Journey 14 — the config is deleted under a live install. */
 async function journeyDeletedConfig(store: SeedConfigStore): Promise<void> {
   section("Journey 14 — the config deleted under a live install");
   const source = await createE2ESource();
@@ -529,9 +478,7 @@ async function journeyDeletedConfig(store: SeedConfigStore): Promise<void> {
   const list = await CLI.run(["list"], at);
   const listSaid = firstLine(list.output, /No |not found|install/i);
   note(`list exit ${list.exitCode}`, listSaid);
-  // Both commands, and each on what it SAID. The disjunction this replaces was
-  // satisfied by `doctor` merely exiting non-zero, which is also what the crash it
-  // denies would do — so it could not tell a report from a crash.
+  // On what each SAID: a crash exits non-zero too.
   verdict(
     "the CLI reports rather than crashes",
     doctorSaid !== NO_MATCHING_LINE && listSaid !== NO_MATCHING_LINE,
@@ -539,7 +486,6 @@ async function journeyDeletedConfig(store: SeedConfigStore): Promise<void> {
   rmSync(home, { recursive: true, force: true });
 }
 
-/** Journey 33 — the namespace guards. */
 async function journeyNamespaceGuards(): Promise<void> {
   section("Journey 33 — an author's build refuses an id outside its namespace");
   const dir = mkdtempSync(path.join(tmpdir(), "handrun-j33-"));
@@ -580,7 +526,6 @@ async function journeyNamespaceGuards(): Promise<void> {
   rmSync(dir, { recursive: true, force: true });
 }
 
-/** Journeys 2 / 12 — a stack installs exactly its own roster, and the pair type-checks. */
 async function journeyStackRoster(store: SeedConfigStore): Promise<void> {
   section("Journeys 2 / 12 — a stack installs exactly its roster");
   const source = await createE2ESource();
@@ -599,7 +544,6 @@ async function journeyStackRoster(store: SeedConfigStore): Promise<void> {
   rmSync(home, { recursive: true, force: true });
 }
 
-/** Journeys 3 / 6 — a project over an existing global install, and a second project. */
 async function journeyProjectOverGlobal(store: SeedConfigStore): Promise<void> {
   section("Journeys 3 / 6 — a project over a global install, then a second project");
   const source = await createE2ESource();
@@ -635,7 +579,6 @@ async function journeyProjectOverGlobal(store: SeedConfigStore): Promise<void> {
   for (const d of [home, projA, projB]) rmSync(d, { recursive: true, force: true });
 }
 
-/** Journey 34 — a hand-authored skill is outside the round trip and survives it. */
 async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   section("Journey 34 — a hand-authored skill is not the round trip's to carry or remove");
   const source = await createE2ESource();
@@ -651,13 +594,10 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   );
 
   const postsBefore = store.requests.filter((request) => request.method === "POST").length;
-  // `edit --ui`, not `share`: the install is ejected, which `share` refuses by design, and both
-  // build the payload through `seedPayloadForInstallation`.
+  // `edit --ui`, not `share`, which refuses an ejected install.
   const shared = await runEditUi(store, { dir: home, globalHome: home });
-  // The PAYLOAD the store received, not the transcript: the mint prints a count and an
-  // id and never names a skill, so a grep of its output for one is false whatever the
-  // payload carried. `posted` is also the proof that a payload exists at all — with no
-  // POST, "it does not mention the skill" is true of nothing.
+  // The posted payload, not the transcript, which never names a skill; no POST would make
+  // "not carried" vacuous.
   const posted = store.requests.filter((request) => request.method === "POST").slice(postsBefore);
   const carried = posted.some((request) => request.body.includes(path.basename(mine)));
   note(`edit --ui exit ${shared.exitCode}`, `${posted.length} configuration(s) posted`);
@@ -670,7 +610,6 @@ async function journeyOwnershipBoundary(store: SeedConfigStore): Promise<void> {
   rmSync(home, { recursive: true, force: true });
 }
 
-/** Journeys 7 / 8 — a global edit propagates; a project edit stays contained. */
 async function journeyPropagation(store: SeedConfigStore): Promise<void> {
   section("Journeys 7 / 8 — propagation, and containment");
   const source = await createE2ESource();
@@ -702,7 +641,6 @@ async function journeyPropagation(store: SeedConfigStore): Promise<void> {
   for (const d of [home, proj]) rmSync(d, { recursive: true, force: true });
 }
 
-/** Journey 24 — a payload carrying an external skill's own bytes installs it. */
 async function journeyExternalSkills(store: SeedConfigStore, sourceDir: string): Promise<void> {
   section("Journey 24 — init --from carrying an external skill's own bytes");
   const posted = store.requests.filter((r) => r.method === "POST").map((r) => r.body);
@@ -749,7 +687,6 @@ async function journeyExternalSkills(store: SeedConfigStore, sourceDir: string):
   }
 }
 
-/** Journey 18 — the custom-marketplace arc: the source is stored and later commands resolve it. */
 async function journeyCustomMarketplaceArc(store: SeedConfigStore): Promise<void> {
   section("Journey 18 — a custom marketplace is stored and later commands resolve it");
   const source = await createE2ESource();
@@ -772,15 +709,8 @@ async function journeyCustomMarketplaceArc(store: SeedConfigStore): Promise<void
   rmSync(home, { recursive: true, force: true });
 }
 
-/**
- * Journey 21 — the marketplace-author arc: `doctor` over the repository, `build
- * plugins`, `build marketplace`, then an install from what was built.
- *
- * `doctor` runs three times on purpose. Twice in the repository, at either end of
- * the build, and once over the installation — it is the one command whose answer
- * must CHANGE between the two cwds, so the verdict names both directions rather
- * than only the one it happens to be standing in.
- */
+// doctor runs in the repository at both ends of the build and over the install: its answer must
+// differ by cwd.
 async function journeyMarketplaceAuthorArc(store: SeedConfigStore): Promise<void> {
   section("Journey 21 — the marketplace-author arc: doctor, build, publish, install");
   const source = await createE2ESource();
@@ -852,16 +782,7 @@ async function journeyMarketplaceAuthorArc(store: SeedConfigStore): Promise<void
   }
 }
 
-/**
- * Journey 29 — the share round trip. A real installation becomes an id, and that
- * id installs into a second directory that has never seen any of it.
- *
- * All four things the journey names are compared between the two ends — config,
- * skills directory, agents directory and per-agent curation — and then each end
- * is read at four-surface strength in its own right, which an
- * origin-against-rebuild comparison cannot do: two equally broken installations
- * satisfy every comparison here.
- */
+// Each end is also read at four-surface strength: two equally broken installs pass any comparison.
 async function journeyShareRoundTrip(store: SeedConfigStore): Promise<void> {
   section("Journey 29 — share turns an installation into an id, and the id rebuilds it elsewhere");
   const source = await createE2ESource();
@@ -871,8 +792,7 @@ async function journeyShareRoundTrip(store: SeedConfigStore): Promise<void> {
     const install = await installStackGlobally(store, origin, source.sourceDir);
     note(`the origin install exit ${install.exitCode}`);
 
-    // The origin is ejected, which `share` refuses by design, so the id comes from `edit --ui`,
-    // which builds the same payload through `seedPayloadForInstallation`.
+    // The origin is ejected, which `share` refuses, so the id comes from `edit --ui`.
     const refused = await runShare(store, { dir: origin, globalHome: origin });
     note(`share exit ${refused.exitCode}`, firstLine(refused.output, /cannot be shared/));
     verdict(
@@ -934,9 +854,7 @@ async function journeyShareRoundTrip(store: SeedConfigStore): Promise<void> {
       originAgentFiles.length > 0 && originAgentFiles === rebuiltAgentFiles,
     );
 
-    // Per-agent curation, read where it is decided rather than where it is
-    // declared: which skills each sub-agent got, and which of them are preloaded,
-    // is what the compiled body says.
+    // Curation is read from the compiled bodies, where it is decided.
     const originBodies = await readCompiledAgents(origin);
     const rebuiltBodies = await readCompiledAgents(rebuilt);
     const curationDiffers = Object.keys(originBodies).filter(
@@ -959,16 +877,7 @@ async function journeyShareRoundTrip(store: SeedConfigStore): Promise<void> {
   }
 }
 
-/**
- * Journey 35 — `build marketplace` emits a catalogue the browser can run on:
- * `catalog.json` beside `marketplace.json`, carrying only what this marketplace
- * ships.
- *
- * The emission has no flag, so an absent catalogue cannot mean an author who
- * chose not to publish one — it can only mean a marketplace that is broken. The
- * file is parsed with the editor's own schema, no transform in between, because
- * a catalogue the editor cannot read is the same as no catalogue.
- */
+// Parsed with the editor's own schema: a catalogue the editor cannot read is no catalogue.
 async function journeyCatalogueEmission(): Promise<void> {
   section("Journey 35 — build marketplace emits a catalogue beside the marketplace");
   const dir = mkdtempSync(path.join(tmpdir(), "handrun-j35-"));
@@ -1014,20 +923,7 @@ async function journeyCatalogueEmission(): Promise<void> {
   }
 }
 
-/**
- * Journey 36 — what an installation owns in a directory it shares.
- *
- * `~/.claude/skills/` and `~/.claude/agents/` are Claude Code's directories, and
- * everything else that installs into them is a neighbour. Which entries are this
- * installation's is one question two commands ask, and the claim is that they
- * answer it identically — `doctor` recommends `uninstall`, so a directory the
- * first names and the second declines would be an offer that is never kept.
- *
- * Both halves are driven here, against the same tree: a neighbour's skill
- * directory carrying no `forkedFrom`, and a hand-written agent file carrying no
- * provenance marker, beside a real install of both kinds. Showing one half alone
- * proves nothing about the agreement, which is the whole claim.
- */
+// doctor and uninstall must agree on what this install owns in a shared directory.
 async function journeySharedDirectoryOwnership(store: SeedConfigStore): Promise<void> {
   section("Journey 36 — doctor steps over what it cannot claim, and uninstall refuses the same");
   const source = await createE2ESource();
@@ -1092,23 +988,14 @@ async function journeySharedDirectoryOwnership(store: SeedConfigStore): Promise<
   }
 }
 
-/** The sub-agent every Codex journey and journey 79 installs. */
 const WEB_DEVELOPER = "web-developer";
 
-/**
- * The extension a compiled Codex role file carries, MIRRORED rather than imported.
- *
- * `agentCodec("codex").extension` is the product's own answer, and an assertion importing it
- * moves with it and can never fail — the rule `e2e/pages/constants.ts` states for every string
- * the product renders. A compile that started writing Claude's `.md` into `.codex/agents/` has to
- * redden here.
- */
+// Mirrored, not imported from `agentCodec("codex").extension`, so a change reddens here.
 const CODEX_ROLE_EXTENSION = ".toml";
 
-/** The prompt handed to the root agent. Its text decides nothing — the scenario does. */
+// Its text decides nothing; the mock scenario does.
 const CODEX_ANY_PROMPT = "make the change";
 
-/** One ejected skill and the sub-agent it is assigned to, both in the project. */
 const CODEX_PROJECT_PAYLOAD = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -1120,7 +1007,7 @@ const CODEX_PROJECT_PAYLOAD = buildSeedPayload({
   agents: { [WEB_DEVELOPER]: { on: true, scope: "project" } },
 });
 
-/** A scratch root holding a HOME and a project side by side, which Codex needs kept apart. */
+// HOME and project side by side: Codex needs them kept apart.
 function codexScratch(label: string): { root: string; home: string; project: string } {
   const root = mkdtempSync(path.join(tmpdir(), `handrun-${label}-`));
   const home = path.join(root, "home");
@@ -1130,16 +1017,9 @@ function codexScratch(label: string): { root: string; home: string; project: str
   return { root, home, project };
 }
 
-/** The id each half of the uninstall journey publishes its configuration under. */
 const CODEX_UNINSTALL_IDS = { claude: "HandBothC", codex: "HandBothX" };
 
-/**
- * One ejected skill at global scope with its sub-agent beside it, installable on either provider.
- *
- * Ejecting is deliberate rather than convenient: an eject needs no `claude` binary and no `codex
- * plugin add`, so both sides of the comparison below are this CLI's own writes and the result does
- * not depend on a host binary being on the machine.
- */
+// Ejected so neither provider's install needs a host binary.
 const GLOBAL_EJECT_PAYLOAD = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -1151,14 +1031,7 @@ const GLOBAL_EJECT_PAYLOAD = buildSeedPayload({
   agents: { [WEB_DEVELOPER]: { on: true, scope: "global" } },
 });
 
-/**
- * Every tree a Claude installation occupies under one HOME, as one comparable snapshot.
- *
- * Three rather than the source folder alone: the configuration pair, the ejected skills and the
- * compiled sub-agents are written by three different passes, and a mis-routed Codex uninstall
- * reaching any one of them is the whole subject. Each carries content AND mtime, so a rewrite
- * producing identical bytes is still visible.
- */
+// Config pair, ejected skills, compiled agents; content and mtime, so an identical rewrite shows.
 async function claudeTreeUnder(home: string): Promise<Record<string, TreeSnapshotEntry>> {
   const trees = await Promise.all(
     [
@@ -1175,25 +1048,7 @@ async function claudeTreeUnder(home: string): Promise<Record<string, TreeSnapsho
   return Object.fromEntries(trees.flat());
 }
 
-/**
- * Journeys 64 / 66 / 67 — one HOME holding both installations: `uninstall` refuses to guess, and
- * the flag it names takes the Codex one away without touching Claude.
- *
- * **The refusal and the selection are one claim and neither half means anything alone.** A
- * refusal naming a flag that selects nothing is worse than no refusal: the user reads the
- * sentence, types the flag, and the command refuses again or acts on whichever installation it was
- * going to act on anyway. So the run with no flag is here to be refused, and the run with it is
- * here to succeed.
- *
- * **What makes "Claude is untouched" a claim rather than a look**: the Claude tree is snapshotted
- * with content AND mtime before the Codex uninstall and compared afterwards. Content alone cannot
- * see a rewrite that produced identical bytes, which is what an unwanted recompile of an unchanged
- * config does — and an empty snapshot would satisfy the comparison on both sides, so the snapshot
- * is checked for being non-empty first.
- *
- * This is the journey the C7b unhide is FOR. The refusal below is the only place a user meets the
- * flag, and until C7b `--provider` was absent from every help screen the refusal sends them to.
- */
+// The refusal must name a flag that then works; neither half means anything alone.
 async function journeyCodexUninstallLeavesClaude(
   store: SeedConfigStore,
   sourceDir: string,
@@ -1235,8 +1090,6 @@ async function journeyCodexUninstallLeavesClaude(
         existsSync(path.join(home, CODEX_SOURCE_REL, FILES.CONFIG_TS)),
     );
 
-    // Content and mtime, so a rewrite producing identical bytes is still visible — and every tree
-    // a Claude installation occupies, not just its source folder.
     const claudeBefore = await claudeTreeUnder(home);
 
     const removed = await CLI.run(["uninstall", "--yes", ...PROVIDER_CODEX], at);
@@ -1249,8 +1102,7 @@ async function journeyCodexUninstallLeavesClaude(
     note("the Claude folder after", listDir(path.join(home, CLAUDE_SOURCE_REL)));
 
     const claudeAfter = await claudeTreeUnder(home);
-    // A subject guard, not decoration: two empty snapshots compare equal for free, so a run whose
-    // Claude install never landed would satisfy the comparison perfectly.
+    // Two empty snapshots compare equal, so the count must be non-zero.
     const claudeFileCount = Object.keys(claudeBefore).length;
     note("Claude files snapshotted before the Codex uninstall", String(claudeFileCount));
     verdict(
@@ -1266,29 +1118,8 @@ async function journeyCodexUninstallLeavesClaude(
 }
 
 /**
- * The two shared fixtures, built exactly as `e2e/global-setup.ts` builds them.
- *
- * This is not a convenience. `createE2EPluginSource()` called with no options RETURNS the shared
- * frozen tree rather than building one — that is the whole point of the fixture, and it is why 51
- * call sites stopped paying ~1.65s each. Nothing outside vitest runs `globalSetup`, so a hand-run
- * reached for a directory no one had built and journeys 5 / 17 died on
- * `Failed to add marketplace: Path does not exist: <tmp>/agents-inc-e2e-shared-fixtures/fixture`.
- *
- * The failure was invisible in the shape that matters: `attempt` catches it, prints COULD NOT RUN,
- * and the run still exits 0 — so a hand-run reporting a clean sweep had silently not exercised
- * plugin mode at all, which is the one install mode the other journeys never touch.
- *
- * Built here rather than in `scripts/handrun.mjs` because the builders are TypeScript and that
- * file is a plain bundler; putting them here keeps the two setups the same two calls in the same
- * order, so a fixture that gains a step gains it for both.
- *
- * **{@link installCodexOnPath} is the third call, and it is the same class of silent failure one
- * host over.** The product resolves the Codex binary BY NAME — `codex-host.ts` spawns `codex` with
- * no shell and no path — so a spawned `bin/run.js` finds whatever the child's PATH carries.
- * `globalSetup` writes that shim for the E2E suite, nothing outside vitest runs `globalSetup`, and
- * without it a Codex journey does not fail honestly: `init` reports the Codex CLI missing, every
- * assertion about a plugin becomes an assertion about this machine, and the hand-run prints a
- * transcript of a provider it never exercised.
+ * Does what `e2e/global-setup.ts` does, since nothing outside vitest runs it: without the shared
+ * tree plugin journeys die, and without the codex shim Codex journeys test this machine instead.
  */
 async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
   process.stdout.write("building the shared fixtures (plugin tree + plain tree)...\n");
@@ -1306,16 +1137,6 @@ async function withSharedFixtures(run: () => Promise<void>): Promise<void> {
   }
 }
 
-/**
- * Journeys 76 / 78 — a Codex PROJECT install through the binary, as a user who never edits their
- * own Codex config meets it.
- *
- * 76: the install trusts the project in the global Codex config itself and says so (CLI-893), and
- * the role file names no Claude model — so Codex offers the role, and a sub-agent can be spawned,
- * with no trust line written by hand.
- * 78: `uninstall` takes the role files away — CLI-896: the agent lister only knew `*.md`, so on
- * Codex it found no compiled role and left every one behind while saying it had removed them.
- */
 async function journeyCodexProjectInstallTrustsItself(
   store: SeedConfigStore,
   sourceDir: string,
@@ -1389,10 +1210,7 @@ async function journeyCodexProjectInstallTrustsItself(
   }
 }
 
-/**
- * A writing sub-agent at PROJECT scope on Claude — the one whose completion gate needs a trusted
- * folder.
- */
+// A writing sub-agent at project scope, whose completion gate needs a trusted folder.
 const CLAUDE_PROJECT_PAYLOAD = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -1404,14 +1222,7 @@ const CLAUDE_PROJECT_PAYLOAD = buildSeedPayload({
   agents: { [WEB_DEVELOPER]: { on: true, scope: "project" } },
 });
 
-/**
- * Journey 79 — a Claude project install says its sub-agents' completion gate needs the folder
- * trusted, and stops saying so once Claude Code's state file records the dialog as accepted.
- *
- * The control is a global install run from the home directory, which says nothing: there the
- * project agents directory IS `~/.claude/agents/`, which Claude Code trusts unconditionally. A
- * notice printed for every install with a writing sub-agent satisfies the first half too.
- */
+// The control: from HOME the project agents dir IS `~/.claude/agents/`, which Claude trusts.
 async function journeyClaudeFolderTrust(store: SeedConfigStore, sourceDir: string): Promise<void> {
   section("Journey 79 — a Claude project install says the folder must be trusted");
 
@@ -1445,7 +1256,6 @@ async function journeyClaudeFolderTrust(store: SeedConfigStore, sourceDir: strin
   }
 }
 
-/** Journey 79's control: a global install from the home directory, with no trust record at all. */
 async function journeyClaudeHomeNeedsNoTrust(
   store: SeedConfigStore,
   sourceDir: string,

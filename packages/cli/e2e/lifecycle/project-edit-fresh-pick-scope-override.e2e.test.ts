@@ -22,12 +22,9 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
- * A skill the global install does not carry, set up in a project over that install at project
- * scope: a REAL project install, so all three of its sides are asserted (the copied skill
- * directory, the project config entry, the compiled project agent carrying it) against a global
- * scope that must be byte-identical afterwards. The agent is moved to project scope in the same
- * run for that last one: a global agent can never carry a project-scoped skill, so without it
- * the project side has nowhere to be observed in compiled output.
+ * A skill the global install lacks, set up in a project at project scope: the project side
+ * (copied dir, config entry, compiled agent) is real and the global scope is unchanged. The agent
+ * moves to project scope too, since a global agent never carries a project-scoped skill.
  */
 
 describe("a fresh pick set up at project scope over a global install", () => {
@@ -55,8 +52,7 @@ describe("a fresh pick set up at project scope over a global install", () => {
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      // Phase A — global install WITHOUT vitest, so picking it later is a
-      // genuine addition rather than a re-selection of an inherited install.
+      // Without vitest, so picking it later is a genuine addition.
       await installFromSeed(
         store,
         "WithoutVitest1",
@@ -75,8 +71,6 @@ describe("a fresh pick set up at project scope over a global install", () => {
         "the global scope must hold compiled agents before the edit, or its unchanged-ness is vacuous",
       ).toBeGreaterThan(0);
 
-      // Phase B — set the project up over that global install, with the skill the
-      // global install lacks, and web-developer, in the project.
       await installFromSeed(
         store,
         "VitestInProject1",
@@ -87,7 +81,6 @@ describe("a fresh pick set up at project scope over a global install", () => {
         { dir: projectDir, home: fakeHome },
       );
 
-      // The project side is real: config entry, copied files, compiled agent.
       expect(
         await readSkillEntries(projectDir, E2E_SKILL.vitest.id),
         "the pick must be recorded at project scope only",
@@ -101,10 +94,7 @@ describe("a fresh pick set up at project scope over a global install", () => {
         { contains: [E2E_SKILL.vitest.id] },
       );
 
-      // The global side is untouched: no entry, no files, no rewritten agents.
-      // The global config's SKILLS are compared rather than its bytes — setting a
-      // project up registers its path in the global `projects` list, which is the
-      // one global write this flow owes and is asserted below.
+      // Skills compared, not bytes: registering the project in `projects` is the one global write.
       expect(
         await readAllSkillEntries(fakeHome),
         "a project-scoped pick must not reach the global config's skills",
@@ -122,10 +112,7 @@ describe("a fresh pick set up at project scope over a global install", () => {
         "setting a project up must register it globally — the one global write this flow owes",
       ).toContain(realpathSync(projectDir));
 
-      // Both scopes at four-surface strength. The run moved a skill and an agent across
-      // the boundary, so the generated pair on EACH side has to still narrow — a project that
-      // took the only skill of its category leaves the global unions to be regenerated without
-      // it, and that regeneration is where a union collapses unnoticed.
+      // A project taking its category's only skill regenerates the global unions without it.
       await expectFourSurfaces(projectDir, { globalHome: fakeHome });
       await expectFourSurfaces(fakeHome);
     },

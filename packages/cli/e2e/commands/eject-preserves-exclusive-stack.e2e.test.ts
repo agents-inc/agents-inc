@@ -25,36 +25,15 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import "../matchers/setup.js";
 
 /**
- * D-308 — a project's exclusive stack categories must survive a command that
- * rewrites `config.ts` for an unrelated reason.
- *
- * `eject skills` records the source it read from: it reads the project config
- * with the LENIENT loader, overlays `source`, and writes the result back through
- * `writeProjectPartial`. The lenient loader does not normalize stack values, and
- * the writer compacted every exclusive category to its BARE value on the previous
- * write — so on re-emit those categories fail the writer's `Array.isArray` test
- * and are dropped. The user asked to save a source and silently lost their stack.
- *
- * The install is a real one (`init --from`, the non-interactive install path), so
- * the config under test is the one the CLI itself wrote — the compact bare form
- * is the input the defect needs, and a hand-built fixture could not supply it
- * honestly.
- *
- * `web-framework` is exclusive in the matrix; `web-testing` is not. Asserting on
- * both means the failure reads as one missing KEY rather than as a stack that
- * disappeared wholesale.
+ * A project's exclusive stack categories survive `eject skills` rewriting config.ts to record its
+ * source. Installed by `init --from` so the config is in the compact bare form the CLI writes.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** Published id for the shared configuration the install is driven from. */
 const SHARED_CONFIG_ID = "Exclusiv";
 
-/**
- * The stack the install writes and the eject must leave alone: one exclusive
- * category (`web-framework`) and one non-exclusive one (`web-testing`), both
- * lazily assigned to the same sub-agent.
- */
+/** One exclusive and one non-exclusive category, so a loss reads as one missing key. */
 const EXPECTED_STACK = {
   "web-framework": [sa(E2E_SKILL.react.id)],
   "web-testing": [sa(E2E_SKILL.vitest.id)],
@@ -105,9 +84,7 @@ describe("eject preserves a project's exclusive stack categories", () => {
               assignments: { [WEB_DEV]: "lazy" },
             }),
           },
-          // The stack under test is the PROJECT's, so the sub-agent holding it has to be pinned
-          // there: a payload naming no agent scope takes the shared selection default and the
-          // sub-agent — with its stack — lands in the user's own ~/.claude instead.
+          // Pinned to the project, or the sub-agent and its stack land in ~/.claude.
           agents: { [WEB_DEV]: { scope: "project" } },
         }),
       );
@@ -115,8 +92,7 @@ describe("eject preserves a project's exclusive stack categories", () => {
       const install = await runInitFrom(store, SHARED_CONFIG_ID, project, sourceDir);
       expect(install.exitCode, `install failed: ${install.output}`).toBe(EXIT_CODES.SUCCESS);
 
-      // Pre-conditions: the install really produced the exclusive category, and
-      // really wrote it in the compact bare form the defect feeds on.
+      // Pre-conditions: the exclusive category is there, in the bare form.
       expect(
         (await loadConfigOrFail(env.projectDir)).stack?.[WEB_DEV],
         "the install must record both stack categories",
@@ -126,7 +102,7 @@ describe("eject preserves a project's exclusive stack categories", () => {
         "the writer must emit the exclusive category in its bare, array-less form",
       ).toMatch(BARE_EXCLUSIVE_ENTRY);
 
-      // No source override: `eject` reads the source this install recorded at `init` time.
+      // No source override: `eject` reads the source `init` recorded.
       const eject = await CLI.run(["eject", "skills"], project);
       expect(eject.exitCode, `eject failed: ${eject.output}`).toBe(EXIT_CODES.SUCCESS);
 
@@ -135,7 +111,6 @@ describe("eject preserves a project's exclusive stack categories", () => {
         "recording a source must not drop the exclusive stack category",
       ).toStrictEqual(EXPECTED_STACK);
 
-      // ...and the config the eject rewrote is still a config a user can compile.
       const typecheck = await typecheckGeneratedConfig(path.dirname(configTsPath(env.projectDir)));
       expect(
         typecheck.exitCode,

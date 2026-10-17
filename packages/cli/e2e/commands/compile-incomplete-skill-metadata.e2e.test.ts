@@ -19,25 +19,13 @@ import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * An installed skill whose `metadata.yaml` parses but leaves out a field the skill
- * is described by is a hard error under `compile`, exactly like one that cannot be
- * parsed at all: the command exits naming WHICH skill is wrong and WHICH fields are
- * missing, and writes nothing.
- *
- * The state it replaces: one pass loaded what the other skipped. `compile`'s skill
- * discovery read the file only far enough to know it parsed, while the
- * `config-types.ts` regeneration pass in the same run validated it, failed, and
- * skipped the same skill — one run printing `Loaded skill: X` and
- * `Skipping local skill 'X'` about the same file, exiting 0. `compile`'s half of the
- * unparseable class is `compile-malformed-skill-metadata.e2e.test.ts`; this is the
- * same contract one strictness level up.
+ * A metadata.yaml missing a required field is a hard `compile` error naming the skill and field;
+ * nothing is written.
  */
 
-/** Installed into the fixture project. Only the second one loses a field. */
 const HEALTHY_SKILL: string = E2E_SKILL.react.id;
 const INCOMPLETE_SKILL: string = E2E_SKILL.vitest.id;
 
-/** The required field this spec takes away — named in the refusal it must produce. */
 const OMITTED_FIELD = "category";
 
 type Fixture = {
@@ -59,7 +47,6 @@ async function seedInstalledProject(): Promise<Fixture> {
   };
 }
 
-/** Overwrites the skill's metadata.yaml with one complete but for {@link OMITTED_FIELD}. */
 async function stripRequiredField(fixture: Fixture): Promise<void> {
   await writeFile(
     fixture.metadataPath,
@@ -98,10 +85,8 @@ describe("compile with an incomplete skill metadata.yaml", () => {
     );
     expect(combined, "the offending skill must be named").toContain(INCOMPLETE_SKILL);
     expect(combined, "the offending file must be named").toContain(fixture.metadataPath);
-    // Flattened, not shortened: oclif wraps the refusal at the terminal width and
-    // prefixes each continuation with ` ›  `, so this sentence straddles a line break.
-    // A shorter fragment would move the brittleness rather than remove it — it would
-    // also pass on a message that had been truncated.
+    // Flattened, not shortened: oclif wraps with ` › `, and a shorter fragment would also pass on a
+    // truncated message.
     expect(
       flattenCliOutput(combined),
       "the refusal must say what is wrong with the file",

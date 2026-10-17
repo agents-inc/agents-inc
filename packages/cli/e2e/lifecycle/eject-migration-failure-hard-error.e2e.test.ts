@@ -25,50 +25,9 @@ import {
 import "../matchers/setup.js";
 
 /**
- * The eject half of the contract `plugin-install-failure-hard-error.e2e.test.ts` pins for
- * the plugin half: a mode migration that could NOT do the work the user asked for must
- * refuse to record it.
- *
- * Pre-fix, `executeMigration` pushed `Could not copy skills for eject: …` into `warnings`
- * and `applyMigrations` only LOGGED them, so `writeConfigAndCompile` went on to write
- * `origin: "eject"` rows for skills that never copied — the orphan-entry state CLAUDE.md
- * already rules out for the plugin direction — and the command exited 0. The config write
- * itself had the same shape one layer down: a `writeProjectConfig` throw became
- * `Could not update config: …` and the run continued into the agent recompile, leaving the
- * plugin registry, `config.ts` and `.claude/agents/` mutually inconsistent behind a success
- * banner.
- *
- * WHICH ASSERTION CARRIES THE RED, and how each was watched go red.
- *
- *  - Test one: the exit code, pre-fix and under a `this.warn` in place of the hard-error.
- *    The exit code is NOT the assertion that matters, though — a fix that errors and still
- *    lets the write happen satisfies it. The config pair was watched separately, with the
- *    exit assertion temporarily removed so the run reached it: pre-fix `config.ts` held
- *    `origin: 'eject'` for the skill whose copy the destination had refused, which is the
- *    orphan row this spec exists for.
- *  - Test two: the exit code under a `this.warn`, and — the more informative one — the
- *    `Could not update config` assertion when the skills directory is locked as well. That
- *    mutation still exits 1, for a failure one step earlier, so the exit code alone cannot
- *    tell this test's subject from the previous test's. `toHaveSkillCopied` is the proof
- *    that the run reached the config write at all.
- *  - Test three: the `not.toContain` on the copy wording. That run SUCCEEDS both before and
- *    after and only the sentence changes, so nothing else here can carry it.
- *
- * WHY THE INSTALLED COPY IS DELETED BEFORE EACH RUN, and why that is not a tidy-up.
- * `ProjectBuilder.pluginProject` writes a directory under `.claude/skills/<id>` for every
- * skill it declares, but a genuinely plugin-installed skill has no copy there
- * (`e2e/fixtures/plugin-install-state.ts`: "Plugin mode never copies skills into
- * `.claude/skills/`"). Left in place it is ALSO the destination the eject migration resolves,
- * so `copySkillsToLocalFlattened` takes its source-equals-destination shortcut and performs
- * no write at all. Measured: with the `rm` disabled, test one exits 0 against the fixed
- * binary — the read-only destination is never touched, and the whole spec is vacuous.
- *
- * The lever is a read-only directory, as in `commands/eject.e2e.test.ts`. It is a no-op for
- * a run as root, where the failures these tests assert on cannot be provoked; the exit-code
- * assertions are what would report that, rather than the spec passing quietly.
- *
- * No Claude CLI required: `executeMigration` copies before it attempts the plugin uninstall,
- * and the uninstall is diagnostic-only.
+ * A migration to eject that cannot copy (or cannot write config) must hard-error before recording
+ * `origin: "eject"` rows: the eject half of plugin-install-failure-hard-error. The lever is a
+ * read-only directory, a no-op under root.
  */
 
 /** Denies the write bit while leaving the directory readable and traversable. */
@@ -79,23 +38,16 @@ const WRITABLE_DIR = 0o755;
 /** The binary `claudePluginUninstall` spawns by name, which the case below must not find. */
 const CLAUDE_BINARY = "claude";
 
-/** The installation's own configuration with its one skill ejected rather than a plugin. */
 const REACT_EJECTED_ID = "EjctFal1";
 
 describe("an eject migration that could not do its work must not report success", () => {
   let source: E2ESource;
   let store: SeedConfigStore;
   let lockedDirs: string[] = [];
-  /** Holds the directory `node` is linked into, outside every project. */
   let nodeLinkRoot: string;
   /**
-   * A PATH carrying node and the standard bin directories but deliberately no `claude`, so
-   * `claudePluginUninstall` fails with `spawn claude ENOENT`.
-   *
-   * `node` is linked into a directory of its own rather than named by the directory it runs
-   * from. That directory is where `npm install -g @anthropic-ai/claude-code` puts `claude`, so
-   * naming it handed the binary back on exactly the machines that have it. `/usr/bin` and `/bin`
-   * are the machine's own, so the case asserts the absence rather than trusting the construction.
+   * PATH with node and system bins but no `claude`, so `claudePluginUninstall` fails with ENOENT.
+   * `node` is linked into its own dir because its install dir often holds `claude` too.
    */
   let pathWithoutClaude: string;
 
@@ -133,7 +85,10 @@ describe("an eject migration that could not do its work must not report success"
     lockedDirs = [];
   });
 
-  /** Builds a plugin-mode install whose skill has no local copy, as a real plugin install has. */
+  /**
+   * A real plugin install has no `.claude/skills/` copy. Left in place, that copy is the eject
+   * destination, so the migration writes nothing and the spec is vacuous.
+   */
   async function pluginInstallWithNoLocalCopy(): Promise<{ dir: string }> {
     const project = await ProjectBuilder.pluginProject({
       skills: [E2E_SKILL.react.id],
@@ -146,10 +101,7 @@ describe("an eject migration that could not do its work must not report success"
     return project;
   }
 
-  /**
-   * Applies the configuration that ejects the installation's one skill, under a HOME of its own
-   * — the project's parent, which holds no installation — so the run is a project one.
-   */
+  /** Ejects the one skill under a HOME holding no installation, so the run is a project one. */
   function switchToLocal(
     project: { dir: string },
     env?: Record<string, string>,
@@ -178,8 +130,7 @@ describe("an eject migration that could not do its work must not report success"
       expect(output).toContain("Eject intent could not be honored");
       expect(output).toContain(E2E_SKILL.react.id);
 
-      // The half an exit-code-only assertion cannot see: a fix that errors but still lets
-      // the write happen leaves config.ts claiming a local copy that is not on disk.
+      // A fix that errors but still writes would leave config.ts claiming a missing copy.
       await expect(project).toHaveConfig({
         skillIds: [E2E_SKILL.react.id],
         origin: E2E_MARKETPLACE_NAME,
@@ -205,8 +156,7 @@ describe("an eject migration that could not do its work must not report success"
       expect(result.exitCode, result.output).toBe(EXIT_CODES.ERROR);
       expect(result.output).toContain("Could not update config");
 
-      // Proof of execution: the migration itself succeeded, so the run reached the config
-      // write rather than failing earlier for the reason the first test covers.
+      // Proof the run reached the config write rather than failing earlier.
       await expect(project).toHaveSkillCopied(E2E_SKILL.react.id);
     },
   );
@@ -227,8 +177,7 @@ describe("an eject migration that could not do its work must not report success"
       expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
       const output = result.output;
-      // The subject guard for the negative below: the copy pass ran and reported its count,
-      // so a sentence about copying failing would be a claim about work that succeeded.
+      // Subject guard: the copy pass ran and reported its count.
       expect(output).toContain(
         `${STEP_TEXT.COPIED_LOCAL_SKILLS_PREFIX} 1 ${STEP_TEXT.COPIED_LOCAL_SKILLS_SUFFIX}`,
       );

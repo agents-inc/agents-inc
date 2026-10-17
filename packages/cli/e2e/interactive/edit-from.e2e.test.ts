@@ -49,33 +49,19 @@ import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 
 /**
- * `edit --from <id>` with somebody at the terminal.
- *
- * The command applies a shared configuration DESTRUCTIVELY: the project is made to match the
- * payload, so a skill the previous configuration installed and this one omits is removed. The
- * removals are shown and confirmed first, and two kinds of entry are shown as KEPT instead — one
- * written here, which no shared configuration ever carried, and one this configuration NAMES that
- * the catalogue cannot place, because a destructive command removes on intent and never on its
- * own inability. A globally installed entry is a third kind, and is not removed at all: from a
- * project, `--from` never removes or changes anything global, so the plan names a global skill the
- * configuration leaves out as kept, and the global install is left byte-identical.
- *
- * Every spec drives the real binary through a PTY, because the confirm is an Ink prompt and a
- * spawned process without one refuses (see `e2e/commands/edit-from.e2e.test.ts`).
+ * `edit --from` at a terminal applies destructively after a confirm: omitted skills are removed,
+ * but a skill written here or one named but unplaceable is kept, and from a project nothing global
+ * is removed. Driven through a PTY: without one the command refuses
+ * (`e2e/commands/edit-from.e2e.test.ts`).
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 const APPLY_ID = "EditFromY1";
 
-/**
- * A real public-catalogue id the E2E source does not carry, recorded in the install with no
- * files written for it. The decode skips it, so a configuration naming it asks for a skill this
- * catalogue has no way to place.
- */
+/** Recorded with no files: the decode skips it, so the catalogue cannot place it. */
 const UNPLACEABLE_SKILL = "web-styling-tailwind";
 
-/** The installed row of a sub-agent whose only skill is the one above. */
 const UNPLACEABLE_ROWS = { "web-styling": [sa(UNPLACEABLE_SKILL)] };
 
 describe("edit --from <id> interactive", () => {
@@ -102,10 +88,7 @@ describe("edit --from <id> interactive", () => {
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /**
-   * An installed project. Both of its skills carry fork provenance by default, so the round
-   * trip owns them and nothing is excused from removal unless a spec says so.
-   */
+  /** Both skills carry fork provenance, so the round trip owns them. */
   async function takeProject(
     overrides?: Parameters<typeof ProjectBuilder.editable>[0],
   ): Promise<string> {
@@ -121,7 +104,7 @@ describe("edit --from <id> interactive", () => {
     return project.dir;
   }
 
-  /** A configuration naming React alone — so Vitest is what applying it takes away. */
+  /** Names React alone, so applying it removes Vitest. */
   function publishReactOnly(id: string): void {
     store.publish(
       id,
@@ -137,7 +120,6 @@ describe("edit --from <id> interactive", () => {
     );
   }
 
-  /** The same configuration, naming one more id this catalogue has no way to place. */
   function publishReactAndUnplaceable(id: string): void {
     store.publish(
       id,
@@ -157,14 +139,12 @@ describe("edit --from <id> interactive", () => {
     );
   }
 
-  /** Starts `edit --from <id>` in a real terminal, against the stub store. */
   function launch(id: string, projectDir: string, env?: Record<string, string>): InteractivePrompt {
     return new InteractivePrompt(["edit", "--from", id], projectDir, {
       env: { AGENTS_INC_API_URL: store.url, ...env },
     });
   }
 
-  /** Everything a run could write into the global install at `home`: its configs and its content. */
   function snapshotGlobalTree(home: string): Promise<Record<string, TreeSnapshotEntry>[]> {
     return Promise.all([sourceFolderIn(home), path.join(home, DIRS.CLAUDE)].map(readTreeSnapshot));
   }
@@ -178,11 +158,10 @@ describe("edit --from <id> interactive", () => {
       await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW, TIMEOUTS.WIZARD_LOAD);
 
       const output = prompt.getOutput();
-      // Named, not counted: the id is the only thing a user can weigh a yes against.
+      // Named, not counted: the id is what a user weighs a yes against.
       expect(output).toContain(E2E_SKILL.vitest.display);
       expect(output).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
-      // The plan precedes every mutation, so the skill it names is still on disk while it is
-      // being named. A preview printed after the delete is a report, not a confirm.
+      // The plan precedes every mutation: the named skill is still on disk.
       expect(await listFiles(skillsPath(projectDir))).toContain(E2E_SKILL.vitest.id);
     });
 
@@ -196,8 +175,7 @@ describe("edit --from <id> interactive", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-      // Both surfaces, because either alone can look right while the other lies: a config entry
-      // for a deleted directory, or a directory nothing declares.
+      // Both surfaces: either alone can look right.
       const config = await loadConfigOrFail(projectDir);
       expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
       expect(await listFiles(skillsPath(projectDir))).toStrictEqual([E2E_SKILL.react.id]);
@@ -216,8 +194,7 @@ describe("edit --from <id> interactive", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode).toBe(EXIT_CODES.CANCELLED);
-      // Not "the skill survived" — nothing at all moved. A decline that rewrote config.ts or
-      // recompiled an agent would still be a change the user refused.
+      // Nothing at all moved: a decline must not rewrite config.ts or recompile.
       expect(await readTreeSnapshot(projectDir)).toStrictEqual(before);
     });
   });
@@ -228,8 +205,7 @@ describe("edit --from <id> interactive", () => {
         skills: [E2E_SKILL.react.id],
         globalSkills: [E2E_SKILL.vitest.id],
       });
-      // The global install the project's global row describes: its copy of the skill on disk, and
-      // its config, so there is a global tree for "byte-identical" to be about.
+      // A global tree, so "byte-identical" is about something.
       const home = path.join(path.dirname(projectDir), "home");
       await writeProjectConfig(
         home,
@@ -257,8 +233,7 @@ describe("edit --from <id> interactive", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-      // The question matched before the answer is the positive subject guard for these
-      // negatives: the plan was on screen, and a project run adds nothing to the global install.
+      // The question is the subject guard: the plan was on screen.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
       expect(
         planned,
@@ -268,8 +243,7 @@ describe("edit --from <id> interactive", () => {
         planned,
         "nothing is removed here, so the plan must not open by promising removals",
       ).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
-      // The configuration leaves the global skill out and the run keeps it. "Nothing is removed"
-      // with no name under it reads as the configuration arriving whole.
+      // "Nothing is removed" with no name under it reads as the configuration arriving whole.
       expect(
         planned,
         "a project apply must name the global skill it keeps though the configuration leaves it out",
@@ -288,9 +262,7 @@ describe("edit --from <id> interactive", () => {
   describe("what it discloses instead of removing", () => {
     it("keeps a skill written here, which the round trip never carried", async () => {
       const projectDir = await takeProject();
-      // The one difference that decides ownership: a directory the CLI wrote carries
-      // `forkedFrom`, and one a person wrote carries none. `edit --ui` drops this skill from the
-      // payload for exactly that reason, so the payload made no statement about it.
+      // Ownership is `forkedFrom`: a CLI-written directory carries it, a hand-written one does not.
       await writeFile(
         path.join(skillsPath(projectDir), E2E_SKILL.vitest.id, FILES.METADATA_YAML),
         renderMetadataYaml({
@@ -312,8 +284,7 @@ describe("edit --from <id> interactive", () => {
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_AUTHORED);
-      // Both surfaces again, and this is the one the ruling is about: the user's own work
-      // survives a destructive apply that never mentioned it.
+      // The user's own work survives a destructive apply that never mentioned it.
       expect(await listFiles(skillsPath(projectDir))).toStrictEqual(
         [E2E_SKILL.react.id, E2E_SKILL.vitest.id].sort(),
       );
@@ -324,9 +295,8 @@ describe("edit --from <id> interactive", () => {
     });
 
     it("keeps a skill it names that this catalogue cannot place", async () => {
-      // The install records an id this source does not carry and wrote no files for, so the
-      // decode skips it — while the payload NAMES it, which is what makes the skip this
-      // catalogue's limit rather than an instruction to delete anything.
+      // Recorded with no files, so the decode skips it while the payload names it: the catalogue's
+      // limit, not a deletion order.
       const projectDir = await takeProject({ unresolvableSkills: [UNPLACEABLE_SKILL] });
       publishReactAndUnplaceable(APPLY_ID);
 
@@ -337,14 +307,12 @@ describe("edit --from <id> interactive", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-      // Disclosed with the remedy, because a line that only says it stayed leaves the user with
-      // a configuration that silently did less than it said.
+      // Disclosed with the remedy, or the configuration silently did less than it said.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE);
       expect(planned).toContain(UNPLACEABLE_SKILL);
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE_REMEDY);
 
-      // The run still removes what the configuration really left out, so this is a rewrite the
-      // kept entry has to survive rather than a no-change pass that could not have lost it.
+      // The run still removes what was left out, so the kept entry survives a real rewrite.
       expect(
         prompt.getOutput(),
         "a skill this run merely failed to place must never be reported as removed",
@@ -368,8 +336,8 @@ describe("edit --from <id> interactive", () => {
           [API_DEV]: UNPLACEABLE_ROWS,
         },
       });
-      // Both sub-agents named with no `on`, as the editor mints them, so each is carried in by
-      // its skills alone — and the second one's only skill is the id the decode skips.
+      // No `on`, as the editor mints them, so each comes in by its skills; the second's only skill
+      // is the skipped id.
       store.publish(
         APPLY_ID,
         buildSeedPayload({
@@ -394,8 +362,7 @@ describe("edit --from <id> interactive", () => {
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
       expect(exitCode, `apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-      // The subject guard: the skip was read as a skill kept, and Vitest really was removed, so
-      // this is a destructive rewrite the sub-agent has to survive.
+      // Subject guard: the skip read as kept and Vitest really was removed.
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_KEPT_UNPLACEABLE);
       expect(planned).toContain(STEP_TEXT.SHARED_CONFIG_APPLY_PREVIEW);
       const config = await loadConfigOrFail(projectDir);
@@ -409,17 +376,9 @@ describe("edit --from <id> interactive", () => {
   });
 
   /**
-   * The re-apply, which is the whole reason the collision guard carves anything out at all.
-   *
-   * `edit --from` applies destructively over an existing install, so a skill a shared
-   * configuration CARRIED is met again on the next apply — seated in the matrix by the local-skill
-   * merge, and standing on disk at the id the payload is about to write. Refusing either would
-   * make a shared configuration installable exactly once, and until this leg landed the carve-out
-   * that prevents it was held by a unit spec alone.
-   *
-   * Installed by `init --from` rather than by a fixture: the provenance the guard reads is
-   * `forkedFrom.path`, which only the real installer writes, and a fixture told to stamp it
-   * agrees with whatever the installer does.
+   * A carried skill is met again on the next apply, so refusing it would make a shared
+   * configuration installable once. Installed by `init --from`: only the installer writes the
+   * `forkedFrom.path` the guard reads.
    */
   describe("re-applying a configuration that carries its own skill", () => {
     const CARRIED_ID = "external-web-tooling-brainstorming";
@@ -432,8 +391,7 @@ describe("edit --from <id> interactive", () => {
     const REVISED_DESCRIPTION = "Revised upstream brainstorming";
 
     /**
-     * The same configuration both times: one catalogue skill, and one it brings with it — described
-     * in its SKILL.md and on the payload by the same sentence, as the editor mints it.
+     * One catalogue skill and one carried skill, described identically in SKILL.md and the payload.
      */
     function publishCarrying(
       id: string,
@@ -477,9 +435,7 @@ describe("edit --from <id> interactive", () => {
         const installed = await runInitFrom(store, CARRIED_ID_FIRST, project, sourceDir);
         expect(installed.exitCode, `install failed: ${installed.output}`).toBe(EXIT_CODES.SUCCESS);
 
-        // The same id, re-served with the skill's bytes revised — which is what a sharer who
-        // edited their own skill and re-shared produces, and the only way to tell a second write
-        // from a seat that quietly did nothing.
+        // Re-served with revised bytes, so a second write is distinguishable from a no-op.
         publishCarrying(CARRIED_ID_FIRST, REVISED_DESCRIPTION);
 
         prompt = new InteractivePrompt(["edit", "--from", CARRIED_ID_FIRST], project.dir, {
@@ -490,8 +446,7 @@ describe("edit --from <id> interactive", () => {
         const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
         expect(exitCode, `re-apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-        // Both surfaces: a config entry for a directory nothing wrote, and a directory nothing
-        // declares, are each half of the same lie.
+        // Both surfaces: either alone can look right.
         const config = await loadConfigOrFail(project.dir);
         expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual(
           [E2E_SKILL.react.id, CARRIED_ID].sort(),
@@ -504,8 +459,7 @@ describe("edit --from <id> interactive", () => {
         expect(await readTestFile(path.join(carriedDir, FILES.SKILL_MD))).toContain(
           REVISED_DESCRIPTION,
         );
-        // And the provenance the guard reads is still there afterwards, or the apply after this
-        // one refuses what this one allowed.
+        // Provenance must survive, or the next apply refuses what this one allowed.
         expect(await readTestFile(path.join(carriedDir, FILES.METADATA_YAML))).toContain(
           `path: ${buildSeedExternalSkill().path}`,
         );
@@ -535,7 +489,7 @@ describe("edit --from <id> interactive", () => {
         const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
         expect(exitCode, `re-apply failed: ${prompt.getOutput()}`).toBe(EXIT_CODES.SUCCESS);
-        // The subject guard: the skill's own files did change.
+        // Subject guard: the skill's own files did change.
         expect(
           await readTestFile(path.join(skillsPath(project.dir), CARRIED_ID, FILES.SKILL_MD)),
         ).toContain(REVISED_DESCRIPTION);
@@ -575,7 +529,7 @@ describe("edit --from <id> interactive", () => {
             env: { AGENTS_INC_API_URL: store.url, HOME: project.globalHome },
           });
 
-        // The control: the global copy reads as the configuration states it, so nothing is named.
+        // Control: the global copy matches the configuration, so nothing is named.
         prompt = launchHere();
         await prompt.waitForText(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM, TIMEOUTS.WIZARD_LOAD);
         expect(prompt.getOutput()).not.toMatch(namedAsKept);

@@ -32,58 +32,25 @@ import {
 import { EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * What a Codex compile WRITES: sixteen of the eighteen shipped sub-agents as agent ROLE
- * DEFINITION files, the two summoners absent, and one line saying why.
- *
- * **Every claim here is paired with a Claude control in the same file**, because a refusal on its
- * own cannot tell a correctly-scoped filter from one that has swallowed its whole domain. A
- * payload naming three sub-agents compiles three `.md` files on Claude and one `.toml` on Codex;
- * without the Claude leg, a Codex compile that dropped everything reads exactly the same.
- *
- * **The roster is asserted by MEMBER, never by count.** `toHaveLength(1)` cannot see a swap — drop
- * `web-developer` and keep `skill-summoner` and the count is unchanged while the result is exactly
- * backwards, which is the failure this file exists to catch.
- *
- * **The file EXTENSION is part of the claim.** Until C5 there was no Codex renderer at all, and
- * the defect the guard existed against was `web-developer.md` — Claude's own format — written into
- * `.codex/agents/` by a compile that then reported success. Codex ignores such a file, nothing can
- * recognise it as ours again, and the run exits 0. So the assertions read filenames rather than
- * counting entries.
- *
- * **Why both summoners in one payload and one line for both.** All seventeen shipped stacks list
- * both, so the drop line fires on every Codex install; printed once per agent it would be two
- * lines on every install forever, and printed once per stack it would be seventeen. The spec pins
- * that exactly ONE line of the run's output names either of them, and that it names both.
- *
- * Written before the Codex agent renderer existed. Red on an empty `.codex/agents` and on the
- * absent drop line.
+ * A Codex compile writes sixteen of the eighteen sub-agents as `.toml` role files, leaves the two
+ * summoners out, and says so on ONE line. Every claim pairs with a Claude control; rosters are
+ * asserted by member and extension.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** The two the owner ruled out of v1, and the one that stays — the whole subject in one payload. */
+/** The two left out of v1, and the one that stays. */
 const AGENTS_IN_PLAY = [WEB_DEV, ...CODEX_AGENTS_LEFT_OUT] as const;
 
-/** A sub-agent entry keeping its agent in the project, so scope is not a second variable. */
+// Pinned to the project so scope is not a second variable.
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/**
- * A reasoning effort no shipped sub-agent declares, which is why a payload has to set it.
- *
- * `high` rather than `xhigh` or `max` for no reason beyond being the middle of the five: all five
- * of this product's levels were put through the pinned binary's role deserializer and every one
- * registered, so which is chosen here is not a claim — `agent-role-toml.test.ts` is where the
- * roster is covered by member.
- */
+/** No shipped sub-agent declares an effort, so the payload sets one; which level is not a claim. */
 const TUNED_EFFORT = "high";
 
-/**
- * A model set on the sub-agent's entry. `sonnet` rather than `opus`, which every bundled agent
- * declares, so the Claude control proves the CONFIGURED value arrived rather than a default.
- */
+/** Not `opus`, which every bundled agent declares, so the control proves the configured value. */
 const CONFIGURED_MODEL = "sonnet";
 
-/** The role file each compiled sub-agent lands in, on each host. */
 function claudeAgentFiles(agents: readonly string[]): string[] {
   return agents.map((agent) => `${agent}.md`).sort();
 }
@@ -113,7 +80,7 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
     env = undefined;
   });
 
-  /** One payload naming all three sub-agents, ejecting its skill so no host binary is needed. */
+  /** Ejects its skill so no host binary is needed. */
   function publishThreeAgents(id: string): void {
     store.publish(
       id,
@@ -198,13 +165,8 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
       const said = flattenCliOutput(output);
       expect(exitCode, said).toBe(EXIT_CODES.SUCCESS);
 
-      // ONE line says why Codex leaves them out. Counted on the raw output, because
-      // `flattenCliOutput` collapses every run of whitespace and leaves nothing to count lines
-      // with. Seventeen shipped stacks list both summoners and every Codex install drops them, so
-      // "once per stack" would be seventeen lines and "once per agent" two — on every install,
-      // forever. Only the lines that name Codex are counted: the list every `--from` install
-      // prints before it writes names each sub-agent the configuration carries, these two
-      // included, and that list is a statement about the configuration rather than about Codex.
+      // Counted on the raw output: `flattenCliOutput` collapses the line breaks. Only lines naming
+      // Codex count, since the pre-install roster list names both summoners too.
       const linesSayingCodexLeavesThemOut = stripAnsi(output)
         .split("\n")
         .filter(
@@ -217,7 +179,6 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
         linesSayingCodexLeavesThemOut,
         "the sub-agents Codex leaves out are reported on more than one line",
       ).toHaveLength(1);
-      // Both names, on that one line, so it covers both agents rather than one of them.
       for (const summoner of CODEX_AGENTS_LEFT_OUT) {
         expect(linesSayingCodexLeavesThemOut[0]).toContain(summoner);
       }
@@ -259,12 +220,10 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
       );
       expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
 
-      // The half-routed path this whole funnel exists against: Claude's own format, in Codex's
-      // agents directory, reported as a successful compile.
+      // Claude's own format in Codex's agents directory, reported as success, is the defect.
       const everyRoleFile = await listFiles(codexProjectAgentsDir(env.projectDir));
 
-      // Subject guard, and it is the whole test: "no .md file" is satisfied for free by a compile
-      // that wrote nothing at all, which is exactly the state this spec was written against.
+      // "No .md file" is satisfied for free by a compile that wrote nothing.
       expect(
         everyRoleFile.sort(),
         "the compile wrote no role file at all, so the absence below proves nothing",
@@ -314,20 +273,9 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
   );
 
   /**
-   * The per-agent reasoning effort a shared configuration carries reaches the role file.
-   *
-   * **It is a whole-chain claim and nothing else covers the chain.** The renderer is unit-tested
-   * in `@workspace/compile` and `resolver.ts` is unit-tested for preferring the config's effort
-   * over the definition's, but nothing joined the two — and the defect this replaces was exactly
-   * a join: `effort` was dropped on the floor between an `AgentConfig` that carried it and a role
-   * file that never mentioned it, so an install rendered byte-identically whatever the user asked
-   * for. No shipped sub-agent declares an effort, so only a payload that sets one can ask this at
-   * all.
-   *
-   * **The lines are compared as MEMBERS of the file's line list, not with `toContain` on the
-   * text.** `model_reasoning_effort = "high"` has `effort = "high"` inside it, so a substring
-   * check for the forbidden spelling can never fail — and that spelling is the one Codex answers
-   * with `unknown field \`effort\``, dropping the whole file and the sub-agent with it.
+   * A configured per-agent effort reaches the role file, a chain nothing else covers. Lines are
+   * compared as members: `model_reasoning_effort = "high"` contains `effort = "high"`, the spelling
+   * Codex refuses.
    */
   it(
     "carries a configured effort into the role file, under the key Codex accepts",
@@ -402,17 +350,14 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
         "no Claude agent was compiled, so nothing below is a measurement",
       ).toBeDefined();
 
-      // Claude's own spelling, in the frontmatter block — the same value under a different key is
-      // the whole of what the Codex renderer translates.
+      // The same value under Claude's key, which is all the Codex renderer translates.
       expect((agent ?? "").split("\n")).toContain(`effort: ${TUNED_EFFORT}`);
     },
   );
 
   /**
-   * A role naming a Claude model registers on Codex and then cannot be spawned (real ChatGPT
-   * subscription, codex-cli 0.157.1, 2026-09-26: `The 'opus' model is not supported when using
-   * Codex with a ChatGPT account.`). The payload sets only a Claude model; the Claude case below is
-   * the control that it arrived.
+   * A role naming a Claude model registers on Codex but cannot be spawned. The Claude case below is
+   * the control that the model arrived.
    */
   it(
     "writes no Claude model into the role file, even one the configuration set",
@@ -464,7 +409,7 @@ describe("a Codex compile writes sixteen of the eighteen sub-agents", () => {
     },
   );
 
-  /** One sub-agent whose entry SETS a model, so a renderer that passes it through has one to pass. */
+  /** Sets a model, so a renderer that passes it through has one to pass. */
   function publishWithAModel(id: string): void {
     store.publish(
       id,

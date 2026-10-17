@@ -19,9 +19,7 @@ import {
 } from "../helpers/test-utils.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 
-/**
- * Scope roundtrip E2E tests: an edit that changes nothing does not mutate scope or config.
- */
+/** An edit that changes nothing does not mutate scope or config. */
 
 describe("scope toggle roundtrip", () => {
   let store: SeedConfigStore;
@@ -53,21 +51,17 @@ describe("scope toggle roundtrip", () => {
     "Passthrough edit should not change scope of any skill or agent",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // BEFORE: Snapshot configs
       const projectConfigPath = configTsPath(projectDir);
       const globalConfigPath = configTsPath(fakeHome);
       const projectConfigBefore = await readTestFile(projectConfigPath);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
-      // ACTION: apply the configuration as installed
       await applyFromSeed(store, "Unchanged1", e2eStackPayload(DUAL_SCOPE), {
         dir: projectDir,
         home: fakeHome,
       });
 
-      // AFTER: Both configs are functionally identical (normalize projects line).
-      // The project config is where a project-scope passthrough would write, so
-      // checking only the global one would leave the spec's own claim untested.
+      // The project config is where a project-scope passthrough would write, so check both.
       const globalConfigAfter = await readTestFile(globalConfigPath);
       expect(normalizeConfigPreservingOrder(globalConfigAfter)).toStrictEqual(
         normalizeConfigPreservingOrder(globalConfigBefore),
@@ -78,8 +72,6 @@ describe("scope toggle roundtrip", () => {
         normalizeConfigPreservingOrder(projectConfigBefore),
       );
 
-      // AFTER: All skill directories still exist at their original scopes
-      // Global skills
       const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
       for (const skillName of [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id]) {
         expect(
@@ -88,14 +80,12 @@ describe("scope toggle roundtrip", () => {
         ).toBe(true);
       }
 
-      // Project skills
       const projectSkillsDir = path.join(projectDir, DIRS.CLAUDE, DIRS.SKILLS);
       expect(
         await directoryExists(path.join(projectSkillsDir, E2E_SKILL.hono.id)),
         "api-framework-hono must still exist at project scope",
       ).toBe(true);
 
-      // AFTER: All compiled agent files still exist at their original scopes
       await expect({ dir: fakeHome }).toHaveCompiledAgent("web-developer");
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
     },

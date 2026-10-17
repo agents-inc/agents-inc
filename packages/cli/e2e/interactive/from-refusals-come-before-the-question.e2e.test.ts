@@ -36,62 +36,29 @@ import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js
 import type { TreeSnapshotEntry } from "../helpers/test-utils.js";
 
 /**
- * Every `--from` refusal is decided before the run lists what it would install or asks whether to
- * install it — so a user is never asked to confirm something that will then be refused — and a
- * refused run writes nothing.
- *
- * The refusals that already worked that way: a carried skill asked for as a plugin, a carried
- * skill claiming a catalogue id, project-scoped content at the home directory, an existing
- * installation. Two did not, and each is a describe below.
- *
- * **The write-over of a hand-written skill.** A configuration can carry a skill no catalogue has,
- * its whole directory inline, under an id minted for it — `external-<category>-<name>`. A skill id
- * IS the directory the skill installs into, so where the project already keeps a directory of
- * that name that no shared configuration put there (the user's own skill, written by hand),
- * installing would write the payload's bytes over it. The run refuses that — after listing,
- * asking "Install this configuration?" (or "Apply this configuration?") and being told yes.
- *
- * **A configuration this catalogue can place nothing of.** Every id it names is one the loaded
- * catalogue does not know, so the decode keeps nothing — and `init` listed two empty lists, asked,
- * and only after the yes said there was nothing to install.
- *
- * **A placement the host does not offer.** Codex offers three of the four mode/scope cells, so a
- * configuration asking for the fourth is refused on Codex. `init` decides that in its install
- * spine, after the question, though the decoded configuration and the host are all it reads;
- * `edit` has no pre-flight for the configuration at all, so after the yes it starts installing and
- * fails on the host's own per-plugin guard.
- *
- * Each refusal here is paired, in this file, with the run it must still allow, so a guard grown to
- * refuse its whole domain could not stay green: with no directory at the carried id `init` lists
- * and asks; over a directory a previous apply of the same configuration wrote `edit` asks; with one
- * skill the catalogue can place beside the unknown one `init` lists and asks; and on Claude, which
- * offers every cell, the same configuration lists and asks, from either command.
+ * Every `--from` refusal is decided before the run lists or asks, and a refused run writes nothing.
+ * Covered here: writing over a hand-written skill at a carried id, a configuration with nothing
+ * placeable, and a placement the host does not offer. Each is paired with the run it must still
+ * allow.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** The id intake mints for an added skill, and the category it was placed in. */
+/** The id intake mints for an added skill (`external-<category>-<name>`). */
 const CARRIED_ID = "external-web-tooling-brainstorming";
 const CARRIED_CATEGORY = "web-tooling";
 const CARRIED_REPO = "obra/superpowers";
 
-/** React alone, in the project: an installation with nothing carried in it. */
 const REACT_ONLY_ID = "HandWritten0";
-/** React, and the carried skill beside it, both in the project. */
 const CARRYING_ID = "HandWritten1";
-/** An id no catalogue here knows — what the decode skips and reports. */
 const UNKNOWN_SKILL = "totally-unknown-skill";
 
-/** Only the unknown id: nothing this catalogue can place. */
 const NOTHING_PLACEABLE_ID = "NothingPlaceable1";
-/** React, and the unknown id beside it: one skill this catalogue can place. */
 const ONE_PLACEABLE_ID = "OnePlaceable1";
-/** React installed as a plugin into the project: the one cell Codex does not offer. */
+/** The one cell Codex does not offer. */
 const PLUGIN_IN_PROJECT_ID = "PluginInProject1";
-/** React as installed, and Vitest added as a plugin into the project — the same cell, by `edit`. */
 const PLUGIN_ADDED_IN_PROJECT_ID = "PluginInProject2";
 
-/** The project, whole, and the folders an installation keeps under HOME. */
 type InstallSurfaces = {
   project: Record<string, TreeSnapshotEntry>;
   home: Record<string, TreeSnapshotEntry>[];
@@ -212,10 +179,7 @@ describe("--from refusals come before the lists and the question", () => {
     env = undefined;
   });
 
-  /**
-   * The user's own skill at the carried id: a real local skill, metadata and all, and no
-   * `forkedFrom` — the one field that says a shared configuration put a directory here.
-   */
+  /** No `forkedFrom`: the field that says a shared configuration put a directory here. */
   async function writeHandWrittenSkill(projectDir: string): Promise<void> {
     await createLocalSkill(projectDir, CARRIED_ID, {
       description: "The house's own way of brainstorming",
@@ -232,11 +196,7 @@ describe("--from refusals come before the lists and the question", () => {
     });
   }
 
-  /**
-   * Every place a run can write: the whole project, and each folder an installation keeps under
-   * HOME. Not HOME whole — the project sits inside it, and the cache a load drops there is not an
-   * install.
-   */
+  /** Not HOME whole: the project sits inside it, and a load's cache is not an install. */
   async function snapshotInstallSurfaces(environment: TestEnvironment): Promise<InstallSurfaces> {
     const [project, ...home] = await Promise.all([
       readTreeSnapshot(environment.projectDir),
@@ -247,7 +207,6 @@ describe("--from refusals come before the lists and the question", () => {
     return { project, home };
   }
 
-  /** `init --from <id>` in a real terminal, in the project, under the environment's HOME. */
   function launchInit(
     environment: TestEnvironment,
     id: string,
@@ -260,14 +219,12 @@ describe("--from refusals come before the lists and the question", () => {
     );
   }
 
-  /** `edit --from <id>` in a real terminal, in the project, under the environment's HOME. */
   function launchEdit(environment: TestEnvironment, id: string): InteractivePrompt {
     return new InteractivePrompt(["edit", "--from", id], environment.projectDir, {
       env: { AGENTS_INC_API_URL: store.url, HOME: environment.fakeHome },
     });
   }
 
-  /** An installation in the project, made the way a user makes one. */
   async function installIntoProject(environment: TestEnvironment, id: string): Promise<void> {
     const installed = await runInitFrom(
       store,
@@ -288,14 +245,11 @@ describe("--from refusals come before the lists and the question", () => {
         const before = await snapshotInstallSurfaces(env);
 
         prompt = launchInit(env, CARRYING_ID);
-        // The question OR the exit: a run that asks waits for an answer, so waiting for the exit
-        // alone would end in a timeout that names nothing. This hands the assertions below a run
-        // that has either asked or stopped.
+        // The question or the exit: waiting on the exit alone would time out naming nothing.
         await prompt.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_INSTALL_CONFIRM);
         const shown = prompt.getOutput();
 
-        // First, because it is the defect: a run that asks here goes on to refuse the yes, so
-        // its exit is never reached without an answer.
+        // First, because it is the defect: a run that asks here refuses the yes.
         expect(
           shown,
           "a refused install must be refused before the user is asked to confirm it",
@@ -304,15 +258,13 @@ describe("--from refusals come before the lists and the question", () => {
           STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
         );
 
-        // The subject guard for the two negatives: the run reached its decision and refused for
-        // this reason, rather than never starting.
+        // Subject guard: the run reached its decision and refused for this reason.
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
         expect(flattenCliOutput(prompt.getOutput())).toContain(
           STEP_TEXT.SHARED_CONFIG_UNCARRIED_DESTINATION,
         );
         expect(flattenCliOutput(prompt.getOutput())).toContain(CARRIED_ID);
-        // Content and mtime, under the project and every installation folder under HOME: the
-        // user's own skill above all, which is what the refusal exists to protect.
+        // Content and mtime everywhere a run can write, the user's own skill above all.
         expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);
       },
     );
@@ -334,8 +286,8 @@ describe("--from refusals come before the lists and the question", () => {
 
         expect(exitCode).toBe(EXIT_CODES.ERROR);
         expect(flattenCliOutput(output)).toContain(STEP_TEXT.SHARED_CONFIG_UNCARRIED_DESTINATION);
-        // Without a terminal the lists are printed and the run carries on, so a refusal that
-        // comes after them prints a plan for an install that never happens.
+        // Without a terminal the lists print and the run carries on, so a late refusal prints a
+        // plan for nothing.
         expect(output, "a refused install must not first list what it would install").not.toContain(
           STEP_TEXT.SHARED_CONFIG_LIST_PROJECT,
         );
@@ -403,8 +355,8 @@ describe("--from refusals come before the lists and the question", () => {
       { timeout: TIMEOUTS.INTERACTIVE },
       async () => {
         env = await createTestEnvironment();
-        // Installed by `init --from` rather than by a fixture: what tells a carried directory
-        // from a hand-written one is the provenance only the real installer writes.
+        // Installed by `init --from`: only the real installer writes the provenance that marks a
+        // carried directory.
         await installIntoProject(env, CARRYING_ID);
         const before = await snapshotInstallSurfaces(env);
 
@@ -443,7 +395,7 @@ describe("--from refusals come before the lists and the question", () => {
         expect(await prompt.waitForExit(TIMEOUTS.EXIT_WAIT)).toBe(EXIT_CODES.ERROR);
         const said = flattenCliOutput(prompt.getOutput());
         expect(said).toContain(STEP_TEXT.SHARED_CONFIG_NOTHING_INSTALLABLE);
-        // The skip is the refusal's explanation, so it is said: which id this catalogue lacks.
+        // The skip explains the refusal, so it names the missing id.
         expect(said).toContain(STEP_TEXT.CATALOG_DOES_NOT_KNOW);
         expect(said).toContain(UNKNOWN_SKILL);
         expect(await snapshotInstallSurfaces(env)).toStrictEqual(before);

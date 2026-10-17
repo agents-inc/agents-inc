@@ -40,53 +40,28 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * The arc `new marketplace` exists to open: a directory that did not exist becomes
- * one `doctor` accepts, `build plugins` compiles, `build marketplace` publishes,
- * and `init --from <id> --marketplace` installs from.
- *
- * The round trip is the point. A scaffold asserted file-by-file passes while
- * producing a marketplace no command downstream will read — the command deleted in
- * `95738763` had specs that checked `config/stacks.ts` existed and never that
- * anything could load it.
+ * `new marketplace`'s arc: the scaffold must pass `doctor`, build, publish and install via `init
+ * --from --marketplace`; a file-by-file check passes on a scaffold nothing can load.
  */
 
 /**
- * The name every marketplace scaffolded here publishes under.
- *
- * Carries {@link E2E_MARKETPLACE_PREFIX} so `e2e/global-setup.ts`'s registration
- * sweep still matches it, for the same reason the fixture marketplace does.
+ * Carries {@link E2E_MARKETPLACE_PREFIX} so the registration sweep in `e2e/global-setup.ts` still
+ * matches it.
  */
 const MARKETPLACE_NAME = `${E2E_MARKETPLACE_PREFIX}scaffold`;
 
-/**
- * The one skill a scaffold ships, in its marketplace's own namespace.
- *
- * Composed rather than written out: the prefix and the marketplace name are one
- * string, and an id spelled whole would agree with a scaffold that had stopped
- * namespacing.
- */
+/** Composed, so it fails if the scaffold stops namespacing. */
 const EXAMPLE_SKILL_ID = `${MARKETPLACE_NAME}-example-skill`;
 
-/** The one stack a scaffold ships, composed for the same reason the skill id is. */
 const SCAFFOLDED_STACK_ID = `${MARKETPLACE_NAME}-starter`;
 
-/**
- * The one category a scaffold declares, and the only one its skill is in.
- *
- * Spelled rather than composed: it carries the domain a scaffold picks and not
- * the marketplace's name, so building it from {@link MARKETPLACE_NAME} would be
- * a different string that happened to be right about nothing.
- */
+/** Spelled out: it carries the scaffold's domain, not the marketplace name. */
 const SCAFFOLDED_CATEGORY_ID = "web-example";
 
-/**
- * The four names `build marketplace` refuses. Spelled out rather than imported:
- * the rule is these strings, and a test reading the product's own list would agree
- * with any list it grew.
- */
+/** Spelled out: the rule is these strings. */
 const RESERVED_MARKETPLACE_NAMES = ["agents-inc", "external", "local", "eject"] as const;
 
-/** Every file `docs/guides/creating-a-marketplace.md` promises a marketplace holds. */
+/** Every file `docs/guides/creating-a-marketplace.md` promises. */
 const PROMISED_FILES = [
   FILES.PACKAGE_JSON,
   SOURCE_PATHS.SKILL_CATEGORIES,
@@ -96,7 +71,7 @@ const PROMISED_FILES = [
   path.join(SOURCE_PATHS.SKILLS_DIR, EXAMPLE_SKILL_ID, FILES.METADATA_YAML),
 ] as const;
 
-/** The three config files whose loader unwraps a default export and nothing else. */
+/** Their loader unwraps a default export and nothing else. */
 const CONFIG_FILES = [
   SOURCE_PATHS.SKILL_CATEGORIES,
   SOURCE_PATHS.SKILL_RULES,
@@ -133,8 +108,7 @@ describe("new marketplace — refusals", () => {
 
       expect(exitCode, output).toBe(EXIT_CODES.ERROR);
       expect(output).toContain("reserved");
-      // Nothing is written yet, so there is no package.json to rename, and this command takes no
-      // --name: the name is its argument, so another argument is the one way out.
+      // No package.json yet and no --name flag, so another argument is the one way out.
       const flattened = flattenCliOutput(output);
       expect(flattened, "the way out must be one this command has").toContain(
         `Choose a name of your own: run '${CLI_INVOKE_COMMAND} new marketplace <other-name>'.`,
@@ -151,7 +125,7 @@ describe("new marketplace — refusals", () => {
     tempDir = await createTempDir();
     const occupied = path.join(tempDir, MARKETPLACE_NAME);
     await mkdir(occupied, { recursive: true });
-    // A version no scaffold writes, so the author's file cannot be mistaken for one.
+    // A version no scaffold writes, so the author's file is recognisable.
     await writeTestPackageJson(occupied, { name: MARKETPLACE_NAME, version: "9.9.9" });
     const occupantPackageJson = await readTestFile(path.join(occupied, FILES.PACKAGE_JSON));
 
@@ -160,7 +134,7 @@ describe("new marketplace — refusals", () => {
     });
 
     expect(exitCode, output).toBe(EXIT_CODES.ERROR);
-    // Compacted, both sides: oclif breaks a path longer than its line mid-word.
+    // Compacted: oclif breaks a long path mid-word.
     expect(compactCliOutput(output), "the refusal must name the directory it is about").toContain(
       compactCliOutput(occupied),
     );
@@ -251,10 +225,7 @@ describe("new marketplace — what it writes", () => {
     ).toContain("export default");
   });
 
-  /**
-   * The editor reads a marketplace from GitHub and nothing else, so the next steps end on pushing
-   * it there — and on the one run that tests local changes against a configuration built there.
-   */
+  /** The editor reads marketplaces only from GitHub, so the next steps end on pushing. */
   it("ends its next steps on the editor's Marketplace button and init --from with --marketplace", () => {
     expect(scaffoldStdout).toContain(
       `  6. Push it to GitHub, then add it from the Marketplace button at ${STEP_TEXT.EDITOR_URL}`,
@@ -267,9 +238,7 @@ describe("new marketplace — what it writes", () => {
     );
   });
 
-  // Every name a source folder is spelled in, not one: `new marketplace` writes `config/*.ts`
-  // and nothing under a source folder, so naming only the legacy one made this true of every
-  // marketplace this release creates whatever else had been left beside it.
+  // Every source-folder spelling, not only the legacy one.
   it("does not leave the marketplace looking like an installation", async () => {
     await expectNoSourceFolder(
       marketplaceDir,
@@ -335,8 +304,7 @@ describe("new marketplace — round trip through the commands downstream", () =>
         "an empty owner name fails the schema the CLI reads a marketplace.json back with, so the published marketplace would load as none at all",
       ).not.toBe("");
 
-      // The other end of the arc: building must not have left the repository in a
-      // state its own author's check rejects.
+      // Building must not leave the repository in a state its own check rejects.
       const afterBuild = await CLI.run(["doctor"], { dir: marketplaceDir });
       expect(
         afterBuild.exitCode,

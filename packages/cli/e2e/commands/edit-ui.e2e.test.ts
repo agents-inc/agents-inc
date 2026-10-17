@@ -17,12 +17,8 @@ import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-fac
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * `edit --ui`, and the bare `edit` that does the same, end to end: the CLI hands the installation
- * in this directory to the editor.
- *
- * What it must prove is that an id is minted, the editor link is printed, and the directory is
- * left exactly as it was found. A spec that only checked the posted body would pass on a run that
- * rewrote the config on its way out.
+ * `edit --ui` and bare `edit` mint an id, print the editor link and leave the directory exactly as
+ * found.
  */
 
 describe("edit --ui", () => {
@@ -46,7 +42,7 @@ describe("edit --ui", () => {
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** A fresh directory, cleaned up after the spec that took it. Its own HOME, so its own scope. */
+  /** Its own HOME, so its own scope. */
   async function takeTempDir(): Promise<string> {
     const dir = await createTempDir();
     tempDirs.push(dir);
@@ -54,7 +50,7 @@ describe("edit --ui", () => {
   }
 
   describe.each([[["edit"]], [["edit", "--ui"]]])("%j", (argv) => {
-    /** Runs `argv` against `store`; the spawned process has no TTY, so the link is only printed. */
+    /** No TTY in the spawned process, so the link is only printed. */
     const runAgainst = (dir: string) =>
       CLI.run(argv, { dir }, { env: { AGENTS_INC_API_URL: store.url } });
 
@@ -84,9 +80,7 @@ describe("edit --ui", () => {
       const mintedId = firstElement(store.minted);
       expect(output).toContain(`Shared as ${mintedId}`);
       expect(output).toContain(STEP_TEXT.EDITOR_URL);
-      // Opening the editor needs no catalogue, so none is loaded.
       expect(output).not.toContain(STEP_TEXT.LOADING_SKILLS);
-      // Nothing was edited: the id is a reading of this installation, not a rewrite of it.
       expect(await readTreeSnapshot(project)).toStrictEqual(before);
     });
 
@@ -97,8 +91,7 @@ describe("edit --ui", () => {
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(flattenCliOutput(output)).toContain(STEP_TEXT.NO_INSTALLATION);
-      // An id for an empty configuration is a dead link, and minting one spends a write from the
-      // scarce half of the store's free tier.
+      // An empty configuration's id is a dead link, and minting spends a scarce store write.
       expect(store.requests).toStrictEqual([]);
     });
   });

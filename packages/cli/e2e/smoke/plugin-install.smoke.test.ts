@@ -17,32 +17,9 @@ import {
 } from "../helpers/test-utils.js";
 import type { Marketplace } from "../../src/cli/types/index.js";
 
-/**
- * Smoke tests for Claude CLI plugin commands.
- *
- * These tests verify that `claude plugin install`, `claude plugin marketplace add`,
- * and `claude plugin uninstall` work in the test environment. They call the real
- * `claude` binary via the Claude host in src/cli/lib/hosts/claude-host.ts.
- *
- * Every call is pinned to a per-test config dir. The marketplace add below used
- * to land in the machine's own installation under a name outside
- * `E2E_MARKETPLACE_PREFIX`, so the suite's own sweep could never reach it — a
- * registration pointing at a temp directory that the same test then deleted.
- *
- * The entire suite is skipped when the Claude CLI is not available (e.g. CI
- * without Claude installed).
- *
- * NOTE: These are smoke tests for the Claude CLI binary, NOT E2E tests for our CLI.
- */
+// Smoke tests for the real `claude plugin` commands, each pinned to a per-test config dir. Skipped
+// where `claude` is absent.
 
-/**
- * The manifest this file writes and the registration it then reads back.
- *
- * Typed as `Marketplace` so the compiler enforces the required fields. It used
- * to be an untyped `{ name, plugins }` literal that the Claude CLI rejected on
- * `owner: expected object, received undefined` — invisible, because the only
- * assertion was that the exit code was a number.
- */
 const SMOKE_MARKETPLACE: Marketplace = {
   name: "e2e-smoke-test-marketplace",
   version: "1.0.0",
@@ -83,15 +60,12 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
     it("should list marketplaces without error", async () => {
       const marketplaces = await claudePluginMarketplaceList({ configDir: isolated.configDir });
 
-      // The list may be empty or populated -- we just verify it returns an array
       expect(Array.isArray(marketplaces)).toBe(true);
     });
 
     it("should add a marketplace from a local directory source", async () => {
       tempDir = await createTempDir();
 
-      // Create a minimal marketplace structure that `claude plugin marketplace add`
-      // expects: a directory with a marketplace.json in .claude-plugin/
       const marketplaceDir = path.join(tempDir, "test-marketplace");
       const pluginDir = path.join(marketplaceDir, SOURCE_PATHS.PLUGIN_MANIFEST_DIR);
       await mkdir(pluginDir, { recursive: true });
@@ -104,9 +78,6 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
         env: { CLAUDE_CONFIG_DIR: isolated.configDir },
       });
 
-      // Asserted rather than merely recorded: with the registration landing in a
-      // temp config dir, whether the Claude CLI accepts this manifest shape is a
-      // question the test can answer instead of tolerate.
       expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
       const registered = await claudePluginMarketplaceList({ configDir: isolated.configDir });
       expect(registered.map((marketplace) => marketplace.name)).toContain(SMOKE_MARKETPLACE.name);
@@ -119,13 +90,10 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       const projectDir = path.join(tempDir, "project");
       await mkdir(projectDir, { recursive: true });
 
-      // Create .claude directory so the CLI has a valid project context
       const claudeDir = path.join(projectDir, DIRS.CLAUDE);
       await mkdir(claudeDir, { recursive: true });
 
-      // Attempt to install a nonexistent plugin to verify the command doesn't hang.
-      // We expect this to fail (plugin doesn't exist) but the key assertion is
-      // that the command completes within a reasonable time.
+      // Must fail promptly rather than hang.
       await expect(
         claudePluginInstall("nonexistent-plugin@nonexistent-marketplace", "project", projectDir, {
           configDir: isolated.configDir,
@@ -141,9 +109,7 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
       const claudeDir = path.join(projectDir, DIRS.CLAUDE);
       await mkdir(claudeDir, { recursive: true });
 
-      // Uninstalling a nonexistent plugin does not throw: the host reads Claude's own
-      // "not installed" / "not found" message and answers `absent`. It answered nothing at all
-      // until C3, which is why `uninstall` could report a removal it had not performed.
+      // Claude's not-found message is classified as `absent`, not thrown.
       await expect(
         claudePluginUninstall("nonexistent-plugin@nonexistent-marketplace", "project", projectDir, {
           configDir: isolated.configDir,
@@ -164,8 +130,6 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
         { cwd: projectDir, env: { CLAUDE_CONFIG_DIR: isolated.configDir } },
       );
 
-      // The command should complete (not hang) and return a non-zero exit code
-      // since the plugin doesn't exist
       expect(typeof result.exitCode).toBe("number");
       expect(result.exitCode).not.toBe(EXIT_CODES.SUCCESS);
 
@@ -184,7 +148,6 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
         { cwd: projectDir, env: { CLAUDE_CONFIG_DIR: isolated.configDir } },
       );
 
-      // Should complete without hanging
       expect(typeof result.exitCode).toBe("number");
     });
   });
@@ -200,7 +163,6 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
 
       const settingsPath = path.join(claudeDir, FILES.SETTINGS_JSON);
 
-      // Attempt an install that will fail
       await claudePluginInstall(
         "nonexistent-plugin@nonexistent-marketplace",
         "project",
@@ -210,7 +172,6 @@ describe.skipIf(!claudeAvailable)("claude plugin install (smoke)", () => {
         },
       ).catch(() => {});
 
-      // A failed install should not create or modify settings.json
       expect(await fileExists(settingsPath)).toBe(false);
     });
   });

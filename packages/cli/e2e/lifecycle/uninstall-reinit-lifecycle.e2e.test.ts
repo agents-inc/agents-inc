@@ -20,11 +20,8 @@ import { installE2EStackDualScope, installE2EStackGlobally } from "../fixtures/e
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 
 /**
- * Uninstall / re-init lifecycle E2E tests.
- *
- * Covers two lifecycle gaps:
- * 1. Init -> Uninstall -> Re-init produces a clean, equivalent installation
- * 2. Uninstall from project scope preserves the global installation
+ * init -> uninstall -> re-init produces an equivalent installation, and a project-scope uninstall
+ * preserves the global one.
  */
 
 let store: SeedConfigStore;
@@ -53,10 +50,8 @@ describe("uninstall-reinit lifecycle", () => {
       tempDir = env.tempDir;
       const { fakeHome } = env;
 
-      // Phase A: Init global with eject mode
       await installE2EStackGlobally(store, fakeHome);
 
-      // Verify Phase A installation exists
       const globalConfigPath = configTsPath(fakeHome);
       const globalSkillsDir = skillsPath(fakeHome);
       const globalAgentsDir = agentsPath(fakeHome);
@@ -65,12 +60,8 @@ describe("uninstall-reinit lifecycle", () => {
       expect(await directoryExists(globalSkillsDir), "Skills dir must exist after init").toBe(true);
       expect(await directoryExists(globalAgentsDir), "Agents dir must exist after init").toBe(true);
 
-      // Snapshot Phase A config for later comparison, loaded structurally: the
-      // claim is about the entries a re-init produces, not about how the writer
-      // broke them across lines.
       const configAfterFirstInit = await loadConfigOrFail(fakeHome);
 
-      // Phase B: Uninstall (the config manifest is removed by default)
       const uninstall = await runCLI(["uninstall", "--yes"], fakeHome, {
         env: { HOME: fakeHome },
       });
@@ -78,11 +69,7 @@ describe("uninstall-reinit lifecycle", () => {
         EXIT_CODES.SUCCESS,
       );
 
-      // Verify uninstall cleaned everything.
-      //
-      // `expectNoSourceFolder` rather than one `directoryExists`: the resolved folder's absence is
-      // satisfied by an emptied `.agents-inc/` parent left sitting there — a whole-source-folder
-      // absence has to ask after every name one is spelled in.
+      // Asks after every spelling of the source folder, not only the resolved one.
       await expectNoSourceFolder(fakeHome, "uninstall removed the global install it made");
       expect(
         await directoryExists(globalSkillsDir),
@@ -93,10 +80,8 @@ describe("uninstall-reinit lifecycle", () => {
         "Agents dir must be removed after uninstall",
       ).toBe(false);
 
-      // Phase C: Re-init global with eject mode
       await installE2EStackGlobally(store, fakeHome);
 
-      // Verify re-init produced a complete installation
       expect(await fileExists(globalConfigPath), "Config must exist after re-init").toBe(true);
       expect(await directoryExists(globalSkillsDir), "Skills dir must exist after re-init").toBe(
         true,
@@ -105,7 +90,6 @@ describe("uninstall-reinit lifecycle", () => {
         true,
       );
 
-      // Verify config contents are equivalent to Phase A
       const configAfterReinit = await loadConfigOrFail(fakeHome);
 
       expect(
@@ -136,10 +120,8 @@ describe("uninstall scope isolation", () => {
       tempDir = env.tempDir;
       const { fakeHome, projectDir } = env;
 
-      // Setup: Dual-scope install (global + project) with eject mode
       await installE2EStackDualScope(store, { fakeHome, projectDir });
 
-      // Snapshot global state before project uninstall
       const globalConfigPath = configTsPath(fakeHome);
       const globalSkillsDir = skillsPath(fakeHome);
       const globalAgentsDir = agentsPath(fakeHome);
@@ -148,13 +130,8 @@ describe("uninstall scope isolation", () => {
         true,
       );
       const globalConfigBefore = await readTestFile(globalConfigPath);
-      // The exact global sets, captured before the uninstall. The assertions at the
-      // end of this phase used `globalAfter.skills.length > 0`, which a run that
-      // deleted every global skill but one satisfies exactly as a run that touched
-      // none does.
       const globalBefore = await loadConfigOrFail(fakeHome);
 
-      // Phase C: Uninstall from project scope (no --all, just project)
       const uninstall = await runCLI(["uninstall", "--yes"], projectDir, {
         env: { HOME: fakeHome },
       });
@@ -162,7 +139,6 @@ describe("uninstall scope isolation", () => {
         EXIT_CODES.SUCCESS,
       );
 
-      // Verify project installation was removed
       const projectSkillsDir = skillsPath(projectDir);
       const projectAgentsDir = agentsPath(projectDir);
 
@@ -178,13 +154,11 @@ describe("uninstall scope isolation", () => {
         "Project agents dir should be removed after uninstall",
       ).toBe(false);
 
-      // Verify global installation is preserved
       expect(await fileExists(globalConfigPath), "Global config must still exist").toBe(true);
       expect(await directoryExists(globalSkillsDir), "Global skills must still exist").toBe(true);
       expect(await directoryExists(globalAgentsDir), "Global agents must still exist").toBe(true);
 
-      // The only global-config change from a project uninstall is deregistering
-      // this project from the tracked `projects` list.
+      // The only global-config change from a project uninstall is deregistering this project.
       const realProjectDir = realpathSync(projectDir);
       expect(
         globalConfigBefore,
@@ -196,7 +170,6 @@ describe("uninstall scope isolation", () => {
         globalAfter.projects ?? [],
         "project must be deregistered from the global config after uninstall",
       ).not.toContain(realProjectDir);
-      // Global skills/agents are otherwise untouched — every entry, unchanged.
       expect(globalAfter.skills, "global skills must be preserved").toStrictEqual(
         globalBefore.skills,
       );

@@ -34,20 +34,16 @@ import {
 import type { SeedSkill } from "@workspace/matrix/seed";
 
 /**
- * Dual-scope edit lifecycle E2E test -- mixed source coexistence.
- * Requires Claude CLI to be available.
- *
- * Split from dual-scope-edit-integrity.e2e.test.ts for parallel execution.
+ * Dual-scope edit with mixed sources: a project's ejected skill switched to plugin. Requires the
+ * Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 const API_DEV = E2E_AGENT["api-developer"].name;
 
-/** The stack at home, every skill installed as a plugin. */
 const PLUGIN_STACK_ID = "PlugStk2";
 
-/** The project's own API skill on its own API sub-agent, in the install mode named. */
 function projectHonoPayload(install: SeedSkill["install"]) {
   return buildSeedPayload({
     skills: {
@@ -89,7 +85,6 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
     if (pluginSourceTempDir) await cleanupTempDir(pluginSourceTempDir);
   });
 
-  /** The stack globally as plugins, then the project's own API skill ejected into it. */
   async function installMixedSources(): Promise<TestEnvironment> {
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
@@ -118,28 +113,22 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
     async () => {
       const { fakeHome, projectDir } = await installMixedSources();
 
-      // Phase C: Edit -- the project's own API skill switched to plugin
       const result = await applyEditFrom(store, PROJECT_HONO_PLUGIN_ID, {
         dir: projectDir,
         globalHome: fakeHome,
       });
 
-      // Phase D: Assertions
       expect(result.exitCode, result.output).toBe(EXIT_CODES.SUCCESS);
 
-      // Which direction the switch went, not merely that the word appeared. The
-      // alternation that stood here (`/[Ss]witch/`) was satisfied by a switch BACK
-      // to eject, which is the other half of the matrix this file exists to tell apart.
+      // The direction of the switch: a switch back to eject would also match a bare /switch/.
       const { output } = result;
       expect(output).toContain(STEP_TEXT.SWITCHING_SKILLS_SUFFIX);
       expect(output).toContain(STEP_TEXT.PLUGIN_NATIVE);
       expect(output).not.toContain(STEP_TEXT.EJECT_LOCAL_COPY);
 
-      // D-3: api-framework-hono local files deleted (migrated to plugin)
       const localSkillPath = path.join(skillsPath(projectDir), E2E_SKILL.hono.id, FILES.SKILL_MD);
       expect(await fileExists(localSkillPath)).toBe(false);
 
-      // D-4: Both scopes have correct config and compiled agents
       await expectDualScopeInstallation(fakeHome, projectDir, {
         global: {
           skillIds: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
@@ -151,8 +140,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
         },
       });
 
-      // D-5: Project-scoped api-framework-hono source must have been updated from eject to plugin
-      // (excluded global entries may legitimately retain source:"eject")
+      // Excluded global entries may legitimately keep `source: "eject"`.
       const projectHonoEntry = (await readSkillEntries(projectDir, E2E_SKILL.hono.id)).find(
         (entry) => entry.scope === "project",
       );
@@ -170,17 +158,13 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- mixed source coe
     async () => {
       const { fakeHome, projectDir } = await installMixedSources();
 
-      // Phase D: Verify agent content
-
-      // D-1: web-developer.md (global) contains its own domain's skill and,
-      // under relevance-scoped assignment, never the api one.
+      // Under relevance-scoped assignment, never the api skill.
       const globalWebDevPath = path.join(agentsPath(fakeHome), "web-developer.md");
       expect(await fileExists(globalWebDevPath)).toBe(true);
       const webDevContent = await readTestFile(globalWebDevPath);
       expect(webDevContent).toContain(E2E_SKILL.react.id);
       expect(webDevContent).not.toContain(E2E_SKILL.hono.id);
 
-      // D-2: api-developer.md (project) mirrors it — the api skill alone.
       const projectApiDevPath = path.join(agentsPath(projectDir), "api-developer.md");
       expect(await fileExists(projectApiDevPath)).toBe(true);
       const apiDevContent = await readTestFile(projectApiDevPath);

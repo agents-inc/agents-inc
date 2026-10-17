@@ -16,36 +16,14 @@ import {
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * `update` wraps Claude's own marketplace update and nothing else.
- *
- * It reads the marketplaces its installation's config actually names — the distinct
- * non-eject `source` values on the active skill entries — and runs
- * `claude plugin marketplace update` for each. It never reads a skills source, never
- * compares hashes, never rewrites a skill directory, and never recompiles.
- *
- * Ejected skills are the user's copies. The command says so in one line and leaves them
- * alone, which is what makes an eject-only installation a successful no-op rather than
- * an error.
- *
- * The Claude-CLI-absent runs are handed a PATH holding node and sh alone, and ASSERT that no
- * `claude` is found on it — the technique `plugin-uninstall-edge-cases.e2e.test.ts` uses. Asserting
- * a SUCCESSFUL marketplace refresh from here would need a real marketplace registered in the run's
- * fake HOME, so that assertion lives in the unit spec, against the wrapper.
- *
- * _Corrected 2026-09-26:_ these runs were handed `node`'s own bin directory plus `/usr/bin:/bin`,
- * and called that deterministic on every machine. It is where `npm i -g @anthropic-ai/claude-code`
- * puts `claude`, and on the machine this was measured on it held one — so the "no Claude CLI" cases
- * ran with a real `claude` on their PATH.
+ * `update` runs `claude plugin marketplace update` for each marketplace its config names, and
+ * nothing else; ejected skills are left alone with one line. Claude-absent runs get a PATH of node
+ * and sh only, and assert no `claude` on it.
  */
 
-/** The marketplace name the seeded config claims its plugin skills came from. */
 const MARKETPLACE = "e2e-update-marketplace";
 
-/**
- * A PATH holding node and sh alone, linked under `root`, and the subject guard that no `claude` is
- * found on it — asked of the PATH the command is actually handed, since `CLI.run` puts the pinned
- * codex in front of whatever it is given.
- */
+/** Asked of the PATH the command gets, since `CLI.run` prepends the pinned codex. */
 async function aPathWithoutClaude(root: string): Promise<string> {
   const searchPath = await pathHoldingOnly({ root }, ["node", "sh"]);
   expect(
@@ -85,8 +63,7 @@ describe("update command", () => {
     const { exitCode, output } = await CLI.run(["update", E2E_SKILL.react.id], { dir: tempDir });
 
     expect(exitCode).not.toBe(EXIT_CODES.SUCCESS);
-    // `topicSeparator: " "` makes a trailing word a subcommand rather than an argument,
-    // so the rejection comes from plugin-not-found: there is no `update <skill>` at all.
+    // `topicSeparator: " "` makes a trailing word a subcommand, so plugin-not-found rejects it.
     expect(output, "there are no per-skill updates left to target").toContain(
       `update ${E2E_SKILL.react.id} is not a`,
     );
@@ -158,8 +135,7 @@ describe("update command", () => {
         { env: { PATH: await aPathWithoutClaude(tempDir), HOME: projectDir } },
       );
 
-      // The ownership line is printed before the marketplace half runs, so it survives
-      // the run that cannot reach the Claude CLI — that ordering is the assertion.
+      // Printed before the marketplace half, so it survives a run that cannot reach the Claude CLI.
       expect(output).toContain(STEP_TEXT.UPDATE_EJECTED_OWNED);
       expect(output, "a mixed install does configure a marketplace").not.toContain(
         STEP_TEXT.UPDATE_NO_MARKETPLACES,

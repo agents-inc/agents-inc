@@ -32,29 +32,13 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
 /**
- * A global installation holds only global-scoped content, and `edit --from` is the second
- * producer that has to be told so.
- *
- * The home directory IS the global scope — both scopes resolve to one config, one skills
- * directory and one agents directory there — so a payload's `scope: "project"` entry does not
- * land somewhere else; it lands in the global config wearing a label that contradicts the file
- * it is in, and `toClaudePluginScope` maps that declared scope onward. `init --from` refuses
- * exactly this and names every offender; applying the same payload through `edit --from`
- * reaches the same state through the other door, and reaches it DESTRUCTIVELY: this command can
- * remove global entries on the way in.
- *
- * The refusal needs the decoded payload to answer — an all-global configuration is precisely
- * what a global installation is for — so it fires after the decode, which is the first moment
- * its input exists. Everything it costs by then has already been spent on the terminal check and
- * the fetch, and nothing has been written.
- *
- * Two things this must NOT do, and each has its own spec: refuse an all-global configuration
- * here (the case the invariant exists to protect), and confirm anything before it refuses.
+ * At the home directory `edit --from` must refuse project-scoped entries, as `init --from` does. It
+ * fires after the decode, before any confirm and before anything is written; an all-global
+ * configuration still applies.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** A sub-agent entry that keeps its agent in the project rather than at the resting default. */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 describe("edit --from <id> at the global root", () => {
@@ -82,9 +66,8 @@ describe("edit --from <id> at the global root", () => {
   });
 
   /**
-   * A global installation at a fake home directory — every entry global-scoped, which is the
-   * only shape a global install has. Built from the same writers `ProjectBuilder` uses; there
-   * is no home-root factory because this is the only suite that needs one.
+   * Every entry global-scoped. Built from the writers `ProjectBuilder` uses; only this suite needs
+   * a home-root fixture.
    */
   async function takeInstalledHome(skillIds: string[]): Promise<string> {
     const tempDir = await createTempDir();
@@ -113,12 +96,7 @@ describe("edit --from <id> at the global root", () => {
     return home;
   }
 
-  /**
-   * Both trees a global installation lives in: the config pair, and the skills, agents and
-   * settings under `.claude/`. Snapshotted separately rather than as one read of `$HOME`,
-   * because HOME is also where oclif's update-check plugin keeps its version cache — a file
-   * written beside the installation by something that is not this command.
-   */
+  /** Snapshotted per tree, not `$HOME` whole: oclif's update check writes a version cache there. */
   async function installedTrees(home: string): Promise<Record<string, unknown>> {
     return {
       configPair: await readTreeSnapshot(sourceFolderIn(home)),
@@ -126,7 +104,6 @@ describe("edit --from <id> at the global root", () => {
     };
   }
 
-  /** Starts `edit --from <id>` in a real terminal whose HOME is the directory it runs in. */
   function launchAtHome(id: string, home: string): InteractivePrompt {
     return new InteractivePrompt(["edit", "--from", id], home, {
       env: { AGENTS_INC_API_URL: store.url, HOME: home },
@@ -136,7 +113,6 @@ describe("edit --from <id> at the global root", () => {
   describe("a configuration with project-scoped content", () => {
     const PROJECT_SCOPED_ID = "EditHome01";
 
-    /** React pinned to the project, and the sub-agent that holds it pinned with it. */
     function publishProjectScoped(): void {
       store.publish(
         PROJECT_SCOPED_ID,
@@ -162,11 +138,9 @@ describe("edit --from <id> at the global root", () => {
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       const said = prompt.getOutput();
       expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
-      // Not `uninstall`: the configuration is installable and the location is not, so the way
-      // out is another directory — the same distinction `init --from` draws.
+      // Not `uninstall`: the configuration is installable, the location is not.
       expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_HINT);
-      // Named rather than counted, and both kinds: a skill's scope and a sub-agent's are
-      // separate decisions in the payload, and only the sharer knows which they meant.
+      // Both kinds named: only the sharer knows which they meant.
       expect(said).toContain(`skill ${E2E_SKILL.react.id}`);
       expect(said).toContain(`sub-agent ${WEB_DEV}`);
     });
@@ -178,14 +152,11 @@ describe("edit --from <id> at the global root", () => {
       prompt = launchAtHome(PROJECT_SCOPED_ID, home);
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
-      // The exit code and the refusal's own sentence, on the same capture the negative is
-      // read from: without them a run that never reached the command at all satisfies the
-      // `not.toContain` below, and nothing here would notice.
+      // Exit code and sentence first: a run that never reached the command satisfies the negative.
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       const said = prompt.getOutput();
       expect(said).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
-      // The confirm is this command's one gate, and a plan shown for a run that is about to be
-      // refused describes removals it never intended to make.
+      // A plan shown before a refusal would describe removals never intended.
       expect(said).not.toContain(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
     });
 
@@ -197,12 +168,10 @@ describe("edit --from <id> at the global root", () => {
       prompt = launchAtHome(PROJECT_SCOPED_ID, home);
       const exitCode = await prompt.waitForExit(TIMEOUTS.EXIT_WAIT);
 
-      // Same subject guard as the sibling above: an untouched tree is also what a run that
-      // never started leaves behind, so the refusal has to be observed before it is read.
+      // Subject guard: an untouched tree is also what a run that never started leaves.
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(prompt.getOutput()).toContain(STEP_TEXT.SHARED_CONFIG_PROJECT_SCOPE_AT_HOME);
-      // The refusal's whole claim, and the one `init --from` never had to make: this command
-      // deletes, so a refusal that arrived late would be a refusal after a removal.
+      // This command deletes, so a late refusal would follow a removal.
       expect(await installedTrees(home)).toStrictEqual(before);
     });
   });
@@ -212,8 +181,7 @@ describe("edit --from <id> at the global root", () => {
 
     it("applies here, removing what it leaves out", async () => {
       const home = await takeInstalledHome([E2E_SKILL.react.id, E2E_SKILL.vitest.id]);
-      // The case the refusal exists to protect. Every entry is global, which is the only scope
-      // a global installation can hold — so this is not a payload the location refuses.
+      // The protected case: every entry global.
       store.publish(
         ALL_GLOBAL_ID,
         buildSeedPayload({
@@ -235,8 +203,7 @@ describe("edit --from <id> at the global root", () => {
       expect(exitCode, `apply at the global root failed: ${prompt.getOutput()}`).toBe(
         EXIT_CODES.SUCCESS,
       );
-      // Both surfaces, because either alone can look right while the other lies: a config entry
-      // for a deleted directory, or a directory nothing declares.
+      // Both surfaces: either alone can look right.
       const config = await loadConfigOrFail(home);
       expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
       expect(await listFiles(skillsPath(home))).toStrictEqual([E2E_SKILL.react.id]);

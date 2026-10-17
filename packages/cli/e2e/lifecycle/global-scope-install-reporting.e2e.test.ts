@@ -11,16 +11,10 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import "../matchers/setup.js";
 
 /**
- * Reporting fidelity for an all-global-scope install driven from a PROJECT
- * directory whose HOME is a separate fake home.
- *
- * HOME === projectDir collapses the global and project install roots onto the
- * same path and makes scope-blind reporting indistinguishable from correct
- * reporting. Here the two roots are distinct, so the report and the `list`
- * counts can be checked against where the files actually landed.
+ * Reporting for an all-global install driven from a project whose HOME is separate, so report and
+ * `list` counts can be checked against where files actually landed.
  */
 
-/** Stack skills selected by the E2E Test Stack, all at the default global scope. */
 const GLOBAL_STACK_SKILLS = [
   E2E_SKILL.react,
   E2E_SKILL.vitest,
@@ -33,16 +27,7 @@ const GLOBAL_STACK_SKILLS = [
 
 const GLOBAL_STACK_SKILL_IDS: string[] = GLOBAL_STACK_SKILLS.map((skill) => skill.id);
 
-/**
- * The title each of those skills carries — and, for every one of them, a directory name that does not exist: every fixture title is prose where its directory is
- * a namespaced id.
- *
- * Written out rather than only derived, because this list is the subject guard for the
- * negative half of the listing assertion below. A fixture whose titles happened to equal its
- * directory names would satisfy that negative for free while proving nothing, and a count
- * would not notice — which is what four of these were until 2026-08-19, when they read
- * `web-framework-react` and friends. Ordered as {@link GLOBAL_STACK_SKILLS} carries them.
- */
+/** Titles that name no directory: the subject guard for the listing's negative half. */
 const TITLES_THAT_NAME_NO_DIRECTORY = [
   "E2E React",
   "E2E Vitest",
@@ -53,16 +38,7 @@ const TITLES_THAT_NAME_NO_DIRECTORY = [
   "CLI Reviewing",
 ];
 
-/**
- * Every agent a default E2E-stack install compiles: the sub-agents the stack
- * declares, and only those. A stack's `agents` keys are the roster its selection
- * installs — the domain-derived preselection is the from-scratch path and has no
- * say over a stack's list. All of them are global-scoped, so all of them land
- * under HOME.
- *
- * Read off the stack rather than written out, so a roster change reports the
- * name that moved instead of agreeing with whatever the code produced.
- */
+/** Read off the stack, so a roster change reports the name that moved. */
 const COMPILED_AGENT_NAMES: AgentName[] = E2E_STACK_AGENTS;
 
 describe("default init from a project dir — global scope reporting", () => {
@@ -101,10 +77,7 @@ describe("default init from a project dir — global scope reporting", () => {
     for (const agentName of COMPILED_AGENT_NAMES) {
       await expect({ dir: fakeHome }).toHaveCompiledAgent(agentName);
     }
-    // The weak reading is the CORRECT one for an absence: the matcher fails on an
-    // agents directory that is missing OR holds no `.md`, and both are what "nothing was
-    // compiled here" means. Its blind spots — a wrong roster, a swap — need something to
-    // BE there, so a negation cannot inherit them.
+    // A negation is correct here: it fails on a missing dir or one with no `.md`.
     await expect({ dir: projectDir }).not.toHaveCompiledAgents();
 
     await expect({ dir: fakeHome }).toHaveConfig({
@@ -119,16 +92,7 @@ describe("default init from a project dir — global scope reporting", () => {
     expect(initOutput).not.toContain(skillsPath(projectDir));
   });
 
-  /**
-   * The directory line above was already asserted; its CONTENTS never were, and they are the
-   * half that once named directories nobody could open. `reportSkillsCopied` rendered every
-   * entry through `displayName`, so an install carrying these three printed `Reviewing/`,
-   * `CLI Reviewing/` and `Research Methodology/` under a header that claims to describe the
-   * filesystem, while the directories on disk were the skill ids.
-   *
-   * Both halves are asserted because either alone is satisfiable: the ids could be printed
-   * alongside the titles, and the titles could be absent because the block was never painted.
-   */
+  /** Both halves: the ids could print beside the titles, or the block might never paint. */
   it("lists the directory each skill was copied into, not its title", () => {
     expect(initOutput).toContain(STEP_TEXT.SKILLS_COPIED_TO);
 
@@ -157,14 +121,7 @@ describe("default init from a project dir — global scope reporting", () => {
     expect(initOutput).not.toContain(agentsPath(projectDir));
   });
 
-  /**
-   * The closing block has to name the config that actually holds the assignments.
-   * For a wholly global install driven from a project directory that is the GLOBAL
-   * config: the writer filters the project config's `stack` down to project-scoped
-   * agents, of which this install has none, so the project file carries no
-   * assignment at all — and `list` already names the global config for this same
-   * install, so two commands disagree today.
-   */
+  /** The project config keeps no global-agent assignment, so the global config holds them. */
   it("names the global config as the one holding the assignments", () => {
     expect(initOutput).toContain(STEP_TEXT.CONFIGURATION_LABEL);
     expect(initOutput).toContain(configTsPath(fakeHome));
@@ -174,12 +131,7 @@ describe("default init from a project dir — global scope reporting", () => {
     ).not.toContain(configTsPath(projectDir));
   });
 
-  /**
-   * And the second half of the same block: `compile` run in this cwd performs the
-   * PROJECT pass only, which recompiles no global agent. The wording already exists
-   * — `globalScopedAgentsHint`, which `compile` itself prints when it lands in the
-   * mirror-image of this state.
-   */
+  /** `compile` in this cwd runs the project pass only, recompiling no global agent. */
   it("says where to compile from, given every agent is global-scoped", () => {
     expect(initOutput).toContain(STEP_TEXT.COMPILE_GLOBAL_SCOPE_HINT);
   });

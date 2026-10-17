@@ -30,12 +30,8 @@ import { buildSeedPayload } from "../../src/cli/lib/__tests__/factories/seed-fac
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * `init --from <id>` end to end: the CLI fetches a configuration shared from agentsinc.sh and
- * installs it without the wizard.
- *
- * Wire contract and command plumbing live here. What a decoded payload turns into on disk —
- * per-agent curation, preload fidelity, model/effort, install modes and scopes — lives in the
- * `init-from-scenarios-*` specs.
+ * `init --from <id>` end to end: wire contract and command plumbing. What a payload becomes on disk
+ * is in `init-from-scenarios-*`.
  */
 
 describe("init --from <id>", () => {
@@ -82,13 +78,11 @@ describe("init --from <id>", () => {
     const { exitCode, output } = await runInit("Ab3xY9_Q");
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // Never rendered the wizard — this has to work over a pipe and in CI.
+    // No wizard: this must work over a pipe and in CI.
     expect(output).toContain("Fetching configuration Ab3xY9_Q");
     expect(output).toContain("Installing 2 skill(s)");
 
-    // Structural, like every sibling spec in this file: `toContain` on the raw
-    // config text cannot say which skill carries which scope or source, and a
-    // third skill appearing alongside the two would satisfy it.
+    // Structural: `toContain` cannot say which skill carries which scope.
     const config = await loadConfigOrFail(tempDir);
     expect(config.skills.map((skill) => skill.id).sort()).toStrictEqual(
       [E2E_SKILL.react.id, E2E_SKILL.vitest.id].sort(),
@@ -96,7 +90,6 @@ describe("init --from <id>", () => {
     expect(await readAgentEntriesFor(tempDir, E2E_AGENT["web-developer"].name)).toStrictEqual(
       buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "global" }),
     );
-    // The preloaded/dynamic split the payload asked for reaches the compiled agent.
     await expect({ dir: tempDir }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
       exactSkills: [E2E_SKILL.vitest.id],
     });
@@ -113,9 +106,8 @@ describe("init --from <id>", () => {
       }),
     );
 
-    // Deliberately not `runInit`, which always passes `--marketplace`: the whole of what this
-    // pins is that the ref on the wire reaches the loader on its own. Without it the walk ends
-    // at the default public marketplace, which has never heard of this source's skills.
+    // Not `runInit`, which always passes `--marketplace`: the ref on the wire must reach the loader
+    // on its own.
     const { exitCode, output } = await CLI.run(
       ["init", "--from", "Market01"],
       { dir: tempDir },
@@ -127,16 +119,15 @@ describe("init --from <id>", () => {
 
     const config = await loadConfigOrFail(tempDir);
     expect(config.skills.map((skill) => skill.id)).toStrictEqual([E2E_SKILL.react.id]);
-    // Recorded, not merely used: it is what every later command in this directory reads from.
+    // Recorded: every later command here reads it.
     expect(config.marketplace).toBe(sourceDir);
-    // The filesystem half — the skill only exists in the source the ref named, so its presence
-    // on disk is what says the ref chose the catalogue rather than the default one.
+    // The skill exists only in the named source, so its presence shows the ref chose the catalogue.
     expect(await listFiles(skillsPath(tempDir))).toContain(E2E_SKILL.react.id);
   });
 
   it("lets an explicit marketplace outrank the one the payload names", async () => {
     tempDir = await createTempDir();
-    // A ref that resolves to nothing, so the run can only succeed on the flag's.
+    // A ref that resolves to nothing, so only the flag's can succeed.
     store.publish(
       "Market02",
       buildSeedPayload({
@@ -146,8 +137,7 @@ describe("init --from <id>", () => {
       }),
     );
 
-    // Naming one is an instruction about THIS install; the payload's ref is a record of where
-    // the sharer's skills came from, and an install may legitimately be pointed elsewhere.
+    // The flag is about this install; the payload's ref only records the sharer's source.
     const { exitCode } = await runInit("Market02");
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
@@ -189,7 +179,6 @@ describe("init --from <id>", () => {
     const { exitCode, output } = await runInit("Mixed001");
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // Named rather than counted: a count cannot be acted on.
     expect(flattenCliOutput(output)).toContain("web-framework-does-not-exist");
     expect(output).toContain("Installing 1 skill(s)");
 
@@ -205,7 +194,7 @@ describe("init --from <id>", () => {
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain("No configuration found for id 'NoSuchId'");
-    // Nothing partially installed: the fetch fails before the pipeline starts.
+    // The fetch fails before the pipeline starts.
     await expectNoSourceFolder(
       tempDir,
       "the fetch fails before the pipeline starts, so nothing was installed",
@@ -214,8 +203,7 @@ describe("init --from <id>", () => {
 
   it("refuses a payload that does not match the contract", async () => {
     tempDir = await createTempDir();
-    // A payload the current contract accepts, with one field broken: `skills` is a string where
-    // the contract wants a map, so that is the only thing the refusal can be about.
+    // One field broken, so the refusal can only be about it.
     store.publish("BadShape", { ...buildSeedPayload({ v: PINNED_WIRE_VERSION }), skills: "nope" });
 
     const { exitCode, output } = await runInit("BadShape");
@@ -228,8 +216,7 @@ describe("init --from <id>", () => {
 
   it("refuses a payload from the previous contract version rather than migrating it", async () => {
     tempDir = await createTempDir();
-    // v1 carried model/effort per skill. Pre-1.0 policy is to fail loudly, not migrate, so an id
-    // shared before the move has to be re-shared rather than silently reinterpreted.
+    // v1 carried model/effort per skill; pre-1.0 fails loudly rather than migrating.
     store.publish("OldWire1", {
       v: 1,
       matrixVersion: "1.0.0",
@@ -251,9 +238,8 @@ describe("init --from <id>", () => {
     expect(flattenCliOutput(output)).toContain(
       "is not in a format this version of the CLI can install",
     );
-    // A version bump invalidates every id minted before it, so an OLDER id meeting a newer CLI is
-    // the case this refusal exists for in bulk — and the remedy for it always exists. A message
-    // that only diagnoses "a newer version" sends the reader to an upgrade that cannot help.
+    // Older ids meet newer CLIs in bulk after a version bump, so the remedy, re-sharing, must be
+    // named.
     expect(flattenCliOutput(output)).toContain("re-share the configuration");
     await expectNoSourceFolder(
       tempDir,
@@ -275,13 +261,11 @@ describe("init --from <id>", () => {
     const { exitCode } = await runInit("Tuned001");
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // The compiled file is what Claude Code reads...
     await expect({ dir: tempDir }).toHaveAgentFrontmatter(E2E_AGENT["web-developer"].name, {
       model: "haiku",
       effort: "xhigh",
     });
-    // ...and config.ts is what a later edit or recompile reads back. The entry names a model and an
-    // effort but no scope, so the sub-agent takes the shared selection default.
+    // No scope named, so the sub-agent takes the shared default.
     expect(await readAgentEntriesFor(tempDir, E2E_AGENT["web-developer"].name)).toStrictEqual(
       buildAgentConfigs([E2E_AGENT["web-developer"].name], {
         scope: "global",
@@ -324,8 +308,7 @@ describe("init --from <id>", () => {
     const { exitCode } = await runInit("Bare0001");
 
     expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    // A bare agent has no skill to carry it in, so the `agents` map is the only thing that can —
-    // and `on: true` alone names no scope, so it lands at the shared selection default.
+    // A bare agent travels only in the `agents` map, and `on: true` names no scope.
     expect(await readAgentEntriesFor(tempDir, E2E_AGENT["api-developer"].name)).toStrictEqual(
       buildAgentConfigs([E2E_AGENT["api-developer"].name], { scope: "global" }),
     );
@@ -372,9 +355,7 @@ describe("init --from <id>", () => {
     const skillsBefore = await listFiles(skillsPath(tempDir));
     const agentsBefore = await listFiles(agentsPath(tempDir));
 
-    // A bare `init` here would show the dashboard and stop. An id is still not diverted to it —
-    // but it no longer installs over what it finds either: `--from` is greenfield-only, so an
-    // existing installation is a refusal naming `uninstall`, not a dashboard and not a merge.
+    // `--from` is greenfield-only: an existing installation is refused naming `uninstall`.
     const second = await runInit("Second02");
 
     expect(second.exitCode).toBe(EXIT_CODES.ERROR);
@@ -383,7 +364,6 @@ describe("init --from <id>", () => {
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_EXISTING_INSTALL);
     expect(said).toContain(STEP_TEXT.SHARED_CONFIG_UNINSTALL_HINT);
 
-    // The first install is exactly as it was, on both sides: nothing ran.
     expect(await readFile(configTsPath(tempDir), "utf8")).toBe(configBefore);
     expect(await listFiles(skillsPath(tempDir))).toStrictEqual(skillsBefore);
     expect(await listFiles(agentsPath(tempDir))).toStrictEqual(agentsBefore);

@@ -29,17 +29,9 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * Journey 10's refresh branch, through the real Claude CLI: `update` refreshes the marketplace a
- * plugin install came from, and the installed plugin stays at the version it was installed at.
- *
- * `update` runs `claude plugin marketplace update <name>`, which re-reads the marketplace's listing
- * and installs nothing. So with a newer version on offer, the installed plugin's registry record is
- * the same after the run as before it — and the run's summary must say exactly that, rather than
- * report the update complete.
- *
- * The marketplace moves on the way an author moves it: one line appended to the skill, then the two
- * builds, which take the plugin to its next major version. The source is a private one for that
- * reason, since the shared fixture is frozen.
+ * Journey 10's refresh branch through the real Claude CLI: `update` refreshes the marketplace but
+ * installs nothing, so the plugin's registry record is unchanged and the summary says so. The
+ * source is private because building a new version mutates it.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -52,7 +44,6 @@ const OFFERED_VERSION = "2.0.0";
 
 const SOURCE_EDIT = "## A section added to the marketplace after installation";
 
-/** Every plugin record in the Claude CLI's registry under `home`, as it wrote them. */
 async function registeredPlugins(home: string): Promise<Record<string, unknown[]>> {
   const registryPath = path.join(home, DIRS.CLAUDE, DIRS.PLUGINS, FILES.INSTALLED_PLUGINS_JSON);
   const registry: { plugins: Record<string, unknown[]> } = JSON.parse(

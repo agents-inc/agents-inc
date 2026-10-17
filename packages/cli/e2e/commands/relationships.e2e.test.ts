@@ -12,9 +12,7 @@ import { STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import type { ProjectHandle } from "../fixtures/project-handle.js";
 
-// Plugin-source fixture is required because local sources without
-// marketplace.json now hard-error on default plugin-intent install.
-// See feedback_no_plugin_to_eject_fallback.md.
+// A plugin source: a local source without marketplace.json hard-errors on plugin install.
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
@@ -38,7 +36,6 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
     fixture = undefined;
   });
 
-  /** The E2E stack installed as plugins from `source`, at the default scope. */
   async function installStackFrom(source: E2EPluginSource): Promise<ProjectHandle> {
     env = await createTestEnvironment();
     const site = { dir: env.projectDir, home: env.fakeHome };
@@ -57,7 +54,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
       "should detect unresolved conflict references via doctor",
       { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
-        // "angular-standalone" slug does not exist in the E2E source — should be flagged as unresolved
+        // `angular-standalone` is not in the E2E source, so it must be flagged as unresolved.
         fixture = await createE2EPluginSource({
           relationships: {
             conflicts: [
@@ -73,7 +70,6 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
 
         const { output } = await CLI.run(["doctor"], project);
 
-        // Slug resolution should detect that "angular-standalone" has no matching skill in the source
         expect(output).toContain(STEP_TEXT.UNRESOLVED_SLUG);
         expect(output).toContain("angular-standalone");
       },
@@ -85,9 +81,7 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
       "should detect unresolved require references via doctor",
       { timeout: TIMEOUTS.LIFECYCLE },
       async () => {
-        // "angular-standalone" is a valid SkillSlug but does not exist in the E2E source.
-        // The slug must be valid for the rules file to pass schema validation,
-        // but the matrix health check will then detect it as unresolved.
+        // A valid SkillSlug, so the rules pass the schema, but absent from the E2E source.
         fixture = await createE2EPluginSource({
           relationships: {
             requires: [
@@ -137,15 +131,8 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
 
         const { output } = await CLI.run(["doctor"], project);
 
-        // Default rules may produce unresolved references for slugs not in E2E source
-        // (e.g., "angular", "vue"), but E2E source slugs should all resolve cleanly.
-        // When a slug resolves, its canonical SkillId (e.g., "web-framework-react")
-        // exists in matrix.skills, so it won't be flagged as unresolved.
-        // When a slug does NOT resolve, the raw slug string passes through as the
-        // reference — only those unresolved raw slugs appear in the warning messages.
-        //
-        // Message format: "Skill 'X' has unresolved reference 'Y' in 'field'"
-        // The quoted reference position must never hold an E2E skill's resolved ID.
+        // An unresolved slug passes through raw into the warning; a resolved one becomes its
+        // SkillId, which must never appear as an unresolved reference.
         expect(output).not.toContain(`unresolved reference '${E2E_SKILL.react.id}'`);
         expect(output).not.toContain(`unresolved reference '${E2E_SKILL.zustand.id}'`);
         expect(output).not.toContain(`unresolved reference '${E2E_SKILL.hono.id}'`);
@@ -173,7 +160,6 @@ describe.skipIf(!claudeAvailable)("slug-based relationship rules", () => {
 
         const { output } = await CLI.run(["doctor"], project);
 
-        // "angular-standalone" slug does not exist in the E2E source
         expect(output).toContain(STEP_TEXT.UNRESOLVED_SLUG);
         expect(output).toContain("angular-standalone");
       },

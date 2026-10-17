@@ -59,9 +59,7 @@ describe("list command", () => {
     const viaAlias = await CLI.run(["ls"], { dir: tempDir });
 
     expect(viaAlias.exitCode).toBe(EXIT_CODES.SUCCESS);
-    // The alias is a routing claim: same command, same report. Asserting one
-    // shared substring cannot tell the alias apart from a different command that
-    // happens to print it too.
+    // A routing claim: same command, same report.
     expect(viaAlias.stdout).toBe(viaList.stdout);
   });
 
@@ -104,55 +102,30 @@ describe("list command", () => {
       expect(stdout).toContain("Config:");
       expect(stdout).toContain(FILES.CONFIG_TS);
 
-      // Counts asserted as whole labelled rows against the fixture's own lists,
-      // anchored to the line so the value is the count and nothing else. A bare
-      // `toContain("2")` matches the version banner, a path segment, or any other
-      // digit in the report — and `Agents:` labels two different rows here, a
-      // count and a path.
+      // Whole labelled rows anchored to the line: a bare digit matches the banner or a path, and
+      // `Agents:` labels both a count and a path.
       expect(stdout).toMatch(new RegExp(`^\\s*Skills:\\s+${skills.length}$`, "m"));
       expect(stdout).toMatch(new RegExp(`^\\s*Agents:\\s+${agents.length}$`, "m"));
     });
   });
 
   /**
-   * A mixed installation — most skills carried by a marketplace, one ejected into the project —
-   * is the shape the count was lost on. `countInstalledSkills` asked the plugin registry for a
-   * `plugin` install and `.claude/skills/` for everything else, and `mixed` fell to the second
-   * branch: it reported the ejected copies alone, which for a mostly-plugin install is a number
-   * close to zero.
-   *
-   * What `Skills: N` counts is the skills THIS CLI put there — the configuration's `skills` array
-   * minus its tombstones. Neither the registry nor the skills directory answers that: each holds
-   * only the half of an installation its own install path writes, and each also holds entries the
-   * CLI never wrote.
-   *
-   * **The dashboard is driven here too, against the same fixture, and that pairing is the point.**
-   * It and `list` read one producer (`getInstallationInfo`), and each has only ever been asserted
-   * against itself — which is how two dashboard paths diverged silently once already
-   * (`todo/archive.md`, 2026-08-24). A number is the installation's answer, not a surface's, so
-   * both surfaces are held to one named constant rather than to a figure written twice.
+   * `Skills: N` counts the config's skills minus tombstones, which neither the plugin registry nor
+   * `.claude/skills/` answers alone. The dashboard reads the same producer, so both are held to one
+   * constant.
    */
   describe("with a mixed installation", () => {
-    /** Carried by a marketplace: declared in the config, and owning no directory on disk. */
+    /** Declared in config, owning no directory on disk. */
     const MARKETPLACE_SKILL_IDS = [E2E_SKILL.zustand.id, E2E_SKILL.vitest.id];
 
-    /** Ejected into the project: the only skills of this fixture that own a directory. */
     const EJECTED_SKILL_IDS = [E2E_SKILL.react.id];
 
-    /** What every surface must say, whichever of them is asked. */
     const DECLARED_SKILL_COUNT = MARKETPLACE_SKILL_IDS.length + EJECTED_SKILL_IDS.length;
 
-    /**
-     * A directory under `.claude/skills/` that no configuration declares — a skill installed by
-     * hand or by another tool. This CLI did not put it there and does not manage it.
-     */
+    /** Declared by no configuration: another tool's skill. */
     const UNDECLARED_SKILL_DIR = "context7-mcp";
 
-    /**
-     * The fixture, in a genuine project context: HOME is a sibling of the project rather than the
-     * project itself, so the global scope is a second root the report has to account for and not
-     * an alias of the first one.
-     */
+    /** HOME is a sibling of the project, so the global scope is a second root. */
     async function buildMixedInstall(): Promise<{ project: ProjectHandle; home: string }> {
       const project = await ProjectBuilder.editable({
         skills: EJECTED_SKILL_IDS,
@@ -189,9 +162,8 @@ describe("list command", () => {
     });
 
     /**
-     * The dashboard prints its counts in its own wording (`Skills: N installed`) through a
-     * separate formatter, so it is driven here rather than in a spec of its own: the claim is that
-     * two surfaces agree about ONE installation, and nothing makes two fixtures agree.
+     * Driven here, not in its own spec: the claim is that two surfaces agree about one
+     * installation.
      */
     it("reports that same number on the dashboard", async () => {
       const { project, home } = await buildMixedInstall();
@@ -233,10 +205,7 @@ describe("list command", () => {
       ).toStrictEqual([...EJECTED_SKILL_IDS, UNDECLARED_SKILL_DIR].sort());
     });
 
-    /**
-     * A tombstone masks a globally installed skill for this project; the files can outlive it, so
-     * the only thing that says it is excluded is the entry itself.
-     */
+    /** Files can outlive a tombstone, so only the entry excludes it. */
     it("does not count a tombstoned entry", async () => {
       tempDir = await createTempDir();
       const projectDir = path.join(tempDir, "project");
@@ -282,8 +251,7 @@ describe("list command", () => {
   });
 
   describe("with multiple skills installed", () => {
-    // The list command currently only shows skill counts, not individual skill IDs.
-    // This test asserts the user should see which skills are installed.
+    // Known gap: `list` shows counts, not skill ids.
     it.fails("should show all skill IDs in output", async () => {
       const project = await ProjectBuilder.editable({
         skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id],
@@ -301,10 +269,7 @@ describe("list command", () => {
   });
 
   describe("skill type distinction", () => {
-    // BUG: The list command only shows skill counts (e.g., "Skills: 3"), not individual
-    // skill names or types. There is no distinction between CLI-managed skills (installed
-    // from a source with forkedFrom metadata) and user-created skills (custom: true,
-    // no forkedFrom). Users should be able to see which skills are custom vs managed.
+    // Known gap: `list` does not distinguish CLI-managed from user-created skills.
     it.fails("should distinguish CLI-managed and user-created skills in output", async () => {
       const project = await ProjectBuilder.editable({
         skills: [E2E_SKILL.react.id, E2E_SKILL.vitest.id],
@@ -312,7 +277,6 @@ describe("list command", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Add a user-created skill (custom: true, no forkedFrom)
       await createLocalSkill(projectDir, "web-utilities-date-fns", {
         description: "A user-created custom skill",
         metadata: renderMetadataYaml({
@@ -327,11 +291,9 @@ describe("list command", () => {
       const { exitCode, stdout } = await CLI.run(["list"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // The output should show individual skills with some kind of type indicator
       expect(stdout).toContain(E2E_SKILL.react.id);
       expect(stdout).toContain(E2E_SKILL.vitest.id);
       expect(stdout).toContain("web-utilities-date-fns");
-      // There should be a visible distinction between managed and custom skills
       expect(stdout).toMatch(/custom|user|local/i);
     });
   });
@@ -340,14 +302,12 @@ describe("list command", () => {
     it("should handle project with skills directory but no config", async () => {
       tempDir = await createTempDir();
 
-      // Create .claude/skills/ with a skill but no config.ts
       await mkdir(skillsPath(tempDir), { recursive: true });
       await createLocalSkill(tempDir, "web-animation-css-animations");
 
       const { exitCode, stdout } = await CLI.run(["list"], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // Without config.ts, detectInstallation returns null
       expect(stdout).toContain(STEP_TEXT.NO_INSTALLATION);
     });
 
@@ -368,7 +328,6 @@ describe("list command", () => {
     it("should show global installation details when no project config exists", async () => {
       tempDir = await createTempDir();
 
-      // Create a "global home" directory with .agents-inc/claude/config.ts
       const globalHome = path.join(tempDir, "global-home");
       await writeProjectConfig(globalHome, {
         name: "global-test",
@@ -376,14 +335,11 @@ describe("list command", () => {
         agents: [{ name: E2E_AGENT["web-developer"].name, scope: "project" }],
       });
 
-      // Create skills directory with a skill folder so skill count > 0
       await mkdir(path.join(skillsPath(globalHome), E2E_SKILL.react.id), { recursive: true });
 
-      // Create a project directory WITHOUT config (so detectInstallation falls back to global)
       const projectDir = path.join(tempDir, "project");
       await mkdir(projectDir, { recursive: true });
 
-      // Run list with HOME pointing to globalHome so detectGlobalInstallation finds the config
       const { exitCode, stdout } = await CLI.run(
         ["list"],
         { dir: projectDir },
@@ -393,7 +349,6 @@ describe("list command", () => {
       );
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // detectInstallation should fall back to the global config and show installation info
       expect(stdout).toContain("Installation:");
       expect(stdout).toContain("Eject");
       expect(stdout).toContain("Skills:");
@@ -426,10 +381,8 @@ describe("list command", () => {
         const commandEnv = { HOME: install.home };
         const configBefore = await readTestFile(configTsPath(install.projectDir));
 
-        // The home root is the control: the same install read from the root the
-        // plugins are enabled under has always reported them, so a project
-        // reporting fewer is the CLI losing a scope, not the fixture failing to
-        // install one.
+        // Control: read from the home root the plugins have always been reported, so fewer from the
+        // project is a lost scope.
         const fromHome = await CLI.run(["list"], { dir: install.home }, { env: commandEnv });
         expect(fromHome.exitCode).toBe(EXIT_CODES.SUCCESS);
         expect(fromHome.stdout, "the home root reports the plugins enabled under it").toMatch(
@@ -474,9 +427,7 @@ describe("list command", () => {
         );
 
         expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-        // Zustand is enabled under both roots. Three distinct skills are
-        // installed, so a report of four is the two scopes added rather than
-        // merged.
+        // Three distinct skills, so four means the scopes were added, not merged.
         expect(
           stdout,
           "the two scopes merge by skill id, so a skill enabled at both is one skill and not two",
@@ -491,10 +442,8 @@ describe("list command", () => {
 });
 
 /**
- * The report's Skills / Agents count rows, anchored to the whole line so the
- * digit matched is the count and nothing else — `Agents:` labels both a count
- * row and one path row per directory, and a bare digit also occurs in the
- * version banner and in path segments.
+ * Anchored to the whole line: `Agents:` labels a count row and path rows, and digits occur in the
+ * banner and paths.
  */
 function skillCountRow(count: number): RegExp {
   return new RegExp(`^\\s*Skills:\\s+${count}$`, "m");
@@ -519,16 +468,9 @@ function pluginKeysFor(skillIds: string[], marketplace: string): string[] {
 }
 
 /**
- * Reproduces a completed plugin install whose plugins are enabled under two
- * different roots — `claude plugin install --scope user` writes the home root's
- * settings.json, `--scope project` writes the project's — while both resolve
- * through the single registry the Claude CLI keeps in the home root. Writing
- * the files directly reproduces the finished install without needing the Claude
- * CLI binary, so these tests run unconditionally.
- *
- * Both roots get a config.ts, the way a global install plus a project install
- * leaves them, so `list` detects an installation from either directory.
- * Plugin mode never copies skills into `.claude/skills/`, so none are written.
+ * A finished plugin install with plugins enabled under both roots and one registry in the home
+ * root, written directly so no Claude CLI is needed. Plugin mode copies no skills into
+ * `.claude/skills/`.
  */
 async function createScopedPluginInstall(options: {
   pluginsDir: string;

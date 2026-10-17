@@ -33,49 +33,19 @@ import {
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * Uninstall on Codex: it removes exactly what the install wrote, and it reports what it OBSERVED
- * rather than what it asked for.
- *
- * **The reporting half is not a nicety, because on Codex the host cannot tell you.** Re-derived on
- * the pinned 0.155.1, 2026-09-22, three runs in one `CODEX_HOME`:
- *
- * ```
- * $ codex plugin remove never-installed@<mkt> --json   # exit 0, {"pluginId":…,"name":…,"marketplaceName":…}
- * $ codex plugin remove probe-plugin@<mkt>    --json   # exit 0, the same three fields
- * $ codex plugin remove probe-plugin@<mkt>    --json   # exit 0, the same three fields again
- * ```
- *
- * A plugin that was never there, one that really went, and one removed twice are byte-identical on
- * both channels. So a count built from the list of plugins the plan NAMED is a count of intentions,
- * and it will say "Uninstalled 1 plugin" for a plugin the command did not touch. The only thing
- * that can answer is the listing taken BEFORE the removal — which is why `PluginRemovalOutcome`
- * exists on the host seam, and why this is the Claude-visible change D11(b) signs off.
- *
- * **Every claim about a removal is paired with one about a removal that happened**, in this file.
- * "0 plugins removed" is the same output a command that removed nothing at all would print, and a
- * project uninstall that swept the machine's global plugins and one that correctly swept nothing
- * differ only in what is left on the other side of the sweep.
- *
- * **`codex plugin remove` also clears caches its own `list` does not show**, so the filesystem is
- * read as well as the listing: a removal that emptied the cache but left the registration, or the
- * reverse, is a state only both reads together can see.
- *
- * Written before `codex-host.ts` and the `--provider` flag existed, and red on the unknown flag
- * until C4b built both. Green since 2026-09-22 against the pinned `@openai/codex` 0.155.1, which
- * `e2e/fixtures/codex-on-path.ts` puts on the spawned CLI's `PATH` — without that the product
- * resolves no `codex` at all and every assertion here becomes one about the developer's machine.
+ * Uninstall on Codex removes exactly what the install wrote and reports what it OBSERVED: `codex
+ * plugin remove` exits 0 with the same output whether or not anything was removed, so the count
+ * comes from the listing taken before. Filesystem and listing are both read.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/** A skill directory the CLI did not write, planted beside the ones it did. */
 const FOREIGN_SKILL = "a-skill-this-cli-never-installed";
 
-/** A role file the user wrote by hand beside the ones this CLI compiled — no provenance marker. */
+/** Hand-written, with no provenance marker. */
 const THEIR_OWN_ROLE = `their-own-role${FILES.CODEX_AGENT_EXTENSION}`;
 
-/** The per-plugin line uninstall prints for each plugin it actually removed. */
 function uninstalledPluginLine(ref: string): string {
   return `Uninstalled plugin '${ref}'`;
 }
@@ -101,7 +71,6 @@ describe("uninstalling a Codex installation", () => {
     env = undefined;
   });
 
-  /** Installs one globally-scoped plugin skill onto Codex and answers its marketplace ref. */
   async function installOneGlobalPlugin(target: TestEnvironment, id: string): Promise<string> {
     store.publish(
       id,
@@ -128,7 +97,6 @@ describe("uninstalling a Codex installation", () => {
     return buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName);
   }
 
-  /** What the pinned binary says is installed in this HOME, as one JSON string to search. */
   async function pluginsCodexReports(target: TestEnvironment): Promise<string> {
     const listed = await runCodex(target.fakeHome, ["plugin", "list"], target.projectDir);
     expect(listed.exitCode, listed.stderr).toBe(EXIT_CODES.SUCCESS);
@@ -142,9 +110,7 @@ describe("uninstalling a Codex installation", () => {
       env = await createTestEnvironment({ permissions: false });
       const ref = await installOneGlobalPlugin(env, "CdxUnObs");
 
-      // Out of band, with Codex's own binary: the registration goes, the CLI's config still names
-      // it, and nothing about the next command's inputs changes. This is the ordinary case — a
-      // user who ran `codex plugin remove` themselves — not a contrived one.
+      // Removed out of band with Codex's own binary, as a user might.
       const removedOutOfBand = await runCodex(
         env.fakeHome,
         ["plugin", "remove", ref],
@@ -160,13 +126,8 @@ describe("uninstalling a Codex installation", () => {
       const said = flattenCliOutput(uninstalled.output);
 
       expect(uninstalled.exitCode, said).toBe(EXIT_CODES.SUCCESS);
-      // It must not claim a removal it did not make. `codex plugin remove` exits 0 and prints the
-      // same document either way, so a command that believes its own request says the opposite.
-      //
-      // Both negatives and no positive, deliberately: whether a run that observed nothing prints
-      // `Uninstalled 0 plugins` or skips the section entirely is the implementer's call, and both
-      // are truthful. What is not truthful is either line below. The test beside this one is what
-      // stops the pair being satisfied by a command that reports no removal ever.
+      // Both negatives, no positive: printing `Uninstalled 0 plugins` or nothing are both truthful.
+      // The next test stops a command that never reports a removal from passing.
       expect(said).not.toContain(uninstalledPluginLine(ref));
       expect(said).not.toContain("Uninstalled 1 plugin");
     },
@@ -179,15 +140,10 @@ describe("uninstalling a Codex installation", () => {
       env = await createTestEnvironment({ permissions: false });
       const ref = await installOneGlobalPlugin(env, "CdxUnCnt");
 
-      // Subject guard for the test above as much as for this one: the plugin really was
-      // registered before the uninstall, so "0" there was an observation and not the only answer
-      // this path can produce.
+      // Subject guard: registered before, so the "0" above was an observation.
       expect(await pluginsCodexReports(env)).toContain(ref);
 
-      // The staged copy, before the removal. Measured on 0.155.1: the cache is nested
-      // `<CODEX_HOME>/plugins/cache/<marketplace>/<plugin>/<version>`, so the plugin's own name
-      // is one level BELOW the directory the cache root lists — a listing of the root can never
-      // carry it, installed or not, and asserting its absence there says nothing at all.
+      // The cache nests `<marketplace>/<plugin>/<version>`, so the plugin is one level below.
       const stagedByMarketplace = path.join(
         codexPluginCacheDir(env.fakeHome),
         fixture.marketplaceName,
@@ -204,8 +160,7 @@ describe("uninstalling a Codex installation", () => {
       expect(said).toContain(uninstalledPluginLine(ref));
       expect(said).toContain("Uninstalled 1 plugin");
 
-      // Both reads, because `plugin remove` clears caches the listing does not show: a run that
-      // dropped the registration and left the staged files, or the reverse, satisfies one alone.
+      // Both reads: `plugin remove` clears caches the listing does not show.
       expect(await pluginsCodexReports(env)).not.toContain(ref);
       expect(await directoryExists(codexPluginCacheDir(env.fakeHome))).toBe(true);
       expect(await listFiles(stagedByMarketplace)).not.toContain(E2E_SKILL.react.id);
@@ -219,9 +174,7 @@ describe("uninstalling a Codex installation", () => {
       env = await createTestEnvironment({ permissions: false });
       const ref = await installOneGlobalPlugin(env, "CdxUnPrj");
 
-      // Codex installs plugins for a machine, never for one project. A project uninstall that
-      // asked Codex's user-wide list would take every global plugin away from every project on
-      // the machine — the one operation in this step that can destroy work nobody asked about.
+      // Codex plugins are machine-wide; a project uninstall must not take them from every project.
       const project = await CLI.run(["uninstall", "--yes"], {
         dir: env.projectDir,
         globalHome: env.fakeHome,
@@ -274,10 +227,7 @@ describe("uninstalling a Codex installation", () => {
       );
       expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
 
-      // A skill the CLI never installed, in each root it is about to sweep. `$CODEX_HOME/skills`
-      // is shared with whatever the user put there and with Codex's own `.system` bundle, and
-      // `<repo>/.agents/skills` is a committed directory of the user's repository — a sweep that
-      // removes the directory rather than its own entries destroys both.
+      // Both skills roots are shared with the user: a sweep removes its entries, not the dir.
       const globalSkills = codexGlobalSkillsDir(env.fakeHome);
       const projectSkills = codexProjectSkillsDir(env.projectDir);
       for (const root of [globalSkills, projectSkills]) {
@@ -294,10 +244,8 @@ describe("uninstalling a Codex installation", () => {
       });
       expect(uninstalled.exitCode, flattenCliOutput(uninstalled.output)).toBe(EXIT_CODES.SUCCESS);
 
-      // The project's own skill goes; the stranger beside it stays.
       expect(await listFiles(projectSkills)).toStrictEqual([FOREIGN_SKILL]);
-      // A PROJECT uninstall leaves the global scope's rows where they are — members, not a count,
-      // because a count cannot tell a removal from a swap.
+      // A project uninstall leaves the global rows.
       expect((await listFiles(globalSkills)).sort()).toStrictEqual(
         [FOREIGN_SKILL, E2E_SKILL.react.id].sort(),
       );
@@ -307,14 +255,13 @@ describe("uninstalling a Codex installation", () => {
     "removes the role files it compiled, and leaves one the user wrote beside them",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // CLI-896: the lister globbed `*.md` and read Claude's marker, so on Codex it found no
-      // compiled agent at all — the roles survived while the output said they were removed.
+      // On Codex the lister must find `.toml` roles, not Claude's `*.md`.
       env = await createTestEnvironment({ permissions: false });
       await installOneGlobalPlugin(env, "CdxUnRol");
 
       const roles = path.join(env.projectDir, DIRS.CODEX, DIRS.AGENTS);
       const compiledRole = `${WEB_DEV}${FILES.CODEX_AGENT_EXTENSION}`;
-      // Subject guard: the install really wrote the role, so its absence below is a removal.
+      // Subject guard: the install really wrote the role.
       expect(await listFiles(roles)).toContain(compiledRole);
       await writeFile(path.join(roles, THEIR_OWN_ROLE), 'name = "their-own-role"\n');
 

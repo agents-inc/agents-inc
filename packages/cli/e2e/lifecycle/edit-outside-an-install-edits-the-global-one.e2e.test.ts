@@ -23,30 +23,16 @@ import { buildSeedSkill } from "../../src/cli/lib/__tests__/factories/seed-facto
 import type { SkillConfig } from "../../src/cli/types/index.js";
 
 /**
- * `cc edit` started in a directory that holds no installation edits the installation it
- * FOUND — the global one — rather than inventing a project out of the directory it was
- * started in.
- *
- * The command names no directory. It detects an installation, and detection falls back to
- * `$HOME` when the working directory has no config of its own, so `cc edit --from` in an
- * unrelated checkout is a request to edit the GLOBAL install. `edit` used to read that
- * directory as a project anyway: the write path split by scope and wrote a source-folder pair
- * into the directory, and the compile ran twice, dropping `.claude/agents/` beside it.
- *
- * The positive half is the global installation gaining what the run added; the negative half
- * is a whole-tree snapshot rather than four separate absences: the directory must come out of
- * the run byte-identical, which covers the config pair, the compiled agents and anything else
- * a stray write would leave.
+ * `edit` started in a directory with no installation edits the global one it found: the global
+ * install gains what the run added, and the directory's whole tree is byte-identical afterwards.
  */
 
-/** The skill the E2E stack assigns to no agent, so an edit has something genuinely new to add. */
+/** Assigned to no agent by the E2E stack, so the edit has something genuinely new to add. */
 const SPARE_SKILL = E2E_SKILL["visual-regression"];
 
-/** The E2E stack, every skill ejected into the global installation. */
 const STACK_PAYLOAD = e2eStackPayload({ scope: "global" });
 const STACK_ID = "Outside1";
 
-/** The same configuration with the spare added to the web sub-agent. */
 const STACK_AND_SPARE_ID = "Outside2";
 const STACK_AND_SPARE_PAYLOAD = {
   ...STACK_PAYLOAD,
@@ -82,8 +68,7 @@ describe("edit from a directory that holds no installation", () => {
     const env = await createTestEnvironment();
     tempDir = env.tempDir;
     fakeHome = env.fakeHome;
-    // `createTestEnvironment` leaves this directory bare — a `.claude/settings.json` and
-    // nothing else. Only the global install runs, so nothing is ever installed into it.
+    // Only `.claude/settings.json`; nothing is ever installed into it.
     bareDir = env.projectDir;
 
     const phaseA = await runInitFrom(store, STACK_ID, { dir: fakeHome }, E2E_SOURCE.sourceDir);
@@ -91,9 +76,7 @@ describe("edit from a directory that holds no installation", () => {
 
     bareTreeBefore = await readTreeSnapshot(bareDir);
 
-    // The subject: `cc edit --from` from the bare directory, adding a skill so the run has real
-    // work to persist. A pass-through would leave the directory untouched for want of
-    // anything to write rather than for want of authority to write it.
+    // Adds a skill, so an untouched directory means no authority to write, not nothing to write.
     ({ exitCode: bareEditExitCode, output: bareEditOutput } = await applyEditFrom(
       store,
       STACK_AND_SPARE_ID,

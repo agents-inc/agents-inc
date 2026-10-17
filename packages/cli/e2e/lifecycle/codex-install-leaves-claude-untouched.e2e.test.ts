@@ -34,42 +34,14 @@ import {
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * What a Codex install writes, where, and the one claim the whole step rests on: **Claude does not
- * move.**
- *
- * **Why the absences are the load-bearing half.** A path that missed the layout funnel does not
- * fail — it writes into `.claude/` or `.agents-inc/claude/` and exits 0, with every assertion
- * about the Codex side still green, because those assertions are about what IS there. The plan
- * calls this "half-routed paths" and names it the risk that ships a broken provider with a green
- * suite. So a Codex run is pinned for what it did NOT create as firmly as for what it did.
- *
- * **Two strengths of the same claim, and the weaker one cannot be dropped.** The first test runs
- * on a machine with no Claude installation at all, so "no `.claude/`" is checkable by existence.
- * The second runs with a Claude global already installed, where existence proves nothing and only
- * the BYTES do — and that is the case a user is actually in. Neither subsumes the other: the first
- * catches a path that creates the folder, the second catches one that writes into a folder that
- * was already there.
- *
- * **`toStrictEqual` over two normalised trees, not a file count.** A count cannot see a swap, and
- * a swap is exactly what a mis-routed write looks like from outside: one file rewritten, the total
- * unchanged. The normalisation is `readInstallTree`'s own — temp roots and the compiled-agent
- * version line — and nothing else, so a byte that moved for any other reason reddens.
- *
- * Every payload here ejects. That is deliberate and not a convenience: an eject needs no `claude`
- * binary and no `codex plugin add`, so both halves of the comparison are this CLI's own writes and
- * the result does not depend on a host binary being on the machine. The plugin placement's own
- * proof lives in `codex-offered-placements.e2e.test.ts`.
- *
- * Written before the `--provider` flag existed, and red on the unknown flag until C4b built it.
- * Green since 2026-09-22.
+ * A Codex install, and every later command on it, leaves Claude untouched: no `.claude/` on a
+ * machine without Claude, and byte-identical Claude trees on one with it. Every payload ejects, so
+ * no host binary is involved.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/**
- * The Claude CLI's record of its own sessions, which nothing in this CLI writes and every run
- * moves. Left unpinned for the reason the golden-tree journeys leave it unpinned.
- */
+/** The Claude CLI's own session records: nothing here writes them, every run moves them. */
 const CLAUDE_SESSION_STATE = [
   path.posix.join(DIRS.CLAUDE, FILES.CLAUDE_SESSION_JSON),
   path.posix.join(DIRS.CLAUDE, FILES.CLAUDE_SESSION_LOCK),
@@ -77,20 +49,9 @@ const CLAUDE_SESSION_STATE = [
 ];
 
 /**
- * Every command a Codex installation reaches after the install, in the order a user meets them.
- *
- * Named as a list rather than written out once per command because the claim is one claim per
- * command and a command missing from it is the half-routed path that ships: `compile` writes the
- * agents, `doctor` reads every scope it can find, `edit --from` applies a shared configuration,
- * `eject skills` copies the catalogue into the installation's skills folder, and `uninstall`
- * removes one. Members rather than a count, and `uninstall` last because it takes the subject away.
- * `eject` passes `--force` because the install's own project copy already holds that folder, and a
- * refusal would write nothing on either provider.
- *
- * **`edit --from` refuses here and that is stated rather than hidden.** It applies a shared
- * configuration destructively, so with no terminal to confirm the removals in it stops — which
- * pins that its REFUSAL writes nothing and leaves the approving path to the PTY harness, where a
- * Codex spec does not exist yet.
+ * Every command a Codex installation reaches after install, `uninstall` last. `eject` passes
+ * `--force` because the project already holds that folder. `edit --from` refuses with no terminal,
+ * which pins that its refusal writes nothing.
  */
 const LATER_COMMANDS = [
   { label: "compile", argv: ["compile"] },
@@ -100,17 +61,12 @@ const LATER_COMMANDS = [
   { label: "uninstall", argv: ["uninstall", "--yes"] },
 ] as const;
 
-/** oclif's refusal for a flag no command declares — what a half-built provider looks like. */
+/** oclif's refusal for an undeclared flag: what a half-built provider looks like. */
 const UNKNOWN_FLAG = "Nonexistent flag";
 
 /**
- * One skill, ejected, with its sub-agent's scope stated beside it.
- *
- * Both scopes are written out rather than defaulted because the pair has to be COHERENT: a
- * project-scoped skill assigned to a sub-agent resting at global scope is a combination the config
- * model cannot express, and an install at the home directory refuses any project-scoped entry
- * outright — "a global installation holds only global-scoped content". Either mismatch fails the
- * run before it reaches the subject, which reads as this step's red and is not.
+ * Both scopes stated: a project skill on a global sub-agent, or any project-scoped entry at home,
+ * fails before reaching the subject.
  */
 function ejected(skillScope: "global" | "project", agentScope: "global" | "project") {
   return buildSeedPayload({
@@ -161,8 +117,7 @@ describe("a Codex install and the Claude side of the machine", () => {
       );
       expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
 
-      // The folder IS the provider: it is the only record that this installation is a Codex one,
-      // so both scopes in play carry their own pair and neither is inferred from the other.
+      // The folder is the provider's only record, so each scope carries its own pair.
       for (const root of [env.fakeHome, env.projectDir]) {
         expect(
           await fileExists(path.join(root, CODEX_SOURCE_REL, FILES.CONFIG_TS)),
@@ -170,15 +125,13 @@ describe("a Codex install and the Claude side of the machine", () => {
         ).toBe(true);
       }
 
-      // The skill went to the global Codex root, not to a Claude one.
       expect(
         await fileExists(
           path.join(codexGlobalSkillsDir(env.fakeHome), E2E_SKILL.react.id, FILES.SKILL_MD),
         ),
       ).toBe(true);
 
-      // Nothing Claude-shaped exists, at either scope. This is the check that catches a path that
-      // bypassed the layout funnel — it writes somewhere plausible and exits 0.
+      // Catches a path that bypassed the layout funnel and wrote somewhere plausible.
       for (const root of [env.fakeHome, env.projectDir]) {
         expect(await directoryExists(path.join(root, DIRS.CLAUDE)), `${root}/.claude`).toBe(false);
         expect(
@@ -195,7 +148,6 @@ describe("a Codex install and the Claude side of the machine", () => {
     async () => {
       env = await createTestEnvironment({ permissions: false });
 
-      // A Claude global first, the way a user already on Claude has one.
       store.publish("ClaBase1", ejected("global", "global"));
       const claudeInstall = await runInitFrom(
         store,
@@ -212,9 +164,7 @@ describe("a Codex install and the Claude side of the machine", () => {
 
       const before = await claudeSideOf(env);
 
-      // Then a Codex install in a project underneath it. A Codex project inherits from and
-      // propagates to the Codex global alone, so nothing here has any business touching the
-      // Claude pair — not even to register the project in its `projects[]` list.
+      // A Codex project relates only to the Codex global, so it must not register in Claude's.
       store.publish("CdxBesd1", ejected("project", "project"));
       const codexInstall = await runInitFromOnCodex(
         store,
@@ -224,14 +174,12 @@ describe("a Codex install and the Claude side of the machine", () => {
       );
       expect(codexInstall.exitCode, flattenCliOutput(codexInstall.output)).toBe(EXIT_CODES.SUCCESS);
 
-      // Subject guard: the Codex run really did install something. Without it this test passes
-      // for a run that refused at the first line, which is the same green as a run that behaved.
+      // Subject guard: a run that refused at once would also leave Claude untouched.
       expect(await fileExists(path.join(env.projectDir, CODEX_SOURCE_REL, FILES.CONFIG_TS))).toBe(
         true,
       );
 
       expect(await claudeSideOf(env)).toStrictEqual(before);
-      // And the project it ran in grew no Claude half either.
       expect(await directoryExists(path.join(env.projectDir, CLAUDE_SOURCE_REL))).toBe(false);
       expect(await directoryExists(path.join(env.projectDir, DIRS.CLAUDE))).toBe(false);
     },
@@ -264,8 +212,7 @@ describe("a Codex install and the Claude side of the machine", () => {
       );
       expect(codexInstall.exitCode, flattenCliOutput(codexInstall.output)).toBe(EXIT_CODES.SUCCESS);
 
-      // The baseline is taken AFTER the install, because the install's own effect on the Claude
-      // side is the test above. What this one measures is every command a user runs afterwards.
+      // Taken after the install, whose own effect is the test above.
       const before = await claudeSideOf(env);
 
       for (const { label, argv } of LATER_COMMANDS) {
@@ -276,10 +223,7 @@ describe("a Codex install and the Claude side of the machine", () => {
         );
         const said = flattenCliOutput(run.output);
 
-        // The exit code is not the claim and is deliberately unasserted: `doctor` answers whether
-        // the installation is healthy, and `edit --from` refuses outright where there is no
-        // terminal to confirm its removals in. What every one of them owes is the same thing —
-        // a Codex installation's command does not touch the Claude side of the machine.
+        // Exit codes are not the claim: `doctor` reports; `edit --from` refuses without a TTY.
         expect(await claudeSideOf(env), `${label} moved the Claude side`).toStrictEqual(before);
         expect(
           await directoryExists(path.join(env.projectDir, CLAUDE_SOURCE_REL)),
@@ -295,9 +239,7 @@ describe("a Codex install and the Claude side of the machine", () => {
         ).not.toContain(UNKNOWN_FLAG);
       }
 
-      // Subject guard for the whole loop: the sweep really did reach a command that acts. Without
-      // it every assertion above is satisfied by commands that each refused at their first
-      // line, which is the same green as commands that behaved.
+      // Subject guard: the sweep reached a command that acts.
       expect(
         await directoryExists(path.join(env.projectDir, CODEX_SOURCE_REL)),
         "the uninstall at the end of the sweep left the Codex pair behind",
@@ -306,39 +248,19 @@ describe("a Codex install and the Claude side of the machine", () => {
   );
 });
 
-/**
- * What a Codex run is SUPPOSED to write under one scope root, named relative to it.
- *
- * `.agents` whole rather than `.agents/skills`: it is the namespace Codex reads a project's
- * committed skills out of, this CLI is the only thing that writes under it, and an uninstall
- * leaves the emptied parent behind — so naming the child excludes the content and leaves the
- * directory itself reading as a Claude-side change. Both are the Codex side.
- */
+/** `.agents` whole: uninstall leaves the emptied parent behind, which is still the Codex side. */
 const CODEX_SIDE_OF_A_SCOPE = [
   DIRS.CODEX,
   path.posix.join(DIRS.SOURCE_ROOT, "codex"),
   ".agents",
 ] as const;
 
-/** The Claude side of the machine: the HOME's own scope, and the project's, as two trees. */
 type ClaudeSide = { home: InstallTree; project: InstallTree };
 
 /**
- * Everything on the machine that belongs to Claude, as one normalised value.
- *
- * Read from each SCOPE ROOT rather than from each folder separately: a write that lands in a
- * directory neither of the two named folders covers — a half-routed `~/.agents-inc/` — has to
- * show up somewhere, and reading the whole scope root is what makes an
- * unexpected sibling a failure rather than an omission. The Codex side is excluded by name at
- * each of them, because it is what the run under test is supposed to be writing.
- *
- * **Two trees rather than one, because the project sits INSIDE the HOME here.** A single read of
- * the HOME cannot express this claim at all: `<home>/project/.agents-inc/codex/config.ts` is the
- * file the test beside this one REQUIRES the run to write, and a skip relative to the HOME does
- * not reach it — while `project/` itself flips from an empty directory to a populated one on the
- * strength of exactly that write, which no skip can undo because `readInstallTree` counts a
- * directory's real children. Reading the project as its own root keeps every Claude-side claim,
- * and drops only the fact that the fixture nests the two.
+ * Everything Claude's, read per scope root so an unexpected sibling fails, with the Codex side
+ * excluded by name. Two trees because the project sits inside HOME here and its Codex config
+ * would otherwise count as a change.
  */
 async function claudeSideOf(env: TestEnvironment): Promise<ClaudeSide> {
   const context = { roots: { home: [env.fakeHome] }, cliVersion: await cliVersion() };

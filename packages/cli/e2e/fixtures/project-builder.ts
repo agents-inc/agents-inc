@@ -34,47 +34,22 @@ export type DualScopeHandle = {
 };
 
 export type EditableOptions = {
-  /**
-   * The skills source this install answers to, recorded in its config.
-   *
-   * Every command after `init` resolves the source out of the config — `--marketplace` is
-   * `init`'s flag alone and `CC_MARKETPLACE` is read at install time only — so a fixture that
-   * hand-writes an install has to write the source too, or the commands under test read
-   * the default public marketplace. Pass it HERE whenever the spec snapshots config.ts: recorded
-   * at build time it is part of the fixture, and recorded later it is a change the snapshot sees.
-   */
+  /** Recorded in config.ts, the only place later commands read the source from. */
   marketplace?: string;
   skills?: string[];
   agents?: AgentName[];
   domains?: Domain[];
   stack?: Partial<Record<AgentName, FixtureStackAgentConfig>>;
-  /**
-   * Writes `FORKED_FROM_METADATA` as each skill's metadata.yaml instead of the
-   * default metadata, marking the skills as CLI-managed so `uninstall` removes
-   * them instead of skipping them as user-created.
-   */
+  /** Marks the skills CLI-managed, so `uninstall` removes rather than skips them. */
   forkedFrom?: boolean;
-  /**
-   * Extra `scope: "global"` skill entries recorded in the project config. No disk copy is
-   * written: they model skills inherited from the global install, not project-local files.
-   */
+  /** Config-only `scope: "global"` entries modelling skills inherited from the global install. */
   globalSkills?: string[];
-  /**
-   * The `origin` recorded for the `globalSkills` entries above. Defaults to `"eject"`, which
-   * matches the project half and is the shape most specs want.
-   */
+  /** Defaults to `"eject"`. */
   globalSkillsSource?: string;
-  /**
-   * Skills recorded in the project config with NO files written for them: skills the
-   * session's source does not carry AND the install has no copy of, so nothing resolves them.
-   *
-   * Writing the files instead does not produce that state — an installed local
-   * skill whose metadata.yaml describes it is merged into the matrix like any other.
-   */
+  /** Config entries with no files and no source carrying them, so nothing resolves them. */
   unresolvableSkills?: string[];
 };
 
-/** Description and metadata.yaml body for one local skill written by a fixture. */
 export type SkillContentOverride = {
   description: string;
   metadata: string;
@@ -90,45 +65,18 @@ export type DualScopeOptions = {
 export type PluginProjectOptions = {
   skills: string[];
   marketplaceName: string;
-  /** The skills source this install answers to — see {@link EditableOptions.marketplace}. */
   marketplace?: string;
   agents?: AgentName[];
   domains?: Domain[];
-  /**
-   * When true, skips writing the `marketplaceName` field into config.ts even
-   * though every skill entry carries that marketplace as its `origin`. Simulates
-   * legacy installs where the marketplace's name was never persisted — the scenario
-   * that triggered the silent plugin-install skip regression (see
-   * feedback_no_plugin_to_eject_fallback.md).
-   */
+  /** Omits config.ts's marketplace field while entries keep it as `origin` (legacy installs). */
   omitMarketplaceField?: boolean;
-  /** Config entries with no files written for them — see {@link EditableOptions.unresolvableSkills}. */
   unresolvableSkills?: string[];
 };
 
-/** The identity fields a fixture writes into an installed skill's metadata.yaml. */
 type SkillIdentityFields = { category: string; slug: string; displayName: string };
 
-/**
- * Explicit category, slug and display name for every skill ID these fixtures write
- * metadata for. Deriving any of them from a skill ID is banned (see CLAUDE.md) because
- * a wrong guess still looks plausible on disk; an unmapped ID must fail loudly instead.
- *
- * Every `category` here must be a member of `CATEGORIES` in
- * `src/cli/types/generated/source-types.ts` — note that `web-state-*` skills
- * belong to `web-client-state`, not to a `web-state` category.
- *
- * `displayName` is the title the SOURCE publishes for the same skill, so an installed
- * copy and the catalogue entry it came from name it the same way. It is not the id:
- * the strict metadata schema bounds the field at 30 characters, and a namespaced id is
- * longer than that on its own — `doctor`'s content layer validates every installed
- * metadata.yaml, so a fixture writing one reads as a broken install rather than a
- * healthy project. Same reasoning as `FORKED_FROM_METADATA` in test-utils.ts.
- *
- * Keyed by the id an install actually records, so the fixture marketplace's
- * entries are namespaced and `web-styling-tailwind` — which no source here ships,
- * and which exists to be UNRESOLVABLE — is not.
- */
+// Stated, never derived from the id; an unmapped id throws. `displayName` is the source's title
+// (the schema caps it at 30 chars, which a namespaced id exceeds).
 const SKILL_IDENTITY_FIELDS: Record<string, SkillIdentityFields> = {
   [E2E_SKILL.hono.id]: {
     category: "api-api",
@@ -211,12 +159,6 @@ const SKILL_IDENTITY_FIELDS: Record<string, SkillIdentityFields> = {
   },
 };
 
-/**
- * The stated `category` / `slug` / `displayName` of a fixture skill, from the one table
- * above. Exported because a second caller exists: nothing may derive these three from an
- * id or a directory name, so every fixture that writes a `metadata.yaml` has to read them
- * from here and take the throw when the table has no row.
- */
 export function metadataFieldsFor(skillId: string): SkillIdentityFields {
   const entry = SKILL_IDENTITY_FIELDS[skillId];
   if (!entry) {
@@ -228,14 +170,7 @@ export function metadataFieldsFor(skillId: string): SkillIdentityFields {
   return entry;
 }
 
-/**
- * Writes the project's `.claude/settings.json` as a plugin install leaves it — each key enabled,
- * beside the `Read(*)` grant every E2E project carries. It is the one file `toHavePlugin` reads,
- * and therefore the only place a plugin's presence or departure is observable.
- *
- * Writes rather than merges, because the only caller runs it on a directory it has just
- * created and nothing has put a settings.json there yet.
- */
+// The only file `toHavePlugin` reads. Writes rather than merges: the directory is freshly created.
 async function writePluginInstallSettings(
   projectDir: string,
   pluginKeys: readonly string[],
@@ -248,40 +183,16 @@ async function writePluginInstallSettings(
   );
 }
 
-/**
- * What `ProjectBuilder.minimal()` puts in the project — the single local skill
- * and the two agents its config declares. Exported so specs assert against the
- * fixture's own definition rather than re-typing the names the command echoes
- * back at them.
- */
 export const MINIMAL_PROJECT_SKILL_ID = E2E_SKILL.vitest.id;
 export const MINIMAL_PROJECT_AGENT_NAMES = [
   "web-developer",
   "api-developer",
 ] as const satisfies readonly AgentName[];
 
-/**
- * The custom skill `ProjectBuilder.withCustomSkill()` installs and preloads.
- * Deliberately outside the `SkillId` union — a custom skill is exactly a skill
- * the marketplace does not know about.
- */
+// Deliberately outside the `SkillId` union.
 export const CUSTOM_PROJECT_SKILL_ID = "web-custom-e2e-widget";
 
 export class ProjectBuilder {
-  /**
-   * Creates a minimal project with one local skill and config.
-   * Suitable for compile tests.
-   *
-   * Structure:
-   *   <projectDir>/
-   *     .agents-inc/claude/
-   *       config.ts
-   *     .claude/
-   *       skills/
-   *         web-testing-vitest/
-   *           SKILL.md
-   *           metadata.yaml
-   */
   static async minimal(): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -312,21 +223,6 @@ export class ProjectBuilder {
     return { dir: projectDir };
   }
 
-  /**
-   * Creates a project suitable for the edit command.
-   * Has config, local skills, and an agents directory.
-   *
-   * Structure:
-   *   <projectDir>/
-   *     .agents-inc/claude/
-   *       config.ts
-   *     .claude/
-   *       skills/
-   *         <skillId>/
-   *           SKILL.md
-   *           metadata.yaml
-   *       agents/       (empty, for recompilation target)
-   */
   static async editable(options?: EditableOptions): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -382,24 +278,11 @@ export class ProjectBuilder {
     return { dir: projectDir };
   }
 
-  /**
-   * Creates dual-scope project (global + project installations).
-   *
-   * Structure:
-   *   <tempDir>/
-   *     global-home/                        <- fake HOME
-   *       .agents-inc/claude/config.ts       <- global config
-   *       .claude/skills/web-testing-cypress-e2e/
-   *     project/                            <- project dir (cwd)
-   *       .agents-inc/claude/config.ts       <- project config
-   *       .claude/skills/web-mocks-msw/
-   */
   static async dualScope(options?: DualScopeOptions): Promise<DualScopeHandle> {
     const tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "global-home");
     const projectDir = path.join(tempDir, "project");
 
-    // --- Global installation ---
     await writeProjectConfig(
       globalHome,
       buildProjectConfig({
@@ -412,9 +295,6 @@ export class ProjectBuilder {
         selectedDomains: ["web"],
         stack: {
           "web-developer": {
-            // The category the CATALOGUE declares for this id, looked up rather than derived from
-            // its `web-testing-` prefix — `metadataFieldsFor` beside this writes the same answer
-            // into the skill's metadata.yaml, and the two disagreed until 2026-08-24.
             "web-e2e": [sa("web-testing-cypress-e2e", true)],
           },
         },
@@ -433,7 +313,6 @@ export class ProjectBuilder {
         }),
     });
 
-    // --- Project installation ---
     await writeProjectConfig(
       projectDir,
       buildProjectConfig({
@@ -446,13 +325,7 @@ export class ProjectBuilder {
         selectedDomains: ["web"],
         stack: {
           "api-developer": options?.projectStack ?? {
-            // Two skills in two DIFFERENT categories, which is what this fixture always meant: one
-            // agent holding a global-scoped skill and a project-scoped one. It used to say
-            // `web-testing` and `web-mocking` for two skills the catalogue both puts in `web-e2e`,
-            // and `web-e2e` is EXCLUSIVE — so once the categories were read from the catalogue
-            // instead of from the id prefix, the pair became a config the writer refuses to emit.
-            // `web-mocks-msw` is a real `web-mocking` skill, so the second key is now true of the
-            // id under it rather than of the id the author reached for.
+            // One agent with a global-scoped and a project-scoped skill, in different categories.
             "web-e2e": [sa("web-testing-cypress-e2e", true)],
             "web-mocking": [sa("web-mocks-msw", true)],
           },
@@ -479,29 +352,12 @@ export class ProjectBuilder {
     };
   }
 
-  /**
-   * Creates a dual-scope project where the project config imports from the global config.
-   * Used for compile verification of cross-scope config resolution.
-   *
-   * Structure:
-   *   <tempDir>/
-   *     fake-home/                             <- fake HOME (globalHome)
-   *       .agents-inc/claude/
-   *         config.ts                          <- global config
-   *         config-types.ts                    <- shared types
-   *       .claude/skills/web-framework-react/
-   *     project/                               <- project dir (cwd)
-   *       .agents-inc/claude/
-   *         config.ts                          <- imports globalHome config
-   *         config-types.ts                    <- shared types
-   *       .claude/skills/web-testing-vitest/
-   */
+  // The project config imports the global one.
   static async dualScopeWithImport(): Promise<DualScopeHandle> {
     const tempDir = await createTempDir();
     const globalHome = path.join(tempDir, "fake-home");
     const projectDir = path.join(tempDir, "project");
 
-    // --- Global installation ---
     await writeProjectConfig(
       globalHome,
       buildProjectConfig({
@@ -526,7 +382,6 @@ export class ProjectBuilder {
       }),
     });
 
-    // --- Shared config-types.ts ---
     const configTypesContent = `// AUTO-GENERATED
 export type SkillId = "web-framework-react" | "web-testing-vitest";
 export type AgentName = "web-developer" | "api-developer";
@@ -557,7 +412,6 @@ export interface ProjectConfig {
     await writeFile(path.join(globalConfigDir, FILES.CONFIG_TYPES_TS), configTypesContent);
     await writeFile(path.join(projectConfigDir, FILES.CONFIG_TYPES_TS), configTypesContent);
 
-    // --- Project config that imports from global ---
     const globalImportPath = path
       .relative(projectConfigDir, globalConfigDir)
       .split(path.sep)
@@ -584,7 +438,6 @@ export default {
 `;
     await writeFile(path.join(projectConfigDir, FILES.CONFIG_TS), projectConfigContent);
 
-    // --- Project skill ---
     await createLocalSkill(projectDir, "web-testing-vitest", {
       description: "Vitest testing skill for project scope testing",
       metadata: renderMetadataYaml({
@@ -600,27 +453,7 @@ export default {
     };
   }
 
-  /**
-   * Creates a project with a custom (non-marketplace) skill and config-types.ts.
-   * Exercises Zod schema validation for a skill id outside the union.
-   *
-   * The ID is custom and the TAXONOMY is real. A custom skill is placed in a
-   * category that already exists rather than bringing one, so a fabricated
-   * `custom-e2e` domain and `web-custom-e2e` category — what this fixture wrote
-   * until the placement rule landed — is a file no product path can produce and
-   * the loader now refuses.
-   *
-   * Structure:
-   *   <projectDir>/
-   *     .agents-inc/claude/
-   *       config-types.ts   (auto-generated types including the custom ID)
-   *       config.ts         (imports config-types, uses satisfies ProjectConfig)
-   *     .claude/
-   *       skills/
-   *         web-custom-e2e-widget/
-   *           SKILL.md
-   *           metadata.yaml  (custom: true, domain: web, category: web-tooling)
-   */
+  // A custom id in a real category: the loader refuses a fabricated domain or category.
   static async withCustomSkill(options?: { marketplace?: string }): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -631,7 +464,6 @@ export default {
     await mkdir(configDir, { recursive: true });
     await mkdir(skillDir, { recursive: true });
 
-    // Auto-generated config-types.ts with custom skill ID and custom category
     const configTypesContent = `// AUTO-GENERATED by agents-inc — DO NOT EDIT
 
 export type SkillId =
@@ -675,7 +507,6 @@ export interface ProjectConfig {
 
     await writeFile(path.join(configDir, FILES.CONFIG_TYPES_TS), configTypesContent);
 
-    // Config file that references custom skill and custom category
     const marketplaceLine =
       options?.marketplace === undefined ? "" : `\n  marketplace: "${options.marketplace}",`;
     const configContent = `import type { ProjectConfig } from "./config-types";
@@ -698,8 +529,7 @@ export default {
 
     await writeFile(path.join(configDir, FILES.CONFIG_TS), configContent);
 
-    // Written directly (not via createLocalSkill) because the custom skill ID
-    // is intentionally outside the SkillId union.
+    // Not via createLocalSkill: the id is outside the SkillId union.
     await writeFile(
       path.join(skillDir, FILES.SKILL_MD),
       renderSkillMd(
@@ -726,24 +556,8 @@ export default {
     return { dir: projectDir };
   }
 
-  /**
-   * Creates a project that looks like it was initialized in plugin mode.
-   * Has config with marketplace source, skills, agents dir with agent stubs, and each
-   * declared skill's plugin key enabled in `.claude/settings.json`.
-   *
-   * **The enabled keys are what make a DEPARTURE assertable.** Without them the fixture
-   * claimed plugin origin in config.ts and left the one file `toHavePlugin` reads empty,
-   * so `not.toHavePlugin` held before the command ran and every migration spec built here
-   * could check the install direction and not the uninstall one. A hardening pass added
-   * exactly that assertion, mutated away the `claudePluginUninstall` call, watched it stay
-   * green and removed its own assertion rather than ship a vacuous one.
-   *
-   * `unresolvableSkills` get no key: they are config entries with no files, which is a
-   * state no install ever reached, so enabling them would be a claim about an install that
-   * did not happen. The registry half lives in `createPluginInstalledProject`, in
-   * `plugin-install-state.ts` — that fixture owns a fake HOME and this one does
-   * not, and `toHavePlugin` reads only the project's settings.json.
-   */
+  // Enables each skill's plugin key in settings.json so a departure is assertable;
+  // `unresolvableSkills` get none. The registry half is `createPluginInstalledProject`.
   static async pluginProject(options: PluginProjectOptions): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -786,10 +600,6 @@ export default {
     return { dir: projectDir };
   }
 
-  /**
-   * Creates a project initialized in eject mode but with a marketplace configured.
-   * Skills have source "eject" but the config has a marketplace field.
-   */
   static async localProjectWithMarketplace(options: PluginProjectOptions): Promise<ProjectHandle> {
     const tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
@@ -826,19 +636,7 @@ export default {
     return { dir: projectDir };
   }
 
-  /**
-   * Creates a global installation with one skill installed.
-   * Returns a handle to the global home dir (for HOME env var)
-   * and a subdirectory to run commands from (simulating a project without its own config).
-   *
-   * Structure:
-   *   <tempDir>/
-   *     .agents-inc/claude/config.ts   <- global config
-   *     .claude/skills/web-framework-react/
-   *       SKILL.md
-   *       metadata.yaml
-   *     subproject/                   <- empty dir to run from
-   */
+  // `subDir` is an empty directory to run from: a project with no config of its own.
   static async globalWithSubproject(): Promise<{ globalHome: ProjectHandle; subDir: string }> {
     const tempDir = await createTempDir();
 
@@ -869,19 +667,9 @@ export default {
     return { globalHome: { dir: tempDir }, subDir };
   }
 
-  /**
-   * Creates a minimal installation — a `config.ts` in the folder that directory is on.
-   * This satisfies `detectInstallation()` for commands that require an existing
-   * installation (e.g., `new skill` when no `--output` flag is provided).
-   *
-   * Unlike other ProjectBuilder methods, this does NOT create its own temp dir.
-   * It writes into the provided directory.
-   */
+  // Writes into `dir` (no temp dir of its own), enough for `detectInstallation()`.
   static async installation(dir: string): Promise<void> {
-    // Declares a skill so the config is a real installation: a config that
-    // declares neither skills nor agents is content-less and does not count as
-    // an installation. The empty `agents` is stated, because the factory's default
-    // roster would otherwise add one.
+    // A config with neither skills nor agents is not an installation; `agents` is explicitly empty.
     await writeProjectConfig(
       dir,
       buildProjectConfig({

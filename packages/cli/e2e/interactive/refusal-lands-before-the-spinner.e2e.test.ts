@@ -19,33 +19,15 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `edit --from` renders a loading `<Spinner>` and then awaits a load that can refuse
- * the run. The documented contract is that such a refusal "lands before the spinner
- * renders … never sits under a mounted Ink tree" — what the user is left looking at
- * must be the error, and nothing else.
- *
- * These are PTY specs and cannot be anything else. Without a terminal Ink buffers
- * its frames and writes the last one when the tree is torn down, so the spinner
- * text reaches stdout whether or not it was still mounted when the error was
- * raised — a non-PTY assertion on its absence fails identically either way and
- * would test nothing.
- *
- * The negative is proved by ORDER rather than by absence, per the standards: the
- * emulator's buffer holds everything the session ever drew, so `not.toContain` on
- * text the session legitimately painted is unfalsifiable. What discriminates is
- * that a spinner still mounted when oclif writes the error repaints BELOW it, so
- * the last thing on screen is the spinner rather than the refusal.
- *
- * `init-edit-error-guards.e2e.test.ts` owns the exit codes and message text for
- * these paths; it runs without a PTY and says nothing about the frame. Neither spec
- * subsumes the other.
+ * A refusal inside `edit --from`'s spinner load must be the last thing on screen, not repainted
+ * under a still-mounted spinner. PTY only: without a terminal Ink flushes its last frame
+ * regardless. Proved by order, since the buffer holds everything ever drawn.
  */
 
 /** The `source-fetcher` message for a marketplace path that is not a directory. */
 const LOCAL_MARKETPLACE_NOT_FOUND = "Local marketplace not found:";
-/** A path no marketplace can be fetched from, named so the failure is proved to be about it. */
 const MISSING_SOURCE_PATH = "/tmp/not-a-real-source-path-refusal-frame";
-/** The spinner row exactly as it is painted, less its rotating glyph. */
+/** Exactly as painted, less its rotating glyph. */
 const SPINNER_ROW = `${STEP_TEXT.LOADING_SKILLS}...`;
 
 const APPLIED_ID = "Refusal1";
@@ -89,7 +71,7 @@ describe("a refusal does not sit under a live spinner", () => {
     const emptyDir = path.join(tempDir, "empty");
     await mkdir(emptyDir, { recursive: true });
 
-    // The id resolves, so the run gets past the fetch and refuses inside the spinner's load.
+    // The id resolves, so the run refuses inside the spinner's load.
     prompt = new InteractivePrompt(["edit", "--from", APPLIED_ID], emptyDir, {
       env: { CC_MARKETPLACE: undefined, AGENTS_INC_API_URL: store.url },
     });
@@ -98,7 +80,7 @@ describe("a refusal does not sit under a live spinner", () => {
     expect(exitCode).toBe(EXIT_CODES.ERROR);
 
     const screen = prompt.getScreen();
-    // Positive subject guard: the refusal IS painted in the frame being asserted on.
+    // Subject guard: the refusal is painted in this frame.
     expect(screen).toContain(STEP_TEXT.NO_INSTALLATION);
     expect(
       screen.trimEnd().endsWith(SPINNER_ROW),
@@ -110,8 +92,7 @@ describe("a refusal does not sit under a live spinner", () => {
     tempDir = await createTempDir();
     const projectDir = path.join(tempDir, "project");
 
-    // A real installation, so detectProject() succeeds and the run reaches the
-    // loadSource catch inside loadContext — the second of its three throw paths.
+    // A real installation, so the run reaches the loadSource catch inside loadContext.
     await writeProjectConfig(projectDir, {
       name: "refusal-frame-project",
       marketplace: MISSING_SOURCE_PATH,

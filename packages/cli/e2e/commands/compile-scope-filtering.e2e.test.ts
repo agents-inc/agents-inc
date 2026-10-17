@@ -15,11 +15,8 @@ import { CLI } from "../fixtures/cli.js";
 import { metadataFieldsFor, ProjectBuilder } from "../fixtures/project-builder.js";
 
 /**
- * Regression tests for compile scope-filtering fixes.
- *
- * Dual-pass scope filtering — project pass must NOT overwrite global agents.
- * Global skill discovery — project pass must see global local skills.
- * Filtered agents per pass — each pass only compiles its own scope's agents.
+ * Each compile pass writes only its own scope's agents, and the project pass sees global local
+ * skills.
  */
 describe("compile scope filtering", () => {
   let tempDir: string;
@@ -32,11 +29,7 @@ describe("compile scope filtering", () => {
 
   describe("dual-pass scope filtering", () => {
     it("should not overwrite global agent with zero-skill version during project pass", async () => {
-      // Global installation: web-developer agent with a skill.
-      // Project installation: api-developer agent with a different skill.
-      // The project config does NOT have web-developer in its agents list,
-      // but before the fix, the project pass would compile ALL agents from
-      // the agent definitions source, including web-developer, with zero skills.
+      // The project config lacks web-developer, so the project pass must not compile it.
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
           description: "Global skill for scope filtering test",
@@ -62,8 +55,8 @@ describe("compile scope filtering", () => {
       });
       tempDir = path.dirname(project.dir);
 
-      // Each scope is compiled by a run in that scope: a compile inside a project
-      // writes only that project, so the global agents are the home run's to write.
+      // A compile inside a project writes only that project, so the global agents need the home
+      // run.
       const globalRun = await CLI.run(
         ["compile"],
         { dir: globalHome.dir },
@@ -79,26 +72,19 @@ describe("compile scope filtering", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(output).toContain("Compiling project agents");
 
-      // Global agent should exist and contain its skill (not be clobbered)
       await expect(globalHome).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer", "web-testing-cypress-e2e"],
       });
 
-      // Global dir should NOT have the project agent
       await expect(globalHome).not.toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
 
-      // Project agent should exist and contain its skill
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
         contains: ["name: api-developer", "web-mocks-msw"],
       });
 
-      // Project dir should NOT have the global agent
       await expect(project).not.toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
-      // Ported from the deleted "should not produce duplicate agent files across
-      // scopes": the per-agent matchers above negate only the two names they are
-      // given, so the directory listing is what forbids a third file appearing in
-      // either scope.
+      // The per-agent matchers negate only the names given; the listing forbids a third file.
       expect(Object.keys(await readCompiledAgents(globalHome.dir))).toStrictEqual([
         `${E2E_AGENT["web-developer"].name}.md`,
       ]);
@@ -112,7 +98,6 @@ describe("compile scope filtering", () => {
       const globalHome = path.join(tempDir, "global-home");
       const projectDir = path.join(tempDir, "project");
 
-      // Global installation: two agents, each with a skill
       await writeProjectConfig(globalHome, {
         name: "global-test",
         skills: [
@@ -149,7 +134,6 @@ describe("compile scope filtering", () => {
         }),
       });
 
-      // Project installation: completely different agent, no overlap with global
       await writeProjectConfig(projectDir, {
         name: "project-test",
         skills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
@@ -185,7 +169,6 @@ describe("compile scope filtering", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Both global agents should be compiled with their respective skills
       await expect({ dir: globalHome }).toHaveCompiledAgentContent(
         E2E_AGENT["web-developer"].name,
         {
@@ -200,26 +183,18 @@ describe("compile scope filtering", () => {
         },
       );
 
-      // Global dir should NOT have the project agent
       await expect({ dir: globalHome }).not.toHaveCompiledAgent("cli-developer");
 
-      // Project agent compiled separately with its skill
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("cli-developer", {
         contains: ["name: cli-developer", "web-mocks-msw"],
       });
 
-      // Project dir should NOT have any global agents
       await expect({ dir: projectDir }).not.toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
       await expect({ dir: projectDir }).not.toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
     });
   });
 
   describe("global skill discovery for project pass", () => {
-    // One spec, the harder of the two setups. A sibling used the same fixture with
-    // the global skill ALSO listed in the project config's `skills` array; that is
-    // strictly easier — if discovery works without the listing it works with it —
-    // and its unique claim (the project agent carries the project-local skill too)
-    // is ported here by naming both skills in the project stack.
     it("should discover global local skills the project config does not list, alongside its own", async () => {
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
@@ -229,12 +204,10 @@ describe("compile scope filtering", () => {
             contentHash: "hash-gpd",
           }),
         },
-        // Only the project-scoped skill is registered here — the global one is
-        // referenced by the stack below and by nothing else.
+        // The global skill is referenced only by the stack below.
         projectSkills: [{ id: "web-mocks-msw", scope: "project", origin: "eject" }],
-        // Each under the category the CATALOGUE declares for it, not the one the id's prefix
-        // suggests: `web-testing-cypress-e2e` is `web-e2e`, and `web-e2e` is EXCLUSIVE, so the
-        // two cannot share a key even before they are named correctly.
+        // Keyed by the catalogue's category, not the id prefix: `web-testing-cypress-e2e` is
+        // `web-e2e`, which is exclusive.
         projectStack: {
           "web-e2e": [{ id: "web-testing-cypress-e2e", preloaded: true }],
           "web-mocking": [{ id: "web-mocks-msw", preloaded: true }],
@@ -262,28 +235,22 @@ describe("compile scope filtering", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // The project agent carries BOTH the project-local skill and the global one
-      // its config never names.
       await expect(project).toHaveCompiledAgentContent(E2E_AGENT["api-developer"].name, {
         contains: ["name: api-developer", "web-mocks-msw", "web-testing-cypress-e2e"],
       });
 
-      // Project dir should NOT have the global agent
       await expect(project).not.toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
 
-      // Global agent should contain its own skill
       await expect(globalHome).toHaveCompiledAgentContent(E2E_AGENT["web-developer"].name, {
         contains: ["name: web-developer", "web-testing-cypress-e2e"],
       });
 
-      // Global dir should NOT have the project agent
       await expect(globalHome).not.toHaveCompiledAgent(E2E_AGENT["api-developer"].name);
     });
   });
 
   describe("project agents not clobbered by global pass", () => {
     it("should label each context's own pass in verbose mode", async () => {
-      // Global: web-developer. Project: api-developer.
       const { project, globalHome } = await ProjectBuilder.dualScope({
         globalSkill: {
           description: "Global skill for verbose test",
@@ -330,12 +297,8 @@ describe("compile scope filtering", () => {
         "Compiling global agents",
       );
 
-      // Ported from the deleted dual-scope "should name the one pass each context
-      // owns": not running the global PASS is not the same as not READING the
-      // global scope. A project agent may carry a global-scoped skill, so the
-      // project run still loads both scopes' skills — it is the writes that are
-      // contained, and without this the negative above would also pass on a run
-      // that had stopped reading ~/.claude/skills/ altogether.
+      // The project run still reads both scopes' skills; only writes are contained. Without this
+      // the negative above would pass on a run that stopped reading ~/.claude/skills/.
       expect(output).toContain(STEP_TEXT.LOADED_SKILL);
       expect(output).toContain("web-testing-cypress-e2e");
       expect(output).toContain("web-mocks-msw");

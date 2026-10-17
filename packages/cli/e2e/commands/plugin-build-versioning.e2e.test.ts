@@ -20,48 +20,26 @@ import {
 } from "../pages/constants.js";
 
 /**
- * CLI-338 to CLI-344 — version bumping through the real binary.
- *
- * `determinePluginVersion` / `bumpMajorVersion` / `computeSkillFolderHash` are unit
- * tested in `src/cli/lib/versioning.test.ts`; the chain that runs them —
- * `build plugins` reading a source off disk, writing `plugin.json` + `.content-hash`,
- * then `build marketplace` reading those manifests back — asserted no version VALUE
- * anywhere before this file.
- *
- * The phases run in declaration order and share one source directory, because a bump
- * is only observable as a DIFFERENCE between two compiles of the same plugin
- * directory: the compiler decides the version by comparing the skill's fresh content
- * hash against the `.content-hash` the previous run left beside the manifest. A
- * per-phase source would make every compile an initial one, and every version 1.0.0.
- *
- * Only the edited skill's SKILL.md body changes between rebuilds, so the content hash
- * is the only input that moves.
+ * Version bumping through the real binary. Phases run in order over one source directory: a bump is
+ * only visible as a difference between two compiles, decided by the `.content-hash` the previous
+ * run left.
  */
 
 const INITIAL_VERSION = "1.0.0";
 const BUMPED_VERSION = "2.0.0";
 const REBUMPED_VERSION = "3.0.0";
 
-/**
- * The name written into package.json, and therefore the one `build marketplace`
- * publishes under. It must be the fixture marketplace's own: the skills this source
- * ships come from `E2E_SKILLS`, whose ids carry that name as their prefix, so any
- * other name here describes a marketplace whose plugins are not its own.
- */
+/** The fixture marketplace's own name: its skill ids carry it as their prefix. */
 const MARKETPLACE_NAME = E2E_MARKETPLACE_NAME;
 
-/** The one skill this spec edits. Every other source skill is the control group. */
+/** Every other source skill is the control group. */
 const EDITED_SKILL_ID = E2E_SKILL.react.id;
 
 const EDITED_DESCRIPTION = "Edited React skill";
 const FIRST_EDIT_BODY = "# Edited before the second compile";
 const SECOND_EDIT_BODY = "# Edited again before the marketplace regeneration";
 
-/**
- * Every source skill at the version an initial compile gives it. Written out in full
- * rather than derived, so a missing or extra plugin fails the `toStrictEqual` instead
- * of quietly shrinking the expectation with the actual.
- */
+/** Written out, so a missing or extra plugin fails the `toStrictEqual`. */
 const ALL_SKILLS_AT_INITIAL_VERSION: Record<string, string> = {
   [E2E_SKILL.hono.id]: INITIAL_VERSION,
   [E2E_SKILL["research-methodology"].id]: INITIAL_VERSION,
@@ -85,18 +63,13 @@ const AFTER_SECOND_EDIT: Record<string, string> = {
   [EDITED_SKILL_ID]: REBUMPED_VERSION,
 };
 
-/**
- * The `name` / `source` / `version` triple every marketplace entry must carry, as the
- * marketplace looks once the first bump has landed. `generateMarketplace` sorts by
- * name, and `E2E_SKILL_IDS` is already in that order.
- */
+/** `generateMarketplace` sorts by name, and `E2E_SKILL_IDS` is already in that order. */
 const EXPECTED_MARKETPLACE_ENTRIES = E2E_SKILL_IDS.map((id) => ({
   name: id,
   source: `./${SOURCE_PATHS.PLUGINS_DIST}/${id}`,
   version: AFTER_FIRST_EDIT[id],
 }));
 
-/** Rewrites the edited skill's SKILL.md, which is what the content hash reads. */
 async function editSkillMd(sourceDir: string, body: string): Promise<void> {
   await writeFile(
     path.join(sourceDir, SOURCE_PATHS.SKILLS_DIR, EDITED_SKILL_ID, FILES.SKILL_MD),
@@ -111,7 +84,6 @@ describe("build plugins version bumping", () => {
   let marketplacePath: string;
 
   beforeAll(async () => {
-    // The author's checkout before its first build: the version this file pins starts there.
     ({ sourceDir, tempDir } = await createE2ESource({ unbuilt: true }));
     pluginsDir = path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST);
     marketplacePath = path.join(
@@ -119,7 +91,7 @@ describe("build plugins version bumping", () => {
       SOURCE_PATHS.PLUGIN_MANIFEST_DIR,
       FILES.MARKETPLACE_JSON,
     );
-    // `build marketplace` reads marketplace identity from package.json at cwd.
+    // `build marketplace` reads its identity from package.json at cwd.
     await writeTestPackageJson(sourceDir, {
       name: MARKETPLACE_NAME,
       description: "Version-bumping test marketplace",
@@ -203,21 +175,15 @@ describe("build plugins version bumping", () => {
       expect(result.exitCode, `build marketplace failed: ${result.output}`).toBe(
         EXIT_CODES.SUCCESS,
       );
-      // Ported from the deleted plugin-build.e2e.test.ts, which matched
-      // `[1-9]\d* plugins!` — any non-zero count. The source's own skill count is
-      // known, so the exact number is what a dropped plugin has to redden.
+      // The exact count, so a dropped plugin reddens.
       expect(result.output).toContain(
         `Marketplace generated with ${E2E_SKILL_IDS.length} plugins!`,
       );
     });
 
     /**
-     * Artifact-to-artifact: proves the marketplace was generated from the manifests
-     * on disk rather than from anything cached. It deliberately does NOT carry the
-     * red for a broken bump — both sides move together when the compiler stops
-     * bumping, so it stayed green under that mutation. The literal-value assertions
-     * ("carries name, version and source", and the regeneration case below) are the
-     * ones that go red; do not simplify them into this one.
+     * Artifact-to-artifact only: both sides move together under a broken bump, so the literal-value
+     * assertions carry that red.
      */
     it("lists every compiled skill at the version its own manifest declares", async () => {
       const marketplace = await readMarketplaceJson(marketplacePath);
@@ -240,16 +206,8 @@ describe("build plugins version bumping", () => {
     });
 
     /**
-     * `MarketplacePlugin.category` is optional and `getMarketplaceStats` groups by
-     * `p.category ?? "uncategorized"`, so the marketplace command has a category
-     * breakdown to print — but nothing ever fills it in for a skill plugin.
-     * `PluginManifest` has no category field, `generateSkillPluginManifest` takes no
-     * category, and `convertManifestToMarketplacePlugin` never sets one, so every
-     * generated marketplace reports "uncategorized: <all>". The skill's own
-     * metadata.yaml DOES carry a category; it is simply dropped on the way through.
-     *
-     * Expected-fail rather than deleted: the assertion is the record of the gap, and
-     * it turns green the moment a category reaches the entry.
+     * Known gap: nothing carries a skill's category into its plugin manifest, so every entry is
+     * "uncategorized". Expected-fail as the record of the gap.
      */
     it("carries a category on every plugin entry", async () => {
       const marketplace = await readMarketplaceJson(marketplacePath);

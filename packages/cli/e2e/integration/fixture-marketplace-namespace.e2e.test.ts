@@ -29,42 +29,9 @@ import {
 import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
 import { validateKebabCaseName } from "../../src/cli/lib/validate-kebab-name.js";
 
-/**
- * The identity an E2E fixture marketplace publishes under, and the namespace its
- * skill ids are built in.
- *
- * A marketplace's name and its skills' id prefix are the same string, so the name
- * cannot vary per run: a timestamped one makes every id unassertable and every
- * fixture's published identity unnameable. Nothing pinned that before this spec —
- * every assertion on the published name read the value back off the fixture object,
- * which a timestamp satisfies as readily as a constant.
- *
- * The three constant-only checks are the contract the name has with surfaces that
- * cannot see it: the stale-registration sweep in `e2e/global-setup.ts`, the public
- * catalogue whose namespace a fixture must never claim, and `build marketplace`'s
- * own name validator.
- *
- * **The slug axis is the same claim about the other half of a skill's identity, and it is
- * pinned rather than met.** A slug is the short key a rule and a `search` argument name a skill
- * by. This fixture mirrors ten catalogue skills and publishes all ten under the catalogue's bare
- * slugs, which is the worst case.
- *
- * It cannot stop, and the reason is one layer down: `skillRefInRules` in
- * `src/cli/lib/schemas.ts` holds every slug a marketplace's own `config/skill-rules.ts` names to
- * the PUBLIC catalogue's generated union, and a rules file that fails validation fails the whole
- * source load. Namespacing the fixture's slugs therefore stops its own rules loading —
- *
- *     Error: Config validation failed at '<source>/config/skill-rules.ts':
- *     relationships.requires.0.skill: 'e2e-test-fixture-react' is not a slug the public
- *     catalogue carries …
- *
- * — measured at five spec files and eleven tests on that one cause, three of which need the rule
- * to RESOLVE to a fixture skill and so cannot be reworded. Which is the finding underneath:
- * the relationship-rule surface has only ever been covered BECAUSE this fixture borrows
- * catalogue slugs, and a marketplace naming its skills correctly has no way to write a rule
- * about them. Whether a marketplace's own slugs may be named in its own rules is an open
- * question; until it is answered the fixture cannot own its slugs, and the namespace pin stays red.
- */
+// A marketplace's name is its skills' id prefix, so it must be constant across runs. Slugs are
+// pinned (it.fails) rather than met: the fixture borrows catalogue slugs because `skillRefInRules`
+// holds a marketplace's own rules to the public catalogue's slug union.
 
 describe("E2E fixture marketplace namespace", () => {
   describe("the name the fixtures publish under", () => {
@@ -122,7 +89,6 @@ describe("E2E fixture marketplace namespace", () => {
     });
   });
   describe("the slugs a fixture publishes", () => {
-    /** A slug the shipped catalogue owns, asserted against the catalogue below. */
     const CATALOGUE_OWNED_SLUG = "react";
 
     let source: E2ESource;
@@ -143,7 +109,6 @@ describe("E2E fixture marketplace namespace", () => {
       }
     });
 
-    /** The slug one published skill declares, from the metadata.yaml beside its SKILL.md. */
     async function slugPublishedBy(skillDir: string): Promise<string> {
       const metadataPath = path.join(skillDir, FILES.METADATA_YAML);
       const metadata: Record<string, unknown> = parseYaml(await readFile(metadataPath, "utf8"));
@@ -153,7 +118,6 @@ describe("E2E fixture marketplace namespace", () => {
       return slug;
     }
 
-    /** Every slug the source wrote to disk, in the order a directory listing yields them. */
     async function publishedSlugs(): Promise<string[]> {
       const skillsDir = path.join(source.sourceDir, SOURCE_PATHS.SKILLS_DIR);
       const skillDirs = await readdir(skillsDir);
@@ -161,7 +125,6 @@ describe("E2E fixture marketplace namespace", () => {
       return Promise.all(skillDirs.map((dir) => slugPublishedBy(path.join(skillsDir, dir))));
     }
 
-    /** The slugs the fixture's own exported identity map claims, sorted the way a read is. */
     function rosteredSlugs(): string[] {
       return Object.values(E2E_SKILL)
         .map((skill) => skill.slug)
@@ -214,12 +177,7 @@ describe("E2E fixture marketplace namespace", () => {
       },
     );
 
-    /**
-     * The permitted case beside the two pins, and not decoration: whatever the fixture's slugs
-     * become, `metadataValidationSchema` — the schema `doctor` judges every published and
-     * installed metadata.yaml with — has to keep accepting them. It is the cost the namespace
-     * must not carry, and the reason `custom: true` is part of the fix rather than beside it.
-     */
+    // The permitted case beside the pins: whatever the slugs become, doctor's metadata schema must accept them.
     it(
       "are accepted by the strict metadata schema doctor validates with",
       { timeout: TIMEOUTS.LIFECYCLE },

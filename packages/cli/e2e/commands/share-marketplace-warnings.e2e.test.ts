@@ -28,34 +28,18 @@ import {
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * What `share` says about the marketplace its id names. A payload names ONE marketplace, by the
- * ref `--marketplace` took, and the receiver installs from that one alone — so two shapes of
- * installation share an id that does not install everywhere, and `share` says so after the id
- * rather than refusing:
- *
- * - the marketplace is a folder on disk, so the id installs only where that folder exists;
- * - what is shared comes from more than one marketplace — a global installation from one and a
- *   project from another — so the skills from every marketplace but the one named stay behind.
- *   That is a stopgap until a payload can carry more than one marketplace.
- *
- * The installations are written as a plugin install records them rather than installed, because
- * `share` only reads them and a plugin install needs the Claude CLI. The two-marketplace shape is
- * also not one any command can make from scratch today: `init --marketplace` in a project under a
- * global installation opens the global's dashboard and ignores the flag. The project's file is
- * written as the writer leaves it — the global entries inlined beside the project's own, the
- * global sub-agents' rows in HOME's file alone.
+ * `share` warns after the id when it will not install everywhere: the marketplace is a local
+ * folder, or the shared skills span more than one marketplace. Installations are written as a
+ * plugin install records them, since `share` only reads them.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** The fixture marketplace, published to GitHub rather than read from a folder. */
 const FIXTURE_ON_GITHUB = `github:agents-inc/${E2E_MARKETPLACE_NAME}`;
 
-/** A second custom marketplace, the one a project installs from, and the skill it ships. */
 const ACME_MARKETPLACE = { name: "acme", ref: "github:acme/skills" } as const;
 const ACME_SKILL_ID = "acme-web-testing-house-style";
 
-/** What the store received as the mint, parsed. */
 type PostedPayload = { marketplace?: string; skills: Record<string, unknown> };
 
 describe("share names the marketplace its id installs from", () => {
@@ -87,12 +71,10 @@ describe("share names the marketplace its id installs from", () => {
     return env;
   }
 
-  /** The one body the store was asked to mint. */
   function postedPayload(): PostedPayload {
     return JSON.parse(firstElement(store.requests.filter((r) => r.method === "POST")).body);
   }
 
-  /** A plugin installation of the fixture marketplace, recording `marketplace` as its ref. */
   async function writeFixturePluginInstallation(dir: string, marketplace: string): Promise<void> {
     await writeProjectConfig(
       dir,
@@ -110,9 +92,8 @@ describe("share names the marketplace its id installs from", () => {
   }
 
   /**
-   * A project installed from {@link ACME_MARKETPLACE} under a global installation whose React
-   * plugin came from somewhere else: HOME's file records that marketplace and web-developer's
-   * row, and the project's own file inlines HOME's entries beside its Acme skill.
+   * HOME records another marketplace and web-developer's row; the project's file inlines HOME's
+   * entries beside its Acme skill.
    */
   async function writeTwoMarketplaceProject(
     env: TestEnvironment,
@@ -162,7 +143,7 @@ describe("share names the marketplace its id installs from", () => {
     expect(said, "the id travels with a folder only this machine has").toContain(
       STEP_TEXT.SHARE_FOLDER_MARKETPLACE,
     );
-    // After the id, so the line reads as a note about it rather than as a reason it failed.
+    // After the id, so it reads as a note, not a failure.
     expect(said.indexOf(STEP_TEXT.SHARE_FOLDER_MARKETPLACE)).toBeGreaterThan(
       said.indexOf(mintedId),
     );
@@ -198,8 +179,7 @@ describe("share names the marketplace its id installs from", () => {
     expect(exitCode, `share must share a setup from two marketplaces, and said: ${said}`).toBe(
       EXIT_CODES.SUCCESS,
     );
-    // Everything is shared, under the marketplace this project records; the global's React
-    // plugin is the one the id cannot install anywhere else.
+    // Shared under the project's marketplace, so the global React plugin cannot install elsewhere.
     const posted = postedPayload();
     expect(posted.marketplace).toBe(ACME_MARKETPLACE.ref);
     expect(Object.keys(posted.skills).sort()).toStrictEqual(
@@ -222,8 +202,7 @@ describe("share names the marketplace its id installs from", () => {
 
     expect(exitCode, `share failed: ${said}`).toBe(EXIT_CODES.SUCCESS);
     expect(postedPayload().marketplace).toBe(ACME_MARKETPLACE.ref);
-    // The public catalogue is a marketplace too: a receiver given Acme's ref loads Acme alone, so
-    // the public React plugin is left behind exactly as a second custom marketplace's would be.
+    // The public catalogue is a marketplace too: given Acme's ref, its React plugin stays behind.
     expect(said, "the id names Acme alone, so the catalogue's skills stay behind").toContain(
       STEP_TEXT.SHARE_SKILLS_NOT_INSTALLED_ELSEWHERE,
     );

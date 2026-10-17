@@ -8,13 +8,7 @@ import type { TestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { installDualScopeStack } from "../fixtures/e2e-stack-seed.js";
 
-/**
- * Doctor dual-scope E2E tests.
- *
- * Verifies that `cc doctor` works correctly with dual-scope installations
- * (global + project). Covers healthy state, missing agent files, and
- * orphaned skill directories.
- */
+/** `doctor` on a dual-scope installation: healthy, missing agent file, orphaned skill directory. */
 
 describe("doctor dual-scope diagnostics", () => {
   let store: SeedConfigStore;
@@ -45,9 +39,7 @@ describe("doctor dual-scope diagnostics", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // The summary counts, not a generic absence: `not.toContain("FAIL")` is
-      // tripped by any text carrying those letters, and `toContain("Config")`
-      // matches a pass row, a warn row and a path alike.
+      // The summary counts: "FAIL" and "Config" match too much.
       expect(stdout).toMatch(
         new RegExp(`${STEP_TEXT.DOCTOR_SUMMARY}\\s+\\d+ passed, 0 warnings, 0 errors`),
       );
@@ -61,7 +53,6 @@ describe("doctor dual-scope diagnostics", () => {
     async () => {
       env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
 
-      // Delete the api-developer agent file from the project scope
       const agentFile = path.join(env.projectDir, DIRS.CLAUDE, DIRS.AGENTS, "api-developer.md");
       await rm(agentFile, { force: true });
 
@@ -69,13 +60,10 @@ describe("doctor dual-scope diagnostics", () => {
         env: { HOME: env.fakeHome },
       });
 
-      // A missing compiled agent is a recompilation warning, not a failing check,
-      // so doctor must still exit successfully.
+      // A missing compiled agent is a warning, not a failing check.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Which of the two the report said, not either: an alternation cannot tell
-      // a warning apart from a recompilation notice, and telling them apart is
-      // this spec's whole subject.
+      // Which of the two: telling a warning from a recompilation notice is the subject.
       expect(combined).toMatch(
         new RegExp(`${STEP_TEXT.DOCTOR_SUMMARY}\\s+\\d+ passed, [1-9]\\d* warnings?, 0 errors`),
       );
@@ -89,7 +77,6 @@ describe("doctor dual-scope diagnostics", () => {
     async () => {
       env = await installDualScopeStack(store, E2E_SOURCE.sourceDir);
 
-      // Create an orphan skill directory not referenced in config
       const orphanDir = path.join(env.projectDir, DIRS.CLAUDE, DIRS.SKILLS, "orphan-skill");
       await mkdir(orphanDir, { recursive: true });
       await writeFile(path.join(orphanDir, FILES.SKILL_MD), "# Orphan Skill\n");
@@ -98,10 +85,7 @@ describe("doctor dual-scope diagnostics", () => {
         env: { HOME: env.fakeHome },
       });
 
-      // The operational No Orphans check only looks at agent files, and the content layer judges
-      // the skill directories this installation owns — the ones a configuration names, and the
-      // ones carrying the marker this CLI stamps. A directory answering to neither belongs to
-      // whatever else writes into Claude Code's shared skills tree, and is named rather than failed.
+      // A directory neither named by config nor marked by this CLI is named, not failed.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(combined).toContain("orphan-skill");
       expect(combined).toContain(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR);

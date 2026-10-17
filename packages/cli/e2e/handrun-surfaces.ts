@@ -1,8 +1,3 @@
-/**
- * The hand-run's presentation of the four surfaces. The checking itself lives
- * in `e2e/assertions/four-surfaces.ts` and is shared with the E2E specs, so a
- * spec and a hand-run cannot disagree about what "strict" means.
- */
 import { note, verdict } from "./handrun-driver.js";
 import { inspectFourSurfaces, type SurfaceOptions } from "./assertions/four-surfaces.js";
 

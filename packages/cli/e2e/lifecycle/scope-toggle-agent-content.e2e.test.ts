@@ -19,14 +19,8 @@ import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * Dual-scope edit lifecycle E2E test -- compiled agent content after a scope change.
- *
- * Key invariants:
- * - When a SKILL's scope changes, only the skill moves — agents stay at their scope.
- * - The global config is PRESERVED via `mergeGlobalConfigs` — it keeps existing
- *   skills even if the new config doesn't include them.
- * - Global skills reach any agent (project or global). Project skills never reach
- *   global agents.
+ * Compiled agent content after a skill or agent scope change: only the thing toggled moves, global
+ * skills reach any agent, and project skills never reach a global one.
  */
 
 const API_DEV = E2E_AGENT["api-developer"].name;
@@ -61,35 +55,28 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
     "collapsing a persisted dual-scope skill to its global half leaves the project agent carrying it untouched",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // BEFORE: Verify project api-developer contains api-framework-hono
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
         contains: [E2E_SKILL.hono.id],
       });
 
-      // api-framework-hono is a persisted dual-scope [P][G] pair carried by the project
-      // api-developer. Naming it at global scope only collapses the pair to its global half.
-      // The agent itself must stay put at project scope — only the skill's project override
-      // goes away.
+      // Naming the [P][G] skill at global scope only collapses it to its global half; the agent
+      // stays at project scope.
       await applyFromSeed(store, "HonoGlobal1", e2eStackPayload({ projectAgents: [API_DEV] }), {
         dir: projectDir,
         home: fakeHome,
       });
 
-      // AFTER assertions — only the skill's project half moved
-
-      // api-developer.md STILL exists at project scope (agent untouched)
       const projectApiDevPath = path.join(agentsPath(projectDir), "api-developer.md");
       expect(
         await fileExists(projectApiDevPath),
         "api-developer.md must still exist at project scope",
       ).toBe(true);
       await expect({ dir: projectDir }).toHaveCompiledAgent("api-developer");
-      // The agent still references the skill — it is now resolved from the global install.
+      // Now resolved from the global install.
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
         contains: [E2E_SKILL.hono.id],
       });
 
-      // The global install survives; the project override is gone.
       const globalSkillDir = path.join(skillsPath(fakeHome), E2E_SKILL.hono.id);
       expect(
         await directoryExists(globalSkillDir),
@@ -108,14 +95,12 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
     "Agent scope change should recompile agent at new scope with correct skills",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // BEFORE: Verify project api-developer contains api-framework-hono
       await expect({ dir: projectDir }).toHaveCompiledAgentContent("api-developer", {
         contains: [E2E_SKILL.hono.id],
       });
 
-      // ACTION: restore api-developer to global scope. It is a persisted dual-scope [P][G]
-      // agent, so this collapses [P][G] → [G], the P→G restoration path. The project's
-      // Hono stays, assigned to no sub-agent, since a project skill never reaches a global one.
+      // Collapses the [P][G] agent to [G]. The project's Hono stays, assigned to no sub-agent,
+      // since a project skill never reaches a global one.
       await applyFromSeed(
         store,
         "ApiDevGlobal1",
@@ -123,22 +108,18 @@ describe("dual-scope edit lifecycle -- compiled agent content after scope toggle
         { dir: projectDir, home: fakeHome },
       );
 
-      // AFTER assertions
-
-      // api-developer.md at global scope: exists and contains api-developer in content
       await expect({ dir: fakeHome }).toHaveCompiledAgent("api-developer");
       await expect({ dir: fakeHome }).toHaveCompiledAgentContent("api-developer", {
         contains: ["api-developer"],
       });
 
-      // api-developer.md at project scope: does NOT exist (P->G is a move for agents)
+      // P->G is a move for agents.
       const projectApiDevPath = path.join(agentsPath(projectDir), "api-developer.md");
       expect(
         await fileExists(projectApiDevPath),
         "api-developer.md must NOT exist at project scope after the P->G agent move",
       ).toBe(false);
 
-      // Global config has api-developer agent
       await expect({ dir: fakeHome }).toHaveConfig({
         agents: ["api-developer"],
       });

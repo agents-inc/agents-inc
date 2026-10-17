@@ -7,31 +7,13 @@ import { EXIT_CODES } from "../pages/constants.js";
 import { BUILT_IN_MATRIX } from "../../src/cli/types/generated/matrix.js";
 import type { SkillId } from "../../src/cli/types/index.js";
 
-/**
- * The skill the checkout will not carry. Constrained to `SkillId`, so retiring it from the
- * catalogue reddens this line rather than leaving the fixture seeding a skill that no longer
- * exists and the spec asserting a name nothing would ever print.
- *
- * It is the id that produced the report: `BUILT_IN_MATRIX` named it while the marketplace on
- * GitHub did not, and every default-source eject died on it.
- */
+/** Constrained to `SkillId`, so retiring it from the catalogue reddens this line. */
 const ABSENT_FROM_THE_CHECKOUT = "meta-reviewing-infra-reviewing" as const satisfies SkillId;
 
 /**
- * `eject skills` from the DEFAULT public marketplace, against a checkout that is missing one skill
- * the catalogue names.
- *
- * **No other spec ejects from the default source, and that is why this failure was never seen.**
- * Every other source a spec names is a directory, and for a directory the matrix is built from the
- * files — the two cannot disagree. The default source is the one place they are separate artefacts:
- * `BUILT_IN_MATRIX` is vendored into the binary, the files come from a fetched checkout, and any
- * user whose CLI predates a marketplace change holds a pair that disagrees with no way to reconcile
- * them. What the run printed was the filesystem's own `ENOENT`, naming a path inside the source
- * cache — an address the user did not choose, cannot place and cannot act on — and, because one
- * `Promise.all` rejection discards its siblings', it named at most one skill per run.
- *
- * The whole thing is offline: the fixture seeds the cache directory `fetchFromSource` resolves to,
- * with the record shape that answers "current" without a network call.
+ * `eject skills` from the default marketplace against a checkout missing a skill `BUILT_IN_MATRIX`
+ * names: the only source where matrix and files can disagree. Offline: the fixture seeds the cache
+ * `fetchFromSource` reads as current.
  */
 describe("eject skills from the default marketplace, against a checkout missing one of them", () => {
   let projectDir: string | undefined;
@@ -62,11 +44,8 @@ describe("eject skills from the default marketplace, against a checkout missing 
       collapsed,
       "an ENOENT names a cache path; the id is the only part of the failure a user can act on",
     ).toContain(`${ABSENT_FROM_THE_CHECKOUT}: ENOENT`);
-    // `toContain` over a multi-line refusal is satisfied by one line, so the id assertion above
-    // holds just as well when the fixture broke every other skill too. The count line is the only
-    // part that says how many failed, and pinning it is what separates the seeded defect from a
-    // fixture that mis-seeded the catalogue. The failure count and the word are asserted, never
-    // the total — that moves whenever the catalogue grows.
+    // `toContain` is satisfied by one line, so the failure count is what pins one seeded defect;
+    // never the total, which grows with the catalogue.
     expect(
       collapsed,
       "exactly the one skill the checkout omits may fail; a wider count is the fixture's fault",

@@ -46,13 +46,8 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import { SEED_VERSION, type SeedAgent } from "@workspace/matrix/seed";
 
 /**
- * `init --from <id>` with a sub-agent pinned to a Codex model. The pin travels beside the Claude
- * model and each provider reads its own: a Codex role names it as `model`, with an effort so a
- * small model is never handed one it refuses, and Claude's frontmatter never sees it. `config.ts`
- * is provider-neutral, so it keeps the pin on either.
- *
- * Every payload pins its sub-agents into the project, so both the role files and `config.ts` are
- * read from the project.
+ * `init --from` with a sub-agent pinned to a Codex model: a Codex role names it as `model` with an
+ * effort, Claude's frontmatter never sees it, and provider-neutral config.ts keeps it.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -118,7 +113,6 @@ describe("init --from <id>: a sub-agent's Codex model", () => {
     return env;
   }
 
-  /** web-developer's role file, split into lines; throws when none was written. */
   async function webDevRoleLines(env: TestEnvironment): Promise<string[]> {
     const role = (await readCodexAgentRoles(codexProjectAgentsDir(env.projectDir)))[ROLE_FILE];
     if (role === undefined) throw new Error(`no ${ROLE_FILE} was written`);
@@ -195,10 +189,7 @@ describe("init --from <id>: a sub-agent's Codex model", () => {
     );
   });
 
-  /**
-   * Guard: a role with no pin renders as it always has. Compared across two installs that differ
-   * only by a pin on ANOTHER sub-agent, so a pin cannot leak into a role that did not ask for one.
-   */
+  /** Two installs differing only by a pin on another sub-agent, so a pin cannot leak. */
   it("leaves an unpinned role's bytes untouched: no model line and no invented effort", async () => {
     const plain = await installOnCodex("CdxModl4", payloadWith({ [WEB_DEV]: {}, [API_DEV]: {} }));
     const besideAPin = await installOnCodex(

@@ -30,24 +30,9 @@ import {
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * `share` and `edit --ui` run inside a project whose sub-agents are global — the shape every
- * `init --from` run from a project leaves (journeys 23, 29 and 30). Both send everything — the global sub-agents with their skills — and ask nothing.
- *
- * The writer splits curation by scope: a global sub-agent's stack row is written to HOME's
- * `config.ts` and nowhere else, while the project's file inlines the global skill and sub-agent
- * entries without their rows. So a mint that reads the project's file alone drops every row naming
- * an inherited sub-agent — a skill only they load posts as `assignments: {}` — and the id it hands
- * back installs those sub-agents bare.
- *
- * `commands/share`, `commands/edit-ui` and both `lifecycle/share-round-trip-*` specs never see it,
- * because each of them mints AT HOME: a handle without `globalHome` runs with HOME set to its own
- * directory, and the lifecycle specs pass `globalHome: origin`. Here the project sits inside a
- * HOME of its own, as a real one does, and the posted body is compared against the payload that
- * was installed — which is the assertion that carries the red in both specs.
- *
- * `share` shares plugins only, so its leg installs plugins and needs the Claude CLI; `edit --ui`
- * still opens ejected skills, so its leg installs them and needs nothing. Both mint through the
- * one function, so the `edit --ui` leg is the half that runs wherever the Claude CLI does not.
+ * `share` and `edit --ui` inside a project whose sub-agents are global must send the global rows
+ * too, which live only in HOME's config.ts. The posted body is compared against the installed
+ * payload. `share` needs plugins and the Claude CLI; `edit --ui` runs on ejected skills anywhere.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -55,7 +40,6 @@ const API_DEV = E2E_AGENT["api-developer"].name;
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
-/** The body the store was asked to mint, parsed. */
 function postedSkills(store: SeedConfigStore): unknown {
   const posted: { skills: unknown } = JSON.parse(
     firstElement(store.requests.filter((request) => request.method === "POST")).body,
@@ -80,7 +64,6 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
     await Promise.all(environments.splice(0).map((env) => cleanupTempDir(env.tempDir)));
   });
 
-  /** A fresh HOME with an empty project inside it, cleaned up after the spec that took it. */
   async function takeEnvironment(): Promise<TestEnvironment> {
     const env = await createTestEnvironment({ permissions: false });
     environments.push(env);
@@ -88,8 +71,7 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
   }
 
   it("edit --ui hands the editor the curation of the sub-agents the project inherits", async () => {
-    // What the editor's Install dialog leads to: an id installed with `init --from` from inside a
-    // project, every sub-agent at the global default, so every row is in HOME's file alone.
+    // Every sub-agent at the global default, so every row is in HOME's file alone.
     const skills = {
       [E2E_SKILL.react.id]: ejectedGlobalSkill(),
       [E2E_SKILL.vitest.id]: ejectedGlobalSkill({ assignments: { [WEB_DEV]: "preloaded" } }),
@@ -105,8 +87,7 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
 
     expect(opened.exitCode, `edit --ui failed: ${opened.output}`).toBe(EXIT_CODES.SUCCESS);
     expect(await readTreeSnapshot(origin.fakeHome)).toStrictEqual(before);
-    // The editor opens exactly this payload: a row missing here is a sub-agent it paints as a
-    // base agent, and an apply back through `edit --from` compiles bare.
+    // A missing row is a sub-agent the editor paints as a base agent.
     expect(
       postedSkills(store),
       "the payload the editor opens must carry the rows of the sub-agents the project inherits from HOME",
@@ -114,10 +95,7 @@ describe("minting an id in a project that inherits sub-agents from HOME", () => 
   });
 });
 
-/**
- * The `share` half, on plugins: a share carries nothing else. The marketplace is the built E2E
- * plugin source, and both installs hand their plugins to the Claude CLI.
- */
+/** `share` carries plugins only, so this leg needs the built plugin source and the Claude CLI. */
 describe.skipIf(!claudeAvailable)("sharing a project that inherits sub-agents from HOME", () => {
   let fixture: E2EPluginSource;
   let store: SeedConfigStore;
@@ -147,9 +125,7 @@ describe.skipIf(!claudeAvailable)("sharing a project that inherits sub-agents fr
     "share carries the inherited sub-agents' curation, so its id rebuilds both scopes",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // One sub-agent pinned into the project and the other left global. React's row belongs to
-      // the project's web-developer and is written to the project's file; Hono's belongs to the
-      // global api-developer and is written to HOME's file alone.
+      // React's row goes to the project's file, Hono's to HOME's alone.
       const skills = {
         [E2E_SKILL.react.id]: buildSeedSkill({
           install: "plugin",
@@ -179,18 +155,16 @@ describe.skipIf(!claudeAvailable)("sharing a project that inherits sub-agents fr
 
       const shared = await runShare(store, project);
 
-      // Exit 0 with no terminal attached is also the proof that it asked nothing.
+      // Exit 0 with no terminal also proves it asked nothing.
       expect(shared.exitCode, `share failed: ${shared.output}`).toBe(EXIT_CODES.SUCCESS);
-      // The project sits inside this HOME, so one snapshot covers both scopes: the id is a
-      // reading of the installation, not a rewrite of it.
+      // The project sits inside this HOME, so one snapshot covers both scopes.
       expect(await readTreeSnapshot(origin.fakeHome)).toStrictEqual(before);
-      // React's row is the control: the project's own file keeps it, so it travels either way.
+      // Control: the project's own file keeps React's row.
       expect(
         postedSkills(store),
         "a share minted in a project must carry the rows of the sub-agents it inherits from HOME, not only its own",
       ).toStrictEqual(skills);
 
-      // The other direction, into a HOME and project that have never seen any of it.
       const rebuilt = await takeEnvironment();
       const reinstalled = await runInitFrom(
         store,
@@ -209,8 +183,7 @@ describe.skipIf(!claudeAvailable)("sharing a project that inherits sub-agents fr
         (await loadConfigOrFail(origin.projectDir)).stack,
       );
 
-      // Each scope's roster is named before its bodies are compared: `readCompiledAgents` answers
-      // `{}` for a directory that is not there, and two ends that compiled nothing would agree.
+      // Rosters before bodies: `readCompiledAgents` answers `{}` for a missing directory.
       const originGlobalBodies = await readCompiledAgents(origin.fakeHome);
       const originProjectBodies = await readCompiledAgents(origin.projectDir);
       expect(Object.keys(originGlobalBodies)).toStrictEqual([`${API_DEV}.md`]);

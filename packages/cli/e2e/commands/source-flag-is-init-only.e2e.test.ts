@@ -4,43 +4,23 @@ import { CLI } from "../fixtures/cli.js";
 import { EXIT_CODES } from "../pages/constants.js";
 
 /**
- * Naming a marketplace is an INSTALL-time decision, so `--marketplace` is `init`'s flag and
- * nobody else's (owner ruling 2026-08-09).
- *
- * A later command that takes the flag is a command that can be pointed at a
- * marketplace the installation was never made from: `edit` would offer a catalogue
- * config.ts does not name, `compile` would resolve skill references against one
- * marketplace while the config records another. Every command after `init` reads the
- * marketplace that install stored — project config, then global, then the default.
- *
- * Withdrawn rather than ignored, for the same reason `eject` refuses it: a flag
- * silently accepted reads as honoured. The parser's own refusal is the contract,
- * and the exit code with it.
- *
- * The same rule now governs the flag's OLD spelling. Pre-1.0 ships no compatibility
- * shims, so `--source` is not aliased on `init` either — it is refused there exactly as
- * it is everywhere else, because a flag that still parses is a flag users keep typing.
+ * `--marketplace` is `init`'s flag only; later commands read the marketplace the install stored.
+ * Withdrawn rather than ignored, and the old `--source` spelling is refused everywhere, `init`
+ * included.
  */
 
-/** oclif's refusal for a flag the command does not declare — both spellings of it. */
 const NONEXISTENT_LONG_FLAG = "Nonexistent flag: --marketplace";
 const NONEXISTENT_SHORT_FLAG = "Nonexistent flag: -m";
 
-/** The same refusal for the withdrawn spelling, which no command declares any more. */
 const NONEXISTENT_WITHDRAWN_LONG_FLAG = "Nonexistent flag: --source";
 const NONEXISTENT_WITHDRAWN_SHORT_FLAG = "Nonexistent flag: -s";
 
-/** The value-less form's refusal: the flag EXISTS and its argument is missing. */
+/** The flag exists and its argument is missing. */
 const FLAG_EXPECTS_A_VALUE = "Flag --marketplace expects a value";
 
-/**
- * Every command that reads a marketplace without choosing one. Asserted as a SET: one
- * command left holding the flag is the whole mixed-marketplace path back, and each of
- * these reaches the marketplace through a different call path.
- */
+/** Asserted as a set: each reaches the marketplace through a different call path. */
 const COMMANDS_WITHOUT_MARKETPLACE = ["edit", "compile", "uninstall", "list"] as const;
 
-/** `init` included: the withdrawn spelling is refused by every command without exception. */
 const EVERY_COMMAND = ["init", ...COMMANDS_WITHOUT_MARKETPLACE] as const;
 
 describe("--marketplace is init's flag alone", () => {
@@ -77,9 +57,7 @@ describe("--marketplace is init's flag alone", () => {
   it("keeps the flag on init", async () => {
     tempDir = await createTempDir();
 
-    // The value-less form is the control: a command that does not DECLARE the flag
-    // refuses its name before it can miss a value, so "expects a value" is only ever
-    // printed by a command that has it. No wizard is reached — the parser answers first.
+    // Control: only a command declaring the flag can print "expects a value".
     const result = await CLI.run(["init", "--marketplace"], { dir: tempDir });
 
     expect(result.exitCode).toBe(EXIT_CODES.INVALID_ARGS);

@@ -17,27 +17,14 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * Regression coverage for the silent plugin-install skip that caused an edit adding a plugin
- * skill to update config.ts but NEVER invoke `claude plugin install`, leaving
- * `.claude/settings.json#enabledPlugins` out of sync with the project config. They assert the
- * full chain: edit adds -> applyPluginChanges -> claudePluginInstall -> settings.json updated.
- * Verifying both config.ts AND settings.json enabledPlugins is the only way to detect the
- * original regression; the pre-fix code silently skipped the install.
- *
- * The fix is written up in changelogs/0.133.0.md under the `cc edit` silent-skip entry —
- * a release note records what a version closed and is not rewritten afterwards, so it keeps
- * resolving where a finding file may not.
- *
- * User memory: feedback_no_plugin_to_eject_fallback.md
- *
- * The entire suite is skipped when the Claude CLI is not available.
+ * An edit adding a plugin skill must run `claude plugin install`, so `.claude/settings.json`
+ * `enabledPlugins` matches config.ts. Requires the Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** The project's React plus Pinia, both as plugins: applying it adds Pinia. */
 const WITH_PINIA = buildSeedPayload({
   skills: {
     [E2E_SKILL.react.id]: buildSeedSkill({
@@ -108,16 +95,7 @@ describe.skipIf(!claudeAvailable)(
       },
     );
 
-    /**
-     * The precise regression reproduction: project config.ts has plugin-sourced
-     * skills but LACKS the `marketplaceName` field. This is the legacy-install state
-     * that made `sourceResult.marketplace` undefined, triggering the silent skip.
-     *
-     * After the fix, `requireMarketplace` lazily resolves the marketplace via
-     * `ensureMarketplace` (reading the source's marketplace.json) and plugin
-     * install proceeds. This test exists so that removing the lazy resolution
-     * (or reintroducing the silent gate) immediately breaks CI.
-     */
+    /** Plugin skills but no `marketplaceName` still install: the marketplace resolves lazily. */
     it(
       "should lazily resolve marketplace and install the newly added plugin",
       { timeout: TIMEOUTS.PLUGIN_TEST },
@@ -139,8 +117,6 @@ describe.skipIf(!claudeAvailable)(
 
         const addedPluginKey = `${E2E_SKILL.pinia.id}@${fixture.marketplaceName}`;
 
-        // The added plugin must be installed into settings.json even though
-        // the original config had no marketplace name.
         await expect(project).toHavePlugin(addedPluginKey);
 
         await expect(project).toHaveConfig({

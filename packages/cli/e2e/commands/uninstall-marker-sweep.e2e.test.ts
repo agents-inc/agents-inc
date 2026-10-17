@@ -17,17 +17,12 @@ import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 
 /**
- * The two halves of one contract, driven through the real binary.
- *
- * `compile` stamps a provenance marker into every agent it writes — a body comment on the
- * first line after the frontmatter, deliberately not a frontmatter key, because Claude Code's
- * tolerance of unknown frontmatter fields is undocumented and the body is free-form by
- * contract. `uninstall` reads it back: once the configuration that named the compiled agents
- * is gone, the marker is the only thing that says which files this CLI produced, so a marked
- * file is provably ours to delete and an unmarked one is the user's to keep.
+ * `compile` stamps a provenance marker on the first body line after the frontmatter (not a
+ * frontmatter key, whose tolerance is undocumented), and `uninstall` uses it to tell its own agents
+ * from the user's once the config is gone.
  */
 
-/** A file the user wrote and dropped in the agents directory — it carries no marker. */
+/** No marker: the user's own file. */
 const HAND_WRITTEN_AGENT = "my-custom-agent";
 
 describe("compiled-agent provenance marker", () => {
@@ -40,10 +35,7 @@ describe("compiled-agent provenance marker", () => {
     }
   });
 
-  /**
-   * A project whose config names one agent backed by one local skill, plus a HOME of its own
-   * so the run is genuinely project-scoped rather than resolving to a global installation.
-   */
+  /** A HOME of its own, so the run is project-scoped. */
   async function compiledProject(): Promise<{ dir: string; home: string; agentFile: string }> {
     const project = await ProjectBuilder.editable({
       skills: [E2E_SKILL.react.id],
@@ -71,11 +63,7 @@ describe("compiled-agent provenance marker", () => {
     };
   }
 
-  /**
-   * The marker's position is its contract, so the assertion pins it there: the closing
-   * frontmatter fence, then the marker, then the rest. Matching the marker anywhere in the file
-   * would pass on a compiler that appended it to the footer.
-   */
+  /** Position is the contract: fence, marker, then the rest. */
   it("stamps the marker onto the line after the frontmatter", async () => {
     const { agentFile } = await compiledProject();
 
@@ -84,11 +72,7 @@ describe("compiled-agent provenance marker", () => {
     expect(compiled).toContain(`\n---\n${provenanceMarker()}\n`);
   });
 
-  /**
-   * A second compile re-renders from the same partials and re-stamps the result, so the file it
-   * writes must be the one already there — byte for byte. A stamp that appended rather than
-   * replaced would grow the file by a line per compile and nothing else would notice.
-   */
+  /** A stamp that appended would grow the file each compile. */
   it("re-compiles to the same bytes instead of stacking a second marker", async () => {
     const { dir, home, agentFile } = await compiledProject();
     const afterFirstCompile = await readTestFile(agentFile);
@@ -99,11 +83,7 @@ describe("compiled-agent provenance marker", () => {
     expect(await readTestFile(agentFile)).toBe(afterFirstCompile);
   });
 
-  /**
-   * The whole point of the marker. With `config.ts` deleted, nothing names the compiled agents —
-   * and the sweep still tells them apart from the file the user wrote beside them. Both outcomes
-   * are stated in the plan the user reads before pressing `y` and in the summary printed after.
-   */
+  /** Both outcomes are stated in the plan and in the summary. */
   it("sweeps the agents it stamped and keeps the user's own when the config is gone", async () => {
     const { dir, home, agentFile } = await compiledProject();
 

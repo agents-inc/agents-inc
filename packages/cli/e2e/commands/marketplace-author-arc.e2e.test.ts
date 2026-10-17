@@ -33,39 +33,14 @@ import {
 import "../matchers/setup.js";
 
 /**
- * The arc an author of a marketplace walks: check the repository, build its
- * plugins, generate its marketplace, and install from the result.
- *
- * Each command in that chain has its own spec, and `createE2EPluginSource` runs
- * two of them as SETUP for other tests — throwing on a non-zero exit and
- * asserting nothing about what they produced. So the pipeline was exercised
- * constantly and never checked: nothing compared the marketplace's plugin list
- * against the skills the repository ships, and nothing asked whether a
- * repository that has been built is still one the CLI can install from.
- *
- * `doctor` is run from the source-repo cwd at both ends. It is the author's own
- * check, and it is the one command whose answer must CHANGE between the two
- * cwds: in the repository it validates content and skips the operational layer
- * (there is no installation there to be operational about), and in the installed
- * project it runs both. Its answer in the repository changes across the build too:
- * a marketplace is not installable until `.claude-plugin/marketplace.json` exists,
- * so before the build `doctor` names the file as a warning — the author's own
- * repository, half-built, is not yet wrong — and after it, says nothing about it.
- *
- * The install leg here is the eject one. Installing the BUILT PLUGINS requires
- * a registered marketplace and the Claude CLI — the same dependency that blocks
- * journey 10's refresh branch — so it is not attempted unconditionally.
+ * A marketplace author's arc: doctor, build plugins, build marketplace, then install from the
+ * result. In the repository `doctor` skips the operational layer and warns about the manifest until
+ * it is built. Eject only: plugin install needs the Claude CLI.
  */
 
-/**
- * The name the author publishes under. The fixture marketplace's own, because the
- * repository this arc builds is `createE2ESource()`'s — its skill ids carry that
- * name as their prefix, so publishing under any other one would ship plugins whose
- * ids belong to a different marketplace.
- */
+/** The fixture's own name: its skill ids carry it as their prefix. */
 const MARKETPLACE_NAME = E2E_MARKETPLACE_NAME;
 
-/** The aliases an install fills in, whatever repository it read. */
 const GENERATED_ALIASES = ["SkillId", "AgentName", "Category"] as const;
 
 describe("marketplace author arc — check, build, publish, install", () => {
@@ -95,9 +70,8 @@ describe("marketplace author arc — check, build, publish, install", () => {
     "validates the repository, builds a plugin per skill, and lists every one in the marketplace",
     { timeout: TIMEOUTS.LIFECYCLE },
     async () => {
-      // The author's first command, run where they run it. In a repository there
-      // is nothing installed, so the operational layer has nothing to report on
-      // and says so rather than emitting rows about an absent installation.
+      // Nothing is installed in a repository, so the operational layer says so rather than
+      // reporting rows.
       const beforeBuild = await CLI.run(["doctor"], { dir: sourceDir });
       expect(beforeBuild.exitCode, beforeBuild.output).toBe(EXIT_CODES.SUCCESS);
       expect(beforeBuild.stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
@@ -115,8 +89,7 @@ describe("marketplace author arc — check, build, publish, install", () => {
       const buildPlugins = await CLI.run(["build", "plugins"], { dir: sourceDir });
       expect(buildPlugins.exitCode, buildPlugins.output).toBe(EXIT_CODES.SUCCESS);
       expect(buildPlugins.stdout).toContain(`Compiled ${E2E_SKILL_IDS.length} skill plugins`);
-      // One plugin per skill the repository ships, compared as a whole set: a
-      // count passes for the right number of wrong directories.
+      // Compared as a set: a count passes for the right number of wrong directories.
       expect(
         (await listFiles(path.join(sourceDir, SOURCE_PATHS.PLUGINS_DIST))).sort(),
         "every skill in the repository must become a plugin",
@@ -138,8 +111,7 @@ describe("marketplace author arc — check, build, publish, install", () => {
         "the marketplace must list every plugin the build produced, and no others",
       ).toStrictEqual([...E2E_SKILL_IDS].sort());
 
-      // The other end of the arc's first half: building must not have left the
-      // repository in a state its own author's check rejects.
+      // Building must not leave the repository in a state its own check rejects.
       const afterBuild = await CLI.run(["doctor"], { dir: sourceDir });
       expect(
         afterBuild.exitCode,
@@ -157,9 +129,7 @@ describe("marketplace author arc — check, build, publish, install", () => {
     "installs from the built repository and passes doctor over the installation",
     { timeout: TIMEOUTS.EXTENDED_LIFECYCLE },
     async () => {
-      // Runs after the build spec above and against the same repository, which
-      // now carries dist/plugins and a marketplace.json — the state a consumer
-      // meets, rather than the pre-build one every other install spec uses.
+      // Runs after the build spec, against the built repository a consumer meets.
       env = await createTestEnvironment();
       const globalHome = env.fakeHome;
       const project = { dir: env.projectDir, globalHome };
@@ -172,23 +142,19 @@ describe("marketplace author arc — check, build, publish, install", () => {
         sourceDir,
       );
 
-      // Surface 2.
       expect(installOutput).toContain(STEP_TEXT.INIT_SUCCESS);
 
-      // Surface 3: the built repository is what the installation records.
       expect(
         (await loadConfigOrFail(globalHome)).marketplace,
         "the install must record the built repository it read",
       ).toBe(sourceDir);
 
-      // Surface 1.
       expect(
         Object.keys(await readCompiledAgents(globalHome)).length,
         "installing from a built repository must still compile agents",
       ).toBeGreaterThan(0);
       expect((await listFiles(skillsPath(globalHome))).length).toBeGreaterThan(0);
 
-      // Surface 4.
       const sourceFolderDir = path.dirname(configTypesTsPath(globalHome));
       const typecheck = await typecheckGeneratedConfig(sourceFolderDir);
       expect(
@@ -201,15 +167,12 @@ describe("marketplace author arc — check, build, publish, install", () => {
         `a bogus literal must not type-check against the installed pair.\ntsc output:\n${probe.output || "(no diagnostics — the unions accept everything)"}`,
       ).not.toBe(EXIT_CODES.SUCCESS);
       expect(probe.output).toContain(TS_NOT_ASSIGNABLE);
-      // EACH alias, not any: the two above hold while one alias rejects and the others have
-      // collapsed to `string`.
+      // Each alias, not any: one rejecting while others collapse to `string`.
       expect(
         probe.rejected,
         `every alias asked for must reject its bogus literal.\ntsc output:\n${probe.output}`,
       ).toStrictEqual([...GENERATED_ALIASES]);
 
-      // The same command that skipped the operational layer in the repository
-      // runs both layers here — the difference IS the installation.
       const doctor = await CLI.run(["doctor"], project);
       expect(doctor.exitCode, doctor.output).toBe(EXIT_CODES.SUCCESS);
       expect(doctor.stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);

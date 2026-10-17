@@ -31,32 +31,17 @@ import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-
 import { makeGitRepositoryRoot } from "../../src/cli/lib/__tests__/helpers/git-repository.js";
 
 /**
- * Journey 79 below a repository root and below a trusted folder: the trust line follows what
- * Claude Code 2.1.288 records and when it asks, as watched under a scratch HOME on 2026-10-03.
- *
- * - Accepting the prompt in `mono/app`, where `mono` is a git repository's root, records
- *   `projects["…/mono"]` and nothing for `mono/app`. The hook gate reads the same key, so the
- *   project's completion gate runs and the install owes no line.
- * - In a plain folder below a trusted plain folder Claude Code shows no prompt at all, while its
- *   hook gate still reads the folder's own key and keeps the hooks off. A line telling the user to
- *   accept the prompt there gives them a remedy that cannot be followed.
- *
- * Each of those is paired with the case Claude Code does prompt in, where the line and its remedy
- * must stay: a folder below a repository root nothing trusts, and a repository root below a
- * trusted plain folder — the prompt's walk up stops at the root.
- *
- * Every run is `init --from` installing one writing sub-agent at project scope, so compile gives
- * it the gate and the folder's trust is the only thing that differs between the four.
+ * The trust line below a repository root and below a trusted folder follows where Claude Code
+ * records trust and when it prompts. Each no-line case is paired with one Claude Code does prompt
+ * in.
  */
 
 const WRITER = E2E_AGENT["web-developer"].name;
 const SKILL = E2E_SKILL.react;
 const SEED_ID = "TrustRoot";
 
-/** The HOME a run uses and the folder inside it that the install runs in. */
 type Workspace = { home: string; project: string };
 
-/** One ejected skill and the writing sub-agent that loads it, both in the project. */
 const A_WRITER_IN_THE_PROJECT = buildSeedPayload({
   skills: {
     [SKILL.id]: buildSeedSkill({
@@ -86,7 +71,6 @@ describe("the Claude trust line, read where Claude Code keeps the record", () =>
     env = undefined;
   });
 
-  /** A fresh HOME, and `relative` created inside it as the folder the install runs in. */
   async function folderInAFreshHome(...relative: string[]): Promise<Workspace> {
     env = await createTestEnvironment({ permissions: false });
     const project = path.join(env.fakeHome, ...relative);
@@ -94,10 +78,7 @@ describe("the Claude trust line, read where Claude Code keeps the record", () =>
     return { home: env.fakeHome, project };
   }
 
-  /**
-   * Installs the writing sub-agent into `project` and checks what landed — the config entry and
-   * the one compiled file, carrying its gate — so the output is the only thing left to judge.
-   */
+  /** Checks the config entry and the gated compiled file, so only the output is left to judge. */
   async function installAWriterInto({ home, project }: Workspace): Promise<string> {
     const installed = await runInitFrom(
       store,
@@ -123,7 +104,7 @@ describe("the Claude trust line, read where Claude Code keeps the record", () =>
       const workspace = await folderInAFreshHome("mono", "app");
       const repository = path.dirname(workspace.project);
       await makeGitRepositoryRoot(repository);
-      // Accepting the prompt in `mono/app` writes this record and no other.
+      // Accepting the prompt in `mono/app` records the repository root and nothing else.
       await acceptClaudeTrustPrompt(workspace.home, repository);
 
       const output = await installAWriterInto(workspace);

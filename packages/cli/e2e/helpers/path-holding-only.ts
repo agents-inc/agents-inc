@@ -3,10 +3,7 @@ import path from "node:path";
 
 import { execa } from "execa";
 
-/**
- * A PATH holding exactly `commands` and nothing else, each linked to the real binary this suite
- * found — for a spec whose machine must lack every program it leaves out.
- */
+/** A PATH holding only `commands`, each symlinked to this machine's real binary. */
 export async function pathHoldingOnly(
   project: { readonly root: string },
   commands: readonly string[],

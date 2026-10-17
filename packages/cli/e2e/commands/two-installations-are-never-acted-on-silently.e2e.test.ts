@@ -25,54 +25,31 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import type { AgentName } from "../../src/cli/types/index.js";
 
 /**
- * One scope holding a Claude installation and a Codex one, across every command that acts on it.
- *
- * **Four commands refused, `doctor` called it an error, and three said nothing at all.** `edit`,
- * `uninstall`, `share` and `eject` all raise `refuseAnAmbiguousInstallation` and name
- * `--provider`; `doctor`'s Placements Offered row reports the same finding as `1 finding would stop
- * a command acting here`. `compile`, `update` and `list` resolved the provider through
- * `providerInUse`, which answers by ROSTER ORDER — `PROVIDERS` is `["claude", "codex"]` — so the
- * two that WRITE rewrote one user's installation and reported success without naming it, and the
- * one that REPORTS showed one of the pair with nothing saying a second was there.
- *
- * Measured against the built CLI in a project carrying both source folders, 2026-09-23:
- *
- * ```
- * $ agents-inc share     # exit 1, "…holds 2 installations — claude and codex…"
- * $ agents-inc compile   # exit 0, "1 project agents rewritten" — the CLAUDE one, unnamed
- * $ agents-inc update    # exit 0, silent about which config it read
- * $ agents-inc list      # "Installation: dual-claude" and nothing about the other
- * ```
- *
- * So the pair is asserted together in one file: a refusal on its own cannot tell a correctly
- * scoped guard from one that has swallowed its domain, and every case here is paired with the
- * same command succeeding once `--provider` names an installation.
+ * One scope holding a Claude and a Codex installation: every command that acts on it refuses naming
+ * `--provider` (doctor reports it), and each case is paired with the same command succeeding once
+ * `--provider` names one.
  */
 
-/** The two installations one scope holds, named so an assertion can say which one answered. */
 const CLAUDE_INSTALL = "two-installations-claude";
 const CODEX_INSTALL = "two-installations-codex";
 
-/** One ejected skill apiece, so each installation has something a compile pass can find. */
+/** So each installation has something a compile pass can find. */
 const SKILL_ID = E2E_SKILL.vitest.id;
 
 /**
- * Where each host reads an ejected PROJECT skill from — `.claude/skills` against `.agents/skills`.
- *
- * Spelled per host rather than composed once, for `createLocalSkillIn`'s own reason: a fixture
- * that plants both halves under the Claude path leaves the Codex installation empty, and an empty
- * installation satisfies every assertion here for free.
+ * Spelled per host: planting both under the Claude path leaves the Codex installation empty, which
+ * satisfies everything for free.
  */
 const SKILLS_DIR = {
   claude: path.join(DIRS.CLAUDE, STANDARD_DIRS.SKILLS),
   codex: DIRS.CODEX_PROJECT_SKILLS,
 } as const;
 
-/** The sub-agent each installation lists, so a role file on disk says which one was compiled. */
+/** So a role file on disk says which installation was compiled. */
 const CLAUDE_AGENT = "web-developer" as const satisfies AgentName;
 const CODEX_AGENT = "cli-developer" as const satisfies AgentName;
 
-/** What a Codex role file is called: Codex reads TOML where Claude reads Markdown. */
+/** Codex reads TOML where Claude reads Markdown. */
 const CODEX_ROLE_SUFFIX = FILES.CODEX_AGENT_EXTENSION;
 
 describe("a scope holding two installations", () => {
@@ -128,12 +105,8 @@ describe("a scope holding two installations", () => {
   }
 
   /**
-   * The role files one host wrote into this project, or none where it wrote nothing.
-   *
-   * `listFiles` rather than `readCompiledAgents`, which composes `.claude/agents` in its body and
-   * so can only describe a Claude installation — the same host-blindness `createLocalSkillIn`
-   * exists to answer. It already answers `[]` for a directory that is not there, which is one of
-   * the two states under test rather than a failure.
+   * `listFiles`, not `readCompiledAgents`, which only knows `.claude/agents`; `[]` for a missing
+   * directory is a state under test.
    */
   async function roleFilesIn(hostDir: string): Promise<string[]> {
     return (await listFiles(path.join(projectDir, hostDir, DIRS.AGENTS))).sort();
@@ -148,8 +121,7 @@ describe("a scope holding two installations", () => {
       exitCode,
       "compile resolves the provider by roster order, so it rewrites the Claude installation of a project that also has a Codex one and reports success",
     ).toBe(EXIT_CODES.INVALID_ARGS);
-    // Flattened: the refusal leads with the project's path, which pushes its sentence across
-    // oclif's line breaks.
+    // Flattened: the project's path pushes the refusal across oclif's line breaks.
     const said = flattenCliOutput(combined);
     expect(said).toContain("2 installations");
     expect(said).toContain("--provider");
@@ -161,14 +133,12 @@ describe("a scope holding two installations", () => {
 
     const { exitCode, combined } = await run(["compile", "--provider", "codex"]);
 
-    // The refusal above is only worth anything beside a state in which the same command runs:
-    // a guard that had swallowed its whole domain would leave both of these red in the same way.
+    // Beside the refusal: a guard that swallowed its domain would fail here.
     expect(exitCode, combined).toBe(EXIT_CODES.SUCCESS);
     expect(combined).not.toContain("2 installations");
 
-    // And the filesystem, because an exit code cannot tell "compiled the Codex installation" from
-    // "compiled the Claude one and exited 0" — which is the defect, not a variant of it. Members
-    // rather than a count: a count cannot see a swap, and a swap is exactly the subject here.
+    // The filesystem, since an exit code cannot tell which installation compiled; members, not a
+    // count.
     expect(await roleFilesIn(DIRS.CODEX)).toStrictEqual([`${CODEX_AGENT}${CODEX_ROLE_SUFFIX}`]);
     expect(
       await roleFilesIn(DIRS.CLAUDE),
@@ -200,8 +170,7 @@ describe("a scope holding two installations", () => {
 
     const { combined } = await run(["list"]);
 
-    // The installation it names is the CLAUDE one, which is correct and was never the defect:
-    // what was missing is any statement that it is one of two, and which one.
+    // Naming the Claude one is correct; the defect was not saying it is one of two.
     expect(combined).toContain(CLAUDE_INSTALL);
     expect(
       combined,

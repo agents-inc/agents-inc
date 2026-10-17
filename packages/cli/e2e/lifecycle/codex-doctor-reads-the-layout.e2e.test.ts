@@ -17,37 +17,16 @@ import {
 import { DIRS, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * `doctor` on a HEALTHY Codex installation, which is the state no spec covered.
- *
- * Every Codex doctor spec before this one drove a BROKEN configuration — an unofferable placement
- * — so the rows that look at where a skill actually landed were never asked about an installation
- * that works. Driven as a user, the report on a clean Codex install was wrong in four ways at
- * once, and each is invisible to a spec that only ever sees the failing case:
- *
- * - **Skills Installed** composed `<scope root>/.claude/skills/<id>/SKILL.md` from a Claude
- *   constant and reported every eject-mode skill missing, naming a directory this installation
- *   does not have. The host-path lint ban cannot see it: it matches LITERALS, and this is a
- *   constant.
- * - **Agents Compiled** looked for `<name>.md` — Claude's extension, where `agentCodec` answers
- *   `.toml` for Codex — and called the absence "needs recompilation" over a file no release will
- *   ever put in a Codex agents directory, which is a remedy that writes nothing.
- * - **Layout** printed the scope's name and stopped — "This project", with no predicate — because
- *   the row's sentence is only built for a provider that HAS a legacy folder to move out of.
- * - the **Placements Offered** row counts findings and calls them installations, so one
- *   installation with two findings reports "2 unusable installations".
- *
- * **The exit code did NOT carry any of it, and that is the reason the state went unnoticed.** Both
- * wrong rows are `warn`, so `doctor` exited 0 over a report saying an installation that works is
- * missing its skills and owes a recompile. A spec asserting only the exit code sees a pass, which
- * is why every assertion below reads the row's own sentence.
+ * `doctor` on a HEALTHY Codex installation: Skills Installed, Agents Compiled and Layout read the
+ * Codex layout (no `.claude/`, `.toml` roles), and Placements Offered counts installations. The
+ * wrong rows were `warn` and exited 0, so every assertion reads the row's own sentence.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** A sub-agent entry keeping its agent in the project, so a skill's scope is the only variable. */
+/** Pinned to the project so a skill's scope is the only variable. */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/** Claude's own state directory, which no row about a Codex installation may name. */
 const CLAUDE_STATE_DIR = ".claude";
 
 describe("doctor on a healthy Codex installation", () => {
@@ -71,7 +50,7 @@ describe("doctor on a healthy Codex installation", () => {
     env = undefined;
   });
 
-  /** One eject + project skill, installed onto Codex — the cheapest healthy installation there is. */
+  /** The cheapest healthy installation there is. */
   async function installOnCodex(target: TestEnvironment): Promise<void> {
     store.publish(
       "CdxDoc01",
@@ -110,36 +89,18 @@ describe("doctor on a healthy Codex installation", () => {
       const said = flattenCliOutput(examined.output);
 
       expect(said).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_INSTALLED);
-      // The row's own verdict, in the words it prints when it found everything.
       expect(said).toContain("1/1 eject-mode skill installed");
-      // And it may not have looked in a directory this installation does not own. Broad on
-      // purpose: the row's own sentence is only half of what went wrong, and the other half was a
-      // DIFFERENT row naming the same directory.
+      // Broad on purpose: a different row also named the same directory.
       expect(said, "no doctor row may name Claude's state directory here").not.toContain(
         CLAUDE_STATE_DIR,
       );
 
-      // The exit code proves nothing on its own here — both rows this file is about are `warn`,
-      // so the report was already exiting 0 while saying an installation that works is broken.
-      // Asserted anyway, so a later change that makes either a `fail` is not silent.
+      // Proves nothing alone, but a later change making either row a `fail` is not silent.
       expect(examined.exitCode, said).toBe(EXIT_CODES.SUCCESS);
     },
   );
 
-  /**
-   * **Re-pointed on 2026-09-22, and the original assertion is recorded rather than deleted.** It
-   * required the row to say `No sub-agent renderer for codex yet` — true when this file was
-   * written and made false by the renderer landing, which is an assertion this spec's own subject
-   * outgrew rather than a regression. What has NOT changed is the defect it was written against:
-   * the row said `1 agent needs recompilation - web-developer (missing)` on a healthy Codex
-   * installation, because it looked for Claude's `.md` extension where `agentCodec` answers
-   * `.toml`. That claim is the negative below, and it survives the re-point whole.
-   *
-   * **The positive half is what makes the negative mean anything.** `not.toContain` is satisfied
-   * for free by a row that found nothing to say, and by a `doctor` that never reached this row at
-   * all — so the row's own verdict is asserted beside it. The count is the ROW's, over the one
-   * sub-agent this installation configures.
-   */
+  /** The positive verdict beside the negative, which a row that said nothing would satisfy. */
   it(
     "does not ask for a recompile that would write nothing",
     { timeout: TIMEOUTS.PLUGIN_TEST },
@@ -155,7 +116,6 @@ describe("doctor on a healthy Codex installation", () => {
 
       expect(said).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
       expect(said).not.toContain("needs recompilation");
-      // The role file is `.toml` and it is where the layout puts it, so the row finds it.
       expect(said).toContain("1/1 agent compiled");
     },
   );
@@ -174,7 +134,7 @@ describe("doctor on a healthy Codex installation", () => {
       const said = flattenCliOutput(examined.output);
 
       expect(said).toContain(STEP_TEXT.DOCTOR_ROW_LAYOUT);
-      // The predicate, not just the subject. "This project" alone is what the row printed.
+      // The predicate, not just the subject.
       expect(said).toContain(`This project is on ${DIRS.SOURCE_CODEX}/`);
     },
   );

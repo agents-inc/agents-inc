@@ -33,24 +33,8 @@ import "../matchers/setup.js";
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /**
- * D-229: `cc init` must hard-error when `installPluginSkills` returns `failed`
- * entries — writing an orphan config.ts claiming the plugin is installed when
- * `claude plugin install` rejected the ref is a silent-substitution bug.
- *
- * Finding: plugin install intent is inviolable (feedback_no_plugin_to_eject_fallback.md).
- *
- * Pre-fix: `installPluginsStep` emitted `this.warn()` per failed skill and
- * continued, so `writeConfigAndCompile` wrote config.ts entries with
- * `source: "<marketplace>"` even though the plugin was never actually
- * installed into `settings.json`.
- *
- * Post-fix: when `pluginResult.failed.length > 0`, `this.error(..., { exit:
- * EXIT_CODES.ERROR })` fires BEFORE `writeConfigAndCompile`, so no orphan
- * entries reach disk.
- *
- * Requires the Claude CLI — this scenario exercises the real `claude plugin
- * install` code path (marketplace resolves successfully, but the skill ref
- * doesn't correspond to a plugin in the marketplace).
+ * `init` must hard-error before writing config.ts when `installPluginSkills` returns `failed`
+ * entries, rather than recording plugins that never installed. Requires the Claude CLI.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -63,11 +47,8 @@ describe.skipIf(!claudeAvailable)(
     let tempDir: string | undefined;
 
     beforeAll(async () => {
-      // Build a real marketplace that registers cleanly with claude CLI, then
-      // overwrite its plugin list so individual installs fail per-skill.
-      //
-      // `owned` because this spec's whole method is CORRUPTING its marketplace, and the shared
-      // fixture is frozen precisely so a spec cannot do that to one every other spec is reading.
+      // A marketplace that registers cleanly, its plugin list overwritten so per-skill installs
+      // fail. `owned`, because corrupting the frozen shared fixture would break every other spec.
       fixture = await createE2EPluginSource({ owned: true });
       await overwriteMarketplacePluginsWithPlaceholder(fixture);
       store = await startSeedConfigStore();
@@ -102,15 +83,9 @@ describe.skipIf(!claudeAvailable)(
         expect(result.exitCode).toBe(EXIT_CODES.ERROR);
 
         const output = flattenCliOutput(result.output);
-        // Remediation hint must name a concrete follow-up for the user.
         expect(output).toContain("Plugin install intent could not be honored");
-        // The failing skill id surfaces in the per-skill warn line that runs
-        // before the hard-error, so stderr/stdout combined contains it.
         expect(output).toContain(E2E_SKILL.react.id);
 
-        // The core regression check: pre-fix, config.ts was written with an
-        // orphan entry (`source: "<marketplace>"`) claiming web-framework-react
-        // was installed. Post-fix, `writeConfigAndCompile` never runs.
         expect(await fileExists(configTsPath(projectDir))).toBe(false);
         expect(await fileExists(configTsPath(tempDir))).toBe(false);
       },
@@ -119,24 +94,8 @@ describe.skipIf(!claudeAvailable)(
 );
 
 /**
- * The twin path: `cc edit` must hard-error with the same guarantees as
- * `cc init` when `installPluginSkills` returns `failed` entries. There is one
- * guard rather than two copies of it — `BaseCommand.reportPluginInstalls`, which
- * `edit.tsx::applyPluginChanges` and `init.tsx::handleInstallation` both reach
- * through `installPluginSkillsReported` — so this test pins the shared contract
- * from the edit side, and the init case above pins it from the other.
- *
- * Scenario:
- *   1. Seed a valid plugin-mode project whose config.ts records a
- *      marketplace-sourced `web-framework-react` (ProjectBuilder.pluginProject).
- *   2. The shared fixture's marketplace.json was already overwritten in
- *      `beforeAll` so only the placeholder plugin remains — ANY attempt to
- *      install a real skill from the shipped source is rejected per-skill by
- *      `claude plugin install`.
- *   3. Run `edit --from` with a configuration adding a plugin skill, and
- *      confirm. The install step hits `pluginResult.failed.length > 0` and
- *      hard-errors BEFORE `writeConfigAndCompile` runs, so config.ts is
- *      byte-for-byte identical to its pre-edit state.
+ * The same guarantee from `edit`: the shared reporter both commands reach hard-errors before
+ * `writeConfigAndCompile`, so config.ts is byte-identical after the failed edit.
  */
 describe.skipIf(!claudeAvailable)(
   "edit with plugin install failure: hard-error before orphan config write",
@@ -174,15 +133,10 @@ describe.skipIf(!claudeAvailable)(
         });
         tempDir = path.dirname(project.dir);
 
-        // Snapshot config.ts BEFORE edit. The hard-error contract is that
-        // writeConfigAndCompile never runs, so the file must be identical
-        // after the failed edit (no orphan entries, no timestamp-only churn).
         const configPath = configTsPath(project.dir);
         const configBefore = await readTestFile(configPath);
 
-        // Add a plugin-sourced skill beside web-framework-react.
-        // `claude plugin install <id>@<marketplace>` rejects it because the
-        // placeholder marketplace does not list the shipped plugins.
+        // Rejected: the placeholder marketplace does not list the shipped plugins.
         const { output } = await applyFromSeed(
           store,
           "AddPinia1",
@@ -205,16 +159,10 @@ describe.skipIf(!claudeAvailable)(
           EXIT_CODES.ERROR,
         );
 
-        // Remediation hint is `pluginInstallFailureError`, emitted by the one
-        // reporter both commands reach, so the two spellings cannot drift apart.
         expect(output).toContain("Failed to install");
         expect(output).toContain("plugin skill(s)");
         expect(output).toContain("Plugin install intent could not be honored");
 
-        // The core regression check: config.ts on disk is byte-for-byte the
-        // same as before the failed edit. Pre-fix, `writeConfigAndCompile`
-        // would have appended the new plugin skill with `source:
-        // "<marketplace>"` even though the install was rejected.
         const configAfter = await readTestFile(configPath);
         expect(configAfter).toStrictEqual(configBefore);
       },
@@ -223,16 +171,8 @@ describe.skipIf(!claudeAvailable)(
 );
 
 /**
- * Overwrites the built `.claude-plugin/marketplace.json` so the marketplace
- * still passes `fetchMarketplace` schema validation and registers with
- * `claude plugin marketplace add`, but the plugin ref emitted by init
- * (`web-framework-react@<marketplaceName>`) is NOT present. `claude plugin
- * install` then rejects per-skill, populating `installPluginSkills`'s
- * `failed` array.
- *
- * The marketplace schema requires `plugins: z.array(...).min(1)`, so we keep
- * exactly one placeholder entry whose name cannot collide with any skill id
- * shipped by `createE2ESource`.
+ * Leaves the marketplace valid and registrable but without the ref init emits, so
+ * `claude plugin install` rejects per-skill. The schema requires `min(1)`, hence one placeholder.
  */
 async function overwriteMarketplacePluginsWithPlaceholder(fixture: E2EPluginSource): Promise<void> {
   const marketplacePath = path.join(

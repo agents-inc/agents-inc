@@ -19,15 +19,8 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * `edit --from <id>` where there is nobody to confirm the removals.
- *
- * The command is destructive by ruling — the project is made to MATCH the payload — so it shows
- * the removals and asks. A confirm nobody can answer must never become a yes, so a spawned
- * process with no TTY refuses instead, and the refusal is what this file proves: refused, exit
- * non-zero, nothing fetched, nothing on disk moved.
- *
- * The counterpart is `e2e/interactive/edit-from.e2e.test.ts`, which drives the same command
- * through a real terminal and approves.
+ * `edit --from <id>` with no TTY to confirm its removals refuses: exit non-zero, nothing fetched,
+ * nothing on disk moved. `e2e/interactive/edit-from.e2e.test.ts` is the approving counterpart.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -54,7 +47,6 @@ describe("edit --from <id> without a terminal", () => {
     await Promise.all(tempDirs.splice(0).map(cleanupTempDir));
   });
 
-  /** An installed project carrying two skills, cleaned up after the spec that took it. */
   async function takeInstalledProject(): Promise<string> {
     const project = await ProjectBuilder.editable({
       marketplace: sourceDir,
@@ -67,14 +59,13 @@ describe("edit --from <id> without a terminal", () => {
     return project.dir;
   }
 
-  /** A directory with nothing installed in it, under a HOME holding no global install either. */
   async function takeEmptyFolder(): Promise<string> {
     const tempDir = await createTempDir();
     tempDirs.push(tempDir);
     return tempDir;
   }
 
-  /** A configuration naming one of the two installed skills — so the other would be removed. */
+  /** Names one of the two installed skills, so the other would be removed. */
   function publishHalfOfIt(id: string): void {
     store.publish(
       id,
@@ -99,18 +90,13 @@ describe("edit --from <id> without a terminal", () => {
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     const flattened = flattenCliOutput(output);
     expect(flattened).toContain(STEP_TEXT.SHARED_CONFIG_NEEDS_TERMINAL);
-    // `init --from` is the whole of what a pipeline can do with an id: it installs into a clean
-    // directory and removes nothing, so it needs no confirm. A refusal that named no way
-    // forward would read as "this id is unusable here".
+    // `init --from` removes nothing and needs no confirm, so it is the way forward for a pipeline.
     expect(flattened).toContain(`init --from ${PUBLISHED_ID}`);
   });
 
   /**
-   * The installed-folder refusal above names `edit --from <id>` from a terminal as the way on.
-   * In a folder with nothing installed that command refuses too — "No installation found" — so
-   * telling someone to run it here sends them to a second refusal. Nothing is installed to apply
-   * a configuration TO, which is true with or without a terminal, so that is what is said first,
-   * with the command that does install one here.
+   * `edit --from` also refuses where nothing is installed, so that is said first, with the command
+   * that installs here.
    */
   it("in a folder with nothing installed, says so instead of sending it to a terminal", async () => {
     const emptyDir = await takeEmptyFolder();
@@ -140,9 +126,7 @@ describe("edit --from <id> without a terminal", () => {
 
     await runEditFrom(store, PUBLISHED_ID, { dir: projectDir });
 
-    // Nothing in the payload can change the answer, so the round trip is spent on a run that
-    // was already over — the same reasoning that puts `init --from`'s greenfield check ahead of
-    // its fetch.
+    // Nothing in the payload can change the answer, so nothing is fetched.
     expect(store.requests).toStrictEqual([]);
   });
 
@@ -153,17 +137,12 @@ describe("edit --from <id> without a terminal", () => {
 
     await runEditFrom(store, PUBLISHED_ID, { dir: projectDir });
 
-    // The refusal's whole claim: a destructive command that could not ask permission removed
-    // nothing, rewrote no config and recompiled no agent.
     expect(await readTreeSnapshot(projectDir)).toStrictEqual(before);
   });
 
   /**
-   * REFUSED until 2026-08-24, on the reading that the two flags were opposite ends of one round
-   * trip. The owner's ruling made `--ui` open whatever `--from` names, so the pair now opens the
-   * shared id — which is what lets a recipient look at a configuration instead of only applying
-   * it blind. Full coverage of the pairing is `commands/edit-ui-from`; what this spec adds is the
-   * economy, which only a real store can observe.
+   * `--ui` opens whatever `--from` names; `commands/edit-ui-from` covers the pairing, and this adds
+   * that the store is not touched.
    */
   it("opens the shared id without spending anything at the store", async () => {
     const projectDir = await takeInstalledProject();
@@ -175,9 +154,7 @@ describe("edit --from <id> without a terminal", () => {
 
     expect(exitCode, output).toBe(EXIT_CODES.SUCCESS);
     expect(flattenCliOutput(output)).toContain(`?fromId=${PUBLISHED_ID}`);
-    // `--ui` alone would POST this installation to mint an id, and `--from` alone would GET the
-    // named one. Given both, the id already exists and this directory is not the subject — so
-    // neither call has anything to do and the store sees nothing at all.
+    // Given both flags the id already exists, so neither the mint nor the fetch is needed.
     expect(store.requests).toStrictEqual([]);
   });
 });

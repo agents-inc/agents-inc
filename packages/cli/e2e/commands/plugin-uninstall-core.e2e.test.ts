@@ -32,15 +32,7 @@ import {
 } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
-/**
- * Plugin-mode uninstall E2E tests — core cleanup with Claude CLI.
- *
- * P-UNINSTALL-1: Full plugin chain uninstall with Claude CLI
- *   - Builds a plugin source, registers marketplace, installs a plugin,
- *     sets up config, then runs `uninstall --yes` and verifies cleanup.
- *
- * Reference: e2e-framework-design.md, Section 4.3
- */
+/** Plugin-mode `uninstall --yes` with the Claude CLI: full-chain cleanup. */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
@@ -48,33 +40,25 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
   let fixture: E2EPluginSource;
   let projectDir: string;
   let projectTempDir: string;
-  // The run's own Claude installation. `uninstall` has to read the plugin
-  // registry `claudePluginInstall` wrote, and `<home>/.claude` is both where the
-  // config dir puts it and where the CLI's `getUserPluginsDir()` looks under the
-  // same HOME — so one temp tree serves both. This used to be the developer's
-  // real HOME, which made the registration outlive the spec.
+  // One temp tree is both the Claude config dir and the HOME `getUserPluginsDir()` reads, so
+  // `uninstall` sees the registry `claudePluginInstall` wrote.
   let isolated: IsolatedClaudeHome;
 
   beforeAll(async () => {
-    // Step 1: Build plugin source (source -> build plugins -> build marketplace)
     fixture = await createE2EPluginSource();
     isolated = await createIsolatedClaudeHome();
 
-    // Step 2: Create an isolated project directory
     projectTempDir = await createTempDir();
     projectDir = path.join(projectTempDir, "project");
     await mkdir(projectDir, { recursive: true });
 
-    // Step 3: Register marketplace with Claude CLI
     await claudePluginMarketplaceAdd(fixture.sourceDir, { configDir: isolated.configDir });
 
-    // Step 4: Install a plugin via Claude CLI
     const pluginRef = `${E2E_SKILL.react.id}@${fixture.marketplaceName}`;
     await claudePluginInstall(pluginRef, "project", projectDir, {
       configDir: isolated.configDir,
     });
 
-    // Step 5: Create config.ts referencing the installed plugin
     await writeProjectConfig(
       projectDir,
       buildProjectConfig({
@@ -88,19 +72,17 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
       }),
     );
 
-    // Step 6: Create local skill with forkedFrom metadata (so skill uninstall works)
+    // forkedFrom metadata, so skill uninstall applies.
     await createLocalSkill(projectDir, E2E_SKILL.react.id, {
       description: "React framework",
       body: "# React\n\nTest content.",
       metadata: FORKED_FROM_METADATA,
     });
 
-    // Step 7: Create agents directory
     await writeAgentFile(projectDir, "web-developer", { frontmatter: true, body: "" });
 
-    // Note: No createPermissionsFile() here. The claudePluginInstall() call
-    // in Step 4 creates .claude/settings.json with enabledPlugins. We must
-    // not overwrite it with a permissions-only file.
+    // No createPermissionsFile(): `claudePluginInstall()` already wrote settings.json with
+    // enabledPlugins.
   }, TIMEOUTS.INTERACTIVE);
 
   afterAll(async () => {
@@ -120,9 +102,8 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     let uninstallResult: Awaited<ReturnType<typeof CLI.run>>;
 
     beforeAll(async () => {
-      // The run's own HOME, so the CLI finds the registry step 4 wrote and can
-      // call `claude plugin uninstall` against the same installation. `CLI.run`
-      // derives CLAUDE_CONFIG_DIR from it, so the deregistration lands there too.
+      // The run's own HOME, so `uninstall` finds the registry the install wrote; `CLI.run` derives
+      // CLAUDE_CONFIG_DIR from it.
       uninstallResult = await CLI.run(
         ["uninstall", "--yes"],
         { dir: projectDir },
@@ -141,7 +122,6 @@ describe.skipIf(!claudeAvailable)("uninstall with plugins calls Claude CLI", () 
     });
 
     it("should report per-plugin uninstall messages", () => {
-      // The uninstall command logs "  Uninstalled plugin '<name>'" per plugin
       expect(uninstallResult.stdout).toContain("Uninstalled plugin");
     });
 

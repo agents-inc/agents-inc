@@ -18,43 +18,19 @@ import {
   type MarketplaceInfo,
 } from "../helpers/test-utils.js";
 
-/**
- * Where does a `claude plugin` invocation keep its state, and how is it redirected?
- *
- * The answer, settled here rather than assumed: BOTH `HOME` and `CLAUDE_CONFIG_DIR`
- * redirect the Claude CLI's whole config tree — reads AND writes — and
- * `CLAUDE_CONFIG_DIR` WINS when the two disagree. `HOME=<h>` puts the tree at
- * `<h>/.claude`, which is the directory our own CLI reads the plugin registry from
- * under the same HOME, so both binaries see one installation. That is why the e2e
- * fixtures pin the config dir explicitly instead of relying on `HOME` alone: an
- * exported `CLAUDE_CONFIG_DIR` on a developer's machine overrides every fake HOME
- * in the suite, and a helper called in-process has no fake HOME to inherit at all.
- *
- * This file exists because the question was once asked and answered with
- * `expect(typeof result.exitCode).toBe("number")` — an assertion that passes on a
- * crash. It is the guard that keeps the answer true, so every claim below is read
- * back out of the registry the invocation actually wrote to, and paired with the
- * machine's own installation being byte-identical to how the run found it.
- *
- * The negative is asserted as "the ambient list did not move", not as "the ambient
- * list lacks this name": a machine carrying a stale registration under the fixture
- * name would fail the second for a reason that has nothing to do with isolation,
- * while re-registering it at this run's source path still moves the list.
- *
- * NOTE: smoke tests for the Claude CLI binary, NOT E2E tests for our CLI.
- */
+// Both HOME and CLAUDE_CONFIG_DIR redirect the Claude CLI's config tree, and CLAUDE_CONFIG_DIR wins,
+// so fixtures pin the config dir explicitly. The negative is "the ambient list did not move".
 
-/** Neutralises an exported `CLAUDE_CONFIG_DIR` so a HOME-only claim tests HOME. */
+/** So a HOME-only claim tests HOME. */
 const NO_AMBIENT_CONFIG_DIR = { CLAUDE_CONFIG_DIR: undefined };
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
 describe.skipIf(!claudeAvailable)("Claude CLI config isolation", () => {
   let fixture: E2EPluginSource;
-  /** The marketplaces the machine's own installation carries. Must not move. */
+  /** Must not move. */
   let ambientMarketplaces: MarketplaceInfo[];
 
-  /** Names registered in one config tree. */
   async function registeredMarketplaces(options: ClaudeConfigOptions): Promise<string[]> {
     const marketplaces = await claudePluginMarketplaceList(options);
     return marketplaces.map((marketplace) => marketplace.name);
@@ -66,9 +42,7 @@ describe.skipIf(!claudeAvailable)("Claude CLI config isolation", () => {
   }, TIMEOUTS.SETUP);
 
   afterAll(async () => {
-    // Safety net, not cleanup: every test below registers into a temp tree, so
-    // reaching the ambient installation at all means the isolation regressed.
-    // Deregistering keeps a red run from leaving the machine dirty for the next.
+    // Safety net: reaching the ambient installation means isolation regressed; keep the machine clean.
     await claudePluginMarketplaceRemove(E2E_MARKETPLACE_NAME);
     await cleanupFixture(fixture);
   });
@@ -95,9 +69,7 @@ describe.skipIf(!claudeAvailable)("Claude CLI config isolation", () => {
       });
       expect(add.exitCode).toBe(EXIT_CODES.SUCCESS);
 
-      // Reading it back through the config dir proves two things at once: the
-      // registration happened, and `<home>/.claude` is the tree HOME chose — the
-      // directory our own CLI reads the plugin registry from under that HOME.
+      // `<home>/.claude` is the tree HOME chose, which our CLI also reads.
       expect(await registeredMarketplaces({ configDir: isolated.configDir })).toContain(
         E2E_MARKETPLACE_NAME,
       );

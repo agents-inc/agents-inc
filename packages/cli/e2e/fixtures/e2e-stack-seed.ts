@@ -27,11 +27,7 @@ type Scope = SeedSkill["scope"];
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const API_DEV = E2E_AGENT["api-developer"].name;
 
-/**
- * The E2E source's stack, written out skill by skill as the editor sends it. Restated from
- * `E2E_STACK` in `create-e2e-source.ts`, whose keys are `E2E_STACK_SKILL_IDS` — a spec installing
- * this and asserting that list is what holds the two together.
- */
+// Restates `E2E_STACK` in create-e2e-source.ts; specs asserting `E2E_STACK_SKILL_IDS` keep them in step.
 const E2E_STACK_ASSIGNMENTS: Record<string, SeedSkill["assignments"]> = {
   [E2E_SKILL.react.id]: { [WEB_DEV]: "preloaded" },
   [E2E_SKILL.vitest.id]: { [WEB_DEV]: "lazy" },
@@ -43,27 +39,20 @@ const E2E_STACK_ASSIGNMENTS: Record<string, SeedSkill["assignments"]> = {
 };
 
 export type E2EStackOptions = {
-  /** Where every skill and sub-agent rests unless named below. Default `global`. */
+  /** Default `global`. */
   scope?: Scope;
-  /** Skills placed in the project instead. */
   projectSkills?: readonly string[];
-  /** Sub-agents placed in the project instead. */
   projectAgents?: readonly AgentName[];
   /** Default `eject`. */
   install?: SeedSkill["install"];
-  /** Skills installed as plugins whatever `install` says. */
   pluginSkills?: readonly string[];
-  /** Skills the stack assigns that this configuration leaves out. */
   without?: readonly string[];
-  /** Skills added beyond the stack, each assigned lazily to these sub-agents. */
+  /** Extra skills, each assigned lazily to these sub-agents. */
   plus?: Readonly<Record<string, readonly AgentName[]>>;
-  /** Skills kept but assigned to no sub-agent. */
   unassigned?: readonly string[];
-  /** Sub-agents left out, with every assignment to them. */
   withoutAgents?: readonly AgentName[];
 };
 
-/** The E2E stack as a shared configuration, so `init --from` installs what selecting it would. */
 export function e2eStackPayload(options: E2EStackOptions = {}): SeedPayload {
   const stackSkills = Object.entries({
     ...E2E_STACK_ASSIGNMENTS,
@@ -82,13 +71,8 @@ export function e2eStackPayload(options: E2EStackOptions = {}): SeedPayload {
   });
 }
 
-/** Where an install runs: `dir` is its cwd, `home` its HOME. */
 type InstallSite = { dir: string; home: string };
 
-/**
- * Publishes `payload` under `id` and installs it with `init --from` at `site`, from the E2E source
- * unless `sourceDir` names another. Fails the spec when the install does.
- */
 export async function installFromSeed(
   store: SeedConfigStore,
   id: string,
@@ -102,11 +86,7 @@ export async function installFromSeed(
   return result;
 }
 
-/**
- * Runs `edit --from <id>` against `store` at a real terminal and approves its plan — the apply a
- * user makes, where `runEditFrom` is the one refused for want of a terminal. Asserts nothing about
- * how the edit exits; {@link applyFromSeed} does.
- */
+// At a real terminal, approving the plan; asserts nothing about the exit.
 export async function applyEditFrom(
   store: SeedConfigStore,
   id: string,
@@ -127,10 +107,6 @@ export async function applyEditFrom(
   }
 }
 
-/**
- * Publishes `payload` under `id` and applies it with {@link applyEditFrom} at `site`. Fails the
- * spec unless the edit exits `expectedExit` (default success).
- */
 export async function applyFromSeed(
   store: SeedConfigStore,
   id: string,
@@ -144,9 +120,6 @@ export async function applyFromSeed(
   return applied;
 }
 
-/**
- * A global install of the E2E stack at `home`, as selecting it at HOME with every skill ejected.
- */
 export function installE2EStackGlobally(
   store: SeedConfigStore,
   home: string,
@@ -155,17 +128,12 @@ export function installE2EStackGlobally(
   return installFromSeed(store, "E2EGlobal", e2eStackPayload(), { dir: home, home }, sourceDir);
 }
 
-/** The project half of the dual-scope installation: Hono and API Developer in the project. */
 export const DUAL_SCOPE = {
   projectSkills: [E2E_SKILL.hono.id],
   projectAgents: [API_DEV],
 } as const satisfies E2EStackOptions;
 
-/**
- * The dual-scope installation: the E2E stack installed globally, then a project install that moves
- * Hono and API Developer into the project — leaving each a `[P][G]` pair, the project's own entry
- * beside a `{ scope: "global", excluded: true }` tombstone.
- */
+// Global install, then a project install moving Hono and API Developer in, leaving each a `[P][G]` pair.
 export async function installE2EStackDualScope(
   store: SeedConfigStore,
   env: { fakeHome: string; projectDir: string },
@@ -181,15 +149,9 @@ export async function installE2EStackDualScope(
   );
 }
 
-/** The id {@link installDualScopeStack} publishes {@link DUAL_SCOPE} under. */
 const DUAL_SCOPE_ID = "DualScp1";
 
-/**
- * A fresh test environment holding the dual-scope installation, made by ONE `init --from` run from
- * the project with {@link DUAL_SCOPE} — the stack in the global installation but for the API skill
- * and the API sub-agent, which the project owns. {@link installE2EStackDualScope} makes the same
- * split in two runs, the global install first.
- */
+// The same split as `installE2EStackDualScope`, made by one `init --from` from the project.
 export async function installDualScopeStack(
   store: SeedConfigStore,
   sourceDir: string,
@@ -205,11 +167,7 @@ export async function installDualScopeStack(
   return env;
 }
 
-/**
- * The global-only installation: the E2E stack installed globally, then the same configuration run
- * from the project, which adds nothing there — the project config inlines every global entry and
- * the project is registered in the global one.
- */
+// The project run adds nothing: its config inlines every global entry.
 async function installE2EStackGlobalOnly(
   store: SeedConfigStore,
   env: { fakeHome: string; projectDir: string },
@@ -221,21 +179,18 @@ async function installE2EStackGlobalOnly(
   });
 }
 
-/** A fresh environment holding {@link installE2EStackDualScope}'s installation. */
 export async function createDualScopeEnvFromSeed(store: SeedConfigStore): Promise<DualScopeEnv> {
   const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
   await installE2EStackDualScope(store, { fakeHome, projectDir });
   return { fakeHome, projectDir, destroy: () => cleanupTempDir(tempDir) };
 }
 
-/** A fresh environment holding {@link installE2EStackGlobalOnly}'s installation. */
 export async function createGlobalOnlyEnvFromSeed(store: SeedConfigStore): Promise<DualScopeEnv> {
   const { tempDir, fakeHome, projectDir } = await createTestEnvironment();
   await installE2EStackGlobalOnly(store, { fakeHome, projectDir });
   return { fakeHome, projectDir, destroy: () => cleanupTempDir(tempDir) };
 }
 
-/** Each skill `plus` adds, assigned lazily to the sub-agents it names. */
 function lazilyAssigned(
   plus: NonNullable<E2EStackOptions["plus"]>,
 ): Record<string, SeedSkill["assignments"]> {
@@ -247,7 +202,6 @@ function lazilyAssigned(
   );
 }
 
-/** One stack skill, installed, placed and assigned as `options` says. */
 function seedSkillOf(
   id: string,
   assigned: SeedSkill["assignments"],
@@ -268,7 +222,6 @@ function restingScope(options: E2EStackOptions): Scope {
   return options.scope ?? "global";
 }
 
-/** `assigned` less every assignment to a sub-agent `options` leaves out. */
 function keptAssignments(
   assigned: SeedSkill["assignments"],
   options: E2EStackOptions,

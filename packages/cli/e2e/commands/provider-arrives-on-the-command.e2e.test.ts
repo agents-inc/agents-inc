@@ -36,50 +36,23 @@ import { parseRefusal } from "../../src/cli/lib/__tests__/helpers/cli-runner.js"
 import { DIRS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
 
 /**
- * `--provider` is a LOCATION parameter on one command, and after the install the folder answers
- * the question instead.
- *
- * **Three claims, and each one is a refusal paired with the case it is not.**
- *
- * 1. The flag is meaningless without `--from`. The provider is chosen in the web app, so the only
- *    run that can be told one is the run that installs what the app produced; a wizard walked to
- *    the end and then refused would have spent the user's time before saying so, and there is no
- *    wizard step to choose it in. D15: exit INVALID_ARGS, naming `--from` and the editor.
- * 2. The flag names a provider rather than switching Codex on — `--provider claude` is the
- *    default written out, and it must install exactly what no flag installs. Without that half,
- *    "the flag decides which folder this run creates" is indistinguishable from "the flag means
- *    Codex".
- * 3. Once two installations share a scope, no later command may pick one silently. The folder is
- *    the only record of a provider, so a scope holding `.agents-inc/claude/` and
- *    `.agents-inc/codex/` has two answers and every command that resolved the first one it found
- *    would act on a user's other installation with nothing on screen to say so.
- *
- * **Nothing here reads a config to find the provider.** There is no `provider` field in
- * `config.ts`, nothing in a shared payload carries one and the share id does not encode one —
- * which is what keeps one saved configuration installable onto either provider and every existing
- * id working. The assertions are therefore about FOLDERS.
- *
- * Written before the flag existed: every test was red on oclif's `Nonexistent flag: --provider`,
- * which named what C4 had to add. Green since 2026-09-22, and green throughout C4-C6 while the
- * flag carried `hidden: true` — hidden is not disabled, so oclif parsed it here exactly as it does
- * anywhere. **Which is why nothing in this file moved when C7b took the hiding off**, and why the
- * release claim needed a file of its own: `provider-is-on-every-help-screen.e2e.test.ts` is the
- * only surface that can tell a shipped flag from an undiscoverable one.
+ * `--provider` is a location parameter on one command: meaningless without `--from`, `--provider
+ * claude` installs exactly what no flag does, and once a scope holds two installations no command
+ * picks one silently. Nothing reads a config for the provider, so the assertions are about folders.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /**
- * oclif's refusal for a flag no command declares — the red this file started from. Built by the
- * shared helper, because both assertions reading it are negatives and a hand-spelled refusal the
- * parser can never print would leave them unable to fail.
+ * Built by the shared helper: both readers are negatives, and a hand-spelled refusal could never
+ * fail them.
  */
 const NO_SUCH_FLAG = parseRefusal("--provider");
 
-/** A provider nobody ships, to prove the flag is a closed roster rather than a free string. */
+/** A provider nobody ships: the flag is a closed roster. */
 const NOT_A_PROVIDER = "gemini";
 
-/** One ejected skill at global scope with its sub-agent beside it — no host binary needed. */
+/** One ejected skill at global scope with its sub-agent; no host binary needed. */
 function ejectedGlobally() {
   return buildSeedPayload({
     skills: {
@@ -125,13 +98,11 @@ describe("the provider arrives on the command", () => {
 
     expect(refused.exitCode, said).toBe(EXIT_CODES.INVALID_ARGS);
     expect(said).toContain("--from");
-    // The editor with its `/editor` segment, because the apex is a landing page that knows
-    // nothing about `?fromId=` and a user sent there has no way to produce the id they were
-    // just told they need.
+    // The `/editor` segment: the apex landing page knows nothing about `?fromId=`.
     expect(said).toContain(STEP_TEXT.EDITOR_URL);
 
-    // A refusal before anything is written, at both scopes — an installation half-created by a
-    // run that then refused is the state every later command has to guess about.
+    // Nothing written at either scope: a half-created installation is what later commands would
+    // guess about.
     for (const root of [env.projectDir, env.fakeHome]) {
       expect(await directoryExists(path.join(root, DIRS.SOURCE_ROOT)), root).toBe(false);
     }
@@ -163,8 +134,7 @@ describe("the provider arrives on the command", () => {
     );
 
     expect(installed.exitCode, flattenCliOutput(installed.output)).toBe(EXIT_CODES.SUCCESS);
-    // The flag chose a location, not a feature: naming the default writes the Claude pair and no
-    // Codex folder anywhere.
+    // Naming the default writes the Claude pair and no Codex folder.
     expect(await fileExists(path.join(env.fakeHome, CLAUDE_SOURCE_REL, FILES.CONFIG_TS))).toBe(
       true,
     );
@@ -172,17 +142,8 @@ describe("the provider arrives on the command", () => {
   });
 
   /**
-   * The control the whole flag rests on, and the strongest form of it: BYTES.
-   *
-   * The case above says naming the default creates the Claude pair and no Codex folder, which a
-   * flag that quietly changed something else inside that pair would satisfy exactly as well. Two
-   * installs of one configuration — one naming `claude`, one naming nothing — compared as whole
-   * normalised trees is what says the flag decided a LOCATION and nothing else. A count could not:
-   * a swap leaves it unchanged, and a swap is what a flag that diverges looks like from outside.
-   *
-   * Two environments rather than two runs in one, because `init --from` refuses a directory that
-   * already holds an installation — and the normaliser is what makes trees from two temp roots
-   * comparable at all.
+   * Bytes: two installs of one configuration, with `claude` and with no flag, compared as
+   * normalised trees. Two environments, since `init --from` refuses an existing installation.
    */
   it("installs the same BYTES as no flag at all, which is what makes it a location and not a feature", async () => {
     store.publish("PrvSame1", ejectedGlobally());
@@ -206,7 +167,7 @@ describe("the provider arrives on the command", () => {
       );
       expect(named.exitCode, flattenCliOutput(named.output)).toBe(EXIT_CODES.SUCCESS);
 
-      // Subject guard: both runs really installed. Two empty trees compare equal for free.
+      // Subject guard: two empty trees compare equal for free.
       const installedBare = await installedTreeOf(withNoFlag.fakeHome);
       expect(Object.keys(installedBare.files).length).toBeGreaterThan(0);
 
@@ -237,19 +198,15 @@ describe("the provider arrives on the command", () => {
     const said = flattenCliOutput(refused.output);
 
     expect(refused.exitCode, said).toBe(EXIT_CODES.INVALID_ARGS);
-    // Both names, because a message that only says "invalid" leaves the user guessing at the
-    // spelling of the one they wanted.
+    // Both names, so the user sees the spelling they wanted.
     expect(said).toContain("claude");
     expect(said).toContain("codex");
     expect(await directoryExists(path.join(env.fakeHome, DIRS.SOURCE_ROOT))).toBe(false);
   });
 
   /**
-   * The state every ambiguity claim in this file is read against: one scope, two installations.
-   *
-   * It ends with the subject guard rather than leaving it to each caller — without it a refusal
-   * could be a command that refuses whenever a Codex folder exists, and an assertion about a state
-   * the setup never reached reads exactly like one about a state it did.
+   * Ends with the subject guard, so a refusal cannot pass on a setup that never reached two
+   * installations.
    */
   async function installBothProvidersAt(home: string): Promise<void> {
     const at = { dir: home, globalHome: home };
@@ -277,30 +234,19 @@ describe("the provider arrives on the command", () => {
     });
     const said = flattenCliOutput(ambiguous.output);
 
-    // No TTY here, so there is nobody to prompt: the run has to stop and say how to answer.
+    // No TTY, so the run must stop and say how to answer.
     expect(ambiguous.exitCode, said).toBe(EXIT_CODES.INVALID_ARGS);
     expect(said).toContain("--provider");
 
-    // And it destroyed nothing on the way to saying so. Both pairs are still there, which is the
-    // half that separates "refused" from "acted on whichever it found first".
+    // Both pairs survive: refused, not acted on whichever came first.
     for (const folder of [CLAUDE_SOURCE_REL, CODEX_SOURCE_REL]) {
       expect(await fileExists(path.join(env.fakeHome, folder, FILES.CONFIG_TS)), folder).toBe(true);
     }
   });
 
   /**
-   * Every other command that ACTS on exactly one installation, and therefore owes the same
-   * refusal.
-   *
-   * `uninstall` has its own pair above because it is the destructive one and its allowed case has
-   * to prove the removal really happened. These three are asserted together because the claim is
-   * one claim per command and a command missing from the list is one that would silently pick: the
-   * folder is the only record of a provider, so a scope holding two has two answers and resolving
-   * them by roster order acts on a user's other installation with nothing on screen to say so.
-   *
-   * `eject` is given an argument that stops it for its OWN reason afterwards — `agent-partials` is
-   * a real eject type — because what is pinned is the refusal that comes first, not what the
-   * command would have done next.
+   * Every other command that acts on one installation owes the same refusal. `eject agent-partials`
+   * would stop for its own reason afterwards; the refusal comes first.
    */
   const ACTS_ON_ONE_INSTALLATION = [
     { label: "edit", argv: ["edit"] },
@@ -322,12 +268,11 @@ describe("the provider arrives on the command", () => {
 
       expect(ambiguous.exitCode, said).toBe(EXIT_CODES.INVALID_ARGS);
       expect(said).toContain("--provider");
-      // Both names, because "there is more than one" leaves the user to go and look.
+      // Both names, so the user need not go and look.
       for (const provider of [PROVIDER_CLAUDE[1], PROVIDER_CODEX[1]]) {
         expect(said, provider).toContain(provider);
       }
 
-      // And nothing moved on the way to saying so.
       for (const folder of [CLAUDE_SOURCE_REL, CODEX_SOURCE_REL]) {
         expect(await fileExists(path.join(env.fakeHome, folder, FILES.CONFIG_TS)), folder).toBe(
           true,
@@ -348,8 +293,7 @@ describe("the provider arrives on the command", () => {
       });
       const said = flattenCliOutput(chosen.output);
 
-      // What each command does next is its own business and is not the claim. The claim is that
-      // the flag SELECTED: no refusal about which installation, and no refusal about the flag itself.
+      // The claim is only that the flag selected: no refusal about the installation or the flag.
       expect(
         said,
         "the flag it was told to use is one this command does not declare",
@@ -383,10 +327,8 @@ describe("the provider arrives on the command", () => {
 });
 
 /**
- * Everything one install wrote under a HOME, normalised so two temp roots compare.
- *
- * The Claude CLI's own session state is left out for the reason the golden-tree journeys leave it
- * out: nothing in this CLI writes it and every run moves it.
+ * Normalised so two temp roots compare; the Claude CLI's own session state is left out, since this
+ * CLI never writes it.
  */
 async function installedTreeOf(home: string): Promise<InstallTree> {
   const tree = await readInstallTree(home, {

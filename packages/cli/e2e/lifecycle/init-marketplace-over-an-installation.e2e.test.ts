@@ -16,18 +16,13 @@ import {
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * `init --marketplace <Y>` without `--from`, where an installation already serves the directory,
- * opens the editor and says how to add Y there — whatever is installed and whichever marketplace
- * it was installed from. The dashboard has nowhere to put a marketplace, so it is not shown, and
- * the installation is left byte for byte as it was.
- *
- * X is the fixture without its spare skill and Y is the full shared fixture, so the two are
- * different marketplaces.
+ * `init --marketplace <Y>` without `--from` over an existing installation opens the editor and
+ * says how to add Y there, leaving the installation byte for byte as it was. X is the fixture
+ * without its spare skill, Y the full one.
  */
 
 const NAMED = E2E_SOURCE;
 
-/** The line a local marketplace named without `--from` gets. */
 function addItLine(ref: string): string {
   return `${ref} is a folder on this machine, which the editor cannot read — push it to GitHub, then add it from the editor's Marketplace button.`;
 }
@@ -83,7 +78,6 @@ describe("init --marketplace where an installation already serves the directory"
     return made;
   }
 
-  /** `init --marketplace <ref>` in the project, then the editor route's three claims. */
   async function expectTheEditorRoute(made: TestEnvironment, ref: string): Promise<void> {
     const before = await readTreeSnapshot(made.fakeHome);
 

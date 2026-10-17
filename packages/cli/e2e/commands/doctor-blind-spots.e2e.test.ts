@@ -27,8 +27,8 @@ import {
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
 /**
- * Doctor blind spots around skills it never verifies on disk, and remediation
- * advice that makes the diagnosed problem worse.
+ * doctor's blind spots: skills it never verifies on disk, and remediation advice that worsens the
+ * problem.
  */
 
 describe("doctor with uninstalled plugin skills", () => {
@@ -63,8 +63,7 @@ describe("doctor with uninstalled plugin skills", () => {
         },
       });
       tempDir = path.dirname(installed.project.dir);
-      // The install records its own source: no command below carries a flag or reads the
-      // environment for one — naming a source is `init`'s decision.
+      // The install records its own source; only `init` names one.
       await recordInstallSource([installed.project.dir, installed.home], pluginSource.sourceDir);
       const doctorEnv = { HOME: installed.home };
 
@@ -72,8 +71,7 @@ describe("doctor with uninstalled plugin skills", () => {
       await expect(installed.project).toHavePlugin(firstPluginKey);
       await expect({ dir: installed.home }).toHavePluginInRegistry(firstPluginKey, "user");
 
-      // Proof the healthy state is genuinely live: the plugin skill is
-      // discoverable, so the agent on disk is compiled from a real skill.
+      // Proof the healthy state is live: the agent compiles from a real skill.
       const compiled = await CLI.run(["compile"], installed.project, { env: doctorEnv });
       expect(compiled.exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(compiled.output, "the enabled plugin must be discoverable before uninstall").toContain(

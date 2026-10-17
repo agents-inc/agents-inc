@@ -27,32 +27,20 @@ import {
 import { createMockSkillAssignment } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 
-/** `checkSourceReachable` counts what the marketplace carries, which the E2E source defines. */
+/** `checkSourceReachable` counts what the E2E source carries. */
 const SOURCE_SKILL_COUNT_LINE = `${E2E_SKILL_IDS.length} ${STEP_TEXT.DOCTOR_SKILLS_AVAILABLE}`;
 
-/**
- * A skill id the E2E source does not define, so `Skills Resolved` must fail on it. A `string`
- * rather than a `SkillId`: a hand-written config is unvalidated input, and the fixture config type
- * takes any id for exactly that reason.
- */
+/** A `string`: a hand-written config is unvalidated input. */
 const UNKNOWN_SKILL_ID = "web-framework-nonexistent";
 
-/**
- * A directory in the shared `.claude/skills/` tree that this CLI did not put there — no
- * `metadata.yaml`, so nothing in it can carry the `forkedFrom` marker that would claim it.
- */
+/** No metadata.yaml, so nothing can carry the `forkedFrom` marker that would claim it. */
 const FOREIGN_SKILL_DIR = "context7-mcp";
 
-/**
- * An agent file in the shared `.claude/agents/` tree that this CLI did not compile. Its claim is
- * the provenance marker rather than `forkedFrom`, and it carries none — which is the whole of
- * what makes it the user's own file.
- */
+/** Carries no provenance marker, so it is the user's own file. */
 const FOREIGN_AGENT_NAME = "my-own-reviewer";
 
 describe("doctor diagnostics", () => {
   let tempDir: string;
-  // Created once for the whole file — each install below records it as its own source
   let source: E2ESource;
 
   beforeAll(async () => {
@@ -73,9 +61,8 @@ describe("doctor diagnostics", () => {
     it("should count the source's skills even with no project config to check them against", async () => {
       tempDir = await createTempDir();
 
-      // The source comes from the GLOBAL config: `doctor` takes no `--marketplace` and reads no
-      // `CC_MARKETPLACE` (both are `init`'s), so a directory with no config of its own reads the
-      // one under HOME — the machine-wide install a bare directory still inherits.
+      // `doctor` takes no marketplace flag or env, so a bare directory reads the global config
+      // under HOME.
       const home = path.join(tempDir, "home");
       await mkdir(home, { recursive: true });
       await writeProjectConfig(
@@ -97,17 +84,12 @@ describe("doctor diagnostics", () => {
         { env: { HOME: home } },
       );
 
-      // Doctor always emits details (no --verbose flag needed). The count is
-      // asserted rather than the bare phrase: an unreachable source that still
-      // printed the label would satisfy "skills available" on its own.
+      // The count, not the bare phrase: an unreachable source could still print the label.
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(SOURCE_SKILL_COUNT_LINE);
     });
 
-    // The count is built by hand at this one site while `plural()` sits in the same file and is
-    // used at three others, so a marketplace with exactly one skill read `1 skills available`.
-    // A one-skill source is the only input that can tell the two apart — every other count in
-    // this suite is plural and satisfies the buggy form as readily as the fixed one.
+    // Only a one-skill source can tell `1 skill` from `1 skills`.
     it("says '1 skill available' for a source that ships exactly one", async () => {
       tempDir = await createTempDir();
       const oneSkillSource = await createE2ESource({
@@ -140,9 +122,6 @@ describe("doctor diagnostics", () => {
   });
 
   describe("healthy project", () => {
-    // One run, every pass row. Previously three `it`s ("valid config with local
-    // E2E source", "details always emitted", "healthy project") built the same
-    // fixture and asserted overlapping subsets of the same report.
     it("should pass every check and name every row on a properly configured project", async () => {
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
@@ -169,24 +148,13 @@ describe("doctor diagnostics", () => {
       expect(stdout).toContain(SOURCE_SKILL_COUNT_LINE);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_LAYOUT);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_PLACEMENTS);
-      // The counts, not the word "errors": every content and operational row above
-      // passed, so a warn or a failure anywhere in the report reddens this line.
-      //
-      // The count is a roster assertion written as a number, and it is kept as one because it
-      // sees the thing the `toContain`s above cannot: a row this spec has never heard of. It went
-      // from 12 to 13 when the Layout row landed and to 14 with Placements Offered, which is
-      // exactly the event it is for — the lines above name both rows now, so they move together
-      // and the number can no longer be "corrected" without someone saying which row it counts.
-      // What it still cannot see is a SWAP, one row removed and another added, and the named rows
-      // are what cover that.
+      // The count catches a row this spec has never heard of; the named rows above catch a swap.
       expect(stdout).toContain(`${STEP_TEXT.DOCTOR_SUMMARY} 14 passed, 0 warnings, 0 errors`);
     });
   });
 
   describe("agents compiled check", () => {
     it("should warn once per missing agent and tip at compile", async () => {
-      // Two configured agents, neither compiled. Previously two `it`s — one with
-      // one agent, one with two — asserted the same three substrings.
       const project = await ProjectBuilder.editable({
         agents: ["web-developer", "api-developer"],
       });
@@ -198,12 +166,11 @@ describe("doctor diagnostics", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
-      // The count discriminates: "1 agent needs recompilation" would pass a bare
-      // match on the word, and both agents are missing here.
+      // The count discriminates: both agents are missing.
       expect(stdout).toContain(`2 agents need ${STEP_TEXT.DOCTOR_AGENTS_NEED_RECOMPILATION}`);
       expect(stdout).toContain("- web-developer (missing)");
       expect(stdout).toContain("- api-developer (missing)");
-      // Not `toContain("compile")` — the report's header names the command.
+      // Not `toContain("compile")`: the report's header names the command.
       expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
     });
 
@@ -214,7 +181,6 @@ describe("doctor diagnostics", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Create the compiled agent .md file so checkAgentsCompiled passes
       await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
 
       await recordInstallSource([projectDir], source.sourceDir);
@@ -224,7 +190,7 @@ describe("doctor diagnostics", () => {
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_AGENTS_COMPILED);
       expect(stdout).toContain("1/1 agent compiled");
-      // The control for the spec above: the tip fires only on the warn result.
+      // Control: the tip fires only on the warn result.
       expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_COMPILE_AGENTS);
     });
   });
@@ -237,7 +203,6 @@ describe("doctor diagnostics", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Create the configured agent file AND an orphan
       await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
       await writeAgentFile(projectDir, "orphan-agent", { frontmatter: true });
 
@@ -246,17 +211,14 @@ describe("doctor diagnostics", () => {
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: projectDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // checkNoOrphans returns warn with "N orphaned agent file(s)"
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_NO_ORPHANS);
       expect(stdout).toContain("1 orphaned agent file");
       expect(stdout).toContain("- orphan-agent.md (not in config)");
     });
 
     /**
-     * The project-scope half of the same row. `lifecycle/global-config-deleted-under-install`
-     * carries the global half, where both install roots resolve to one directory and the walk
-     * covers it once; here the home directory is elsewhere, so two roots are walked and the
-     * project's own leftovers are what the row has to name.
+     * The project-scope half; `lifecycle/global-config-deleted-under-install` carries the global
+     * half.
      */
     it("names every installed skill and agent when the project config is deleted", async () => {
       const project = await ProjectBuilder.editable({ agents: ["web-developer"] });
@@ -264,8 +226,7 @@ describe("doctor diagnostics", () => {
       const projectDir = project.dir;
       await writeAgentFile(projectDir, "web-developer", { frontmatter: true, provenance: true });
 
-      // A home directory of its own: with HOME at the project the two install
-      // roots collapse into one, and this row's project-scope walk goes untested.
+      // A home of its own: with HOME at the project the two install roots collapse into one.
       const home = path.join(tempDir, "home");
       await mkdir(home, { recursive: true });
 
@@ -276,7 +237,7 @@ describe("doctor diagnostics", () => {
 
       await rm(configTsPath(projectDir), { force: true });
 
-      // No source override: the config that would have named one is what this spec deleted.
+      // No source override: the config that would name one is deleted.
       const { exitCode, stdout } = await CLI.run(
         ["doctor"],
         { dir: projectDir },
@@ -296,10 +257,6 @@ describe("doctor diagnostics", () => {
   });
 
   describe("skills the config names but nothing provides", () => {
-    // One run covering what four `it`s ("missing skills directory with valid
-    // config", "missing skill dirs", "details always emitted" -> skill details,
-    // "tip discrimination" -> skill IDs) each asserted a fragment of: they all
-    // wrote a config naming one fabricated skill id and read the same report.
     it("should fail Skills Resolved, name the skill and tip at checking skill IDs", async () => {
       tempDir = await createTempDir();
 
@@ -317,15 +274,14 @@ describe("doctor diagnostics", () => {
         }),
       );
 
-      // Do NOT create .claude/skills/ — the skill is absent from the source AND
-      // from disk, which is what makes the check fail rather than warn.
+      // No .claude/skills/: the skill is absent from source and disk, so the check fails rather
+      // than warns.
 
       await recordInstallSource([tempDir], source.sourceDir);
 
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
-      // The config itself is fine — the failure is about the skill, not the file.
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_CHECK);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_CONFIG_IS_VALID);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
@@ -337,26 +293,22 @@ describe("doctor diagnostics", () => {
 
   describe("skill dirs this installation does not own", () => {
     it("should name a skill dir no config references and no provenance claims, without failing", async () => {
-      // Create project with one skill in config
       const project = await ProjectBuilder.editable({
         agents: ["web-developer"],
       });
       tempDir = path.dirname(project.dir);
 
-      // No `metadata` option, so the directory holds a SKILL.md and no metadata.yaml — nothing in
-      // it can carry the `forkedFrom` marker, and no config names its id.
+      // SKILL.md only: no `forkedFrom` marker, and no config names it.
       await createLocalSkill(project.dir, "web-testing-orphan-extra", { body: "# Orphan Skill" });
 
-      // Create the compiled agent so checkAgentsCompiled passes
       await writeAgentFile(project.dir, "web-developer", { frontmatter: true });
 
       await recordInstallSource([project.dir], source.sourceDir);
 
       const { exitCode, stdout } = await CLI.run(["doctor"], { dir: project.dir });
 
-      // `.claude/skills/` is Claude Code's directory, shared with everything else that installs a
-      // skill into it. A directory no configuration names and no `forkedFrom` claims is not this
-      // installation's to judge — so it is named and stepped over, not reported as the user's fault.
+      // `.claude/skills/` is shared with other tools; an unclaimed directory is named and stepped
+      // over, not reported as a fault.
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain("web-testing-orphan-extra");
       expect(stdout).toContain(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR);
@@ -370,8 +322,7 @@ describe("doctor diagnostics", () => {
       });
       tempDir = path.dirname(project.dir);
 
-      // Metadata carrying `forkedFrom` and no SKILL.md beside it: this CLI wrote the directory,
-      // and what is wrong with it is the CLI's to report however the configuration has moved on.
+      // `forkedFrom` without a SKILL.md: this CLI wrote it, so its fault is the CLI's to report.
       const forkedDir = path.join(skillsPath(project.dir), "web-testing-orphan-extra");
       await mkdir(forkedDir, { recursive: true });
       await writeFile(path.join(forkedDir, FILES.METADATA_YAML), FORKED_FROM_METADATA);
@@ -387,11 +338,8 @@ describe("doctor diagnostics", () => {
     });
 
     /**
-     * The same judgement on the path where there is no configuration to make it with, on both
-     * kinds of file at once. `doctor` offers the unowned installation to `uninstall`, and
-     * `uninstall` removes a skill directory only when it carries `forkedFrom` and an agent file
-     * only when it carries the compiler's marker — so anything listed that answers to neither is
-     * one command recommending what the next one refuses.
+     * `uninstall` removes only `forkedFrom` skill directories and marker-carrying agents, so doctor
+     * must offer nothing else.
      */
     it("offers only what uninstall would remove when the configuration is gone", async () => {
       const project = await ProjectBuilder.editable({
@@ -421,23 +369,19 @@ describe("doctor diagnostics", () => {
 
       expect(exitCode).toBe(EXIT_CODES.ERROR);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_UNOWNED_INSTALL);
-      // Two skill directories and two agent files are on disk, and one of each is this CLI's.
-      // The count is what proves the others were stepped over: the content layer walks both in
-      // the same report, so a `not.toContain` on either name would pass whether or not the row
-      // listed it.
+      // The count proves the others were stepped over: a `not.toContain` passes whether or not the
+      // row listed them.
       expect(
         stdout,
         "the row names what `uninstall` removes — a file with no provenance is not that",
       ).toContain("1 skill and 1 agent installed here");
       expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_UNOWNED_INSTALL);
 
-      // Named rather than dropped: stepping over a directory is not the same as going quiet
-      // about it, and the content layer is where that is said.
+      // Named, not dropped: stepping over a directory is still said.
       expect(stdout).toContain(FOREIGN_SKILL_DIR);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_FOREIGN_SKILL_DIR);
 
-      // The other half of the agreement, asserted rather than assumed: the command `doctor`
-      // sends the reader to removes exactly the files the row named, and leaves the others.
+      // Asserted, not assumed: the uninstall doctor recommends removes exactly the named files.
       const uninstall = await CLI.run(
         ["uninstall", "--yes"],
         { dir: projectDir },
@@ -463,7 +407,6 @@ describe("doctor diagnostics", () => {
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      // Overwrite config to register an eject-mode skill whose disk files are missing
       await writeProjectConfig(
         projectDir,
         buildProjectConfig({
@@ -473,10 +416,8 @@ describe("doctor diagnostics", () => {
         }),
       );
 
-      // Make agents compile check pass so the only warn is from checkSkillsInstalled
       await writeAgentFile(projectDir, "web-developer", { frontmatter: true });
 
-      // Ensure the eject skill directory is absent so checkSkillsInstalled warns
       const ejectedSkillDir = path.join(skillsPath(projectDir), E2E_SKILL.react.id);
       await rm(ejectedSkillDir, { recursive: true, force: true });
 
@@ -486,8 +427,8 @@ describe("doctor diagnostics", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(STEP_TEXT.DOCTOR_TIP_RE_EJECT);
-      // The discriminating half: the skills tip must NOT fire — the skill resolves
-      // in the source, it is only its ejected copy that is missing.
+      // The skill resolves in the source and only its ejected copy is missing, so the skills tip
+      // must not fire.
       expect(stdout).not.toContain(STEP_TEXT.DOCTOR_TIP_CHECK_SKILL_IDS);
     });
   });

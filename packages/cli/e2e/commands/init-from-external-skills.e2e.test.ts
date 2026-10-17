@@ -39,53 +39,33 @@ import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-con
 import { renderSkillMd } from "../../src/cli/lib/__tests__/content-generators.js";
 
 /**
- * `init --from <id>` with a skill the catalogue never had.
- *
- * Every other id in a payload is resolved against the catalogue the receiver loads. A skill added
- * from outside answers to no catalogue, so its whole directory travels inline — and the claim this
- * file exists to prove is that those bytes become a real install: files on disk under the scope
- * the entry names, a config entry, and a compiled sub-agent that really references it.
- *
- * Eject only. The payload IS the source, so there is no marketplace for a plugin install of one to
- * fetch from, and asking for one is refused rather than quietly ejected instead.
+ * `init --from` with a skill from outside the catalogue: its inline directory becomes a real
+ * install (files, config entry, compiled reference). Eject only: the payload is the source, so
+ * plugin install is refused.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
 /**
- * The id an added skill is minted under at intake — `external-<category>-<name>` — and the
- * category the user confirmed for it.
- *
- * A NON-exclusive category, deliberately: an exclusive one holds a single skill, so placing a
- * carried skill in the same exclusive category as a catalogue skill is refused by the config
- * model's own rule and would make these specs about that rule instead of about carried content.
+ * Non-exclusive on purpose: an exclusive category would make these specs about the one-skill rule.
  */
 const EXTERNAL_CATEGORY = "web-tooling";
 const EXTERNAL_ID = "external-web-tooling-brainstorming";
 const EXTERNAL_DISPLAY = "Brainstorming";
 const EXTERNAL_REPO = "obra/superpowers";
 
-/** A sub-agent entry that keeps its agent in the project rather than at the default scope. */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 /**
- * A real public-catalogue id the E2E marketplace does not ship.
- *
- * The two halves are what make it the bypass's subject: the SHIPPED catalogue owns it, so a
- * carried skill taking it writes over `~/.claude/skills/web-framework-react/` on any machine that
- * installs the catalogue's own copy — and the marketplace the payload steers the loader to has
- * never heard of it, so a guard reading only the LOADED matrix finds no incumbent and installs.
+ * Owned by the shipped catalogue but not by the E2E marketplace, so a guard reading only the loaded
+ * matrix finds no incumbent.
  */
 const CATALOGUE_ID_THE_FIXTURE_LACKS = "web-framework-react";
 
-/**
- * A carried skill's description at the length the editor's index usually serves one — longer than
- * the `cliDescription` doctor accepts without a warning.
- */
+/** Longer than the `cliDescription` doctor accepts. */
 const LONG_EXTERNAL_DESCRIPTION =
   "Use before any creative work - explores user intent, requirements and design before implementation";
 
-/** The whole directory an added skill carries: its manifest, and the reference file beside it. */
 const EXTERNAL_FILES = {
   [FILES.SKILL_MD]: renderSkillMd(UPSTREAM_SKILL_NAME, "Structured brainstorming"),
   "reference/prompts.md": "# Prompts\n",
@@ -150,57 +130,44 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     );
     expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-    // The failure this whole leg exists to end: the id reported as one this catalogue does not
-    // know, while its content sat in the payload unread.
+    // The old failure: reported as unknown while its content sat unread in the payload.
     expect(flattenCliOutput(output)).not.toContain("does not know");
 
-    // "eject" is the only origin an added skill can have — nothing serves it as a plugin.
+    // "eject" is the only origin an added skill can have.
     const config = await loadConfigOrFail(env.projectDir);
     expect(config.skills).toStrictEqual(
       buildSkillConfigs([E2E_SKILL.react.id, EXTERNAL_ID], { scope: "project", origin: "eject" }),
     );
     expect(config.agents).toStrictEqual(buildAgentConfigs([WEB_DEV], { scope: "project" }));
 
-    // Exhaustive, not "contains": the catalogue skill and the carried one land side by side in
-    // one directory, and a copy that also reached HOME would satisfy a subset check here.
+    // Exhaustive: a copy that also reached HOME would pass a subset check.
     expect(await listFiles(skillsPath(env.projectDir))).toStrictEqual([
       E2E_SKILL.react.id,
       EXTERNAL_ID,
     ]);
 
-    // The whole directory, not the manifest alone: a skill installed without its reference files
-    // loads and then cannot do what it says.
+    // The whole directory: a skill without its reference files loads but cannot work.
     const skillDir = path.join(skillsPath(env.projectDir), EXTERNAL_ID);
     expect(await readTestFile(path.join(skillDir, "reference", "prompts.md"))).toBe("# Prompts\n");
 
-    // Named by the id it installs under. The compiled sub-agent references that id, and every
-    // loader reads a skill's id off this line — left as the repository wrote it, the sub-agent
-    // would name a skill Claude Code knows as something else.
+    // Every loader reads the id off this line, so it must be the installed id.
     expect(await readTestFile(path.join(skillDir, FILES.SKILL_MD))).toContain(
       `name: ${EXTERNAL_ID}`,
     );
 
-    // Registered on disk as well as in this run's memory, or the next `edit` or `compile` finds
-    // a config entry for a skill nothing on disk describes.
+    // On disk too, or the next `edit` or `compile` finds a config entry nothing describes.
     const metadata = await readTestFile(path.join(skillDir, FILES.METADATA_YAML));
     expect(metadata).toContain(`category: ${EXTERNAL_CATEGORY}`);
-    // Provenance: this directory is the CLI's, which is what lets `uninstall` remove it and the
-    // producer tell it apart from a skill the user wrote by hand.
+    // Provenance lets `uninstall` remove it and tells it apart from a hand-written skill.
     expect(metadata).toContain(`source: github:${EXTERNAL_REPO}`);
 
-    // And the point of all of it — the sub-agent really carries the skill.
     const compiled = await readCompiledAgents(env.projectDir);
     expect(compiled[`${WEB_DEV}.md`]).toContain(EXTERNAL_ID);
 
-    // A carried skill answers to no catalogue, so the id it installs under only reaches the
-    // generated unions if the writer treated it as a real installed skill. Four surfaces is
-    // where that shows: a config naming an id its own `config-types.ts` never learned fails
-    // `tsc` in the user's editor while every directory listing above still passes.
+    // A config naming an id its config-types.ts never learned fails `tsc` while every listing
+    // passes.
     await expectFourSurfaces(env.projectDir, { globalHome: env.fakeHome });
-    // The other scope, asserted as owning nothing rather than skipped. Every entry in this
-    // payload is pinned to the project, so a skill or a sub-agent appearing in the user's own
-    // ~/.claude is content that crossed a boundary it was told not to cross — and an absence
-    // nobody asserts is indistinguishable from one nobody looked for.
+    // Everything is pinned to the project, so the other scope must own nothing.
     await expectFourSurfaces(env.fakeHome, { expectEmpty: true });
   });
 
@@ -236,7 +203,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     const { exitCode, stdout } = await CLI.run(["doctor"], project);
 
     expect(exitCode, `doctor failed: ${stdout}`).toBe(EXIT_CODES.SUCCESS);
-    // The subject guard: the content layer ran over this installation's skills.
+    // Subject guard: the content layer ran.
     expect(stdout).toContain(STEP_TEXT.DOCTOR_CONTENT_SECTION);
     expect(
       stdout,
@@ -275,14 +242,11 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     );
     expect(exitCode, `install failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
 
-    // A carried skill obeys the same per-entry scope rule a catalogue skill does: the bytes go
-    // to the user's own skills directory, and the project keeps none of its own.
+    // Same per-entry scope rule as a catalogue skill.
     expect(await listFiles(skillsPath(env.fakeHome))).toStrictEqual([EXTERNAL_ID]);
     await expect({ dir: env.projectDir }).toHaveNoLocalSkills();
     expect(await listFiles(agentsPath(env.projectDir))).toStrictEqual([`${WEB_DEV}.md`]);
 
-    // The carried skill went to one scope and the sub-agent to the other, so each side's pair
-    // is checked where it was written.
     await expectFourSurfaces(env.projectDir, { globalHome: env.fakeHome });
     await expectFourSurfaces(env.fakeHome);
   });
@@ -318,14 +282,11 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     );
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
-    // Named, because the fix is on the sharer's side: the id is what they have to switch.
+    // Named: the sharer has to switch this id.
     expect(flattenCliOutput(output)).toContain(EXTERNAL_ID);
-    // For the RIGHT reason. Skipping the id as one this catalogue does not know also exits with
-    // an error naming it, so a refusal spec that asked no more than that would pass against the
-    // very behaviour this file exists to replace.
+    // For the right reason: an unknown-id skip also errors naming it.
     expect(flattenCliOutput(output)).not.toContain("does not know");
     expect(flattenCliOutput(output)).toContain("plugin");
-    // The refusal fires before anything is written, like every other refusal on this path.
     await expect({ dir: env.projectDir }).toHaveNoLocalSkills();
     expect(await fileExists(path.join(sourceFolderIn(env.projectDir), FILES.CONFIG_TS))).toBe(
       false,
@@ -344,10 +305,8 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
             assignments: { [WEB_DEV]: "lazy" },
           }),
         },
-        // Keyed by an id this run's marketplace already publishes. A skill id IS the directory
-        // the skill installs into, so a carried skill taking one writes its own bytes over the
-        // catalogue's copy — and every sub-agent that names that id afterwards is handed whatever
-        // the payload shipped, under the catalogue's own display name and placement.
+        // An id this marketplace publishes: the skill id is its directory, so a carried skill there
+        // would overwrite the catalogue's copy.
         external: {
           [E2E_SKILL.react.id]: buildSeedExternalSkill({
             categoryId: EXTERNAL_CATEGORY,
@@ -359,9 +318,7 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       }),
     );
 
-    // One snapshot for both scopes: the project this installs into is nested inside the fake
-    // HOME that would hold a global install, so every surface a refusal must leave alone —
-    // skills, compiled sub-agents, config.ts and config-types.ts, at either scope — is under it.
+    // The project is nested in the fake HOME, so one snapshot covers both scopes.
     const homeBefore = await readTreeSnapshot(env.fakeHome);
 
     const { exitCode, output } = await runInitFrom(
@@ -371,30 +328,15 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
       sourceDir,
     );
 
-    // This assertion is the one that carries the red against an unguarded build, and the two
-    // below it cannot: measured 2026-09-03, the impostor installs, the run exits 0 with
-    // "initialized successfully", and the success report NAMES the id on its "Wrote 1 skill(s)
-    // this configuration carries" line — so the `toContain` and the `not.toContain` are both
-    // green while `.claude/skills/<react id>/SKILL.md` holds the payload's bytes.
+    // This assertion carries the red: unguarded, the impostor installs, exits 0, and the report
+    // names the id, so the two below stay green.
     expect(exitCode).toBe(EXIT_CODES.ERROR);
-    // Named, because the fix is on the sharer's side: the id is what they have to re-mint.
+    // Named: the sharer has to re-mint this id.
     expect(flattenCliOutput(output)).toContain(E2E_SKILL.react.id);
-    // For the RIGHT reason, and it is also the proof the run reached its decision rather than
-    // failing on the way there. Skipping the id as one this catalogue does not know names it too,
-    // so a refusal spec that asked no more than "the id appears" would pass against the very
-    // behaviour this leg exists to end.
+    // For the right reason: an unknown-id skip names the id too.
     expect(flattenCliOutput(output)).not.toContain("does not know");
 
-    // `readTreeSnapshot` rather than the plugin leg's pair of absence checks: that leg names the
-    // two surfaces it happens to think of, and a refusal owes every surface. This carries content
-    // AND mtime for every file under both scopes, so a write that produced identical bytes is
-    // visible too.
-    //
-    // Watched go red rather than assumed, and NOT by reverting a fix — a guarantee not to write
-    // and a bug that skipped the write are the same bytes on disk. Flipping the exit-code
-    // expectation above to SUCCESS on 2026-09-03 left this the only failing assertion, reporting
-    // 8 files against the empty tree: the impostor's SKILL.md, metadata.yaml and reference/, the
-    // compiled web-developer.md, config.ts and config-types.ts. Restore that flip to re-measure.
+    // Content and mtime under both scopes: a refusal owes every surface.
     expect(await readTreeSnapshot(env.fakeHome)).toStrictEqual(homeBefore);
   });
 
@@ -403,10 +345,8 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     store.publish(
       "External5",
       buildSeedPayload({
-        // The payload's OWN marketplace, and the whole of the bypass. `sharedConfigSourceFlags`
-        // in `src/cli/commands/init.tsx` reads `flags.marketplace ?? payload.marketplace`, so
-        // with no flag given the payload decides which catalogue the receiver loads — and it
-        // names one that does not ship the id it is about to impersonate.
+        // With no flag the payload's own marketplace decides the catalogue (`flags.marketplace ??
+        // payload.marketplace`), and it lacks the id it impersonates.
         marketplace: sourceDir,
         skills: {
           [CATALOGUE_ID_THE_FIXTURE_LACKS]: buildSeedSkill({
@@ -427,9 +367,8 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     );
     const homeBefore = await readTreeSnapshot(env.fakeHome);
 
-    // `runInitFrom` is deliberately not used: it always passes `--marketplace <sourceDir>`, and
-    // the flag BEATS the payload's field — which is the one arrangement under which this bypass
-    // cannot happen. The env is the same one that helper sets.
+    // Not `runInitFrom`: it always passes `--marketplace`, which beats the payload's field. Same
+    // env as that helper.
     const { exitCode, output } = await CLI.run(
       ["init", "--from", "External5"],
       { dir: env.projectDir, globalHome: env.fakeHome },
@@ -438,19 +377,15 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
     expect(flattenCliOutput(output)).toContain(CATALOGUE_ID_THE_FIXTURE_LACKS);
-    // For the RIGHT reason: an id the loaded marketplace does not carry is also skipped by name,
-    // so a refusal spec asking no more than "the id appears" would pass against the very
-    // behaviour this leg exists to end.
+    // For the right reason: an id the loaded marketplace lacks is also skipped by name.
     expect(flattenCliOutput(output)).not.toContain("does not know");
     expect(await readTreeSnapshot(env.fakeHome)).toStrictEqual(homeBefore);
   });
 
   it("refuses to write a carried skill over a directory nobody shared, and leaves it untouched", async () => {
     env = await createTestEnvironment({ permissions: false });
-    // The user's own skill, sitting at the id the configuration below carries. It is a REAL local
-    // skill — metadata and all — so the load merges it into the matrix wearing `local: true`,
-    // which is exactly the flag the collision guard carves out for a re-apply. Nothing about the
-    // catalogue can tell the two apart; only the disk can.
+    // A real local skill, so the load marks it `local: true`, which the collision guard carves out
+    // for a re-apply; only the disk can tell them apart.
     const handAuthoredDir = await createLocalSkill(env.projectDir, EXTERNAL_ID, {
       description: "The house's own way of doing things",
       metadata: renderMetadataYaml({
@@ -494,12 +429,9 @@ describe("init --from <id>: skills the payload carries rather than names", () =>
     );
 
     expect(exitCode).toBe(EXIT_CODES.ERROR);
-    // Named, because the fix is the user's: the directory is theirs to move or rename.
+    // Named: the directory is the user's to move or rename.
     expect(flattenCliOutput(output)).toContain(EXTERNAL_ID);
-    // Content AND mtime for every file under the directory. Journey 34's claim is that a
-    // hand-authored skill survives untouched — measured 2026-09-03, the payload's bytes replaced
-    // its SKILL.md and its metadata.yaml was stamped `forkedFrom`, which hands the user's own
-    // work to the round trip: `uninstall` may then delete it and `share` will carry it.
+    // A hand-authored skill must survive untouched; content and mtime for every file.
     expect(await readTreeSnapshot(handAuthoredDir)).toStrictEqual(before);
   });
 });

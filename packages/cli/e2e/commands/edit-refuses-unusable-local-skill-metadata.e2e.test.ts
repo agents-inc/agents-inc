@@ -25,25 +25,13 @@ import {
 import { firstElement } from "../../src/cli/lib/__tests__/helpers/element-at.js";
 
 /**
- * A saved skill entry whose local files ARE on disk, and whose metadata.yaml describes no
- * skill, stops `edit --from` before it asks anything — the same refusal `compile` raises over
- * the same file, for the same reason: nothing can be loaded for that skill.
- *
- * What it replaces: the entry resolved to nothing, so the run dropped it from config.ts — which
- * blamed the marketplace for a YAML typo in the user's own working copy, and cost them the
- * config record of an install whose files were sitting right there.
- *
- * A bare `edit` refuses over the same file before it mints the id the editor opens: the
- * configuration it hands over is read off these files, and one that describes nothing read as
- * a skill the user wrote, so the skill was quietly left out of what the editor showed.
- *
- * Both run in a terminal: `edit --from` asks before it applies, and a bare `edit` opens the
- * browser only where someone is sitting at one.
+ * A custom skill whose metadata.yaml describes no skill stops `edit --from` before it asks, and a
+ * bare `edit` before it mints, as `compile` does; the entry is not dropped from config.ts. Both run
+ * in a terminal.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
-/** What the edit applies: one marketplace skill on the project's own sub-agent. */
 const APPLIED_ID = "MetaFix01";
 const APPLIED = buildSeedPayload({
   skills: {
@@ -52,10 +40,9 @@ const APPLIED = buildSeedPayload({
   agents: { [WEB_DEV]: { scope: "project" } },
 });
 
-/** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
 
-/** A single token of the `yaml` parser's own reason, safe from output wrapping. */
+/** One token of the `yaml` parser's own reason, short enough to survive wrapping. */
 const PARSE_REASON_TOKEN = "mappings";
 
 type Fixture = {
@@ -66,10 +53,8 @@ type Fixture = {
 };
 
 /**
- * A project whose one skill is CUSTOM — a skill the marketplace has never heard of, which is
- * the only kind whose broken metadata.yaml can make a saved entry unresolvable. Corrupt an
- * ejected copy of a marketplace skill instead and the catalogue still carries the id, so the
- * run resolves it from there and nothing is classified at all.
+ * Custom, because only an id the marketplace lacks becomes unresolvable; an ejected marketplace
+ * skill still resolves from the catalogue.
  */
 async function seedBrokenCustomSkillMetadata(source: string): Promise<Fixture> {
   const project = await ProjectBuilder.withCustomSkill({ marketplace: source });
@@ -115,7 +100,6 @@ describe("edit --from with a saved entry whose installed metadata.yaml describes
     }
   });
 
-  /** `edit --from` in a terminal over the project, under a HOME of its own. */
   function launchEditFrom(projectDir: string): InteractivePrompt {
     prompt = new InteractivePrompt(["edit", "--from", APPLIED_ID], projectDir, {
       env: { AGENTS_INC_API_URL: store.url },
@@ -143,9 +127,7 @@ describe("edit --from with a saved entry whose installed metadata.yaml describes
       expect(output, "the offending skill must be named").toContain(CUSTOM_PROJECT_SKILL_ID);
       expect(output, "the offending file must be named").toContain(fixture.metadataPath);
       expect(output, "the parser's own reason must reach the user").toContain(PARSE_REASON_TOKEN);
-      // The refusal's own closing line. The loader already WARNS about the same file while
-      // discovering local skills, so only this sentence distinguishes a run that refused
-      // from one that shrugged and carried on to the question.
+      // The loader already warns about the file, so only this closing line shows the run refused.
       expect(
         flattenCliOutput(output),
         "the refusal must offer the two ways out and point at doctor",
@@ -154,7 +136,6 @@ describe("edit --from with a saved entry whose installed metadata.yaml describes
         STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM,
       );
 
-      // The whole point: the entry survives the refusal, on disk, byte for byte.
       expect(
         await readTestFile(configTsPath(fixture.projectDir)),
         "config.ts must not lose the entry over a file that can be repaired",
@@ -183,9 +164,7 @@ describe("edit --from with a saved entry whose installed metadata.yaml describes
       await writeFile(fixture.metadataPath, fixture.healthyMetadata);
       const configBefore = await readTestFile(configTsPath(fixture.projectDir));
 
-      // The guard is keyed to the unusable FILE, not to custom skills or to unresolvable
-      // entries at large, so a repaired file lets the run reach the question it was stopped
-      // short of — declined here, so nothing is applied.
+      // Keyed to the unusable file: once repaired, the run reaches the question (declined here).
       const repaired = launchEditFrom(fixture.projectDir);
       await repaired.waitForTextOrExit(STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM);
       const asked = repaired.getRawOutput();
@@ -231,7 +210,6 @@ describe("bare edit with a saved entry whose installed metadata.yaml describes n
     }
   });
 
-  /** A bare `edit` in a terminal over the project, with the browser it would open stubbed. */
   function launchBareEdit(projectDir: string, opener: BrowserOpenerStub): InteractivePrompt {
     prompt = new InteractivePrompt(["edit"], projectDir, {
       env: { AGENTS_INC_API_URL: store.url, PATH: opener.path },
@@ -258,8 +236,7 @@ describe("bare edit with a saved entry whose installed metadata.yaml describes n
       expect(output, "the offending skill must be named").toContain(CUSTOM_PROJECT_SKILL_ID);
       expect(output, "the offending file must be named").toContain(fixture.metadataPath);
       expect(output, "the parser's own reason must reach the user").toContain(PARSE_REASON_TOKEN);
-      // Reading the file for its provenance already WARNS with its path and reason, so only the
-      // refusal's closing line tells a run that stopped from one that minted around the skill.
+      // Reading the file already warns, so only the closing line shows the run stopped.
       expect(
         flattenCliOutput(output),
         "the refusal must offer the two ways out and point at doctor",
@@ -286,8 +263,7 @@ describe("bare edit with a saved entry whose installed metadata.yaml describes n
       const opener = await stubBrowserOpener(fixture.tempDir);
       const treeBefore = await readTreeSnapshot(fixture.projectDir);
 
-      // The guard is keyed to the unusable FILE, not to custom skills or to every edit, so the
-      // same installation with the file repaired is handed to the editor.
+      // Keyed to the unusable file, so the repaired installation is handed to the editor.
       const edit = launchBareEdit(fixture.projectDir, opener);
       const exitCode = await edit.waitForExit(TIMEOUTS.EXIT_WAIT);
       const output = edit.getRawOutput();

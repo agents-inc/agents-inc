@@ -21,13 +21,7 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 
-/**
- * Doctor blind spots that only appear once agents and skills are installed at
- * global scope.
- *
- * Both scenarios are certified healthy (or self-contradictory) by doctor today
- * even though the on-disk state is fine and doctor's own report is wrong.
- */
+/** `doctor` blind spots that only appear with agents and skills installed at global scope. */
 
 let source: E2ESource;
 

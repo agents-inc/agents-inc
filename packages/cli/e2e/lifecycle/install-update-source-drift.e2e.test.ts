@@ -26,38 +26,14 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * What `update` does to a real ejected install when the source it came from moves on:
- * nothing at all, and it says so.
- *
- * Eject means the user owns the copy. The source gaining a section is not a reason to
- * overwrite an edited local skill, so the guarantee this pins is UNAFFECTED — the
- * installed SKILL.md, its metadata.yaml, the project's config.ts and the compiled agents
- * must all be byte-identical across the update, and the one line the command prints about
- * them must say they are the user's.
- *
- * A real install matters here even though nothing is compared any more: it is what makes the
- * fixture an ejected skill the CLI itself wrote and stamped, rather than a directory a spec
- * planted.
- *
- * The source edit lands between the install and the update, and the marker it appends is
- * the proof-of-execution counterpart to the byte comparison — an update that quietly
- * copied the source across would carry that marker into the installed copy.
- *
- * HOW THE BYTE COMPARISON WAS MUTATION-CHECKED, and why not the usual way. Reverting the
- * command in `src/` cannot turn this spec red: the pre-rewrite `update` also left this
- * skill alone, because a local skill installed under its own id shadowed the source entry
- * and classified `local-only`. The old defect and the new guarantee are the same bytes. So
- * the mutation was applied to the FIXTURE — one line appended to the INSTALLED SKILL.md
- * just before the `update` run — which turned the spec red on the ejected-SKILL.md
- * assertion and nothing else, then was removed. Do not conclude from a green run against
- * an older binary that this spec asserts nothing.
+ * `update` on a real ejected install whose source moved on changes nothing (SKILL.md, metadata,
+ * config.ts and compiled agents byte-identical) and says the copies are the user's.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 const SEED_CONFIG_ID = "Drift001";
 const SOURCE_EDIT_MARKER = "## Section added to the source after installation";
 
-/** A sub-agent entry that keeps its agent in the project rather than at the default scope. */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
 describe("update against the source an ejected skill was really installed from", () => {
@@ -144,8 +120,7 @@ describe("update against the source an ejected skill was really installed from",
   });
 
   it("leaves the installed skill, its metadata, the config and the agents byte-identical", () => {
-    // Proof of execution: the source really did move on under the installed copy, so a
-    // command that copied it across would show up in the very next assertion.
+    // Proof the source moved on, so a command that copied it across shows in the next assertion.
     expect(
       sourceSkillMdAfterEdit,
       "the source edit must have landed, or nothing was at risk",

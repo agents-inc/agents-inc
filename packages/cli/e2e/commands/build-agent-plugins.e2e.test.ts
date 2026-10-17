@@ -13,38 +13,17 @@ import {
 import { CLI } from "../fixtures/cli.js";
 
 /**
- * E2E tests for `build plugins --agents-dir`: agent plugin compilation.
- *
- * Investigation findings:
- *
- * 1. `build plugins` compiles SKILL plugins by default (from `src/skills/`).
- *    Agent plugins are ONLY compiled when the `--agents-dir` flag is passed.
- *
- * 2. `compileAllAgentPlugins()` in `agent-plugin-compiler.ts` expects
- *    pre-compiled `.md` files with YAML frontmatter (`name` and `description`
- *    fields required). It does NOT consume raw agent source directories
- *    (`metadata.yaml` + `identity.md` + `playbook.md`).
- *
- * 3. The existing `createE2EPluginSource()` helper runs `build plugins`
- *    WITHOUT `--agents-dir`, so no agent plugins are built in existing tests.
- *
- * 4. Each agent plugin is output to `<outputDir>/agent-<name>/` with:
- *    - `.claude-plugin/plugin.json` (manifest with `agents: "./agents/"`)
- *    - `agents/<name>.md` (copy of the source .md file)
- *
- * The workflow for agent plugins is:
- *   Compiled agent .md (with frontmatter) ->
- *   `build plugins --agents-dir <dir>` ->
- *   `dist/plugins/agent-<name>/` (plugin package)
+ * `build plugins --agents-dir`: agent plugins are built from pre-compiled agent .md files, and only
+ * when the flag is passed.
  */
 
 const AGENT_NAMES = ["web-developer", "api-developer"] as const;
 const EXPECTED_AGENT_COUNT = 2;
-/** `DEFAULT_VERSION` in src/cli/consts.ts — the version a first compile stamps. */
+/** Mirrors `DEFAULT_VERSION` in src/cli/consts.ts. */
 const INITIAL_VERSION = "1.0.0";
-/** The `agents` field `generateAgentPluginManifest` writes, verbatim. */
+/** Mirrors the `agents` field `generateAgentPluginManifest` writes. */
 const AGENTS_MANIFEST_PATH = "./agents/";
-/** Prefix `compileAgentPlugin` gives every agent plugin directory it writes. */
+/** Mirrors the directory prefix `compileAgentPlugin` writes. */
 const AGENT_PLUGIN_PREFIX = "agent-";
 
 const agentDescription = (agentName: string): string => `E2E test agent for ${agentName}`;
@@ -61,7 +40,6 @@ describe("build agent plugins", () => {
 
     await mkdir(agentsDir, { recursive: true });
 
-    // Create pre-compiled agent .md files (the format compileAllAgentPlugins expects)
     for (const agentName of AGENT_NAMES) {
       await writeFile(
         path.join(agentsDir, `${agentName}.md`),
@@ -80,8 +58,7 @@ describe("build agent plugins", () => {
     let buildResult: Awaited<ReturnType<typeof CLI.run>>;
 
     beforeAll(async () => {
-      // We also need a minimal skills directory for the skills portion.
-      // `build plugins` reads skills from `src/skills/` relative to cwd.
+      // `build plugins` also reads skills from `src/skills/` relative to cwd.
       const skillsDir = path.join(sourceDir, SOURCE_PATHS.SKILLS_DIR);
       await mkdir(skillsDir, { recursive: true });
 
@@ -166,8 +143,6 @@ describe("build agent plugins", () => {
       expect(result.stdout).not.toContain("Compiling agent plugins");
       expect(result.stdout).not.toContain("agent plugins");
 
-      // The filesystem is the contract: stdout staying quiet about agents would
-      // also be satisfied by a run that wrote the plugin directories silently.
       const builtPlugins = await listFiles(path.join(noAgentSourceDir, SOURCE_PATHS.PLUGINS_DIST));
       expect(builtPlugins.filter((entry) => entry.startsWith(AGENT_PLUGIN_PREFIX))).toStrictEqual(
         [],
@@ -193,13 +168,12 @@ describe("build agent plugins", () => {
       await mkdir(edgeAgentsDir, { recursive: true });
       await mkdir(edgeSkillsDir, { recursive: true });
 
-      // Valid agent
       await writeFile(
         path.join(edgeAgentsDir, "good-agent.md"),
         renderAgentMd("good-agent", "A valid agent"),
       );
 
-      // Invalid agent (no frontmatter)
+      // No frontmatter
       await writeFile(
         path.join(edgeAgentsDir, "bad-agent.md"),
         "# No frontmatter here\n\nJust plain markdown.",
