@@ -1,16 +1,6 @@
-// The validation boundary for `BUILT_IN_MATRIX` — the one catalogue this package
-// vendors — and for everything the read models build on it.
-//
-// These schemas describe only what the editor actually reads, not the full CLI types.
-// Unknown keys are stripped, so the vendored data can grow fields without touching this file.
-// What they do catch is the case that matters: a regenerated catalog that dropped or renamed
-// something we depend on. That fails here, loudly, instead of rendering a blank table.
-//
-// The narrowing is what makes it the VENDORED boundary rather than a general
-// one: every id is held against a generated vocabulary, so a catalogue whose
-// ids came from somewhere else is rejected by construction. That other case is
-// `matrixSchema` in `matrix-schema.ts`, which describes any marketplace's
-// catalogue and is the schema a fetched `catalog.json` is parsed with.
+// Validates the vendored catalogue against the generated id vocabularies, so a
+// regenerated catalogue that renamed something fails loudly. Any other
+// catalogue uses `matrixSchema`.
 
 import { z } from "zod"
 import {
@@ -22,9 +12,6 @@ import {
 
 export const domainIdSchema = z.enum(DOMAINS)
 
-// The generated vocabularies, as the boundary's own alphabet. Ids validated
-// against them arrive downstream already narrowed, which is what spares every
-// read model from casting a `string` back into the union it came from.
 const skillIdSchema = z.enum(SKILL_IDS)
 const categorySchema = z.enum(CATEGORIES)
 const agentNameSchema = z.enum(AGENT_NAMES)
@@ -33,8 +20,7 @@ export const categoryDefinitionSchema = z.object({
   id: categorySchema,
   displayName: z.string(),
   description: z.string(),
-  // Optional in the CLI's type. Present on all 89 built-in categories today; a category without
-  // one cannot be placed in the UI, so the read model drops it rather than failing the whole boot.
+  // A category without one is dropped by the read model, not rejected.
   domain: domainIdSchema.exactOptional(),
   exclusive: z.boolean(),
   order: z.number(),
@@ -56,12 +42,8 @@ export const resolvedSkillSchema = z.object({
   slug: z.string(),
   displayName: z.string(),
   description: z.string(),
-  // The sentence a compiled sub-agent reads as its cue to load the skill. Optional
-  // on the CLI's `SkillCore`, so a catalogue entry without one falls back to its
-  // category — but a schema that omits the field STRIPS it, which is the same value
-  // arriving by a route nothing can tell apart from the skill stating nothing.
+  // Declared so parsing does not strip it.
   usageGuidance: z.string().exactOptional(),
-  // The SKILL.md description compile renders — see `SkillCore.activationDescription`.
   activationDescription: z.string().exactOptional(),
   category: categorySchema,
   conflictsWith: z.array(skillRelationSchema),
@@ -73,21 +55,17 @@ export const resolvedStackSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  // agent id → category id → skill ids. Partial because a stack names the few
-  // agents it staffs, not the whole roster; the category keys are the one level
-  // nothing here reads, so they stay unvalidated strings.
+  // agent id → category id → skill ids; a stack names only the agents it staffs.
   skills: z.partialRecord(
     agentNameSchema,
     z.record(z.string(), z.array(skillIdSchema))
   ),
   allSkillIds: z.array(skillIdSchema),
   philosophy: z.string(),
-  // Never populated by the CLI today; the stack rail groups by it when it appears.
   group: z.string().exactOptional(),
 })
 
 export const builtInMatrixSchema = z.object({
-  // Stamped into every seed payload so a consumer can explain skipped ids.
   version: z.string(),
   categories: z.record(z.string(), categoryDefinitionSchema),
   skills: z.record(z.string(), resolvedSkillSchema),

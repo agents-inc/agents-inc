@@ -7,11 +7,7 @@ import {
   type SelectionScenario,
 } from "./selection-scenarios"
 
-// The scenarios are the contract two implementations are held to, so a typo in
-// one of them is a golden that silently tests nothing. `SkillId` catches an id
-// that was never a skill; these catch an id that is a skill the catalogue does
-// not render, an expectation that contradicts itself, and a scenario that
-// asserts nothing at all.
+// Guards against scenario typos that would make a golden test nothing.
 
 const idsOf = (scenario: SelectionScenario) => [
   ...scenario.selection,
@@ -57,9 +53,6 @@ describe("SELECTION_SCENARIOS", () => {
     ).toBeGreaterThan(0)
   })
 
-  // A skill cannot be both offerable and ruled out, and a selection is neither
-  // implied nor a verdict about itself. A scenario claiming both would be
-  // asking for something no implementation can produce.
   it.each(
     SELECTION_SCENARIOS.map((scenario) => [scenario.id, scenario] as const)
   )("%s keeps its expectations apart", (_id, scenario) => {
@@ -77,8 +70,6 @@ describe("SELECTION_SCENARIOS", () => {
     ).toStrictEqual([])
   })
 
-  // Every implied id has to be reachable by following one skill's own
-  // `requires`, or the closure the scenario claims could not produce it.
   it.each(
     SELECTION_SCENARIOS.map((scenario) => [scenario.id, scenario] as const)
   )("%s implies only skills something in it requires", (_id, scenario) => {

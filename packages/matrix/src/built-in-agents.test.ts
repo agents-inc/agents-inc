@@ -6,17 +6,10 @@ import {
 } from "./built-in-agents"
 import { AGENT_DEFINITIONS } from "./generated/agents"
 
-// The validation boundary for the generated sub-agent roster. Ids are the part
-// that matters for the same reason they do on the matrix: `sub-agents.ts`
-// groups, labels and looks up by them, so an agent a regenerated roster retired
-// has to fail here rather than arrive downstream as a group with no domain.
-
 const KNOWN_AGENT = "web-developer"
 const KNOWN_MODEL = "opus"
 const KNOWN_FLAVOR = "developer"
 
-// What a retirement looks like from in here: a plausible id that the generated
-// vocabulary does not carry.
 const RETIRED_AGENT = "web-engineer"
 const RETIRED_MODEL = "sonnet-3-5"
 
@@ -48,9 +41,7 @@ describe("agentDefinitionSchema", () => {
     ).toBe(false)
   })
 
-  // `flavor` is deliberately not narrowed here — which roles are sayable is
-  // authored in the read model's preload table, and `preload-defaults.test.ts`
-  // holds it to the roster ("names exactly the flavors the roster carries").
+  // `flavor` is narrowed by `flavorOf`, tested in `preload-defaults.test.ts`.
 })
 
 describe("agentDefinitionsSchema", () => {
@@ -61,12 +52,7 @@ describe("agentDefinitionsSchema", () => {
   })
 })
 
-// A sub-agent naming no model means the roster said nothing, and only an ABSENT
-// key says that: a key present holding `undefined` is a generator that
-// assembled the entry and then failed to leave the field out. The refusal is
-// paired with the absence it is there to keep permitted, since a boundary that
-// turned both away would have made the field mandatory instead —
-// `built-in-matrix.test.ts` holds the same pair for the matrix's two.
+// Absent, not present as `undefined`; the refusal is paired with the absence it permits.
 describe("optional fields, absent rather than undefined", () => {
   it("refuses a sub-agent whose model is present holding undefined", () => {
     expect(

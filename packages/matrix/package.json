@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "//generate": "Delegates: packages/cli is the single writer of src/vendor/** and src/generated/**, and its scripts/generate-matrix-package.ts is what emits them. Kept as an entry point here because the files it writes carry a header telling the reader to run it from this package.",
+  "//generate": "Delegates to packages/cli/scripts/generate-matrix-package.ts, the single writer of src/vendor/** and src/generated/**.",
   "scripts": {
     "generate": "cd ../cli && bun run generate:matrix",
     "lint": "eslint",

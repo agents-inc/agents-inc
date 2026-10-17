@@ -1,63 +1,26 @@
-// The selection semantics, written down once, as data.
-//
-// These scenarios were pinned while two implementations answered the same
-// questions — the CLI's `matrix-resolver.ts` plus `build-step-logic.ts`, and
-// the editor's `derive.ts` — and did not always agree. The expectations are
-// the CLI's, which the owner ruled authoritative. The editor now delegates to
-// `read-model/selection-semantics.ts`, and the scenarios hold that module to
-// one contract.
-//
-// Nothing here imports either implementation, and nothing here is
-// editor-shaped or CLI-shaped: a scenario is a selection against the real
-// catalogue and the outcomes that selection must produce. A runner maps its
-// side's API onto these fields.
-//
-// `outOfReach` and `inReach` are *samples*, not the whole catalogue. Listing
-// every skill would pin hundreds of incidental answers that nobody decided and
-// that a regenerated catalogue would churn; each id listed here is one somebody
-// chose, and the `why` says what it is standing for.
+// The selection semantics as implementation-neutral data; each runner maps its
+// API onto these fields. `outOfReach` and `inReach` are chosen samples, not
+// the whole catalogue.
 
 import { CATALOG } from "../read-model/catalog"
 import type { SkillId } from "../vendor/generated/source-types"
 
-// The divergences the owner ruled bugs on 2026-08-06, each fixed when the
-// editor moved onto the shared semantics — the label survives as the record of
-// what its scenario was pinned to guard. A further one, found while writing
-// these down, was the CLI forgiving every incompatibility inside a pick-one
-// category; that one was narrowed rather than pinned, and the scenario holding
-// it is an agreement now.
-//
-// A third, `framework-constraint`, is gone rather than fixed: it named the
-// CLI's `compatibleWith` whitelist ruling out a framework-bound skill beside a
-// framework that merely does not host it. The owner ruled on 2026-08-07 that
-// those verdicts are an accepted loss and deleted the field (CLI-389 phase C),
-// which makes both sides answer the one question that survives — *could this
-// still become valid* — and leaves nothing for the label to name. The three
-// scenarios that carried it are agreements below, each recording the ruling.
+// Labels for the editor/CLI divergences a scenario guards against.
 export type SelectionDivergence =
-  // The editor never read `discourages`, so a soft warning never appeared.
   | "discourages"
-  // Inside an exclusive category the editor forgave a conflict only with a
-  // *selected* sibling; the CLI forgives any verdict the swap would resolve,
-  // whether the sibling was selected or merely implied.
   | "exclusive-forgiveness"
 
 export type SelectionScenario = {
   id: string
-  // Phrased as the behaviour a test name would describe.
   title: string
-  // What the user has clicked, and only that.
+  // What the user clicked.
   selection: readonly SkillId[]
-  // Everything the selection necessarily also chooses, itself excluded. A
-  // group offering a choice commits the user to none of its options.
+  // Everything the selection necessarily also chooses, itself excluded.
   implied: readonly SkillId[]
-  // Must be surfaced as unavailable against this selection.
   outOfReach: readonly SkillId[]
-  // Must stay offerable against this selection.
   inReach: readonly SkillId[]
-  // Must be surfaced as a soft warning — never disabled.
   discouraged: readonly SkillId[]
-  // `null` on the agreement surface: both implementations already answer this.
+  // `null` when both implementations agree.
   divergence: SelectionDivergence | null
   why: string
 }
@@ -321,16 +284,7 @@ export const SELECTION_SCENARIOS: readonly SelectionScenario[] = [
   },
 ]
 
-// The pairs the `discourages` golden runs over. Derived rather than written
-// down because the point of that golden is what the catalogue actually
-// declares: as of 2026-08-06 it declares none, so the golden is red on its
-// data before it is ever red on an implementation.
-//
-// `string` rather than `SkillId` because that is what the read model holds now
-// that a catalogue can be a marketplace's. These pairs are still the SHIPPED
-// catalogue's — `CATALOG` is the vendored one — and both runners feed them
-// straight into semantics that take open ids, so nothing downstream wanted the
-// narrower type.
+// Derived from the catalogue so the `discourages` golden tests what it declares.
 export const DISCOURAGED_PAIRS: readonly (readonly [string, string])[] =
   Object.values(CATALOG.skillsById).flatMap((skill) =>
     skill.discourages.map((other) => [skill.id, other] as const)

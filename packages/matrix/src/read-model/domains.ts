@@ -1,8 +1,5 @@
 import { DOMAINS, type Domain } from "../vendor/generated/source-types"
 
-// The canonical display order. The byte-duplicate the CLI used to keep in sync
-// by hand (`BUILT_IN_DOMAIN_ORDER` in src/cli/consts.ts) was folded into this
-// one when the selection semantics moved onto this shared surface.
 export const DOMAIN_ORDER: readonly Domain[] = [
   "web",
   "api",
@@ -15,8 +12,7 @@ export const DOMAIN_ORDER: readonly Domain[] = [
   "shared",
 ]
 
-// Short labels, for a filter bar that has to fit nine chips on one row.
-// The CLI spells `infra` out as "Infrastructure"; the design's chip says "Infra".
+// Short, to fit nine filter chips on one row.
 export const DOMAIN_LABELS: Record<Domain, string> = {
   web: "Web",
   api: "API",
@@ -29,7 +25,6 @@ export const DOMAIN_LABELS: Record<Domain, string> = {
   shared: "Shared",
 }
 
-// One-line descriptions: the editor's chip and group tooltips.
 export const DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
   web: "Frontend web applications",
   api: "Backend APIs and services",
@@ -44,21 +39,11 @@ export const DOMAIN_DESCRIPTIONS: Record<Domain, string> = {
 
 const DOMAIN_IDS = new Set<string>(DOMAINS)
 
-/**
- * Whether the UI has a section for this domain.
- *
- * Exported because a fetched marketplace names its own domains as plain
- * strings, and the nine here are the only ones with a label, an order and a
- * filter chip — so this is the question `buildCatalog` asks before it decides a
- * category has somewhere to render.
- */
+/** Whether the UI has a section for this domain. */
 export const isDomain = (domainId: string): domainId is Domain =>
   DOMAIN_IDS.has(domainId)
 
-// Agent ids are `<domain>-<role>` for the twelve agents that belong to a domain. The other six
-// (`agent-summoner`, `codex-keeper`, `convention-keeper`, `skill-summoner`, and the two
-// consolidated role agents `pm` and `reviewer`) have no domain prefix and land in `meta`,
-// alongside the meta-domain skills.
+// Agent ids are `<domain>-<role>`; unprefixed ones (`pm`, `reviewer`, the keepers) land in `meta`.
 export const agentDomainOf = (agentId: string): Domain => {
   const prefix = agentId.split("-")[0]
   return prefix && isDomain(prefix) ? prefix : "meta"

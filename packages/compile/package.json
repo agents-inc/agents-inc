@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "//generate": "Delegates: packages/cli is the single writer of src/generated/**, and its scripts/generate-compile-package.ts is what emits them. Kept as an entry point here because the files it writes carry a header telling the reader to run it from this package.",
+  "//generate": "Delegates to packages/cli's generate-compile-package.ts, the single writer of src/generated/**.",
   "scripts": {
     "generate": "cd ../cli && bun run generate:compile",
     "lint": "eslint",
@@ -17,7 +17,7 @@
     "remeda": "^2.33.6",
     "yaml": "^2.9.0"
   },
-  "//smol-toml": "A devDependency and not a dependency: `src/providers/codex/agent-role-toml.ts` WRITES TOML by hand — four scalars and one table — and nothing in this package's shipped surface parses any. Its spec parses every rendered role file back with a real parser, so the encoding is held against TOML rather than against the renderer's own idea of it. Declared here on 2026-09-22 after being imported and declared in no package.json in this repository: it resolved only because `knip`, a root devDependency, hoists smol-toml@1.7.1 into the root node_modules, so the import would have broken the day that tool changed or went.",
+  "//smol-toml": "A devDependency: only the spec parses TOML, to hold the hand-written role files against a real parser.",
   "devDependencies": {
     "@types/node": "^24",
     "@workspace/eslint-config": "workspace:*",

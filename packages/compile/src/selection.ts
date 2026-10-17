@@ -4,16 +4,9 @@ import type { CompileCatalog, CatalogSkill } from "./catalog.js"
 import { LOCAL_PSEUDO_CATEGORY } from "./paths.js"
 import type { SelectionValidation, SkillId, ValidationError } from "./types.js"
 
-/**
- * The three relationship rules a selection is judged against, as a total function
- * of a selection and a catalogue.
- *
- * The catalogue is a parameter here for the same reason it is one in the
- * renderers: `init --from` validates a shared payload against the catalogue the
- * install loaded, which is the merged one rather than the built-in.
- */
+// The catalogue is a parameter: `init --from` validates against the merged one, not the built-in.
 
-/** Asserting lookup — a selection naming an id the catalogue does not hold is a caller bug. */
+/** A selection naming an id the catalogue lacks is a caller bug. */
 function skillOrThrow(catalog: CompileCatalog, id: SkillId): CatalogSkill {
   const skill = catalog.skills[id]
   if (!skill) throw new Error(`Skill not found: ${id}`)
@@ -124,22 +117,13 @@ function validateExclusivity(
   })
 }
 
-/**
- * Validates a complete set of skill selections against every catalogue constraint:
- * conflicting pairs, unmet requirements, and exclusive categories holding more
- * than one skill.
- *
- * `valid` is derived from `errors` rather than asserted: a literal `true` beside a populated
- * `errors` array is a comment with a type annotation, and the first `if (validation.valid)`
- * written against it would pass on every rejected selection there is.
- */
+/** `valid` is derived from `errors`, never asserted alongside them. */
 export function validateSelection(
   selections: SkillId[],
   catalog: CompileCatalog
 ): SelectionValidation {
   const resolvedSelections = selections.map(
-    // Boundary cast: the id came back off the catalogue entry `id` just found, and a catalogue
-    // skill's `id` is typed `string` on the narrow shape so the wire `Matrix` satisfies it too.
+    // Boundary cast: a catalogue id, typed `string` so the wire `Matrix` fits the shape.
     (id) => skillOrThrow(catalog, id).id as SkillId
   )
   const selectedSet = new Set<SkillId>(resolvedSelections)

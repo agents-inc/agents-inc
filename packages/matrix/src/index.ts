@@ -1,4 +1,4 @@
-// The public API. Import from "@workspace/matrix" only — never reach into ./vendor or ./generated.
+// Import from "@workspace/matrix" only, never ./vendor or ./generated.
 
 export {
   CATALOG,
@@ -21,9 +21,7 @@ export {
 } from "./read-model/sub-agents"
 export type { SubAgent, SubAgentGroup } from "./read-model/sub-agents"
 
-// The roster as the CLI's metadata.yaml files declare it. The output preview
-// needs these definitions: `SubAgent` drops `tools`, which compiled frontmatter
-// is written from.
+// The preview needs `tools`, which `SubAgent` drops.
 export { AGENT_DEFINITIONS } from "./generated/agents"
 export type { GeneratedAgentDefinition } from "./generated/agents"
 
@@ -80,8 +78,6 @@ export type {
   SkillRequirementFacts,
 } from "./read-model/selection-semantics"
 
-// The vendored catalogue in its wire shape. The editor merges external skills
-// into it and rebuilds the read models, so they follow every other skill's rules.
 export { MATRIX, MATRIX_VERSION } from "./read-model/source"
 
 export {
@@ -156,9 +152,7 @@ export type {
   AgentName,
 } from "./vendor/generated/source-types"
 
-// The CLI's own domain types, vendored byte-for-byte by
-// scripts/generate-matrix-package.ts so `@workspace/compile` renders against the
-// same declarations the CLI writes with.
+// The CLI's domain types, vendored byte-for-byte.
 export { CODEX_MODEL_NAMES, EFFORT_NAMES, MODEL_NAMES } from "./vendor/matrix"
 export type {
   CategoryDefinition,

@@ -1,18 +1,5 @@
-// The selection semantics, implemented once. The editor's `derive.ts`
-// delegates here; `contract/selection-scenarios.ts` is the specification this
-// module answers to.
-//
-// Verdicts are structured rather than worded: this module decides *that* a
-// skill is out of reach and *why*, and each surface renders the why in its own
-// words ("Needs Svelte" in the editor).
-//
-// Parameterized over the catalogue like `createLoadStateResolver`, never
-// closed over one: the CLI judges a merged matrix that carries local skills
-// the shipped catalogue has never heard of, which is also why the ids here are
-// `string` rather than `SkillId`.
-//
-// Hand-written and browser-safe: no filesystem, no I/O, nothing Node-only, at
-// import time or ever. The editor bundles this module.
+// Selection semantics shared by the editor and the CLI. Ids are `string`
+// because the CLI judges merged matrices with local skills. Browser-safe.
 
 import type { Matrix } from "../matrix-schema"
 import { MATRIX } from "./source"
@@ -23,15 +10,13 @@ export type SkillRequirementFacts = {
   needsAny: boolean
 }
 
-/** What the semantics read about one skill — relationships, not presentation. */
 export type SelectionSkillFacts = {
   id: string
   categoryId: string
   /** Selecting either side hard-excludes the other; declared on one is enough. */
   conflictsWith: readonly string[]
-  /** Soft conflict — warn, never disable. The reason is authored upstream. */
+  /** Soft conflict: warn, never disable. */
   discourages: readonly { skillId: string; reason: string }[]
-  /** What this skill is built on: the closure and the fixpoint both walk it. */
   requires: readonly SkillRequirementFacts[]
 }
 
@@ -41,16 +26,10 @@ export type SelectionCatalogFacts = {
   exclusiveCategoryIds: ReadonlySet<string>
 }
 
-// A verdict is about possibility, never presence: a skill is ruled out only
-// once the selection has made it impossible, never merely because the host it
-// prefers has not been clicked. The `compatibleWith` whitelist stated the
-// second reading and was deleted on the owner's 2026-08-07 ruling (CLI-389
-// phase C).
+// A skill is ruled out only once the selection makes it impossible, not
+// because its preferred host is unpicked.
 export type IncompatibilityCause =
-  // Something the selection reaches conflicts with it outright.
   | { kind: "conflict"; skillId: string }
-  // A requirement whose named candidates the selection has ruled out —
-  // `lostIds` are the ones actually gone, the whole group for a lost choice.
   | {
       kind: "unreachableRequirement"
       requirement: SkillRequirementFacts
@@ -62,7 +41,6 @@ export type SelectionVerdict =
   | { status: "discouraged"; reason: string }
   | { status: "incompatible"; cause: IncompatibilityCause }
 
-/** One selection, judged: the sets it settles and the verdicts it implies. */
 export type SelectionJudgement = {
   /** Selected, plus everything the selection necessarily also chooses. */
   reached: ReadonlySet<string>
@@ -70,17 +48,10 @@ export type SelectionJudgement = {
   outOfReach: ReadonlySet<string>
   /** The closure minus the selection — what was chosen without being clicked. */
   implied: readonly string[]
-  /**
-   * The verdict a cell renders. Inside a pick-one category an incompatibility
-   * is re-judged against the selection a click would produce — the swap drops
-   * every same-category member, selected or implied — so a conflict the swap
-   * resolves is forgiven and an impossibility it leaves standing keeps its
-   * reason.
-   */
+  /** In a pick-one category, an incompatibility is re-judged against the selection a click would swap to. */
   verdictOf: (skillId: string) => SelectionVerdict
-  /** The verdict before the swap rule — what the selection as it stands says. */
+  /** The verdict before the swap rule. */
   incompatibilityOf: (skillId: string) => IncompatibilityCause | undefined
-  /** The soft warning alone, whatever else the skill's verdict says. */
   discourageReasonOf: (skillId: string) => string | undefined
 }
 
@@ -88,14 +59,10 @@ export type SelectionSemantics = (
   selection: readonly string[]
 ) => SelectionJudgement
 
-// A group offering a choice commits the user to none of the options: "Pinia
-// needs Vue *or* Nuxt" cannot say which, so it implies neither.
+// "Needs Vue or Nuxt" implies neither.
 const isAmbiguous = (requirement: SkillRequirementFacts) =>
   requirement.needsAny && requirement.skillIds.length > 1
 
-// The judging material for one verdict pass. The base pass judges the
-// selection as it stands; the swap pass judges the selection a pick-one click
-// would produce.
 type JudgingSets = {
   reached: ReadonlySet<string>
   outOfReach: ReadonlySet<string>
@@ -106,8 +73,7 @@ export const createSelectionSemantics = (
 ): SelectionSemantics => {
   const skillsById = new Map(catalog.skills.map((skill) => [skill.id, skill]))
 
-  // Conflicts are declared on either side, so the symmetric view is built once
-  // and every lookup is one direction.
+  // Conflicts may be declared on either side; index both directions.
   const conflictIdsBySkill = new Map<string, Set<string>>()
   const noteConflict = (skillId: string, otherId: string) => {
     const held = conflictIdsBySkill.get(skillId)
@@ -127,14 +93,11 @@ export const createSelectionSemantics = (
     return skill
   }
 
-  // What choosing this skill necessarily also chooses.
   const directlyImpliedBy = (skillId: string) =>
     (skillsById.get(skillId)?.requires ?? [])
       .filter((requirement) => !isAmbiguous(requirement))
       .flatMap((requirement) => requirement.skillIds)
 
-  // What the selection drags in behind it: choosing Next.js is choosing React
-  // whether or not React was ever clicked.
   const closureOf = (selection: readonly string[]) => {
     const reached = new Set(selection)
     const frontier = [...reached]
@@ -150,8 +113,6 @@ export const createSelectionSemantics = (
     return reached
   }
 
-  // The first reached skill this one cannot coexist with, if any — reached in
-  // selection order, so the verdict names what the user actually picked first.
   const reachedConflictOf = (skillId: string, reached: ReadonlySet<string>) => {
     const conflictIds = conflictIdsBySkill.get(skillId)
     if (!conflictIds) return undefined
@@ -170,8 +131,6 @@ export const createSelectionSemantics = (
       (skillId) => !reached.has(skillId) && outOfReach.has(skillId)
     )
 
-  // A group is met while any candidate is still reachable — for `needsAny`,
-  // one survivor is enough; otherwise every candidate has to survive.
   const isUnreachable = (
     requirement: SkillRequirementFacts,
     lostIds: readonly string[]
@@ -180,9 +139,7 @@ export const createSelectionSemantics = (
       ? lostIds.length === requirement.skillIds.length
       : lostIds.length > 0
 
-  // First everything conflicting with the reached set, then everything built
-  // on what was lost, and so on — Vue goes, then Nuxt, then Pinia. Each round
-  // either strands at least one more skill or stops, so this terminates.
+  // Conflicts first, then dependents of what was lost, to a fixpoint.
   const strandedBeyond = (reached: ReadonlySet<string>) => {
     const outOfReach = new Set<string>()
     for (const skill of catalog.skills) {
@@ -266,10 +223,7 @@ export const createSelectionSemantics = (
       outOfReach: strandedBeyond(reached),
     }
 
-    // The selection a pick-one click would produce: every same-category
-    // member drops out of the judging material — selected or implied — and
-    // the strandings are recomputed from what survives. Cached per category,
-    // since every cell in it swaps against the same remainder.
+    // A pick-one click drops every same-category member; cached per category.
     const swapSetsByCategory = new Map<string, JudgingSets>()
     const swapSetsFor = (categoryId: string): JudgingSets => {
       const held = swapSetsByCategory.get(categoryId)
@@ -309,14 +263,6 @@ export const createSelectionSemantics = (
   }
 }
 
-/**
- * The relationships a selection is judged by, read off a catalogue.
- *
- * Exported because a marketplace's conflicts are its own: judging its skills by
- * the public catalogue's facts would find no relationship at all, since it
- * knows neither id. The CLI builds these facts from its own merged matrix
- * instead, which is why the semantics take them rather than reading a module.
- */
 export const catalogFactsOf = (matrix: Matrix): SelectionCatalogFacts => ({
   skills: Object.values(matrix.skills).map((skill) => ({
     id: skill.id,
@@ -338,5 +284,4 @@ export const catalogFactsOf = (matrix: Matrix): SelectionCatalogFacts => ({
   ),
 })
 
-/** The semantics both surfaces read: the shipped catalogue, bound. */
 export const judgeSelection = createSelectionSemantics(catalogFactsOf(MATRIX))

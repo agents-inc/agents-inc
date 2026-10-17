@@ -1,28 +1,11 @@
 import type { AgentConfig, Skill, SkillId } from "../../types"
 
 /**
- * The agent definitions and skills this package's renderer specs hand `buildAgentTemplateContext`,
- * `renderAgent`, `renderAgentBody`, `renderAgentFromCorpus` and `renderAgentRoleToml`.
- *
- * Here rather than borrowed from the CLI's `src/cli/lib/__tests__/factories/`, which this package
- * cannot import: the dependency runs the other way. And deliberately not a copy of them. The CLI's
- * `createMockAgentConfig` defaults `tools` to a writer's grant, while every spec here reads `tools`
- * back — the Skill grant, the completion gate only a writer stops against, the Codex shell toggle
- * only an agent without Bash gets — so a default there would supply the very condition an
- * assertion depends on, out of sight of the call site.
- *
- * `contract/emission-scenarios.ts` writes its configurations out rather than building them, and
- * that stays right: a contract module is the single declaration of what it pins. These serve the
- * unit specs.
+ * Not the CLI's factories (this package cannot import them): those default `tools` to a writer's
+ * grant, and every spec here asserts on `tools`.
  */
 
-/**
- * One sub-agent's resolved definition.
- *
- * `tools` and `skills` have no default, which is the whole design: a spec states the grant and the
- * skills its assertion depends on where it builds the agent. Only `title` and `description` are
- * filled in, and no assertion in this package depends on what either says.
- */
+/** `tools` and `skills` have no default: a spec states what its assertion depends on. */
 export function buildAgentConfig(
   name: string,
   fields: Pick<AgentConfig, "tools" | "skills"> &
@@ -36,12 +19,7 @@ export function buildAgentConfig(
   }
 }
 
-/**
- * One skill as an agent carries it.
- *
- * `preloaded` is required rather than defaulted: it decides whether the skill is listed in the
- * frontmatter or loaded through the Skill tool, and specs here assert on each side of that.
- */
+/** `preloaded` is required: specs assert on both sides of it. */
 export function buildSkill(
   id: SkillId,
   { preloaded }: Pick<Skill, "preloaded">

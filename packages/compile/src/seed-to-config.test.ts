@@ -28,10 +28,7 @@ function payloadFor(agent: SeedAgent): SeedPayload {
   }
 }
 
-/**
- * An unknown Codex id is the wire's leniency meeting the CLI's enum: the decode drops the key and
- * says so, and the install goes on — the sub-agent runs on the session's model.
- */
+// An unknown Codex id is dropped with a warning; the sub-agent runs on the session's model.
 describe("a sub-agent's Codex model, decoded", () => {
   let warnings: string[]
 

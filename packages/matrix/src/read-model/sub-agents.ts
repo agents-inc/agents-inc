@@ -58,9 +58,6 @@ const toSubAgent = (definition: ParsedAgentDefinition): SubAgent => {
     description: definition.description,
     ...(definition.model !== undefined && { model: definition.model }),
     domainId,
-    // The same string the definition carries, read back through the preload
-    // table's list of sayable roles — a role no entry could name is an error
-    // there, so it is one here rather than a flavor nothing routes on.
     flavor: flavorOf(definition.id),
   }
 }
@@ -95,11 +92,6 @@ const ROSTER_IDS = new Set<string>(AGENT_NAMES)
 const isAgentName = (agentId: string): agentId is AgentName =>
   ROSTER_IDS.has(agentId)
 
-/**
- * The roster asked with an open id — the counterpart to `skillById`. The roster
- * itself is closed, but the surfaces reading it hold ids as plain strings (a
- * saved configuration, a persisted assignment), and one the CLI has since
- * retired is an answer rather than a crash.
- */
+/** A retired or unknown id answers `undefined`. */
 export const subAgentById = (agentId: string): SubAgent | undefined =>
   isAgentName(agentId) ? SUB_AGENTS_BY_ID[agentId] : undefined

@@ -586,13 +586,13 @@ export function buildStackProperty(
     typedEntries<AgentName, StackAgentConfig>(stack.agents)
       .filter(
         ([, agentConfig]) =>
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries drops Partial's `| undefined`; this guards an explicitly-undefined slot
           agentConfig && typedKeys<Category>(agentConfig).length > 0
       )
       .map(([agentId, agentConfig]) => {
         const resolvedMappings: StackAgentConfig = typedFromEntries(
           typedEntries<Category, SkillAssignment[]>(agentConfig)
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries drops Partial's `| undefined`; this guards an explicitly-undefined slot
             .filter(([, assignments]) => assignments && assignments.length > 0)
             .map(([category, assignments]) => [
               category,
@@ -612,7 +612,7 @@ function splitAgentStack(
   globalSkillIds: ReadonlySet<SkillId>
 ): { global: StackAgentConfig; project: StackAgentConfig } {
   const perCategory = typedEntries<Category, SkillAssignment[]>(agentStack)
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries drops Partial's `| undefined`; this guards an explicitly-undefined slot
     .filter(([, assignments]) => assignments !== undefined)
     .map(([category, assignments]) => {
       const [globalOnly, projectOnly] = partition(assignments, (a) =>
@@ -636,7 +636,7 @@ function splitAgentStack(
 
 /**
  * Splits by skill scope; agents follow the skills their stack references. Selected domains go to
- * both partitions (owner ruling 2026-08-20); hand-written fields to the project alone.
+ * both partitions; hand-written fields to the project alone.
  */
 export function splitConfigByScope(config: ProjectConfig): SplitConfigResult {
   // Excluded-global tombstones go to the project partition as overrides.

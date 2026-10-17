@@ -1,7 +1,6 @@
 /**
- * `tools:` is an allowlist, so every compiled sub-agent needs `Skill` in it to invoke a skill;
- * `skills:` only preloads content and grants no tool. Rendered through `renderAgentFromCorpus`,
- * and `"Skill"` stays a literal so the assertion can fail when the renderer's constant moves.
+ * `tools:` is an allowlist, so every compiled sub-agent needs `Skill` to invoke a skill. `"Skill"`
+ * stays a literal so the assertion can fail when the renderer's constant moves.
  */
 
 import { describe, expect, it } from "vitest"
@@ -179,11 +178,8 @@ describe("the frontmatter an install writes", () => {
 })
 
 /**
- * Every author-supplied string reaching Liquid has its delimiters stripped.
- * `sanitizeCompiledAgentData` enumerates fields, so the fixture is `Required<AgentConfig>`: a
- * field added to the type and forgotten here fails `tsc`, and every field carries a marker whose
- * surviving delimiters name it. The roster is the type's, not the template's: the template reader
- * lives in the CLI, which this package cannot import, and the type covers strictly more.
+ * `Required<AgentConfig>`, so a field added to the type and forgotten here fails `tsc`. Each
+ * field's marker names it if its delimiters survive.
  */
 
 const POISON_PREFIX = "POISON:"
@@ -230,11 +226,7 @@ const marker = (field: PoisonedField): string => `{{${POISON_PREFIX}${field}}}`
 
 const residue = (field: PoisonedField): string => `${POISON_PREFIX}${field}`
 
-/**
- * Cast into the field's closed vocabulary. The CLI's schemas reject these values, but the
- * editor's preview reaches {@link renderAgent} from a browser without them, so these are the
- * fields where the two routes diverge.
- */
+/** The editor's preview reaches {@link renderAgent} without the CLI's schemas. */
 function poisoned<T extends string>(field: PoisonedField): T {
   // Deliberately invalid test data: the subject is a value the field's own type forbids.
   return marker(field) as T
@@ -291,10 +283,7 @@ const holdsAuthorText = (value: unknown): boolean =>
   (Array.isArray(value) &&
     value.every((entry: unknown) => typeof entry === "string"))
 
-/**
- * The subject guard: a render that lost its frontmatter would otherwise compare two empty lists.
- * The six absent fields are ones the template does not read.
- */
+// Subject guard: a render that lost its frontmatter would compare two empty lists.
 const FIELDS_THE_TEMPLATE_RENDERS: readonly PoisonedField[] = [
   "name",
   "title",
@@ -357,10 +346,8 @@ describe("the Liquid syntax a rendered sub-agent must not carry", () => {
 })
 
 /**
- * The completion gate a writing sub-agent stops against, asserted as the raw `hooks:` line Claude
- * Code reads. The command stays a literal rather than importing `COMPLETION_GATE_COMMAND`.
- * "declares a hook for another event" and "declares its own `Stop`" stay together: a refusal
- * alone cannot tell a scoped guard from one that swallowed its domain.
+ * The raw `hooks:` line Claude Code reads; the command stays a literal. A refusal alone cannot tell
+ * a scoped guard from one that swallowed its domain, so both cases stay together.
  */
 
 /** `Write` is what makes an agent one the gate is for. */
@@ -380,7 +367,7 @@ const DECLARED_GATE_COMMAND = "make check"
 const FORMATTER_MATCHER = "Write"
 const FORMATTER_COMMAND = "prettier --write"
 
-/** Byte for byte, as a literal: it is the frontmatter of every writing agent an install writes. */
+/** A literal: the frontmatter of every writing agent an install writes. */
 const GATE_HOOKS_LINE = String.raw`hooks: {"Stop":[{"hooks":[{"type":"command","command":"command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0; out=$(npm run --if-present --silent typecheck 2>&1) || { printf '%s\\n' \"$out\" >&2; exit 2; }"}]}]}`
 
 describe("the completion gate a writing sub-agent stops against", () => {
@@ -506,11 +493,7 @@ describe("the completion gate a writing sub-agent stops against", () => {
   })
 })
 
-/**
- * A writing agent's own hooks, sanitised while the gate is composed beside them; the poison suite
- * above never enters this branch. A declared `PostToolUse` survives beside the gate and a declared
- * `Stop` replaces it, so both are pinned.
- */
+/** A declared `PostToolUse` survives beside the gate; a declared `Stop` replaces it. */
 
 /** Every field `sanitizeHooks` enumerates below the event key; none rides a spread uncovered. */
 const SANITISED_HOOK_FIELDS: readonly PoisonedField[] = [
@@ -580,9 +563,7 @@ describe("the Liquid syntax an author's own hooks must not carry", () => {
 })
 
 /**
- * `@@SOURCE_FOLDER@@` is substituted into the partials before inlining, and stays a literal: it is
- * a contract with the shipped `.md` files. A folder-less engine refuses a partial asking for the
- * folder, yet still compiles one naming the escaped token; both are pinned.
+ * `@@SOURCE_FOLDER@@` stays a literal: it is a contract with the shipped `.md` files.
  */
 
 const SOURCE_FOLDER_TOKEN = "@@SOURCE_FOLDER@@"

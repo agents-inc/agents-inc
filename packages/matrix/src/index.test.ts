@@ -3,9 +3,8 @@ import { describe, expect, it } from "vitest"
 import { CODEX_MODEL_NAMES, EFFORT_NAMES, MODEL_NAMES } from "./index"
 
 /**
- * The Codex models a sub-agent may be pinned to, re-derived from the pinned binary with
- * `HOME=$(mktemp -d) CODEX_HOME=$(mktemp -d) node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex debug models --bundled`.
- * `gpt-5.5` is listed there and left out: it refuses `max` and has no spawn tool.
+ * Re-derive with `HOME=$(mktemp -d) CODEX_HOME=$(mktemp -d) node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex debug models --bundled`.
+ * `gpt-5.5` is left out: it refuses `max` and has no spawn tool.
  */
 const OFFERED_CODEX_MODELS = [
   "gpt-6-astra",
@@ -25,7 +24,6 @@ describe("the Codex models the barrel exports", () => {
     expect(CODEX_MODEL_NAMES.filter((id) => claude.has(id))).toStrictEqual([])
   })
 
-  // Effort stays one shared field, which is only sound while it has no Codex twin.
   it("leave the effort vocabulary as it was", () => {
     expect([...EFFORT_NAMES]).toStrictEqual([
       "low",

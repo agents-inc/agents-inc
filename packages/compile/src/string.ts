@@ -1,8 +1,4 @@
-/**
- * Locale-free ordering for anything emitted into a committed file. `localeCompare` follows the
- * process locale (LC_ALL / LANG), so a colleague's desktop language can reorder output; `<`
- * compares code units and cannot.
- */
+/** Locale-free ordering for committed output: `localeCompare` follows the process locale. */
 export function bytewise(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }

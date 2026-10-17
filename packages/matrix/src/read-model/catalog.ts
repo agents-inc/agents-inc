@@ -13,21 +13,9 @@ import {
   isDomain,
 } from "./domains"
 
-// Ids are `string` throughout, and that is the point rather than a loosening.
-// A catalogue is no longer only the vendored one: the editor fetches a
-// marketplace's `catalog.json` and builds these same read models over it, and a
-// marketplace's ids are its own — `SkillId` would reject every one of them by
-// construction. The vendored unions still narrow what the VENDORED artefact is
-// allowed to contain, in `built-in-matrix.ts`, which is the boundary that
-// question belongs to.
-//
-// `Domain` is the exception and stays closed, because it is not the
-// catalogue's vocabulary — it is the UI's. Nine domains have labels, an order
-// and a filter chip, so a category naming a tenth has nowhere to render; it is
-// dropped exactly as one naming no domain already was.
+// Ids are `string` because marketplace catalogues carry their own ids.
+// `Domain` stays closed: it is the UI's vocabulary.
 
-// One dependency group: `needsAny` picks between "all of these" and "one of
-// these". `reason` is authored upstream ("SvelteKit is built on Svelte").
 export type SkillRequirement = {
   skillIds: string[]
   needsAny: boolean
@@ -41,13 +29,9 @@ export type CatalogSkill = {
   description: string
   categoryId: string
   domainId: Domain
-  // Selecting this skill hard-excludes these.
   conflictsWith: string[]
-  // Soft conflict — warn, do not disable.
+  // Soft conflict: warn, do not disable.
   discourages: string[]
-  // What this skill is built on. The only place a cross-category
-  // incompatibility is expressed: SvelteKit requires Svelte, so picking React
-  // — which Svelte conflicts with — puts SvelteKit out of reach.
   requires: SkillRequirement[]
 }
 
@@ -56,7 +40,7 @@ export type CatalogCategory = {
   displayName: string
   description: string
   domainId: Domain
-  // Only one skill may be picked. Drives the `pick one` tag and auto-collapse.
+  // Only one skill may be picked.
   exclusive: boolean
   skills: CatalogSkill[]
 }
@@ -71,11 +55,7 @@ export type CatalogDomain = {
 
 export type Catalog = {
   domains: CatalogDomain[]
-  // Both indexes hold the ids this catalogue ships and nothing else: a category
-  // with no placeable domain never reaches them, so even a known id can miss —
-  // and once the catalogue can be a marketplace's, so can an id from another
-  // one. Keyed by `string` rather than by a union, which under
-  // `noUncheckedIndexedAccess` is what already types every read as "or nothing".
+  // A category with no placeable domain is absent, so even a known id can miss.
   skillsById: Record<string, CatalogSkill>
   categoriesById: Record<string, CatalogCategory>
   skillCount: number
@@ -102,17 +82,13 @@ const toCatalogSkill = (
 
 type PlaceableCategory = MatrixCategory & { domain: Domain }
 
-// Categories the UI can place. A category has nowhere to render when it names
-// no domain, and equally when it names one the UI has never heard of — a
-// marketplace is free to invent a category id but not a domain, because a
-// domain is a labelled section with an order and a filter chip.
+// A category naming no domain, or one the UI lacks, has nowhere to render.
 const placeableCategories = (categories: Record<string, MatrixCategory>) =>
   Object.values(categories).filter(
     (category): category is PlaceableCategory =>
       category.domain !== undefined && isDomain(category.domain)
   )
 
-// Domain order first, then the category order authored upstream.
 const byDomainThenAuthoredOrder = (
   a: PlaceableCategory,
   b: PlaceableCategory
@@ -146,15 +122,6 @@ const toCatalogDomain = (
   ),
 })
 
-/**
- * The read model, over any catalogue in the wire shape.
- *
- * Exported because the vendored matrix is no longer the only one: the editor
- * fetches a marketplace's `catalog.json`, parses it with `matrixSchema`, and
- * builds exactly this — same derivation, same sorting, same placement rules, so
- * a marketplace's grid cannot render by a different set of rules than the
- * public one's.
- */
 export const buildCatalog = (matrix: Matrix): Catalog => {
   const skillsByCategory = groupBy(
     Object.values(matrix.skills),
@@ -181,43 +148,22 @@ export const buildCatalog = (matrix: Matrix): Catalog => {
   }
 }
 
-// `indexById`'s open-vocabulary twin. That one keys by a finite union and is
-// therefore `Partial`; these ids are `string`, so `noUncheckedIndexedAccess`
-// already says a read may miss and no cast is needed to say it again.
 const byId = <T extends { id: string }>(items: T[]): Record<string, T> =>
   Object.fromEntries(items.map((item) => [item.id, item]))
 
-/** The vendored public catalogue — what an app nobody has pointed anywhere shows. */
+/** The vendored public catalogue. */
 export const CATALOG = buildCatalog(MATRIX)
 
-/**
- * The catalogue asked with an open id.
- *
- * The question reaching it is not always an id the catalogue carries: the
- * editor mints `github:owner/repo` ids for skills added mid-session, a saved
- * configuration can name one a later catalogue dropped, and a configuration
- * built against one marketplace can be asked of another. All three are answered
- * — `undefined` — rather than rejected, which is what keeps the guards at those
- * call sites doing real work.
- */
+/** Unknown ids (session-added, dropped, another marketplace's) answer `undefined`. */
 export const createSkillLookup =
   (catalog: Catalog) =>
   (skillId: string): CatalogSkill | undefined =>
     catalog.skillsById[skillId]
 
-/** The lookup bound to the vendored catalogue. */
 export const skillById = createSkillLookup(CATALOG)
 
 const SHIPPED_IDS = new Set<string>(SKILL_IDS)
 
-/**
- * Whether this id is one the VENDORED catalogue ships.
- *
- * Not "does some catalogue carry it" — `skillById` answers that, of whichever
- * catalogue it is bound to. This is the narrower question, and the only surface
- * that needs it is a table authored against the shipped ids: a marketplace's
- * skill cannot have a row in one by construction, so it is outside the table
- * rather than left out of it.
- */
+/** Whether the vendored catalogue ships this id, unlike `skillById`, which asks any bound catalogue. */
 export const isShippedSkillId = (skillId: string): skillId is SkillId =>
   SHIPPED_IDS.has(skillId)

@@ -3,11 +3,7 @@ import { AGENT_NAMES } from "@workspace/matrix"
 import { inAnEnglishList } from "../../string.js"
 import type { AgentName } from "../../types.js"
 
-/**
- * Which sub-agents a Codex installation compiles, and the two lines a Codex compile prints once
- * about what it did not do: which sub-agents are absent, and which settings of the present ones
- * have no Codex expression. Kept apart so a user can tell whether their reviewer exists.
- */
+// Two separate lines: absent sub-agents, and unexpressible settings of present ones.
 
 /**
  * Left out of every Codex install for v1 because their roster mechanics on Codex are not proven.
@@ -27,13 +23,7 @@ export function compilesForCodex(agent: AgentName): boolean {
 export const CODEX_AGENT_ROSTER: readonly AgentName[] =
   AGENT_NAMES.filter(compilesForCodex)
 
-/**
- * What a Codex role file cannot express, as the compile line names them. A Claude model never
- * reaches a role — Codex refuses to spawn one naming it — so a role runs on its `codexModel` pin,
- * or on the session's model. The other five were measured against the pinned binary's
- * deserializer, and are reported because a user-authored agent setting one would otherwise lose it
- * in silence.
- */
+/** Reported because a user-authored agent setting one would otherwise lose it silently. */
 export const UNEXPRESSIBLE_ON_CODEX = [
   "Claude models",
   "tool allowlists",

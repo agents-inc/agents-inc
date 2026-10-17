@@ -84,7 +84,6 @@ describe("seedExternalSkillSchema", () => {
     ).toBe(true)
   })
 
-  // The cap is about what lands on disk, which is UTF-8.
   it("counts UTF-8 bytes rather than characters", () => {
     const multibyte = { [SKILL_MD]: "€".repeat(MAX_EXTERNAL_SKILL_BYTES / 2) }
 
@@ -133,10 +132,7 @@ describe("seedPayloadSchema with external skills", () => {
   })
 })
 
-/**
- * Literals rather than `SEED_VERSION ± 1`: an expectation built from the constant moves with it
- * and could never fail on a bump that went the wrong way.
- */
+/** Literals, not `SEED_VERSION ± 1`, so a wrong-way bump fails. */
 describe("the version", () => {
   it("is 6, the version that carries a sub-agent's Codex model", () => {
     expect(SEED_VERSION).toBe(6)
@@ -146,8 +142,6 @@ describe("the version", () => {
     expect(seedPayloadSchema.safeParse(payload({ v: 6 })).success).toBe(true)
   })
 
-  // Discard-don't-migrate: a v5 consumer would strip `codexModel`, so v5 is refused rather than
-  // read as a payload with no pins.
   it("refuses a payload minted against v5", () => {
     expect(seedPayloadSchema.safeParse(payload({ v: 5 })).success).toBe(false)
   })
@@ -157,8 +151,7 @@ describe("the version", () => {
   })
 })
 
-// Only an ABSENT key says "nothing to say": a key holding `undefined` cannot survive JSON, so the
-// sharer and the receiver would see two different payloads behind one id.
+// A key holding `undefined` cannot survive JSON.
 describe("the payload's optional fields", () => {
   it("refuses a marketplace present holding undefined", () => {
     expect(
@@ -201,8 +194,6 @@ describe("the payload's description", () => {
     expect(seedPayloadSchema.parse(payload())).not.toHaveProperty("description")
   })
 
-  // A plain object schema drops what it does not know. That is why a purely descriptive field
-  // needed no bump, and why `codexModel`, whose loss changes what installs, did.
   it("would be dropped by an older consumer rather than refused", () => {
     const throughAnOlderBuild = seedPayloadSchema.parse(
       payload({ aFieldMintedAfterEveryBuildOnDisk: SHARED_DESCRIPTION })
@@ -250,11 +241,6 @@ describe("a sub-agent's optional fields", () => {
   })
 })
 
-/**
- * A string on the wire, not the CLI's enum: Codex retires ids, and an enum here would turn each
- * retirement into a version bump that kills every link. Each consumer drops an id it does not
- * offer; the wire only refuses what is not an id at all.
- */
 describe("a sub-agent's Codex model", () => {
   it("keeps an id no build offers, so the consumer can say what it dropped", () => {
     const parsed = seedPayloadSchema.parse(withAgent({ codexModel: "gpt-4o" }))
@@ -297,15 +283,14 @@ const skillAt = (
   assignments,
 })
 
-/** A project skill on a sub-agent the `agents` map says nothing about, so it rests at global. */
+/** A project skill on a sub-agent the `agents` map omits, so it rests at global. */
 const restingPairPayload = () =>
   payload({
     skills: { [REACT]: skillAt("project", { [AGENT_ID]: "preloaded" }) },
     agents: {},
   })
 
-// Refusal and permission are pinned together: a rule that only ever refuses cannot be told from
-// one that has swallowed its whole domain.
+// Refusal and permission are pinned together.
 describe("a project skill's reach over a sub-agent", () => {
   it("resolves an unnamed sub-agent through the shared selection default", () => {
     expect(DEFAULT_SELECTION_OPTIONS.scope).toBe("global")
@@ -335,7 +320,6 @@ describe("a project skill's reach over a sub-agent", () => {
     expect(installableSeedPayloadSchema.safeParse(global).success).toBe(true)
   })
 
-  // A row naming a sub-agent pinned off installs nothing, as the decode treats it.
   it("ignores an assignment row naming a sub-agent pinned off", () => {
     const off = payload({
       skills: { [REACT]: skillAt("project", { [AGENT_ID]: "preloaded" }) },
@@ -376,7 +360,6 @@ describe("a project skill's reach over a sub-agent", () => {
   })
 })
 
-// Links already minted with the pair must keep decoding, so the editor can open and repair them.
 describe("the read schema is deliberately lenient about the same pair", () => {
   it("accepts a payload the installable schema turns away", () => {
     expect(seedPayloadSchema.safeParse(restingPairPayload()).success).toBe(true)

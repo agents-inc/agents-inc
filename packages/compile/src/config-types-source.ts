@@ -36,7 +36,6 @@ import type {
  */
 const EMPTY_UNION_TYPE = "never"
 
-/** Entities just written to config but not yet in the loaded matrix. */
 export type ConfigTypesExtras = {
   extraSkillIds?: string[]
   extraAgentNames?: string[]
@@ -292,8 +291,7 @@ function buildSkillsByCategory(
       (entry): entry is { id: SkillId; category: Category } =>
         entry.category !== undefined &&
         entry.category !== LOCAL_PSEUDO_CATEGORY &&
-        // Boundary cast: typed `string` on the narrow catalogue shape; the `has` is the runtime
-        // check.
+        // Boundary cast: `string` on the narrow catalogue shape; `has` is the runtime check.
         categorySet.has(entry.category as Category)
     )
 

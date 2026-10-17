@@ -16,7 +16,6 @@ import { provenanceMarker } from "../../agent-source"
 import type { AgentConfig } from "../../types"
 import { buildAgentConfig } from "../../__tests__/factories/agent-config-factories"
 
-/** Read off the vocabularies, so a new member is covered the day it ships. */
 const EVERY_EFFORT_LEVEL = EFFORT_NAMES
 const EVERY_CLAUDE_MODEL = MODEL_NAMES
 const EVERY_CODEX_MODEL = CODEX_MODEL_NAMES
@@ -34,14 +33,14 @@ const BODY = [
   "Tabs\tand a trailing backslash \\",
 ].join("\n")
 
-/** A writer: the shape sixteen of the eighteen shipped sub-agents have. */
+/** The shape sixteen of the eighteen shipped sub-agents have. */
 const WRITER = buildAgentConfig("web-developer", {
   tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash"],
   model: "opus",
   skills: [],
 })
 
-/** A reader: Bash is still granted, which is why it can still edit files. */
+/** Bash is still granted, so it can still edit files. */
 const READ_ONLY = buildAgentConfig("web-researcher", {
   tools: ["Read", "Grep", "Glob", "Bash"],
   model: "opus",
@@ -62,7 +61,7 @@ const PINNED = buildAgentConfig("web-developer", {
   skills: [],
 })
 
-/** The keys Codex refuses, spelled out rather than imported from the module under test. */
+/** Spelled out rather than imported from the module under test. */
 const REJECTED_BY_CODEX = [
   "disallowed_tools",
   "effort",
@@ -227,8 +226,7 @@ describe("the keys Codex's deserializer refuses", () => {
 })
 
 describe("the settings Codex can express", () => {
-  // `model = "opus"` registers and then cannot be spawned on a ChatGPT account (codex-cli 0.157.1,
-  // 2026-09-26), so no Claude selector may reach a role.
+  // Codex cannot spawn a role naming a Claude model.
   it("never writes a Claude model into a role with no Codex pin", () => {
     for (const model of EVERY_CLAUDE_MODEL) {
       const rendered = renderAgentRoleToml({ ...WRITER, model }, BODY)
@@ -290,11 +288,7 @@ describe("the settings Codex can express", () => {
   })
 })
 
-/**
- * A role carrying its own `model` runs on it, and one with no effort inherits the parent's — which
- * a small model may refuse at spawn. So a pin always brings an effort: the configured one, else
- * `medium`, which every offered id accepts.
- */
+/** A pin always brings an effort (configured, else `medium`): an inherited one may be refused. */
 describe("a Codex model pin", () => {
   it("writes the pinned id as the role's model, never the Claude model beside it", () => {
     const parsed = parse(renderAgentRoleToml(PINNED, BODY))
@@ -350,8 +344,7 @@ describe("a Codex model pin", () => {
 })
 
 describe("the rendered file as TOML", () => {
-  // The closing `"""` starts its own line and TOML drops the newline after the opening one, so
-  // exactly one trailing newline survives. Stated rather than trimmed, so either end can fail.
+  // Exactly one trailing newline survives; stated rather than trimmed so either end can fail.
   const BODY_AS_TOML_RETURNS_IT = `${BODY}\n`
 
   it("round-trips: every scalar parses back to what was rendered", () => {

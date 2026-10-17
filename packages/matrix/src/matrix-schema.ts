@@ -1,28 +1,7 @@
 import { z } from "zod"
 
-// The wire contract for a catalogue: the CLI's `MergedSkillsMatrix`, described
-// without reference to any particular vocabulary of ids.
-//
-// It has two callers and they want the same thing for different reasons. A
-// marketplace's `build marketplace` emits `catalog.json` in this shape, and the
-// editor fetches that file and `safeParse`s it — one fetch, one parse, no
-// transform layer, whichever marketplace it came from. And `generate:matrix`
-// asks it whether the artefact it is about to vendor is still a matrix at all,
-// which byte-comparison against the CLI's own copy cannot answer.
-//
-// NOT to be confused with `builtInMatrixSchema` in `built-in-matrix.ts`. That
-// one narrows every id to the vendored vocabulary — `SKILL_IDS`, `CATEGORIES`,
-// `AGENT_NAMES` — so it catches a regenerated catalogue that renamed something
-// the read models index by. It is the right boundary for the catalogue this
-// package ships and the wrong one for every other: a marketplace's ids are its
-// own, and parsing a fetched `catalog.json` with it would reject all of them by
-// construction.
-//
-// Ids are therefore `z.string().min(1)` here, and unknown keys are stripped, so
-// a matrix may grow fields without this file moving. What it does hold is the
-// fields a consumer reads — the same surface `built-in-matrix.ts` models, for
-// the same reason: a catalogue that dropped one fails here, loudly, rather than
-// rendering a blank grid.
+// Wire contract for any catalogue (`catalog.json`), with open ids. The vendored
+// catalogue's narrower schema is `builtInMatrixSchema` in `built-in-matrix.ts`.
 
 const idSchema = z.string().min(1)
 
@@ -30,8 +9,7 @@ const matrixCategorySchema = z.object({
   id: idSchema,
   displayName: z.string(),
   description: z.string(),
-  // Optional in the CLI's type. A category without one cannot be placed in the
-  // UI, so a consumer drops it rather than failing the whole catalogue.
+  // A category without one is dropped by consumers, not rejected.
   domain: z.string().exactOptional(),
   exclusive: z.boolean(),
   order: z.number(),
@@ -53,14 +31,9 @@ const matrixSkillSchema = z.object({
   slug: z.string(),
   displayName: z.string(),
   description: z.string(),
-  // The sentence a compiled sub-agent reads as its cue to load the skill, which
-  // the editor's preview renders verbatim. Optional because a marketplace's own
-  // skills may state none; omitting it here would strip it from every fetched
-  // `catalog.json` and make every marketplace look like it states none.
+  // A compiled sub-agent's cue to load the skill.
   usageGuidance: z.string().exactOptional(),
-  // The SKILL.md description a compiled sub-agent's activation table shows —
-  // `description` is the short label. The preview renders this one so
-  // it shows what the install writes (CLI-898); absent on older catalogues.
+  // The SKILL.md description the activation table shows; `description` is the short label.
   activationDescription: z.string().exactOptional(),
   category: idSchema,
   conflictsWith: z.array(skillRelationSchema),
@@ -72,13 +45,10 @@ const matrixStackSchema = z.object({
   id: idSchema,
   name: z.string(),
   description: z.string(),
-  // agent id → category id → skill ids. A stack names the few agents it staffs
-  // rather than the whole roster, and the agent roster is as marketplace-owned
-  // as the skills are, so neither level is narrowed.
+  // agent id → category id → skill ids.
   skills: z.record(z.string(), z.record(z.string(), z.array(idSchema))),
   allSkillIds: z.array(idSchema),
   philosophy: z.string(),
-  // Never populated by the CLI today; a stack rail groups by it when it appears.
   group: z.string().exactOptional(),
 })
 

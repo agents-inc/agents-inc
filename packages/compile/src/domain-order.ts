@@ -2,10 +2,7 @@ import { DOMAIN_ORDER } from "@workspace/matrix"
 
 import type { Domain } from "./types.js"
 
-/**
- * Sort domains into canonical display order: custom domains first (alphabetically),
- * then built-in domains in the shared DOMAIN_ORDER.
- */
+/** Custom domains first (alphabetically), then DOMAIN_ORDER. */
 export function orderDomains(domains: Domain[]): Domain[] {
   const builtInSet = new Set<Domain>(DOMAIN_ORDER)
   return [

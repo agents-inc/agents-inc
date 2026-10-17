@@ -1,38 +1,7 @@
 /**
- * The template split C5 needs, and the one claim that makes it safe: **the
- * Claude render does not move a byte.**
- *
- * C5 splits `src/agents/_templates/agent.liquid` into a frontmatter part and a
- * body part, because Codex's agent ROLE DEFINITION file has no frontmatter — its
- * `developer_instructions` key carries the body alone, and a Claude-shaped
- * frontmatter block reaching a TOML renderer would either be quoted into the
- * instructions as noise or emit keys the strict deserializer drops the whole
- * file for.
- *
- * **Why the invariant here is composition rather than a golden.** A recorded
- * golden of today's Claude output would pass on the day it is written and say
- * nothing about the split: it can only fail AFTER the split lands, and a golden
- * the implementing pass can regenerate is a golden the implementing pass will
- * regenerate. Asserting instead that {@link renderAgentBody} is exactly the tail
- * of {@link renderAgent} makes `renderAgent` itself the reference — so a body
- * renderer that changed one byte of the Claude output cannot satisfy it, and
- * `renderAgent`'s own bytes stay pinned where they already are: the recorded
- * trees in `e2e/lifecycle/claude-install-byte-identity.e2e.test.ts`, the corpus
- * goldens, and `scripts/generate-compile-package.test.ts`.
- *
- * **The frontmatter half is asserted as an absence, deliberately named.** The
- * body must not open with the `---` fence, and its opening lines must not hold
- * `tools:`, `disallowedTools:`, `permissionMode:` or `model:` — Claude
- * frontmatter keys that, left at the head of a body, would be carried into
- * `developer_instructions` as prose, where Codex reads none of them as a
- * setting. Only the opening lines are read: that is where a frontmatter the
- * split failed to remove would sit, and a body's own prose may name these keys
- * further down — `agent-summoner`'s names all four in a `metadata.yaml`
- * example (measured 2026-09-26). Each is first shown to be IN the frontmatter,
- * because the absence of a key the render never wrote proves nothing about
- * where it went.
- *
- * Written before `renderAgentBody` existed and red on the missing export.
+ * The body render must be exactly the tail of `renderAgent`, so the Claude render is its own
+ * reference. Frontmatter keys are checked only in the body's opening lines: prose further down may
+ * name them.
  */
 
 import { describe, expect, it } from "vitest"
@@ -55,26 +24,14 @@ import {
   buildSkill,
 } from "./__tests__/factories/agent-config-factories"
 
-/** The frontmatter fence, as the template writes it. Kept a literal on purpose. */
 const FENCE = "---"
 
-/** A grant holding `Write`, which is what earns a sub-agent the completion gate's `hooks:` line. */
+/** Holding `Write` earns the completion gate's `hooks:` line. */
 const WRITER_TOOLS = ["Read", "Write", "Edit", "Grep", "Glob", "Bash"]
 
-/** A grant with no writing tool, so the frontmatter the split leaves behind carries no `hooks:`. */
 const READER_TOOLS = ["Read", "Grep", "Glob", "Bash"]
 
-/**
- * Three shipped sub-agents covering the shapes the split has to survive: a
- * writer with a completion gate, a reader without one, and a second writer —
- * each rendered carrying both a preloaded and a dynamic skill.
- *
- * Named members rather than "some agent", because the risk is a body renderer
- * that is correct for the simple shape and drops a section for the others. The
- * grant is stated per subject because it is what decides the shape: every
- * subject was rendered with a writer's tools until 2026-09-26, so the reader
- * this names was never rendered as one.
- */
+// A writer, a reader and a second writer: the shapes a split could get wrong.
 const SUBJECTS = [
   ["web-developer", WRITER_TOOLS],
   ["web-researcher", READER_TOOLS],
@@ -87,12 +44,7 @@ const DYNAMIC_SKILL = buildSkill("meta-design-expressive-typescript", {
 
 const PRELOADED_SKILL = buildSkill("web-framework-react", { preloaded: true })
 
-/**
- * The frontmatter keys a body must not open with. The template writes `tools`,
- * `model` and `permissionMode` into every agent's frontmatter — the last two
- * through a default when the definition sets none — and `disallowedTools` only
- * when it is set, which is why the spec reading this list sets one.
- */
+// `disallowedTools` is only written when set, so the spec reading this list sets one.
 const FRONTMATTER_ONLY_KEYS = [
   "tools:",
   "permissionMode:",
@@ -100,7 +52,6 @@ const FRONTMATTER_ONLY_KEYS = [
   "disallowedTools:",
 ]
 
-/** The engine a corpus render uses, built for a Claude installation. */
 function claudeEngine() {
   return createEngineFromTemplates(CORPUS_TEMPLATES, {
     sourceFolder: sourceDirName("claude"),
@@ -162,9 +113,7 @@ describe("the body render against the whole Claude render", () => {
     const frontmatter = whole.slice(0, whole.length - body.length)
 
     expect(whole.endsWith(body)).toBe(true)
-    // The empty string is a suffix of every render, so the comparison above holds for a body
-    // renderer that dropped everything. What stands in front of the body has to be the
-    // frontmatter and nothing else, which an empty or truncated body cannot leave.
+    // The empty string is a suffix of everything, so check the frontmatter is all that precedes it.
     expect(
       frontmatter.trimEnd().endsWith(FENCE),
       "the body is not the whole of what follows the frontmatter"

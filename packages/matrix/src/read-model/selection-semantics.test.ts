@@ -10,14 +10,10 @@ import {
   type SelectionCatalogFacts,
 } from "./selection-semantics"
 
-// A hand-sized catalogue that isolates each rule the shipped one can only
-// exercise in combination. The ids are fabricated on purpose: the factory is
-// parameterized over its catalogue, and these tests are about the rules, not
-// the data.
+// Fabricated ids isolating each rule.
 const FACTS: SelectionCatalogFacts = {
   skills: [
-    // Two frameworks in a pick-one category, conflicting one way round — the
-    // symmetric read is the module's job.
+    // Conflict declared one way round; the symmetric read is the module's job.
     {
       id: "react",
       categoryId: "framework",
@@ -32,7 +28,6 @@ const FACTS: SelectionCatalogFacts = {
       discourages: [],
       requires: [],
     },
-    // Meta-frameworks, each built on its framework, conflicting as siblings.
     {
       id: "nextjs",
       categoryId: "meta-framework",
@@ -47,7 +42,6 @@ const FACTS: SelectionCatalogFacts = {
       discourages: [],
       requires: [{ skillIds: ["vue"], needsAny: false }],
     },
-    // A third hop for the closure to follow.
     {
       id: "nextjs-starter",
       categoryId: "companions",
@@ -55,7 +49,7 @@ const FACTS: SelectionCatalogFacts = {
       discourages: [],
       requires: [{ skillIds: ["nextjs"], needsAny: false }],
     },
-    // A choice between hosts: implied by neither, stranded when both go.
+    // Implied by neither host, stranded when both go.
     {
       id: "pinia",
       categoryId: "companions",
@@ -63,7 +57,7 @@ const FACTS: SelectionCatalogFacts = {
       discourages: [],
       requires: [{ skillIds: ["vue", "nuxt"], needsAny: true }],
     },
-    // A conflict outside any pick-one category — no swap can forgive it.
+    // Outside any pick-one category, so no swap forgives it.
     {
       id: "styled",
       categoryId: "companions",
@@ -71,7 +65,6 @@ const FACTS: SelectionCatalogFacts = {
       discourages: [],
       requires: [],
     },
-    // A soft warning, declared one way round.
     {
       id: "scss",
       categoryId: "companions",
@@ -113,7 +106,6 @@ describe("the dependent fixpoint", () => {
   it("keeps stranding dependents until nothing more is stranded", () => {
     const { outOfReach } = judge(["react"])
 
-    // Vue conflicts, Nuxt is built on Vue, Pinia accepts only those two.
     expect(outOfReach.has("vue")).toBe(true)
     expect(outOfReach.has("nuxt")).toBe(true)
     expect(outOfReach.has("pinia")).toBe(true)
@@ -128,8 +120,6 @@ describe("the dependent fixpoint", () => {
 
 describe("the cell verdict", () => {
   it("reports a conflict with what the selection implies", () => {
-    // styled conflicts with React, React arrives through Next.js, and no swap
-    // inside `companions` can remove it.
     expect(judge(["nextjs"]).verdictOf("styled")).toStrictEqual({
       status: "incompatible",
       cause: { kind: "conflict", skillId: "react" },
@@ -159,8 +149,6 @@ describe("the cell verdict", () => {
   })
 
   it("leaves a merely unselected requirement alone", () => {
-    // Next.js needs React, and nothing rules React out — the cell stays
-    // offerable; nudging the user to pick the base is another surface's job.
     expect(judge([]).verdictOf("nextjs").status).toBe("normal")
   })
 
@@ -188,14 +176,11 @@ describe("the pick-one swap rule", () => {
   })
 
   it("forgives a conflict with a merely implied sibling", () => {
-    // React is implied by Next.js, not clicked — the swap forgives all the
-    // same, because the category is pick-one either way.
+    // React is implied, not clicked; the swap forgives all the same.
     expect(judge(["nextjs"]).verdictOf("vue").status).toBe("normal")
   })
 
   it("keeps an impossibility the swap would not resolve", () => {
-    // Nuxt conflicts with nothing selected in its own category once the swap
-    // drops Next.js — but it still needs the Vue that React rules out.
     expect(judge(["react", "nextjs"]).verdictOf("nuxt")).toStrictEqual({
       status: "incompatible",
       cause: {
@@ -207,8 +192,6 @@ describe("the pick-one swap rule", () => {
   })
 
   it("leaves the resolver surface unswapped", () => {
-    // `incompatibilityOf` answers for the selection as it stands — the swap
-    // belongs to the cell, and the CLI's resolver layer is pinned to this.
     expect(judge(["react"]).incompatibilityOf("vue")).toStrictEqual({
       kind: "conflict",
       skillId: "react",
@@ -235,8 +218,6 @@ describe("soft warnings", () => {
   })
 
   it("yields to an incompatibility", () => {
-    // styled conflicts with React; were it also discouraged, the hard verdict
-    // must win. Pin the priority through a skill carrying both.
     const facts: SelectionCatalogFacts = {
       skills: [
         {
@@ -266,9 +247,6 @@ describe("soft warnings", () => {
   })
 })
 
-// The shared module is what both runners now delegate to, so it answers the
-// contract directly as well: a scenario failing here names the semantics,
-// where the same failure in a runner names a view layer.
 describe("the shared semantics honour the selection contract", () => {
   const assertScenario = (scenario: SelectionScenario) => {
     const judgement = judgeSelection([...scenario.selection])
@@ -291,7 +269,6 @@ describe("the shared semantics honour the selection contract", () => {
       ).not.toBe("incompatible")
     }
 
-    // A soft warning warns; it never takes the choice away.
     for (const skillId of scenario.discouraged) {
       expect(
         judgement.verdictOf(skillId).status,

@@ -1,7 +1,4 @@
-/**
- * The vocabulary an emission is written in: the CLI's own declarations, vendored
- * into `@workspace/matrix` and re-exported rather than restated.
- */
+// The CLI's own declarations, vendored into `@workspace/matrix` and re-exported.
 export type {
   AgentConfig,
   AgentDefinition,

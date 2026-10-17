@@ -27,9 +27,7 @@ import type {
   SkillConfig,
 } from "./types.js"
 
-/**
- * Renders `config.ts` sources and writes nothing: writing a config half is `config-gate/`'s alone.
- */
+// Renders `config.ts` sources and writes nothing; writing is `config-gate/`'s alone.
 
 /**
  * `isProjectConfig: true` needs `globalConfig` or `globalImportPath` (`globalConfig` wins).
@@ -59,7 +57,7 @@ export const HAND_WRITTEN_FIELDS = [
   "rulesFile",
 ] as const satisfies readonly (keyof ProjectConfig)[]
 
-/** Fields that are extracted into typed named variables above the export default */
+/** Emitted as typed named variables above the export default. */
 const EXTRACTED_FIELDS = new Set([
   "skills",
   "agents",
@@ -85,7 +83,6 @@ const CANONICAL_FIELD_ORDER = [
   "projects",
 ] as const satisfies readonly (keyof ProjectConfig)[]
 
-/** The same rule for the entries inside `skills` and `agents`. */
 const CANONICAL_SKILL_ENTRY_ORDER = [
   "id",
   "scope",
@@ -260,8 +257,7 @@ function cleanForEmission(
     delete cleaned.projects
   }
   if (cleaned.stack) {
-    // Boundary cast: cleaned comes from JSON.parse(JSON.stringify(...)), so the stack
-    // is a plain JSON record of agent -> category -> assignment arrays
+    // Boundary cast: a JSON round trip, so agent -> category -> assignment arrays.
     const compacted = compactStackAssignments(
       cleaned.stack as Record<string, Record<string, unknown[]>>,
       catalog
@@ -496,6 +492,7 @@ function partitionInlinedConfigEntries(
   const project = extractConfigArrays(cleaned)
   const global = extractConfigArrays(cleanedGlobal)
 
+  // Boundary casts: entries are plain JSON records off the round trip.
   const isExcluded = (entry: unknown): boolean =>
     (entry as { excluded?: boolean }).excluded === true
   const idOf = (entry: unknown): string => (entry as { id: string }).id

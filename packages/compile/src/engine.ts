@@ -1,31 +1,18 @@
 import { Liquid, type FS } from "liquidjs"
 
 /**
- * A Liquid engine whose templates are a plain record rather than a directory.
- *
- * The CLI builds its engine over a layered `root:` array so a project can
- * override a template on disk; a browser has no disk, so the same templates
- * travel as string data (`./generated/corpus`) and are seated here. Both hand a
- * `Liquid` to the same `renderAgent`, which is what makes the two renders
- * comparable at all.
- *
- * liquidjs ships a `MapFS` doing roughly this, at `dist/fs/map-fs.d.ts`, but does
- * not re-export it from the package root — so this implements the `FS` interface
- * over the record instead.
+ * A Liquid engine over a template record, for a browser with no disk. liquidjs's `MapFS` is not
+ * exported from its root, so this implements `FS` itself.
  */
 
-/** Keyed by template path relative to the templates root, extension included. */
+/** Keyed by path relative to the templates root, extension included. */
 export type CompileTemplates = Readonly<Record<string, string>>
 
 const TEMPLATE_EXTENSION = ".liquid"
 
 const SEPARATOR = "/"
 
-/**
- * liquidjs resolves a `{% render %}` by joining the root against the referenced
- * path, so the key a lookup arrives with can carry `./` and `..` segments. This
- * flattens them the way a filesystem would, without one.
- */
+/** liquidjs joins roots onto `{% render %}` paths, so keys can carry `./` and `..`. */
 function flattenSegment(
   resolved: readonly string[],
   segment: string
@@ -44,9 +31,7 @@ function templateFileSystem(templates: CompileTemplates): FS {
     templates[normalizeKey(file)]
 
   return {
-    // Roots are joined by liquidjs before `exists`/`readFile`; the record is
-    // rooted at the templates directory itself, so an empty root means the
-    // lookup key IS the path.
+  // The record is rooted at the templates directory, so an empty root means the key is the path.
     resolve: (dir: string, file: string, ext: string) =>
       [dir, file.endsWith(ext) ? file : `${file}${ext}`]
         .filter(Boolean)
@@ -73,15 +58,8 @@ function templateFileSystem(templates: CompileTemplates): FS {
 }
 
 /**
- * The browser-side twin of the CLI's `createLiquidEngine`. Every option below is
- * that function's, because a render that resolved filters or variables
- * differently would produce a different file from the same data.
- *
- * `globals` is that function's too, and it is what carries the install-specific
- * values an agent's own partials name — the source folder above all, since a
- * compiled agent tells an agent where to author and the answer is a folder this
- * product decides. A browser has no installation, so the preview passes the
- * layout a new one is created in.
+ * The browser twin of the CLI's `createLiquidEngine`, with the same options so renders match.
+ * `globals` carries install values such as the source folder.
  */
 export function createEngineFromTemplates(
   templates: CompileTemplates,

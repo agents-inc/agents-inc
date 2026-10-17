@@ -1,14 +1,4 @@
-/**
- * The renderers the CLI writes with and the editor previews with.
- *
- * **This barrel must reach neither `./generated/corpus` nor `./preview`,
- * transitively or otherwise.** The corpus is the heaviest artefact this package
- * ships and `./preview` is the only module that pulls both it and `liquidjs`; the
- * editor reaches them through `import()` so they land in a lazy chunk, and a
- * barrel that reached either would put them on whatever imports the barrel.
- * `src/index.test.ts` is the gate, and it covers the transitive case a grep of
- * this file could not.
- */
+// Must not reach `./generated/corpus` or `./preview`, even transitively; `index.test.ts` gates it.
 
 export type {
   CatalogCategory,

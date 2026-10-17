@@ -7,12 +7,8 @@ import { MATRIX } from "./source"
 import { STACKS, createStackExpander, expandStack } from "./stacks"
 import { SUB_AGENTS_BY_ID, SUB_AGENT_GROUPS, subAgentById } from "./sub-agents"
 
-// The id the editor mints for a skill added from GitHub during a session. The
-// catalogue never had it and never will, which is exactly why asking is legal.
 const ADDED_SKILL_ID = "github:software-mansion/react-native-reanimated"
 
-// A stack declaring `cli-tester: {}`, and one whose every sub-agent carries a
-// skill. Each premise is asserted where it is used.
 const SKILL_LESS_STACK = "nextjs-fullstack"
 const FULLY_STAFFED_STACK = "cli-ink-oclif"
 const SKILL_LESS_AGENT = "cli-tester"
@@ -20,17 +16,10 @@ const SKILL_LESS_AGENT = "cli-tester"
 const matrixStack = (stackId: string) =>
   MATRIX.suggestedStacks.find((stack) => stack.id === stackId)!
 
-// The roster as the catalogue declares it, less the sub-agents this build
-// has never heard of.
 const declaredRoster = (stackId: string) =>
   Object.keys(matrixStack(stackId).skills)
     .filter((agentId) => subAgentById(agentId) !== undefined)
     .sort()
-
-// The catalogue is regenerated from the agents-inc CLI, so these are
-// invariants about the *shape* the read model guarantees rather than about
-// particular skills. They are what stands between a bad regeneration and a
-// screen that renders empty categories or unreachable skills.
 
 describe("CATALOG", () => {
   it("parsed something", () => {
@@ -55,7 +44,6 @@ describe("CATALOG", () => {
     }
   })
 
-  // An empty category renders a header with nothing under it.
   it("renders no empty categories", () => {
     for (const domain of CATALOG.domains) {
       for (const category of domain.categories) {
@@ -84,11 +72,6 @@ describe("CATALOG", () => {
   })
 })
 
-// The catalogue is keyed by the ids it ships, but the question reaching it is
-// not always one of them: the editor mints its own for skills added in-session,
-// and a saved configuration can name one a later catalogue dropped. Both are
-// answered rather than rejected, which is what keeps the guards at the call
-// sites doing real work.
 describe("skillById", () => {
   it("answers with the entry for an id the catalogue ships", () => {
     const [first] = CATALOG.domains[0]?.categories[0]?.skills ?? []
@@ -134,7 +117,6 @@ describe("SUB_AGENT_GROUPS", () => {
     }
   })
 
-  // The prefix convention is what places an agent; a blank label means it failed.
   it("gives every agent a non-empty label", () => {
     for (const agent of Object.values(SUB_AGENTS_BY_ID)) {
       expect(agent.label.length).toBeGreaterThan(0)
@@ -183,9 +165,6 @@ describe("expandStack", () => {
     }
   })
 
-  // A stack says which sub-agents carry a skill; how each of them loads it is
-  // the shared resolver's answer, so the expansion must never differ from what
-  // the same pick made by hand would produce.
   it("loads every pair the way the shared resolver does", () => {
     for (const stack of STACKS) {
       const { assignmentsBySkill } = expandStack(stack.id)!
@@ -204,9 +183,6 @@ describe("expandStack", () => {
     }
   })
 
-  // The flattening this replaced answered per skill, so a framework preloaded
-  // on its own domain's developer claimed to preload on every summoner that
-  // also carries it.
   it("keeps one skill's two sub-agents on different load states", () => {
     const { assignmentsBySkill } = expandStack("nextjs-fullstack")!
     const targets = assignmentsBySkill["web-framework-react"] ?? []
@@ -224,8 +200,6 @@ describe("expandStack", () => {
     }
   })
 
-  // Picking a stack installs every sub-agent it declares. One declared with no
-  // skills is named by no assignment, so the expansion has to name it itself.
   it("names every sub-agent the stack declares, skill-less ones included", () => {
     for (const stack of STACKS) {
       const { assignmentsBySkill, skillLessAgentIds } = expandStack(stack.id)!

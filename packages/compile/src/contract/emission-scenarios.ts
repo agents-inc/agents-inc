@@ -1,21 +1,13 @@
 /**
- * What an install writes, as data: each scenario is a configuration and the exact bytes the two
- * renderers must produce for it. The CLI writes these files and the editor previews them, so both
- * are held to one answer. `emission-scenarios.test.ts` is the only runner, and it also holds every
- * output to being a fixed point of the prettier settings an install is read with.
- *
- * Configurations are written out rather than built from a factory, so nothing stands between a
- * scenario and the bytes it pins. Every scenario renders against the built-in public catalogue.
+ * What an install writes, as data: a configuration and the exact bytes both renderers must produce.
+ * Configurations are written out, not built from a factory, so nothing stands between them.
  */
 
 import type { AgentName, ProjectConfig } from "../index"
 import { STANDARD_FILES } from "../paths.js"
 import { sourceDirName, type Provider } from "../source-layout.js"
 
-/**
- * Relative to the root (home or a project); the config pair lives in its source folder, never in
- * `.claude/`. The provider is named because `source-layout.ts` hands out no default.
- */
+/** Paths are relative to the root; `source-layout.ts` hands out no default provider. */
 const SCENARIO_PROVIDER: Provider = "claude"
 
 export const CONFIG_TS = `${sourceDirName(SCENARIO_PROVIDER)}/${STANDARD_FILES.CONFIG_TS}`
@@ -24,17 +16,13 @@ export const CONFIG_TYPES_TS = `${sourceDirName(SCENARIO_PROVIDER)}/${STANDARD_F
 export type EmissionScenario = {
   id: string
   title: string
-  // Which writer the root selects. `"global"` renders standalone; `"project"`
-  // renders the inlined-global form and carries the `globalConfig` it inlines.
+  // `"global"` renders standalone; `"project"` inlines `globalConfig`.
   root: "global" | "project"
   config: ProjectConfig
   globalConfig?: ProjectConfig
-  // The sub-agent roster the types half is generated against. The CLI walks
-  // `src/agents/` for it; a browser has no such directory, so it travels here.
+  // A browser has no `src/agents/` to walk, so the roster travels here.
   agentNames: readonly AgentName[]
-  // Destination path relative to the root, mapped to the exact bytes written
-  // there. This is the whole emission for the scenario: a renderer that writes
-  // a third file fails it just as one that writes different bytes does.
+  // The whole emission: a third file fails the scenario as different bytes do.
   expected: Record<string, string>
   why: string
 }
@@ -44,7 +32,6 @@ const TAILWIND = "web-styling-tailwind"
 const ZUSTAND = "web-state-zustand"
 const VITEST = "web-testing-vitest"
 
-/** The public catalogue's own name, which is what an unejected skill's `origin` holds. */
 const AGENTS_INC = "agents-inc"
 
 const WEB_DEVELOPER = "web-developer"
@@ -106,11 +93,7 @@ export interface ProjectConfig {
 }
 `
 
-/**
- * The type import both multi-alias config.ts scenarios open with. Broken one
- * specifier per line because the single-line form is 108 columns wide, which is
- * past the print width the pair is formatted to.
- */
+// One specifier per line: the single-line form exceeds the print width.
 const FULL_TYPE_IMPORT = `import type {
   ProjectConfig,
   ProjectAgentName,
@@ -506,11 +489,6 @@ export type StackAgentConfig = {
   'web-testing'?: SkillAssignment<'web-testing-vitest'>[]
 }` + CONFIG_TYPES_INTERFACE
 
-/**
- * A configuration whose global root the project root below inlines. It is a
- * scenario input rather than a scenario of its own, so the two halves of one
- * installation cannot drift apart in this file.
- */
 const GLOBAL_HALF: ProjectConfig = {
   name: "global",
   agents: [{ name: WEB_DEVELOPER, scope: "global" }],
