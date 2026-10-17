@@ -1,27 +1,6 @@
 /**
  * A root whose source folder says Codex resolves onto Codex, and one that says Claude still
  * resolves onto Claude.
- *
- * **This file replaces `a-provider-with-no-host-is-refused-by-name.test.ts`, whose subject C4
- * deleted.** That spec pinned C2's interim refusal — *"until the Codex host exists, discovery
- * refuses a present `.agents-inc/codex/` by name"* — which existed for the window in which the
- * folder could answer `codex` while every path built under that answer was Claude's: `compile`
- * reading `.agents-inc/codex/` and writing `.md` sub-agents into `.claude/agents/`, with nothing
- * able to report it. C4 closes that window by building the host, so `refuseAProviderWithNoHost`
- * and the `PROVIDERS_WITH_A_HOST` roster beside it are gone. The refusal was not relaxed to keep a
- * test green; it was removed with the reason it existed for, and what stands here is the claim that
- * replaced it. The three control cases are carried over unchanged, because a positive answer on
- * its own cannot tell a resolver that reads the folder from one that answers `codex` for every
- * root.
- *
- * **What is still refused, and is a different thing:** a Codex CONFIGURATION asking for a placement
- * Codex does not offer. That is `hosts/offered-placements.ts`'s refusal, it is about a config's
- * contents rather than a folder's name, and it has its own pairings in
- * `hosts/__tests__/the-codex-host-offers-three-placements.test.ts`.
- *
- * The folder names are literals throughout. They are text on people's disks, and an assertion that
- * imported the constant the product joins would move with it and could never fail — the rule
- * `install-layout.test.ts` states for the same two names.
  */
 
 import path from "path";
@@ -35,7 +14,6 @@ import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js"
 import { getInstalledConfigPath } from "../install-base-dir.js";
 import { providerInUse } from "../install-layout.js";
 
-/** The new layout, per provider, as it is written on disk and shown to a user. */
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
 const CODEX_SOURCE_REL = ".agents-inc/codex";
 
@@ -50,12 +28,11 @@ describe("a root whose source folder names Codex", () => {
     await cleanupTempDir(root);
   });
 
-  /** Plants a loadable installation in `folder`, the way `init --provider codex` leaves one. */
   async function plantInstallation(folder: string): Promise<void> {
     await writeTestTsConfig(root, buildProjectConfig(), folder);
   }
 
-  /** Plants a folder that holds content but no config — the half-built state rung 3 reaches. */
+  /** Content but no config: a half-built installation. */
   async function plantHalfBuiltFolder(folder: string): Promise<void> {
     const dir = path.join(root, ...folder.split("/"), "agents");
     await mkdir(dir, { recursive: true });

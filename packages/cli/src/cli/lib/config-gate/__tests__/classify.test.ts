@@ -10,34 +10,13 @@ import { EJECT_SOURCE } from "../../../consts.js";
 import type { ProjectConfig } from "../../../types/index.js";
 
 /**
- * The classification table for `config-gate/classify.ts` — the module that
- * decides, for one config write, which of the four work tiers it belongs to.
- *
- * THE TIERS
- *
- * T1 — the full guarantee. The write moves something the generated type unions
- *      or the compiled agents are derived from, so it owes: regenerate
- *      `config-types.ts`, propagate to every registered project, recompile those
- *      projects' agents.
- * T2 — config half only. A scalar the unions do not encode changed, so the write
- *      propagates the config to registered projects but regenerates no types and
- *      recompiles no agents.
- * T3 — bookkeeping. Only the `projects[]` registration list changed. Nothing is
- *      propagated, and the matrix/agent-definition dependencies propagation
- *      needs are never loaded.
- * T4 — no-op. The write is byte-identical to what is already on disk, so no file
- *      is touched at all.
- *
- * The `source-change-on-existing-id` case is T1 rather than T2 on purpose: the
- * per-skill `source` decides the reference form a compiled agent emits
- * (`<id>:<id>` for a marketplace-sourced skill, the bare id for an ejected one),
- * so a source change that skipped the recompile leaves every registered
- * project's agents naming a reference that no longer resolves.
+ * T1 regenerates types, propagates and recompiles; T2 propagates the config half only; T3 is
+ * registration-only bookkeeping; T4 is a byte-identical no-op. A `source` change is T1 because it
+ * changes the reference form a compiled agent emits.
  */
 
 const MARKETPLACE = "test-marketplace";
 
-/** The global config every case diffs against: one skill, one agent, one project. */
 const BASELINE: ProjectConfig = buildProjectConfig({
   name: "global",
   skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: MARKETPLACE }),
@@ -48,7 +27,6 @@ const BASELINE: ProjectConfig = buildProjectConfig({
   projects: ["/tmp/registered-project"],
 });
 
-/** The tier a write of `next` over the baseline obliges. */
 function tierOf(next: ProjectConfig): string {
   return consequenceTier(classifyGlobalChange(BASELINE, next));
 }

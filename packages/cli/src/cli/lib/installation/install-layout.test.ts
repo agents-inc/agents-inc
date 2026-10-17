@@ -1,9 +1,4 @@
-/**
- * Which folder an installation is READ from: `.agents-inc/<provider>/`, and nothing else.
- *
- * The folder names are literals throughout. They are text on people's disks, and an assertion
- * that imported the constant the product writes would move with it and could never fail.
- */
+// Folder names are literals: an assertion importing the product's constant could never fail.
 
 import path from "path";
 import { chmod, mkdir, writeFile } from "fs/promises";
@@ -15,15 +10,10 @@ import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
 import { getProjectConfigPath } from "./install-base-dir.js";
 import { providerInUse, sourceDir, sourceFolderInUse } from "./install-layout.js";
 
-/** The layout, per provider, as it is written on disk and shown to a user. */
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
 const CODEX_SOURCE_REL = ".agents-inc/codex";
 
-/**
- * What the hand gate of a consuming repository keeps under `.agents-inc/`, and therefore the
- * state `providerInUse` must not read as a provider. Taken from the benchmark repository's own gate
- * (`agents-inc/vendor/lint/gate.mjs`), which is where this hazard is real rather than imagined.
- */
+// A consuming repository's own gate state under `.agents-inc/`, which is not a provider.
 const GATE_STATE_FILES = ["baseline.json", "typecheck-baseline.json"] as const;
 const GATE_STATE_DIR = "attempts";
 
@@ -69,19 +59,6 @@ describe("sourceDir", () => {
   });
 });
 
-/**
- * Which provider's installation a root holds, asked across PROVIDERS — which is the whole of "the
- * folder says the provider, so no command needs a flag".
- *
- * `providerAt` answered this question a second way until 2026-09-21, on rungs of its own:
- * `PROVIDERS.filter(provider => directoryExists(sourceDir(root, provider)))`, which ranked a bare
- * `mkdir` equal with a live installation. It is gone; `detectInstallations` is what a caller asks
- * when it needs the LIST, and it carries each installation's scope and config path with it.
- *
- * A root whose folder names Codex resolves onto the Codex host, and the Claude arrangements that
- * must keep answering Claude beside it are
- * `__tests__/a-codex-folder-resolves-onto-the-codex-host.test.ts`'s subject.
- */
 describe("providerInUse", () => {
   let root: string;
 
@@ -132,19 +109,8 @@ describe("providerInUse", () => {
   });
 });
 
-/**
- * The resolver answers for EVERY directory, and `getProjectConfigPath` is where that matters.
- *
- * It is reached from ~30 sites that treat it as a path builder — an expression in the middle of a
- * `Promise.all`, a `configDirsInPlay(...).map(...)`, a `throw new GlobalPairWriteViolation(...)` —
- * none of them inside a `try`. So it must be TOTAL, and a failure surfaces at the read or the write
- * instead, with an errno naming the actual file. It probed the disk while two folder names were
- * live; with one name it no longer does, and these specs pin that the answer still names the
- * folder rather than throwing, whatever state the disk is in.
- *
- * `chmod 000` is the only way to reach the fault, and root ignores it: the guard states that
- * rather than letting the specs pass for the wrong reason on a container that runs as root.
- */
+// Callers use `getProjectConfigPath` as a total path builder outside any `try`. Skipped as root,
+// which ignores `chmod 000`.
 describe.skipIf(process.getuid?.() === 0)(
   "getProjectConfigPath answers for every directory",
   () => {
@@ -156,12 +122,11 @@ describe.skipIf(process.getuid?.() === 0)(
     });
 
     afterEach(async () => {
-      // Unlocked before the tree is removed; a 000 directory cannot be walked by the cleanup either.
+      // Unlock first: cleanup cannot walk a 000 directory.
       await Promise.all(locked.splice(0).map((dir) => chmod(dir, 0o755)));
       await cleanupTempDir(root);
     });
 
-    /** A real directory this process cannot look inside — the shape a wrong umask leaves. */
     async function lockedDir(...segments: readonly string[]): Promise<string> {
       const dir = path.join(root, ...segments);
       await mkdir(dir, { recursive: true });
@@ -175,8 +140,6 @@ describe.skipIf(process.getuid?.() === 0)(
 
       expect(getProjectConfigPath(absent, "claude")).toBe(
         path.join(absent, ".agents-inc", "claude", "config.ts"),
-        // `statSync(..., { throwIfNoEntry: false })` answers undefined for ENOENT AND for ENOTDIR,
-        // so this input never threw — it is pinned because it is the input the finding named.
       );
     });
 

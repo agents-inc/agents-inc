@@ -12,7 +12,6 @@ import {
 import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders";
 import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices";
 
-// Use vi.hoisted so mock fn is available when vi.mock factory runs (hoisted to top)
 const { mockRealpathSync } = vi.hoisted(() => ({
   mockRealpathSync: vi.fn((p: string) => p),
 }));
@@ -29,8 +28,7 @@ vi.mock("fs", async (importOriginal) => {
 });
 
 vi.mock("../../installation/index.js", async () => {
-  // Real isHomeDirectory so the fs.realpathSync mock above keeps driving the
-  // project-vs-home branch; the heavy installer exports stay mocked.
+  // Real isHomeDirectory so the realpathSync mock drives the project-vs-home branch.
   const { isHomeDirectory } = await vi.importActual<
     typeof import("../../installation/is-home-directory.js")
   >("../../installation/is-home-directory.js");
@@ -98,7 +96,6 @@ describe("write-project-config", () => {
     mockWriteConfigByScope.mockResolvedValue(buildGateReport());
     mockEnsureDir.mockResolvedValue(undefined);
 
-    // Default: project context (different from homedir)
     mockRealpathSync.mockImplementation((p) => String(p));
   });
 
@@ -141,7 +138,6 @@ describe("write-project-config", () => {
     const homeDir = "/home/user";
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}));
 
-    // Both resolve to the same path -> not a project context
     mockRealpathSync.mockReturnValue(homeDir);
 
     const result = await writeProjectConfig({
@@ -167,13 +163,6 @@ describe("write-project-config", () => {
     });
   });
 
-  /**
-   * The option takes the WHOLE `AgentDefs` value rather than a bare roster map, so the
-   * only thing a caller can hand over is what `loadAgentDefs` answered. It used to take
-   * `Partial<Record<AgentName, AgentDefinition>>` — any map at all — which made "a roster
-   * different from the one the CLI would load" a representable argument, and the sub-agent
-   * unions this function emits are built from whatever it is given.
-   */
   it("should use pre-loaded agents when provided", async () => {
     const preloadedAgents: Partial<Record<AgentName, AgentDefinition>> = {
       "web-developer": createMockAgent("web-developer"),
@@ -197,13 +186,6 @@ describe("write-project-config", () => {
     });
   });
 
-  /**
-   * The sub-agent roster the emitted `AgentName` / `SelectedAgentName` unions are built from, and
-   * the one thing about it that matters: it is the CLI's own, taken from `loadAgentDefs` and NOT
-   * from the marketplace `sourceResult` names. This site loaded `loadMergedAgents(sourcePath)`
-   * until 2026-08-21, which made `init` emit a different config-types.ts from the one `edit` and
-   * `compile` emit for the same config.
-   */
   it("loads the CLI's own sub-agent roster when none is provided, never the marketplace's", async () => {
     const cliAgents: Partial<Record<AgentName, AgentDefinition>> = {
       "web-developer": createMockAgent("web-developer"),

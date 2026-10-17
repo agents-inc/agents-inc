@@ -39,7 +39,6 @@ export function resolveSkillReferences(
     .filter((skill): skill is Skill => skill !== null);
 }
 
-/** Values are already SkillAssignment[] (normalizeStackRecord in project-config.ts). */
 export function buildSkillRefsFromConfig(agentStack: StackAgentConfig): SkillReference[] {
   return resolveAgentConfigToSkills(agentStack);
 }
@@ -50,8 +49,7 @@ export function resolveAgentSkillRefs(agentConfig: CompileAgentConfig): SkillRef
 }
 
 /** Throws when the compile config names an agent no scanned directory defines. */
-// The `Promise` is the published shape: two callers await it and local-installer.test.ts mocks it.
-// eslint-disable-next-line @typescript-eslint/require-await -- published shape, see above
+// eslint-disable-next-line @typescript-eslint/require-await -- callers await it and tests mock it as async
 export async function resolveAgents(
   agents: Partial<Record<AgentName, AgentDefinition>>,
   skills: SkillDefinitionMap,
@@ -102,7 +100,6 @@ function assembleAgentConfig(
   agentConfig: CompileAgentConfig,
   resolvedSkills: Skill[],
 ): AgentConfig {
-  // Config wins over metadata, silently. Metadata never names a Codex model.
   const model = agentConfig.model ?? definition.model;
   const effort = agentConfig.effort ?? definition.effort;
 

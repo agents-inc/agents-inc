@@ -10,7 +10,6 @@ import { installPluginSkills } from "./install-plugin-skills";
 import { hostAt } from "../../hosts/host-for.js";
 import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 
-/** The one host every `hostAt` answer in this file is, so a spy set here is the spy called. */
 const mockInstallPlugin = vi.mocked(hostAt("/any-root").installPlugin);
 
 const PROJECT_DIR = "/tmp/test-project";

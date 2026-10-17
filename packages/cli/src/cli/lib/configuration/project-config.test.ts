@@ -32,11 +32,7 @@ import { EXPECTED_SKILLS } from "../__tests__/expected-values";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import type { SkillId, StackAgentConfig } from "../../types";
 
-/**
- * A skill the catalog moved between releases: the id still spells the category
- * it left, and the matrix answers with the one it joined. A config saved before
- * the move keys the entry under `STALE_CATEGORY_KEY`.
- */
+/** A skill the catalog moved; a config saved before the move keys it under `STALE_CATEGORY_KEY`. */
 const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
 const STALE_CATEGORY_KEY = "shared-monorepo";
 const LIVE_CATEGORY_KEY = "shared-task-runner";
@@ -175,12 +171,7 @@ describe("project-config", () => {
       expect(result!.config).toStrictEqual(inputConfig);
     });
 
-    /**
-     * The blank global pair `ensureBlankPair` writes is what a project install on a clean machine
-     * merges its global half into, and the editor's output preview has no file to read it from —
-     * so it starts from `blankGlobalConfig()` instead. The two are one claim only while loading
-     * the template answers exactly that object.
-     */
+    /** Loading the template must answer exactly `blankGlobalConfig()`, the preview's stand-in. */
     it("should load the blank global config template as the blank global config", async () => {
       await writeRawTestConfig(tempDir, generateBlankGlobalConfigSource());
 
@@ -193,8 +184,7 @@ describe("project-config", () => {
     it("should throw for a config file that exists but is unparseable", async () => {
       await writeRawTestConfig(tempDir, "invalid typescript content {{");
 
-      // A file that exists but cannot load is corrupt, not "missing" — it must
-      // surface, never collapse into null.
+      // A file that exists but cannot load is corrupt, not missing.
       await expect(loadProjectConfig(tempDir)).rejects.toThrow("could not be loaded");
     });
 
@@ -212,8 +202,6 @@ describe("project-config", () => {
 
     beforeEach(async () => {
       savedHome = process.env.HOME ?? "";
-      // The home root and the project are different directories, so the line the
-      // loader prints has something to be right or wrong about.
       homeDir = path.join(tempDir, "home");
       await mkdir(homeDir, { recursive: true });
       process.env.HOME = homeDir;
@@ -336,7 +324,6 @@ describe("round-trip tests", () => {
     initializeMatrix(WEB_PAIR_MATRIX);
     const selectedAgents: AgentName[] = ["web-developer"];
 
-    // Generate config
     const generated = generateProjectConfigFromSkills(
       "test-project",
       [...EXPECTED_SKILLS.WEB_DEFAULT],
@@ -347,7 +334,6 @@ describe("round-trip tests", () => {
       },
     );
 
-    // Write to temp dir as config
     const configDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(configDir, { recursive: true });
     await writeFile(
@@ -355,12 +341,9 @@ describe("round-trip tests", () => {
       generateConfigSource(generated, matrix),
     );
 
-    // Load it back
     const loaded = await loadProjectConfig(tempDir);
 
-    // Verify full config shape. The generator emits sparse assignments and the
-    // writer compacts them to bare ids; the loader normalizes every id back to a
-    // full SkillAssignment, so the stack comes back denser than it went out.
+    // The loader normalizes every id to a full SkillAssignment, so the stack comes back denser.
     expect(loaded).not.toBeNull();
     expect(loaded!.config).toStrictEqual({
       ...generated,
@@ -377,8 +360,7 @@ describe("round-trip tests", () => {
     initializeMatrix(BUILT_IN_MATRIX);
     const selectedAgents: AgentName[] = ["web-developer"];
 
-    // On disk from before the move: the entry is keyed by the category the
-    // skill sat in then, and carries the load the user curated.
+    // Keyed by the category the skill sat in before the move.
     await writeTestTsConfig(tempDir, {
       ...buildProjectConfig({ name: "test-project" }),
       stack: {
@@ -392,8 +374,7 @@ describe("round-trip tests", () => {
       selectedAgents,
       skillConfigs: buildSkillConfigs([MOVED_SKILL]),
       agentConfigs: buildAgentConfigs(selectedAgents),
-      // Boundary cast: ProjectConfig.stack types agents as Record<string, …>
-      // (it comes from parsed TS); narrow to typed AgentName keys.
+      // Boundary cast: the parsed stack is keyed by string; narrow to AgentName.
       existingStack: loaded!.config.stack as Partial<Record<AgentName, StackAgentConfig>>,
       newlyAddedSkillIds: [],
     });
@@ -412,11 +393,7 @@ describe("round-trip tests", () => {
     });
   });
 
-  /**
-   * The `.passthrough()` trap the rename has to close. An old key that is merely unrecognised
-   * loads clean, `resolveSource` finds nothing under the name it now reads, and the install
-   * repoints to the public marketplace with nothing on screen to say so. The load must stop.
-   */
+  /** An old key would load clean under `.passthrough()` and repoint the install; refuse it. */
   describe("a config carrying a field name from before the rename", () => {
     it("refuses to load when the project-level source ref sits under the old key", async () => {
       await writeTestTsConfig(tempDir, buildPreRenameProjectConfig());
@@ -443,7 +420,6 @@ describe("round-trip tests", () => {
     initializeMatrix(SINGLE_REACT_MATRIX);
     const selectedAgents: AgentName[] = ["web-developer"];
 
-    // Generate config with options
     const generated = generateProjectConfigFromSkills(
       "my-awesome-project",
       ["web-framework-react"],
@@ -456,7 +432,6 @@ describe("round-trip tests", () => {
       },
     );
 
-    // Write to temp dir as config
     const configDir = sourceFolderInUse(tempDir, "claude").dir;
     await mkdir(configDir, { recursive: true });
     await writeFile(
@@ -464,10 +439,9 @@ describe("round-trip tests", () => {
       generateConfigSource(generated, matrix),
     );
 
-    // Load it back
     const loaded = await loadProjectConfig(tempDir);
 
-    // Verify full config shape — the stack densifies on load, as above.
+    // The stack densifies on load, as above.
     expect(loaded).not.toBeNull();
     expect(loaded!.config).toStrictEqual({
       ...generated,

@@ -12,9 +12,6 @@ import { providerInUse } from "../installation/install-layout";
 import { loadProjectConfigFromDir } from "../configuration/project-config";
 import { normalizeStackRecord } from "../stacks/stacks-loader";
 import { splitConfigByScope } from "../configuration/config-generator";
-// The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
-// startup, which is what `generateConfigSource` read directly before the renderers moved into
-// `@workspace/compile` and the editor became a second caller with a catalogue of its own.
 import { matrix as activeMatrix } from "../matrix/matrix-provider";
 import { generateConfigSource } from "../configuration/config-writer";
 import {
@@ -56,16 +53,7 @@ export type { GateDeps } from "./deps.js";
 export type { ConsequenceTier, GlobalChangeSet } from "./classify.js";
 export { GlobalPairWriteViolation } from "./gate-token.js";
 
-/**
- * What one gated write did, for the caller to render.
- *
- * A write that propagates recompiles the propagated projects' agents itself:
- * both audited gaps in the previous contract (a project-context source
- * migration, a global uninstall) were instances of a caller forgetting to. A
- * report the caller may only log cannot go stale the same way, and per-project
- * failure isolation already lives in `recompilePropagatedProjectAgents`, so
- * internalizing the recompile adds no new failure mode.
- */
+/** A propagating write recompiles the propagated projects itself, so no caller can forget to. */
 export type GateReport = {
   /** True when either half of the global pair was actually rewritten. */
   globalWritten: boolean;
@@ -75,33 +63,11 @@ export type GateReport = {
 };
 
 /**
- * The gate's public entry points are the ONLY code that mints the pair-write
- * privilege, and each one holds it across its whole consequence flow rather than
- * around the individual write.
- *
- * `pair-writer.ts` used to open the token inside each of its own functions, which
- * meant reaching that module by any route — a dynamic import, a re-export — came
- * with the privilege attached, and the runtime tripwire in `utils/fs.ts` had
- * nothing left to refuse. Moving the mint here inverts that: the private writers
- * REQUIRE a token they cannot produce, so authorization is a property of how the
- * write was ENTERED, which is exactly what the gate is meant to guarantee.
- *
- * The window is wider than the write itself — propagation and the recompile run
- * inside it too. That is accepted: everything in the window is the gate's own
- * code carrying out consequences the same entry already owes.
- *
- * Every entry below that writes or drives a write opens the token with
- * `withGateToken`, including `propagateGlobalRemoval`, which today reaches only
- * project pairs — the rule is "a gate entry holds the privilege for its flow",
- * not "the ones whose current implementation happens to need it".
- *
- * The one exception is `writeProjectPartial`. It refuses the home directory as its
- * first act and then writes a PROJECT's own config, which the tripwire never
- * guards; handing it the global-pair privilege would only blunt the refusal it
- * exists to make.
+ * Only these entry points mint the pair-write privilege, held across each whole consequence flow;
+ * the private writers require it. `writeProjectPartial` is the exception: it refuses the home
+ * directory and writes only a project's own config.
  */
 
-/** A write whose classification obliged nothing beyond the global pair. */
 const NOTHING_PROPAGATED: PropagationResult = {
   updated: [],
   unreadable: [],
@@ -110,10 +76,7 @@ const NOTHING_PROPAGATED: PropagationResult = {
   failed: [],
 };
 
-/**
- * Whether a gated write moved anything the global install's compiled sub-agents are built from —
- * the question a caller asks before deciding its global compile pass has work to do.
- */
+/** Whether a gated write moved anything the global install's compiled sub-agents are built from. */
 export function movedGlobalAgentInputs(written: GateReport): boolean {
   return tierRegeneratesTypes(consequenceTier(written.changes));
 }
@@ -127,13 +90,7 @@ function report(
   return { globalWritten, changes, propagated, recompile };
 }
 
-/**
- * Carries out a classified global change's consequences: fan the change out to
- * every registered project, then recompile the ones it rewrote.
- *
- * `currentProjectDir` is excluded from the fan-out — its own pair is written by
- * the call that triggered this, and its agents are compiled by the command.
- */
+/** `currentProjectDir` is left out of the fan-out: its pair and agents are the caller's. */
 async function applyConsequences(
   globalConfig: ProjectConfig,
   changes: GlobalChangeSet,
@@ -165,13 +122,7 @@ async function applyConsequences(
 }
 
 /**
- * Loaders for a caller that holds no matrix of its own. Nothing is fetched
- * unless classification proves the write has consequences that read it, so a
- * registration-only mutation stays offline.
- *
- * `matrixOnly` + `skipExtraSources` are the offline policy the other config
- * readers already use: extra-source loading never changes the emitted config or
- * types.
+ * Nothing is fetched unless classification needs it, so a registration-only mutation stays offline.
  */
 export function lazyGateDeps(projectDir: string): GateDeps {
   return {
@@ -199,27 +150,16 @@ export type WriteConfigByScopeArgs = {
   projectConfigPath: string;
   projectInstallationExists: boolean;
   /**
-   * How much of what it can see this session owns, from `mergeConfigs`' own vocabulary.
-   *
-   * Read by the PROJECT branch only, and only to decide whether the global config is made to
-   * MATCH this session or merely absorb it. The home branch writes the whole global config from
-   * `finalConfig` either way, and `undefined` (init) keeps the additive default.
+   * Read by the project branch only: whether the global config matches this session or absorbs it.
    */
   authoritativeScope?: AuthoritativeScope;
 };
 
-/**
- * Writes config.ts and config-types.ts split by scope.
- * When installing into a project directory:
- * - Global config/types go to the home scope's source folder
- * - Project config/types go to the project's own (with import from global)
- * When installing from home directory, writes a single standalone config.
- */
+/** From a project, splits config and types by scope; from home, writes one standalone config. */
 export async function writeConfigByScope(args: WriteConfigByScopeArgs): Promise<GateReport> {
   return withGateToken(async () => {
     const { finalConfig, matrix, agents, projectDir, projectConfigPath } = args;
-    // os.homedir() at call time, so the path agrees with getGlobalConfigImportPath(),
-    // which reaches the same home through globalInstallRoot()
+    // os.homedir() at call time, matching getGlobalConfigImportPath().
     const homeDir = os.homedir();
     const deps: LoadedGateDeps = { matrix, agents };
 
@@ -227,9 +167,7 @@ export async function writeConfigByScope(args: WriteConfigByScopeArgs): Promise<
       return writeFromProjectContext(args, homeDir, deps);
     }
 
-    // Installing from ~/ — write directly to global config (no import preamble). The provider
-    // is the one the home root's own installation is on: at this scope the project IS the
-    // global installation.
+    // At home the project IS the global installation, so the provider is home's own.
     const provider = providerInUse(homeDir);
     const priorGlobal = await loadProjectConfigFromDir(homeDir, provider);
     const changes = classifyGlobalChange(priorGlobal?.config, finalConfig);
@@ -247,17 +185,12 @@ async function writeFromProjectContext(
 ): Promise<GateReport> {
   const { finalConfig, projectDir } = args;
 
-  // Installing from project — split by scope for project config generation.
   const { global: globalConfig, project: projectSplitConfig } = splitConfigByScope(finalConfig);
-  // The PROJECT's provider decides which global installation this run inherits from and writes
-  // to: each provider family inherits and propagates only within itself.
+  // The project's provider: each provider family inherits and propagates only within itself.
   const provider = providerInUse(projectDir);
   const globalConfigPath = getProjectConfigPath(homeDir, provider);
 
-  // Merge new global-scoped items into the existing global config.
-  // - Existing items are preserved (never removed from global during project init)
-  // - New global items are added
-  // - If no existing global config, write the full global split
+  // Merged into the existing global config: project init adds, never removes.
   const existingGlobal = await loadProjectConfigFromDir(homeDir, provider);
   const effective = await resolveEffectiveGlobalConfig(
     globalConfig,
@@ -278,10 +211,7 @@ async function writeFromProjectContext(
     projectDir,
   );
 
-  // Reconcile the project's own entries against the global config this write inlines.
-  // Without it this branch hands the raw split straight to the inlining writer, so a
-  // skill/agent the project owns at project scope AND a colliding live global install
-  // both land as active entries in the same project config.
+  // Reconcile with the inlined global, or a colliding global entry lands active beside ours.
   const reconciledProjectConfig = reconcileProjectSplitAgainstGlobal(
     projectSplitConfig,
     effectiveGlobalConfig,
@@ -298,7 +228,6 @@ async function writeFromProjectContext(
   return report(globalWritten, changes, propagated, recompile);
 }
 
-/** Writes the resolved global pair when resolving it changed anything; answers whether it did. */
 async function writeGlobalPairWhenChanged(
   effective: { config: ProjectConfig; changed: boolean },
   globalConfigPath: string,
@@ -320,12 +249,7 @@ async function writeGlobalPairWhenChanged(
   return written;
 }
 
-/**
- * Writes the project's own pair if the project installation already exists OR if there is
- * anything of the project's own to record. Skips only when no existing project installation AND
- * nothing project-owned — creating an empty project config with just `import globalConfig` and
- * `{ ...globalConfig }` is pointless.
- */
+/** Skips only when no project installation exists and nothing is the project's own. */
 async function writeProjectPairWhenOwed(
   project: Pick<
     WriteConfigByScopeArgs,
@@ -355,22 +279,11 @@ async function writeProjectPairWhenOwed(
   verbose(`Updated project config at ${project.projectConfigPath}`);
 }
 
-/** Whether the project's split carries anything of the project's own to record. */
 function holdsAnythingOfItsOwn(projectConfig: ProjectConfig): boolean {
   return projectConfig.skills.length > 0 || projectConfig.agents.length > 0;
 }
 
-/**
- * Regenerates a single scope's config-types.ts from its persisted config,
- * matching `writeConfigByScope`'s writer selection exactly:
- * - global scope (home dir): standalone unions narrowed to the config's entries
- * - project scope: import-and-extend form (falls back to standalone when no
- *   global config-types.ts exists)
- *
- * Writes no config half at either scope: the config on disk is the input.
- * Returns whether a file was actually rewritten (always false at project scope,
- * where the writer does not report).
- */
+/** Matches `writeConfigByScope`'s writer choice; writes no config half; false at project scope. */
 export async function writeScopeConfigTypes(
   projectDir: string,
   config: ProjectConfig,
@@ -398,16 +311,8 @@ export async function writeScopeConfigTypes(
 }
 
 /**
- * Regenerates a scope's config-types.ts from the config already on disk, which
- * is the truth and is never rewritten — the documented hand-edit workflow is
- * "edit config.ts, then compile", so the file the user edited must survive it.
- *
- * At the home directory the types are the standalone unions narrowed to that
- * config, and the fan-out is UNCONDITIONAL: a hand edit leaves no prior state to
- * diff against, so there is nothing to classify and the only safe assumption is
- * that every registered project's inlined copy is stale. At project and
- * marketplace directories the import-and-extend writer applies and nothing is
- * propagated — a project config is nobody else's input.
+ * The config on disk is the truth and survives. At home the fan-out is unconditional, since a hand
+ * edit leaves nothing to diff; elsewhere nothing propagates.
  */
 export async function reconcileTypesFromDisk(
   projectDir: string,
@@ -437,22 +342,12 @@ export async function reconcileTypesFromDisk(
   });
 }
 
-/**
- * The transforms the gate will apply to the global config on a caller's behalf.
- *
- * A closed union rather than a caller-supplied function: every variant is
- * analysable and testable on its own, and no caller-authored transform runs
- * inside the only code allowed to write the pair.
- */
+/** Closed, so no caller-authored transform runs inside the only code allowed to write the pair. */
 export type GlobalMutation =
   | { kind: "deregister-project"; projectDir: string }
   | { kind: "set-source"; source: string; fallbackName: string };
 
-/**
- * The config a partial write commits: the scalars and arrays already on disk,
- * with the required fields filled. Mirrors what the partial writer has always
- * defaulted, so a scalar mutation cannot silently empty an install.
- */
+/** The config on disk with required fields filled, so a scalar mutation cannot empty an install. */
 function fillRequiredFields(
   partial: Partial<ProjectConfig>,
   fallbackName: string | undefined,
@@ -493,21 +388,11 @@ function fallbackNameFor(mutation: GlobalMutation): string | undefined {
   return mutation.kind === "set-source" ? mutation.fallbackName : undefined;
 }
 
-/**
- * Applies a typed transform to the global config and carries out whatever its
- * classification obliges. No variant is exempt from classification by
- * construction: a source change propagates because project configs inline the
- * global scalars, and a deregistration does not because nothing inlines the
- * registration list.
- */
+/** Every mutation is classified: a source change propagates, a deregistration does not. */
 export async function mutateGlobal(mutation: GlobalMutation, deps: GateDeps): Promise<GateReport> {
   return withGateToken(async () => {
     const homeDir = os.homedir();
-    // The full loader, not the scalar one: it normalizes every stack assignment
-    // back to `SkillAssignment[]`. The writer compacts an exclusive category to its
-    // bare value on the way out, and re-emitting that bare form without
-    // normalization drops the category — so a scalar mutation would silently strip
-    // every exclusive category from the global stack.
+    // The full loader normalizes the stack; re-emitting bare values drops exclusive categories.
     const provider = providerInUse(homeDir);
     const loadedGlobal = await loadProjectConfigFromDir(homeDir, provider);
     if (!loadedGlobal) return report(false, NO_CHANGES);
@@ -535,20 +420,8 @@ export async function mutateGlobal(mutation: GlobalMutation, deps: GateDeps): Pr
 }
 
 /**
- * Prunes the CLI-inlined global entries from every registered project after a
- * GLOBAL uninstall, and recompiles their agents.
- *
- * Writes no pair: the pair this would derive from has just been deleted. That is
- * the reason this is its own entry rather than a flag on a writing one — the
- * removal case must not be reachable from a code path whose job is to write.
- *
- * Call AFTER the global manifest has been removed so the regenerated project
- * types fall back to the standalone form instead of importing from the
- * now-deleted global config-types.ts.
- *
- * `provider` is the installation that was removed, and it is a parameter rather than a read:
- * the folder that would answer it has just been deleted, so by the time this runs the disk no
- * longer records which installation the pruning belongs to.
+ * Prunes CLI-inlined global entries from registered projects after a global uninstall. Call it
+ * after the global manifest is removed. `provider` is passed because its folder is already gone.
  */
 export async function propagateGlobalRemoval(
   preRemovalGlobalConfig: ProjectConfig,
@@ -573,11 +446,7 @@ export async function propagateGlobalRemoval(
   });
 }
 
-/**
- * Creates the blank global pair when none exists. No classification and no
- * fan-out: the registration list propagation reads lives in the file that was
- * just found absent, so a pair created here has no registered projects.
- */
+/** No classification or fan-out: a pair created here has no registered projects. */
 export async function ensureBlankPair(provider: Provider): Promise<boolean> {
   return withGateToken(() => ensureBlankPairInternal(provider));
 }
@@ -587,32 +456,13 @@ export type WriteProjectPartialOptions = {
   fallbackName?: string;
 };
 
-/**
- * The partial with every stack assignment normalized back to `SkillAssignment[]`.
- *
- * Every caller of this entry reads the config with the LENIENT loader
- * (`loadProjectSourceConfig`), overlays one scalar, and hands the result back.
- * That loader passes the on-disk stack through untouched, and the writer emits an
- * exclusive category in its BARE form (`"web-framework": "web-framework-react"`,
- * no array) — so on a load / re-emit round trip `compactCategories`, which keeps
- * only non-empty arrays, drops the category and the user silently loses an
- * assignment they never touched.
- *
- * Normalizing at this boundary rather than inside the writer keeps the fix on the
- * one path that can present a denormalized stack: the full loader
- * (`loadProjectConfigFromDir`) already runs `normalizeStackRecord`, so every other
- * writer input arrives normalized.
- */
+/** The lenient loader leaves bare exclusive values that a re-emit would drop; normalized here. */
 function withNormalizedStack(partial: Partial<ProjectConfig>): Partial<ProjectConfig> {
   if (!partial.stack) return partial;
   return { ...partial, stack: normalizeStackRecord(partial.stack) };
 }
 
-/**
- * Writes a partial config to a PROJECT's own `config.ts`, filling
- * required defaults. Refuses the home directory: the global pair's config half
- * may never be written without its types sibling and without classification.
- */
+/** Refuses the home directory: the global config half is written only by the gate. */
 export async function writeProjectPartial(
   projectDir: string,
   partial: Partial<ProjectConfig>,
@@ -633,11 +483,5 @@ export async function writeProjectPartial(
   );
 }
 
-/**
- * `normalizeProjectPath` is the single rule for any value compared against the
- * global config's `projects` array, so a reader that only wants to MATCH a
- * registration (never write one) gets it from here rather than reimplementing
- * `fs.realpathSync` and drifting from the rule the registrations were stored
- * under. It writes nothing, so exporting it hands out no privilege.
- */
+/** Exported so readers match registrations by the stored rule; it writes nothing. */
 export { mergeGlobalConfigs, normalizeProjectPath };

@@ -7,34 +7,18 @@ export type ConfirmHandlers = {
 };
 
 export type PromptValueOptions<T> = {
-  /** Value resolved when the Ink app exits before any callback fires (Ctrl+C / render failure). */
+  /** Resolved when the app exits before any callback fires (Ctrl+C, render failure). */
   onExit: T;
-  /** Call instance.clear() before unmount — repaints a clean terminal (used by the dashboard). */
+  /** Clear before unmount. */
   clearOnResolve?: boolean;
 };
 
-/**
- * Renders an Ink prompt and resolves with the value produced by its callbacks.
- * First-wins: the first resolve (a callback or the app-exit fallback) settles the
- * promise; later resolves are ignored. The element is unmounted at the resolution
- * site (optionally cleared first). Callers own exit policy (exit codes, logging).
- *
- * A prompt may resolve before `render()` has handed its instance back: Ink flushes
- * mount effects synchronously, so a component that settles on mount reaches the
- * callback first. The teardown is then run the moment the instance exists — one
- * statement later, on the same tick — so callers that resolve from a keypress see
- * exactly the order they always did.
- *
- * The terminal is raw before the first frame is painted, through {@link holdInputRaw}.
- */
+/** First resolve wins, whether a callback or the app-exit fallback; callers own exit policy. */
 export async function promptValue<T>(
   build: (resolve: (value: T) => void) => React.ReactElement,
   options: PromptValueOptions<T>,
 ): Promise<T> {
-  // The promise's own `resolve`, lifted out so the render can be a plain `const` below
-  // rather than a binding the element's callbacks would reach while `render()` is still
-  // producing it. The seed is never called: a Promise executor runs synchronously, so the
-  // next statement has already replaced it by the time anything can answer.
+  // The seed is never called: the executor below replaces it synchronously.
   const answer: { settle: (value: T) => void } = { settle: () => {} };
   const chosen = new Promise<T>((resolve) => {
     answer.settle = resolve;
@@ -44,8 +28,6 @@ export async function promptValue<T>(
   try {
     const instance = render(build((value) => answer.settle(value)));
 
-    // App exit without a callback (e.g. Ctrl+C) or a render failure counts as the
-    // fallback; the promise is first-wins, so a prior callback value is unaffected.
     instance.waitUntilExit().then(
       () => answer.settle(options.onExit),
       () => answer.settle(options.onExit),
@@ -53,9 +35,7 @@ export async function promptValue<T>(
 
     const value = await chosen;
 
-    // Taken down here rather than at each resolve site: it then happens exactly once,
-    // whichever of the three endings settled the promise, and always with an instance in
-    // hand — including the ending that arrives before `render()` has returned one.
+    // Here, not at each resolve site: a prompt can answer before `render()` returns the instance.
     if (options.clearOnResolve) instance.clear();
     instance.unmount();
 
@@ -66,21 +46,8 @@ export async function promptValue<T>(
 }
 
 /**
- * Puts a terminal's input into raw mode for as long as a prompt is up, and returns what puts it
- * back the way it was. Input that is not a terminal has no mode to set, and is left alone.
- *
- * Ink takes raw mode only from `useInput`'s effect, which runs after the frame it belongs to has
- * been written. A key pressed between the two reaches a terminal still in cooked mode: the kernel
- * echoes an Enter as a line break, which scrolls a full-height frame up by a line that is never
- * repainted, and turns it into `\n`, which Ink reads as `enter` — and every prompt here waits for
- * `return`. Taken here, before the render, the key is held as typed until Ink starts reading.
- *
- * Ink's own handling is unchanged: `useInput` still sets raw mode and Ink still turns it off at
- * unmount. This closes the gap before the effect, and restores the mode for a prompt that never
- * took input or failed to render, where Ink has nothing to turn off.
- *
- * Prompts only, never every render: raw mode turns Ctrl+C into a byte for whoever reads input,
- * and the spinner reads none, so a load under it could no longer be interrupted.
+ * Ink sets raw mode only after the first frame, so an early Enter is echoed in cooked mode.
+ * Prompts only: under raw mode Ctrl+C could not interrupt a spinner, which reads no input.
  */
 function holdInputRaw(input: NodeJS.ReadStream): () => void {
   if (!input.isTTY) return () => {};
@@ -91,11 +58,6 @@ function holdInputRaw(input: NodeJS.ReadStream): () => void {
   };
 }
 
-/**
- * Renders a confirm UI and resolves with the user's choice. The element is
- * unmounted as soon as either handler fires; a clean exit or render failure
- * without a choice resolves as "cancelled". Callers own exit policy.
- */
 export async function promptConfirm(
   build: (handlers: ConfirmHandlers) => React.ReactElement,
 ): Promise<"confirmed" | "cancelled"> {

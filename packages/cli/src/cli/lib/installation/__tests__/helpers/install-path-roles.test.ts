@@ -1,16 +1,3 @@
-/**
- * The attributor's own tests, because a helper a spec trusts needs a reason to be trusted.
- *
- * `attributeByRole` is what lets the golden-tree spec say "every byte a Claude install wrote is
- * still under a named role" without writing the paths out again, so its two failure modes are the
- * ones that matter: a path under no site must be reported, and a path under two must be reported
- * separately — an attributor answering "claimed" to everything would leave that spec green over
- * an installation that had moved wholesale.
- *
- * The sites here are a fixture and name no real directory: this file is about the attribution,
- * and the real roles are pinned where they are declared.
- */
-
 import { describe, expect, it } from "vitest";
 
 import { ROOT_SITE_REFUSED, attributeByRole, type RoleSite } from "./install-path-roles.js";

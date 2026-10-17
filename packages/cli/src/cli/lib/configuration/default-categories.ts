@@ -1,9 +1,5 @@
 import type { Category, CategoryDefinition } from "../../types";
 
-/**
- * Built-in category definitions, equivalent to config/skill-categories.ts.
- * Source repos may override or extend these via their own config files.
- */
 export const defaultCategories = {
   "web-framework": {
     id: "web-framework",

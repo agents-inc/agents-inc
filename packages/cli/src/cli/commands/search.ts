@@ -11,15 +11,7 @@ import { typedValues } from "../utils/typed-object.js";
 
 const MAX_DESCRIPTION_WIDTH = 50;
 
-/**
- * One row of the results table. Every column is rendered for its cell, so all five are plain
- * strings — including the two that used to be carried through as the skill's own `SkillId` and
- * `CategoryPath`.
- *
- * They stopped being the skill's own values when they started being sanitised, and the type says
- * so rather than casting the sanitised string back into a union it is no longer known to be in.
- * Nothing downstream of this looks a row up by id: it is five strings and a table.
- */
+/** Plain strings: sanitised values are no longer known to be in their unions. */
 type ResultRow = {
   id: string;
   name: string;
@@ -57,8 +49,7 @@ export default class Search extends BaseCommand {
 
   async run(): Promise<void> {
     const { args } = await this.parse(Search);
-    // The marketplace searched is the one the configs name, so a config nobody can read is not
-    // read past to whichever marketplace the next rung would answer.
+    // The configs name the marketplace searched, so an unreadable one is not read past.
     await this.ensureConfigReadable(process.cwd());
     await this.runSearch(args.query);
   }
@@ -103,28 +94,14 @@ export default class Search extends BaseCommand {
   }
 }
 
-/**
- * Every skill the catalog can offer: the marketplace matrix, which `loadSource` has already
- * merged the on-disk local skills into. There is no second source to reach for — the
- * registered-extras array this used to fan out over was withdrawn with the marketplace axis
- * itself, so the read is one load and no network beyond it.
- */
+/** The marketplace matrix, with on-disk local skills already merged in by `loadSource`. */
 async function loadSearchableSkills(): Promise<ResolvedSkill[]> {
   const { sourceResult } = await loadSource({ projectDir: process.cwd() });
 
   return typedValues(sourceResult.matrix.skills);
 }
 
-/**
- * The machine id and the display name are different answers and get a column each.
- *
- * Every one of the five is a string a catalogue author wrote, and this is where they stop being
- * that and become cells. `--marketplace` is a supported input, so a stranger's repository reaches
- * this table by the product's advertised route: an unsanitised `displayName` carrying an
- * erase-line and a carriage return repaints the row, and `@oclif/table` sizes the column on the
- * escape bytes as well, so the border moves too. Only `description` carries a budget, because
- * only `description` is prose; the other four are identifiers and are shown whole.
- */
+/** Strips terminal controls: a third-party marketplace's text could otherwise repaint the table. */
 function toResultRow(skill: ResolvedSkill): ResultRow {
   return {
     id: stripTerminalControls(skill.id),
@@ -135,12 +112,7 @@ function toResultRow(skill: ResolvedSkill): ResultRow {
   };
 }
 
-/**
- * Where this installation reads the skill from: the local copy when one is on disk, otherwise
- * the marketplace the load resolved. Both names are written by the tagging pass
- * (`loadSkillsFromAllSources`), which `loadSource` always runs — a skill that reached the table
- * untagged would have no origin to report, so say so rather than name one it might not have.
- */
+/** `loadSource` always tags an origin, so an untagged skill is a bug, not a fallback case. */
 function activeSourceName(skill: ResolvedSkill): string {
   const { activeSource } = skill;
   if (!activeSource) {

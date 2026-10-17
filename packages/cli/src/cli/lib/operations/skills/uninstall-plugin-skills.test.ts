@@ -12,7 +12,6 @@ import { uninstallPluginSkills } from "./uninstall-plugin-skills";
 import { hostAt } from "../../hosts/host-for.js";
 import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 
-/** The one host every `hostAt` answer in this file is, so a spy set here is the spy called. */
 const mockUninstallPlugin = vi.mocked(hostAt("/any-root").uninstallPlugin);
 
 const PROJECT_DIR = "/tmp/test-project";
@@ -30,8 +29,6 @@ describe("uninstallPluginSkills", () => {
       buildSkillConfig("api-framework-hono", { scope: "global", origin: "agents-inc" }),
     ];
 
-    // Stated rather than defaulted: the host's answer is what this function REPORTS, so a spec
-    // whose expectation is "both were removed" has to be the thing that says both were.
     mockUninstallPlugin.mockResolvedValue("removed");
 
     const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
@@ -104,12 +101,6 @@ describe("uninstallPluginSkills", () => {
     ]);
   });
 
-  /**
-   * `removed` and `absent` are both ordinary endings — asking twice is ordinary, and a user who ran
-   * the host's own remove command themselves is the common case — so the distinction cannot be an
-   * exception and is the return value. Before it was read, a plugin that had already gone was
-   * reported as one this run took away, and the two were indistinguishable in the output.
-   */
   it("does not report a skill whose plugin the host found nothing to remove", async () => {
     const skillIds: SkillId[] = ["web-framework-react", "api-framework-hono"];
     const oldSkills = [
@@ -121,8 +112,6 @@ describe("uninstallPluginSkills", () => {
 
     const result = await uninstallPluginSkills(skillIds, oldSkills, MARKETPLACE, PROJECT_DIR);
 
-    // Both were ASKED — an `absent` answer is not a skipped call — and only the one the host
-    // really removed is reported.
     expect(mockUninstallPlugin).toHaveBeenCalledTimes(2);
     expect(result.uninstalled).toStrictEqual(["api-framework-hono"]);
     expect(result.failed).toStrictEqual([]);

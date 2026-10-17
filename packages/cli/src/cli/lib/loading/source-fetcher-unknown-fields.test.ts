@@ -12,12 +12,7 @@ import { fetchMarketplace } from "./source-fetcher";
 
 const UNKNOWN_FIELD = "fieldThisFormatDoesNotDefine";
 
-/**
- * marketplace.json is a file this CLI defines, publishes a schema for, and reads every field of, so
- * a key it does not know is a real signal: a typo, a newer publisher, or a file that is not what it
- * claims to be. That is the opposite of settings.json, which belongs to Claude Code and which this
- * CLI must never police — these tests exist so the silence introduced there stays there.
- */
+/** marketplace.json is this CLI's own file, so an unknown key in it is a real signal. */
 describe("fetchMarketplace unknown-field warning", () => {
   let tempDir: string;
 
@@ -29,7 +24,6 @@ describe("fetchMarketplace unknown-field warning", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Writes a marketplace manifest into the temp dir and returns it as a local source. */
   async function writeMarketplace(marketplace: Record<string, unknown>): Promise<string> {
     const manifestDir = path.join(tempDir, PLUGIN_MANIFEST_DIR);
     await mkdir(manifestDir, { recursive: true });
@@ -52,7 +46,6 @@ describe("fetchMarketplace unknown-field warning", () => {
 
     await fetchMarketplace(source);
 
-    // The field is named, not counted: the point of the warning is that it can be acted on.
     expect(warn).toHaveBeenCalledWith(`Unknown fields in ${MARKETPLACE_JSON}: ${UNKNOWN_FIELD}`);
   });
 
@@ -61,8 +54,7 @@ describe("fetchMarketplace unknown-field warning", () => {
 
     await fetchMarketplace(source);
 
-    // The subject guard for the test above: without it, a `warn` that fired on every manifest
-    // would satisfy the positive assertion just as well.
+    // Subject guard for the test above.
     expect(warn).not.toHaveBeenCalled();
   });
 });

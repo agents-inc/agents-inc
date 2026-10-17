@@ -16,13 +16,6 @@ import {
 } from "../schemas";
 import type { CategoryMap, ExtractedSkillMetadata, SkillRulesConfig } from "../../types";
 
-/**
- * Loads and validates a skill-categories.ts configuration file.
- *
- * @param configPath - Absolute path to the skill-categories.ts file
- * @returns Parsed and validated categories map
- * @throws When the file cannot be read or fails Zod schema validation
- */
 export async function loadSkillCategories(configPath: string): Promise<CategoryMap> {
   const data = await loadConfig(configPath, skillCategoriesFileSchema);
 
@@ -34,13 +27,6 @@ export async function loadSkillCategories(configPath: string): Promise<CategoryM
   return data.categories;
 }
 
-/**
- * Loads and validates a skill-rules.ts configuration file.
- *
- * @param configPath - Absolute path to the skill-rules.ts file
- * @returns Parsed and validated skill rules config
- * @throws When the file cannot be read or fails Zod schema validation
- */
 export async function loadSkillRules(configPath: string): Promise<SkillRulesConfig> {
   const data = await loadConfig(configPath, skillRulesFileSchema);
 
@@ -62,25 +48,7 @@ export async function loadSkillRules(configPath: string): Promise<SkillRulesConf
   return config;
 }
 
-/**
- * Scans a skills directory and extracts metadata from all valid skills.
- *
- * Discovers skills by globbing for `metadata.yaml` files, then for each:
- * 1. Validates a corresponding SKILL.md exists (skips if missing)
- * 2. Parses metadata.yaml and validates it against the raw metadata schema
- * 3. Parses SKILL.md frontmatter for the canonical skill ID
- * 4. Merges metadata fields into an ExtractedSkillMetadata object
- *
- * A metadata.yaml that describes no skill — unparseable, or parseable without the
- * fields the schema requires — is warned by path and skips its own skill, and so is a
- * SKILL.md whose frontmatter does not read; one bad file does not take the scan down
- * with it. Skills missing the required
- * `displayName` field in metadata.yaml cause a hard error.
- *
- * @param skillsDir - Absolute path to the skills root directory (e.g., `{root}/src/skills`)
- * @returns Array of extracted skill metadata, one per valid skill found
- * @throws When a skill's metadata.yaml is missing the required `displayName` field
- */
+/** Files describing no skill are warned and skipped; a missing `displayName` throws. */
 export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkillMetadata[]> {
   const skills: ExtractedSkillMetadata[] = [];
   const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
@@ -97,9 +65,7 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
 
     const metadataContent = await readFile(metadataPath);
 
-    // The safeParse below catches a file that parses without the fields a skill is
-    // described by, and cannot catch a file nothing parses out of at all. Both refuse
-    // the same way readSkillMetadata does: skip this skill, not the whole scan.
+    // safeParse cannot catch a file nothing parses; both skip this skill, not the scan.
     let rawMetadata: unknown;
     try {
       rawMetadata = parseYaml(metadataContent);
@@ -123,8 +89,7 @@ export async function extractAllSkills(skillsDir: string): Promise<ExtractedSkil
     const skillMdContent = await readFile(skillMdPath);
     const frontmatter = parseFrontmatter(skillMdContent, skillMdPath);
 
-    // Named as an unparseable metadata.yaml is above, so the skill does not simply go missing. A
-    // frontmatter that READ and failed its schema has already been named by `parseFrontmatter`.
+    // A frontmatter that read but failed its schema was already named by `parseFrontmatter`.
     if (!frontmatter) {
       const unreadable = unreadableFrontmatter(skillMdContent);
       if (unreadable !== undefined) {

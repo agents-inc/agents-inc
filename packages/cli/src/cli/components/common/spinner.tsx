@@ -9,15 +9,7 @@ type SpinnerProps = {
 
 export const Spinner: React.FC<SpinnerProps> = ({ label }) => <InkSpinner label={label} />;
 
-/**
- * Awaits `load` behind a spinner and takes the spinner down whichever way the await ends, leaving
- * the terminal as it found it.
- *
- * The cleanup is a `finally` because a load that refuses the run throws from inside this await,
- * and oclif would otherwise paint its error under an Ink tree still repainting over it. Never a
- * `catch`: the throw reaches the caller untouched, or both the error rendering and the exit code
- * change with it.
- */
+/** `finally`, never `catch`: a throw must reach the caller untouched, with the spinner gone. */
 export async function awaitUnderSpinner<T>(label: string, load: () => Promise<T>): Promise<T> {
   const spinner = render(<Spinner label={label} />);
   try {
@@ -28,15 +20,8 @@ export async function awaitUnderSpinner<T>(label: string, load: () => Promise<T>
 }
 
 /**
- * Stop the clock, paint what Ink is holding, and only then erase.
- *
- * Ink paints through a render throttle, and a spinner frame that arrives inside its window is
- * held rather than painted. `unmount()` paints whatever is held — so a spinner cleared with a
- * frame held was drawn again after the clear, where nothing erases it. A starved event loop is
- * what puts one there: a spinner tick that runs late is followed by the next one less than a
- * window later. Hence the order: the still line has no clock, so once it replaces the spinner no
- * new frame can be held; the flush paints anything already held; the clear then erases the last
- * thing painted, and `unmount()` finds nothing left to draw.
+ * Ink's throttle can hold a spinner frame that `unmount()` would paint after the clear. So: swap in
+ * a still line (no clock), flush what is held, then clear and unmount.
  */
 async function takeDownWithoutTrace(spinner: Instance, label: string): Promise<void> {
   spinner.rerender(<Text>{label}</Text>);

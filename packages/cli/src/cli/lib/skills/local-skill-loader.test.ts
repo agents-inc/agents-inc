@@ -31,7 +31,6 @@ describe("local-skill-loader", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Create a local skill directory with metadata.yaml and optionally SKILL.md */
   async function writeLocalSkill(
     skillName: string,
     options: {
@@ -184,17 +183,14 @@ describe("local-skill-loader", () => {
       const result = await discoverLocalSkills(tempDir);
       const skill = result?.skills[0];
 
-      // Identity
       expect(skill?.id).toBe("full-skill (@local)");
       expect(skill?.directoryPath).toBe("full-skill");
       expect(skill?.description).toBe("Complete skill for testing");
 
-      // Catalog data
       expect(skill?.category).toBe("web-framework");
       expect(skill?.author).toBe("@dummy-author");
       expect(skill?.domain).toBe("web");
 
-      // Location
       expect(skill?.path).toBe(`${LOCAL_SKILLS_PATH}/full-skill/`);
       expect(skill?.local).toBe(true);
       expect(skill?.localPath).toBe(path.join(tempDir, LOCAL_SKILLS_PATH, "full-skill") + path.sep);
@@ -238,19 +234,16 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
-      // Schema validation may fail for wrong types, but the function should not throw
       expect(result).not.toBeNull();
     });
 
     it("skips valid skills alongside invalid ones", async () => {
-      // Valid skill
       await writeLocalSkill("valid-skill", {
         metadata:
           "displayName: Valid Skill\nslug: valid-skill\ndomain: web\ncategory: web-framework",
         skillMd: renderSkillMd("valid-skill (@local)", "A valid skill", "Content"),
       });
 
-      // Invalid skill (no SKILL.md)
       await writeLocalSkill("invalid-skill", {
         metadata: "displayName: Invalid Skill\nslug: invalid-skill\ndomain: web",
         withSkillMd: false,
@@ -295,7 +288,6 @@ describe("local-skill-loader", () => {
 
       const result = await discoverLocalSkills(tempDir);
 
-      // Schema validation expects an object, so this should be skipped
       expect(result?.skills).toStrictEqual([]);
     });
 
@@ -347,7 +339,6 @@ describe("local-skill-loader", () => {
 
     it("handles directory with only non-skill subdirectories", async () => {
       const skillsDir = path.join(tempDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
-      // Create subdirectories with no metadata or SKILL.md files
       const randomDir = path.join(skillsDir, "random-dir");
       await mkdir(randomDir, { recursive: true });
       await writeFile(path.join(randomDir, "README.md"), "# Not a skill");

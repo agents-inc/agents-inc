@@ -17,13 +17,7 @@ import { settingsFileSchema } from "./schemas";
 type SettingsFile = z.infer<typeof settingsFileSchema>;
 type PermissionConfig = NonNullable<SettingsFile["permissions"]>;
 
-/**
- * Reads one settings file's permissions block; undefined when absent, malformed, or empty.
- *
- * settings.json belongs to Claude Code, which adds keys on its own release schedule. This CLI
- * consumes `permissions` and owns nothing else in the file, so it stays silent about every other
- * field rather than warning about settings it has no standing to judge.
- */
+/** Undefined when absent, malformed or empty; silent about every other field (Claude Code's). */
 async function readSettingsPermissions(filePath: string): Promise<PermissionConfig | undefined> {
   if (!(await fileExists(filePath))) return undefined;
   try {
@@ -38,14 +32,6 @@ async function readSettingsPermissions(filePath: string): Promise<PermissionConf
   }
 }
 
-/**
- * The files this host reads permissions from at project scope, in the host's own order: the base
- * file this CLI writes first, then any overlay that beats it.
- *
- * Composed from `CLAUDE_DIR` until 2026-09-22, which is why a Codex install read a `.claude/`
- * directory it had never written. {@link permissionFiles} is the one answer now, and this is its
- * first production reader.
- */
 function settingsFilesFor(projectRoot: string): string[] {
   return permissionFiles(providerInUse(projectRoot), "project", projectRoot);
 }
@@ -59,36 +45,17 @@ async function loadPermissions(files: readonly string[]): Promise<PermissionConf
   return undefined;
 }
 
-/**
- * One settings file as the notice names it: relative to the project, POSIX-separated.
- *
- * POSIX for `pathUnder`'s reason one module over — what comes back is a NAME shown to a person,
- * not a path this process opens.
- */
+/** Relative to the project and POSIX-separated: a name shown to a person, not a path to open. */
 function asUserWritesIt(projectRoot: string, file: string): string {
   return path.relative(projectRoot, file).split(path.sep).join("/");
 }
 
-/**
- * The notice a run ends on when nothing has granted the agents any permissions — or `null` where
- * there is nothing true to say.
- *
- * **`null` for a host whose permission model this release cannot advise on**, which is
- * {@link advisesOnPermissions}'s whole subject. Every word below is Claude Code's: a
- * `permissions.allow` block, in JSON, in `settings.json`. Codex has neither the key nor the file,
- * and a Codex install printed this verbatim until 2026-09-22 — ending a run that had touched no
- * `.claude/` directory by telling the user to go and edit one.
- *
- * The file is NAMED from the layout rather than spelled, so the notice points at the file it
- * actually read.
- */
+/** `null` for a host whose permission model this release cannot advise on. */
 export async function checkPermissions(projectRoot: string): Promise<React.ReactElement | null> {
   if (!advisesOnPermissions(providerInUse(projectRoot))) return null;
 
   const files = settingsFilesFor(projectRoot);
-  // The BASE file rather than the overlay: it is the one this CLI writes, and the one a user with
-  // neither is being asked to create. A host with a notice to print has a file to name it in, so
-  // an empty roster is a host that has nothing to say rather than a case to paper over.
+  // The base file: the one this CLI writes and a user with neither is asked to create.
   const [base] = files;
   if (base === undefined) return null;
 

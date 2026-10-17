@@ -29,7 +29,6 @@ describe("plugin-validator", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Write a plugin.json manifest at .claude-plugin/plugin.json */
   async function writePluginJson(dir: string, manifest: Record<string, unknown>) {
     await mkdir(path.join(dir, PLUGIN_MANIFEST_DIR), { recursive: true });
     await writeFile(

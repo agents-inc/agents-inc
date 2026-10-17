@@ -66,39 +66,24 @@ import {
 import type { AgentDefinition, AgentName, MergedSkillsMatrix, ProjectConfig } from "../types/index";
 import type { SkillScope } from "../types/config";
 
-/**
- * One removal this run promises AND makes. Each entry carries what its remover needs
- * — paths and names, never display strings — so the preview and the removal are two
- * readings of one value rather than two derivations of the same target.
- */
+/** Paths and names, never display strings, so the preview and the removal read one value. */
 type RemovalEntry =
   | { kind: "plugins"; pluginsDir: string; names: string[] }
   | { kind: "skills"; skillsDir: string }
   | { kind: "agents"; agentsDir: string; agentNames: string[]; codec: AgentCodec }
   | { kind: "config"; sourceDir: string; fileNames: string[] };
 
-/** The single entry of a kind, for the remover that consumes it. */
 type PluginRemoval = Extract<RemovalEntry, { kind: "plugins" }>;
 type SkillsRemoval = Extract<RemovalEntry, { kind: "skills" }>;
 type AgentsRemoval = Extract<RemovalEntry, { kind: "agents" }>;
 type ConfigManifestRemoval = Extract<RemovalEntry, { kind: "config" }>;
 
-/**
- * The uninstall removal plan: what this run removes, and what it deliberately leaves
- * behind. Built once per run — the confirm UI renders it, the executor consumes the
- * same value, so the plan cannot name a removal the run declines to make.
- */
+/** Built once: the confirm UI and the executor read the same value. */
 type RemovalPlan = {
   entries: RemovalEntry[];
-  /** Statements naming content that stays, and why — see {@link keptStatements}. */
   kept: string[];
 };
 
-/**
- * Pure builder for the uninstall removal plan — the one place that decides what this
- * run removes. Every removal downstream is driven by an entry from here, and nothing
- * downstream re-reads the target to decide whether to act.
- */
 function buildRemovalPlan(target: UninstallTarget): RemovalPlan {
   const agents = compiledAgentsEntry(target);
 
@@ -113,7 +98,6 @@ function buildRemovalPlan(target: UninstallTarget): RemovalPlan {
   };
 }
 
-/** The plan carries at least one removal — the only thing that makes this run an uninstall. */
 function hasAnythingToRemove(plan: RemovalPlan): boolean {
   return plan.entries.length > 0;
 }
@@ -137,33 +121,19 @@ function compiledAgentsEntry(target: UninstallTarget): AgentsRemoval[] {
   return [{ kind: "agents", agentsDir: target.agentsDir, agentNames, codec: target.agentCodec }];
 }
 
-/**
- * The agent files this run can say are its own, and on whose authority.
- *
- * The configuration is the first: it names the agents this install compiled, and a marker-less
- * file it names is still this CLI's — every install predating the marker is in exactly that
- * state. The provenance marker the compiler stamps into every agent is the second, reached
- * when there is no configuration left to read: provably ours, whoever lost the config. With
- * neither, nothing here is identifiable and the plan carries no removal for it.
- */
+/** The config's roster first (pre-marker installs carry none), else the provenance-marked files. */
 function identifiableAgents(target: UninstallTarget): string[] {
   if (target.configuredAgents.length > 0) return target.configuredAgents;
   return target.markedAgents;
 }
 
-/** The CLI config manifest (config.ts + config-types.ts) is always removed from the source folder. */
 function configManifestEntries(target: UninstallTarget): ConfigManifestRemoval[] {
   const { dir, manifestFiles } = target.sourceFolder;
   if (manifestFiles.length === 0) return [];
   return [{ kind: "config", sourceDir: dir, fileNames: manifestFiles }];
 }
 
-/**
- * The plan's kept half: the agent files carrying no provenance marker that the removal above
- * does not claim anyway. Derived FROM the removal rather than from a second reading of the
- * target, so the two halves of the plan cannot contradict each other — an agent named in both
- * lists would be a promise to remove a file the same plan calls kept.
- */
+/** Derived from the removal, so no agent can be both removed and kept. */
 function keptStatements(target: UninstallTarget, agentRemovals: AgentsRemoval[]): string[] {
   const removing = new Set(agentRemovals.flatMap((entry) => entry.agentNames));
   const kept = target.unmarkedAgents.filter((name) => !removing.has(name));
@@ -171,7 +141,6 @@ function keptStatements(target: UninstallTarget, agentRemovals: AgentsRemoval[])
   return [unmarkedAgentsKept(target.agentsDir, kept.length)];
 }
 
-/** Every entry of a kind — the config kind has one per source folder. */
 function planEntries<K extends RemovalEntry["kind"]>(
   plan: RemovalPlan,
   kind: K,
@@ -181,7 +150,6 @@ function planEntries<K extends RemovalEntry["kind"]>(
   );
 }
 
-/** The plan's entry of a kind, for the remover that consumes it. At most one exists. */
 function planEntry<K extends RemovalEntry["kind"]>(
   plan: RemovalPlan,
   kind: K,
@@ -191,7 +159,6 @@ function planEntry<K extends RemovalEntry["kind"]>(
   );
 }
 
-/** The heading an entry prints under, and the lines it contributes beneath it. */
 function describeEntry(entry: RemovalEntry): RemovalPlanSection {
   switch (entry.kind) {
     case "plugins":
@@ -224,13 +191,7 @@ const PLAN_SECTION_ORDER = [
   UNINSTALL_PLAN.CONFIG_HEADING,
 ] as const;
 
-/**
- * The plan's display half: entries grouped under their heading, in printing order —
- * skills and compiled agents share one. A heading is a promise about the lines beneath
- * it, so a heading no entry contributed to is not printed at all. The single source of
- * the strings shared by printRemovalPlan (plain text) and the UninstallConfirm Ink
- * component; each renderer only adds its own indentation and styling.
- */
+/** Skills and compiled agents share a heading; a heading with no items is not printed. */
 function planSections(entries: readonly RemovalEntry[]): RemovalPlanSection[] {
   const described = entries.map(describeEntry);
 
@@ -239,7 +200,6 @@ function planSections(entries: readonly RemovalEntry[]): RemovalPlanSection[] {
   );
 }
 
-/** Every line the described entries contributed under one heading, in plan order. */
 function itemsUnder(described: readonly RemovalPlanSection[], label: string): string[] {
   return described.filter((section) => section.label === label).flatMap((section) => section.items);
 }
@@ -252,17 +212,7 @@ function sectionWithItems(label: string, items: string[]): RemovalPlanSection[] 
 const UNINSTALL_CONFIRM_MESSAGE = "Are you sure you want to uninstall?";
 
 export default class Uninstall extends BaseCommand {
-  /**
-   * The name this run prints itself under, resolved once in {@link run} because three separate
-   * lines carry it: the heading, the sign-off, and the warning naming the tool a preserved
-   * directory was not created by. The last of those sits three calls below the resolution, and
-   * threading a display string through `executeUninstall` -> `removeLocalFiles` ->
-   * `removePlannedSkills` would widen three signatures to deliver one word.
-   *
-   * A plain `string` holding the shipped default rather than an optional every reader would have
-   * to answer for. `run` replaces it before the first line is printed, so what a user sees is
-   * always what their configuration says.
-   */
+  /** Replaced in `run` before anything prints; a field so removers three calls deep can name it. */
   private brandingName: string = DEFAULT_BRANDING.NAME;
 
   static summary = `Remove ${DEFAULT_BRANDING.NAME} from this project`;
@@ -283,21 +233,15 @@ export default class Uninstall extends BaseCommand {
     provider: providerFlag(),
   };
 
-  /**
-   * Starts at any terminal size: a plan and a one-line confirm fit any terminal, and this command
-   * is the way out of every state, so a small window must not hold up an uninstall.
-   */
   protected async ensureTerminalSize(): Promise<void> {
-    // Nothing to wait for — see above.
+    // Any size: uninstall is the way out of every state.
   }
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Uninstall);
     const projectDir = process.cwd();
 
-    // Before the branding read and before anything is detected: this run is destructive, and a
-    // scope holding two installations has two answers to "which one". Removing the roster's first
-    // is removing a user's other installation with nothing on screen to say so.
+    // Before anything is detected: removing the wrong one of two installations is destructive.
     await refuseAnAmbiguousInstallation(
       projectDir,
       "uninstall",
@@ -364,8 +308,7 @@ export default class Uninstall extends BaseCommand {
   }
 
   private async confirmRemoval(plan: RemovalPlan): Promise<boolean> {
-    // A confirm nobody can answer must never become a yes, and mounting it here died on Ink's
-    // raw-mode error — so a run with no terminal is refused before it, naming `--yes`.
+    // A confirm nobody can answer must never become a yes.
     if (!process.stdin.isTTY) {
       this.error(uninstallNeedsTerminal(), { exit: EXIT_CODES.ERROR });
     }
@@ -389,9 +332,7 @@ export default class Uninstall extends BaseCommand {
     projectDir: string,
   ): Promise<void> {
     const isGlobalUninstall = isHomeDirectory(projectDir);
-    // Prepared BEFORE any removal: the projects[] registry and the source used
-    // to regenerate each project's config-types.ts both live in the global
-    // config this uninstall is about to delete.
+    // Before any removal: the registry and source live in the global config about to be deleted.
     const propagation = isGlobalUninstall
       ? await this.prepareGlobalPropagation(target, projectDir)
       : null;
@@ -408,22 +349,15 @@ export default class Uninstall extends BaseCommand {
     }
 
     if (isGlobalUninstall) {
-      // The global manifest is gone — prune the inlined global-scoped entries the
-      // registered projects still carry so they stop referencing removed content.
       if (propagation) {
         await this.updateRegisteredProjects(propagation);
       }
       return;
     }
 
-    // Deregister this project from the global config's tracked projects so future
-    // global edits stop propagating back into it. Best-effort by nature: a missing,
-    // project-less, or corrupt global config (ConfigLoadError) must never fail the
-    // uninstall — warn and move on.
+    // Degrades: a missing or corrupt global config must never fail the uninstall.
     try {
-      // Registration bookkeeping only: nothing inlines the `projects[]` list into a
-      // project config, so this loads neither the matrix nor the agent definitions
-      // and the uninstall stays offline.
+      // Lazy deps: deregistering inlines nothing, so the uninstall stays offline.
       await mutateGlobal({ kind: "deregister-project", projectDir }, lazyGateDeps(projectDir));
     } catch (error) {
       this.warn(`Could not update the global project registry: ${getErrorMessage(error)}`);
@@ -431,25 +365,8 @@ export default class Uninstall extends BaseCommand {
   }
 
   /**
-   * Loads what updating registered projects needs (global config with its
-   * projects[] registry, skills matrix, agent definitions) BEFORE the global
-   * the config manifest is deleted — source resolution reads that config.
-   * Returns null when nothing is registered or loading fails; a load failure
-   * warns and never aborts the uninstall.
-   *
-   * `skipExtraSources: true` is NOT a divergence from a full multi-source
-   * load: extra-source loading only annotates each skill's
-   * `availableSources`/`activeSource` — it never adds
-   * skills or categories to the matrix, and the config-types writer never reads
-   * those annotations, so the regenerated project types are byte-identical
-   * either way (pinned by the skipExtraSources parity test in
-   * local-installer.test.ts). Skipping avoids fetching every registered extra
-   * source (network on a cold cache, plus unreachable-remote warnings) during
-   * an uninstall that must never hang or noise-fail on remote state.
-   *
-   * `purpose: "upkeep"` because the prune only rewrites projects that are already installed: a
-   * marketplace that has since lost its manifest must not leave every registered project naming
-   * the global content this uninstall deletes.
+   * A load failure warns and never aborts. `skipExtraSources` cannot change the output (extra
+   * sources only annotate skills) and keeps the uninstall off the network.
    */
   private async prepareGlobalPropagation(
     target: UninstallTarget,
@@ -480,14 +397,7 @@ export default class Uninstall extends BaseCommand {
     }
   }
 
-  /**
-   * Prunes the inlined global-scoped config entries from every registered
-   * project and regenerates its config-types.ts. Runs AFTER the global manifest
-   * removal so the regenerated project types fall back to the standalone form
-   * instead of importing from the deleted global config-types.ts. Best-effort:
-   * unreachable projects are warned and skipped, and no failure here may abort
-   * the uninstall.
-   */
+  /** Runs after the global manifest is gone, so regenerated types use the standalone form. */
   private async updateRegisteredProjects(propagation: GlobalPropagationData): Promise<void> {
     try {
       const report = await propagateGlobalRemoval(
@@ -497,7 +407,6 @@ export default class Uninstall extends BaseCommand {
       );
       const { updated, unreadable, failed } = report.propagated;
       this.reportProjectsOutOfReach(report.propagated);
-      // Uninstall's own sentence, only where it is true: the config is there and was not pruned.
       for (const skippedPath of [...unreadable, ...failed]) {
         this.warn(registeredProjectUpdateSkipped(skippedPath));
       }
@@ -505,8 +414,6 @@ export default class Uninstall extends BaseCommand {
 
       this.logSuccess(registeredProjectsUpdated(updated.length));
 
-      // The pruned projects' compiled agents were built from the global rows this
-      // uninstall just removed, so the prune owes them a recompile too.
       this.reportPropagatedRecompile(report);
     } catch (error) {
       this.warn(registeredProjectsUpdateFailed(getErrorMessage(error)));
@@ -521,16 +428,10 @@ export default class Uninstall extends BaseCommand {
     this.log("");
   }
 
-  /**
-   * Each step acts only when the plan carries its entry, so what the user was shown and
-   * what this run removes are the same list read twice.
-   */
   private async removeLocalFiles(plan: RemovalPlan, target: UninstallTarget): Promise<void> {
     await this.removePlannedSkills(planEntry(plan, "skills"));
     await this.removePlannedAgents(planEntry(plan, "agents"));
 
-    // The same statements the preview showed, from the same plan: what the user approved and
-    // what this run reports are one value read twice, never two derivations that agree today.
     for (const statement of plan.kept) {
       this.log(statement);
     }
@@ -548,7 +449,6 @@ export default class Uninstall extends BaseCommand {
     }
   }
 
-  /** What became of one source folder: gone, emptied of the CLI's files, or kept for the user's. */
   private reportSourceFolderCleanup(folder: SourceFolderCleanup): void {
     if (folder.dirRemoved) {
       this.logSuccess(`Removed ${folder.relName}/`);
@@ -559,7 +459,6 @@ export default class Uninstall extends BaseCommand {
     }
   }
 
-  /** What became of the `.agents-inc/` parent, said out loud in both directions. */
   private reportSourceRootCleanup(sourceRoot: SourceRoot, cleanup: CleanupResult): void {
     if (cleanup.sourceRootRemoved) {
       this.logSuccess(`Removed ${sourceRoot.relName}/`);
@@ -584,10 +483,7 @@ export default class Uninstall extends BaseCommand {
         this.log(`  Uninstalled plugin '${name}'`),
       );
 
-      // Silent on zero rather than "Uninstalled 0 plugins": the line's job is to account for
-      // removals, and a run that observed none has nothing to account for — the plan preview has
-      // already said what it expected to find. Saying "0" beside a plan that named one reads as a
-      // failure, which it is not: a plugin a user removed themselves is the ordinary case.
+      // Silent on zero: "0" beside a plan that named one reads as a failure, and is not one.
       if (pluginResult.totalUninstalled > 0) {
         this.logSuccess(
           `Uninstalled ${pluginResult.totalUninstalled} ${pluginResult.totalUninstalled === 1 ? "plugin" : "plugins"}`,
@@ -634,7 +530,7 @@ export default class Uninstall extends BaseCommand {
 export type UninstallTarget = {
   hasPlugins: boolean;
   pluginNames: string[];
-  /** Plugin names filtered to only those installed by this CLI (matched against config skills) */
+  /** Only those this CLI installed, matched against config skills. */
   cliPluginNames: string[];
   hasLocalSkills: boolean;
   hasLocalAgents: boolean;
@@ -642,55 +538,31 @@ export type UninstallTarget = {
   pluginsDir: string;
   skillsDir: string;
   agentsDir: string;
-  /**
-   * How this installation's host names and marks a compiled agent — `*.md` on Claude, `*.toml` on
-   * Codex. Everything the plan reads or removes in `agentsDir` goes through it (CLI-896).
-   */
   agentCodec: AgentCodec;
   claudeDir: string;
-  /** This scope's source folder: what this run reads and removes in it. */
   sourceFolder: ScopeSourceFolder;
-  /** The `.agents-inc/` parent the source folder sits under. */
   sourceRoot: SourceRoot;
-  /** The source folder's config, when it is readable. */
   config: ProjectConfig | null;
-  /** Every project the config registers — only a global config registers any. */
   registeredProjects: string[];
-  /** Agent names the config names (e.g., ["web-developer"]) */
   configuredAgents: AgentName[];
-  /** On-disk agent basenames carrying this CLI's provenance marker. */
   markedAgents: string[];
-  /** On-disk agent basenames carrying no marker — the user's, unless the config claims them. */
+  /** The user's, unless the config claims them. */
   unmarkedAgents: string[];
 };
 
-/** The source folder of the scope being uninstalled, and what this run reads and removes in it. */
 type ScopeSourceFolder = {
   dir: string;
-  /** The folder as a user writes it: `.agents-inc/claude`. */
   relName: string;
-  /** The manifest files on disk in it — `config.ts`, `config-types.ts` — which this run removes. */
   manifestFiles: string[];
-  /** Its config, or `null` when the file is absent or unreadable — see {@link loadUninstallConfig}. */
+  /** `null` when absent or unreadable. */
   config: ProjectConfig | null;
 };
 
-/**
- * Everything a global uninstall needs to update the registered projects after
- * the global manifest is removed — captured before removal because it is
- * sourced from the config being deleted.
- */
+/** Captured before removal: all of it comes from the config and folder being deleted. */
 type GlobalPropagationData = {
   globalConfig: ProjectConfig;
   matrix: MergedSkillsMatrix;
   agents: Partial<Record<AgentName, AgentDefinition>>;
-  /**
-   * Which installation is being removed.
-   *
-   * Captured here for the same reason everything else on this type is: by the time the prune
-   * runs, the folder that says which provider this was has been deleted, so reading it then
-   * would answer about whatever is left rather than about what was removed.
-   */
   provider: Provider;
 };
 
@@ -699,14 +571,12 @@ type SkillRemovalResult = {
   skippedCount: number;
   removedNames: string[];
   skippedNames: string[];
-  /** Whether the skills directory was cleaned up (empty after removal) */
   dirCleaned: boolean;
 };
 
 type AgentRemovalResult = {
   removedCount: number;
   removedNames: string[];
-  /** Whether the agents directory was cleaned up (empty after removal) */
   dirCleaned: boolean;
 };
 
@@ -715,25 +585,19 @@ type UninstallPluginsResult = {
   totalUninstalled: number;
 };
 
-/** What a cleanup pass did with the source folder. */
 type SourceFolderCleanup = {
   relName: string;
-  /** Whether config.ts/config-types.ts were removed from it */
   manifestRemoved: boolean;
-  /** Whether the emptied folder itself was removed */
   dirRemoved: boolean;
-  /** Whether it is still there because something this CLI never wrote lives in it */
+  /** Still there because of content this CLI never wrote. */
   kept: boolean;
 };
 
 type CleanupResult = {
   claudeDirRemoved: boolean;
   sourceFolder: SourceFolderCleanup;
-  /** Whether the emptied `.agents-inc/` parent went with the last provider folder under it */
   sourceRootRemoved: boolean;
-  /** Whether `.agents-inc/` still exists because something this CLI never wrote lives in it */
   sourceRootKept: boolean;
-  /** Whether .claude/ still exists with user content after cleanup */
   claudeDirKept: boolean;
 };
 
@@ -748,10 +612,8 @@ export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null)
   const { marketplaceName } = config;
   return new Set(
     config.skills.flatMap((skill) => [
-      // Primary key: skill.id@skill.origin
       buildMarketplacePluginRef(skill.id, skill.origin),
-      // Marketplace variant for plugins installed via marketplace where
-      // skill.origin may differ (e.g., "eject" vs the marketplace name)
+      // Installed via the marketplace while `origin` names something else.
       ...(marketplaceName && skill.origin !== marketplaceName && skill.origin !== EJECT_SOURCE
         ? [buildMarketplacePluginRef(skill.id, marketplaceName)]
         : []),
@@ -760,13 +622,8 @@ export function getCliInstalledPluginKeys(config: Partial<ProjectConfig> | null)
 }
 
 /**
- * Loads the config that drives the removal plan. A config file that exists but
- * cannot be parsed (`ConfigLoadError`) is handed to `onLoadFailed` and
- * then treated exactly like a missing one — an unreadable config is precisely
- * when a user needs to uninstall, so it must never fail the run. Same posture as
- * the `deregister-project` mutation's call site above. Only the plan degrades: the plugins and
- * compiled agents the config named can no longer be identified, while file
- * removal proceeds. Any other failure is a real fault and still propagates.
+ * Degrades: a `ConfigLoadError` is reported and treated as a missing config, since that is when a
+ * user needs to uninstall. Any other failure propagates.
  */
 async function loadUninstallConfig(
   configPath: string,
@@ -784,7 +641,7 @@ async function loadUninstallConfig(
   }
 }
 
-/** The folder's manifest files on disk, and its config read under uninstall's degrade posture. */
+/** Its config is read under {@link loadUninstallConfig}'s degrade posture. */
 async function readSourceFolder(
   folder: Pick<ScopeSourceFolder, "dir" | "relName">,
   projectDir: string,
@@ -803,7 +660,6 @@ async function readSourceFolder(
   return { ...folder, manifestFiles, config };
 }
 
-/** The files of the CLI config manifest — `config.ts`, `config-types.ts` — that are in `dir`. */
 async function manifestFilesIn(dir: string): Promise<string[]> {
   const manifest = [STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS];
   const present = await Promise.all(
@@ -812,7 +668,6 @@ async function manifestFilesIn(dir: string): Promise<string[]> {
   return manifest.filter((_, index) => present[index]);
 }
 
-/** A config with its excluded rows dropped — the entries an uninstall acts on. */
 function activeConfigOf(config: ProjectConfig): ProjectConfig {
   return {
     ...config,
@@ -821,12 +676,6 @@ function activeConfigOf(config: ProjectConfig): ProjectConfig {
   };
 }
 
-/**
- * Detects what's installed in a project directory for uninstallation.
- *
- * Checks for plugins, local skills, agents, config directories, and
- * resolves which plugins were installed by this CLI.
- */
 async function detectUninstallTarget(
   projectDir: string,
   onConfigLoadFailed: (failure: ConfigLoadError) => void,
@@ -889,23 +738,8 @@ async function detectUninstallTarget(
 }
 
 /**
- * Whether this run has any plugin of its own to remove.
- *
- * **A PROJECT uninstall on a host that installs no project-scoped plugin has none, and asking
- * anyway is the one operation in this step that can destroy work nobody asked about.** Codex
- * installs plugins for a MACHINE: no subcommand takes a scope, `plugin add` run inside a project
- * writes the switch to the global config and silently un-scopes it, and `plugin list` answers the
- * same set from every directory. So every plugin a Codex project can see belongs to every other
- * project on that machine, and a project uninstall that swept them would take them all away.
- *
- * Read off {@link PluginHost.installsProjectScopedPlugins} rather than written as a provider
- * check, so a host added later is covered by the flag it already has to set. Claude's answer is
- * `true`, so its sweep is unchanged at both scopes — which is deliberate: whether a Claude project
- * uninstall should drop a user-scoped registration is a separate question about a host that CAN
- * hold both, and nothing here is the place to settle it.
- *
- * A GLOBAL uninstall owns the machine's plugins whatever the host, which is the case the other
- * half of this pair rests on.
+ * A host without project-scoped plugins (Codex) shares them machine-wide, so a project uninstall
+ * there must not sweep them. A global uninstall owns them on any host.
  */
 function thisRunOwnsAnyPlugin(projectDir: string): boolean {
   if (isHomeDirectory(projectDir)) return true;
@@ -970,17 +804,6 @@ async function cleanupSkillsDir(dir: string, allRemoved: boolean): Promise<boole
   return removeDirIfEmpty(dir);
 }
 
-/**
- * Removes the compiled agent files the plan's agents entry names — `.md` on Claude, `.toml` on
- * Codex, as the entry's codec says.
- *
- * A file is removed only when its basename is one the entry names; every other agent file
- * is preserved. Cleans up the agents directory if empty after removal. Which names those are
- * — the configured roster, or the files carrying the provenance marker — is the plan's
- * decision, not this function's, and so is whether to act at all: no entry, no call.
- *
- * @param onRemoved - Called for each removed agent name (for logging)
- */
 async function removeMatchingAgents(
   entry: AgentsRemoval,
   onRemoved?: (agentName: string) => void,
@@ -1004,24 +827,9 @@ async function removeMatchingAgents(
   };
 }
 
-/**
- * Where a plugin is looked for FIRST when the config has no entry naming its skill.
- *
- * The scope translation swallowed this until C3 — an absent scope and a project one mapped to
- * the same Claude scope word — so the order is unchanged and only the silence is gone.
- */
 const SCOPE_OF_AN_UNRECORDED_SKILL: SkillScope = "project";
 
-/**
- * Every scope this host installs plugins at, the config's own answer first.
- *
- * A plugin's registered scope is genuinely ambiguous here — a skill re-scoped after install is
- * filed under the scope it was installed at, not the one the config now names — so a removal
- * asks at each scope rather than trusting one. The best-effort sweep this replaces did it with
- * two hard-coded Claude scope words and no way to answer for another host; reading the roster off
- * {@link PluginHost.offeredPlacements} is the same sweep with the host deciding its width, which
- * for a host that installs plugins globally only is one scope rather than two.
- */
+/** Every offered plugin scope, the config's first: a re-scoped skill stays where installed. */
 function pluginScopesToSweep(host: PluginHost, primary: SkillScope): SkillScope[] {
   const offered = host.offeredPlacements
     .filter((placement) => placement.mode === "plugin")
@@ -1031,19 +839,7 @@ function pluginScopesToSweep(host: PluginHost, primary: SkillScope): SkillScope[
   return [primary, ...offered.filter((scope) => scope !== primary)];
 }
 
-/**
- * Drops a plugin's registration wherever the host filed it, and says whether one was there.
- *
- * Best-effort on the FAILURE side and unchanged by C3: the directory is deleted either way, so a
- * registration that cannot be dropped is untidy rather than wrong, and a thrown error here would
- * abort an uninstall that has already removed files. What changed is that it no longer reports
- * NOTHING — {@link PluginHost.uninstallPlugin} answers `removed` or `absent`, and that answer is
- * the only thing on this path that knows the difference.
- *
- * `removed` if ANY swept scope had one, because the sweep exists precisely for a plugin filed
- * under a scope the config no longer names: one registration dropped at either scope is one
- * removal, not two, and not none.
- */
+/** Failures are swallowed: the directory is deleted either way and files are already gone. */
 async function removePluginWhereverItIsFiled(
   host: PluginHost,
   pluginRef: string,
@@ -1057,9 +853,7 @@ async function removePluginWhereverItIsFiled(
       const swept = await host.uninstallPlugin(pluginRef, scope, projectDir);
       if (swept === "removed") outcome = "removed";
     } catch {
-      // Best-effort: the plugin may not be registered at this scope. A throw is neither outcome
-      // — the host reserves it for a failure that is not "there was nothing there" — so it leaves
-      // `outcome` exactly as the other scopes found it rather than claiming an absence.
+      // A throw is neither outcome, so `outcome` stays as the other scopes left it.
     }
   }
 
@@ -1067,12 +861,7 @@ async function removePluginWhereverItIsFiled(
 }
 
 /**
- * Uninstalls the plugins the plan's plugins entry names, by removing them from the
- * host and deleting their local directories. The entry decides WHICH plugins go;
- * `config` only answers HOW to ask the host — the scope its registry filed each
- * one under, per-skill where the config says, project-level otherwise.
- *
- * @param onUninstalled - Called for each successfully uninstalled plugin name (for logging)
+ * `config` only supplies the scope each plugin is filed under; the entry decides which go.
  * @internal Exported for testing
  */
 export async function uninstallPlugins(
@@ -1103,24 +892,13 @@ export async function uninstallPlugins(
     }
   }
 
-  // What was OBSERVED, never what was asked for — D11(b), and the one Claude-visible change this
-  // step signs off. On Codex `plugin remove` exits 0 and prints the same document for a plugin
-  // that was never installed, one that really went and one removed twice, so a count built from
-  // the plan is a count of intentions: it says "Uninstalled 1 plugin" for a plugin this command
-  // did not touch. The listing the host takes BEFORE its removal is the only thing that knows.
+  // Observed, not intended: Codex `plugin remove` exits 0 whether or not the plugin existed.
   return {
     uninstalledNames: observed,
     totalUninstalled: observed.length,
   };
 }
 
-/**
- * The scope the host's registry most likely filed this plugin under, from the config's own row.
- *
- * The sweep beside it asks at every scope the host installs plugins at, so this is a PREFERENCE
- * rather than an answer: a skill re-scoped after install is filed under the scope it was installed
- * at, not the one the config now names.
- */
 function scopeThePluginIsFiledUnder(config: ProjectConfig | null, pluginName: string): SkillScope {
   const skillId = parseMarketplacePluginRef(pluginName);
   return (
@@ -1128,24 +906,10 @@ function scopeThePluginIsFiledUnder(config: ProjectConfig | null, pluginName: st
   );
 }
 
-/**
- * What a run with no host binary observed, which is nothing — the OTHER half of D11(b).
- *
- * This command used to count every plugin it MEANT to remove, so a machine where the host is not
- * installed reported a clean sweep of registrations nothing had touched. An unreachable host is
- * not a failure — the directory is still deleted and the uninstall still completes — so it is an
- * outcome rather than a throw, and the outcome is that nothing was seen to go.
- */
 function nothingWasObserved(): PluginRemovalOutcome {
   return "absent";
 }
 
-/**
- * Removes exactly the manifest files the plan's config entry names from the source folder,
- * then the source folder itself when it has nothing else left. User-owned content in it
- * (e.g. ejected templates) keeps the directory alive. No entry
- * means the plan promised no manifest removal, so none is made.
- */
 async function removeConfigManifest(
   entry: ConfigManifestRemoval | undefined,
 ): Promise<{ manifestRemoved: boolean; dirRemoved: boolean }> {
@@ -1158,13 +922,7 @@ async function removeConfigManifest(
   return { manifestRemoved: true, dirRemoved: await removeDirIfEmpty(entry.sourceDir) };
 }
 
-/**
- * Removes the CLI config manifest the plan named, then cleans up the emptied .claude/
- * directory and the emptied source folder.
- *
- * The directories themselves are not plan entries — they are the user's, and are removed
- * only when nothing of theirs is left in them once the CLI-managed contents are gone.
- */
+/** Directories are not plan entries: each goes only once nothing of the user's is left in it. */
 async function cleanupEmptyDirs(
   target: Pick<UninstallTarget, "hasClaudeDir" | "claudeDir" | "sourceRoot" | "sourceFolder">,
   manifestEntries: readonly ConfigManifestRemoval[],
@@ -1189,11 +947,6 @@ async function cleanupEmptyDirs(
   };
 }
 
-/**
- * The source folder, once the plan's manifest files are out of it: removed when nothing is left,
- * kept when the user's own content is. A folder the plan named no file in is still removed when it
- * is empty — it is the product's name on a folder holding nothing.
- */
 async function cleanupSourceFolder(
   folder: ScopeSourceFolder,
   entry: ConfigManifestRemoval | undefined,
@@ -1209,24 +962,11 @@ async function cleanupSourceFolder(
   };
 }
 
-/** What a cleanup pass did with the `.agents-inc/` parent: took it away, or deliberately left it. */
 type SourceRootCleanup = { removed: boolean; kept: boolean };
 
 /**
- * The provider folder's `.agents-inc/` parent, once the folder under it has gone.
- *
- * Cleanup above is leaf-first — `removeDirIfEmpty` on the folder the config was in — so nothing
- * looks one level up, and `.agents-inc/` left standing is a directory naming this product with
- * nothing installed under it. A later `init` and `doctor` both read that as a half-built layout.
- *
- * Only when it is empty, and only through the same `removeDirIfEmpty` the leaf uses: a consuming
- * repository keeps its own state under this parent — the gate's `baseline.json` is the live case
- * — and that state is not this CLI's to remove. Keeping it is then SAID rather than done in
- * silence, because a directory left where an install was reads as one the uninstall forgot.
- *
- * Attempted only when the provider folder itself went: while that folder is still there the
- * parent is not empty for a reason the user has already been told about, and a second line about
- * it would name the wrong cause.
+ * Only once the provider folder went, and only when empty: consuming repositories keep their own
+ * state under `.agents-inc/`.
  */
 async function cleanupSourceRoot(
   sourceRoot: SourceRoot,

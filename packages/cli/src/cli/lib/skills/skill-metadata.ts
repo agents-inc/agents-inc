@@ -10,79 +10,33 @@ import { formatZodIssues, localSkillMetadataSchema } from "../schemas";
 import { warn } from "../../utils/logger";
 import { getErrorMessage } from "../../utils/errors";
 
-/**
- * Tracks the original marketplace source of a locally-installed skill.
- *
- * Written into each skill's metadata.yaml under the `forkedFrom` key when a skill
- * is copied from a source repository to the local `.claude/skills/` directory.
- * Used for version comparison, update detection, and provenance tracking.
- */
+/** Provenance written under `forkedFrom` when a skill is copied locally. */
 export type ForkedFromMetadata = {
-  /** Canonical skill ID from the source repository (e.g., "cc-ts-react-hook-form") */
   skillId: SkillId;
   /** SHA-256 hash of the source SKILL.md content at the time of installation */
   contentHash: string;
   /** ISO date string (YYYY-MM-DD) when the skill was installed or last updated */
   date: string;
-  /** Source URL the skill was installed from (e.g., "github:agents-inc/skills") */
   source?: string;
   /**
-   * The skill's own DIRECTORY inside the repository `source` names — `skills/brainstorming`,
-   * never the SKILL.md.
-   *
-   * Recorded only where it is the whole address. A marketplace resolves every id it serves, so a
-   * skill ejected from one is installed again by its id and where inside that repository it lived
-   * is nobody else's business. A skill a shared configuration CARRIED answers to no catalogue at
-   * all, and this pair — repository and directory — is the only address it has: without it, the
-   * producer that shares this installation can name the id and not the content behind it.
+   * The skill's directory inside `source`; recorded only for a skill no catalogue resolves by id.
    */
   path?: string;
 };
 
-/**
- * Full metadata.yaml content for a locally-installed skill.
- *
- * Parsed from the `metadata.yaml` file in each skill directory under `.claude/skills/`.
- * Uses an index signature to preserve unknown fields written by other tools.
- */
+/** The index signature preserves fields written by other tools. */
 export type LocalSkillMetadata = {
-  /** Provenance metadata linking back to the original source skill, if any */
   forkedFrom?: ForkedFromMetadata;
   [key: string]: unknown;
 };
 
-/**
- * Reads forkedFrom metadata from a skill's metadata.yaml file.
- *
- * This metadata tracks the original marketplace source of a locally-installed skill,
- * enabling version comparison and update detection via content hash matching.
- *
- * @param skillDir - Absolute path to the skill directory (e.g., `/project/.claude/skills/react-hook-form`)
- * @returns The `forkedFrom` metadata if present and valid, `null` if the file doesn't exist,
- *          has no `forkedFrom` field, or fails Zod validation (warns on invalid metadata)
- *
- * @example
- * ```ts
- * const metadata = await readForkedFromMetadata("/project/.claude/skills/react-hook-form");
- * if (metadata) {
- *   console.log(`Installed from ${metadata.skillId} on ${metadata.date}`);
- * }
- * ```
- */
+/** `null` when absent, without `forkedFrom`, or invalid (warned). */
 export async function readForkedFromMetadata(skillDir: string): Promise<ForkedFromMetadata | null> {
   const metadata = await readLocalSkillMetadata(skillDir);
   return metadata?.forkedFrom ?? null;
 }
 
-/**
- * Reads the full local skill metadata from a skill's metadata.yaml file.
- *
- * Returns the parsed metadata including `forkedFrom` field.
- * Used by the uninstall command to determine whether a skill was installed by the CLI.
- *
- * @param skillDir - Absolute path to the skill directory
- * @returns The parsed metadata if valid, `null` if the file doesn't exist or is invalid
- */
+/** `null` when absent or invalid; uninstall uses it to tell CLI-installed skills apart. */
 export async function readLocalSkillMetadata(skillDir: string): Promise<LocalSkillMetadata | null> {
   const metadataPath = path.join(skillDir, STANDARD_FILES.METADATA_YAML);
 
@@ -109,28 +63,9 @@ export async function readLocalSkillMetadata(skillDir: string): Promise<LocalSki
 }
 
 /**
- * Writes forked-from provenance metadata into a skill's metadata.yaml.
- *
- * Reads the existing metadata.yaml (preserving any extra fields), sets the
- * `forkedFrom` block with the given skill ID, content hash, and current date,
- * then writes the file back with a YAML language server schema comment.
- *
- * Called during skill installation (by the skill copier) to record where a
- * locally-installed skill originated from.
- *
- * @param destPath - Absolute path to the skill directory containing metadata.yaml.
- *                   The file must already exist (created during skill copy).
- * @param skillId - Canonical skill ID from the source repository (e.g., "cc-ts-react-hook-form")
- * @param contentHash - SHA-256 hash of the source SKILL.md content at install time
- * @param origin - Where the bytes came from: the repository ref, and the directory inside it for
- *                 a skill nothing but that directory can install again. A bag rather than two
- *                 positional strings, because two adjacent optional strings can be swapped
- *                 silently and these two mean entirely different things.
- *
- * @remarks
- * **Side effect:** Overwrites `{destPath}/metadata.yaml` on disk. Existing fields
- * are preserved if the file parses successfully; if parsing fails, only `forkedFrom`
- * is written (with a warning logged).
+ * Overwrites `{destPath}/metadata.yaml` with `forkedFrom` set, keeping existing fields when the
+ * file parses; otherwise writes only `forkedFrom`, with a warning. `origin` is a bag so its two
+ * strings cannot be swapped silently.
  */
 export async function injectForkedFromMetadata(
   destPath: string,
@@ -156,10 +91,6 @@ export async function injectForkedFromMetadata(
   await writeMetadataYaml(metadataPath, metadata, `${yamlSchemaComment(SCHEMA_PATHS.metadata)}\n`);
 }
 
-/**
- * Serializes skill metadata with the standard line-width policy and writes it,
- * optionally prefixed by a yaml-language-server schema comment.
- */
 export async function writeMetadataYaml(
   filePath: string,
   metadata: unknown,
@@ -169,22 +100,11 @@ export async function writeMetadataYaml(
   await writeFile(filePath, schemaComment + yamlContent);
 }
 
-/** What a YAML read can answer: the document, or why no parser could produce one. */
 type YamlRead =
   | { readonly parsed: true; readonly value: unknown }
   | { readonly parsed: false; readonly reason: string };
 
-/**
- * Parses YAML without letting a syntax error escape.
- *
- * The two ways a metadata file fails reach a reader by different routes, and only one of them was
- * ever handled here: a wrong SHAPE is caught by the schema's `safeParse`, while a file no parser
- * can read throws out of `parseYaml` BEFORE `safeParse` is called at all. Both readers below
- * promise to survive an invalid file and neither kept that promise for the second kind.
- *
- * `readSkillMetadata` in `lib/loading/loader.ts` is the same guard written out at its own call
- * site; this is that shape, shared by the two readers here rather than repeated.
- */
+/** Catches a syntax error, which throws before any schema `safeParse` runs. */
 function readYaml(content: string): YamlRead {
   try {
     return { parsed: true, value: parseYaml(content) };
@@ -193,14 +113,7 @@ function readYaml(content: string): YamlRead {
   }
 }
 
-/**
- * The fields a metadata.yaml already holds, or none of them.
- *
- * Answers empty and warns for EITHER failure — a file no parser can read, or one whose shape the
- * schema refuses. Both are the same event from the author's side: the fields they wrote are about
- * to be replaced by a file carrying only `forkedFrom`, and the warning is the only thing that says
- * so. Keeping the two apart here would mean two warnings for one consequence.
- */
+/** Empty, with one warning, for either failure: the author's fields are about to be replaced. */
 function existingMetadataFields(
   yamlContent: string,
   metadataPath: string,

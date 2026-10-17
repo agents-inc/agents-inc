@@ -20,10 +20,7 @@ export type CopiedSkill = {
 
 const NULL_BYTE_PATTERN = /\0/;
 
-/**
- * Validate that a resolved path stays within the expected parent directory.
- * Prevents path traversal attacks where skill.path contains sequences like "../../sensitive".
- */
+/** Guards against path traversal such as `../../sensitive` in `skill.path`. */
 export function validateSkillPath(
   resolvedPath: string,
   expectedParent: string,
@@ -40,11 +37,6 @@ export function validateSkillPath(
   }
 }
 
-/**
- * Join basePath + skillPath, validate the result stays within basePath,
- * and return the resolved path. Combines path.join + validateSkillPath
- * to eliminate repeated join-then-validate boilerplate.
- */
 function resolveSkillPath(basePath: string, skillPath: string): string {
   const resolved = path.join(basePath, skillPath);
   validateSkillPath(resolved, basePath, skillPath);
@@ -67,7 +59,6 @@ async function generateSkillHash(skillSourcePath: string): Promise<string> {
   return computeFileHash(skillMdPath);
 }
 
-/** Core copy: hash the source SKILL.md, copy the directory, stamp forkedFrom provenance. */
 async function copySkillTo(
   skill: ResolvedSkill,
   sourcePath: string,
@@ -79,9 +70,7 @@ async function copySkillTo(
   await ensureDir(path.dirname(destPath));
   await copy(sourcePath, destPath);
 
-  // No directory: the marketplace this ref names resolves the id itself, so where inside it the
-  // skill lived is not part of installing it again. Absent rather than undefined, because that is
-  // the difference between "no ref was given" and "the ref is the word undefined".
+  // No directory: the marketplace resolves the id. Omitted, since undefined renders as a word.
   await injectForkedFromMetadata(destPath, skill.id, contentHash, {
     ...(source !== undefined && { source }),
   });
@@ -116,10 +105,6 @@ export async function copySkillFromSource(
   );
 }
 
-/**
- * In-place CopiedSkill for a local skill left where it already lives (no copy):
- * source and destination are the skill's own local path.
- */
 async function resolveLocalCopiedSkill(
   skill: ResolvedSkill,
   localPath: string,
@@ -135,20 +120,8 @@ async function resolveLocalCopiedSkill(
 }
 
 /**
- * Copies every selected skill, and reports the ones that could not be copied BY ID.
- *
- * `Promise.all` alone rejects with whichever error arrived first and discards its siblings', and
- * that error is the filesystem's: an `ENOENT` naming a path inside the source cache. The reader is
- * told a file is missing at an address they did not choose, cannot place, and cannot act on — and
- * they learn about the second missing skill only by fixing the first and running again.
- *
- * The condition is ordinary rather than exotic: the copy walks the MATRIX and reads from the
- * FETCHED directory, so any disagreement between the two lands here. A user whose CLI predates a
- * marketplace change has no way to make them agree, which makes the id the only actionable thing
- * the failure can carry.
- *
- * It still throws. A partial copy would leave an installation missing skills its config records,
- * which is the orphan-entry state the plugin-install path already refuses.
+ * Throws naming every failed id: `Promise.all` alone surfaces one ENOENT inside the source cache,
+ * which the user cannot act on.
  */
 async function copyEachSkill(
   selectedSkillIds: SkillId[],
@@ -187,7 +160,6 @@ function isCopySuccess(outcome: CopyOutcome): outcome is CopySuccess {
   return "copied" in outcome;
 }
 
-/** One line per skill that failed, so both what failed and why are named for every one of them. */
 function copyFailureMessage(failures: CopyFailure[], attempted: number): string {
   const lines = failures.map((failure) => `  ${failure.skillId}: ${failure.problem}`);
 

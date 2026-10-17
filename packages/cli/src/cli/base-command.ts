@@ -63,11 +63,7 @@ import type { GateReport } from "./lib/config-gate/index.js";
 import type { SourceLoadResult } from "./lib/loading/source-loader.js";
 import type { UnusableSkillMetadata } from "./lib/loading/index.js";
 
-/**
- * How often the size gate re-reads the terminal while it is blocked. `resize` is what normally
- * ends the wait; the poll is the belt for the terminals and multiplexers that resize without
- * ever emitting one, and it is the only reason a blocked command is not a hung one there.
- */
+/** Polled because some terminals and multiplexers resize without emitting `resize`. */
 const TERMINAL_RESIZE_POLL_MS = 500;
 
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- @types/node declares this as `number`; it is undefined whenever stdout is not a TTY
@@ -80,11 +76,6 @@ function isTerminalBigEnough(): boolean {
   return isTerminalLargeEnough(terminalColumns(), terminalRows());
 }
 
-/**
- * Resolves the moment the terminal satisfies `isSatisfied` — on the resize event where there is
- * one, on the poll where there is not. Both listeners are torn down before resolving, so a
- * command that got past the gate leaves nothing behind holding the process open.
- */
 function waitForTerminal(isSatisfied: () => boolean): Promise<void> {
   return new Promise<void>((resolve) => {
     const check = () => {
@@ -98,21 +89,11 @@ function waitForTerminal(isSatisfied: () => boolean): Promise<void> {
   });
 }
 
-/** A selected skill no sub-agent's stack carries, and the sub-agents the scope rule blocked. */
 type UnassignedSkill = { skillId: SkillId; blockedBy: AgentName[] };
 
 /**
- * Every active skill this save selected that no agent's stack in the saved config references,
- * paired with the global-scoped sub-agents that could not have carried it.
- *
- * Only the selection is judged. A project's saved config also lists the global skills it
- * inherits, while the stack a shared configuration brings names only the sub-agents it carries —
- * a global sub-agent's rows stay in the global config — so an inherited skill is missing from
- * this stack without being unassigned.
- *
- * `blockedBy` is empty for a global-scoped skill: the scope rule had no say there, and the
- * skill reached nothing for a different reason (no selected sub-agent the resolver
- * considers it relevant to). Naming sub-agents there would blame the wrong rule.
+ * Only the selection is judged: inherited global skills are absent from this stack without being
+ * unassigned. `blockedBy` is empty for a global-scoped skill, since the scope rule is not why.
  */
 function findUnassignedSkills(
   config: ProjectConfig,
@@ -137,16 +118,11 @@ function findUnassignedSkills(
   }));
 }
 
-/** True when an ACTIVE entry for this id sits at project scope — the only case the rule explains. */
 function hasActiveProjectEntry(skills: readonly SkillConfig[], skillId: SkillId): boolean {
   return skills.some((skill) => skill.id === skillId && isActiveAt(skill, "project"));
 }
 
-/**
- * What a decoded selection would file at PROJECT scope, split by kind because a skill's scope
- * and a sub-agent's are independent decisions in a payload — a refusal naming only one kind
- * would send the sharer to change the wrong entry.
- */
+/** Split by kind: skill and sub-agent scopes are independent, so the refusal names each. */
 function projectScopedContent(result: InstallSelection): {
   skillIds: SkillId[];
   agentNames: AgentName[];
@@ -161,26 +137,8 @@ function projectScopedContent(result: InstallSelection): {
   };
 }
 
-/**
- * Nothing is inherited by every command, so this class declares no `baseFlags`.
- *
- * There was one — the marketplace flag — until naming a marketplace became `init`'s
- * decision alone (owner ruling 2026-08-09). Six commands were already opting out of it
- * through an exported empty-object cast; a flag one command wants is that command's flag,
- * so it is declared in `init` as `--marketplace` and the six opt-outs went with it.
- */
 export abstract class BaseCommand extends Command {
-  /**
-   * Everything this run set out to do and did not, in the order it hit them.
-   *
-   * Non-empty is the whole of the exit-code decision — see {@link exitIfWorkIncomplete}. It is
-   * deliberately not a boolean: a non-zero exit whose output does not say what failed and what
-   * finishes it is worse than the silent success it replaces.
-   *
-   * Private, with {@link hasIncompleteWork} the only reading a subclass gets. A command records
-   * through the two methods below and asks whether anything is owed; the list itself is this
-   * class's, because it is this class that answers for it.
-   */
+  /** Non-empty decides the exit code; see {@link exitIfWorkIncomplete}. */
   private readonly incompleteWork: IncompleteWork[] = [];
 
   async init(): Promise<void> {
@@ -188,10 +146,6 @@ export abstract class BaseCommand extends Command {
     await this.ensureTerminalSize();
   }
 
-  /**
-   * Blocks the command from launching in a terminal below {@link MIN_TERMINAL_SIZE}. This runs
-   * once, before Ink mounts.
-   */
   protected async ensureTerminalSize(): Promise<void> {
     if (isTerminalBigEnough()) return;
 
@@ -207,22 +161,8 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
-   * The name this run prints itself under: `branding.name` where a config supplies one, and
-   * {@link DEFAULT_BRANDING.NAME} everywhere else.
-   *
-   * **DEGRADE is the posture, and it is chosen here for every command that prints a name.**
-   * `loadSourceConfig` raises for a config that exists and cannot be evaluated, and two of the
-   * four callers must survive precisely that state: `doctor`'s whole job is naming it, and
-   * `uninstall` is the only way out of it. A heading is decoration — nothing about a display name
-   * is worth refusing a command over, and refusing here would turn the branding wiring into a new
-   * way for an unreadable config to abort two commands that survive it today. `init` and `eject`
-   * cannot reach the catch at all: {@link ensureConfigReadable} has already refused every config
-   * they would read.
-   *
-   * The cause is not swallowed: it goes to `verbose`, and the command's own config reader reports
-   * it in full where the user needs to act on it. Reporting it twice would put a warning about
-   * the configuration above a heading, which is the one line that has to be the first thing on
-   * screen.
+   * Degrades on an unreadable config: `doctor` and `uninstall` must survive one, and a heading is
+   * not worth refusing over. The command's own config reader reports the cause.
    */
   protected async resolveBrandingName(projectDir: string): Promise<string> {
     try {
@@ -250,15 +190,7 @@ export abstract class BaseCommand extends Command {
     clearTerminalScreen();
   }
 
-  /**
-   * Resolves the marketplace required for a plugin operation, or hard-exits with
-   * an actionable error when it cannot be resolved. `onRegistered` is invoked
-   * (when provided) if the marketplace had to be registered — init uses it to log.
-   *
-   * `host` is the caller's because a marketplace registration is handed no directory of its own:
-   * every caller here holds the install root the run is about, and `hostAt` turns one into the
-   * host whose registry the marketplace has to land in.
-   */
+  /** `onRegistered` fires only when the marketplace had to be registered. */
   protected async requireMarketplaceOrExit(
     sourceResult: SourceLoadResult,
     purpose: string,
@@ -275,37 +207,14 @@ export abstract class BaseCommand extends Command {
     return required.marketplace;
   }
 
-  /**
-   * Reports every constraint a selection breaks — a conflicting pair, an unmet
-   * requirement, an exclusive category with two picks.
-   *
-   * Shared by `init` and `edit` so one selection cannot be reported two ways. Both commands ask
-   * the same question of the same matrix, so a roster that draws a warning through one must draw
-   * the same warning through the other; `init` used to compute the answer and drop it, which is
-   * the whole reason this lives here rather than on either command.
-   *
-   * These are advisory (`ValidationError` in types/matrix.ts): the selection is installed either
-   * way and neither command's exit code turns on them, so they are warnings and not errors. The
-   * loop is its own guard — a selection that breaks none says nothing.
-   */
+  /** Advisory: the selection installs either way, so these are warnings. */
   protected reportValidationErrors(validation: SelectionValidation): void {
     for (const error of validation.errors) {
       this.warn(error.message);
     }
   }
 
-  /**
-   * Installs skill plugins and narrates the operation.
-   *
-   * Shared by `init` and `edit` for the same reason as {@link reportValidationErrors}:
-   * both run the SAME install against the same marketplace, so a line one prints about
-   * it the other owes. `edit` used to run it in silence — a real `claude plugin install`
-   * was indistinguishable in the output from nothing having happened.
-   *
-   * The skills nothing carries are refused FIRST, by name: an install no marketplace
-   * could serve is knowable before the host's CLI is asked, and the generic
-   * install-failure advice is unfollowable for a skill the user wrote themselves.
-   */
+  /** Refuses skills no marketplace carries before the host's CLI is asked. */
   protected async installPluginSkillsReported(
     skills: SkillConfig[],
     marketplace: string,
@@ -323,25 +232,12 @@ export abstract class BaseCommand extends Command {
     return result;
   }
 
-  /**
-   * The opening half of the narration above, exposed for the one caller that cannot
-   * use the whole of it: an eject→plugin migration installs each plugin and deletes
-   * that skill's working copy in the same step (see `executeMigration`), so the
-   * install it performs is not this command's to run.
-   */
+  /** Split out for the eject-to-plugin migration, which runs its own installs. */
   protected announcePluginInstall(): void {
     this.log(STATUS_MESSAGES.INSTALLING_PLUGINS);
   }
 
-  /**
-   * The closing half: what was installed, what was not, and the refusal to continue
-   * past a failure.
-   *
-   * The hard-error is part of the report rather than each caller's own postscript
-   * because it is the same rule everywhere — plugin install intent is inviolable, so
-   * a run that could not honor it must stop BEFORE any config records a marketplace
-   * `origin` for a skill with no plugin registration.
-   */
+  /** Hard-errors on any failure, before a config can record an origin for an uninstalled plugin. */
   protected reportPluginInstalls(result: PluginInstallResult): void {
     for (const item of result.installed) {
       this.log(`  Installed ${item.ref}`);
@@ -355,13 +251,6 @@ export abstract class BaseCommand extends Command {
     this.log(`${pluginsInstalled(result.installed.length)}\n`);
   }
 
-  /**
-   * Renders what a gated write's fan-out did to the OTHER registered projects: one line for each
-   * it left alone because its config.ts cannot be loaded, then the recompile it performed.
-   *
-   * `uninstall` alone calls {@link reportPropagatedRecompile} directly, since it words the projects
-   * whose config it could not prune in its own terms.
-   */
   protected reportFanOut(report: GateReport): void {
     for (const projectPath of report.propagated.unreadable) {
       this.warn(registeredProjectConfigUnreadable(projectPath));
@@ -369,12 +258,6 @@ export abstract class BaseCommand extends Command {
     this.reportPropagatedRecompile(report);
   }
 
-  /**
-   * One line for each registered project a fan-out left alone because nothing of this
-   * installation is there to rewrite: nothing is installed at its path any more, or it is another
-   * provider's installation. `compile` and `uninstall` print it — neither project's config can
-   * hold what either run changed.
-   */
   protected reportProjectsOutOfReach(propagated: GateReport["propagated"]): void {
     for (const projectPath of propagated.gone) {
       this.warn(registeredProjectGone(projectPath));
@@ -384,14 +267,6 @@ export abstract class BaseCommand extends Command {
     }
   }
 
-  /**
-   * Renders the recompile a gated write already performed on every OTHER registered
-   * project this run's global change was propagated into.
-   *
-   * Shared by all four commands that fan out — the count and its wording are one
-   * statement about one operation, and four copies of it had already drifted into two
-   * spellings of the same sentence.
-   */
   protected reportPropagatedRecompile(report: GateReport): void {
     if (report.propagated.updated.length === 0) return;
 
@@ -402,20 +277,6 @@ export abstract class BaseCommand extends Command {
     this.log(propagatedRecompileSummary(rewrittenCount, unchangedCount, failedCount));
   }
 
-  /**
-   * Names every selected skill this save left in no sub-agent's stack, and — where the
-   * scope rule is why — every sub-agent it was kept away from.
-   *
-   * Shared by `init` and `edit` for the reason {@link reportValidationErrors} is: both
-   * build the stack from the same rules over the same selection, so a skill that reaches
-   * nothing through one reaches nothing through the other. The rule being reported is
-   * CORRECT and nothing here changes it — a project-scoped skill installs, is written to
-   * `config.ts`, and is loaded by nobody, which every other surface reports as a clean
-   * install.
-   *
-   * `compile` says the same thing about the same shape one layer over, for a config
-   * hand-edited into it — see `Compile.warnScopeDroppedStackPairs`.
-   */
   protected reportUnassignedSkills(config: ProjectConfig, selected: readonly SkillConfig[]): void {
     for (const { skillId, blockedBy } of findUnassignedSkills(config, selected)) {
       this.warn(skillAssignedToNoAgent(skillId));
@@ -426,21 +287,8 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
-   * Refuses to run when a config file exists but cannot be loaded.
-   *
-   * Both configs this run would read are checked, because both are read on the way through: a
-   * project's own `config.ts` and the global one every project write inlines. Checking up
-   * front is the whole point — an unreadable GLOBAL config otherwise surfaced only at the
-   * config write, after the install had copied skills and installed plugins, as a warning that
-   * the write never happened.
-   *
-   * Every command that reads an installation's config calls it before anything else reads one:
-   * the writes (`init`, `edit`, `compile`, `update`, `share`, `eject`) and the two that only
-   * report (`search`, `list`). `doctor` reports the same file instead, and `uninstall` is the way
-   * out of it, so neither does.
-   *
-   * A MISSING config is not a corrupt one and passes here untouched: it is the legitimate
-   * state `init` exists for, and the state `edit` reports as "no installation".
+   * Aborts up front when the project or global config exists but cannot be loaded, so nothing is
+   * installed before the config write fails. A missing config passes.
    */
   protected async ensureConfigReadable(projectDir: string): Promise<void> {
     const failures = await findConfigLoadFailures(projectDir);
@@ -449,20 +297,7 @@ export abstract class BaseCommand extends Command {
     }
   }
 
-  /**
-   * Refuses to run when a saved skill entry names a local skill that IS installed and whose
-   * metadata.yaml describes no skill.
-   *
-   * One layer below {@link ensureConfigReadable} and for the same reason: the config parses,
-   * and a file it points at does not.
-   *
-   * Only entries the catalogue does not carry are looked at, so a healthy install costs no
-   * filesystem read. An entry whose files are simply GONE is not refused — there
-   * is no file to repair.
-   *
-   * Runs before anything is asked or written, which is the whole point: past that, everything
-   * this protects has been rewritten.
-   */
+  /** Only entries the catalogue lacks are checked; one whose files are gone is not refused. */
   protected async ensureSavedSkillsReadable(
     savedSkills: readonly SkillConfig[],
     matrix: MergedSkillsMatrix,
@@ -476,10 +311,6 @@ export abstract class BaseCommand extends Command {
     );
   }
 
-  /**
-   * Refuses to run when an installed entry of `savedSkills` has a metadata.yaml that describes no
-   * skill, with `refusal` saying what the file would cost the command that met it.
-   */
   protected async refuseUnusableSavedSkillMetadata(
     savedSkills: readonly SkillConfig[],
     projectDir: string,
@@ -488,9 +319,7 @@ export abstract class BaseCommand extends Command {
     const unusable = await findUnusableSavedSkillMetadata(savedSkills, projectDir);
     if (unusable.length === 0) return;
 
-    // The detail is LOGGED and only the refusal is raised — oclif hard-wraps error text at the
-    // terminal width, and a path broken across two lines is one nobody can copy. Same split
-    // `compile` makes over the same verdict.
+    // Logged, not raised: oclif hard-wraps error text, which breaks copyable paths.
     for (const entry of unusable) {
       this.log(skillMetadataUnusableDetail(entry));
     }
@@ -498,27 +327,8 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
-   * Refuses a shared configuration carrying project-scoped content at the home directory.
-   *
-   * The home directory IS the global scope, and a global installation holds only global-scoped
-   * content. Both scopes read one config file there, and on Claude one skills directory and one
-   * agents directory as well — so a project-scoped entry lands in the global config wearing a
-   * label that contradicts the file it is in, and on Claude `toClaudePluginScope` maps that
-   * declared scope onward, registering the skill against `$HOME` as a project. Nothing
-   * below this point reads the scope again, so whatever the boundary lets through becomes the
-   * truth.
-   *
-   * Shared by `init --from` and `edit --from` for the reason {@link reportValidationErrors} is
-   * shared: it is a fact about the payload and the directory, identical whichever command asked,
-   * and an invariant enforced on one producer and not the other is enforced nowhere. It matters
-   * more on the destructive one — `edit --from` reaches the same contradiction through the other
-   * door and can remove global entries on the way.
-   *
-   * It takes the DECODED selection, so it must run after the decode and can run no earlier: an
-   * all-global configuration is exactly what a global installation is for, and only the decode
-   * says which entries survived this catalogue and what scope each rests at. Every caller runs it
-   * before it reports a skip and before it writes anything, so a run about to be refused neither
-   * narrates nor mutates.
+   * The home directory is the global scope, so project-scoped content there would land in the
+   * global config mislabelled. Needs the decoded selection; callers run it before any write.
    */
   protected refuseProjectScopedContentAtHome(result: InstallSelection, projectDir: string): void {
     if (!isHomeDirectory(projectDir)) return;
@@ -529,34 +339,7 @@ export abstract class BaseCommand extends Command {
     this.error(sharedConfigProjectScopeAtHome(skillIds, agentNames), { exit: EXIT_CODES.ERROR });
   }
 
-  /**
-   * The refusals a `--from` producer can decide only once it holds what it would install — the
-   * selection and the skills the configuration carries — asked before it lists any of it or asks
-   * whether to install it.
-   *
-   * A run that lists, asks, and is told yes has promised that a yes installs what was listed, so a
-   * refusal still to come after the question would ask a person to confirm an install that was
-   * never going to happen. Every other
-   * `--from` refusal is already decided above the lists — a carried skill asked for as a plugin or
-   * under a catalogue's id, project content at the home directory, an installation already here —
-   * and these four are the ones that need the decoded selection to be asked of:
-   *
-   * - **A placement the host does not offer.** Read off the selection and the host the run
-   *   installs through, nothing else, so nothing makes it wait for the yes.
-   * - **A stack the marketplace does not ship.** The stack supplies only the configuration's
-   *   description, yet the install refuses an id it cannot resolve — after the plugins are
-   *   installed and the skills copied. So it is asked here, through the lookup the install makes,
-   *   of the marketplace the install reads.
-   * - **A carried skill over a directory no shared configuration put there** — the user's own
-   *   skill at the id the configuration minted for it. Judged on the same set the producer writes,
-   *   so the skills already installed globally, which it does not write, are not asked about.
-   * - **A stack the config writer would refuse** — two skills in a category that holds one, as a
-   *   hand-written row or the kept skills an apply puts back can make. Asked through the writer's
-   *   own rule, because `edit --from` writes the config after its removals have landed.
-   *
-   * Shared by `init --from` and `edit --from` for the reason {@link refuseProjectScopedContentAtHome}
-   * is: an invariant enforced on one producer and not the other is enforced nowhere.
-   */
+  /** The `--from` refusals that need the decoded selection, asked before the confirm. */
   protected async refuseSharedConfigBeforeAsking(
     selection: InstallSelection,
     carried: ExternalSkillInstall[],
@@ -574,28 +357,8 @@ export abstract class BaseCommand extends Command {
   }
 
   /**
-   * Refuses a SELECTION asking for a mode/scope cell this host does not offer, before the run has
-   * touched anything.
-   *
-   * **`bindsItsOfferedPlacements` is not a pre-flight and cannot be made into one.** It refuses
-   * at `installPlugin`, which `installPluginSkills` calls once per skill inside a loop that
-   * collects per-skill failures — so a payload whose first plugin row is offerable and whose
-   * second is not installed a real plugin into the user's Codex registry and only then stopped,
-   * on a message ending "Nothing has been changed." Nothing removed it afterwards: no `config.ts`
-   * was written, so `uninstall` had no row naming it and `doctor` had no configuration to check
-   * it against — an orphan in the host's own registry that no command in this CLI can see. The
-   * single-row case cannot show it, because with one unofferable row the loop's first iteration
-   * IS the refusal. `edit --from` had no pre-flight at all until it came here, and met exactly
-   * that per-plugin guard after its own yes.
-   *
-   * It reads the whole selection — ejected rows included — because the roster is about CELLS
-   * rather than about plugins: a host that stopped offering `eject+project` would owe the same
-   * refusal, and a guard that only looked at plugin rows would go on writing files for it.
-   *
-   * The same function the read path calls (`refuseUnofferedPlacements`, off the same host
-   * roster), so `init`'s sentence and `compile`'s are one sentence rather than two that agree
-   * today. The per-call guard stays where it is: it is the backstop for a caller that did not
-   * come through here.
+   * Pre-flight over every row, ejected included: the per-plugin guard in `installPlugin` fires
+   * mid-loop, after earlier plugins are already installed.
    */
   protected refuseUnofferablePlacementsBeforeWriting(
     skills: readonly SkillConfig[],
@@ -608,52 +371,22 @@ export abstract class BaseCommand extends Command {
     }
   }
 
-  /** Whether this run owes an account — the one thing a command may ask about the list. */
   protected get hasIncompleteWork(): boolean {
     return this.incompleteWork.length > 0;
   }
 
-  /**
-   * Warns about work this run attempted and did not complete, and records it for the ending.
-   *
-   * Both halves, always. The warning stays at the point of failure because that is where it is
-   * explicable and where the surrounding output says what was being attempted; the record is
-   * what decides the exit code, and a failure the user is told about while the process reports
-   * success is exactly the state this closes.
-   *
-   * What it must never do is abort. Every caller sits past the point where the mutation it is
-   * reporting on has already happened, so stopping would relabel a state already committed to
-   * disk rather than prevent it — and would abandon the steps after it that can still land.
-   *
-   * The `recovery` sentences live in `INCOMPLETE_WORK_RECOVERY` in `utils/messages.ts`. One
-   * spelling per remedy is what matters; three spellings of "run compile" read as three
-   * different instructions.
-   */
+  /** Never aborts: every caller is past a mutation that has already landed. */
   protected reportIncompleteWork(what: string, recovery: string): void {
     this.warn(what);
     this.recordIncompleteWork(what, recovery);
   }
 
-  /**
-   * The recording half alone, for a caller that has already said its piece: a recompile warns
-   * once per failed sub-agent with the compiler's own reason, so the ending names the roster
-   * those reasons belong to instead of repeating any of them.
-   */
+  /** For a caller that has already warned. */
   protected recordIncompleteWork(what: string, recovery: string): void {
     this.incompleteWork.push({ what, recovery });
   }
 
-  /**
-   * The command's last word: what did not happen, what finishes it, and a non-zero exit.
-   *
-   * `this.exit` raises oclif's `ExitError`, which the framework carries to the process exit
-   * code and prints nothing for — so the account printed here is the whole of the output, with
-   * none of the `Error:` framing `this.error` would add to a command that in fact completed.
-   *
-   * A command that records must call this, or it files failures into a list nothing reads —
-   * which is the original silence wearing the mechanism built to close it, and is what
-   * `failure-reporting-classification.test.ts` holds every command in `src/cli/commands/` to.
-   */
+  /** Every command that records must call this; `this.exit` skips the `Error:` framing. */
   protected exitIfWorkIncomplete(): void {
     if (!this.hasIncompleteWork) return;
 

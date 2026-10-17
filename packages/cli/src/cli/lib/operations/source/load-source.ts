@@ -9,28 +9,18 @@ import {
 } from "../../../utils/logger.js";
 
 export type LoadSourceOptions = {
-  /** Whether this load may reach the init-time source rungs — see {@link SourceCaller}. */
   caller?: SourceCaller;
   sourceFlag?: string;
   projectDir: string;
-  /** When true, enables message buffering and captures startup messages. Default: false. */
+  /** Captures warn() output during the load instead of writing it to stderr. */
   captureStartupMessages?: boolean;
 };
 
 export type LoadedSource = {
   sourceResult: SourceLoadResult;
-  /** Empty array when captureStartupMessages is false. */
   startupMessages: StartupMessage[];
 };
 
-/**
- * Loads the skills matrix from a resolved source.
- *
- * When `captureStartupMessages` is true, wraps the load in buffer mode so
- * warn() calls during loading are captured instead of written to stderr.
- *
- * @throws {Error} If source resolution or fetching fails.
- */
 export async function loadSource(options: LoadSourceOptions): Promise<LoadedSource> {
   const { caller, sourceFlag, projectDir, captureStartupMessages } = options;
 
@@ -61,11 +51,6 @@ export async function loadSource(options: LoadSourceOptions): Promise<LoadedSour
   return { sourceResult, startupMessages };
 }
 
-/**
- * Says what a captured load held back — a skill skipped for a file that will not parse, two
- * folders claiming one id, a marketplace served from a stale cache — in the words `compile` prints
- * them in.
- */
 export function sayCapturedWarnings(messages: readonly StartupMessage[]): void {
   for (const { text } of messages) warn(text);
 }

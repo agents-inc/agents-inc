@@ -37,53 +37,14 @@ import type { LocalSkillMetadata } from "../skills/skill-metadata.js";
 import type { MergedSkillsMatrix, SkillId, SkillSlug } from "../../types/index.js";
 import type { SeedExternalSkill } from "@workspace/matrix/seed";
 
-/**
- * External skills: the one kind of skill a payload carries rather than names.
- *
- * Every other id in a payload is resolved by the receiver against a catalogue it already has, so
- * an id this catalogue does not know is skipped. An added skill answers to no catalogue at all —
- * its whole directory travels inline — so the receiver has to seat it as a catalogue entry AND
- * write its bytes, or the id it was keyed by is skipped like any other unknown one and the
- * configuration installs quietly smaller than it was shared.
- */
-
-/**
- * The id an added skill is minted under at intake — `external-<category>-<name>`.
- *
- * Boundary cast, the same one `CUSTOM_HOUSE_TOOLING_ID` carries: a skill outside every catalogue
- * has an id outside the generated union by construction, and it has to index a matrix keyed by it.
- */
+// Boundary cast: a carried skill's id is outside the generated union by construction.
 const EXTERNAL_ID = "external-web-framework-brainstorming" as SkillId;
 const SECOND_EXTERNAL_ID = "external-web-framework-worktrees" as SkillId;
 const WEB_DEV = "web-developer";
 
-/**
- * The `agents` entry a project-scoped skill's assignment has to be paired with. Absent, a
- * sub-agent rests at the shared selection default and a project skill has nowhere to be written
- * on it.
- *
- * **Seven files declare this name and none exports it, by decision rather than by oversight** —
- * `grep -rn "const PINNED_TO_PROJECT" src e2e --include='*.ts'` is the census, and this note is
- * here because the previous wording ("spelled the way the `init-from-*` specs spell it") reads
- * like a shared import a reader would go looking for. It is not one, and it should not become
- * one. The sites fail the same-reason-to-change test in `clean-code-standards.md` 8.8: each
- * states `"project"` precisely so its own subject stays observable no matter what
- * `DEFAULT_SELECTION_OPTIONS.scope` becomes, so there is no future in which they move together.
- * And the value is an OBJECT — `agents: { [WEB_DEV]: PINNED_TO_PROJECT }` hands over the
- * identity, which is CLAUDE.md's ban on exporting a shared constant callers receive by identity.
- * A two-token literal is the cheaper half of that trade.
- */
 const PINNED_TO_PROJECT = { scope: "project" } as const;
 
-/**
- * The metadata.yaml a skill EJECTED from a marketplace carries: provenance naming the id that
- * installs it again, and no directory beside it.
- *
- * That absence is the whole point, and it is the generator's own shape rather than an omission
- * arranged here — `renderMetadataYaml`'s `forkedFrom` has no `path` field, because `copySkillTo`
- * writes none. Only a skill a shared configuration CARRIED records where inside a repository its
- * bytes came from, since that pair is the only address it has.
- */
+/** An ejected skill's metadata: `forkedFrom` has no `path`, as `copySkillTo` writes it. */
 const EJECTED_SKILL_METADATA = renderMetadataYaml({
   author: "@acme",
   displayName: "Acme House Style",
@@ -92,11 +53,7 @@ const EJECTED_SKILL_METADATA = renderMetadataYaml({
   forkedFrom: { skillId: SECOND_EXTERNAL_ID, contentHash: "abc1234", date: "2026-01-01" },
 });
 
-/**
- * A fresh matrix per spec rather than a shared constant from `mock-matrices.ts`: registration
- * writes the payload's entries INTO the matrix it is given, exactly as the local-skill merge
- * does, and a module-level constant would carry one spec's added skill into every later one.
- */
+/** Fresh per spec: registration writes into the matrix it is given. */
 function catalogueWithFrameworkCategory(): MergedSkillsMatrix {
   return createMockMatrix(SKILLS.react, {
     categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }),
@@ -123,16 +80,11 @@ describe("registerExternalSkills", () => {
         [EXTERNAL_ID]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
       },
       external: { [EXTERNAL_ID]: buildSeedExternalSkill() },
-      // Stated on both sides because the localPath below names the project: a project skill never
-      // reaches a sub-agent resting at the shared selection default, so an assignment left to pair
-      // itself with one would be a configuration nothing in this product can hand out.
       agents: { [WEB_DEV]: PINNED_TO_PROJECT },
     });
 
     registerExternalSkills(payload, matrix, projectDir);
 
-    // The category is the whole of the entry's reach: it decides the domain, the grid tab, and
-    // which sub-agent stack the assignment lands in. Everything else is what the sharer saw.
     expect(matrix.skills[EXTERNAL_ID]).toMatchObject({
       id: EXTERNAL_ID,
       slug: EXTERNAL_ID,
@@ -143,8 +95,6 @@ describe("registerExternalSkills", () => {
       custom: true,
       localPath: path.join(resolveInstallPaths(projectDir, "project").skillsDir, EXTERNAL_ID),
     });
-    // Claimed on the identity axis too — an entry the slug map does not carry is invisible to
-    // anything that addresses a skill by slug.
   });
 
   it("seats an entry the decode that runs immediately after it can still read", () => {
@@ -155,10 +105,6 @@ describe("registerExternalSkills", () => {
 
     registerExternalSkills(payload, matrix, projectDir);
 
-    // Registration is the first half of the install and the decode is the very next step, so a
-    // payload this function seats and that one throws on is one no install can reach the end of.
-    // The pair is what decides it, and neither half is stated here: this is the payload the
-    // factories compose when a caller says nothing about scope on either side.
     expect(() => seedToInstallSelection(payload, matrix)).not.toThrow();
   });
 
@@ -183,8 +129,6 @@ describe("registerExternalSkills", () => {
 
     const installs = registerExternalSkills(payload, matrix, projectDir);
 
-    // Presence in `skills` is selection; `external` is only where the bytes are. Content nobody
-    // picked installs nothing, and seating it would put a skill in the grid nobody chose.
     expect(installs).toStrictEqual([]);
     expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
   });
@@ -199,9 +143,6 @@ describe("registerExternalSkills", () => {
 
     const installs = registerExternalSkills(payload, matrix, projectDir);
 
-    // A skill is PLACED in the taxonomy, never extends it: a category this catalogue has no
-    // definition for belongs to no domain, renders in no tab and reaches no sub-agent. Left
-    // unseated, the id falls to the decode's own skip — reported by name, never fatal.
     expect(installs).toStrictEqual([]);
     expect(matrix.skills[EXTERNAL_ID]).toBeUndefined();
   });
@@ -221,9 +162,6 @@ describe("registerExternalSkills", () => {
     registerExternalSkills(payload, matrix, projectDir);
     const { result, skippedSkillIds } = seedToInstallSelection(payload, matrix);
 
-    // The whole point of seating it: past registration the decode has no idea this id arrived
-    // with its own bytes, so the assignment lands in the sub-agent's stack under the confirmed
-    // category, at the load state the sharer chose.
     expect(skippedSkillIds).toStrictEqual([]);
     expect(result.skills).toStrictEqual(buildSkillConfigs([EXTERNAL_ID]));
     expect(result.assignedStack).toStrictEqual({
@@ -247,19 +185,10 @@ describe("registerExternalSkills", () => {
       },
     });
 
-    // A skill id is the directory the skill installs into, so a carried skill taking a catalogue
-    // id writes its own bytes where the catalogue's copy belongs — and every consumer downstream
-    // reads the payload's content under the catalogue's name. Both ids are named at once for the
-    // same reason the plugin refusal names both: a sharer who fixes one only to be refused for
-    // the next learns nothing the first message could not have told them.
     expect(() => registerExternalSkills(payload, catalogue, projectDir)).toThrow(
       new RegExp(`${SKILLS.react.id}[\\s\\S]*${SKILLS.vue.id}`),
     );
-    // Both incumbents are still the catalogue's, which is the half a thrown error does not prove:
-    // the seat writes into the matrix in place, so a guard placed after it would refuse the run
-    // having already replaced the entries every later read in this process resolves. Both,
-    // because a guard that throws on the FIRST collision it meets has already overwritten
-    // whatever it seated on the way there, and only the second entry can show that.
+    // Both incumbents survive, so the guard ran before anything was seated.
     expect([catalogue.skills[SKILLS.react.id], catalogue.skills[SKILLS.vue.id]]).toStrictEqual([
       SKILLS.react,
       SKILLS.vue,
@@ -267,12 +196,7 @@ describe("registerExternalSkills", () => {
   });
 
   it("refuses a carried skill claiming a shipped catalogue id the loaded matrix does not carry", () => {
-    // The payload chooses which catalogue is loaded — `sharedConfigSourceFlags` in
-    // `commands/init.tsx` passes `payload.marketplace` to the loader — so a payload naming a
-    // marketplace that does not ship the id it impersonates meets no incumbent in the matrix
-    // this function is handed. The shipped catalogue is the half no payload can move, which is
-    // why `refuseCatalogueCollisions` in `loading/source-loader.ts` reads it, and this asks the
-    // same question of the same set.
+    // The payload chooses which catalogue loads, so the shipped one is checked too.
     const otherMarketplace = createMockMatrix(SKILLS.vue, {
       categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }),
     });
@@ -282,8 +206,7 @@ describe("registerExternalSkills", () => {
       external: { [SKILLS.react.id]: buildSeedExternalSkill() },
     });
 
-    // The subject guard: with the id seated here the refusal would be the loaded-matrix arm's,
-    // and this spec would pass against the build it exists to red.
+    // Not seated here, or the refusal would be the loaded-matrix arm's.
     expect(
       otherMarketplace.skills[SKILLS.react.id],
       "the matrix the payload steered must not carry the impersonated id",
@@ -295,16 +218,8 @@ describe("registerExternalSkills", () => {
   });
 
   it("seats a carried skill over this installation's own copy, so re-applying is not a collision", () => {
-    // What `edit --from` hands this function on a SECOND apply: the id is in the matrix because
-    // the local-skill merge read the directory a previous apply wrote, not because a marketplace
-    // ships it. Refusing that would make a shared configuration installable exactly once.
-    //
-    // `category` and `slug` are stated because `createMockSkill` throws for an id its canonical
-    // registry does not carry, and a skill outside every catalogue is outside that table by
-    // construction. Neither is read off the id's segments: the category is the one the payload
-    // below confirms and this matrix declares, and slug-equals-id is what `externalSlug` makes
-    // true of every carried skill — a skill answering to no catalogue has no shorter name, and the
-    // cast is that function's own (`return id as SkillSlug`) rather than a second opinion.
+    // A second `edit --from` apply finds its own earlier copy seated and `local`.
+    // Boundary cast below: a carried skill's slug is its id, as `externalSlug` makes it.
     const carried = buildSeedExternalSkill();
     const withOwnCopy = createMockMatrix(
       createMockSkill(EXTERNAL_ID, {
@@ -323,11 +238,6 @@ describe("registerExternalSkills", () => {
 
     expect(registerExternalSkills(payload, withOwnCopy, projectDir).map(({ id }) => id)) //
       .toStrictEqual([EXTERNAL_ID]);
-    // The mirror of the refusal above, and what makes the pair a control rather than two specs
-    // about different things: there the incumbent had to SURVIVE, here it has to be replaced by
-    // the payload's own entry. Held against the values the payload carries rather than literals,
-    // because the local copy's own displayName and description are what a seat that silently
-    // did nothing would leave behind.
     expect(withOwnCopy.skills[EXTERNAL_ID]).toMatchObject({
       displayName: carried.displayName,
       description: carried.description,
@@ -346,9 +256,6 @@ describe("registerExternalSkills", () => {
       },
     });
 
-    // The payload IS the source, so there is no marketplace for a plugin install to fetch from —
-    // and both are named at once, because a sharer who fixes one only to be refused for the next
-    // learns nothing the first message could not have told them.
     expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
       new RegExp(`${EXTERNAL_ID}[\\s\\S]*${SECOND_EXTERNAL_ID}`),
     );
@@ -366,8 +273,7 @@ describe("writeExternalSkills", () => {
     initializeMatrix(matrix);
     tempDir = await createTempDir("cc-external-write-");
     projectDir = path.join(tempDir, "project");
-    // Global scope resolves through `os.homedir()`, which reads $HOME on POSIX — without the
-    // stub a global-scoped entry would be written into the developer's own ~/.claude.
+    // Global scope resolves through $HOME; unstubbed, it would write into the real ~/.claude.
     vi.stubEnv("HOME", tempDir);
   });
 
@@ -376,7 +282,6 @@ describe("writeExternalSkills", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** Registers and writes in the order both producers must: seat the entries, then write them. */
   async function install(
     external: SeedExternalSkill,
     scope: "project" | "global",
@@ -389,11 +294,6 @@ describe("writeExternalSkills", () => {
     return path.join(resolveInstallPaths(projectDir, scope).skillsDir, EXTERNAL_ID);
   }
 
-  /**
-   * A skill directory already standing where a carried skill's bytes would land, described by
-   * `metadata` — or by nothing at all, which is how a skill somebody wrote by hand most often
-   * arrives.
-   */
   async function standingSkillDir(id: SkillId, metadata: string | null): Promise<string> {
     const skillDir = path.join(resolveInstallPaths(projectDir, "project").skillsDir, id);
     await mkdir(skillDir, { recursive: true });
@@ -415,8 +315,6 @@ describe("writeExternalSkills", () => {
       "project",
     );
 
-    // A skill is its SKILL.md AND everything under it: the manifest alone installs something
-    // that loads and then cannot do what it says.
     expect(await readFile(path.join(skillDir, "reference/api.md"), "utf8")).toBe("# API\n");
     expect(await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf8")).toContain(
       "Structured brainstorming",
@@ -435,24 +333,17 @@ describe("writeExternalSkills", () => {
   it("names the skill by the id it installs under, so a sub-agent's reference resolves", async () => {
     const skillDir = await install(buildSeedExternalSkill(), "project");
 
-    // Every loader reads a skill's id off its frontmatter `name`, and a compiled sub-agent
-    // references it by the id the config recorded — the minted one. Left as the repository
-    // wrote it, the two never meet: the agent names a skill Claude Code knows as something else,
-    // and the next load registers an id the configuration does not carry.
+    // Loaders read the id off frontmatter `name`, so it must be the minted id.
     const frontmatter = parseFrontmatter(
       await readFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "utf8"),
     );
     expect(frontmatter?.name).toBe(EXTERNAL_ID);
-    // Only the name. The description is the author's and travels untouched.
     expect(frontmatter?.description).toBe("Structured brainstorming");
   });
 
   it("registers the skill on disk as well as in memory, under the same taxonomy", async () => {
     const skillDir = await install(buildSeedExternalSkill(), "project");
 
-    // The in-memory seat lasts one run. What makes the skill survive the next `edit`, `compile`
-    // or `list` is a metadata.yaml the local-skill discovery can read it out of — carrying the
-    // category the sharer confirmed and the domain that category belongs to.
     const metadata: LocalSkillMetadata = parseYaml(
       await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8"),
     );
@@ -468,11 +359,7 @@ describe("writeExternalSkills", () => {
   it("writes a metadata.yaml this installation's own validator accepts", async () => {
     const skillDir = await install(buildSeedExternalSkill(), "project");
 
-    // `doctor` validates every installed skill's metadata.yaml against the schema below, so a
-    // file this command writes and that command reports as an error is the CLI disagreeing with
-    // itself — and a user who cannot fix it (the skill is somebody else's repository) learns to
-    // ignore `doctor` instead. What the payload cannot say is defaulted in the CLI's own idiom,
-    // not left out.
+    // `doctor` validates this file, so defaults are written rather than left out.
     const metadata: LocalSkillMetadata = parseYaml(
       await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8"),
     );
@@ -494,9 +381,6 @@ describe("writeExternalSkills", () => {
       "project",
     );
 
-    // Only what the sharer CONFIRMED is written over the repository's own file — the placement in
-    // this taxonomy, and the names the editor showed. Everything else it shipped is kept, because
-    // a skill's author knows more about when to use it than a default does.
     const metadata: LocalSkillMetadata = parseYaml(
       await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8"),
     );
@@ -506,13 +390,6 @@ describe("writeExternalSkills", () => {
   it("stamps the provenance that says this directory is the CLI's copy, not the user's own", async () => {
     const skillDir = await install(buildSeedExternalSkill(), "project");
 
-    // `forkedFrom` is the package's one answer to "did the CLI put this here?" — `uninstall`
-    // reads it to decide what it may delete, and the producer reads it to decide what the round
-    // trip owns. An added skill IS the round trip's, so it says so where that question is asked.
-    //
-    // Both halves of the address, because sharing this installation has to rebuild the entry the
-    // payload arrived as: a repository alone cannot say which of its directories travelled, and a
-    // skill answering to no catalogue has no id anyone can resolve instead.
     const metadata: LocalSkillMetadata = parseYaml(
       await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8"),
     );
@@ -529,12 +406,7 @@ describe("writeExternalSkills", () => {
       "project",
     );
 
-    // One sentence, one definition. A carried skill's trigger line is reachable by two routes —
-    // this file, on every load after the install, and `statedUsageFor` in
-    // `stacks/stacks-loader.ts` during the run that seats it — and the two used to disagree on
-    // both halves: the category against the display name, and a trailing period against none.
-    // Held against `FALLBACK_USAGE`, which MIRRORS the product's wording rather than importing
-    // it, so a change to the template reddens here instead of moving both sides at once.
+    // `FALLBACK_USAGE` mirrors the product's wording rather than importing it.
     const metadata: LocalSkillMetadata = parseYaml(
       await readFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), "utf8"),
     );
@@ -544,9 +416,7 @@ describe("writeExternalSkills", () => {
   it("refuses to write over a skill directory no shared configuration carried, naming every one", async () => {
     const handAuthored = await standingSkillDir(EXTERNAL_ID, null);
     const ejected = await standingSkillDir(SECOND_EXTERNAL_ID, EJECTED_SKILL_METADATA);
-    // Stated on both entries: the standing directories above are the project's, and the shared
-    // selection default rests at global — so a payload that said nothing would be judged against
-    // the user's own ~/.claude and meet nothing at all.
+    // Project scope on both, matching the standing directories.
     const payload = buildSeedPayload({
       skills: {
         [EXTERNAL_ID]: buildSeedSkill({ scope: "project" }),
@@ -558,18 +428,9 @@ describe("writeExternalSkills", () => {
       },
     });
 
-    // `forkedFrom.path` is the one thing that says a directory arrived inside a shared
-    // configuration: {@link registerSkillOnDisk} is the only writer of it and `readCarriedSkill`
-    // reads it for this exact question. `local` cannot stand in for it — the local-skill merge
-    // writes that flag on everything it finds, so the user's own work and a marketplace skill
-    // ejected here both wear it. Both are named at once, for the same reason the two refusals
-    // above name every id: a user who moves one directory only to be refused for the next
-    // learns nothing the first message could not have told them.
     await expect(writeExternalSkills(registerExternalSkills(payload, matrix, projectDir))) //
       .rejects.toThrow(new RegExp(`${EXTERNAL_ID}[\\s\\S]*${SECOND_EXTERNAL_ID}`));
 
-    // And neither directory moved. A refusal that had already written the first of two is a
-    // refusal that destroyed what it was raised to protect.
     expect(await readFile(path.join(handAuthored, STANDARD_FILES.SKILL_MD), "utf8")).toBe(
       renderSkillMd(EXTERNAL_ID),
     );
@@ -582,10 +443,6 @@ describe("writeExternalSkills", () => {
   it("writes over the directory a previous apply carried, so re-applying is not a refusal", async () => {
     const skillDir = await install(buildSeedExternalSkill(), "project");
 
-    // The control for the refusal above, and the constraint the whole re-apply rests on:
-    // `edit --from` applies a shared configuration destructively over an existing install, so a
-    // carried skill a previous apply wrote is met again on the next one. Refusing it would make
-    // a shared configuration installable exactly once.
     await install(
       buildSeedExternalSkill({
         files: { "SKILL.md": renderSkillMd(UPSTREAM_SKILL_NAME, "Revised upstream") },
@@ -617,8 +474,7 @@ describe("writeExternalSkills", () => {
 
     vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
     const first = await write(buildSeedExternalSkill());
-    // A day later, the same bytes: the stamp's date moves and its place in the file does too, and
-    // neither is anything a load reads.
+    // A later write moves the stamp's date and position; neither is something a load reads.
     vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
     const same = await write(buildSeedExternalSkill());
     const revised = await write(
@@ -646,19 +502,10 @@ describe("writeExternalSkills", () => {
     });
     const installs = registerExternalSkills(payload, matrix, projectDir);
 
-    // The keys come off the wire, so a payload can ask for any path it likes. The same guard the
-    // skill copier applies to a marketplace's own paths applies to these.
     await expect(writeExternalSkills(installs)).rejects.toThrow("escaped.md");
   });
 
-  /**
-   * The editor's output preview draws a carried skill's directory with `installedSkillTree`,
-   * which composes the two writes this file shares through `@workspace/compile` with the half
-   * this CLI keeps because it needs a disk — reading the shipped metadata.yaml back, and stamping
-   * `forkedFrom`. This holds that composition against the directory a real install leaves, byte
-   * for byte, so the preview cannot drift from the install without a red here. The install date
-   * is the one input only the machine knows, so it is pinned rather than read back.
-   */
+  /** Holds the editor's `installedSkillTree` preview byte-for-byte against a real install. */
   describe("the directory the output preview draws for it", () => {
     const INSTALL_DAY = "2026-10-01";
     const SHIPPED_FIELDS = {
@@ -680,8 +527,6 @@ describe("writeExternalSkills", () => {
     const SHIPPED_CASES = [
       { shipping: "no metadata.yaml", metadata: undefined },
       { shipping: "a metadata.yaml of its own", metadata: renderMetadataYaml(SHIPPED_FIELDS) },
-      // A copy somebody ejected and committed: its provenance is replaced, and the CLI's read-back
-      // puts the replacement first.
       { shipping: "a metadata.yaml with provenance of its own", metadata: EJECTED_SKILL_METADATA },
       { shipping: "a metadata.yaml no parser can read", metadata: renderUnparseableMetadataYaml() },
       {
@@ -699,8 +544,6 @@ describe("writeExternalSkills", () => {
             ...(metadata !== undefined && { "metadata.yaml": metadata }),
           },
         });
-        // The domain the install files the skill under is the one the seated catalogue declares
-        // for its category, read through the lookup the install itself makes.
         const domain = getCategoryDomain(external.categoryId);
         if (domain === undefined) {
           throw new Error(`the test catalogue places ${external.categoryId} in no domain`);

@@ -91,7 +91,6 @@ describe("config-generator", () => {
           "web-framework": [{ id: "web-framework-react", preloaded: true }],
         },
       });
-      // Should NOT have these fields by default
       expect(config.author).toBeUndefined();
       expect(config.description).toBeUndefined();
     });
@@ -110,8 +109,7 @@ describe("config-generator", () => {
         },
       );
 
-      // Styling is preloaded for the roles that build with it and lazy for the
-      // reviewer — the same skill, two answers, straight from the mapping.
+      // Preloaded for the roles that build with styling, lazy for the reviewer.
       expect(config.stack).toStrictEqual({
         "web-developer": {
           "web-framework": [{ id: "web-framework-react", preloaded: true }],
@@ -142,7 +140,7 @@ describe("config-generator", () => {
         },
       );
 
-      // Both styling skills must survive — regression: Object.fromEntries overwrote duplicates
+      // Both styling skills must survive.
       expect(config).toStrictEqual({
         name: "my-project",
         agents: buildAgentConfigs(["web-developer"]),
@@ -204,10 +202,7 @@ describe("config-generator", () => {
         agentConfigs: buildAgentConfigs(selectedAgents),
       });
 
-      // Local skills have category "local" which is excluded from stack. With an
-      // agent selected, the generator authoritatively rebuilt the stack and found
-      // nothing to preload, so it emits an explicit empty `{}` (not an omitted
-      // key) — the merger trusts `{}` and won't resurrect a stale existing stack.
+      // Local skills are excluded; with an agent selected the rebuilt stack is an explicit `{}`.
       expect(config).toStrictEqual({
         name: "my-project",
         agents: buildAgentConfigs(["web-developer"]),
@@ -234,7 +229,6 @@ describe("config-generator", () => {
         },
       );
 
-      // Stack should have framework mapping from remote skill (local skills have no category)
       expect(config.stack).toStrictEqual({
         "web-developer": {
           "web-framework": [{ id: "web-framework-react", preloaded: true }],
@@ -283,7 +277,6 @@ describe("config-generator", () => {
         },
       );
 
-      // Stack should only contain known skills
       expect(config.stack).toStrictEqual({
         "web-developer": {
           "web-framework": [{ id: "web-framework-react", preloaded: true }],
@@ -295,7 +288,6 @@ describe("config-generator", () => {
     describe("what the user is told about a skill this marketplace does not carry", () => {
       /** An id no marketplace declares — the whole point of the warning under test. */
       const ABSENT_SKILL_ID = "web-unknown-skill" as SkillId;
-      /** The developer-only half of the old warning: five arbitrary matrix keys. */
       const MATRIX_SAMPLE_LABEL = "Matrix keys sample";
 
       beforeEach(() => {
@@ -374,10 +366,7 @@ describe("config-generator", () => {
         agentConfigs: buildAgentConfigs(selectedAgents),
       });
 
-      // Order IS the subject here, so the comparison has to be order-sensitive.
-      // `expectAgentConfigs` sorts both sides — right for its other callers, who
-      // ask about membership, and blind here: this `it` passed unchanged with the
-      // producer's own `.sort()` removed.
+      // Order is the subject; `expectAgentConfigs` sorts both sides.
       expect(config.agents).toStrictEqual(
         buildAgentConfigs(["api-developer", "reviewer", "web-developer"]),
       );
@@ -398,9 +387,7 @@ describe("config-generator", () => {
       );
 
       expectAgentConfigs(config, buildAgentConfigs(["api-developer", "web-developer", "reviewer"]));
-      // Relevance-scoped: each implementation skill reaches its own domain's
-      // agents and never the other domain's — while the cross-domain reviewer
-      // carries both, preloaded per each skill's reviewer-flavor row.
+      // Each skill reaches its own domain's agents; the cross-domain reviewer carries both.
       expect(config.stack).toStrictEqual({
         "api-developer": {
           "api-api": [{ id: "api-framework-hono", preloaded: true }],
@@ -453,8 +440,7 @@ describe("config-generator", () => {
         },
       );
 
-      // Cross-domain use is a shared skill's nature: both agents carry it, and
-      // the mapping's row — developer yes, tester no — decides each load.
+      // A shared skill reaches both agents; the mapping row decides each load.
       expect(config.stack).toStrictEqual({
         "api-tester": {
           "shared-security": [{ id: "shared-security-auth-security" }],
@@ -465,9 +451,7 @@ describe("config-generator", () => {
       });
     });
 
-    // Reversed by CLI-846: a shared skill is what every workspace is built with,
-    // so the meta agents reach it too — lazily, since the row names `developer`
-    // and `researcher` and not `meta`.
+    // The row names `developer` and `researcher`, not `meta`, so the meta agent gets it lazily.
     it("assigns a shared skill to a meta agent lazily", () => {
       initializeMatrix(SHARED_SECURITY_MATRIX);
       const selectedAgents: AgentName[] = ["agent-summoner", "web-developer"];
@@ -678,9 +662,7 @@ describe("config-generator", () => {
       });
 
       expectAgentConfigs(config, buildAgentConfigs(["web-developer", "reviewer"]));
-      // The reviewing skill's row names the reviewer flavor alone, so the
-      // reviewer carries it — preloaded, as authored — and the developer does
-      // not carry it at all.
+      // The row names the reviewer flavor alone.
       expect(config.stack).toStrictEqual({
         reviewer: {
           "meta-reviewing": [{ id: "meta-reviewing-reviewing", preloaded: true }],
@@ -700,8 +682,7 @@ describe("config-generator", () => {
       });
 
       expectAgentConfigs(config, buildAgentConfigs(["api-developer", "web-developer"]));
-      // Agents are in play, so the generator rebuilt the stack and found no
-      // relevant pair — an explicit empty `{}`, not an omitted key.
+      // Agents in play, so the rebuilt stack is an explicit `{}`, not an omitted key.
       expect(config.stack).toStrictEqual({});
     });
 
@@ -738,13 +719,11 @@ describe("config-generator", () => {
         expect(config.stack?.["api-developer"]).toBeUndefined();
       });
 
-      // Per-agent curation preservation outranks relevance: an entry the
-      // prior save carries is the user's curation, wherever it sits, and
-      // survives verbatim. Only NEW triples take the scoped rule.
+      // Prior entries are curation and survive verbatim; only new triples take the scoped rule.
       it("keeps a prior cross-domain entry verbatim through an edit", () => {
         initializeMatrix(FULLSTACK_PAIR_MATRIX);
         const selectedAgents: AgentName[] = ["api-developer", "web-developer"];
-        // A broadcast-era save: the web skill sits on the api agent, lazily.
+        // The web skill sits on the api agent, lazily.
         const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
           "api-developer": {
             "web-framework": [{ id: "web-framework-react" }],
@@ -763,8 +742,7 @@ describe("config-generator", () => {
           "api-developer": {
             "web-framework": [{ id: "web-framework-react" }],
           },
-          // New to the selection, so the seeding branch runs for this agent —
-          // and the scoped rule places the web skill here.
+          // New to the selection, so the scoped rule places the web skill here.
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
@@ -799,8 +777,7 @@ describe("config-generator", () => {
           },
         );
 
-        // The new web skill lands on the web agent and never crosses to the
-        // api agent, whose prior entries ride through untouched.
+        // The web skill lands on the web agent only; the api agent's prior entries are untouched.
         expect(config.stack).toStrictEqual({
           "api-developer": {
             "api-api": [{ id: "api-framework-hono", preloaded: true }],
@@ -917,8 +894,7 @@ describe("config-generator", () => {
         });
       });
 
-      // The pair already in the stack keeps the flag it was saved with; the one
-      // arriving this session has nothing to keep and takes the mapping's word.
+      // A saved pair keeps its flag; a new pair takes the mapping's.
       it("takes the mapping's default on a new (agent, skill) pair absent from existingStack", () => {
         initializeMatrix(REACT_SCSS_MATRIX);
         const existingStack: Partial<Record<AgentName, StackAgentConfig>> = {
@@ -995,24 +971,15 @@ describe("config-generator", () => {
         expect(config.stack?.["reviewer"]).toBeUndefined();
       });
 
-      // A saved config.ts keys each agent's stack by the category the skill sat
-      // in when it was written, and the generator looks a prior entry up under
-      // the LIVE one. The loader is what makes the two agree: it re-keys every
-      // saved entry to its skill's live category before the generator sees it,
-      // so a moved skill's curation is still the user's word here.
+      // The loader re-keys saved entries to each skill's live category before the generator runs.
       describe("a saved stack entry whose skill has since changed category", () => {
         const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
         const STALE_CATEGORY_KEY = "shared-monorepo";
         const LIVE_CATEGORY_KEY = "shared-task-runner";
 
-        /**
-         * The saved block as the generator receives it — through the same
-         * `normalizeStackRecord` that `loadProjectConfigFromDir` runs, which is
-         * the only way an on-disk stack reaches this function.
-         */
+        /** Through `normalizeStackRecord`, the only way an on-disk stack reaches the generator. */
         function savedStackAsLoaded(): Partial<Record<AgentName, StackAgentConfig>> {
-          // Boundary cast: normalizeStackRecord returns string-keyed agents (it
-          // takes the parsed TS shape); narrow to typed AgentName keys.
+          // Boundary cast: normalizeStackRecord returns string-keyed agents.
           return normalizeStackRecord({
             "web-developer": {
               [STALE_CATEGORY_KEY]: [{ id: MOVED_SKILL, preloaded: true }],
@@ -1070,8 +1037,7 @@ describe("config-generator", () => {
         it("keeps the curation the user saved under the bucket's name", () => {
           initializeMatrix(BUILT_IN_MATRIX);
           const selectedAgents: AgentName[] = ["api-developer"];
-          // Boundary cast: normalizeStackRecord takes the parsed TS shape and returns
-          // string-keyed agents; narrow to typed AgentName keys.
+          // Boundary cast: normalizeStackRecord returns string-keyed agents.
           const existingStack = normalizeStackRecord({
             "api-developer": {
               [RETIRED_CATEGORY_KEY]: [{ id: SPLIT_SKILL, preloaded: true }],
@@ -1112,8 +1078,7 @@ describe("config-generator", () => {
           selectedAgents,
           skillConfigs: buildSkillConfigs(selectedSkills),
           agentConfigs: buildAgentConfigs(selectedAgents),
-          // Boundary cast: ProjectConfig.stack is Record<string, StackAgentConfig>
-          // (parsed TS shape); narrow to typed AgentName keys for the mutator input.
+          // Boundary cast: the parsed stack is keyed by string; narrow to AgentName keys.
           existingStack: first.stack as Partial<Record<AgentName, StackAgentConfig>>,
         });
 
@@ -1257,9 +1222,7 @@ describe("config-generator", () => {
         });
 
         expect(config.stack).toStrictEqual({
-          // The developer's entry is new — the flip is what brought the skill
-          // into reach — so it arrives with the mapping's default rather than
-          // the reviewer's saved flag.
+          // The developer's entry is new, so it takes the mapping's default.
           "web-developer": {
             "web-framework": [{ id: "web-framework-react", preloaded: true }],
           },
@@ -1349,14 +1312,7 @@ describe("config-generator", () => {
       });
     });
 
-    /**
-     * A triple with no prior entry has nobody's word to inherit, so it takes
-     * the shared mapping's — the same table the editor resolves against, so a
-     * skill picked in either place arrives loaded the same way. A triple that
-     * DOES have a prior entry keeps it, mapping or no mapping: that entry is
-     * the user's curation, and a bare `{ id }` states lazy as plainly as the
-     * flag states preloaded.
-     */
+    /** A new triple takes the shared mapping's load; one with a prior entry keeps it. */
     describe("load state on triples the prior stack does not carry", () => {
       it("preloads a new triple on a role the mapping names", () => {
         initializeMatrix(SINGLE_REACT_MATRIX);
@@ -1375,8 +1331,7 @@ describe("config-generator", () => {
         });
       });
 
-      // The mapping lists the testing skills on `tester` alone, so the same
-      // skill lands preloaded on one agent and lazy on the next.
+      // The mapping lists testing skills on `tester` alone.
       it("loads a new triple lazily on a role the mapping leaves out", () => {
         initializeMatrix(VITEST_MATRIX);
         const selectedAgents: AgentName[] = ["web-developer", "web-tester"];
@@ -1466,9 +1421,7 @@ describe("config-generator", () => {
         });
       });
 
-      // A skill whose category this matrix places in no domain has no taxonomy
-      // to be targeted on. Relevance unknown means it reaches nobody as a new
-      // triple — assignment is the user's to make, not a broadcast's.
+      // No domain means no targeting: assignment is the user's to make.
       it("assigns a skill whose category names no domain to no agent", () => {
         initializeMatrix(CUSTOM_SKILL_MATRIX);
         const selectedAgents: AgentName[] = ["web-developer"];
@@ -1484,10 +1437,7 @@ describe("config-generator", () => {
         expect(config.stack).toStrictEqual({});
       });
 
-      // A marketplace's own skill is namespaced, so no catalog lookup can
-      // answer for its id — and targeting never needed one. The matrix carries
-      // the domain its category belongs to, and the skill lands on that
-      // domain's agents like any other, whatever marketplace shipped it.
+      // Targeting reads the domain from the matrix, whatever marketplace shipped the skill.
       it("assigns a marketplace-namespaced skill to its own domain's agents", () => {
         initializeMatrix(NAMESPACED_SKILL_MATRIX);
         const selectedAgents: AgentName[] = ["web-developer", "api-developer"];
@@ -1507,11 +1457,7 @@ describe("config-generator", () => {
         });
       });
 
-      // A skill the user wrote is targeted the same way a marketplace's is: by
-      // the taxonomy the loaded matrix carries. Provenance decides nothing about
-      // reach, so a custom skill in a real category lands on that domain's
-      // agents — lazily, because eagerness is keyed by catalog id and no custom
-      // skill has one.
+      // Targeted by taxonomy, and lazy, since eagerness is keyed by catalog id.
       it("assigns a custom skill in a real category to its own domain's agents", () => {
         initializeMatrix(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX);
         const selectedAgents: AgentName[] = ["web-developer", "api-developer"];
@@ -1529,9 +1475,7 @@ describe("config-generator", () => {
         });
       });
 
-      // The prior save's word covers outside-catalog entries too: what an
-      // earlier release or a hand edit placed is curation, not a candidate for
-      // the relevance rule to reclaim.
+      // Prior outside-catalog entries are curation too.
       it("keeps a prior outside-catalog entry verbatim", () => {
         initializeMatrix(CUSTOM_SKILL_MATRIX);
         const selectedAgents: AgentName[] = ["web-developer"];
@@ -1559,13 +1503,7 @@ describe("config-generator", () => {
       });
     });
 
-    /**
-     * A stack map's category keys are emitted into `config.ts` in the order the
-     * map carries them, and the compiled agent's Available-Skills section follows
-     * the same order. That makes key order CONTENT: two sessions that end on the
-     * same roster owe the same bytes. The order the user happened to tick the
-     * skills in is a property of the session, not of the roster.
-     */
+    /** Category key order is content (config.ts and compiled agent), so it follows the roster. */
     describe("stack category order is a property of the roster, not of the session", () => {
       /** One skill in each of three categories the matrix declares in a fixed order. */
       const ROSTER: SkillId[] = [
@@ -1592,8 +1530,7 @@ describe("config-generator", () => {
         const asPicked = Object.keys(stackFromSelectionOrder(ROSTER));
         const pickedInReverse = Object.keys(stackFromSelectionOrder([...ROSTER].reverse()));
 
-        // Subject guard: both sessions really did place all three categories, so
-        // the equality below is not comparing two empty lists.
+        // Subject guard: both sessions placed all three categories.
         expect([...asPicked].sort()).toStrictEqual(["web-framework", "web-styling", "web-testing"]);
         expect(
           pickedInReverse,
@@ -1719,9 +1656,6 @@ describe("config-generator", () => {
       });
     });
 
-    // A stack that states only which skills an agent gets has said nothing
-    // about the load, so the shared mapping answers — per pair, which is how
-    // one skill can preload on one of its agents and not on another.
     it("gives an unflagged entry the shared mapping's load, per agent", () => {
       const result = buildStackProperty(UNFLAGGED_TWO_AGENT_STACK);
 
@@ -1735,8 +1669,7 @@ describe("config-generator", () => {
       });
     });
 
-    // Third-party stack YAML is the explicit tier: what its author wrote wins
-    // over the mapping in both directions.
+    // Third-party stack YAML is the explicit tier.
     it("leaves an authored flag exactly as the author wrote it", () => {
       const result = buildStackProperty(AUTHORED_FLAGS_STACK);
 
@@ -1813,7 +1746,6 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // Global partition
       expectConfigSkills(result.global, ["web-framework-react"]);
       expectConfigAgents(result.global, ["web-developer"]);
       expect(result.global.stack).toStrictEqual({
@@ -1822,7 +1754,6 @@ describe("config-generator", () => {
         },
       });
 
-      // Project partition
       expectConfigSkills(result.project, ["web-testing-vitest"]);
       expectConfigAgents(result.project, ["reviewer"]);
       expect(result.project.stack).toStrictEqual({
@@ -1862,10 +1793,7 @@ describe("config-generator", () => {
     });
 
     it("splits global agents' stack between global and project when skills have mixed scope", () => {
-      // Bug regression: when all agents are global but skills are mixed scope,
-      // project skills' stack mappings must appear in the project config under the
-      // same global agent name. Before the fix, only globalFiltered was built and
-      // project skills were silently dropped from the stack.
+      // All agents global but skills mixed: project skills' mappings must reach the project config.
       const config = buildProjectConfig({
         skills: [
           ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
@@ -1882,15 +1810,12 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // Global partition should contain only the global skill's stack mapping
       expect(result.global.stack).toStrictEqual({
         "web-developer": {
           "web-framework": [{ id: "web-framework-react", preloaded: false }],
         },
       });
 
-      // Project partition should contain the project skill's stack mapping
-      // under the same global agent name
       expect(result.project.stack).toStrictEqual({
         "web-developer": {
           "web-testing": [{ id: "web-testing-vitest", preloaded: false }],
@@ -1898,20 +1823,7 @@ describe("config-generator", () => {
       });
     });
 
-    /**
-     * The global partition holds only what the global partition declares. `stack` on it is
-     * derived from the global agents, never inherited from the whole config — and today it is
-     * inherited whenever the derivation yields nothing, because the override guarding the
-     * spread is conditional and the spread underneath it is not.
-     *
-     * The assertion reads `result.global.stack` with no `?? {}` fallback, and that is the whole
-     * of what makes it an assertion about an EMPTY stack rather than about a missing one: the
-     * two states are what the function's own doc comment calls load-bearing, because the merger
-     * reads an absent stack as no statement and keeps the stale one. A `?? {}` launders them
-     * together, and a conditional `stack` key then satisfies this `it` unchanged.
-     *
-     * See `.ai-docs/agent-findings/2026-08-17-the-global-split-carries-the-whole-stack-when-no-global-agent-survives.md`.
-     */
+    /** No `?? {}`: an empty stack and an absent one mean different things to the merger. */
     it("gives the global partition an empty stack when no global agent survives", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"]),
@@ -1925,8 +1837,7 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // The subject guard for the assertion below: the split kept no global agent, so every
-      // stack row left names a sub-agent the global partition does not install.
+      // Subject guard: the split kept no global agent.
       expectConfigAgents(result.global, []);
       expect(
         result.global.stack,
@@ -1934,11 +1845,7 @@ describe("config-generator", () => {
       ).toStrictEqual({});
     });
 
-    /**
-     * The same rule read from the other side. Both partitions override `stack` over the same
-     * unconditional spread, so a derivation that yields nothing inherits the whole config's
-     * stack on either — and a fix that closes one side leaves the mirror live.
-     */
+    /** The mirror of the case above, for the project partition. */
     it("gives the project partition an empty stack when no project agent survives", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
@@ -1955,8 +1862,7 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // The subject guard: every agent went global, so every stack row left names a sub-agent
-      // the project partition does not install.
+      // Subject guard: every agent went global.
       expectConfigAgents(result.project, []);
       expect(
         result.project.stack,
@@ -1964,15 +1870,7 @@ describe("config-generator", () => {
       ).toStrictEqual({});
     });
 
-    /**
-     * The ruling this pins (owner, 2026-08-20): a project owns its own domain
-     * selection rather than inheriting the global one.
-     *
-     * It is pinned on BOTH partitions deliberately. The field was uncovered here until this
-     * test, which is exactly why the function's own doc comment could claim for months that
-     * the project half was cleared while the code copied it — both project writers recompute
-     * the field before writing, so no emitted config could tell the two stories apart.
-     */
+    /** A project owns its own domain selection; pinned on both partitions. */
     it("carries selectedDomains onto both partitions, because a project owns its own domains", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react"], {
@@ -1994,11 +1892,7 @@ describe("config-generator", () => {
       ).toEqual(["web"]);
     });
 
-    /**
-     * The ruling this pins (owner, 2026-10-02): a project's `branding` stays on the project
-     * half. The global partition becomes the machine's own config, so a name carried into it
-     * would rename every installation that declares none of its own.
-     */
+    /** The global partition becomes the machine's config, so a project's branding stays off it. */
     it("keeps a project's branding on the project partition and off the global one", () => {
       const config = buildProjectConfig({
         skills: [
@@ -2020,11 +1914,7 @@ describe("config-generator", () => {
       ).not.toHaveProperty("branding");
     });
 
-    /**
-     * The same ruling for the five fields a source repository declares its own layout with: they
-     * stay in the file that carried them, so the global partition, which becomes the machine's own
-     * config, takes none of them.
-     */
+    /** Likewise the five source-layout fields. */
     it("keeps a project's source-layout fields on the project partition and off the global one", () => {
       const config = buildProjectConfig({
         skills: [
@@ -2064,7 +1954,6 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // Excluded global skill routes to project partition
       expectSkillConfigs(
         result.project,
         buildSkillConfigs(["web-framework-react"], {
@@ -2073,7 +1962,6 @@ describe("config-generator", () => {
           excluded: true,
         }),
       );
-      // Active global skill stays in global partition
       expectSkillConfigs(
         result.global,
         buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
@@ -2091,12 +1979,10 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // Excluded global agent routes to project partition
       expectAgentConfigs(
         result.project,
         buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
       );
-      // Active global agent stays in global partition
       expectAgentConfigs(result.global, buildAgentConfigs(["reviewer"], { scope: "global" }));
     });
 
@@ -2116,12 +2002,10 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // Active global skill in global partition
       expectSkillConfigs(
         result.global,
         buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "agents-inc" }),
       );
-      // Excluded global + project skills in project partition
       expectSkillConfigs(result.project, [
         ...buildSkillConfigs(["web-testing-vitest"], {
           scope: "global",
@@ -2143,12 +2027,10 @@ describe("config-generator", () => {
 
       const result = splitConfigByScope(config);
 
-      // Excluded project-scope skill stays in project partition with excluded preserved
       expectSkillConfigs(
         result.project,
         buildSkillConfigs(["web-framework-react"], { excluded: true }),
       );
-      // Does NOT appear in global partition
       expectSkillConfigs(
         result.global,
         buildSkillConfigs(["web-testing-vitest"], { scope: "global", origin: "agents-inc" }),
@@ -2157,9 +2039,6 @@ describe("config-generator", () => {
   });
 
   describe("splitConfigByScope correctness (moved from E2E)", () => {
-    // Moved from e2e/lifecycle/unified-config-view.e2e.test.ts — these are pure unit tests
-    // that call splitConfigByScope directly, not E2E tests.
-
     it("should produce empty project split when all items are global", () => {
       const config = buildProjectConfig({
         skills: buildSkillConfigs(["web-framework-react", "web-testing-vitest"], {

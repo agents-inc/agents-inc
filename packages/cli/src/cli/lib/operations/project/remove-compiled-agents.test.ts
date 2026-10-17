@@ -13,21 +13,9 @@ import {
 } from "../../__tests__/test-fs-utils.js";
 import type { AgentName } from "../../../types/index.js";
 
-/**
- * One operation owns compiled-agent removal AND the tidiness of the directory
- * it removes from. A scope's `.claude/agents/` is an artefact of what it holds,
- * so the removal that empties it takes it too — and emptiness here is FILESYSTEM
- * emptiness, never roster emptiness: anything at all still on disk keeps the
- * directory alive whatever a config says.
- *
- * `.claude/` above it is uninstall's decision, never a removal path's.
- */
-
 const REMOVED_AGENT: AgentName = "api-developer";
 const SURVIVING_AGENT: AgentName = "web-developer";
-// Basename outside the AgentName union — a file the CLI never compiled.
 const HAND_AUTHORED_AGENT = "my-custom-agent";
-// A file that is not an agent at all — emptiness is measured on the filesystem.
 const UNRELATED_FILE = "notes.txt";
 
 describe("removeCompiledAgents", () => {

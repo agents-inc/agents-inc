@@ -50,42 +50,23 @@ export type SourceValidationResult = {
 };
 
 /**
- * Who this report is for, relative to the marketplace it is about.
- *
- * You are the `"author"` of the marketplace being validated when it IS the directory the command
- * ran in; a marketplace anywhere else — fetched, or on disk at another path — is one you are only
- * a `"consumer"` of. Not "is there a marketplace under the cwd": that says nothing about the OTHER
- * marketplace a config may point at, and the severity turns on the per-marketplace question.
- *
- * It changes one finding. A slug a marketplace's rules dangle is a typo its author can fix and
- * wants the run to fail on, and it is a defect a consumer cannot touch in a file they cannot open
- * — while every skill still installs and still resolves. Whether the reader holds push rights is
- * not knowable here and is not the test: a checkout under your cursor is a file you can edit.
+ * `"author"` when the marketplace IS the directory the command ran in, else `"consumer"`. It
+ * changes one finding: a dangling rule slug is the author's to fix and a consumer's to ignore.
  */
 export type MarketplaceReader = "author" | "consumer";
 
-/**
- * True when `dir` is itself a skills source repository — it carries the skills tree
- * `validateSource` walks, at `src/skills/` or wherever its own source config points.
- * A marketplace author's checkout answers yes; a consumer project answers no.
- */
+/** True when `dir` carries a skills tree, at `src/skills/` or where its source config points. */
 export async function isSourceRepo(dir: string): Promise<boolean> {
-  // ABORT on an unreadable config, and it is caught rather than fatal at both callers: `doctor`
-  // reaches this through `safeCheck`, so the throw becomes a failed row instead of an aborted
-  // command, and its other caller asks only where no config file exists at all.
+  // Aborts on an unreadable config; `doctor` catches it via `safeCheck`.
   const sourceConfig = await loadSourceRepoConfig(dir);
   return directoryExists(path.join(dir, sourceConfig?.skillsDir ?? SKILLS_DIR_PATH));
 }
 
-/** Checks if a key uses snake_case (has underscore between lowercase letters) */
 export function isSnakeCase(key: string): boolean {
   return /[a-z]_[a-z]/.test(key);
 }
 
-/**
- * Checks top-level keys for snake_case usage (camelCase is the convention).
- * Non-object input yields no issues.
- */
+/** Non-object input yields no issues. */
 export function checkSnakeCaseKeys(rawMetadata: unknown, relPath: string): SourceValidationIssue[] {
   if (!isRecord(rawMetadata)) return [];
 
@@ -98,12 +79,7 @@ export function checkSnakeCaseKeys(rawMetadata: unknown, relPath: string): Sourc
     }));
 }
 
-/**
- * Warns when a skill directory's name does not equal the skill's machine id
- * (SKILL.md frontmatter `name`) — the key the loader registers the skill under.
- * Warning, not error: the loader still loads the skill by its id, but the
- * directory no longer signals which skill it contains.
- */
+/** A warning, not an error: the loader still registers the skill by its id. */
 export function checkDirNameMatchesSkillId(
   skillId: string,
   relPath: string,
@@ -119,11 +95,7 @@ export function checkDirNameMatchesSkillId(
   ];
 }
 
-/**
- * Reads a skill directory's SKILL.md frontmatter and checks the directory name
- * against the skill's machine id. When the id cannot be read (unreadable file or
- * missing/invalid frontmatter), reports that the check could not run.
- */
+/** Reports that the check could not run when the id cannot be read. */
 async function checkSkillDirName(
   skillsDir: string,
   skillsDirRelPath: string,
@@ -158,13 +130,6 @@ async function checkSkillDirName(
   }
 }
 
-/**
- * Finds missing SKILL.md / metadata.yaml pairs (pure function, no I/O).
- *
- * Returns issues for:
- * - Directories with SKILL.md but no metadata.yaml
- * - Directories with metadata.yaml but no SKILL.md
- */
 export function validateSkillFilePairs(
   skillMdDirs: Set<string>,
   metadataDirs: Set<string>,
@@ -189,22 +154,7 @@ export function validateSkillFilePairs(
   return [...missingMetadata, ...missingSkillMd];
 }
 
-/**
- * Validates a skills source repository for metadata correctness.
- *
- * Checks:
- * 1. Every metadata.yaml against the strict validation schema
- *    (over-length cliDescription is downgraded to a warning)
- * 2. Directory name equals the skill's machine id (SKILL.md frontmatter name)
- * 3. Cross-references resolve to existing skill IDs (via matrixHealthIssues)
- * 4. camelCase key convention (no snake_case)
- * 5. Every skill directory has both SKILL.md and metadata.yaml
- *
- * `reader` decides how loudly one of those findings is stated — see {@link MarketplaceReader}.
- * It defaults to `"author"`, the louder verdict: a caller that names nobody has said nothing
- * about who is reading, and under-reporting to the one person who can fix the file is the worse
- * of the two ways to be wrong.
- */
+/** `reader` sets how loud findings are; default `"author"`, as under-reporting is worse. */
 export async function validateSource(
   sourcePath: string,
   reader: MarketplaceReader = "author",
@@ -218,9 +168,7 @@ export async function validateSource(
     );
   }
 
-  // ABORT on an unreadable config, caught by `validateOneSource`, which turns it into an issue
-  // against this marketplace. Defaulting past it would validate whatever sits at `src/skills/` and
-  // call a marketplace whose skills live elsewhere empty.
+  // Aborts on an unreadable config; `validateOneSource` turns it into an issue.
   const sourceProjectConfig = await loadSourceRepoConfig(resolvedPath);
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
   const skillsDir = path.join(resolvedPath, skillsDirRelPath);
@@ -232,7 +180,6 @@ export async function validateSource(
     );
   }
 
-  // Phase 1: Check every skill directory has both SKILL.md and metadata.yaml
   const skillMdFiles = await glob(`**/${STANDARD_FILES.SKILL_MD}`, skillsDir);
   const metadataFiles = await glob(`**/${STANDARD_FILES.METADATA_YAML}`, skillsDir);
 
@@ -241,18 +188,13 @@ export async function validateSource(
 
   const pairIssues = validateSkillFilePairs(skillMdDirs, metadataDirs, skillsDir);
 
-  // Phase 2: Validate each metadata.yaml against strict schema and conventions.
-  // Pair violations were already reported by phase 1 — validate only complete pairs.
+  // Pair violations were reported above; validate only complete pairs.
   const validMetadataFiles = metadataFiles.filter((f) => skillMdDirs.has(path.dirname(f)));
   const skillIssues = await validateSkillsInTurn(skillsDir, skillsDirRelPath, validMetadataFiles);
 
-  // Phase 3: Cross-reference validation via matrix health check
   const crossReferenceIssues = await checkCrossReferences(resolvedPath, reader);
 
-  // Phases 4–6: optional source-repo targets — run in parallel
-  // Phase 4: stack skill metadata + stack configs
-  // Phase 5: agent metadata
-  // Phase 6: config/*.ts runtime exports
+  // Optional source-repo targets, in parallel: stacks, agents, config/*.ts exports.
   const extraIssues = await Promise.all([
     validateStacks(resolvedPath),
     validateAgents(resolvedPath),
@@ -265,7 +207,6 @@ export async function validateSource(
   );
 }
 
-/** {@link validateOneSkill} over every complete pair, one skill at a time, in the order given. */
 async function validateSkillsInTurn(
   skillsDir: string,
   skillsDirRelPath: string,
@@ -278,22 +219,12 @@ async function validateSkillsInTurn(
   return issues;
 }
 
-/**
- * Why a YAML file could not be read, in the parser's own words. Two phases refuse the same
- * way — the skill-pair scan and the stack/agent scan — and they printed different sentences
- * for a while, one carrying the cause and one dropping it; naming the message once is what
- * stops them diverging again.
- */
+/** Named once so both YAML-reading phases word the failure alike. */
 function yamlParseFailure(error: unknown): string {
   return `Failed to parse YAML: ${getErrorMessage(error)}`;
 }
 
-/**
- * One complete skill pair, judged four ways: its metadata.yaml parses, its keys are camelCase,
- * it satisfies the strict published-skill schema, and its directory is named after the id its
- * SKILL.md declares. A file nothing can be parsed out of reports that and stops — every check
- * after it reads the parsed value, so each would only restate the same fault.
- */
+/** An unparseable file reports that and stops: every later check reads the parsed value. */
 async function validateOneSkill(
   skillsDir: string,
   skillsDirRelPath: string,
@@ -316,10 +247,6 @@ async function validateOneSkill(
   ];
 }
 
-/**
- * The strict published-skill schema's verdict, as its hard errors plus the one advisory
- * (over-length cliDescription) `splitMetadataValidationIssues` separates out.
- */
 function checkMetadataSchema(rawMetadata: unknown, relPath: string): SourceValidationIssue[] {
   const result = validateSkillMetadata(rawMetadata);
   if (result.success) return [];
@@ -331,30 +258,16 @@ function checkMetadataSchema(rawMetadata: unknown, relPath: string): SourceValid
   ];
 }
 
-/**
- * The manifest as a reader of the report has to type it — the location half of the row
- * `doctor` prints, and therefore the file they open.
- */
+/** As a reader types it: the file `doctor` tells them to open. */
 const MARKETPLACE_MANIFEST_PATH = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSON);
 
-/**
- * How loud a missing or unreadable manifest is, by who is reading: its author is one build from
- * the fix, and a consumer has nothing to load. Keyed on the whole union, so a new kind of reader
- * does not compile until someone decides this.
- */
+/** Keyed on the whole reader union, so a new reader does not compile until someone decides. */
 const MANIFEST_REQUIRED_SEVERITY = {
   author: "warning",
   consumer: "error",
 } as const satisfies Record<MarketplaceReader, SourceValidationIssue["severity"]>;
 
-/**
- * Whether every relationship the source declares resolves to a skill it actually holds.
- * A load that did not complete is reported by {@link matrixLoadFailure}, which decides
- * whether the failure is this marketplace's fault or merely this pass's.
- *
- * The load has already said each health finding; this pass only files them, so it reads them
- * without saying them again.
- */
+/** Files the load's health findings without saying them again. */
 async function checkCrossReferences(
   resolvedPath: string,
   reader: MarketplaceReader,
@@ -370,19 +283,8 @@ async function checkCrossReferences(
 }
 
 /**
- * A load this pass could not complete, as the finding a reader can act on.
- *
- * Three answers, because the failures are not one event. A marketplace with no valid
- * manifest cannot be loaded at all, so the finding is the manifest's, filed against the file
- * a reader opens rather than the categories file this pass happened to be reading, at the
- * severity {@link MANIFEST_REQUIRED_SEVERITY} gives its reader. A manifest naming the marketplace
- * something Claude Code registers no plugin under leaves nothing here installable, so it is
- * this marketplace's own ERROR, against the file that holds the name — without it the
- * Marketplaces row counted such a marketplace as validated and printed a tick beneath
- * `doctor`'s own warning about that same file, and a warning above a tick is what a reader
- * stops believing. Everything else only leaves this pass unable to run, so it stays a warning
- * against the file it was reading. Read off the throw's TYPE, so nothing here matches on a
- * sentence.
+ * No valid manifest: the manifest's finding, at the reader's severity. A refused name: this
+ * marketplace's error, since nothing installs. Anything else: a warning. Read off the throw's type.
  */
 function matrixLoadFailure(error: unknown, reader: MarketplaceReader): SourceValidationIssue {
   if (error instanceof MarketplaceManifestRequiredError) {
@@ -408,29 +310,10 @@ function matrixLoadFailure(error: unknown, reader: MarketplaceReader): SourceVal
   };
 }
 
-/**
- * The audit manifest, as a path a reader can open. It is this CLI's own file rather than anything
- * in the marketplace being validated, and it has to be: the verdict a matrix contradicts is
- * recorded there and the marketplace holds no copy of it.
- */
+/** This CLI's own file: the marketplace holds no copy of the verdicts. */
 const SKILL_AUDIT_PATH = "src/cli/lib/configuration/skill-audit.ts";
 
-/**
- * The file a finding's defect is written in — the one `doctor` renders as the location half of the
- * line, and therefore the one the reader opens.
- *
- * Each answer is the file the check actually reads, which is not always the file its name suggests:
- *
- * - a category and the `domain` it omits are both declared in the categories file, and a skill
- *   naming a category nothing defines is the same file short an entry (its own metadata.yaml is
- *   the other half of that fix, and the message already names the skill);
- * - every relation a resolved skill carries comes from the rules file — no metadata.yaml declares
- *   one — so an unresolved reference and the dangling slug behind it are both written there;
- * - a verdict, recorded or missing, is the audit manifest's.
- *
- * Exhaustive on purpose: a seventh finding kind will not compile until someone decides where its
- * defect lives, which is the property one path shared by all six had already lost.
- */
+/** The file the defect is in, as `doctor` shows it; exhaustive, so new kinds must choose. */
 function fileHoldingDefect(finding: MatrixHealthIssue["finding"]): string {
   switch (finding) {
     case "category-missing-domain":
@@ -449,15 +332,7 @@ function fileHoldingDefect(finding: MatrixHealthIssue["finding"]): string {
   }
 }
 
-/**
- * One health finding as this reader should hear it. Every kind but one is reported at the
- * severity the health check gave it — that severity is a property of the defect. The exception
- * is the slug a marketplace's own rules dangle, which is a property of the defect AND of who is
- * looking: a typo the author can fix, and a file the consumer cannot open.
- *
- * The reader moves the severity and the wording; it never moves the file, because which file holds
- * the defect is not a fact about who is reading.
- */
+/** Only a marketplace's own dangling rule slug moves with the reader; the file never does. */
 function toSourceIssue(
   healthIssue: MatrixHealthIssue,
   marketplacePath: string,
@@ -480,20 +355,12 @@ function toSourceIssue(
   };
 }
 
-/**
- * The same finding, addressed to someone who did not write the rule. It leads with the
- * marketplace because that is the part the slug alone does not tell them, and it says outright
- * that there is nothing here to fix — a warning that sends a reader hunting through their own
- * project for a typo in a file they do not own is worse than no warning at all.
- */
+/** Leads with the marketplace and says there is nothing here for the reader to fix. */
 function consumedMarketplaceMessage(marketplacePath: string, details: string): string {
   return `Marketplace '${marketplacePath}': ${details}. Nothing to fix here — the rule is that marketplace's, not this project's`;
 }
 
-/**
- * Validates stack-embedded skill metadata.yaml files and stack config.yaml files.
- * Skips silently when src/stacks/ does not exist.
- */
+/** Skips silently when src/stacks/ does not exist. */
 async function validateStacks(resolvedPath: string): Promise<SourceValidationIssue[]> {
   const stacksDir = path.join(resolvedPath, DIRS.stacks);
   if (!(await directoryExists(stacksDir))) return [];
@@ -515,12 +382,7 @@ async function validateStacks(resolvedPath: string): Promise<SourceValidationIss
   return [...skillMetaIssues, ...configIssues];
 }
 
-/**
- * Validates each hand-authored agent `metadata.yaml` under `DIRS.agents` against
- * `agentYamlGenerationSchema` — compilation's INPUT schema rather than an output one, since
- * compiling an agent writes one `.md` file and no YAML at all. Skips silently when src/agents/
- * does not exist.
- */
+/** Against compilation's input schema (compiling writes no YAML); skips a missing src/agents/. */
 async function validateAgents(resolvedPath: string): Promise<SourceValidationIssue[]> {
   const agentsDir = path.join(resolvedPath, DIRS.agents);
   if (!(await directoryExists(agentsDir))) return [];
@@ -533,11 +395,7 @@ async function validateAgents(resolvedPath: string): Promise<SourceValidationIss
   });
 }
 
-/**
- * Validates TypeScript config files (skill-categories.ts, skill-rules.ts, stacks.ts)
- * by runtime-loading them via loadConfig and validating the default export.
- * Skips silently when a file does not exist.
- */
+/** Runtime-loads each config/*.ts and validates its default export; absent files are skipped. */
 async function validateConfigFiles(resolvedPath: string): Promise<SourceValidationIssue[]> {
   const results = await Promise.all([
     validateTsConfig(resolvedPath, SKILL_CATEGORIES_PATH, skillCategoriesFileSchema),
@@ -550,19 +408,12 @@ async function validateConfigFiles(resolvedPath: string): Promise<SourceValidati
 /** One kind of YAML file a source may carry: where it lives, and the schema each must satisfy. */
 type YamlFileScan = {
   baseDir: string;
-  /**
-   * `baseDir` as issues report it, so their locations match the project-relative form used
-   * elsewhere.
-   */
+  /** `baseDir` in the project-relative form issues report. */
   relBaseDir: string;
   pattern: string;
   schema: z.ZodType<unknown>;
 };
 
-/**
- * {@link validateYamlFile} over every file the scan's pattern matches, one file at a time, in
- * glob order.
- */
 async function validateYamlFiles(scan: YamlFileScan): Promise<SourceValidationIssue[]> {
   const issues: SourceValidationIssue[] = [];
   const files = await glob(scan.pattern, scan.baseDir);
@@ -573,10 +424,6 @@ async function validateYamlFiles(scan: YamlFileScan): Promise<SourceValidationIs
   return issues;
 }
 
-/**
- * One YAML file judged against the scan's schema: its parse error if it cannot be read, otherwise
- * the schema's errors as field-path messages — none when it passes.
- */
 async function validateYamlFile(
   scan: YamlFileScan,
   relFile: string,
@@ -600,17 +447,7 @@ async function validateYamlFile(
   }));
 }
 
-/**
- * Runtime-loads a TypeScript config file via loadConfig and reports validation failures.
- * Absent files are not errors — only report when the file exists but fails to load or validate.
- *
- * The two ways a file can say nothing are reported apart, because the author's next move differs
- * and they used to arrive wearing each other's words. A `null` is a file that exported nothing at
- * all; a module that exported only named bindings raises {@link ConfigDefaultExportError}, which
- * is the one this file's own config files get wrong — `export const skillRules = {...}` reads to
- * `loadConfig` as a namespace, and validating THAT against the schema reports whichever field the
- * schema names first as missing from a file the author can see it in.
- */
+/** `null` (exported nothing) and named-only exports are reported apart, since the fixes differ. */
 async function validateTsConfig(
   resolvedPath: string,
   relConfigPath: string,
@@ -635,10 +472,7 @@ async function validateTsConfig(
   }
 }
 
-/**
- * Normalizes a loadConfig error so the message references the relative config path,
- * not the absolute path embedded by loadConfig's own template string.
- */
+/** References the relative config path, not the absolute one loadConfig embeds. */
 function formatLoadError(relConfigPath: string, error: unknown): string {
   const raw = getErrorMessage(error);
   const stripped = raw.replace(/Failed to load config from '[^']+':\s*/, "");

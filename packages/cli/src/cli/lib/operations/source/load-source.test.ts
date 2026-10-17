@@ -4,8 +4,7 @@ vi.mock("../../loading/index.js", () => ({
   loadSkillsMatrixFromSource: vi.fn(),
 }));
 
-// The manual mock in utils/__mocks__/logger.ts, not an inline factory: this module's whole job is
-// the buffering pair, so a mock that omits them is a TypeError raised inside loadSource.
+// The manual mock, because an inline factory omitting the buffering functions breaks loadSource.
 vi.mock("../../../utils/logger.js");
 
 import { loadSource } from "./load-source";

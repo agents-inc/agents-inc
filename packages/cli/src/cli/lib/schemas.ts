@@ -82,10 +82,7 @@ export const agentHookActionSchema: z.ZodType<AgentHookAction> = z.object({
   prompt: z.string().exactOptional(),
 });
 
-/**
- * `Partial` because nothing here reads a manifest's hooks, and refusing one would drop the whole
- * plugin from discovery. Agents declare hooks through {@link strictHooksRecordSchema}.
- */
+/** `Partial`: nothing reads a manifest's hooks, and refusing one would drop the whole plugin. */
 export const agentHookDefinitionSchema: z.ZodType<Partial<AgentHookDefinition>> = z.object({
   matcher: z.string().exactOptional(),
   hooks: z.array(agentHookActionSchema).exactOptional(),
@@ -99,10 +96,7 @@ export const hooksRecordSchema = z.record(z.string(), z.array(agentHookDefinitio
  */
 export const agentIsolationSchema = z.enum(AGENT_ISOLATIONS) as z.ZodType<AgentIsolation>;
 
-/**
- * `.strict()` here rather than per site: a plain object emptied an unknown key to `{}`, which the
- * template emitted as `experimental: {}` with nothing left to refuse.
- */
+/** `.strict()`: a plain object empties an unknown key to `{}`, leaving nothing to refuse. */
 export const agentExperimentalSchema = z
   .object({
     cacheTtl: z.enum(CACHE_TTLS).exactOptional(),
@@ -313,10 +307,7 @@ const categoryDefinitionSchema: z.ZodType<CategoryDefinition> = z.object({
   icon: z.string().exactOptional(),
 });
 
-/**
- * Names the slug the author wrote: Zod's enum text lists ~250 catalogue options and never the
- * input. "Yet" because the closed union is this schema's limit, not the loader's.
- */
+/** Names the slug the author wrote: Zod's enum message lists ~250 options and never the input. */
 function unknownSkillSlugRefusal(input: unknown): string {
   const named = typeof input === "string" ? `'${input}'` : "That value";
   return (
@@ -443,16 +434,13 @@ const marketplaceMetadataSchema: z.ZodType<MarketplaceMetadata> = z.object({
   pluginRoot: z.string().exactOptional(),
 });
 
-/**
- * Worded as `marketplaceNameNotPublishable` in `utils/messages.ts` words the emit side. A `regex`
- * message rather than a `refine`, so the generated JSON Schema keeps its `pattern`.
- */
+/** A `regex` message rather than a `refine`, so the generated JSON Schema keeps its `pattern`. */
 const MARKETPLACE_NAME_REFUSAL =
   "A marketplace name is kebab-case: lowercase letters, numbers and hyphens, starting with a letter (e.g. 'acme-skills'). Rename it in this manifest — Claude Code registers every plugin under it and accepts no other shape.";
 
 export const marketplaceSchema: z.ZodType<Marketplace> = z.object({
   $schema: z.string().exactOptional(),
-  /** Kebab-case: the namespace Claude Code registers plugins under (owner ruling 2026-08-20). */
+  /** Kebab-case: the namespace Claude Code registers plugins under. */
   name: z.string().min(1).regex(KEBAB_CASE_PATTERN, { message: MARKETPLACE_NAME_REFUSAL }),
   version: z.string().min(1),
   description: z.string().exactOptional(),
@@ -513,10 +501,7 @@ export const projectSourceConfigSchema = renamedFieldGuard.pipe(projectSourceCon
 
 // The strict schemas below reject unknown fields; the loaders above pass them through.
 
-/**
- * A source agent's hand-authored `metadata.yaml`. Generates `src/schemas/agent.schema.json`;
- * `validateAgents` is its only runtime caller. Lenient id: marketplace agents may use custom ids.
- */
+/** A source agent's `metadata.yaml`; generates `agent.schema.json`. Custom ids allowed. */
 export const agentYamlGenerationSchema = z
   .object({
     $schema: z.string().exactOptional(),
@@ -537,11 +522,7 @@ export const agentYamlGenerationSchema = z
   })
   .strict();
 
-/**
- * A compiled agent's frontmatter. `parseAgentFrontmatter`'s refusal fails a packaging run, so a
- * key this omits is loud. `hooks`, `isolation` and `experimental` share `agentYamlConfigSchema`'s
- * schemas, so whatever compiles can be read back.
- */
+/** A compiled agent's frontmatter, sharing the loader's sub-schemas so whatever compiles reads. */
 export const agentFrontmatterValidationSchema = z
   .object({
     /** Agent name in kebab-case (becomes the Task tool identifier) */
@@ -594,10 +575,7 @@ const forkedFromSchema = z.object({
   date: z.string(),
 });
 
-/**
- * Advisory: splitMetadataValidationIssues reports an over-length cliDescription as a warning.
- * Empty stays an error.
- */
+/** Advisory: over-length is a warning; empty stays an error. */
 const CLI_DESCRIPTION_MAX_LENGTH = 60;
 
 /** Shared by the strict and custom metadata schemas, which differ only in `category`/`slug`. */
@@ -617,11 +595,7 @@ const skillMetadataBaseSchema = z.object({
   custom: z.boolean().exactOptional(),
 });
 
-/**
- * Names the slug the author wrote, as {@link unknownSkillSlugRefusal} does, and points at
- * `custom: true`, which routes validation to {@link customMetadataValidationSchema} (owner ruling
- * 2026-08-22: the union stays closed).
- */
+/** As `unknownSkillSlugRefusal`, and points at `custom: true`. */
 function unknownMetadataSlugRefusal(input: unknown): string {
   const named = typeof input === "string" ? `'${input}'` : "That value";
   return (
@@ -636,10 +610,7 @@ function unknownMetadataSlugRefusal(input: unknown): string {
 export const metadataValidationSchema = skillMetadataBaseSchema
   .extend({
     category: z.enum(CATEGORIES),
-    /**
-     * Kebab-case short key — must be a known built-in slug, unless the file declares
-     * `custom: true` and is judged by {@link customMetadataValidationSchema} instead.
-     */
+    /** A known built-in slug, unless `custom: true` routes the file to the custom schema. */
     slug: z.enum(SKILL_SLUGS, {
       error: (issue) => unknownMetadataSlugRefusal(issue.input),
     }),

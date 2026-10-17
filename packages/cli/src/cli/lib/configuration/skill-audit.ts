@@ -1,15 +1,10 @@
 import type { SkillId, SkillSlug } from "../../types";
 
-/**
- * Post-decision-2 vocabulary: conflict groups no longer exist as a mechanism, so a skill is
- * fenced by category exclusivity, by a `requires` rule, or not at all.
- */
+/** A skill is fenced by category exclusivity, by a `requires` rule, or not at all. */
 export type AuditVerdict = "constrained-via-exclusivity-or-requires" | "universal";
 
-/** The framework-adapter classification rides this manifest — one audit, two products. */
 export type SkillClass = "A" | "B" | "C";
 
-/** Worksheet batch that produced a verdict — provenance for the adversarial pass. */
 export type BatchId =
   | "web-core"
   | "web-state"
@@ -29,33 +24,15 @@ export type SkillAuditEntry = {
   audited: `${number}-${number}-${number}`;
   verdict: AuditVerdict;
   batch: BatchId;
-  /**
-   * Framework-adapter classification. Omitted for the framework skills themselves
-   * (react, nextjs, react-native, electron, tauri, …) which are the binding targets.
-   * class A → frameworks: []; class B → exactly one; class C → the adapter set.
-   */
+  /** Omitted for framework skills. Class A: no frameworks; B: exactly one; C: the adapter set. */
   classification?: { class: SkillClass; frameworks: SkillSlug[] };
-  /** Cited sources — recorded wherever the entry changed a rule. */
   sources?: string[];
   /** Anything the current vocabulary cannot express, deferred rather than invented here. */
   deferredToD306?: string;
 };
 
-/**
- * Every catalog skill's audit verdict, one entry per skill.
- *
- * Total record, not `Partial`: the type checker enforces "every SkillId appears" at compile
- * time, so the "empty = unaudited, or nobody looked?" ambiguity is unrepresentable for
- * built-ins. Source-provided skills cannot be covered that way — `checkMatrixHealth` carries
- * the runtime assertion for those.
- *
- * Verdicts were recorded as of the audit, assuming the batches' category dispositions would
- * land; they have, so every row is backed by the live rules and
- * `auditVerdictsPendingApply` below — the exemption list for rows the tree has not caught up
- * with — is empty.
- */
+/** Total over SkillId, so every built-in needs a verdict; source skills are checked at runtime. */
 export const skillAudit: Record<SkillId, SkillAuditEntry> = {
-  // ── B1 — web core: frameworks, meta-frameworks, routing, server state (20) ──
   "web-framework-react": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -176,7 +153,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     },
   },
 
-  // ── B2 — web state, forms, i18n, utilities (19) ──
   "web-state-jotai": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -300,7 +276,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     classification: { class: "A", frameworks: [] },
   },
 
-  // ── B3 — web UI, styling, animation, editors (22) ──
   "web-ui-shadcn-ui": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -443,7 +418,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     ],
   },
 
-  // ── B4 — web platform, testing, tooling (23) ──
   "web-testing-playwright-e2e": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -610,7 +584,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     classification: { class: "A", frameworks: [] },
   },
 
-  // ── B5 — api core: frameworks, GraphQL, auth, cross-cutting (17) ──
   "api-framework-hono": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -724,7 +697,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     classification: { class: "A", frameworks: [] },
   },
 
-  // ── B6 — api data: databases and BaaS (22) ──
   "api-database-postgresql": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -866,7 +838,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
       "turso as an edge-replica secondary beside a primary Postgres host is a real minority pattern the api-db-host radio over-restricts — accepted.",
   },
 
-  // ── B7 — api services: vector, search, CMS, analytics, observability, email (16) ──
   "api-vector-db-pinecone": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -907,8 +878,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     batch: "api-services",
     classification: { class: "A", frameworks: [] },
   },
-  // Landed by external PR (agents-inc/skills#2) after the B7 batch closed; verdict follows
-  // its api-search siblings — the category radio is the constraint, no rules of its own.
   "api-search-xquik": {
     audited: "2026-08-09",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -985,7 +954,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
       "React-as-template-renderer is not React-as-app-framework: React Email runs in any Node backend, but because react sits in the exclusive web-framework radio the rule fences every Vue/Svelte/Angular project out of the catalog's only email-usage skill.",
   },
 
-  // ── B8 — ai (20) ──
   "ai-provider-anthropic-sdk": {
     audited: "2026-08-07",
     verdict: "universal",
@@ -1109,7 +1077,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     classification: { class: "A", frameworks: [] },
   },
 
-  // ── B9 — mobile (24) ──
   "mobile-framework-react-native": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -1296,7 +1263,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     ],
   },
 
-  // ── B10 — desktop (16) ──
   "desktop-framework-electron": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -1417,7 +1383,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     ],
   },
 
-  // ── B11 — infra + CLI (15) ──
   "infra-ci-cd-github-actions": {
     audited: "2026-08-07",
     verdict: "universal",
@@ -1516,7 +1481,6 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
     classification: { class: "A", frameworks: [] },
   },
 
-  // ── B12 — shared + meta (23) ──
   "shared-monorepo-turborepo": {
     audited: "2026-08-07",
     verdict: "constrained-via-exclusivity-or-requires",
@@ -1665,15 +1629,5 @@ export const skillAudit: Record<SkillId, SkillAuditEntry> = {
   },
 };
 
-/**
- * Rows whose verdict was recorded ahead of the category disposition that backs it, with the
- * batch that owns the change. Both audit checks skip exactly these and nothing else, so any
- * other divergence between the manifest and the rules fails immediately.
- *
- * Empty since every disposition the fan-out ruled on landed: the live rules now back all 238
- * verdicts on their own. It stays as the mechanism for the next audit that runs ahead of its
- * taxonomy — add an entry with the batch that owns it, and delete it when that lands. The
- * consistency test asserts this set matches the live gap exactly, so a stale entry fails just
- * as loudly as a missing one.
- */
+/** Rows whose verdict is ahead of its category disposition; both audit checks skip these. */
 export const auditVerdictsPendingApply: Partial<Record<SkillId, string>> = {};

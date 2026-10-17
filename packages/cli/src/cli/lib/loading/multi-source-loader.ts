@@ -14,13 +14,7 @@ import { typedEntries, typedKeys } from "../../utils/typed-object";
 import { isDefaultSource, type ResolvedConfig } from "../configuration";
 import { discoverAllPluginSkills } from "../plugins";
 
-/**
- * True when the tagging pass looked at this skill and found only the copy on disk.
- *
- * Asked of the tagged sources rather than of `custom` — what a plugin install needs is a
- * marketplace that HAS the skill, and who wrote it decides nothing. A skill the pass never reached
- * carries no sources at all and answers `false`: absence of an answer is not an answer.
- */
+/** Asked of the tagged sources, not `custom`; a skill the pass never reached answers `false`. */
 export function isLocalOnlySkill(skill: ResolvedSkill | undefined): boolean {
   return (
     skill?.availableSources !== undefined &&
@@ -28,10 +22,6 @@ export function isLocalOnlySkill(skill: ResolvedSkill | undefined): boolean {
   );
 }
 
-/**
- * Appends a source to the skill's availableSources, initializing the array on
- * first tag. In-place mutation is this module's documented tagging contract.
- */
 function addAvailableSource(
   skill: { availableSources?: SkillSource[] },
   source: SkillSource,
@@ -41,34 +31,9 @@ function addAvailableSource(
 }
 
 /**
- * Annotates every skill in the matrix with its install-mode availability metadata.
- *
- * Runs a four-phase tagging pipeline that mutates `primaryMatrix.skills` in place:
- * 1. **Primary** -- tags every skill the marketplace CARRIES with it (public or private),
- *    skipping the ids in `unbackedSkillIds`
- * 2. **Local** -- tags skills with `local: true` as installed via local source
- * 3. **Plugin** -- detects skills in the plugins the host reports installed and enabled, at the
- *    project and, from a project, at the home directory
- * 4. **Active source** -- sets `activeSource` to the installed variant, or first available
- *
- * After this function completes, each skill in the matrix has `availableSources` -- at most
- * the local copy and the one marketplace -- and `activeSource` (the one currently in use)
- * populated.
- *
- * @param primaryMatrix - The merged skills matrix to annotate. Mutated in place --
- *                        `availableSources` and `activeSource` are set on each skill.
- * @param sourceConfig - Resolved source configuration, used to determine whether the
- *                       marketplace is a private one or the default public source
- * @param projectDir - Absolute path to the project root, used to locate plugin directories
- * @param marketplace - Optional marketplace name resolved from the source's marketplace.json.
- *                      Takes precedence over `sourceConfig.marketplace` when provided.
- * @param unbackedSkillIds - Ids the matrix holds that the marketplace does NOT carry. They are
- *                           left out of the primary tag, because a marketplace entry on a skill
- *                           no marketplace has is a plugin install that cannot happen. Defaults
- *                           to empty.
- *
- * @remarks
- * **Side effects:** Mutates `primaryMatrix` in place.
+ * Tags every skill with `availableSources` (the local copy and at most one marketplace) and
+ * `activeSource`, mutating `primaryMatrix` in place. `unbackedSkillIds` are ids the marketplace
+ * does not carry, left out of the marketplace tag.
  */
 export async function loadSkillsFromAllSources(
   primaryMatrix: MergedSkillsMatrix,
@@ -88,15 +53,7 @@ export async function loadSkillsFromAllSources(
   setActiveSources(primaryMatrix);
 }
 
-/**
- * The entry naming the marketplace a skill is carried by, as the primary pass writes it: the
- * marketplace's resolved name — `marketplace`, read from its manifest, over the name its config
- * stored — public or private, and not yet known to be installed.
- *
- * Exported for the one other catalogue a load reads: the global installation's own, whose skills
- * `source-loader.ts` seats beside a project's when that project's marketplace does not carry them.
- * A fresh object per call, because the tagging pass mutates the entry it is handed.
- */
+/** A fresh object per call: the tagging pass mutates the entry it is handed. */
 export function marketplaceSource(sourceConfig: ResolvedConfig, marketplace?: string): SkillSource {
   return {
     name: marketplace ?? sourceConfig.marketplace ?? DEFAULT_PUBLIC_SOURCE_NAME,
@@ -113,7 +70,7 @@ function tagPrimarySourceSkills(
   unbackedSkillIds: ReadonlySet<SkillId>,
 ): void {
   for (const [id, skill] of typedEntries(matrix.skills)) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     if (!skill) continue;
     if (unbackedSkillIds.has(id)) continue;
 
@@ -124,7 +81,7 @@ function tagPrimarySourceSkills(
 function tagLocalSkills(matrix: MergedSkillsMatrix): void {
   let count = 0;
   for (const [, skill] of typedEntries(matrix.skills)) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     if (!skill) continue;
     if (!skill.local) continue;
 
@@ -164,15 +121,7 @@ async function tagPluginSkills(
   verbose(`Tagged ${allPluginSkillIds.length} plugin-installed skills`);
 }
 
-/**
- * Records that a skill is installed as a plugin. The skill's own marketplace entry, where one was
- * written with no install mode yet, becomes the installed plugin; otherwise a plugin entry is
- * added under the primary source — unless the skill already carries one.
- *
- * Its OWN entry rather than the loaded marketplace's: a global installation's skill seated from
- * the marketplace that installation was made from is carried under that marketplace's name, and
- * labelling its plugin with the loaded one's would name a marketplace that never shipped it.
- */
+/** Uses the skill's own marketplace entry, so a seated global skill keeps its own label. */
 function markInstalledAsPlugin(
   skill: ResolvedSkill,
   primarySourceName: string,
@@ -197,17 +146,11 @@ function markInstalledAsPlugin(
   });
 }
 
-/**
- * Collects skill IDs from every plugin the host reports installed and enabled, at the project and,
- * from a project, at the home directory. Uses {@link discoverAllPluginSkills}, which reads each
- * plugin's cache directory.
- */
 async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
   const pluginSkills = await discoverAllPluginSkills(projectDir);
   const skillIds = typedKeys<SkillId>(pluginSkills);
 
-  // Also discover global plugins when editing from a project directory.
-  // Follows the same global+project merge pattern as local skills in source-loader.ts.
+  // From a project, also the home directory's plugins.
   const homeDir = os.homedir();
   if (!isHomeDirectory(projectDir)) {
     const globalPluginSkills = await discoverAllPluginSkills(homeDir);
@@ -229,11 +172,10 @@ async function collectPluginSkillIds(projectDir: string): Promise<SkillId[]> {
 /** Prefers installed source; falls back to first available */
 function setActiveSources(matrix: MergedSkillsMatrix): void {
   for (const [, skill] of typedEntries(matrix.skills)) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     if (!skill) continue;
     if (!skill.availableSources || skill.availableSources.length === 0) continue;
 
-    // Prefer installed source, then fall back to first available
     const [firstSource] = skill.availableSources;
     if (!firstSource) continue;
     skill.activeSource = skill.availableSources.find((s) => s.installed) ?? firstSource;

@@ -9,76 +9,34 @@ import { fileExists, glob, readFile, readFileOptional } from "../../utils/fs.js"
 import type { Provider } from "../../consts.js";
 
 /**
- * Whether Claude Code will run the completion gate a PROJECT installation just compiled — and the
- * line that says so when it will not.
- *
- * **Every writing sub-agent carries one.** Compile gives each sub-agent holding `Write` or `Edit` a
- * `Stop` hook that runs the project's typecheck (`withCompletionGate` in `@workspace/compile`'s
- * `agent-source.ts`), unless the sub-agent declares a `Stop` or `SubagentStop` hook of its own,
- * which is then its completion gate instead. Either way it is one frontmatter line: `hooks:` and a
- * JSON record holding at least one hook under that event — a key holding an empty list states no
- * gate, which is how compile's `declaresOwnGate` reads it too.
- *
- * **A project sub-agent's hooks run only in a folder the user has trusted.** Read from the shipped
- * binary 2.1.288 and watched under a scratch HOME on 2026-10-03:
- *
- * - **The record.** Claude Code keeps the answer in `~/.claude.json` as
- *   `projects[<key>].hasTrustDialogAccepted`, where the key is the folder's git repository root —
- *   the main checkout's root for a linked worktree — or the folder itself outside any repository.
- *   Accepting the prompt writes that key, and the hook gate for `<project>/.claude/agents/` reads
- *   it, exactly. Absent or `false`, the sub-agent loads, its prompt loads, and its completion gate
- *   is dropped, logged only to Claude Code's own diagnostics.
- * - **The prompt.** Claude Code skips it when any folder from this one up to its repository root —
- *   or up to `/` outside one — is recorded as trusted. So below a trusted plain folder it never
- *   asks, while the gate still reads the folder's own key and keeps the hooks off.
- *
- * **So the install says it, and only while it is true.** Owner, 2026-09-26: _"yes ofc"_ to telling
- * the user. It is the Claude sibling of `codex-project-trust.ts`, and it READS the host's state and
- * never writes it — accepting the dialog is the user's act. A global installation needs nothing:
- * Claude Code trusts `~/.claude/agents/` unconditionally, and that folder is also the project
- * agents directory of a run from the home directory, so such a run says nothing either.
+ * Warns when Claude Code will drop a project sub-agent's Stop hook: project hooks run only once
+ * `~/.claude.json` records `projects[<key>].hasTrustDialogAccepted`, keyed by the git repository
+ * root (a linked worktree's main checkout). Reads that state, never writes it.
  */
 
-/** The part of `~/.claude.json` this reads. Every other project's record is left unparsed. */
 const claudeStateSchema = z.object({ projects: z.record(z.string(), z.unknown()) });
 
-/** One project's record, answering only the question asked of it. */
 const trustedProjectSchema = z.object({ hasTrustDialogAccepted: z.literal(true) });
 
-/**
- * The frontmatter line a completion gate is written on: `hooks:` with `Stop` or `SubagentStop` as a
- * key holding at least one definition. A line naming only other events is a hook, and nothing this
- * notice is about; an empty list under the key states no gate. The template writes the record
- * through Liquid's `json` filter, compact, which is why the key and its first `{` are adjacent.
- */
+/** `Stop`/`SubagentStop` with at least one definition; the template writes compact JSON. */
 const STOP_HOOK_LINE = /^hooks:\s*\{.*"(Stop|SubagentStop)":\[\{/m;
 const FRONTMATTER_FENCE = "---";
 
-/** The entry whose presence makes a folder a repository root, and a linked worktree's pointer. */
 const GIT_ENTRY = ".git";
 const GITDIR_PREFIX = "gitdir:";
-/** What a linked worktree's own git directory holds, and where the main repository keeps it. */
 const COMMONDIR_FILE = "commondir";
 const BACK_LINK_FILE = "gitdir";
 const WORKTREES_DIR = "worktrees";
 
-/**
- * How Claude Code stands toward a project folder: trusted, untrusted and asking, or untrusted and
- * never asking — a folder above it is trusted — which leaves only the record itself to set.
- */
+/** "never asks": a folder above is trusted, so no prompt appears and only the record can fix it. */
 type ClaudeTrust =
   | { readonly kind: "trusted" }
   | { readonly kind: "asks" }
   | { readonly kind: "never asks"; readonly recordKey: string };
 
-/** Whether `~/.claude.json` records `folder` as trusted. */
 type TrustRecord = (folder: string) => boolean;
 
-/**
- * The notice a Claude install owes when this project holds sub-agents carrying a completion gate
- * and the folder is not trusted, as lines — empty for every other provider, for a run from the
- * home directory, for a trusted project, and for one whose sub-agents carry none.
- */
+/** Empty from the home directory: `~/.claude/agents/` is trusted unconditionally. */
 export async function claudeCompileNotices(
   provider: Provider,
   projectDir: string,
@@ -104,10 +62,6 @@ export async function claudeCompileNotices(
   }
 }
 
-/**
- * The line itself. It names the folder and the remedy, because the failure it warns about prints
- * nothing anywhere a user would read.
- */
 export function claudeProjectNeedsTrustMessage(projectDir: string, count: number): string {
   return (
     `Claude Code runs a project sub-agent's completion gate (its Stop hook — the project's ` +
@@ -117,10 +71,6 @@ export function claudeProjectNeedsTrustMessage(projectDir: string, count: number
   );
 }
 
-/**
- * The line for a folder Claude Code will never ask about, naming the one remedy left — the one
- * Claude Code's own diagnostic gives.
- */
 export function claudeProjectNeverAskedMessage(recordKey: string, count: number): string {
   return (
     `Claude Code runs ${completionGates(count)} only once you trust the folder, and will not ask ` +
@@ -133,7 +83,6 @@ function completionGates(count: number): string {
   return count === 1 ? "1 sub-agent's completion gate" : `${count} sub-agents' completion gates`;
 }
 
-/** Reads the project's trust the way Claude Code does: by its record's key, then by its prompt. */
 async function claudeTrustOf(projectDir: string): Promise<ClaudeTrust> {
   const [isTrusted, repositoryRoot] = await Promise.all([
     trustRecord(),
@@ -147,11 +96,7 @@ async function claudeTrustOf(projectDir: string): Promise<ClaudeTrust> {
   return promptSuppressed ? { kind: "never asks", recordKey } : { kind: "asks" };
 }
 
-/**
- * The trust record in `~/.claude.json`. Anything it cannot read counts as untrusted, which is the
- * safe direction: the cost of a wrong "untrusted" is one line of advice, and the cost of a wrong
- * "trusted" is a completion gate nobody knows is off.
- */
+/** Unreadable counts as untrusted: a wrong "untrusted" costs one line of advice. */
 async function trustRecord(): Promise<TrustRecord> {
   const stateFile = claudeStateFile();
   if (!(await fileExists(stateFile))) return () => false;
@@ -171,14 +116,12 @@ function parsedOrUndefined(json: string): unknown {
   }
 }
 
-/** `folder` and each folder above it, nearest first, up to `top` — or to the filesystem root. */
 function foldersUpTo(folder: string, top?: string): string[] {
   const parent = path.dirname(folder);
   if (folder === top || parent === folder) return [folder];
   return [folder, ...foldersUpTo(parent, top)];
 }
 
-/** The nearest folder at or above `folder` holding a `.git` entry, as Claude Code finds it. */
 async function gitRepositoryRoot(folder: string): Promise<string | undefined> {
   const candidates = foldersUpTo(folder);
   const holdsGit = await Promise.all(
@@ -188,9 +131,8 @@ async function gitRepositoryRoot(folder: string): Promise<string | undefined> {
 }
 
 /**
- * The root Claude Code keys a repository by: the main checkout's, where `root` is a linked
- * worktree — its `.git` file points into `<main>/.git/worktrees/`, and that directory points back —
- * and `root` itself otherwise, a `.git` directory or a pointer that does not check out included.
+ * A linked worktree (`.git` file pointing into `<main>/.git/worktrees/`, which points back) is
+ * keyed by its main checkout; anything else by `root` itself.
  */
 async function canonicalRepositoryRoot(root: string): Promise<string> {
   // A `.git` directory reads as empty, as a missing file does.
@@ -211,12 +153,10 @@ async function canonicalRepositoryRoot(root: string): Promise<string> {
   return path.basename(commonDir) === GIT_ENTRY ? path.dirname(commonDir) : commonDir;
 }
 
-/** The path a git bookkeeping file in `dir` holds, resolved against `dir`; `dir` if it is absent. */
 async function pathRecordedIn(dir: string, file: string): Promise<string> {
   return path.resolve(dir, (await readFileOptional(path.join(dir, file))).trim());
 }
 
-/** Whether a worktree's back-link names `root`'s own `.git`, both read through symlinks. */
 async function pointsBackAt(backLink: string, root: string): Promise<boolean> {
   const [linked, realRoot] = await Promise.all([
     realpathOrUndefined(backLink),
@@ -233,7 +173,6 @@ async function realpathOrUndefined(file: string): Promise<string | undefined> {
   }
 }
 
-/** The compiled sub-agents in this project's own agents directory that carry a completion gate. */
 async function projectAgentsWithAStopHook(projectDir: string): Promise<string[]> {
   const dir = agentsDir("claude", "project", projectDir);
   const files = await glob(agentCodec("claude").listGlob, dir);

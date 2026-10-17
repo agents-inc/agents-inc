@@ -1,8 +1,7 @@
 import type { SkillId } from "../../types";
 import type { SkillConfig, SkillScope } from "../../types/config";
 import type { SourceLoadResult } from "../loading";
-// Type-only, so no module edge is created: the operations layer imports back into
-// this one, and the shape a plugin install reports is defined where installs live.
+// Type-only: the operations layer imports back into this module.
 import type { PluginInstallResult } from "../operations/skills/install-plugin-skills";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
 import { hostAt } from "../hosts/host-for";
@@ -27,17 +26,7 @@ export type MigrationPlan = {
   scopeChanges: SkillMigration[];
 };
 
-/**
- * What the plugin→eject half copied, in the shape {@link PluginInstallResult} reports the
- * opposite direction, so one command surface reports both and neither can drift into a
- * private idea of what a failure looks like.
- *
- * A non-empty `failed` means this run could NOT honor the user's eject intent for those
- * skills, so the caller MUST hard-error before writing any config — otherwise config.ts
- * records `origin: "eject"` for a skill that has no local copy. The asymmetry this
- * replaces is what let that ship: the plugin half returned its failures structurally
- * while the eject half turned them into a warning string nobody could act on.
- */
+/** A non-empty `failed` means the caller must hard-error before writing any config. */
 export type EjectCopyResult = {
   copied: SkillId[];
   failed: Array<{ id: SkillId; error: string }>;
@@ -45,33 +34,15 @@ export type EjectCopyResult = {
 
 export type MigrationResult = {
   ejectCopies: EjectCopyResult;
-  /**
-   * What the eject→plugin half installed, in the shape a fresh install returns, so
-   * one command surface reports both. The refs are built here because this is where
-   * each migration's own scope and marketplace are already resolved.
-   *
-   * A non-empty `failed` means this run could NOT honor the user's plugin intent for
-   * those skills, so the caller MUST hard-error before writing any config — otherwise
-   * config.ts records a marketplace `origin` for a skill that has no plugin
-   * registration.
-   */
+  /** A non-empty `failed` means the caller must hard-error before writing any config. */
   pluginInstalls: PluginInstallResult;
   warnings: string[];
 };
 
-/**
- * Hard-error message for failed eject copies — the twin of `pluginInstallFailureError` in
- * `operations/skills/install-plugin-skills.ts`, worded from the same rule: an install intent
- * this run could not honor must stop the run BEFORE any config records it.
- */
 export function ejectCopyFailureError(failedCount: number): string {
   return `Failed to copy ${failedCount} skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with '${CLI_INVOKE_COMMAND} edit --from <id>' — or switch the affected skills back to plugin mode.`;
 }
 
-/**
- * Detect which skills changed source or scope between old and new configs
- * by comparing SkillConfig[] entries by ID.
- */
 export function detectMigrations(
   oldSkills: SkillConfig[],
   newSkills: SkillConfig[],
@@ -89,7 +60,6 @@ export function detectMigrations(
   };
 }
 
-/** One skill's before and after, as the migration that takes it from one to the other. */
 function migrationBetween(oldSkill: SkillConfig, newSkill: SkillConfig): SkillMigration {
   return {
     id: newSkill.id,
@@ -116,21 +86,13 @@ function switchesToPlugin(migration: SkillMigration): boolean {
   return wasEjected(migration) && !isEjected(migration);
 }
 
-/**
- * A scope change on a skill that stays in its mode. A skill that switches mode is planned as
- * `toEject` or `toPlugin` instead, and never as a scope change as well.
- */
+/** A skill that switches mode is planned as `toEject`/`toPlugin`, never also as a scope change. */
 function movesScopeWithoutSwitchingMode(migration: SkillMigration): boolean {
   return (
     migration.oldScope !== migration.newScope && wasEjected(migration) === isEjected(migration)
   );
 }
 
-/**
- * Execute per-skill migration: delete locals that switch to plugin,
- * copy to local for skills that switch from plugin.
- * Uses per-skill scope from the migration plan.
- */
 export async function executeMigration(
   plan: MigrationPlan,
   projectDir: string,
@@ -139,10 +101,7 @@ export async function executeMigration(
   const host = hostAt(projectDir);
 
   const ejectCopies = await copyMigratedSkillsToLocal(plan.toEject, projectDir, sourceResult);
-  // Only the skills whose copy LANDED, which is `installMigratedPlugins`' rule read the other way
-  // round. Dropping the plugin registration of a skill that has no local copy would leave it
-  // installed nowhere, so a working install must survive a failed migration exactly as the
-  // ejected working copy survives a failed plugin install.
+  // Only skills whose copy landed lose their plugin, so a failed copy leaves the skill installed.
   const warnings = await uninstallMigratedPlugins(
     migrationsWhoseCopyLanded(plan.toEject, ejectCopies),
     projectDir,
@@ -159,20 +118,7 @@ export async function executeMigration(
   return { ejectCopies, pluginInstalls, warnings };
 }
 
-/**
- * Installs the plugin each newly-pluginized skill becomes, and names every one it could not
- * install.
- *
- * Plugin install intent is inviolable: without a marketplace NO migration in this list can be
- * installed, so the whole list fails before anything is deleted. Deleting first and downgrading
- * to a warning destroys the user's editable working copy and leaves config entries claiming a
- * plugin that was never installed.
- *
- * The same rule applies per skill: install FIRST and delete the ejected working copy only once
- * THAT skill's plugin is registered. A failed install then leaves the skill exactly as it was,
- * and the caller hard-errors on `pluginInstalls.failed` before any config claims the plugin
- * source.
- */
+/** Installs first and deletes a skill's ejected copy only once its plugin is registered. */
 async function installMigratedPlugins(
   migrations: SkillMigration[],
   projectDir: string,
@@ -206,22 +152,7 @@ async function installMigratedPlugins(
   return installs;
 }
 
-/**
- * Writes the local copy each newly-ejected skill becomes, and names every one it could not
- * write.
- *
- * The mirror of {@link installMigratedPlugins}, and per-skill for the same reasons. Each
- * migration resolves its OWN destination from its own scope, so the two scopes are independent
- * by construction rather than by pass ordering — a refused write under $HOME says nothing about
- * the project tree, and one batched `try` around both once let a single project-scope failure
- * cancel every global copy behind one warning line.
- *
- * Failures are COLLECTED rather than aborted on. The caller hard-errors on any of them before
- * writing config, so stopping at the first buys no safety and costs the user the rest of the
- * list — they would learn about the second unwritable destination only by fixing the first and
- * running again. That is the reasoning `copyEachSkill` already gives for reporting its own
- * failures by id rather than throwing on the first.
- */
+/** Per skill and per scope; failures are collected so the user sees every one at once. */
 async function copyMigratedSkillsToLocal(
   migrations: SkillMigration[],
   projectDir: string,
@@ -242,7 +173,6 @@ async function copyMigratedSkillsToLocal(
   return copies;
 }
 
-/** The migrations that now have a local copy on disk, and so no longer need their plugin. */
 function migrationsWhoseCopyLanded(
   migrations: SkillMigration[],
   copies: EjectCopyResult,
@@ -251,25 +181,12 @@ function migrationsWhoseCopyLanded(
   return migrations.filter((migration) => landed.has(migration.id));
 }
 
-/**
- * True when a migration must LEAVE the plugin registered: a skill moving from the global
- * install to a project-local copy keeps the global plugin for every other project, and this
- * project's config tombstone (`excluded: true`) is what keeps this project off it.
- */
+/** Global→project keeps the global plugin for others; `excluded: true` keeps this project off it. */
 function keepsGlobalPluginRegistration(migration: SkillMigration): boolean {
   return migration.oldScope === "global" && migration.newScope === "project";
 }
 
-/**
- * Drops the plugin registration each newly-ejected skill no longer needs, and names every one
- * it could not drop.
- *
- * Diagnostic-only: the local copy IS the install now, so a stale registration is untidy rather
- * than wrong and must not fail the migration. What it must not do is borrow the copy pass's
- * words — this loop lived inside the copy's `try`, so a `claude plugin uninstall` that threw
- * was reported to the user as `Could not copy skills for eject`, naming work that had in fact
- * succeeded one line above the count proving it.
- */
+/** Diagnostic-only: the local copy is the install now, so failures become warnings. */
 async function uninstallMigratedPlugins(
   migrations: SkillMigration[],
   projectDir: string,
@@ -288,12 +205,7 @@ async function uninstallMigratedPlugins(
       continue;
     }
 
-    // Scope-precise uninstall keyed to this migration's own scope. A best-effort
-    // both-scopes sweep would also drop a same-id plugin registered at the OTHER Claude
-    // scope (e.g. a project→eject switch uninstalling the still-needed global/user-scope
-    // plugin). The registered scope is unambiguous here, so target it exactly.
-    // A removal still answers `absent` rather than throwing for a plugin the host does not
-    // have, so an already-gone registration is not a warning.
+    // Only the old scope, so a same-id plugin at the other scope survives.
     const pluginRef = buildMarketplacePluginRef(migration.id, sourceResult.marketplace);
     try {
       await host.uninstallPlugin(pluginRef, migration.oldScope, projectDir);
@@ -307,11 +219,7 @@ async function uninstallMigratedPlugins(
   return warnings;
 }
 
-/**
- * Removes the local copy a now-pluginized skill no longer needs, from the scope it was
- * ejected at. A global copy is kept when the skill moves to project scope — the global
- * copy must remain for other projects.
- */
+/** A global copy is kept when the skill moves to project scope, for other projects. */
 async function deleteEjectedWorkingCopy(
   migration: SkillMigration,
   projectDir: string,

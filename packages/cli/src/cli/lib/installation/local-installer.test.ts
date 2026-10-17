@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getProjectConfigPath, resolveInstallPaths } from "./install-base-dir";
 import { sourceFolderInUse } from "./install-layout.js";
 import { buildCompileAgents, buildAgentScopeMap, setConfigMetadata } from "./local-installer";
-// The live config write, the one `commands/init.tsx` calls.
 import { writeProjectConfig } from "../operations/project/write-project-config.js";
 // Deep import: the pair writers live in config-gate and are deliberately not re-exported.
 import {
@@ -130,7 +129,6 @@ function deregisterProjectPath(projectDir: string): Promise<GateReport> {
   );
 }
 
-/** Positional-argument shape of the gate's `writeConfigByScope`. */
 async function writeScopedConfigs(
   finalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,
@@ -159,7 +157,6 @@ async function seedGlobalConfigTypes(homeDir: string): Promise<void> {
   );
 }
 
-/** Positional-argument shape of the gate's `writeScopeConfigTypes`. */
 async function regenerateScopeConfigTypes(
   projectDir: string,
   config: ProjectConfig,
@@ -443,7 +440,6 @@ describe("local-installer", () => {
     });
 
     it("names the stack id and the source it asked when the stack does not resolve", async () => {
-      // A stack id the loaded source does not have resolves to null, and the install names it.
       initializeMatrix(FULLSTACK_PAIR_MATRIX);
       mockLoadStackById.mockResolvedValueOnce(null);
 
@@ -530,7 +526,6 @@ describe("local-installer", () => {
     const fakeHome = useFakeHome(() => tempDir);
 
     it("a global install is named for the product, never for the home directory", async () => {
-      // At $HOME the config takes the product name, not the OS account name.
       initializeMatrix(EMPTY_MATRIX);
       const homeDir = fakeHome.dir;
       const selection = buildInstallSelection(
@@ -905,7 +900,6 @@ describe("local-installer", () => {
 
   describe("mergeGlobalConfigs", () => {
     it("adds new category to existing agent's stack, preserving existing categories", () => {
-      // Additive merge: the new category is appended; the existing one is kept as-is.
       const existing: ProjectConfig = buildProjectConfig({
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
@@ -1020,7 +1014,6 @@ describe("local-installer", () => {
     });
 
     it("adds skill to new agent while preserving it on existing agent", () => {
-      // Additive across agents.
       const sharedSkills = buildSkillConfigs(["web-framework-react"], { scope: "global" });
       const sharedAgents = buildAgentConfigs(["web-developer", "web-researcher"], {
         scope: "global",
@@ -1058,7 +1051,6 @@ describe("local-installer", () => {
     });
 
     it("leaves changed false for a fully identical merge", () => {
-      // Identical configs must not be flagged dirty.
       const sharedSkills = buildSkillConfigs(["web-framework-react"], { scope: "global" });
       const sharedAgents = buildAgentConfigs(["web-developer"], { scope: "global" });
       const sharedStack: NonNullable<ProjectConfig["stack"]> = {
@@ -1284,7 +1276,6 @@ describe("local-installer", () => {
 
       expect(config.marketplaceName).toBe("e2e-test-marketplace");
       expect(config.marketplace).toBe("/path/to/skills");
-      // `changed` gates the global write.
       expect(changed, "newly recorded source identity must trigger the global write").toBe(true);
     });
 
@@ -1639,11 +1630,6 @@ describe("local-installer", () => {
       expect(typesContent).toContain("export type AgentName = GlobalAgentName | 'web-developer'");
     });
 
-    /**
-     * From a project context the global pair is established first, so the import form is the only
-     * outcome. The standalone branch is reachable at $HOME and covered in
-     * `configuration/__tests__/config-types-writer.test.ts`.
-     */
     it("establishes the global pair first, so the project types take the import form", async () => {
       const projectDir = path.join(tempDir, "project-standalone");
       const projectConfigPath = getProjectConfigPath(projectDir, "claude");
@@ -1679,11 +1665,7 @@ describe("local-installer", () => {
       expect(typesContent).toContain("export type SkillId = GlobalSkillId | 'web-framework-react'");
     });
 
-    /**
-     * config.ts inlines every active global row, so its types must name them too, or a later global
-     * narrowing makes config.ts fail `tsc`. Distinct categories and domains, so no assertion passes
-     * by accident.
-     */
+    // config.ts inlines active global rows, so its types must name them or it fails `tsc`.
     it("extends the global unions with the global-scoped entries config.ts inlines", async () => {
       await seedGlobalConfigTypes(fakeHomeHandle.dir);
 
@@ -1723,7 +1705,6 @@ describe("local-installer", () => {
         "{ id: 'web-framework-react', scope: 'global', origin: 'agents-inc' }",
       );
 
-      // Control
       expect(readGeneratedUnion(typesContent, "SkillId")).toContain("'api-framework-hono'");
       expect(readGeneratedUnion(typesContent, "Category")).toContain("'api-api'");
       expect(readGeneratedUnion(typesContent, "Domain")).toContain("'api'");
@@ -1733,10 +1714,7 @@ describe("local-installer", () => {
       expect(readGeneratedUnion(typesContent, "Domain")).toContain("'web'");
     });
 
-    /**
-     * A config can still name a domain after the last skill of it is gone, so the union must come
-     * from the array too. `meta` is named by nothing else.
-     */
+    // A domain can outlive its last skill, so the union reads `selectedDomains` too.
     it("covers a domain the config still names after its last skill row is gone", async () => {
       await seedGlobalConfigTypes(fakeHomeHandle.dir);
 
@@ -1993,11 +1971,7 @@ describe("local-installer", () => {
       expect(report.globalWritten).toBe(false);
     });
 
-    /**
-     * Registration and deregistration must normalize the path the same way. Only a symlinked
-     * ancestor can tell `realpath` from `path.resolve` apart, so the round trip runs through a
-     * symlink.
-     */
+    // Only a symlinked ancestor tells `realpath` from `path.resolve`.
     it("should deregister a project reached through a symlinked ancestor", async () => {
       const sandbox = await realpath(tempDir);
       const realProjectDir = path.join(sandbox, "real", "project");
@@ -2394,7 +2368,6 @@ describe("local-installer", () => {
     });
   });
 
-  // Propagation must write project types in the same import-and-extend form as project writes.
   describe("propagateGlobalChangesToProjects — project config-types imports from global", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
     const fakeHomeHandle = useFakeHome(() => tempDir);
@@ -2431,7 +2404,6 @@ describe("local-installer", () => {
       expect(typesContent).toContain("SkillId as GlobalSkillId");
       expect(typesContent).toContain("AgentName as GlobalAgentName");
 
-      // Covers the project's own entries and the inlined global rows.
       expect(typesContent).toContain(
         "export type SkillId = GlobalSkillId | 'web-framework-react' | 'web-testing-vitest'",
       );
@@ -2585,11 +2557,7 @@ describe("local-installer", () => {
     });
   });
 
-  /**
-   * Category exclusivity must hold on the persisted project config: a project skill in an exclusive
-   * category masks a different global skill there with a tombstone. Propagation and the
-   * project-scope save branch are covered separately; either alone reproduces the defect.
-   */
+  // A project skill in an exclusive category masks a different global one there with a tombstone.
   describe("cross-scope category exclusivity", () => {
     const emptyAgents: Partial<Record<AgentName, AgentDefinition>> = {};
 
@@ -2882,10 +2850,7 @@ describe("local-installer", () => {
       });
     });
 
-    /**
-     * The project-scope save branch does no reconciliation of its own, so each case keeps the
-     * project out of `projects[]` and propagation never runs.
-     */
+    // Each case keeps the project out of `projects[]`, so propagation never runs.
     describe("writeScopedConfigs — project-scope save", () => {
       const fakeHomeHandle = useFakeHome(() => tempDir);
 

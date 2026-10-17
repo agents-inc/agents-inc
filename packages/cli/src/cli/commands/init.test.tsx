@@ -24,21 +24,8 @@ import {
 } from "../lib/__tests__/test-constants";
 import { cleanupTempDir, createTempDir } from "../lib/__tests__/test-fs-utils";
 
-/**
- * The interactive dashboard against the piped one, on the counts block they are meant to share.
- *
- * `showDashboard` branches on `process.stdin.isTTY`: a pipe gets `formatDashboardText`, a terminal
- * gets this component. The two rendered different things — the text path printed skill count,
- * agent count, install mode and marketplace, and the component printed the title and the four menu
- * rows and nothing else — so the screen a person actually sits in front of was **less informative
- * than the output they got by piping it**, with every assertion on the subject green throughout
- * because each path was only ever checked against itself.
- *
- * These read the expected lines out of {@link dashboardCountLines} rather than restating them, so
- * the pair cannot drift again: a line added to the text path and not to the component fails here.
- */
+/** Expected lines come from {@link dashboardCountLines}, so the TTY and piped paths cannot drift. */
 
-/** An installation naming a marketplace — the widest count block, four lines. */
 const WITH_MARKETPLACE: DashboardData = {
   name: DEFAULT_BRANDING.NAME,
   skillCount: 12,
@@ -47,7 +34,6 @@ const WITH_MARKETPLACE: DashboardData = {
   source: "github:agents-inc/skills",
 };
 
-/** The narrower one: no marketplace, so `dashboardCountLines` yields three lines rather than four. */
 const WITHOUT_MARKETPLACE: DashboardData = {
   name: DEFAULT_BRANDING.NAME,
   skillCount: 0,
@@ -93,10 +79,7 @@ describe("the dashboard a person sits in front of", () => {
     expect(missing).toStrictEqual([]);
   });
 
-  /**
-   * The control for the pair above: without it, a `dashboardCountLines` that answered `[]` would
-   * satisfy both of them for free, and an empty counts block is the defect they exist to catch.
-   */
+  // Control for the pair above, which an empty `dashboardCountLines` would satisfy for free.
   it("draws a marketplace line only for an installation that names one", () => {
     expect(dashboardCountLines(WITH_MARKETPLACE)).toHaveLength(
       dashboardCountLines(WITHOUT_MARKETPLACE).length + 1,
@@ -105,7 +88,6 @@ describe("the dashboard a person sits in front of", () => {
     expect(formatDashboardText(WITHOUT_MARKETPLACE)).not.toContain("Marketplace:");
   });
 
-  /** The menu the component owns and the text path only imitates, still painted below the counts. */
   it("still offers the four commands", async () => {
     const frame = await frameFor(WITH_MARKETPLACE);
 
@@ -119,11 +101,7 @@ describe("the dashboard a person sits in front of", () => {
   });
 });
 
-/**
- * The dashboard's first option hands this installation to the editor: chosen from `init` over an
- * installation, it runs `edit --ui`. The run is real up to the command it chooses, which is
- * recorded rather than run.
- */
+/** The run is real up to the command it chooses, which is recorded rather than run. */
 describe("choosing Edit in the web editor", () => {
   const terminal = standAtTerminal();
   let tempDir: string;
@@ -168,10 +146,8 @@ describe("choosing Edit in the web editor", () => {
 });
 
 /**
- * Keys a fast typist or a paste delivers reach Ink as one chunk, and Ink hands them to the menu one
- * after another with no frame painted between them — so a handler that reads the focus a render
- * left behind acts on the option before the last move. The paced twin is the control: the same
- * three keys, a frame apart, which any reading of the focus gets right.
+ * A burst of keys arrives with no frame between them, so a handler reading rendered focus acts on
+ * a stale option. The paced twin is the control.
  */
 describe("the dashboard's keys", () => {
   function dashboardChoosing(): {

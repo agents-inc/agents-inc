@@ -31,7 +31,6 @@ const UNCHANGED_GLOBAL_AGENT_ROW: AgentDiffRow[] = [{ name: AGENT_NAME, status: 
 const ADDED_PROJECT_AGENT_ROW: AgentDiffRow[] = [{ name: AGENT_NAME, status: "added" }];
 const REMOVED_GLOBAL_AGENT_ROW: AgentDiffRow[] = [{ name: AGENT_NAME, status: "removed" }];
 
-/** A global install the project now also claims, with no tombstone recorded for it. */
 const INHERITED_GLOBAL_SKILL: ScopeDiffInput = {
   currentSkills: PROJECT_ACTIVE_SKILL,
   currentAgents: [],
@@ -48,7 +47,6 @@ const INHERITED_GLOBAL_AGENT: ScopeDiffInput = {
   isInitMode: false,
 };
 
-/** A baseline tombstone whose slot held no install, dropped this session. */
 const DROPPED_SKILL_TOMBSTONE: ScopeDiffInput = {
   currentSkills: [],
   currentAgents: [],
@@ -65,7 +63,6 @@ const DROPPED_AGENT_TOMBSTONE: ScopeDiffInput = {
   isInitMode: false,
 };
 
-/** A global install this session drops outright — the removal a `-` is for. */
 const DROPPED_GLOBAL_SKILL: ScopeDiffInput = {
   currentSkills: [],
   currentAgents: [],
@@ -82,7 +79,6 @@ const DROPPED_GLOBAL_AGENT: ScopeDiffInput = {
   isInitMode: false,
 };
 
-/** The dual-scope pair: the project claims the slot and a tombstone silences the global one. */
 const DUAL_SCOPE_SKILL_PAIR: ScopeDiffInput = {
   currentSkills: [...PROJECT_ACTIVE_SKILL, ...GLOBAL_TOMBSTONE_SKILL],
   currentAgents: [],
@@ -91,7 +87,6 @@ const DUAL_SCOPE_SKILL_PAIR: ScopeDiffInput = {
   isInitMode: false,
 };
 
-/** The same pair re-read from a saved config, tombstone and all. */
 const REREAD_DUAL_SCOPE_SKILL_PAIR: ScopeDiffInput = {
   currentSkills: [...PROJECT_ACTIVE_SKILL, ...GLOBAL_TOMBSTONE_SKILL],
   currentAgents: [],

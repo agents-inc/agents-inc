@@ -16,39 +16,20 @@ import {
   generateConfigTypesSource,
   type ConfigTypesExtras,
 } from "../configuration/config-types-writer";
-// The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
-// startup, which is what `generateConfigSource` read directly before the renderers moved into
-// `@workspace/compile` and the editor became a second caller with a catalogue of its own.
 import { matrix as activeMatrix } from "../matrix/matrix-provider";
 import { assertGateToken } from "./gate-token.js";
 
 /**
- * Nothing in this module MINTS the write privilege — every function below
- * REQUIRES it, and `writeIfChanged` is where that requirement is asserted. The
- * token is opened by the gate's public entry points in `index.ts`, each of which
- * wraps its whole consequence flow.
- *
- * That split is the point (D-309): a callee that opens the privilege on its own
- * behalf hands it to whoever reached it, so a caller that got past module
- * privacy — a dynamic import, a re-export added for convenience — arrived
- * already authorized and the runtime tripwire in `utils/fs.ts` waved it through.
- * Requiring the token instead makes reaching the private writer useless on its
- * own: the privilege belongs to the entry points, not to the writers.
+ * Nothing here mints the write privilege: every writer requires it (asserted in `writeIfChanged`)
+ * and only the gate's entry points in `index.ts` open it.
  */
 
-/** Absolute paths of the two halves of the global config pair. */
 export type GlobalPairPaths = {
   configPath: string;
   typesPath: string;
 };
 
-/**
- * Resolves `provider`'s global pair paths. `os.homedir()` at call time, so they agree
- * with every other home-dir reader and with test home mocks.
- *
- * The provider is the asking run's, because the home root can hold a global installation of
- * each and the pair belongs to exactly one of them.
- */
+/** `os.homedir()` at call time, so the paths agree with test home mocks. */
 export function globalPairPaths(provider: Provider): GlobalPairPaths {
   const dir = sourceFolderInUse(os.homedir(), provider).dir;
   return {
@@ -62,13 +43,7 @@ export function typesPathFor(configPath: string): string {
   return path.join(path.dirname(configPath), STANDARD_FILES.CONFIG_TYPES_TS);
 }
 
-/**
- * Writes `source` to `filePath` unless the file already holds exactly those
- * bytes. Both halves are derived from the same config on every write, so pair
- * coherence holds by derivation and the comparison only suppresses the mtime
- * churn a projects-only or scalar-only change would otherwise inflict on every
- * consumer watching these files. Returns true when the file was written.
- */
+/** Skips identical bytes to spare watchers mtime churn; true when written. */
 async function writeIfChanged(filePath: string, source: string): Promise<boolean> {
   assertGateToken(filePath);
   if ((await fileExists(filePath)) && (await readFile(filePath)) === source) return false;
@@ -76,11 +51,7 @@ async function writeIfChanged(filePath: string, source: string): Promise<boolean
   return true;
 }
 
-/**
- * Standalone (non-importing) type unions narrowed to `config`'s own entries,
- * widened by `extras` — the literals a just-created skill or agent needs before
- * it reaches the config.
- */
+/** Unions narrowed to `config`'s entries, widened by `extras` for a just-created skill or agent. */
 function renderStandaloneTypes(
   config: ProjectConfig,
   matrix: MergedSkillsMatrix,
@@ -97,16 +68,7 @@ function renderStandaloneTypes(
   );
 }
 
-/**
- * Writes the config half of the pair at `configPath`. The global config never
- * takes the project writer's import/inline options — it is the file those
- * options resolve against.
- *
- * The one renderer call left reading the singleton rather than taking a
- * catalogue: its sole caller is `mutateGlobal`, which writes this half BEFORE
- * `resolveGateDeps` runs, deliberately — a mutation with no registered projects
- * must not pay for the catalogue load. There is no catalogue in scope to pass.
- */
+/** Reads the singleton catalogue: its caller writes this half before any catalogue is loaded. */
 export async function writeGlobalConfigHalf(
   config: ProjectConfig,
   configPath: string,
@@ -114,7 +76,6 @@ export async function writeGlobalConfigHalf(
   return writeIfChanged(configPath, generateConfigSource(config, activeMatrix));
 }
 
-/** Writes the types half of the pair beside `configPath`. */
 export async function writeGlobalTypesHalf(
   config: ProjectConfig,
   configPath: string,
@@ -128,15 +89,7 @@ export async function writeGlobalTypesHalf(
   );
 }
 
-/**
- * Writes both halves from one config AND one catalogue, so they cannot disagree.
- *
- * The catalogue is the caller's `matrix` for both halves. It was the caller's for
- * the types half and the module singleton for the config half, which is the
- * disagreement this function's name says cannot happen: the two are the same
- * object on every production path today, and the whole reason the renderers take
- * a catalogue parameter is that a second caller seats a different one.
- */
+/** Both halves from one config and one catalogue, so they cannot disagree. */
 export async function writeGlobalPair(
   config: ProjectConfig,
   configPath: string,
@@ -151,11 +104,7 @@ export async function writeGlobalPair(
   return configWritten || typesWritten;
 }
 
-/**
- * Creates a blank global pair in `provider`'s home-scope source folder when none exists: `config.ts`
- * with empty arrays and `config-types.ts` with `never` unions. Returns true when
- * the files were created, false when they already existed.
- */
+/** Creates a blank pair (empty arrays, `never` unions) when none exists; true when created. */
 export async function ensureBlankPair(provider: Provider): Promise<boolean> {
   const { configPath, typesPath } = globalPairPaths(provider);
 

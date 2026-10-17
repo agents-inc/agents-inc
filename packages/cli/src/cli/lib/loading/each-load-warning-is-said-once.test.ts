@@ -14,23 +14,10 @@ import { DEFAULT_TEST_SKILLS } from "../__tests__/mock-data/mock-skills";
 import { loadSource, sayCapturedWarnings } from "../operations/source/load-source";
 import { loadSkillsMatrixFromSource } from "./source-loader";
 
-/**
- * A run says each warning a catalogue load raises once, however many times the run loads the
- * files it is about.
- *
- * A global run loads its marketplace for itself and then again for every registered project it
- * fans out to, twice per project, and each load said what it found: a global `compile` or
- * `edit --from` over N registered projects printed one unparseable file's warning 1 + 2N times.
- * Those loads are each needed — a project's catalogue is its own — so what is held to once is the
- * saying, not the loading.
- *
- * The logger is real here, and every spec builds its own marketplace under its own temporary
- * directory, so the paths in what is said are this spec's alone.
- */
+/** A run says each catalogue-load warning once, however many times it loads the same files. */
 
 type BrokenMarketplace = { dirs: TestDirs; brokenSkillMd: string };
 
-/** A marketplace shipping one skill whose SKILL.md frontmatter no YAML parser reads. */
 async function marketplaceShippingAnUnreadableSkillMd(): Promise<BrokenMarketplace> {
   const skills = inTestMarketplace(DEFAULT_TEST_SKILLS);
   const broken = firstElement(skills);

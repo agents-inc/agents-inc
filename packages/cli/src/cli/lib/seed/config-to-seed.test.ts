@@ -23,11 +23,6 @@ vi.mock("../configuration/config-generator", async (importOriginal) => {
   return { ...original, isScopePairCompatible: vi.fn(original.isScopePairCompatible) };
 });
 
-/**
- * The inverse of `seed-to-selection.ts`. A minted payload must decode to the same install, and what
- * the wire cannot say must be refused by name rather than shared thinner.
- */
-
 const WEB_DEV = "web-developer";
 const API_DEV = "api-developer";
 const REACT_CATEGORY = "web-framework";

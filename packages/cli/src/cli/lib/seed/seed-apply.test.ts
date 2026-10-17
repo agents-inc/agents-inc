@@ -26,13 +26,6 @@ import { SKILLS } from "../__tests__/test-fixtures.js";
 
 import type { MergedSkillsMatrix, SkillId } from "../../types/index.js";
 
-/**
- * What the destructive `edit --from` may not remove: a skill written here (the payload never named
- * it) and an id the payload named that this catalogue cannot place. Scope is
- * `restoreInstalledGlobal`'s, below. Both are restored into the decoded result, because the
- * removal diff, not the writer, drives the uninstall and file deletion.
- */
-
 /** The whole shape, so an authorship keep cannot read as a catalogue keep. */
 const NOTHING_KEPT: KeptFromRoundTrip = { authoredSkillIds: [], unplaceableSkillIds: [] };
 
@@ -354,8 +347,7 @@ describe("reconcileSharedConfig", () => {
         unplaceable: new Set(),
       });
 
-      // `assignedStack` replaces the derived stack, so a kept skill needs its row carried, at its
-      // own load state, beside the payload's.
+      // `assignedStack` replaces the derived stack, so a kept skill's row must be carried.
       expect(result.assignedStack).toStrictEqual({
         [WEB_DEV]: {
           "web-framework": [sa(REACT)],
@@ -433,8 +425,7 @@ describe("reconcileSharedConfig", () => {
       // Kept, files and entry: a slot does not make the user's skill this run's to remove.
       expect(kept.authoredSkillIds).toStrictEqual([VUE]);
       expect(result.skills.map((skill) => skill.id)).toStrictEqual([REACT, VUE]);
-      // A one-skill category the payload fills: its skill takes the slot, so the writer is never
-      // handed two after the removals.
+      // A one-skill category the payload fills: its skill takes the slot.
       expect(
         result.assignedStack,
         "a kept row must not join a category that holds one skill and the payload already fills",
@@ -610,11 +601,6 @@ describe("withUnplaceableAssignees", () => {
   });
 });
 
-/**
- * From a project, `--from` only adds to the global install: held entries stay as installed, and
- * only what it lacks arrives. `edit --from` also puts back the global entries a configuration
- * omits.
- */
 describe("holding the global install as installed", () => {
   beforeEach(() => {
     initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
@@ -738,8 +724,7 @@ describe("holding the global install as installed", () => {
 
     const held = holdInstalledGlobal(decoded, installedGlobal);
 
-    // api-developer keeps its row and gains Hono's, as the configuration states: named as added
-    // to, not as kept.
+    // api-developer gains Hono's row beside its own, so it is named as added to, not kept.
     expect(held.result.skills).toContainEqual(buildSkillConfig(HONO, { scope: "global" }));
     expect(held.installed.skillIds).toStrictEqual([ZUSTAND]);
     expect(held.result.assignedStack[API_DEV]).toStrictEqual({
@@ -751,8 +736,7 @@ describe("holding the global install as installed", () => {
   });
 
   it("names a held sub-agent a new skill joins as added to, never as kept as installed", () => {
-    // The Zustand row the configuration omits stays and Hono's arrives: the sub-agent changes, so
-    // calling it kept as installed would contradict the write.
+    // The sub-agent changes, so calling it kept as installed would contradict the write.
     const decoded = decodedWithGlobal({ [HONO]: onApiDeveloper() });
 
     const held = holdInstalledGlobal(decoded, installedGlobal);

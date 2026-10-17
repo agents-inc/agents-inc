@@ -4,15 +4,10 @@ import os from "os";
 import path from "path";
 import { PROVIDERS, STANDARD_FILES } from "../consts";
 import { sourceDir } from "../lib/installation/install-layout.js";
-// The gate's private token module, imported here by exception (eslint records
-// it): this file is the write choke point every pair write funnels through, and
-// `gate-token.ts` is a dependency-free leaf, so the import cannot cycle.
+// Private gate module, allowed here by an eslint exception: this is the write choke point.
 import { assertGateToken } from "../lib/config-gate/gate-token.js";
 
-/**
- * True when `child` resolves to `parent` or inside it. Purely lexical
- * (no symlink resolution) — the caller decides throw-vs-warn policy.
- */
+/** Purely lexical: no symlink resolution. */
 export function isPathWithin(child: string, parent: string): boolean {
   const resolvedChild = path.resolve(child);
   const resolvedParent = path.resolve(parent);
@@ -23,10 +18,6 @@ export async function readFile(filePath: string): Promise<string> {
   return fs.readFile(filePath, "utf-8");
 }
 
-/**
- * Reads a file with a size limit check before reading content.
- * Throws if the file exceeds maxSizeBytes. Prevents DoS from oversized files.
- */
 export async function readFileSafe(filePath: string, maxSizeBytes: number): Promise<string> {
   const stats = await fs.stat(filePath);
   if (stats.size > maxSizeBytes) {
@@ -67,11 +58,7 @@ export async function listDirectories(dirPath: string): Promise<string[]> {
   }
 }
 
-/**
- * @param dot Include files and directories whose name starts with a dot. Off by default, which
- *   is what a scan LOOKING for something wants; a read that has to reproduce a directory
- *   faithfully wants it on, since a file the read skips is one the copy silently loses.
- */
+/** @param dot Off for scans; on for reads that must reproduce a directory faithfully. */
 export async function glob(
   pattern: string,
   cwd: string,
@@ -80,46 +67,27 @@ export async function glob(
   return fg(pattern, { cwd, onlyFiles: true, dot });
 }
 
-/** The two files the gate owns, wherever a global pair sits. */
 const PAIR_HALVES = [STANDARD_FILES.CONFIG_TS, STANDARD_FILES.CONFIG_TYPES_TS];
 
-/**
- * Every folder a GLOBAL config pair can sit in: one per provider.
- *
- * All of them, rather than the one this home is on, because the guard has to hold against the
- * write it did not expect. A tripwire that knew only the folder in use would let a write into any
- * other one through with nothing failing anywhere — and the gate's static layers cannot see that
- * at all, since a write that simply lands somewhere they were not told about satisfies every one
- * of them.
- */
+// Every provider's folder, not just the one in use, so an unexpected write is still caught.
 function globalPairFolders(): string[] {
   const home = os.homedir();
   return PROVIDERS.map((provider) => sourceDir(home, provider));
 }
 
-/** Every path either half of the global pair can have. */
 function everyGlobalPairPath(): string[] {
   return globalPairFolders().flatMap((folder) =>
     PAIR_HALVES.map((half) => path.join(folder, half)),
   );
 }
 
-/**
- * True when `resolvedPath` is one of the two halves of the global config pair.
- *
- * Compares resolved paths rather than matching on the filename, so it holds
- * against every way of naming the same file — a concatenated path, a relative
- * one, a fragment assembled at runtime — which is exactly what a static check
- * cannot do.
- */
+// Resolved-path compare, so any spelling of the path is caught.
 function isGlobalPairPath(resolvedPath: string): boolean {
   return everyGlobalPairPath().includes(resolvedPath);
 }
 
 export async function writeFile(filePath: string, content: string): Promise<void> {
-  // Runtime tripwire: every write in the CLI funnels through here, so a pair
-  // write attempted without the gate's token dies at its first execution
-  // whatever route it took to get here. Costs one path compare per write.
+  // Runtime tripwire: a global pair write without the gate's token throws.
   const resolvedPath = path.resolve(filePath);
   if (isGlobalPairPath(resolvedPath)) assertGateToken(resolvedPath);
 
@@ -135,11 +103,7 @@ export async function remove(filePath: string): Promise<void> {
   await fs.remove(filePath);
 }
 
-/**
- * True when `dirPath` holds nothing, and true when it cannot be read at all —
- * an absent directory holds nothing either. Both callers ask the same question
- * of a directory they are about to write into or remove.
- */
+/** An unreadable or absent directory counts as empty. */
 export async function isDirectoryEmpty(dirPath: string): Promise<boolean> {
   try {
     const entries = await fs.readdir(dirPath);
@@ -149,14 +113,7 @@ export async function isDirectoryEmpty(dirPath: string): Promise<boolean> {
   }
 }
 
-/**
- * Removes `dir` when it exists and holds nothing; true when it was removed.
- *
- * A scope directory (`.claude/skills/`, `.claude/agents/`) is an artefact of
- * what it holds, so the removal that empties it takes it too. Emptiness here is
- * FILESYSTEM emptiness and never roster emptiness — a hand-authored agent or any
- * other user-owned file keeps its directory alive, whatever a config says.
- */
+/** Filesystem emptiness, not roster emptiness: any user-owned file keeps the directory. */
 export async function removeDirIfEmpty(dir: string): Promise<boolean> {
   if (!(await directoryExists(dir))) return false;
   if (!(await isDirectoryEmpty(dir))) return false;
@@ -165,22 +122,8 @@ export async function removeDirIfEmpty(dir: string): Promise<boolean> {
 }
 
 /**
- * Copies a tree into an installation, and makes what it wrote writable by its new owner.
- *
- * **`eject` means the user owns the copy**, so the copy has to be editable however the SOURCE
- * happened to be stored. `fs-extra` preserves mode, and nothing normalised it: a marketplace on a
- * read-only mount, in a Nix store path, or written under a restrictive umask produced skills the
- * user could not subsequently edit — and the failure did not surface at the install. It surfaced
- * later, at an unrelated `edit` or mode switch, as `EACCES` on a file the user never made
- * read-only. Every caller of this function is an install or an eject, so every destination is the
- * user's.
- *
- * The owner's write bit is ADDED rather than the mode replaced. A skill may legitimately ship an
- * executable script, and flattening to `644` would break it on the way in — the destination should
- * differ from the source in exactly one respect, which is that its owner can write it.
- *
- * Directories take the same bit for the same reason: a read-only directory refuses a file added
- * beside the copy, which is what an eject-then-edit does next.
+ * Adds the owner's write bit after copying (mode otherwise preserved), so an ejected copy
+ * from a read-only source stays editable.
  */
 export async function copy(src: string, dest: string): Promise<void> {
   await fs.copy(src, dest);

@@ -13,12 +13,7 @@ import { typedEntries } from "../../utils/typed-object";
 import { skillAudit, auditVerdictsPendingApply } from "../configuration/skill-audit";
 import type { SkillAuditEntry } from "../configuration/skill-audit";
 
-/**
- * Which check produced an issue. A closed union rather than a free string because a caller may
- * branch on one kind — `source-validator` weighs `rule-unresolved-slug` differently for the
- * author of a marketplace than for someone consuming it — and a misspelled branch there must be
- * a compile error rather than a condition that is quietly never true.
- */
+/** A closed union: callers branch on a kind, so a misspelling must be a compile error. */
 type MatrixHealthFinding =
   | "category-missing-domain"
   | "skill-unknown-category"
@@ -45,10 +40,7 @@ export function matrixHealthIssues(matrix: MergedSkillsMatrix): MatrixHealthIssu
   ];
 }
 
-/**
- * What the health check finds in `matrix`, each one said as a warning. The catalogue load says
- * them; a caller that only files them reads {@link matrixHealthIssues}, or a run says each twice.
- */
+/** Warns each issue; callers that only file them use `matrixHealthIssues`. */
 export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   const issues = matrixHealthIssues(matrix);
 
@@ -62,7 +54,7 @@ export function checkMatrixHealth(matrix: MergedSkillsMatrix): MatrixHealthIssue
 function checkCategoryDomains(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return (
     typedEntries<Category, CategoryDefinition>(matrix.categories)
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       .filter(([, cat]) => cat !== undefined && !cat.domain)
       .map(([catId]) => ({
         severity: "warning" as const,
@@ -76,7 +68,7 @@ function checkSkillCategories(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return typedEntries<SkillId, ResolvedSkill>(matrix.skills)
     .filter(
       ([, skill]) =>
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
         skill !== undefined &&
         // "local" is a pseudo-category that won't exist in matrix.categories — skip it
         skill.category !== LOCAL_PSEUDO_CATEGORY &&
@@ -89,7 +81,6 @@ function checkSkillCategories(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
     }));
 }
 
-/** Every outgoing relation reference on a skill, tagged with the field it came from. */
 function relationRefs(skill: ResolvedSkill): Array<{ field: string; ref: SkillId }> {
   return [
     ...skill.conflictsWith.map((relation) => ({ field: "conflictsWith", ref: relation.skillId })),
@@ -101,7 +92,7 @@ function relationRefs(skill: ResolvedSkill): Array<{ field: string; ref: SkillId
 
 function checkSkillRelationRefs(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return typedEntries<SkillId, ResolvedSkill>(matrix.skills).flatMap(([skillId, skill]) =>
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     skill === undefined
       ? []
       : relationRefs(skill)
@@ -114,18 +105,7 @@ function checkSkillRelationRefs(matrix: MergedSkillsMatrix): MatrixHealthIssue[]
   );
 }
 
-/**
- * A slug a relationship rule names that no skill carries. The rule containing it
- * states nothing — resolution drops the reference — so the source shipped a rule
- * that cannot act, which is a defect in the source rather than an advisory about
- * it. The CLI's own built-in rules are narrowed to the slugs a source ships
- * before resolution, so nothing here can be the CLI's doing.
- *
- * `error` is the AUTHOR's verdict, and it is the only one this module can reach: a matrix says
- * what is wrong with it and cannot say who is reading. Someone who merely installed from the
- * marketplace can neither open the file nor be harmed by it, and `source-validator` — the one
- * layer that knows which of the two is asking — serves them the same finding as a warning.
- */
+/** An `error`: the source's defect. `source-validator` downgrades it for consumers. */
 function checkUnresolvedRuleSlugs(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return (matrix.unresolvedSlugs ?? []).map((slug) => ({
     severity: "error" as const,
@@ -142,11 +122,7 @@ function isExclusiveCategory(matrix: MergedSkillsMatrix, category: CategoryPath)
   return definition !== undefined && definition.exclusive;
 }
 
-/**
- * The one definition of "this skill is fenced" that the audit's two enforcement points — the
- * runtime contradiction check below and the manifest consistency test — must agree on. Post
- * decision 2 the only fences left are category exclusivity and `requires`.
- */
+/** The one definition of fenced that the runtime check and the manifest test share. */
 export function isFencedByMatrix(matrix: MergedSkillsMatrix, skillId: SkillId): boolean {
   const skill = matrix.skills[skillId];
   if (skill === undefined) return false;
@@ -164,16 +140,11 @@ function fenceDescription(matrix: MergedSkillsMatrix, skill: ResolvedSkill): str
   return `its category '${skill.category}' is exclusive`;
 }
 
-/**
- * A `universal` verdict claims the skill is selectable beside anything; a `requires` rule or an
- * exclusive category says the opposite. Both cannot be true, so the pair is a contradiction and
- * the audit trail would be lying. Rows in `auditVerdictsPendingApply` are exempt — their verdict
- * was recorded ahead of a category disposition that has not landed yet.
- */
+/** A `universal` verdict contradicts a `requires` rule or exclusive category; pending exempt. */
 function checkAuditVerdictContradictions(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return typedEntries<SkillId, ResolvedSkill>(matrix.skills)
     .filter(([skillId, skill]) => {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       if (skill === undefined || auditVerdictsPendingApply[skillId]) return false;
       const audit = auditEntryFor(skillId);
 
@@ -186,23 +157,12 @@ function checkAuditVerdictContradictions(matrix: MergedSkillsMatrix): MatrixHeal
     }));
 }
 
-/**
- * "Unaudited" means the manifest was expected to carry a verdict and does not, so the population
- * is the ids the manifest is keyed by: the built-in catalog's. A marketplace's skills carry that
- * marketplace's namespace and are outside the manifest by construction, not unaudited — warning
- * per skill for every one of them would cost a screen of noise and put a clean bill of health out
- * of reach for anyone not on the public catalog. Local skills are the user's own and were already
- * out of scope.
- *
- * `Record<SkillId, SkillAuditEntry>` covers the built-ins exhaustively at compile time, so what
- * remains here is that same totality asserted against a matrix whose keys are open strings at
- * runtime.
- */
+/** Built-in ids only: marketplace and local skills are outside the manifest by construction. */
 function checkUnauditedSkills(matrix: MergedSkillsMatrix): MatrixHealthIssue[] {
   return typedEntries<SkillId, ResolvedSkill>(matrix.skills)
     .filter(
       ([skillId, skill]) =>
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
         skill !== undefined &&
         !skill.local &&
         isSkillId(skillId) &&

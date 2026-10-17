@@ -17,17 +17,6 @@ import {
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 import type { ProjectConfig } from "../../../types/index.js";
 
-/**
- * `writeProjectPartial` is the gate's entry for a scalar-sized change to a
- * PROJECT's config: a partial goes in, the required fields are filled, the
- * config half is written. It replaced `saveSourceToProjectConfig`, whose suite
- * this is — every case below pins a contract the callers still depend on
- * (required-field filling, name invention, generated file shape), and none of
- * them had another home.
- *
- * The home-directory refusal is asserted in the enforcement guard
- * (`lib/__tests__/config-gate-enforcement.test.ts`), beside the other guards.
- */
 describe("writeProjectPartial", () => {
   let tempDir: string;
 
@@ -40,8 +29,7 @@ describe("writeProjectPartial", () => {
   });
 
   /**
-   * Records the marketplace ref the way every caller does: read what is on disk, overlay
-   * the ref, hand the partial over (see `recordSource` in `eject.ts`).
+   * Records the ref the way callers do: read what is on disk, overlay it, hand the partial over.
    */
   async function saveSource(dir: string, source: string, fallbackName: string): Promise<void> {
     const existing = (await loadProjectSourceConfig(dir)) ?? {};
@@ -74,8 +62,7 @@ describe("writeProjectPartial", () => {
   });
 
   it("preserves existing config fields when adding source", async () => {
-    // Deliberately partial — no `skills` — because filling a missing required field is part of
-    // what the write below is held to.
+    // Deliberately partial: filling a missing required field is under test.
     await writeTestTsConfig(tempDir, {
       name: "my-project",
       agents: buildAgentConfigs(["web-developer"], { scope: "project" }),
@@ -97,7 +84,7 @@ describe("writeProjectPartial", () => {
   });
 
   it("overwrites existing source value", async () => {
-    // Deliberately partial — no `skills`, no `agents` — for the reason the spec above gives.
+    // Deliberately partial, as above.
     await writeTestTsConfig(tempDir, {
       marketplace: "github:old/source",
       name: "project",
@@ -117,14 +104,8 @@ describe("writeProjectPartial", () => {
   });
 
   /**
-   * The `?? {}` in `saveSource` is a fallback for a config that is not THERE, and it used to catch
-   * a config that is there and unreadable as well — so a scalar-sized change to a corrupt config
-   * replaced the whole file with a two-field one under an invented name, and reported success. It
-   * refuses now (owner ruling 2026-08-20): a file nobody can read is not a file to overwrite.
-   *
-   * The control this refusal is meaningless without is "preserves existing config fields when
-   * adding source" above: a config on disk that loads is overlaid rather than refused, so the guard
-   * is scoped to unreadable rather than to "anything already on disk".
+   * A config that exists but cannot be read is refused, not replaced; the control is the
+   * field-preserving spec above.
    */
   it("refuses to overwrite a config file it cannot read, rather than inventing a fresh one", async () => {
     const corruptSource = "invalid typescript content {{";
@@ -161,22 +142,8 @@ describe("writeProjectPartial", () => {
   });
 
   /**
-   * The round trip every scalar caller performs: read the config with
-   * the LENIENT loader, overlay one scalar, write it back through this entry.
-   *
-   * The writer compacts an exclusive category to its BARE value on the way out
-   * (`web-framework: "web-framework-react"`, no array), and the lenient loader
-   * hands that bare form straight back because it does not normalize. Re-emitting
-   * it drops the category: `compactCategories` keeps only values that are
-   * non-empty arrays.
-   *
-   * `web-framework` is exclusive in the matrix and `web-testing` is not, so a
-   * dropped exclusive category shows up as one missing KEY rather than as a stack
-   * that vanished wholesale — which is what makes the failure legible.
-   *
-   * The full loader reads the result, because that is what every consumer
-   * downstream of a config file actually sees: `SkillAssignment[]` for every
-   * category, bare form or not.
+   * Lenient load, overlay, re-emit: the writer compacts an exclusive category to a bare value the
+   * lenient loader hands back unnormalized, and re-emitting it must not drop the category.
    */
   describe("a lenient-load / re-emit round trip", () => {
     const STACK_WITH_EXCLUSIVE_CATEGORY: NonNullable<ProjectConfig["stack"]> = {
@@ -203,9 +170,7 @@ describe("writeProjectPartial", () => {
         }),
       );
 
-      // Pre-condition: the file on disk carries the compact bare form, which is
-      // the input the bug needs. Without this the spec could pass on a config
-      // that never exercised the compaction at all.
+      // Pre-condition: the file carries the compact bare form the bug needs.
       expect(
         await readFile(getProjectConfigPath(tempDir, "claude"), "utf-8"),
         "the writer must emit the exclusive category in its bare form",

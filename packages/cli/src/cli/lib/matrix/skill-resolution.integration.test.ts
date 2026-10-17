@@ -34,7 +34,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // Count unique skills from all 3 sources (15 total, minus overlaps)
       const uniqueSkillIds = new Set([
         ...MULTI_SOURCE_PUBLIC_SKILLS.map((s) => s.id),
         ...MULTI_SOURCE_ACME_SKILLS.map((s) => s.id),
@@ -45,12 +44,10 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const skillKeys = Object.keys(matrix.skills);
       expect(skillKeys).toHaveLength(EXPECTED_UNIQUE_COUNT);
 
-      // Verify every expected skill ID is present
       for (const expectedId of uniqueSkillIds) {
         expect(skillKeys).toContain(expectedId);
       }
 
-      // Verify no unexpected skill IDs are present
       for (const actualId of skillKeys) {
         expect(uniqueSkillIds.has(actualId)).toBe(true);
       }
@@ -120,13 +117,11 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // sourceSelections maps SkillId -> source name
       const sourceSelections: Partial<Record<SkillId, string>> = {
         "web-framework-react": "internal",
         "web-testing-vitest": "acme-corp",
       };
 
-      // Verify the source selections reference valid sources
       for (const [skillId, sourceName] of Object.entries(sourceSelections)) {
         const skill = matrix.skills[skillId as SkillId];
         const matchingSource = skill?.availableSources?.find((s) => s.name === sourceName);
@@ -158,7 +153,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
 
-      // All selected skills should exist in the matrix
       for (const skillId of selectedSkills) {
         expect(matrix.skills[skillId]?.id).toBe(skillId);
       }
@@ -170,7 +164,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // Select a skill that doesn't exist in any source
       const selections: SkillId[] = ["web-framework-react", "web-nonexistent-skill" as SkillId];
 
       // The validator throws for an id the catalogue does not hold — invalid input is a bug
@@ -188,7 +181,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // Add a skill that requires a non-existent skill
       matrix.skills["web-feature-advanced" as SkillId] = createMockSkill(
         "web-feature-advanced" as SkillId,
         {
@@ -214,7 +206,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // Add dependency: drizzle (acme) requires hono (acme)
       const drizzleSkill = matrix.skills["api-database-drizzle"]!;
       drizzleSkill.requires = [
         {
@@ -224,7 +215,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         },
       ];
 
-      // Both selected -- should be valid
       const validation = validateSelection(["api-database-drizzle", "api-framework-hono"], matrix);
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
@@ -234,7 +224,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // Add dependency: drizzle requires hono
       const drizzleSkill = matrix.skills["api-database-drizzle"]!;
       drizzleSkill.requires = [
         {
@@ -244,7 +233,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         },
       ];
 
-      // Only drizzle selected, hono missing
       const validation = validateSelection(["api-database-drizzle"], matrix);
       expect(validation.valid).toBe(false);
       expect(firstElement(validation.errors).type).toBe("missingRequirement");
@@ -265,7 +253,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
         },
       ];
 
-      // Select react (from public), sentry should be valid
       const validation = validateSelection(
         ["api-monitoring-sentry" as SkillId, "web-framework-react"],
         matrix,
@@ -273,7 +260,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
 
-      // Without any framework, sentry should fail with missing requirement
       const failValidation = validateSelection(["api-monitoring-sentry" as SkillId], matrix);
       expect(failValidation.valid).toBe(false);
       expect(failValidation.errors).toHaveLength(1);
@@ -287,7 +273,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);
 
-      // react and vue conflict (both in framework category)
       const reactSkill = matrix.skills["web-framework-react"]!;
       reactSkill.conflictsWith = [
         {
@@ -382,18 +367,16 @@ describe("Integration: Multi-Source Install Pipeline", () => {
       projectDir: dirs.projectDir,
     });
 
-    // Verify all skills were copied — named, because a count cannot see a swap
+    // Named, because a count cannot see a swap
     expect(copied.projectCopied.map((skill) => skill.skillId).sort()).toStrictEqual(
       [...selectedSkills].sort(),
     );
 
-    // Verify config contains all selected skills
     // Boundary cast: config parse returns `unknown`
     const config = await readTestTsConfig<ProjectConfig>(configResult.configPath);
 
     expectConfigSkills(config, selectedSkills);
 
-    // Verify agents were compiled
     expect([...compilation.compiled].sort()).toStrictEqual(["api-developer", "web-developer"]);
     expect(compilation.failed).toStrictEqual([]);
   });
@@ -420,7 +403,6 @@ describe("Integration: Multi-Source Install Pipeline", () => {
     // Boundary cast: config parse returns `unknown`
     const config = await readTestTsConfig<ProjectConfig>(configResult.configPath);
 
-    // Source metadata should be preserved
     expect(config.marketplace).toBe("github:test-org/skills");
     expect(config.marketplaceName).toBe("test-marketplace");
   });
@@ -434,7 +416,6 @@ describe("Integration: Skill ID Resolution in Multi-Source Context", () => {
     const resolved = getSkillById("web-framework-react").id;
     expect(resolved).toBe("web-framework-react");
 
-    // Resolved skill should have multi-source metadata
     const skill = matrix.skills[resolved];
     expect(skill?.availableSources?.length).toBeGreaterThanOrEqual(1);
   });

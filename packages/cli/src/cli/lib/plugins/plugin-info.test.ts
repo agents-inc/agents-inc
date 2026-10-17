@@ -58,47 +58,29 @@ const mockedDirectoryExists = vi.mocked(directoryExists);
 const mockedDetectInstallation = vi.mocked(detectInstallation);
 const mockedLoadProjectConfig = vi.mocked(loadProjectConfig);
 
-/**
- * The project every installation below is detected at. `getInstallationInfo` resolves both agents
- * directories from `installation.projectDir` — never from the installation's own `agentsDir` — so
- * a spec whose report names a directory hands this root to the factory and joins its paths from it.
- */
+/** Agents directories resolve from `installation.projectDir`, never its `agentsDir`. */
 const PROJECT_DIR = "/project";
 
-/** Skills a `claude plugin install --scope user` leaves enabled under the home root. */
 const GLOBAL_PLUGIN_SKILLS: SkillDefinitionMap = {
   "web-framework-react": createMockSkillDefinition("web-framework-react"),
   "web-state-zustand": createMockSkillDefinition("web-state-zustand"),
 };
 
-/**
- * Skills a `claude plugin install --scope project` leaves enabled under the
- * project. Zustand is deliberately enabled at both scopes: one skill, two
- * registrations.
- */
+/** Zustand is enabled at both scopes on purpose: one skill, two registrations. */
 const PROJECT_PLUGIN_SKILLS: SkillDefinitionMap = {
   "web-state-zustand": createMockSkillDefinition("web-state-zustand"),
   "web-testing-vitest": createMockSkillDefinition("web-testing-vitest"),
 };
 
-/**
- * The marketplace-carried half of a mixed installation's configuration. Held against `SkillId`
- * so retiring one of these ids reddens this line rather than a consumer four files away.
- */
 const MARKETPLACE_SKILL_IDS = [
   "web-framework-react",
   "web-state-zustand",
   "web-testing-vitest",
 ] as const satisfies readonly SkillId[];
 
-/** The locally ejected half — the one skill of a mixed install that owns a directory on disk. */
 const EJECTED_SKILL_ID = "web-mocks-msw" satisfies SkillId;
 
-/**
- * A directory under `.claude/skills/` that no configuration declares — a skill a user dropped
- * in by hand, or one another tool installed. The CLI did not put it there and does not manage
- * it, so it is deliberately NOT a member of `SkillId`.
- */
+/** A skill directory no configuration declares, so deliberately not a `SkillId`. */
 const UNDECLARED_SKILL_DIR = "context7-mcp";
 
 describe("plugin-info", () => {
@@ -127,8 +109,7 @@ describe("plugin-info", () => {
       );
       mockedDirectoryExists.mockResolvedValue(true);
 
-      // Exact paths, not suffixes: getInstallationInfo also counts the global
-      // scope, whose dirs share the same trailing segments.
+      // Exact paths: the global scope's dirs share the same trailing segments.
       mockReaddirByDir({
         [skillsDir]: [
           createDirent("web-framework-react", { isDir: true }),
@@ -360,7 +341,6 @@ describe("plugin-info", () => {
         provider: "claude",
       });
 
-      // Plugin mode uses discoverAllPluginSkills instead of readdir
       mockedDiscoverAllPluginSkills.mockResolvedValue({
         "web-framework-react": createMockSkillDefinition("web-framework-react", {
           description: "React",
@@ -368,8 +348,7 @@ describe("plugin-info", () => {
         }),
       });
 
-      // Exact path, not a suffix: getInstallationInfo also counts the global
-      // agents dir, which shares the same trailing segment.
+      // Exact path: the global agents dir shares the same trailing segment.
       mockReaddirByDir({
         [agentsDir]: [
           createDirent("agent-1.md", { isFile: true }),
@@ -466,12 +445,6 @@ describe("plugin-info", () => {
       expect(result!.agentDirs).toStrictEqual([globalAgentsDir, projectAgentsDir]);
     });
 
-    /**
-     * The reported installation's own shape: a plugin install rooted at the home directory whose
-     * registry no longer resolves everything the configuration declares. The configuration is what
-     * says which skills this CLI put there, so a plugin the registry has since lost is still one
-     * of them — and a report that drops it tells the user their install shrank.
-     */
     it("counts a home-root plugin installation from its configuration, not from the registry", async () => {
       const homeDir = os.homedir();
       const configPath = getProjectConfigPath(homeDir, "claude");
@@ -486,7 +459,6 @@ describe("plugin-info", () => {
       );
       mockedDirectoryExists.mockResolvedValue(true);
       mockReaddirByDir({});
-      // The registry resolves two of the three the configuration declares.
       mockPluginSkillsByDir({ [homeDir]: GLOBAL_PLUGIN_SKILLS });
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({
@@ -558,19 +530,7 @@ describe("plugin-info", () => {
     });
   });
 
-  /**
-   * What `Skills: N` counts: the skills THIS CLI put there, which is the configuration's `skills`
-   * array minus its tombstones. Neither the plugin registry nor `.claude/skills/` answers that —
-   * each holds only the half of an installation its own install path writes, and each also holds
-   * entries the CLI never wrote.
-   *
-   * **The three modes are pinned separately and deliberately.** The report used to ask the
-   * registry in `plugin` mode and the skills directory otherwise, so `mixed` — a shape neither
-   * branch was written for — fell to the eject branch and reported the ejected copies alone,
-   * which for a mostly-plugin install is a number close to zero. A fix that special-cases `mixed`
-   * would leave the other two answering from a source that can disagree with the configuration,
-   * so each mode gets a fixture where that source under-reports.
-   */
+  // Each mode gets a fixture where the registry or skills directory under-reports the config.
   describe("the skill count is what the configuration declares", () => {
     const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
     const projectSkillsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
@@ -578,8 +538,6 @@ describe("plugin-info", () => {
     it("counts a mixed installation's plugin skills, which own no directory on disk", async () => {
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ mode: "mixed", configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
-      // A mixed install ejects some skills and installs the rest as plugins, so only the ejected
-      // one has a directory. Counting directories here counts the smaller half.
       mockReaddirByDir({
         [projectSkillsDir]: [createDirent(EJECTED_SKILL_ID, { isDir: true })],
       });
@@ -609,8 +567,6 @@ describe("plugin-info", () => {
       mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
       mockReaddirByDir({});
-      // The registry a project reads is the user's, and it can be emptied out from under an
-      // install — by a Claude CLI upgrade, or by a `claude plugin uninstall` run by hand.
       mockPluginSkillsByDir({});
       mockedLoadProjectConfig.mockResolvedValue({
         config: buildProjectConfig({
@@ -630,8 +586,6 @@ describe("plugin-info", () => {
     it("counts an eject installation's skills when a copy has been deleted by hand", async () => {
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
-      // Two of the three declared copies survive; `doctor` is the surface that reports the third
-      // as missing, and it is still a skill this installation is responsible for.
       mockReaddirByDir({
         [projectSkillsDir]: MARKETPLACE_SKILL_IDS.slice(0, 2).map((id) =>
           createDirent(id, { isDir: true }),
@@ -684,8 +638,7 @@ describe("plugin-info", () => {
     it("does not count a tombstoned entry", async () => {
       mockedDetectInstallation.mockResolvedValue(buildInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
-      // The tombstoned skill's files can outlive the exclusion — the tombstone masks a globally
-      // installed skill for THIS project, it does not uninstall it.
+      // A tombstone masks a skill for this project; its files can remain.
       mockReaddirByDir({
         [projectSkillsDir]: MARKETPLACE_SKILL_IDS.map((id) => createDirent(id, { isDir: true })),
       });
@@ -718,11 +671,6 @@ describe("plugin-info", () => {
       ).toBe(2);
     });
 
-    /**
-     * The counterpart of the tombstone case above, and its control: an entry the configuration
-     * declares twice is one skill. Without it, a count that simply took `skills.length` would
-     * satisfy every other test here while reporting a dual-scope install one too high.
-     */
     it("counts a skill declared at both scopes once", async () => {
       mockedDetectInstallation.mockResolvedValue(buildPluginInstallation({ configPath }));
       mockedDirectoryExists.mockResolvedValue(true);
@@ -860,7 +808,6 @@ describe("plugin-info", () => {
   });
 });
 
-/** Eject-mode installation report for `/project`; override the fields a test asserts on. */
 function buildInstallationInfo(overrides: Partial<InstallationInfo> = {}): InstallationInfo {
   return {
     mode: "eject",
@@ -873,23 +820,16 @@ function buildInstallationInfo(overrides: Partial<InstallationInfo> = {}): Insta
   };
 }
 
-/**
- * Makes `discoverAllPluginSkills` resolve the listed map for those exact base
- * directories, and an empty map anywhere else — the shape of a settings.json
- * that enables plugins under one root and not another.
- */
 function mockPluginSkillsByDir(skillsByDir: Record<string, SkillDefinitionMap>): void {
   mockedDiscoverAllPluginSkills.mockImplementation((dir) =>
     Promise.resolve(skillsByDir[dir] ?? {}),
   );
 }
 
-/** Makes `readdir` return the listed entries for those exact directories, and nothing anywhere else. */
 function mockReaddirByDir(entriesByDir: Record<string, Dirent[]>): void {
   mockedReaddir.mockImplementation(
     (dirPath) =>
-      // Boundary cast: a mock is typed against readdir's LAST overload, whose entries are
-      // `Dirent<NonSharedBuffer>`; the call under test is the `withFileTypes` string overload.
+      // Boundary cast: the mock is typed against readdir's last overload, not `withFileTypes`.
       Promise.resolve(entriesByDir[dirPath as string] ?? []) as unknown as ReturnType<
         typeof readdir
       >,

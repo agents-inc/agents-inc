@@ -5,12 +5,7 @@ import type { SourceLoadResult } from "../../loading/source-loader.js";
 export type MarketplaceRequirement =
   { ok: true; marketplace: string; registered: boolean } | { ok: false; error: string };
 
-/**
- * Resolves the marketplace required for plugin operations. Plugin install
- * intent is inviolable — callers must hard-error on `ok: false` rather than
- * silently falling back to eject or skipping, and must do so BEFORE any
- * filesystem mutation so a failure leaves no partial state on disk.
- */
+/** Callers must hard-error on `ok: false`, never fall back to eject, before touching disk. */
 export async function requireMarketplace(
   sourceResult: SourceLoadResult,
   purpose: string,

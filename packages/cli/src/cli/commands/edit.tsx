@@ -401,11 +401,7 @@ function keptAsInstalledStatement(held: HeldGlobal, revisedCarried: SkillId[]): 
   return [keptAsInstalledGlobally(skillIds, agentNames)];
 }
 
-/**
- * At the home root the run owns everything it loaded. In a project it owns only the project's
- * entries: a shared configuration only adds to the global install from a project (owner ruling
- * 2026-10-02).
- */
+/** From a project, a shared configuration only adds to the global install. */
 function applyAuthority(editRoot: EditRoot): AuthoritativeScope {
   return editRoot.isGlobal ? "all" : "owned";
 }
@@ -454,8 +450,7 @@ export default class Edit extends BaseCommand {
     const { flags } = await this.parse(Edit);
     const cwd = process.cwd();
 
-    // Above every installation check: opening a shared id needs no local state (owner ruling
-    // 2026-08-24, pinned by `edit-ui-from.e2e.test.ts`).
+    // Above every installation check: opening a shared id needs no local state.
     if (flags.ui && flags.from !== undefined) return this.openSharedInEditor(flags.from, cwd);
 
     // Before anything is copied or installed.
@@ -556,8 +551,7 @@ export default class Edit extends BaseCommand {
   /**
    * A shared configuration applies destructively, except for a skill written here (`forkedFrom`)
    * and an id this catalogue cannot place — both disclosed in the confirm. From a project the
-   * global install is only added to (owner ruling 2026-10-02): entries the configuration omits or
-   * states otherwise are held as installed, and only what it lacks arrives.
+   * global install is only added to.
    */
   private async selectionFromSharedConfig(
     payload: SeedPayload,
@@ -1611,9 +1605,7 @@ export async function migratePluginSkillScopes(
     const pluginRef = buildMarketplacePluginRef(skillId, marketplace);
 
     try {
-      // global→project: keep the global registration, just add project scope.
-      // The global plugin must remain for other projects.
-      // project→global: uninstall the project-scope registration, install global.
+      // global→project keeps the global registration, which other projects still use.
       if (change.from === "project") {
         await host.uninstallPlugin(pluginRef, "project", projectDir);
       }

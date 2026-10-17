@@ -1,11 +1,5 @@
 /* eslint-disable @typescript-eslint/no-implied-eval --
- * `new Function(source)` is the assertion here, not a way of running code. What
- * this file covers is a *writer*: it renders the source of ~/.agents-inc/claude/config.ts,
- * and "the source it rendered is parseable JavaScript" is a claim only a
- * JavaScript parser can settle. The input is the writer's own output, built from
- * fixtures in this file — never anything a user supplies — and the constructed
- * function is never called. The alternative is a parser dependency carried for
- * five assertions. Five sites, one reason, so it is stated once here.
+ * `new Function(source)` only parses the writer's own output as JavaScript; it is never called.
  */
 import os from "os";
 import path from "path";
@@ -32,15 +26,9 @@ import {
   extractScopeSections,
 } from "../../__tests__/helpers/config-source-sections.js";
 
-/**
- * A skill answering to no marketplace, wearing the namespace such a skill takes.
- * The id is the whole tell a config-only reader gets, and it is enough: nothing
- * in the catalogue can be named `external-`.
- */
 // Boundary cast: a skill outside every marketplace is outside the generated union by construction
 const EXTERNAL_SKILL_ID = "external-web-tooling-house" as SkillId;
 
-/** The folder every path of {@link SOURCE_LAYOUT} sits under. */
 const SOURCE_LAYOUT_ROOT = "catalogue/";
 
 /** The five fields a source repository declares its own layout with, each set off its default. */
@@ -61,7 +49,6 @@ describe("generateConfigSource", () => {
     expect(source).toContain("export default {");
     expect(source).toContain("satisfies ProjectConfig");
     expect(source).toContain("name: 'test-project'");
-    // Named variables below export default
     expect(source).toContain("const skills: SkillConfig[]");
     expect(source).toContain("const agents: AgentScopeConfig[]");
   });
@@ -89,9 +76,7 @@ describe("generateConfigSource", () => {
   });
 
   /**
-   * The writer is a fixed point, so a field the canonical order does not name is emitted after
-   * every field it does — at the tail, beside the passthrough junk. A renamed field left out of
-   * that array reorders every config on its next re-emit.
+   * A field missing from the canonical order is emitted at the tail, reordering configs on re-emit.
    */
   it("gives the renamed marketplace fields their place in the canonical order", () => {
     const config = buildProjectConfig({
@@ -149,7 +134,6 @@ describe("generateConfigSource", () => {
       skills: [],
     });
     const source = generateConfigSource(config, matrix);
-    // Empty arrays should be inline, not extracted
     expect(source).toContain("skills: [],");
     expect(source).toContain("agents: [],");
     expect(source).not.toContain("const skills:");
@@ -169,7 +153,6 @@ describe("generateConfigSource", () => {
     // web-framework is exclusive, so the array wrapper carries no information the reader needs
     expect(source).toContain("'web-framework': 'web-framework-react'");
     expect(source).not.toMatch(/'web-framework':\s*\[/);
-    // Stack should be extracted as named variable
     expect(source).toContain("const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>");
   });
 
@@ -185,8 +168,7 @@ describe("generateConfigSource", () => {
     const source = generateConfigSource(config, matrix);
     // An assignment with nothing but an id says everything the id says — the object wrapper is noise
     expect(source).toContain("'web-framework': 'web-framework-react'");
-    // Scoped to the stack: the skills array carries `id:` for every entry it holds, so a
-    // whole-file negative would answer about that instead of about the assignment.
+    // Scoped to the stack: the skills array carries `id:` for every entry.
     expect(extractNamedSection(source, "stack")).not.toContain("id:");
   });
 
@@ -222,8 +204,7 @@ describe("generateConfigSource", () => {
     const source = generateConfigSource(config, matrix);
     expect(source).toContain("preloaded: true");
     expect(source).toContain("'api-framework-hono'");
-    // api-api is exclusive: the assignment object stands alone, unwrapped. Single-quoted, because
-    // that is how the writer quotes a key — a double-quoted pattern matched nothing it could emit.
+    // Exclusive, so unwrapped. Single-quoted, as the writer quotes keys.
     expect(source).not.toMatch(/'api-api':\s*\[/);
   });
 
@@ -252,8 +233,7 @@ describe("generateConfigSource", () => {
         },
       },
     });
-    // Silently dropping the second entry would write a config that does not match what was
-    // selected, and nothing downstream could tell. Fail where the contract breaks.
+    // Dropping the second entry silently would write a config that does not match the selection.
     expect(() => generateConfigSource(config, matrix)).toThrow("web-framework");
   });
 
@@ -265,7 +245,6 @@ describe("generateConfigSource", () => {
   });
 
   it("only imports used types", () => {
-    // Empty skills/agents, no stack, no domains: only ProjectConfig needed
     const config = buildProjectConfig({ name: "minimal", agents: [], skills: [] });
     const source = generateConfigSource(config, matrix);
     const importLine = source.split("\n")[0];
@@ -319,7 +298,6 @@ describe("generateConfigSource", () => {
     expect(source).toContain("const selectedDomains: Domain[]");
     expect(source).toContain("'web'");
     expect(source).toContain("'api'");
-    // In export default, selectedDomains should be a shorthand reference
     const exportBlock = source.slice(
       source.indexOf("export default"),
       source.indexOf("satisfies ProjectConfig"),
@@ -341,7 +319,6 @@ describe("generateConfigSource", () => {
       expect(source).not.toContain("const stack:");
       expect(source).not.toContain("const selectedDomains:");
       expect(source).toContain("satisfies ProjectConfig");
-      // Only ProjectConfig type should be imported
       const importLine = source.split("\n")[0];
       expect(importLine).toBe("import type { ProjectConfig } from './config-types'");
     });
@@ -364,7 +341,6 @@ describe("generateConfigSource", () => {
         selectedDomains: [],
       });
       const source = generateConfigSource(config, matrix);
-      // Empty array: inline empty in export default, no extracted variable
       expect(source).toContain("selectedDomains: [],");
       expect(source).not.toContain("const selectedDomains:");
     });
@@ -389,7 +365,6 @@ describe("generateConfigSource", () => {
         agents: buildAgentConfigs(["web-developer", "api-developer"], { scope: "global" }),
       });
       const source = generateConfigSource(config, matrix);
-      // Each agent object should contain scope: "global"
       const agentSection = extractNamedSection(source, "agents");
       expect(agentSection).toContain("scope: 'global'");
       expect(agentSection).toContain("name: 'web-developer'");
@@ -409,7 +384,6 @@ describe("generateConfigSource", () => {
         ],
       });
       const source = generateConfigSource(config, matrix);
-      // Both scopes should appear in the output
       const globalCount = (source.match(/scope: 'global'/g) || []).length;
       const projectCount = (source.match(/scope: 'project'/g) || []).length;
       expect(globalCount).toBe(2); // 1 skill + 1 agent
@@ -425,8 +399,7 @@ describe("generateConfigSource", () => {
         agents: [],
       });
       const source = generateConfigSource(config, matrix);
-      // The printer picks the quote prettier would: single here, because the value
-      // carries double ones and swapping would only add escapes.
+      // Single quotes, as prettier would pick: the value carries double ones.
       expect(source).toContain(`name: 'my "quoted" project'`);
     });
 
@@ -475,18 +448,7 @@ describe("generateConfigSource", () => {
     });
   });
 
-  /**
-   * A project emission names the global it extends by inlining it or by importing
-   * it, and those are the only two. Naming neither used to fall through to the
-   * standalone writer, which answers a project request with a GLOBAL-shaped file:
-   * `dropProjects` is false there, so the emitted config carries the `projects`
-   * tracking array a project root must never hold.
-   *
-   * The refusal is paired with the two permitted pairings deliberately. A refusal
-   * on its own cannot tell a guard scoped to the invalid pairing from one that has
-   * swallowed project emission whole — both leave the caller with no file and read
-   * identically from the assertion's side.
-   */
+  /** A project emission must inline or import its global; both permitted pairings sit beside it. */
   describe("project config with neither half of the global it extends", () => {
     it("refuses the emission rather than answering it with a global-shaped file", () => {
       const config = buildProjectConfig({ name: "project-without-a-global" });
@@ -729,9 +691,7 @@ describe("generateConfigSource", () => {
     });
 
     /**
-     * A project that declares no name or layout of its own reads the global's at run time, so a
-     * copy inlined here would become the project's own declaration and keep the old value after
-     * the global changed.
+     * A project declaring none reads the global's at run time, so an inlined copy would go stale.
      */
     it("inlines none of the global config's hand-written fields", () => {
       const brandedGlobal = buildProjectConfig({
@@ -909,11 +869,9 @@ describe("generateConfigSource", () => {
         globalConfig: globalWithStack,
       });
 
-      // Project agents should appear in stack
       expect(source).toContain("'api-developer'");
       expect(source).toContain("'api-framework-hono'");
-      // Global agents' stack entries should NOT appear (they live in global config only).
-      // Single-quoted, as the writer quotes a key: a double-quoted pattern never matched a leak.
+      // Global agents' stack entries live in the global config. Single-quoted, as keys are.
       expect(source).not.toMatch(/'web-developer':\s*\{/);
     });
 
@@ -966,11 +924,9 @@ describe("generateConfigSource", () => {
       expect(source).toContain("marketplace: '/project/skills'");
       expect(source).toContain("marketplaceName: 'custom-marketplace'");
 
-      // Global values should NOT appear (overridden by project)
       expect(source).not.toContain("marketplace: '/global/skills'");
       expect(source).not.toContain("marketplaceName: 'agents-inc'");
 
-      // Each key should appear exactly once in the export default block
       const exportBlock = source.slice(source.indexOf("export default {"));
       const sourceMatches = exportBlock.match(/\bmarketplace:/g);
       const marketplaceMatches = exportBlock.match(/\bmarketplaceName:/g);
@@ -1023,7 +979,6 @@ describe("generateConfigSource", () => {
       });
 
       const stackSection = extractNamedSection(source, "stack");
-      // Multi-skill category must be an array with both elements
       expect(stackSection).toContain("'web-styling': [");
       expect(stackSection).toContain("'web-styling-tailwind'");
       expect(stackSection).toContain("'web-styling-scss-modules'");
@@ -1091,14 +1046,11 @@ describe("generateConfigSource", () => {
         globalConfig: globalWithStack,
       });
 
-      // Project agent stack entries must be present
       expect(source).toContain("const stack:");
       expect(source).toContain("'api-developer'");
       expect(source).toContain("'api-framework-hono'");
 
-      // Extract stack section to check it doesn't contain global agent entries
       const stackSection = extractNamedSection(source, "stack");
-      // Global agent stack entries must NOT be present in stack
       expect(stackSection).not.toMatch(/'web-developer':\s*\{/);
       expect(stackSection).not.toMatch(/'web-researcher':\s*\{/);
       expect(stackSection).not.toContain("'web-framework-react'");
@@ -1123,16 +1075,13 @@ describe("generateConfigSource", () => {
 
       const skillsSection = extractNamedSection(source, "skills");
 
-      // React should appear in both global and project sections
       const reactMatches = skillsSection.match(/'web-framework-react'/g);
       expect(reactMatches).toHaveLength(2);
 
-      // Global entry appears in the global section
       const { global: globalSection, project: projectSection } =
         extractScopeSections(skillsSection);
       expect(globalSection).toContain("'web-framework-react'");
       expect(globalSection).toContain("scope: 'global'");
-      // Project entry appears in the project section
       expect(projectSection).toContain("'web-framework-react'");
       expect(projectSection).toContain("scope: 'project'");
     });
@@ -1155,11 +1104,9 @@ describe("generateConfigSource", () => {
 
       const agentsSection = extractNamedSection(source, "agents");
 
-      // web-developer should appear in both global and project sections
       const agentMatches = agentsSection.match(/'web-developer'/g);
       expect(agentMatches).toHaveLength(2);
 
-      // Global entry appears in the global section, project entry in the project section
       const { global: globalSection, project: projectSection } =
         extractScopeSections(agentsSection);
       expect(globalSection).toContain("'web-developer'");
@@ -1189,11 +1136,9 @@ describe("generateConfigSource", () => {
 
       const skillsSection = extractNamedSection(source, "skills");
 
-      // React should appear in both global and project sections
       const reactMatches = skillsSection.match(/'web-framework-react'/g);
       expect(reactMatches).toHaveLength(2);
 
-      // Global entry in global section, project entry in project section
       const { global: globalSection, project: projectSection } =
         extractScopeSections(skillsSection);
       expect(globalSection).toContain("'web-framework-react'");
@@ -1201,13 +1146,11 @@ describe("generateConfigSource", () => {
       expect(projectSection).toContain("'web-framework-react'");
       expect(projectSection).toContain("scope: 'project'");
 
-      // Tailwind should still be present (no conflict)
       expect(skillsSection).toContain("'web-styling-tailwind'");
     });
 
     it("emits excluded tombstone in global section when same skill is active at project scope", () => {
-      // Edge case: global has react active, project has react excluded (tombstone) AND react active
-      // Expected: global section shows the excluded tombstone, project section shows the active entry
+      // Global react active; the project carries its tombstone and an active entry.
       const globalConfig = buildProjectConfig({
         name: "global",
         skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
@@ -1234,12 +1177,10 @@ describe("generateConfigSource", () => {
       const reactMatches = skillsSection.match(/'web-framework-react'/g);
       expect(reactMatches).toHaveLength(2);
 
-      // Global section should contain the excluded tombstone
       const { global: globalSection, project: projectSection } =
         extractScopeSections(skillsSection);
       expect(globalSection).toContain("excluded: true");
 
-      // Project section should contain the active entry without excluded flag
       expect(projectSection).toContain("scope: 'project'");
       expect(projectSection).not.toContain("excluded");
     });
@@ -1268,17 +1209,13 @@ describe("generateConfigSource", () => {
         },
       });
       const source = generateConfigSource(config, matrix);
-      // Stack should be extracted as named variable
       expect(source).toContain("const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>");
-      // Both agents should appear in stack
       expect(source).toContain("'web-developer'");
       expect(source).toContain("'api-developer'");
-      // Categories should appear
       expect(source).toContain("'web-framework'");
       expect(source).toContain("'web-styling'");
       expect(source).toContain("'api-api'");
       expect(source).toContain("'api-orm'");
-      // Preloaded skill should retain object format
       expect(source).toContain("preloaded: true");
       // Non-preloaded single skills should be bare strings inside arrays
       expect(source).toContain("'web-framework-react'");
@@ -1304,7 +1241,6 @@ describe("generateConfigSource", () => {
         },
       });
       const source = generateConfigSource(config, matrix);
-      // Multiple skills should be an array of bare strings
       expect(source).toContain("'web-testing': [");
       expect(source).toContain("'web-testing-vitest'");
       expect(source).toContain("'web-testing-playwright-e2e'");
@@ -1336,14 +1272,7 @@ describe("generateConfigSource", () => {
   });
 
   describe("syntactic validity", () => {
-    /**
-     * Strips TypeScript-specific syntax so the generated config can be
-     * evaluated as plain JavaScript inside `new Function()`.
-     * - Removes import type statements
-     * - Removes `satisfies ProjectConfig`
-     * - Strips type annotations from const declarations
-     * - Replaces `export default` with a variable assignment
-     */
+    /** Strips the TypeScript syntax so `new Function()` can parse the config as JavaScript. */
     function stripTsForEval(source: string): string {
       return source
         .replace(/import type \{[^}]+\} from '\.\/config-types'\n/, "")
@@ -1366,7 +1295,6 @@ describe("generateConfigSource", () => {
       });
       const source = stripTsForEval(generateConfigSource(config, matrix));
 
-      // Should not throw when evaluated as JavaScript
       expect(() => {
         new Function(source);
       }).not.toThrow();
@@ -1463,14 +1391,7 @@ describe("generateConfigSource", () => {
     });
   });
 
-  /**
-   * The emitted file is what `writeIfChanged` compares, so two configs carrying
-   * the same values owe the same bytes however the in-memory object was
-   * assembled. Three producers assemble one — an install's literal, a config
-   * read back through the loader schema, and a merge that appends at the tail —
-   * and a config.ts that changes because its keys were inserted in a different
-   * order is a diff the user is asked to read for no reason.
-   */
+  /** The same values owe the same bytes, however the in-memory object was assembled. */
   describe("field order follows the config's values, not the object's insertion order", () => {
     it("emits the same bytes for two configs that differ only in key insertion order", () => {
       const author = "@tester";
@@ -1484,8 +1405,7 @@ describe("generateConfigSource", () => {
         matrix,
       );
 
-      // Subject guard: both really carry both scalars, so the equality below is
-      // not comparing two outputs that emitted neither.
+      // Subject guard: both carry both scalars.
       expect(sourceFirst).toContain(`author: '${author}'`);
       expect(sourceFirst).toContain(`marketplace: '${skillsSource}'`);
       expect(authorFirst, "config.ts bytes must be decided by the config's values alone").toBe(
@@ -1502,9 +1422,7 @@ describe("generateConfigSource", () => {
         marketplace: "/path/to/skills",
         marketplaceName: "agents-inc",
       });
-      // The same effective values, split two ways. This pair IS a load/re-emit
-      // round trip: the first emission inlines the global scalars into the file,
-      // so the project half read back off disk carries every one of them.
+      // The same values split two ways, which is a load/re-emit round trip.
       const inheritsMostScalars = buildProjectConfig({
         name: "my-project",
         skills: buildSkillConfigs(["web-styling-tailwind"]),
@@ -1541,12 +1459,7 @@ describe("generateConfigSource", () => {
   });
 
   /**
-   * The stack's own keys are the same claim one level down, and they reach further
-   * than a diff: a compiled sub-agent lists its dynamic skills in the order its
-   * stack entry carries them, so a stack assembled in a different order compiles to
-   * a different file. The seed decode assembles one from a shared payload in whatever
-   * order that payload listed its skills, and the same curation must reach disk as the
-   * same bytes whatever that order was.
+   * A compiled sub-agent lists dynamic skills in stack order, so key order must follow the roster.
    */
   describe("stack key order follows the roster, not the producer's insertion order", () => {
     /** Both sub-agents' curation, with every key in the order the roster declares it. */
@@ -1562,11 +1475,7 @@ describe("generateConfigSource", () => {
       },
     } satisfies NonNullable<ProjectConfig["stack"]>;
 
-    /**
-     * The identical curation, keyed in the order a shared payload's skill list
-     * produces: the sub-agent each payload row first names, and within it the
-     * category that row belongs to.
-     */
+    /** The same curation, keyed in the order a shared payload's skill list produces. */
     const IN_PAYLOAD_ORDER = {
       "web-developer": {
         "web-framework": [sa("web-framework-react", true)],
@@ -1598,8 +1507,7 @@ describe("generateConfigSource", () => {
       const fromRoster = generateConfigSource(configWithStack(IN_ROSTER_ORDER), matrix);
       const fromPayload = generateConfigSource(configWithStack(IN_PAYLOAD_ORDER), matrix);
 
-      // Subject guard: both really carry the whole curation, so the equality below
-      // is not comparing two configs that emitted no stack at all.
+      // Subject guard: both carry the whole curation.
       expect(fromRoster).toContain(
         "const stack: Partial<Record<ProjectAgentName, StackAgentConfig>>",
       );
@@ -1724,9 +1632,7 @@ describe("getGlobalConfigImportPath", () => {
     expect(importPath.startsWith(os.homedir())).toBe(true);
   });
 
-  // The home this suite runs under holds neither folder, so the answer is the one a new global
-  // installation is created in. Written as a literal — it is text on a user's disk, and importing
-  // the constant the product writes would make the assertion move with it.
+  // The home holds neither folder; a literal, as it is text on a user's disk.
   it("names the source folder a new global installation is created in", () => {
     const importPath = getGlobalConfigImportPath("claude");
     expect(importPath).toContain(path.join(".agents-inc", "claude"));

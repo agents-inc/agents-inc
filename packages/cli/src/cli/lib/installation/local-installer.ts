@@ -85,10 +85,8 @@ function wereScopeCompatible(
 }
 
 /**
- * Per-`(skill, agent)` assignments REPLACE the ownership-derived stack: ownership rules would hand
- * every compatible skill to every agent and inherit `preloaded` from elsewhere, undoing the
- * sharer's curation. A payload's stack id is not expanded either, for the same reason. With no
- * agents selected the key is absent, so the merger keeps the stack on disk.
+ * Assigned `(skill, agent)` pairs replace the ownership-derived stack so the sharer's curation
+ * survives. With no agents selected the key is absent and the merger keeps the stack on disk.
  */
 function resolveStackProperty(
   generated: ProjectConfig["stack"],
@@ -97,9 +95,7 @@ function resolveStackProperty(
   return generated === undefined ? undefined : assigned;
 }
 
-/**
- * A loaded stack wins over a carried description (`init --from` with `stackId: null`).
- */
+/** A loaded stack wins over a carried description (`init --from` with `stackId: null`). */
 function resolveDescription(
   loadedStack: Stack | null,
   shared: InstallSelection["description"],
@@ -107,18 +103,14 @@ function resolveDescription(
   return loadedStack === null ? shared : loadedStack.description;
 }
 
-/**
- * A project config is named for its directory. At `$HOME` the basename is the OS account name, so
- * the global config takes the product constant. An existing config keeps its name (`mergeConfigs`).
- */
+/** At `$HOME` the basename is the account name, so the global config takes the product name. */
 function configNameFor(projectDir: string): string {
   return isHomeDirectory(projectDir) ? DEFAULT_PLUGIN_NAME : path.basename(projectDir);
 }
 
 /**
- * A global sub-agent's curation lives only in the global config: the project's stack holds
- * project-scoped agents alone, so reading it by itself would reseed an agent just moved into the
- * project. The project's row wins per agent. The global config is read, never written.
+ * A global sub-agent's curation lives only in the global config, so both are read; the project's
+ * row wins per agent.
  */
 async function loadCuratedStack(
   projectDir: string,
@@ -127,7 +119,6 @@ async function loadCuratedStack(
   // At `$HOME` the loaded config IS the global one.
   const globalStack = isHomeDirectory(projectDir) ? undefined : await loadGlobalStack();
 
-  // The declared return type narrows the keys to AgentName, so no cast is needed.
   return { ...globalStack, ...projectStack };
 }
 
@@ -200,11 +191,7 @@ async function loadSelectedStack(
   return loadedStack;
 }
 
-/**
- * The curated stack on disk, over any stack this install applies. An applied stack's entries reach
- * the builder with a load already decided by `buildStackProperty`, so it is a new selection, never
- * a curated lazy. The on-disk stack spreads last and wins per agent.
- */
+/** The curated stack on disk wins per agent over any stack this install applies. */
 function stackToPreserve(
   loadedStack: Stack | null,
   curatedStack: Partial<Record<AgentName, StackAgentConfig>>,
@@ -213,11 +200,7 @@ function stackToPreserve(
   return { ...buildStackProperty(loadedStack), ...curatedStack };
 }
 
-/**
- * `skillConfigs` and `agentConfigs` always accompany `selectedAgents`, so no scope lookup defaults
- * silently. The two deltas drive per-agent curation; with no persisted config both mean
- * "everything is new".
- */
+/** With no persisted config, both deltas mean "everything is new". */
 function generatorOptionsFor(
   selection: InstallSelection,
   persisted: ProjectConfig | undefined,
@@ -314,15 +297,14 @@ export function buildCompileAgents(
     return true;
   };
 
-  // `origin`, carried as `source`, picks plugin (`${id}:${id}`) or eject (bare id) per skill. A
-  // user-authored local skill has no SkillConfig, so none.
+  // `origin` picks plugin (`${id}:${id}`) or eject (bare id); a user-authored local skill has none.
   const withItsOrigin = (ref: SkillReference): SkillReference => {
     const source = sourceById.get(ref.id);
     return { ...ref, ...(source !== undefined && { source }) };
   };
 
   const buildAgentCompileEntry = (agentConfig: AgentScopeConfig): CompileAgentConfig => {
-    // The agent's own tuning, so a bare agent with no stack entry still carries it.
+    // Kept even for an agent with no stack entry.
     const tuning: CompileAgentConfig = {
       ...(agentConfig.model !== undefined && { model: agentConfig.model }),
       ...(agentConfig.codexModel !== undefined && { codexModel: agentConfig.codexModel }),

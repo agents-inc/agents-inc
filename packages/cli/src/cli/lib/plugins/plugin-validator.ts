@@ -40,15 +40,6 @@ function isValidSemver(str: string): boolean {
   return SEMVER_REGEX.test(str);
 }
 
-/**
- * Validates the directory structure of a plugin.
- *
- * Checks for the required `.claude-plugin/` directory and `plugin.json` manifest file.
- * Warns if README.md is missing (recommended but not required).
- *
- * @param pluginPath - Absolute path to the plugin root directory
- * @returns Validation result with errors for missing required structure
- */
 export async function validatePluginStructure(pluginPath: string): Promise<ValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -79,22 +70,6 @@ export async function validatePluginStructure(pluginPath: string): Promise<Valid
   };
 }
 
-/**
- * Validates a plugin manifest file (plugin.json) for correctness and completeness.
- *
- * Performs the following validation checks:
- * 1. File existence and readability
- * 2. Valid JSON syntax (with file size limit via readFileSafe)
- * 3. Zod schema validation (strict mode rejects unrecognized keys)
- * 4. Plugin name is kebab-case
- * 5. Version string is valid semver
- * 6. Description field is present (warning if missing)
- * 7. Skills directory path exists on disk (if specified as string)
- * 8. Agents directory path exists on disk (if specified as string)
- *
- * @param manifestPath - Absolute path to the plugin.json file
- * @returns Validation result with errors for invalid/missing data and warnings for recommendations
- */
 export async function validatePluginManifest(manifestPath: string): Promise<ValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -103,11 +78,6 @@ export async function validatePluginManifest(manifestPath: string): Promise<Vali
     return invalidResult(`Manifest file not found: ${manifestPath}`);
   }
 
-  // `JSON.parse` returns `any`, and every field read below trusts what it
-  // returns. Landing it in `unknown` and narrowing with `isRecord` first is what
-  // makes `manifest.name` a checked read of a record rather than a property
-  // fetched off `any` — and it names the array/string/null cases the schema
-  // would otherwise report as a shape mismatch several lines later.
   let manifest: Record<string, unknown>;
   try {
     const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
@@ -214,7 +184,7 @@ export async function validateAgentFrontmatter(agentPath: string): Promise<Valid
     errors.push(...formatZodErrors(result.error));
   }
 
-  // Boundary cast: YAML frontmatter parsed as unknown, narrow to record for field access
+  // Boundary cast: parsed YAML frontmatter, narrowed for field access.
   const fm = frontmatter as Record<string, unknown>;
 
   if (fm.name && typeof fm.name === "string") {
@@ -298,16 +268,6 @@ async function loadManifestForValidation(
   }
 }
 
-/**
- * Runs comprehensive validation on a plugin: structure, manifest, skill files, and agent files.
- *
- * Short-circuits on structure validation failure (no point checking manifest if
- * the directory structure is wrong). For valid structures, validates the manifest
- * and then checks all SKILL.md and agent .md files for valid frontmatter.
- *
- * @param pluginPath - Absolute path to the plugin root directory
- * @returns Merged validation result from all validation passes
- */
 export async function validatePlugin(pluginPath: string): Promise<ValidationResult> {
   const structureResult = await validatePluginStructure(pluginPath);
   if (!structureResult.valid) return structureResult;
@@ -329,15 +289,6 @@ export async function validatePlugin(pluginPath: string): Promise<ValidationResu
   return mergeValidationResults([structureResult, manifestResult, skillsResult, agentsResult]);
 }
 
-/**
- * Validates all plugins found in a directory, returning individual results and an aggregate summary.
- *
- * Scans subdirectories for `.claude-plugin/` markers to identify plugins, then validates
- * each one. Returns early with an error if the directory doesn't exist or contains no plugins.
- *
- * @param pluginsDir - Absolute path to the directory containing plugin subdirectories
- * @returns Object with overall validity, per-plugin results, and counts summary
- */
 export async function validateAllPlugins(pluginsDir: string): Promise<{
   valid: boolean;
   results: Array<{ name: string; result: ValidationResult }>;

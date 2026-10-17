@@ -15,7 +15,6 @@ import { STANDARD_FILES } from "../consts";
 describe("getCurrentDate", () => {
   it("should return date in YYYY-MM-DD format", () => {
     const result = getCurrentDate();
-    // Match pattern YYYY-MM-DD
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
@@ -57,8 +56,7 @@ describe("computeStringHash", () => {
   });
 
   it("should produce known hash for known input", () => {
-    // SHA-256 of "test" is 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-    // First 7 chars: 9f86d08
+    // SHA-256 of "test" starts 9f86d08
     const result = computeStringHash("test");
     expect(result).toBe("9f86d08");
   });
@@ -168,10 +166,8 @@ describe("computeSkillFolderHash", () => {
   });
 
   it("when skill folder has no files, should return valid hash from empty content", async () => {
-    // No files in tempDir
     const hash = await computeSkillFolderHash(tempDir);
 
-    // Should still return a valid hash (hash of empty content)
     expect(hash).toMatch(/^[a-f0-9]{7}$/);
   });
 });

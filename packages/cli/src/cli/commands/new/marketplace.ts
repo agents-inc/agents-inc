@@ -9,20 +9,9 @@ import { exampleSkillId, writeMarketplaceScaffold } from "../../lib/marketplace-
 import { validateKebabCaseName } from "../../lib/validate-kebab-name.js";
 import { isDirectoryEmpty } from "../../utils/fs.js";
 
-/**
- * How a reserved name is replaced here. The name is this command's argument, and nothing it could
- * be read from exists yet — no package.json, and no `--name` — so another argument is the way out.
- */
 const RESERVED_NAME_WAY_OUT = `run '${CLI_INVOKE_COMMAND} new marketplace <other-name>'`;
 
-/**
- * The refusal over a target directory that already holds something.
- *
- * A scaffold writes a whole marketplace, so writing into an occupied directory
- * would mean merging with — or overwriting — work this command did not author.
- * Both ways out are one step, which is why there is no `--force`: a flag that
- * overwrites an author's own files is the destructive half of a silent fallback.
- */
+/** No `--force` on purpose: it would overwrite work this command did not author. */
 function occupiedDirectoryError(marketplaceDir: string): string {
   return (
     `${marketplaceDir} already holds files. A scaffold writes a whole marketplace, ` +
@@ -73,21 +62,14 @@ export default class NewMarketplace extends BaseCommand {
     }
   }
 
-  /**
-   * Both name rules `build marketplace` enforces, enforced here instead — failing
-   * at creation beats failing at publish, when the name is already the directory,
-   * the package name and the prefix on every id.
-   */
+  /** `build marketplace`'s name rules, enforced at creation rather than at publish. */
   private refuseUnusableName(marketplaceName: string): void {
     const kebabError = validateKebabCaseName(marketplaceName, "Marketplace");
     if (kebabError) {
       this.error(kebabError, { exit: EXIT_CODES.INVALID_ARGS });
     }
 
-    // The package.json this command is about to write names the marketplace after
-    // itself, so the marketplace name IS the package name. That is what keeps the
-    // public catalogue's exemption out of reach: it belongs to one npm package, and
-    // nobody scaffolds that package from here.
+    // The scaffolded package.json uses this name, so it is also the package name.
     const reservedError = validateMarketplaceName(
       marketplaceName,
       marketplaceName,

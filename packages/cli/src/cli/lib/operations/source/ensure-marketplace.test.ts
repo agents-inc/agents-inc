@@ -15,11 +15,6 @@ import { createMockPluginHost } from "../../__tests__/helpers/mock-plugin-host.j
 import { fetchMarketplace } from "../../loading/index.js";
 import { warn } from "../../../utils/logger.js";
 
-/**
- * The host handed to the function under test. `ensureMarketplace` is the one plugin operation
- * that takes a host rather than reading one off a folder — it is handed no directory at all —
- * so this spec needs no module mock for the seam.
- */
 const host = createMockPluginHost();
 const mockMarketplaceExists = vi.mocked(host.marketplaceExists);
 const mockMarketplaceAdd = vi.mocked(host.addMarketplace);
@@ -27,7 +22,6 @@ const mockMarketplaceUpdate = vi.mocked(host.refreshMarketplace);
 const mockFetchMarketplace = vi.mocked(fetchMarketplace);
 const mockWarn = vi.mocked(warn);
 
-/** Why the lazy resolution failed — the sentence a user must be able to read back. */
 const FETCH_FAILURE_CAUSE = "Network error";
 
 function makeSourceResult(marketplace?: string): SourceLoadResult {

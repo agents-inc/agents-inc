@@ -4,16 +4,13 @@ import { mkdir } from "fs/promises";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { buildSourceConfig } from "../__tests__/factories/config-factories";
 
-// Mock logger (suppress verbose output during tests)
 vi.mock("../../utils/logger");
 
-// Mock fetchFromSource (network call — must remain mocked)
 vi.mock("../loading", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../loading")>()),
   fetchFromSource: vi.fn(),
 }));
 
-// Mock configuration — avoids real filesystem reads for source config
 vi.mock("../configuration", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../configuration")>()),
   loadSourceRepoConfig: vi.fn(),
@@ -21,7 +18,6 @@ vi.mock("../configuration", async (importOriginal) => ({
 
 let MOCK_PROJECT_ROOT: string;
 
-// Mock consts — PROJECT_ROOT points to a temp dir set up per test
 vi.mock("../../consts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../consts")>();
   return {
@@ -45,14 +41,7 @@ const mockLoadSourceRepoConfig = vi.mocked(loadSourceRepoConfig);
 
 const REMOTE_SOURCE = "github:my-org/agents";
 
-/**
- * Creates a fetched-source dir holding `agentsSubdir` — or holding nothing, for `null` — and
- * points the fetchFromSource mock at it. Returns the fetched dir.
- *
- * The subdirectory is named at every call rather than defaulted, because it is what the
- * assertions read back: a case asserting the default `src/agents` passes only when that is the
- * directory the fetched source actually holds.
- */
+/** Points the fetchFromSource mock at a dir holding `agentsSubdir` (or nothing); returns it. */
 async function mockFetchedRemote(tempDir: string, agentsSubdir: string | null): Promise<string> {
   const fetchedDir = path.join(tempDir, "fetched");
   await mkdir(agentsSubdir === null ? fetchedDir : path.join(fetchedDir, agentsSubdir), {
@@ -97,14 +86,12 @@ describe("agent-fetcher", () => {
     });
 
     it("should throw when agents directory does not exist", async () => {
-      // Empty temp dir — no agents directory
       await expect(getLocalAgentDefinitions()).rejects.toThrow("Agent partials not found at '");
     });
   });
 
   describe("fetchAgentDefinitionsFromRemote", () => {
     it("should fetch agent definitions from remote source", async () => {
-      // Create a temp dir simulating the fetched remote content
       const fetchedDir = await mockFetchedRemote(tempDir, "src/agents");
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
@@ -117,7 +104,6 @@ describe("agent-fetcher", () => {
     });
 
     it("should throw when remote agents directory does not exist", async () => {
-      // Fetched dir exists but has no agents subdirectory
       await mockFetchedRemote(tempDir, null);
 
       await expect(fetchAgentDefinitionsFromRemote(REMOTE_SOURCE)).rejects.toThrow(
@@ -154,7 +140,6 @@ describe("agent-fetcher", () => {
     it("should use agentsDir from source project config when set", async () => {
       const fetchedDir = await mockFetchedRemote(tempDir, "lib/agents");
 
-      // Source config declares custom agentsDir
       mockLoadSourceRepoConfig.mockResolvedValue(buildSourceConfig({ agentsDir: "lib/agents" }));
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
@@ -166,7 +151,6 @@ describe("agent-fetcher", () => {
     it("should fall back to default agents dir when source config has no agentsDir", async () => {
       const fetchedDir = await mockFetchedRemote(tempDir, "src/agents");
 
-      // Source config exists but without agentsDir
       mockLoadSourceRepoConfig.mockResolvedValue(
         buildSourceConfig({ marketplace: "github:myorg/skills" }),
       );
@@ -179,7 +163,6 @@ describe("agent-fetcher", () => {
     it("should fall back to default when source has no config at all", async () => {
       const fetchedDir = await mockFetchedRemote(tempDir, "src/agents");
 
-      // No source config found
       mockLoadSourceRepoConfig.mockResolvedValue(null);
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
@@ -190,14 +173,12 @@ describe("agent-fetcher", () => {
     it("should prefer explicit agentsDir option over source config agentsDir", async () => {
       const fetchedDir = await mockFetchedRemote(tempDir, "custom/agents");
 
-      // Source config declares one path, but explicit option takes precedence
       mockLoadSourceRepoConfig.mockResolvedValue(buildSourceConfig({ agentsDir: "lib/agents" }));
 
       const result = await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE, {
         agentsDir: "custom/agents",
       });
 
-      // Should NOT call loadSourceRepoConfig when explicit option is provided
       expect(mockLoadSourceRepoConfig).not.toHaveBeenCalled();
       expect(result.agentsDir).toBe(path.join(fetchedDir, "custom/agents"));
     });
@@ -205,7 +186,6 @@ describe("agent-fetcher", () => {
     it("should throw when agentsDir from config points to non-existent directory", async () => {
       await mockFetchedRemote(tempDir, null);
 
-      // Source config points to a directory that doesn't exist
       mockLoadSourceRepoConfig.mockResolvedValue(
         buildSourceConfig({ agentsDir: "nonexistent/agents" }),
       );

@@ -7,30 +7,20 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
 import { assertDistIsFresh, guardAgainstDistReplacement } from "./dist-staleness.js";
 
-/**
- * The fixture mirrors the real repository layout, because the matrix hop is
- * relative (`<cli>/../matrix/src`) and a moved package is one of the failures
- * this guard exists to report.
- */
+// Mirrors the real repository layout: the sibling-package hops are relative.
 const CLI_ROOT_SEGMENTS = ["packages", "cli"];
 const MATRIX_SRC_SEGMENTS = ["packages", "matrix", "src"];
 const COMPILE_SRC_SEGMENTS = ["packages", "compile", "src"];
-// Added 2026-08-29 with the workspace itself: the fixture mirrors the real
-// layout, so a tree the guard scans and the fixture does not create reads as an
-// incomplete checkout and fails every case in this file rather than one.
 const API_SRC_SEGMENTS = ["packages", "api", "src"];
 
 const DIST_DIR = "dist";
 const CLI_SRC_DIR = "src";
 const DIST_FILES = ["dist/index.js", "dist/commands/init.js"];
 const CLI_SRC_FILE = "src/cli/commands/init.ts";
-/** A spec at the top of the tree, so nothing unignored is left to scan. */
 const CLI_ONLY_SPEC_FILE = "src/resolver.test.ts";
 const CLI_SPEC_FILE = "src/cli/lib/resolver.test.ts";
-/** A source file sharing a directory with a spec, which is what the whole tree looks like. */
 const CLI_SRC_FILE_BESIDE_SPEC = "src/cli/lib/resolver.ts";
 const CLI_SRC_FILE_ADDED_BESIDE_SPEC = "src/cli/lib/added.ts";
-/** What an editor calls the file it writes before renaming it over the one you edited. */
 const EDITOR_SWAP_SUFFIX = ".swap";
 const CLI_TESTS_DIR = "src/cli/lib/__tests__";
 const CLI_TESTS_HELPER_FILE = "src/cli/lib/__tests__/helpers/cli-runner.ts";
@@ -72,7 +62,6 @@ async function writeFixtureFile(filePath: string): Promise<void> {
   await writeFile(filePath, "// fixture\n");
 }
 
-/** Every entry under `root`, directories included — the guard reads both. */
 async function setModifiedTimeDeep(root: string, at: Date): Promise<void> {
   const entries = await fg("**", { cwd: root, absolute: true, dot: true, onlyFiles: false });
 
@@ -179,13 +168,6 @@ describe("assertDistIsFresh", () => {
     await expect(assertDistIsFresh(cliRoot)).resolves.toBeUndefined();
   });
 
-  /**
-   * The save every mainstream editor performs: the new contents go to a temp file beside the
-   * original and a rename puts them in place. The spec's own mtime moves, which the ignore list
-   * covers — and so does the mtime of the directory holding it, which nothing ignores. An
-   * in-place overwrite moves neither, so the refusal fired on the ordinary save and not on the
-   * rare one.
-   */
   it("ignores a spec saved by renaming a temp file over it", async () => {
     const spec = path.join(cliRoot, CLI_SPEC_FILE);
     const swapFile = `${spec}${EDITOR_SWAP_SUFFIX}`;
@@ -207,13 +189,7 @@ describe("assertDistIsFresh", () => {
     await expect(assertDistIsFresh(cliRoot)).rejects.toThrow(STALE_CLI_HEADLINE);
   });
 
-  /**
-   * The one case the rule above gives up, pinned here because a cost nobody can find is a cost
-   * nobody can retire. A deletion and a spec write leave the same single reading — the directory's
-   * mtime — so once something ignored inside it has moved since the build, the deletion beside it
-   * is no longer distinguishable from the save. The test above is its control: a source file ADDED
-   * to that same directory still refuses, because an added file carries an mtime of its own.
-   */
+  // Pins the known cost of ignoring a directory whose spec moved; the test above is its control.
   it("cannot see a source file deleted from a directory where a spec was also written", async () => {
     await utimes(path.join(cliRoot, CLI_SPEC_FILE), AFTER_BUILD, AFTER_BUILD);
 
@@ -248,16 +224,7 @@ describe("assertDistIsFresh", () => {
   });
 });
 
-/**
- * The sibling guard, read at the other end of the run. `assertDistIsFresh` asks once, before
- * anything is collected, whether the build matches the tree; this asks, at every test, whether
- * the build is still the one the file started over.
- *
- * The fixture stands in for a concurrent `bun run build`: emptying `dist/` is the window
- * `clean: true` opens, and moving the entry's mtime forward is the same build having finished.
- * The race itself is not reproduced here on purpose — a spec that rebuilt this package would
- * empty `dist/` under every other worker in the run, which is the defect rather than a test of it.
- */
+// Simulates a concurrent build; a real rebuild would empty dist/ under every other worker.
 describe("guardAgainstDistReplacement", () => {
   let tempDir: string;
   let cliRoot: string;
@@ -305,12 +272,6 @@ describe("guardAgainstDistReplacement", () => {
     expect(assertDistUnchanged).toThrow(REPLACED_HEADLINE);
   });
 
-  /**
-   * The case the two readings alone cannot see, and the one a file loading inside the window
-   * actually gets: absence is read as a time of zero, so a guard taken over an empty dist/ and
-   * checked against the same empty dist/ compares two zeroes and returns cleanly — while every
-   * command the file drives resolves against a directory that is not there.
-   */
   it("refuses while dist/ is absent, including when the guard was taken inside that window", async () => {
     await rm(path.join(cliRoot, DIST_DIR), { recursive: true });
     const assertDistUnchanged = guardAgainstDistReplacement(cliRoot);

@@ -1,4 +1,3 @@
-// ConfirmInput requires longer delays than other components for useInput processing
 import { render } from "ink-testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Confirm } from "./confirm";
@@ -37,7 +36,6 @@ describe("Confirm component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      // ConfirmInput shows (Y/n) or (y/N) depending on default
       expect(output?.toLowerCase()).toMatch(/[yn]/);
     });
 
@@ -77,7 +75,6 @@ describe("Confirm component", () => {
       );
       cleanup = unmount;
 
-      // Wait for component to mount and set up input handler
       await delay(RENDER_DELAY_MS);
 
       stdin.write(KEY_Y);
@@ -192,7 +189,6 @@ describe("Confirm component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      // When default is false, N is capitalized (y/N)
       expect(output).toContain("y/N");
     });
 
@@ -203,7 +199,6 @@ describe("Confirm component", () => {
       cleanup = unmount;
 
       const output = lastFrame();
-      // When default is true, Y is capitalized (Y/n)
       expect(output).toContain("Y/n");
     });
   });

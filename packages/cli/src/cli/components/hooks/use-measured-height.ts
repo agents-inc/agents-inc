@@ -1,15 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { type DOMElement, measureElement, useStdout } from "ink";
 
-/**
- * Measures the computed height of a Box element using Ink's Yoga layout engine.
- *
- * Returns a ref to attach to a Box with `flexGrow={1}` and the measured height.
- * The Box must be inside a parent chain with a constrained height (e.g., an
- * explicit `height` prop on an ancestor) so Yoga can compute the remaining space.
- *
- * Returns 0 before the first layout pass. Re-measures on terminal resize.
- */
+/** Attach to a `flexGrow={1}` Box under an ancestor of constrained height; 0 before first layout. */
 export function useMeasuredHeight(): {
   ref: React.Ref<DOMElement>;
   measuredHeight: number;
@@ -25,15 +17,12 @@ export function useMeasuredHeight(): {
     }
   };
 
-  // Re-measure after every render so late-mounted refs get picked up.
-  // The state setter avoids unnecessary updates when height is unchanged.
+  // Every render, so late-mounted refs are picked up.
   useEffect(() => {
     measure();
   });
 
-  // Yoga may not have computed the layout on the first render, so
-  // measureElement() returns 0. Retry with increasing delays to give
-  // Yoga time to resolve the full flex constraint chain.
+  // Yoga may not have laid out yet on first render, so retry a few times.
   useEffect(() => {
     const RETRY_DELAYS_MS = [0, 16, 50];
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -47,9 +36,7 @@ export function useMeasuredHeight(): {
         clearTimeout(timer);
       }
     };
-    // Deps are deliberately empty: this is a mount-only retry ladder. `measure`
-    // is re-created every render, so listing it would re-arm the timers on every
-    // render instead of once.
+    // Mount-only: listing `measure` would re-arm the timers every render.
   }, []);
 
   useEffect(() => {

@@ -27,9 +27,7 @@ import type { SkillAssignment, SkillId } from "../../types/skills.js";
 import type { StackAgentConfig } from "../../types/stacks.js";
 import type { SeedPayload, SeedSkill } from "@workspace/matrix/seed";
 
-/**
- * What applying a shared configuration may not take away, split by reason: each has its own remedy.
- */
+/** What applying a shared configuration may not take away, split by reason. */
 export type KeptFromRoundTrip = {
   /** Written here, so no shared configuration ever carried them. */
   authoredSkillIds: SkillId[];
@@ -51,13 +49,9 @@ export type ReconciledSharedConfig = {
 
 export type ReconcileOptions = {
   decoded: InstallSelection;
-  /** Its own config, or the global one it inherits. */
   installed: ProjectConfig | null;
-  /** From `skillsAuthoredHere`, the one definition both halves share. */
   authoredHere: ReadonlySet<SkillId>;
-  /**
-   * `SeedMapping.skippedSkillIds` as the caller already reported them, so the two cannot disagree.
-   */
+  /** `SeedMapping.skippedSkillIds` as the caller already reported them. */
   unplaceable: ReadonlySet<string>;
 };
 
@@ -67,11 +61,8 @@ const NOTHING_KEPT: KeptFromRoundTrip = {
 };
 
 /**
- * Puts back what the destructive apply may not remove: skills written here (the payload never
- * named them) and ids it named that this catalogue cannot place (removal is on intent, never on
- * inability). Scope is {@link restoreInstalledGlobal}'s. Restored into the RESULT, not excused at
- * the writer: the removal diff drives the uninstall and file deletion whatever the merger does. A
- * kept skill also needs its stack rows and domain, or the next run deletes it.
+ * Puts back skills written here and ids this catalogue cannot place. Restored into the result,
+ * not excused at the writer, because the removal diff drives deletion; rows and domain come too.
  */
 export function reconcileSharedConfig(options: ReconcileOptions): ReconciledSharedConfig {
   const { decoded, installed } = options;
@@ -113,10 +104,7 @@ function describeKept(options: ReconcileOptions, keptSkills: SkillConfig[]): Kep
   };
 }
 
-/**
- * Where both apply, the more permanent claim is disclosed: `update` can resolve an unplaceable id,
- * nothing changes who authored a skill.
- */
+/** Where both apply, authorship wins: `update` can resolve an unplaceable id. */
 function reasonKept(skill: SkillConfig, options: ReconcileOptions): KeptReason {
   return options.authoredHere.has(skill.id) ? "authored" : "unplaceable";
 }
@@ -163,10 +151,8 @@ type KeptRows = {
 };
 
 /**
- * `assignedStack` replaces the derived stack, so a kept skill's installed rows are its only rows.
- * Rows under a sub-agent this configuration removes go with it. A kept row joins the payload's
- * under its category, except in a one-skill category the payload fills: the payload's skill takes
- * the slot (as {@link arrivingRows} does) and the kept row is returned as unassigned.
+ * A kept row joins the payload's under its category, except in a one-skill category the payload
+ * fills, where it is returned as unassigned.
  */
 function withKeptStackRows(
   assigned: Partial<Record<AgentName, StackAgentConfig>>,
@@ -203,11 +189,7 @@ function withAgentKeptRows(
   };
 }
 
-/**
- * Puts back each installed sub-agent the payload assigns an unplaceable skill, as installed:
- * the decode carries sub-agents in only through placed skills, and its absence is a catalogue
- * limit, not an instruction.
- */
+/** The decode carries sub-agents only through placed skills, so an unplaceable skill's assignees return. */
 export function withUnplaceableAssignees(
   decoded: InstallSelection,
   installed: ProjectConfig | null,
@@ -254,10 +236,7 @@ function assigneesOfHeld(
 
 export type InstalledGlobal = Pick<ProjectConfig, "skills" | "agents" | "stack">;
 
-/**
- * Read from the global config, which every registered project inherits, rather than from a
- * project's possibly older inlined copy; through the project's own provider. `null` when absent.
- */
+/** Read from the global config itself, not a project's possibly older inlined copy. */
 export async function readInstalledGlobal(projectDir: string): Promise<InstalledGlobal | null> {
   const loaded = await loadProjectConfigFromDir(os.homedir(), providerInUse(projectDir));
   return loaded?.config ?? null;
@@ -270,27 +249,14 @@ export type JoinedAgent = { agentName: AgentName; skillIds: SkillId[] };
 
 export type HeldGlobal = {
   result: InstallSelection;
-  /**
-   * Global entries the configuration names that the global install holds; their skills are skipped.
-   */
   installed: GlobalEntries;
-  /**
-   * Of those, the ones stated otherwise that no arriving row joins, plus (from
-   * {@link restoreInstalledGlobal}) every omitted one.
-   */
   keptAsInstalled: GlobalEntries;
-  /** Held sub-agents that gain rows, each keeping everything it already has. */
   joined: JoinedAgent[];
 };
 
 const NO_GLOBAL_ENTRIES: GlobalEntries = { skillIds: [], agentNames: [] };
 
-/**
- * From a project `--from` only ADDS to the global install (owner ruling 2026-10-02): every global
- * entry it already holds is restated as held — install mode, tuning and rows. What it lacks
- * arrives whole, including a new skill's row on a held sub-agent. `installed` is `null` at the
- * home directory and on a machine with no global install.
- */
+/** A project `--from` only adds to the global install: every global entry it holds stays as held. */
 export function holdInstalledGlobal(
   decoded: InstallSelection,
   installed: InstalledGlobal | null,
@@ -343,10 +309,7 @@ export function holdInstalledGlobal(
   };
 }
 
-/**
- * Also puts back every global entry the configuration omits, for the destructive `edit --from`:
- * the global install's entries are not a project's to remove.
- */
+/** For the destructive `edit --from`: a project may not remove global entries. */
 export function restoreInstalledGlobal(
   decoded: InstallSelection,
   installed: InstalledGlobal | null,
@@ -409,7 +372,6 @@ function assignmentKeys(agentStack: StackAgentConfig | undefined): string[] {
     .sort();
 }
 
-/** None where the global install gives the sub-agent none. */
 function withInstalledRows(
   assigned: Partial<Record<AgentName, StackAgentConfig>>,
   installedStack: InstalledGlobal["stack"],
@@ -451,10 +413,6 @@ function asJoined({ agentName, rows }: AgentArrival): JoinedAgent {
   return { agentName, skillIds: rows.map(([, row]) => row.id) };
 }
 
-/**
- * Rows bringing a skill the global install lacks, under a category with room. In a one-skill
- * category the sub-agent already fills, the arriving skill installs without that row.
- */
 function arrivingRows(
   stated: StackAgentConfig | undefined,
   installed: StackAgentConfig | undefined,
@@ -549,9 +507,6 @@ function withOmittedGlobal(
   };
 }
 
-/**
- * A carried skill's bytes written over a global skill directory would change it like a reinstall.
- */
 export function notInstalledGlobally<Entry extends { id: SkillId }>(
   entries: Entry[],
   held: HeldGlobal,
@@ -581,7 +536,6 @@ function installArrivals(held: HeldGlobal): Arrivals {
   );
 }
 
-/** A skipped global skill is named, so no unarriving skill goes unmentioned. */
 export function installPlanLines(held: HeldGlobal): string[] {
   return [
     ...arrivalLines(installArrivals(held)),
@@ -593,7 +547,6 @@ export function installPlanLines(held: HeldGlobal): string[] {
   ];
 }
 
-/** Held sub-agents are not arrivals, so the ones a row joins are named on their own. */
 export function joinedStatement(held: HeldGlobal): string[] {
   return held.joined.length === 0 ? [] : [addedToGlobalSubAgents(held.joined)];
 }

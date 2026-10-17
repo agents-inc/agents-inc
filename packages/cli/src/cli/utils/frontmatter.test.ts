@@ -74,9 +74,8 @@ describe("extractFrontmatter", () => {
     it("should return null for invalid indentation", () => {
       const content = "---\nkey:\n value\n  other:\n value2\n---\nBody";
 
-      // yaml parser may or may not error on this; verify no exception thrown
+      // The parser may or may not reject this; only the absence of a throw is asserted.
       const result = extractFrontmatter(content);
-      // Result is either parsed (lenient parser) or null (strict parser)
       expect(() => extractFrontmatter(content)).not.toThrow();
       if (result !== null) {
         expect(typeof result).toBe("object");
@@ -166,7 +165,6 @@ describe("extractFrontmatter", () => {
     it("should return null for delimiter-only content with no YAML", () => {
       const content = "---\n---\nBody";
 
-      // Empty YAML between delimiters — match[1] is empty string
       expect(extractFrontmatter(content)).toBeNull();
     });
   });

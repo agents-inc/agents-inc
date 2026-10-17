@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { seedPayloadSchema } from "@workspace/matrix/seed";
 
-/**
- * The CLI's stake in the wire contract it imports from @workspace/matrix, pinned against literals:
- * a payload built from `SEED_VERSION` follows the constant and could never fail. Only the current
- * version decodes; the previous one is refused, never migrated.
- */
+// Pinned against literals: a payload built from `SEED_VERSION` would follow the constant.
 const V6_PAYLOAD = {
   v: 6,
   matrixVersion: "1.0.0",
@@ -21,7 +17,6 @@ const V6_PAYLOAD = {
   agents: { "web-developer": { on: true, scope: "global" } },
 };
 
-/** A marketplace ref in the form `--marketplace` takes one, and not the default public catalogue. */
 const MARKETPLACE_REF = "github:acme/skills";
 
 describe("seedPayloadSchema", () => {

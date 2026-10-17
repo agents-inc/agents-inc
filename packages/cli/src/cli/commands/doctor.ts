@@ -104,31 +104,13 @@ type ConfigCheckOutput = {
   config: ProjectConfig | null;
 };
 
-/**
- * Which state the config these rows describe is in. `detectInstallation` answers "is there an
- * installation here", not "is there a config here", and hands back the same `null` for an absent
- * file and for one that loads while declaring neither skills nor agents — two states that need
- * different sentences. The state missing from this union is the one that cannot reach this layer:
- * a config that cannot be READ is the content layer's finding, and it skips the operational layer.
- *
- * A loaded config says whether it is this directory's own or the global one it inherits: a
- * directory with no config of its own under a global installation reads the global config, and a
- * row naming this directory's path for it describes a file that is not there.
- */
+/** An unreadable config never reaches here: the content layer reports it and skips this one. */
 type ConfigState =
   | { kind: "absent" }
   | { kind: "declares-nothing"; config: ProjectConfig }
   | { kind: "loaded"; config: ProjectConfig; inherited: boolean };
 
-/**
- * The config in THIS directory, and what state it is in. Only this directory: the global fallback
- * is `detectInstallation`'s to make and it has already made it, so a project with no config of its
- * own is absent here whatever the home directory holds — `init` writes exactly the declares-nothing
- * shape as the blank global pair on every project setup, and it is not this project's config.
- *
- * The load cannot throw: `configDirsInPlay` is the same set the content layer just read, and any
- * failure in it skipped this layer entirely.
- */
+/** This directory's config only; the global fallback is already `detectInstallation`'s. */
 async function resolveConfigState(
   detected: DetectedProject | null,
   projectDir: string,
@@ -141,6 +123,7 @@ async function resolveConfigState(
     };
   }
 
+  // Cannot throw: an unreadable config already skipped this layer.
   const loaded = await loadInstalledConfig(projectDir);
   if (!loaded) return { kind: "absent" };
 
@@ -149,16 +132,10 @@ async function resolveConfigState(
     : { kind: "loaded", config: loaded.config, inherited: false };
 }
 
-/** Whether the config detection read for `projectDir` is the home directory's, inherited. */
 function inheritsTheGlobalConfig(readFrom: string, projectDir: string): boolean {
   return isHomeDirectory(readFrom) && !isHomeDirectory(projectDir);
 }
 
-/**
- * `projectDir` rather than a module-level constant for the path this reports about: a scope's
- * source folder depends on the provider read off its disk, so nothing about it exists at module
- * load, and every line below has to name the folder this project is ACTUALLY on.
- */
 function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOutput {
   const theConfig = (verdict: string) => configRowMessage(state, projectDir, verdict);
   if (state.kind === "absent") {
@@ -173,9 +150,7 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
     };
   }
 
-  // Not a fault and nothing to repair — the file is valid, it just has nothing in it. The config
-  // is still handed on: the rows below describe an empty install truthfully, where a `null` would
-  // have them all report `Skipped (config invalid)` about a config that is valid.
+  // Valid but empty: handed on so the rows below don't report "config invalid".
   if (state.kind === "declares-nothing") {
     return {
       result: {
@@ -224,39 +199,25 @@ function checkConfigValid(state: ConfigState, projectDir: string): ConfigCheckOu
   };
 }
 
-/**
- * What a Config Valid row says, led by whose config it is: this project's, or the global
- * installation's — the nouns the Layout rows lead with.
- *
- * A directory with no config of its own under a global installation reads the global one, and the
- * row says so, naming the file it actually read rather than this directory's path for a file that
- * is not there.
- */
+/** Names the file actually read: the global config when this directory inherits it. */
 function configRowMessage(state: ConfigState, projectDir: string, verdict: string): string {
   if (state.kind === "loaded" && state.inherited)
     return `${theInheritedConfig()}, which ${verdict}`;
   return `${theOwnConfig(projectDir)} ${verdict}`;
 }
 
-/** `This project: .agents-inc/claude/config.ts`, or the global installation's from home. */
 function theOwnConfig(projectDir: string): string {
   return `${scopeLabel(scopeOf(projectDir))}: ${configNamedFrom(projectDir)}`;
 }
 
-/** A project with no config of its own, and the global one it reads in its place. */
 function theInheritedConfig(): string {
   return `${scopeLabel("project")}: no ${STANDARD_FILES.CONFIG_TS}, using ${scopeNoun("global")}'s (${configNamedFrom(os.homedir())})`;
 }
 
-/** The scope whose config a directory holds: the home directory's is the global one. */
 function scopeOf(dir: string): ScopeKind {
   return isHomeDirectory(dir) ? "global" : "project";
 }
 
-/**
- * A config file as a row names it: relative to the project it belongs to, and from home for the
- * global one — named relative to a project, the global config is a file that project does not have.
- */
 function configNamedFrom(root: string): string {
   const relPath = relativeConfigPath(root, providerInUse(root));
   return isHomeDirectory(root) ? `~/${relPath}` : relPath;
@@ -267,9 +228,7 @@ async function checkSkillsResolved(
   matrix: MergedSkillsMatrix,
   projectDir: string,
 ): Promise<CheckResult> {
-  // config.ts declares skills both directly and through the stack. A global-only
-  // install has a populated skills array and no stack at all, so keying this check
-  // off the stack alone would report "No skills configured" for a real install.
+  // Both sources: a global-only install has skills but no stack.
   const excludedIds = effectivelyExcludedSkillIds(config.skills);
   const stackIds = config.stack ? getStackSkillIds(config.stack) : [];
   const uniqueSkills = unique([...stackIds, ...config.skills.map((s) => s.id)]).filter(
@@ -313,25 +272,7 @@ async function checkSkillsResolved(
   };
 }
 
-/**
- * Whether every configured sub-agent is compiled where its own host reads it.
- *
- * **Two things here were Claude's and are the host's**, and both were found by running the
- * command on a healthy Codex installation rather than by reading it:
- *
- * - the FILENAME was `${name}.md`. Claude reads `.md` and Codex reads `.toml`, so on Codex this
- *   looked for a file no release will ever write. {@link agentCodec} answers the extension, and
- *   this is the extension ban's own census in action — the eslint config leaves `.md` unbanned
- *   precisely because product modules like this one still spell it.
- * - the VERDICT was "needs recompilation", for a sub-agent {@link hostCompilesAgent} says this
- *   host does not carry at all. Recompiling writes nothing, so the row asked for a remedy that
- *   does not exist and turned an install working exactly as this release intends into a warning.
- *   With C5 that is no longer a whole provider but two named sub-agents — `agent-summoner` and
- *   `skill-summoner`, which Codex leaves out for v1 — so the row names them rather than the host.
- *
- * The host is read per SCOPE, the way `resolveInstallPaths` reads it beside this: two scopes can
- * be on two providers, and one answer for both is how a row reports about the wrong installation.
- */
+/** Host read per scope: two scopes can be on two providers. */
 async function checkAgentsCompiled(
   config: ProjectConfig,
   projectDir: string,
@@ -362,11 +303,7 @@ async function checkAgentsCompiled(
   const unrenderable = agentChecks.filter((c) => c.state === "unrenderable");
   const missingAgents = agentChecks.filter((c) => c.state === "missing").map((c) => c.name);
 
-  // The no-renderer answer leads when it is the whole story, because then nothing is wrong and
-  // nothing can be done: a `warn` here would make every `doctor` on a Codex installation read as
-  // a fault report about the one thing this release has already said it does not do yet. The
-  // providers come off the rows themselves rather than off both scopes, so a project on one host
-  // under a global on another names only the host whose sub-agents this is about.
+  // A sub-agent the host leaves out by design is a pass, not a recompile warning.
   if (unrenderable.length === agents.length) {
     const hostsLeavingThemOut = unique(unrenderable.map((a) => a.provider)).join(" or ");
     return {
@@ -394,17 +331,12 @@ async function checkAgentsCompiled(
   };
 }
 
-/** One configured sub-agent as the Agents Compiled row sees it, and the host that decided it. */
 type AgentCompileCheck = {
   name: AgentName;
   provider: Provider;
   state: "unrenderable" | "compiled" | "missing";
 };
 
-/**
- * Whether one sub-agent is left out by its scope's host, or else compiled or missing where that
- * host reads it — the extension and the directory are both the host's.
- */
 async function agentCompileCheck(
   agent: AgentScopeConfig,
   hosts: Record<SkillScope, Provider>,
@@ -421,14 +353,11 @@ async function agentCompileCheck(
 }
 
 async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promise<CheckResult> {
-  // The host's own agent files — `*.toml` roles on Codex, where a `*.md`-only listing found no
-  // compiled agent and so no orphan either (the CLI-896 class, 2026-09-27).
   const codec = agentCodec(providerInUse(projectDir));
   const projectAgentsDir = resolveInstallPaths(projectDir, "project").agentsDir;
   const globalAgentsDir = resolveInstallPaths(projectDir, "global").agentsDir;
 
-  // At home scope both scopes resolve to the same agents directory, so it is
-  // listed once and its files are matched against both scopes' known names.
+  // At home both scopes share one agents directory.
   const scopesShareAgentsDir = isHomeDirectory(projectDir);
 
   const [projectExists, globalExists] = await Promise.all([
@@ -447,11 +376,10 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
   const projectMdFiles = projectExists ? await listAgentFilesOf(projectAgentsDir, codec) : [];
   const globalMdFiles = globalExists ? await listAgentFilesOf(globalAgentsDir, codec) : [];
 
-  // Project files: only active project-scoped agents should have .md files here
   const activeProjectAgents: Set<string> = new Set(
     config.agents.filter((a) => a.scope === "project" && !a.excluded).map((a) => a.name),
   );
-  // Global files: all global-scoped agents (including excluded) still serve other projects
+  // Excluded global agents still serve other projects.
   const knownGlobalAgents: Set<string> = new Set(
     config.agents.filter((a) => a.scope === "global").map((a) => a.name),
   );
@@ -481,11 +409,6 @@ async function checkNoOrphans(config: ProjectConfig, projectDir: string): Promis
   };
 }
 
-/**
- * The agents whose compiled `.md` sits in a directory whose roster does not name them. The
- * roster differs per directory — a project directory knows only its own active agents, the
- * global one knows every global-scoped agent including the excluded — so it is a parameter.
- */
 function orphanedAgentNames(
   mdFiles: string[],
   knownAgents: ReadonlySet<string>,
@@ -497,21 +420,8 @@ function orphanedAgentNames(
 }
 
 /**
- * The same row when there is no configuration at all. Ownership is not unknown here, it is
- * settled: nothing declares any of it, so every artefact this CLI can prove it wrote is an
- * orphan and the row names it. What it CANNOT prove it wrote is left out — a skill directory
- * with no `forkedFrom` and an agent file with no provenance marker are somebody's own work,
- * and naming them here would offer `uninstall` files that command declines. See
- * {@link listInstalledArtifacts}, which asks exactly that question on both axes.
- *
- * A `fail`, where a stray file beside a config is a warning: that warning is earned by the next
- * `compile` pruning what it names, and nothing prunes these unattended. `compile` and `edit`
- * refuse without a config; `uninstall` does not need one, identifying skill directories by
- * their own `forkedFrom` and compiled agents by the marker each carries, which is why the tip
- * beneath this row can promise both halves.
- *
- * With nothing installed the row keeps the skip it has always printed. An empty directory with
- * no config is the state `init` exists for — there is nothing for a configuration to have owned.
+ * With no config, every artefact this CLI provably wrote is an orphan. A `fail`, not a `warn`:
+ * nothing prunes these unattended, unlike strays beside a config that `compile` removes.
  */
 async function checkUnownedInstallation(projectDir: string): Promise<CheckResult> {
   const { skills, agents } = await listInstalledArtifacts(projectDir);
@@ -520,19 +430,15 @@ async function checkUnownedInstallation(projectDir: string): Promise<CheckResult
   return {
     kind: "orphans-unowned",
     status: "fail",
-    // The per-line "(not in config)" the other verdict repeats is said once here instead:
-    // with no configuration it is true of every line, and there are as many lines as files.
     message: `${countedArtifacts(skills, agents)} installed here, and no configuration declares them`,
     details: [...skills, ...agents].map((artifact) => `- ${artifact}`),
   };
 }
 
-/** "1/1 skill", "2/3 skills" — the noun agrees with the count it is out of. */
 function ratio(found: number, total: number, noun: string): string {
   return `${found}/${plural(total, noun)}`;
 }
 
-/** "7 skills and 2 agents", dropping a half with nothing in it rather than saying "0 agents". */
 function countedArtifacts(skills: string[], agents: string[]): string {
   return [
     ...(skills.length > 0 ? [plural(skills.length, "skill")] : []),
@@ -540,22 +446,7 @@ function countedArtifacts(skills: string[], agents: string[]): string {
   ].join(" and ");
 }
 
-/**
- * Whether every eject-mode skill the configuration names is on disk where its own host reads it.
- *
- * **It composed `<scope root>/.claude/skills/<id>/SKILL.md` for every provider until
- * 2026-09-22**, which made a healthy Codex installation report every one of its skills missing
- * and told the reader to look in a directory that installation does not have. The write path had
- * already moved through the layout — `copyLocalSkills` writes `$CODEX_HOME/skills` and
- * `<repo>/.agents/skills` — so this row was the half that stayed behind, and it is the kind of
- * defect the host-path lint ban cannot report: the path was composed from a CONSTANT, and that
- * ban matches literals.
- *
- * The directory is asked per SKILL rather than once for the row, because scope decides it and a
- * configuration mixes scopes freely. The reader is told the directory that was actually looked
- * in, for the same reason — one sentence naming one folder cannot be true of two scopes on two
- * different hosts.
- */
+/** The directory is resolved per skill, since scope (and so host) varies within one config. */
 async function checkSkillsInstalled(
   config: ProjectConfig,
   projectDir: string,
@@ -592,16 +483,8 @@ async function checkSkillsInstalled(
   };
 }
 
-/** One eject-mode skill as the Skills Installed row sees it, and where it was looked for. */
 type EjectedSkillCheck = { id: SkillId; installed: boolean; lookedIn: string };
 
-/**
- * Whether one eject-mode skill's `SKILL.md` is where its scope's host reads it.
- *
- * The provider is read off the scope's OWN root, the way `resolveInstallPaths` and
- * `discoverLocalProjectSkills` read it: two scopes can be on two different providers, and one
- * probe per skill is what keeps the directory and the reported prefix naming one of them.
- */
 async function ejectedSkillCheck(
   skill: SkillConfig,
   projectDir: string,
@@ -617,11 +500,7 @@ async function ejectedSkillCheck(
   };
 }
 
-/**
- * Plugin-mode skills have no files under `.claude/skills/` — they live in the
- * Claude plugin registry. Verifying them means asking the registry for the scope
- * each skill was installed at, not looking on disk.
- */
+/** Plugin-mode skills are checked against the plugin registry per scope, not on disk. */
 async function checkPluginSkillsInstalled(
   config: ProjectConfig,
   projectDir: string,
@@ -668,17 +547,6 @@ async function checkPluginSkillsInstalled(
   };
 }
 
-/**
- * How a marketplace came to be the one this run reads, in the words each rung earns.
- *
- * The `default` sentence is the one that had to exist. With no configuration anywhere the resolver
- * falls back to the public catalogue and this check FETCHES it, so the report a bare directory gets
- * describes a network round trip to a marketplace nobody named — which is the row doing its job,
- * since reachability is its whole subject, and it was doing it without saying so. The other four
- * rungs are here because the map is exhaustive against the union rather than a default with
- * exceptions; `doctor` takes no marketplace flag and reads no environment variable, so it reaches
- * the first two through nothing today.
- */
 const MARKETPLACE_CHOSEN_BY = {
   flag: "named by this run",
   env: `named by ${SOURCE_ENV_VAR}`,
@@ -687,23 +555,11 @@ const MARKETPLACE_CHOSEN_BY = {
   default: "nothing here names one, so this is the default",
 } as const satisfies Record<ResolvedConfig["sourceOrigin"], string>;
 
-/** How this run got hold of that marketplace — off disk, or over the wire. */
 function howItWasReached(source: string, isLocal: boolean): string {
   return isLocal ? `Read ${source} from disk` : `Fetched ${source} over the network`;
 }
 
-/**
- * The row for a marketplace this run did reach.
- *
- * `message` names where the skills were read FROM, which for a remote marketplace is the cache
- * directory it was unpacked into; the provenance line beneath it names the marketplace itself.
- * Both, because neither answers the other's question: a cache path says nothing about whose
- * catalogue it holds, and a ref says nothing about what is on disk to inspect.
- *
- * The count is what that marketplace carries, not the matrix this run loaded: the matrix also
- * holds the skills ejected here and the global installation's, which may come from another
- * marketplace altogether.
- */
+/** Counts the marketplace's own skills, not the loaded matrix, which also holds local ones. */
 function reachedMarketplace(result: SourceLoadResult): CheckResult {
   const { source, sourceOrigin } = result.sourceConfig;
   const skillCount = result.marketplaceSkillIds.size;
@@ -742,24 +598,13 @@ type ContentCheck = {
   run: (projectDir: string) => Promise<ContentValidation>;
 };
 
-/**
- * A content check plus the two gates it owns: whether it reads config.ts to know WHAT to validate
- * (see {@link CONFIG_CHECK}), and which operational rows its errors stand down.
- *
- * `blocks` names only the rows that READ what this pass validates, so their own verdict would be
- * this pass's finding in the row's words. A row absent from every `blocks` list reads none of the
- * content on disk and answers as truthfully as ever — an error here is not its business.
- */
+/** `blocks`: operational rows that would only restate this pass's errors, so stand down. */
 type GatedContentCheck = ContentCheck & {
   readsConfig: boolean;
   blocks: readonly CheckKind[];
 };
 
-/**
- * The config file every other check is read against, so it is validated before any of them and
- * on its own: a file that exists and cannot be parsed is a finding about that file, and every
- * row underneath would be a cascade of it. It carries no gate of its own — it IS the gate.
- */
+/** Validated first and alone: every other row would cascade from an unreadable config. */
 const CONFIG_CHECK: ContentCheck = {
   kind: "content-config",
   name: "Config",
@@ -767,21 +612,14 @@ const CONFIG_CHECK: ContentCheck = {
   run: validateProjectConfigFile,
 };
 
-/**
- * The content layer: schema and file-level validation of what is on disk. It runs before the
- * operational layer so that a row whose inputs this layer has already reported broken can stand
- * down rather than re-report the same fault as a finding of its own.
- */
+/** Runs before the operational layer so rows with broken inputs can stand down. */
 const CONTENT_CHECKS: GatedContentCheck[] = [
   {
     kind: "content-sources",
     name: "Marketplaces",
     noun: "marketplace",
-    // The registered marketplaces are the ones config.ts names.
     readsConfig: true,
-    // A marketplace whose content is broken is missing skills from the matrix every configured
-    // id is resolved against, so the skills row would call ids "not found" that this row has
-    // already accounted for.
+    // A broken marketplace leaves skills out of the matrix ids resolve against.
     blocks: ["skills"],
     run: validateRegisteredSources,
   },
@@ -790,9 +628,7 @@ const CONTENT_CHECKS: GatedContentCheck[] = [
     name: "Plugins",
     noun: "plugin",
     readsConfig: false,
-    // `resolvePluginInstallPaths` swallows a registry it cannot parse and returns none, so every
-    // plugin-mode skill would read "no enabled plugin found" — the registry's finding, once per
-    // configured skill, wearing the row's words.
+    // An unparseable registry resolves as no installs at all.
     blocks: ["plugins"],
     run: validateInstalledPlugins,
   },
@@ -800,12 +636,9 @@ const CONTENT_CHECKS: GatedContentCheck[] = [
     kind: "content-skills",
     name: "Skills",
     noun: "skill",
-    // `~/.claude/skills/` is shared with everything else that installs a skill there, so which of
-    // its directories are this installation's is a question only the config can answer for the
-    // ones carrying no provenance marker. A config nobody can read leaves that unanswerable.
+    // Only the config says which unmarked shared-skills directories are this installation's.
     readsConfig: true,
-    // `extractLocalSkill` DROPS a skill whose metadata.yaml is missing or unusable, so a "not
-    // found" from the skills row would be this finding re-worded.
+    // `extractLocalSkill` drops a skill with unusable metadata.
     blocks: ["skills"],
     run: validateInstalledSkills,
   },
@@ -814,8 +647,7 @@ const CONTENT_CHECKS: GatedContentCheck[] = [
     name: "Agents",
     noun: "agent",
     readsConfig: false,
-    // Nothing downstream opens an agent .md. `Agents Compiled` asks whether the file is there and
-    // `No Orphans` reads the names of the files that are — broken frontmatter changes neither.
+    // No operational row reads agent file contents.
     blocks: [],
     run: validateInstalledAgents,
   },
@@ -828,8 +660,7 @@ function contentStatus(errors: number, warnings: number): CheckResult["status"] 
 }
 
 function contentMessage(noun: string, count: number, errors: number, warnings: number): string {
-  // A pass that walked nothing can still report an issue — an unreadable plugin
-  // registry is a finding about the directory, not about a plugin inside it.
+  // A pass that walked nothing can still report an issue (e.g. an unreadable registry).
   if (errors === 0 && warnings === 0) {
     return count === 0 ? `No ${noun}s to validate` : `${plural(count, noun)} validated`;
   }
@@ -856,14 +687,9 @@ function toContentResult(check: ContentCheck, validation: ContentValidation): Ch
   };
 }
 
-/**
- * The column every row's status symbol starts at. It has to clear the longest row name
- * the report prints — "Marketplace Reachable", 21 characters — or that row's name runs
- * straight into its own tick with no gap.
- */
+/** Must clear the longest row name ("Marketplace Reachable"). */
 const CHECK_WIDTH = 24;
 
-/** Section headings and the rows underneath them are indented one step apart. */
 const SECTION_INDENT = "  ";
 const ROW_INDENT = "    ";
 
@@ -872,18 +698,8 @@ const SECTION_OPERATIONAL = "Operational checks";
 const SKIP_NO_INSTALLATION = "Skipped — no installation here (marketplace repository)";
 const SKIP_CONFIG_UNREADABLE = "Skipped — the configuration that names them cannot be read";
 
-/**
- * The whole operational layer standing down, for the one content finding that leaves every row
- * with nothing to say: a config nobody can read. It still says "errors" rather than naming that
- * file, because the config row is one of them and whatever else failed is above it too.
- */
 const SKIP_AFTER_CONFIG_ERROR = "Skipped — fix the content errors above first";
 
-/**
- * The sentence a single row stands down with. Unlike its neighbours it names the finding rather
- * than the layer: which pass blocked it is the one thing separating a row that cannot answer from
- * the ones printing verdicts beside it.
- */
 function skipRestatingContent(nouns: string[]): string {
   return `Skipped — this row would only restate the ${nouns.join(" and ")} errors above`;
 }
@@ -892,15 +708,6 @@ function formatCheckName(name: string): string {
   return name.padEnd(CHECK_WIDTH);
 }
 
-/**
- * The glyph each row is headed with, every one of them from {@link UI_SYMBOLS}.
- *
- * The last two used to be literals here — `"!"` and `"-"` — and the second was the one that
- * mattered: `UI_SYMBOLS.SKIPPED` is an EN-DASH, so a stood-down row printed a different character
- * from the one the symbol table declares for exactly that state, while `UI_SYMBOLS.REMOVED` is
- * deliberately an ASCII hyphen for diff markers. Two glyphs a reader cannot tell apart, meaning
- * opposite things, and nothing pointing either literal at the table it belonged in.
- */
 function formatStatus(status: CheckResult["status"]): string {
   switch (status) {
     case "pass":
@@ -918,7 +725,6 @@ function formatStatus(status: CheckResult["status"]): string {
   }
 }
 
-/** The column a row's details start at, under its message. */
 const DETAIL_INDENT = `${ROW_INDENT}${" ".repeat(CHECK_WIDTH)}   `;
 
 function formatCheckLine(name: string, result: CheckResult): string[] {
@@ -927,11 +733,7 @@ function formatCheckLine(name: string, result: CheckResult): string[] {
   return [headerLine, ...detailLines];
 }
 
-/**
- * A detail can be a whole refusal — a loader's message, paragraphs and all — so every one of its
- * lines is indented, and its blank lines dropped. Indenting the first alone printed the rest at
- * column 0, outside the row they belong to and between the rows below it.
- */
+/** A detail can be a multi-paragraph refusal, so every line is indented. */
 function indentedDetailLines(detail: string): string[] {
   return detail
     .split("\n")
@@ -963,19 +765,11 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
     tip: `  Tip: Run '${CLI_INVOKE_COMMAND} init' to create or fix configuration`,
   },
   {
-    // The remedy for a valid config with nothing in it. Not the tip above: there is nothing to
-    // create and nothing to fix. `init` on this config opens the editor rather than the dashboard
-    // — that is what the detection returning null is FOR — so it is the way to fill it in.
     kind: "config-empty",
     status: "warn",
     tip: `  Tip: Nothing is configured yet — run '${CLI_INVOKE_COMMAND} init' to choose skills and sub-agents`,
   },
   {
-    // Printed beside the config tip above, which says how to get a configuration back and
-    // nothing about the files that outlived the old one. Both halves are named with what they
-    // actually do: `uninstall` matches skill directories by their own `forked-from` metadata and
-    // compiled agents by the marker each one carries, so neither needs the configuration that is
-    // gone — which is why the row can name both and this tip can promise both.
     kind: "orphans-unowned",
     status: "fail",
     tip: `  Tip: Nothing declares the files above — '${CLI_INVOKE_COMMAND} init --from <id>' writes a configuration that can own them again, or '${CLI_INVOKE_COMMAND} uninstall' removes them, the compiled agents included: each file listed carries this CLI's own provenance, which is what that command reads when there is no configuration left`,
@@ -988,9 +782,7 @@ const TIPS: Array<{ kind: CheckKind; status: CheckResult["status"]; tip: string 
   {
     kind: "installed",
     status: "warn",
-    // No command is named on purpose: 'eject skills --force' re-copies every skill in the
-    // marketplace and always targets project scope, so it cannot repair a global-scoped
-    // skill and it litters a plugin-mode project with local skill directories.
+    // No command named: `eject skills --force` copies every skill, and only at project scope.
     tip: "  Tip: Re-eject the missing skills from the marketplace to restore their files",
   },
 ];
@@ -1001,16 +793,7 @@ function formatTips(results: CheckResult[]): string[] {
   );
 }
 
-/**
- * The one remedy that applies to a config that cannot be read, once per such config, naming the
- * folder it is taken from. `init` does not clear such a file — it refuses it — so the config tip
- * would send the reader in a circle; this is the way out every refusing command names, worded the
- * same way and sending the reader to the same folder: the project, or the home directory for the
- * global config.
- *
- * Read again rather than threaded out of the content pass, and only once that pass has failed. A
- * failure it cannot classify is already that pass's own failed row, so it adds no tip of its own.
- */
+/** `init` refuses an unreadable config, so the remedy is recreating it, once per such config. */
 async function recreateConfigTips(
   contentResults: CheckResult[],
   projectDir: string,
@@ -1024,10 +807,8 @@ async function recreateConfigTips(
   );
 }
 
-/** The row name every Layout row is printed under, one per scope. */
 const LAYOUT_ROW_NAME = "Layout";
 
-/** One scope's Layout row: which folder its installation is read from and written to. */
 function toLayoutResult(scope: SourceScope): CheckResult {
   return {
     kind: "layout",
@@ -1036,33 +817,9 @@ function toLayoutResult(scope: SourceScope): CheckResult {
   };
 }
 
-/** The row name the placement and installation-ambiguity findings are printed under. */
 const PLACEMENTS_ROW_NAME = "Placements Offered";
 
-/**
- * Whether this installation is one every other command will act on — as a ROW, not a throw.
- *
- * **It carries the two findings that make the rest of this report a claim about nothing.** A
- * configuration asking for a mode/scope cell its host does not offer is refused by `compile`,
- * `edit` and `update`; a scope holding an installation of each provider is refused by `edit`,
- * `uninstall`, `share` and `eject`. Until this row existed, `doctor` — the one command whose job
- * is saying whether an installation is healthy — walked straight past both and pronounced a clean
- * bill of health on a configuration no command would touch. A diagnostic that disagrees with every
- * command it is diagnosing is worse than a missing one.
- *
- * **It reports and never refuses**: a command that changes nothing must not refuse to LOOK,
- * because this is exactly the state a user needs to see in order to fix it.
- *
- * The message is the refusal's own, word for word, off the same host roster — so what a user is
- * told here and what they are told when `compile` stops are one sentence, not two that agree
- * today.
- *
- * **The summary counts FINDINGS, and said "unusable installation" until 2026-09-22.** The two
- * are not the same number in either direction: one installation with an unofferable placement AND
- * an ambiguous folder contributes two findings, while the ambiguity finding is itself about a
- * scope holding two installations. A count of one noun printed over a list of another is a
- * sentence a reader cannot check against the lines underneath it.
- */
+/** Reports, as a row, the refusals other commands would stop on; never refuses itself. */
 async function checkOfferedPlacements(projectDir: string): Promise<CheckResult> {
   const findings = await everythingThatWouldStopACommandActing(projectDir);
 
@@ -1078,14 +835,6 @@ async function checkOfferedPlacements(projectDir: string): Promise<CheckResult> 
   };
 }
 
-/**
- * The two findings a command would stop on, in one list: a placement no host can fill, and a scope
- * holding an installation of each provider.
- *
- * Asked together rather than in sequence because neither answer depends on the other, and reported
- * together because they are one question for a user — "will anything act on this?" — with two ways
- * of being answered no.
- */
 async function everythingThatWouldStopACommandActing(projectDir: string): Promise<string[]> {
   const [unofferable, ambiguous] = await Promise.all([
     unofferablePlacementsFound(projectDir),
@@ -1099,10 +848,6 @@ function skippedResult(kind: CheckKind): CheckResult {
   return { kind, status: "skip", message: "Skipped (config invalid)" };
 }
 
-/**
- * The skills row when the marketplace never loaded. Distinct from {@link skippedResult}: the
- * config is fine, and what is missing is the matrix to resolve its skills against.
- */
 function sourceUnreachableSkillsResult(): CheckResult {
   return { kind: "skills", status: "skip", message: "Skipped (marketplace unreachable)" };
 }
@@ -1111,16 +856,11 @@ function skippedContentResult(kind: CheckKind): CheckResult {
   return { kind, status: "skip", message: SKIP_CONFIG_UNREADABLE };
 }
 
-/** The content passes that failed this run — the set every operational row is gated against. */
 function failedContentKinds(contentResults: CheckResult[]): ReadonlySet<CheckKind> {
   return new Set(contentResults.filter((r) => r.status === "fail").map((r) => r.kind));
 }
 
-/**
- * An operational row standing down because a content pass it reads through failed, naming what
- * blocked it. `null` — the answer for most rows on most runs — means nothing it reads is broken
- * and it can speak for itself.
- */
+/** `null` when no content pass this row reads through failed. */
 function contentBlockedResult(
   row: CheckKind,
   failedContent: ReadonlySet<CheckKind>,
@@ -1138,10 +878,7 @@ function runContentCheck(check: ContentCheck, projectDir: string): Promise<Check
   return safeCheck(check.kind, async () => toContentResult(check, await check.run(projectDir)));
 }
 
-/**
- * Wrap a check so a thrown exception becomes a `fail` result instead of crashing the
- * whole doctor run. Per-check isolation ensures one broken check does not mask others.
- */
+/** A throw becomes that row's `fail`, so one broken check can't abort the run. */
 async function safeCheck(kind: CheckKind, fn: () => Promise<CheckResult>): Promise<CheckResult> {
   try {
     return await fn();
@@ -1163,12 +900,7 @@ export default class Doctor extends BaseCommand {
     await this.parse(Doctor);
     const projectDir = process.cwd();
 
-    // The shared `verbose()` logger stays OFF, and nothing here switches it on. `doctor` used to,
-    // for the whole run — the mechanical residue of a `--verbose` flag whose removal was meant to
-    // make each row's own DETAILS unconditional, which `formatCheckLine` does on its own. What the
-    // logger added on top of that was the loaders' trace, spliced between the section headings and
-    // the rows they head: for a directory holding nothing, 27 lines of it, every one restating a
-    // row printed underneath it.
+    // `verbose()` stays off: the loaders' trace would interleave with and restate the rows.
     this.printHeader(await this.resolveBrandingName(projectDir));
     const contentResults = await this.runContentChecks(projectDir);
     const operationalResults = await this.runOperationalChecks(projectDir, contentResults);
@@ -1189,12 +921,7 @@ export default class Doctor extends BaseCommand {
     this.log("");
   }
 
-  /**
-   * The config is checked first and alone. A check that reads it to know what to validate would
-   * otherwise ask a file already reported as unreadable — and asking is what emitted the loader's
-   * own failure line once per read, spliced between these rows. Everything that walks installed
-   * content on disk still runs: it says something true whatever the config is in.
-   */
+  /** Config first; checks that read it skip when it is unreadable, the rest still run. */
   private async runContentChecks(projectDir: string): Promise<CheckResult[]> {
     this.log(`${SECTION_INDENT}${SECTION_CONTENT}`);
 
@@ -1220,13 +947,7 @@ export default class Doctor extends BaseCommand {
     return allRows.map((row) => row.result);
   }
 
-  /**
-   * The whole layer stands down for the two findings that leave every row with nothing to say: a
-   * config nobody can read — every row is read out of it, so all of them would be cascades of that
-   * one file — and a marketplace repository with nothing installed, where a marketplace author has
-   * no install for the layer to describe. Every other content error is scoped to the rows that
-   * read what it is about; {@link GatedContentCheck} says which those are, per pass.
-   */
+  /** Skipped whole for an unreadable config or an uninstalled marketplace repository. */
   private async runOperationalChecks(
     projectDir: string,
     contentResults: CheckResult[],
@@ -1250,11 +971,7 @@ export default class Doctor extends BaseCommand {
     return this.runAllChecks(projectDir, configState, failedContent);
   }
 
-  /**
-   * A config file that exists but failed to load also detects as "no project", and
-   * that is a finding rather than an absence — so the skip requires no config file
-   * at all, not merely no usable one.
-   */
+  /** Requires no config file at all: an unloadable one is a finding, not an absence. */
   private async isUninstalledSourceRepo(projectDir: string): Promise<boolean> {
     if (await fileExists(getInstalledConfigPath(projectDir))) return false;
     return isSourceRepo(projectDir);
@@ -1270,16 +987,12 @@ export default class Doctor extends BaseCommand {
 
     const layoutResults = await this.reportLayout(projectDir);
 
-    // Directly under Layout, and above every row that reads content: Layout says which FOLDER this
-    // report is about and this row says whether any command will act on what is in it.
     const placementsResult = await safeCheck("placements", () =>
       checkOfferedPlacements(projectDir),
     );
     this.logCheck(PLACEMENTS_ROW_NAME, placementsResult);
 
-    // loadSource (called by checkSourceReachable) populates the matrix. Run it
-    // before checkSkillsResolved so skills lookups see a populated matrix; if
-    // source fails, skip skills rather than reporting false "not found" errors.
+    // Populates the matrix that the skills check reads, so it runs first.
     const sourceResult = await safeCheck("source", () => checkSourceReachable(projectDir));
 
     const filteredConfig = config ? filterExcludedEntries(config) : null;
@@ -1323,15 +1036,6 @@ export default class Doctor extends BaseCommand {
     ];
   }
 
-  /**
-   * One `Layout` row per scope in play.
-   *
-   * Per scope rather than per machine: a project and the global installation are two
-   * installations, and one row for the two can only name one of their folders.
-   *
-   * Printed right under `Config Valid`, because every row below it is read out of a config file
-   * in the folder this row names.
-   */
   private async reportLayout(projectDir: string): Promise<CheckResult[]> {
     const rows = (await sourceScopesInPlay(projectDir)).map(toLayoutResult);
 
@@ -1341,13 +1045,7 @@ export default class Doctor extends BaseCommand {
     return rows;
   }
 
-  /**
-   * The orphan row, and which question it can answer. With a config it names the compiled
-   * agents that config does not; with no config at all every installed file is unowned and it
-   * names all of them. It skips for the one state left — a config that loads and fails
-   * validation — because there the file that says who owns what has already been rejected, and
-   * an installation must not be called stranded on the strength of one nobody can trust.
-   */
+  /** Skips on an invalid config: ownership can't be judged from a rejected file. */
   private async resolveOrphansCheck(
     config: ProjectConfig | null,
     configState: ConfigState,
@@ -1360,12 +1058,6 @@ export default class Doctor extends BaseCommand {
     return skippedResult("orphans");
   }
 
-  /**
-   * The skills row, and the three states in which it cannot be computed: no config to read the
-   * skills out of, content it resolves against that the layer above has already reported broken,
-   * and a marketplace that never loaded — so there is no populated matrix to resolve them
-   * against, and every configured skill would be reported "not found".
-   */
   private async resolveSkillsCheck(
     config: ProjectConfig | null,
     sourceResult: CheckResult,
@@ -1381,11 +1073,6 @@ export default class Doctor extends BaseCommand {
     return safeCheck("skills", () => checkSkillsResolved(config, matrix, projectDir));
   }
 
-  /**
-   * The plugin row, and the two states in which it cannot be computed: no config to read the
-   * plugin-mode skills out of, and a plugin registry the layer above could not parse — which
-   * resolves as no installs at all, so every configured skill would be reported missing.
-   */
   private async resolvePluginsCheck(
     config: ProjectConfig | null,
     projectDir: string,

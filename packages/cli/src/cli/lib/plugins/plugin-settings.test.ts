@@ -14,8 +14,6 @@ import {
   renderInstalledPluginsRegistry,
 } from "../__tests__/factories/plugin-registry-factories.js";
 
-// Use vi.hoisted so mock fns are available when vi.mock factories run (hoisted to top). Typed
-// against the real functions, so an answer the file system could no longer give is a compile error.
 const { mockFileExists, mockReadFileSafe } = vi.hoisted(() => ({
   mockFileExists: vi.fn<typeof import("../../utils/fs").fileExists>(),
   mockReadFileSafe: vi.fn<typeof import("../../utils/fs").readFileSafe>(),
@@ -133,12 +131,6 @@ describe("plugin-settings", () => {
     });
   });
 
-  /**
-   * The registry read "as seen from one project", which is the reading `PluginHost.listPlugins`
-   * takes. Its sibling below answers the whole registry; this one answers ONE install per key,
-   * and the pair is what stops a reader loading a skill out of another project's cache directory
-   * for a key this project merely has switched on.
-   */
   describe("listPluginInstallsForProject", () => {
     const PLUGINS_DIR = "/plugins-dir";
     const REACT = "web-framework-react@my-marketplace";
@@ -336,8 +328,7 @@ describe("plugin-settings", () => {
     it("should deduplicate installations sharing the same installPath", async () => {
       mockReadFileSafe.mockResolvedValue(
         renderInstalledPluginsRegistry({
-          // The same directory under two records that differ in every other field, so only a
-          // dedupe keyed on the path itself collapses them.
+          // Records differ in every field but the path, so only a path-keyed dedupe collapses them.
           "web-framework-react@my-marketplace": [
             buildUserPluginInstallation("/cache/my-marketplace/web-framework-react/1.0.0", {
               version: "1.0.0",
@@ -380,8 +371,7 @@ describe("plugin-settings", () => {
       mockReadFileSafe.mockResolvedValue(
         renderInstalledPluginsRegistry({
           "web-framework-react@my-marketplace": [
-            // Spelled out: a project-scoped record with no `projectPath` is what no builder
-            // produces, and it is this spec's whole subject.
+            // Inline: no builder produces a project-scoped record without `projectPath`.
             {
               scope: "project",
               installPath: "/cache/my-marketplace/web-framework-react/1.0.0",
@@ -392,10 +382,6 @@ describe("plugin-settings", () => {
         }),
       );
 
-      // Which project the record belongs to is the only question a project-scoped
-      // installation exists to answer. Unanswered, `pickInstallation` declines to match
-      // it and the plugin reads as not installed anywhere — a silence the parse boundary
-      // is where to break.
       await expect(listRegisteredPluginInstalls("/plugins-dir")).rejects.toThrow(
         /Invalid installed_plugins\.json/,
       );

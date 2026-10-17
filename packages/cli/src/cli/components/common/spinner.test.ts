@@ -3,22 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { awaitUnderSpinner } from "./spinner";
 
 /**
- * The spinner's hand-off, watched on a terminal emulator: whatever the spinner drew must be gone,
- * and the cursor back where the spinner started, by the time the await returns.
- *
- * **The race these specs hold still.** Ink paints through a render throttle (32ms at its default
- * 30fps). A spinner frame that arrives inside that window is held, not painted, and `unmount()`
- * paints whatever is held. A spinner cleared with a frame held is therefore drawn again AFTER the
- * clear, and nothing erases it. The spinner's frames are 80ms apart, so on an idle machine a frame
- * almost never lands inside the window; on a starved one a tick that runs late is followed by the
- * next one sooner than the window closes, which is how it surfaced — in full e2e runs only. Here the
- * spinner's clock is advanced twice back to back, so the second frame lands in the window the first
- * one opened, every time: while the load is still running, and while the frame Ink held is being
- * painted.
- *
- * `process.stdout` stands in as the terminal because it is where the commands render: it is made a
- * TTY for the duration, so Ink paints frames as it does for a person, and everything written to
- * it is fed to the emulator rather than printed.
+ * Two spinner frames back to back put the second inside Ink's render throttle, where `unmount()`
+ * would repaint it after the clear. stdout is made a TTY and fed to a terminal emulator.
  */
 
 const TERMINAL_COLUMNS = 80;
@@ -30,10 +16,8 @@ describe("awaitUnderSpinner", () => {
   let stdoutWasTty: boolean;
   let stdoutColumns: number;
   let stdoutRows: number;
-  /** Runs, once armed, whenever Ink writes and waits to hear the write has landed. */
   let whileInkAwaitsAWrite: (() => void) | undefined;
 
-  /** Resolves once the emulator has parsed everything written so far. */
   const painted = () => new Promise<void>((resolve) => terminal.write("", resolve));
 
   const screenRow = (row: number): string => {
@@ -42,7 +26,6 @@ describe("awaitUnderSpinner", () => {
     return line.translateToString(true);
   };
 
-  /** Two spinner frames with no time between them: the second is held by Ink's render throttle. */
   const advanceTwoFramesAtOnce = async () => {
     await vi.advanceTimersToNextTimerAsync();
     await vi.advanceTimersToNextTimerAsync();
@@ -108,8 +91,7 @@ describe("awaitUnderSpinner", () => {
         screenRow(0),
         "the spinner must be on screen for its removal to mean anything",
       ).toContain(LABEL);
-      // Painting what Ink holds means waiting on the terminal, and a spinner still ticking fills
-      // the throttle window again in that wait.
+      // A spinner still ticking refills the throttle window while the held frame is painted.
       whileInkAwaitsAWrite = () => {
         vi.advanceTimersToNextTimer();
         vi.advanceTimersToNextTimer();

@@ -11,11 +11,7 @@ const EXPECTED_ALTERNATIVES_COUNT = 42;
 const EXPECTED_NEEDS_ANY_COUNT = 61;
 const EXPECTED_DISTINCT_SLUG_COUNT = 176;
 
-/**
- * Every slug a rule set names, whichever kind names it, deduplicated. A `requires` rule
- * contributes its own `skill` as well as its `needs` — the reading `relationshipsForSource`
- * narrows against.
- */
+/** A `requires` rule contributes its own `skill` as well as its `needs`. */
 function collectEveryRuleSlug({
   conflicts,
   discourages,
@@ -75,8 +71,6 @@ describe("defaultRules", () => {
     });
   });
 
-  // A group and its category would then state one fence twice, and the two spellings
-  // can drift apart; the category is the one the picker renders.
   it("drops every group a pick-one category now states on its own", () => {
     const survivors = SLUGS_WHOSE_GROUP_A_RADIO_NOW_REPLACES.filter((slug) =>
       defaultRules.relationships.conflicts.some((group) => group.skills.includes(slug)),
@@ -102,9 +96,6 @@ describe("defaultRules", () => {
     ).toStrictEqual([]);
   });
 
-  // Better Auth needs Drizzle, BullMQ needs Redis or Upstash. While one pick-one
-  // category held all three, satisfying both rules at once was impossible and the
-  // wizard offered no way through.
   it("lets a selection satisfy an auth rule and a queue rule at the same time", () => {
     const selection: SkillId[] = [
       "api-auth-better-auth-drizzle-hono",
@@ -127,8 +118,7 @@ describe("defaultRules", () => {
     });
   });
 
-  // Plain `needs` is AND, so one rule says both — a second rule for the same
-  // skill would be an OR-group's shape and would let either half stand alone.
+  // Plain `needs` is AND; a second rule for the same skill would read as OR.
   it("names both halves of an auth skill's surface in a single AND rule", () => {
     expect(
       defaultRules.relationships.requires.filter((r) => r.skill === "better-auth-drizzle-hono"),
@@ -142,8 +132,6 @@ describe("defaultRules", () => {
     ]);
   });
 
-  // A one-option choice and a plain need fence identically, so the file writes
-  // the plain form and a single-member `needsAny` list never appears.
   it("states a lone requirement as a plain need rather than a one-option choice", () => {
     expect(
       defaultRules.relationships.requires.filter((r) => r.skill === "setup-axiom-pino-sentry"),
@@ -158,9 +146,7 @@ describe("defaultRules", () => {
   });
 
   it("spells a mobile requirement out flat rather than leaning on a chain of rules", () => {
-    // Expo requires React Native, which requires React — but nothing computes
-    // that closure yet, so a rule naming only Expo would strand every bare
-    // React Native app. Each list carries every framework that satisfies it.
+    // Nothing computes the requires-closure, so each list names every framework that satisfies it.
     const reanimated = defaultRules.relationships.requires.find((r) => r.skill === "reanimated");
 
     expect(reanimated).toStrictEqual({
@@ -198,11 +184,7 @@ describe("defaultRules", () => {
     expect(defaultRules.relationships.discourages).toStrictEqual([]);
   });
 
-  // The two assertions guard each other and belong in one spec. The total alone cannot see a
-  // slug swapped for another, and the resolution check alone is satisfied for free by an empty
-  // list — which is what a broken collector above would hand it. The total is deliberately a
-  // count rather than 176 literals: a swap that still resolves is a legitimate catalogue edit,
-  // and the rules' contents are pinned entry-by-entry above only where they carry meaning.
+  // The total catches a swapped slug; the resolution check alone passes on an empty list.
   it("names only slugs the vendored catalogue can resolve", () => {
     const unresolvable = everyRuleSlug.filter(
       (slug) => BUILT_IN_MATRIX.slugMap.slugToId[slug] === undefined,

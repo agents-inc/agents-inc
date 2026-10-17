@@ -1,24 +1,4 @@
-/**
- * The CLI's writers call `@workspace/compile`; they do not keep a copy of it.
- *
- * This is the whole acceptance criterion of the extraction. A shared package
- * the editor imports and the CLI does not is a client-side reconstruction with
- * a `package.json`: it renders a preview of bytes nobody produces, and the
- * first person to diff it against a real install stops trusting the thing.
- *
- * Two halves, because either alone passes while the defect is present.
- *
- * **Identity** is what a copy fails. A second declaration of
- * `generateConfigSource` in `config-writer.ts` satisfies every behavioural test
- * in this suite on the day it is written and diverges the first time one side
- * is edited — which is what a shared contract exists to prevent and what no
- * assertion about OUTPUT can see, since the two agree until they do not.
- *
- * **Absence of a local declaration** is what a re-export beside a surviving
- * private copy fails. The module can honestly export the package's function
- * while a stale private one is still what its own callers reach, and identity
- * on the export cannot see past that.
- */
+/** The CLI's writers must BE `@workspace/compile`'s functions and declare no local copy. */
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -68,13 +48,7 @@ import { mergeGlobalConfigs } from "../../config-gate/propagate.js";
 
 const CLI_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
-/**
- * Each symbol the CLI still exports, held against the package value it must BE.
- *
- * Written as pairs rather than as a loop over names so a symbol that stops
- * existing on either side is a compile error at the line that owns it, rather
- * than a lookup that answers `undefined` on both sides and compares equal.
- */
+/** Pairs, not a name loop, so a vanished symbol is a compile error rather than undefined. */
 const RE_EXPORTED: readonly (readonly [string, unknown, unknown])[] = [
   ["generateConfigSource", generateConfigSource, configSource.generateConfigSource],
   [
@@ -126,26 +100,15 @@ const RE_EXPORTED: readonly (readonly [string, unknown, unknown])[] = [
   ["isScopePairCompatible", isScopePairCompatible, seedToConfig.isScopePairCompatible],
   ["seedToInstallSelection", seedToInstallSelection, seedToConfig.seedToInstallSelection],
   ["mergeGlobalConfigs", mergeGlobalConfigs, globalConfig.mergeGlobalConfigs],
-  // A string, so this pair alone compares values; the declaration check on config.ts below is
-  // what holds it to one home.
+  // A string, so this compares values; the declaration check below holds it to one home.
   ["DEFAULT_SOURCE", DEFAULT_SOURCE, sharedRoot.DEFAULT_SOURCE],
-  // The pure half of consts.ts. Objects, so identity means something here — a
-  // copied `STANDARD_FILES` compares equal by value and fails this.
+  // Objects, so identity means something: a copy compares equal by value but fails this.
   ["STANDARD_FILES", STANDARD_FILES, sharedRoot.STANDARD_FILES],
   ["STANDARD_DIRS", STANDARD_DIRS, sharedRoot.STANDARD_DIRS],
   ["DIRS", DIRS, sharedRoot.DIRS],
 ];
 
-/**
- * Every module the extraction empties, and the symbols that must no longer be
- * DECLARED in it. A declaration is `function name(` or `const name =` at the
- * start of a line, optionally exported — which is how each of these reads today.
- *
- * Private helpers are named alongside the exported ones deliberately. They are
- * where a copy actually survives: nobody re-exports `canonicalizeStackOrder`, so
- * an identity check has no handle on it, and it is the function whose absence
- * swapped two rows of a compiled sub-agent.
- */
+/** Symbols no longer DECLARED in each module; private helpers too, where copies survive. */
 const EMPTIED_MODULES: readonly { file: string; symbols: readonly string[] }[] = [
   {
     file: "lib/configuration/config-writer.ts",
@@ -193,8 +156,6 @@ const EMPTIED_MODULES: readonly { file: string; symbols: readonly string[] }[] =
   },
   { file: "utils/string.ts", symbols: ["bytewise"] },
   {
-    // The merge a project install resolves the global config through — the output preview draws
-    // the global `config.ts` with it, so a private copy here would answer for the install alone.
     file: "lib/config-gate/propagate.ts",
     symbols: [
       "mergeGlobalConfigs",
@@ -205,7 +166,6 @@ const EMPTIED_MODULES: readonly { file: string; symbols: readonly string[] }[] =
     ],
   },
   {
-    // What an install does to a carried skill's files, which the preview draws that directory with.
     file: "lib/seed/external-skills.ts",
     symbols: [
       "withInstalledName",
@@ -216,20 +176,13 @@ const EMPTIED_MODULES: readonly { file: string; symbols: readonly string[] }[] =
     ],
   },
   {
-    // The marketplace an install records for a configuration naming none — the output preview
-    // draws the same line, so a second declaration here would let the two records drift.
     file: "lib/configuration/config.ts",
     symbols: ["DEFAULT_SOURCE"],
   },
   {
-    // consts.ts is the root blocker: it derives PROJECT_ROOT with
-    // `fileURLToPath(import.meta.url)` at module load and every renderer
-    // reaches it. Its pure half moves and it re-exports, so no CLI call site
-    // moves — which is only true if these stop being DECLARED here.
     file: "consts.ts",
     symbols: [
       "CLAUDE_DIR",
-      // The source folder's name.
       "SOURCE_ROOT_DIR",
       "LOCAL_SKILLS_PATH",
       "STANDARD_DIRS",
@@ -243,10 +196,7 @@ const EMPTIED_MODULES: readonly { file: string; symbols: readonly string[] }[] =
   },
 ];
 
-/**
- * The package specifier each emptied module has to carry, matched without a
- * trailing separator so a barrel import and a subpath import both satisfy it.
- */
+/** No trailing separator, so a barrel import and a subpath import both match. */
 const PACKAGE_SPECIFIER = '"@workspace/compile';
 
 const readCliSource = (file: string): Promise<string> =>

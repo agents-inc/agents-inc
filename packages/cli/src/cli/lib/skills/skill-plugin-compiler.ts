@@ -43,15 +43,8 @@ function sanitizeSkillName(name: string): string {
 }
 
 /**
- * The optional `author` and `category` a skill's metadata.yaml lends the plugin manifest.
- *
- * Not the `readSkillMetadata` exported from `loading/loader.ts` one import away, whose name this
- * carried until the two proved impossible to tell apart in prose. That one is handed the
- * metadata.yaml's own PATH and answers a verdict — the single judgment of whether a file describes
- * its skill, which `compile`, config-types generation and `doctor` all defer to — and it warns
- * about nothing. This is handed the skill DIRECTORY, answers null for a file that is absent as
- * readily as for one nothing can be read out of, and warns on the way past both, because the
- * compile it feeds runs either way with two manifest fields left off.
+ * Unlike `readSkillMetadata` in `loading/loader.ts`: takes the skill directory, answers null for an
+ * absent or unreadable file, and warns, since the compile runs either way.
  */
 async function readPluginSkillMetadata(skillPath: string): Promise<SkillMetadata | null> {
   const metadataPath = path.join(skillPath, STANDARD_FILES.METADATA_YAML);
@@ -118,12 +111,7 @@ export async function compileSkillPlugin(
   const skillMdContent = await readFile(skillMdPath);
   const frontmatter = parseFrontmatter(skillMdContent, skillMdPath);
 
-  // No cause is inlined here, and that is the difference from the agent side. `parseFrontmatter`
-  // has already warned the exact reason against this same `skillMdPath`, and it is shared by six
-  // call sites — five of which skip the skill rather than throw, so its warn is their only report
-  // and cannot be removed. Repeating the reason in this message would print it twice on every
-  // path that reaches here. What is gone is the hard-coded `Required fields: 'name' and
-  // 'description'`, which named two fields whatever had actually failed.
+  // No cause inlined: `parseFrontmatter` has already warned it for this path.
   if (!frontmatter) {
     throw new Error(
       `Skill '${dirBasename}' has invalid or missing YAML frontmatter in ${STANDARD_FILES.SKILL_MD}. ` +

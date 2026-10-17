@@ -67,9 +67,7 @@ describe("loadAgentDefs", () => {
     expect(mockLoadMergedAgents).toHaveBeenCalledTimes(1);
     expect(mockLoadMergedAgents).toHaveBeenCalledWith("/tmp/source");
 
-    // loadMergedAgents is mocked, so what is pinned here is FORWARDING, not merge
-    // precedence: whatever it returns must reach result.agents entry-for-entry and
-    // unchanged. Precedence belongs to loadMergedAgents' own spec.
+    // loadMergedAgents is mocked: this pins forwarding, not merge precedence.
     expect(result.agents["web-developer"]).toStrictEqual(SOURCE_AGENT);
     expect(result.agents["reviewer"]).toStrictEqual(CLI_ONLY_AGENT);
     expect(result.agents).toStrictEqual({
@@ -83,9 +81,6 @@ describe("loadAgentDefs", () => {
 
     await loadAgentDefs();
 
-    // Agent partials always come from the CLI's own installation, so there is nothing for a
-    // caller to vary: no remote source, and no options. Passing either would take
-    // getAgentDefinitions' remote branch or hand it a field it does not read.
     expect(mockGetAgentDefinitions).toHaveBeenCalledWith();
   });
 

@@ -18,25 +18,9 @@ export type ConfigWriteOptions = {
   sourceResult: SourceLoadResult;
   projectDir: string;
   sourceFlag?: string;
-  /**
-   * What {@link loadAgentDefs} answered, for a caller that has already asked it. Omitted, this
-   * function asks for itself.
-   *
-   * It takes the WHOLE value rather than the roster inside it, so the only thing a caller can
-   * hand over is what that one function produced. This used to be a bare
-   * `Partial<Record<AgentName, AgentDefinition>>` — any map at all — which made "a roster
-   * different from the one the CLI would load" a representable argument, and this function emits
-   * the `AgentName` / `SelectedAgentName` unions from whatever it is given. Deleting the option
-   * instead would cost `edit` a second uncached walk-and-parse of `src/agents/` per run, since
-   * it needs `sourcePath` off the same value for its compile pass — one fact loaded twice, where
-   * the second load is the one that can disagree.
-   */
+  /** What {@link loadAgentDefs} answered, for a caller that already asked; loaded when omitted. */
   agentDefs?: AgentDefs;
-  /**
-   * Authority of `cc edit`'s newConfig over absent entries:
-   * `"all"` (global edit) drops any deselected entry, `"owned"` (project edit) drops deselected
-   * project-owned entries only, `undefined` (init) keeps additive union-preserve.
-   */
+  /** `"all"` drops any deselected entry, `"owned"` only project-owned ones, absent keeps all. */
   authoritativeScope?: AuthoritativeScope;
 };
 
@@ -45,36 +29,15 @@ export type ConfigWriteResult = {
   configPath: string;
   wasMerged: boolean;
   existingConfigPath?: string;
-  /**
-   * What the gated write did: what moved in the global config, which registered
-   * projects it fanned out to, and the recompile it drove in them. The caller
-   * renders it; the work is already done.
-   */
   propagation: GateReport;
 };
 
-/**
- * Builds, merges, and writes project configuration files.
- *
- * Handles the full config pipeline:
- * 1. buildAndMergeConfig() — generates config from the selection, merges with existing
- * 2. loadAgentDefs() — the CLI's own sub-agent definitions, for config-types generation
- * 3. ensureBlankPair() — ensures the global config pair exists (when in project context)
- * 4. writeConfigByScope() — writes config.ts and config-types.ts split by scope,
- *    fans global changes out to registered projects and recompiles their agents
- */
 export async function writeProjectConfig(options: ConfigWriteOptions): Promise<ConfigWriteResult> {
   const { selection, sourceResult, projectDir, sourceFlag } = options;
   const projectPaths = resolveInstallPaths(projectDir, "project");
 
   await ensureDir(path.dirname(projectPaths.configPath));
 
-  // The marketplace is deliberately NOT consulted for this roster. It names the sub-agents the
-  // emitted unions declare, and a marketplace-defined name in `AgentName` is one no compile pass
-  // can honour: agent partials resolve through `getLocalAgentDefinitions`, which answers the
-  // CLI's own root, and the generated `AGENT_NAMES` is built from that same directory. Reading
-  // `sourceResult.sourcePath` here is what made `init` and `edit` emit two different files from
-  // one config (owner ruling 2026-08-21).
   const { agents } = options.agentDefs ?? (await loadAgentDefs());
 
   const mergeResult = await buildAndMergeConfig(
@@ -89,9 +52,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
   const isProjectContext = !isHomeDirectory(projectDir);
 
   if (isProjectContext) {
-    // The blank global pair belongs to the installation THIS project is on: a project
-    // inherits only from the global of its own provider, so creating the other provider's
-    // pair would leave the one it actually reads absent.
+    // A project inherits only from its own provider's global.
     await ensureBlankPair(providerInUse(projectDir));
   }
 
@@ -102,9 +63,7 @@ export async function writeProjectConfig(options: ConfigWriteOptions): Promise<C
     projectDir,
     projectConfigPath: projectPaths.configPath,
     projectInstallationExists: isProjectContext,
-    // The same word the merger above took. It decides the config ROW there and the GLOBAL
-    // config a project write commits here, and the two files disagree the moment it does not
-    // reach both: a row preserved for a skill whose directory the removal diff deleted.
+    // Must match the merger's, or the global config and the project rows disagree.
     ...(options.authoritativeScope !== undefined && {
       authoritativeScope: options.authoritativeScope,
     }),

@@ -124,8 +124,7 @@ describe("buildSkillRefsFromConfig", () => {
       "web-framework": [sa("web-framework-react")],
     };
 
-    // Read from BUILT_IN_MATRIX rather than written out, so a metadata edit cannot redden it; the
-    // negative below keeps the read from being vacuous.
+    // Read from BUILT_IN_MATRIX so a metadata edit cannot redden it; the negative keeps it honest.
     const stated = getSkillById("web-framework-react").usageGuidance;
 
     const result = buildSkillRefsFromConfig(agentStack);
@@ -290,10 +289,7 @@ describe("resolveSkillReferences", () => {
   });
 });
 
-/**
- * Rendered through the shipped `agent.liquid` with the context `buildAgentTemplateContext`
- * builds. The expected text is the template's own, as literals.
- */
+/** Rendered through the shipped `agent.liquid`; the expected text is the template's own. */
 describe("preloaded vs dynamic skills in compiled agent output", () => {
   let engine: Liquid;
 
@@ -660,10 +656,7 @@ describe("resolveAgents", () => {
     expect(result["api-developer"]?.skills).toStrictEqual([]);
   });
 
-  /**
-   * The definition pins `sonnet`, neither the override's `haiku` nor the bundled `opus`, so a
-   * surviving value names which side it came from.
-   */
+  /** The definition pins `sonnet`, unlike override and bundle, so a value names its side. */
   describe("model and effort", () => {
     it("should prefer the config model and effort over the agent metadata default", async () => {
       const tunedConfig = createMockCompileConfig({
@@ -714,11 +707,7 @@ describe("resolveAgents", () => {
     });
   });
 
-  /**
-   * `resolveAgents` lists fields explicitly, and the template renders a missing one as nothing, so
-   * a dropped field is silent. One constant feeds both the fixture and the assertions, so adding a
-   * key checks it everywhere in one edit.
-   */
+  /** One constant feeds fixture and assertions: a field `resolveAgents` drops renders nothing. */
   const TUNED_OPTIONAL_FIELDS = {
     disallowedTools: ["Bash", "WebFetch"],
     permissionMode: "plan",

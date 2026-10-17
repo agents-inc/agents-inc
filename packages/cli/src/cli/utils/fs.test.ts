@@ -60,19 +60,8 @@ describe("fs utilities", () => {
     });
   });
 
-  // `eject` means the user owns the copy, so it has to be writable however the SOURCE was stored.
-  // `fs-extra`'s copy preserves mode, and nothing normalised it: a marketplace checkout on a
-  // read-only mount, in a Nix store path, or under a restrictive umask produced skills the user
-  // could not subsequently edit — and the failure surfaced later, at an unrelated `edit`, naming a
-  // file the user never made read-only. Found 2026-08-23 when a frozen test fixture propagated
-  // `r--r--r--` into 17 spec files' installed projects.
   describe("copy normalises what it writes, because the destination is the user's", () => {
-    /**
-     * Makes a read-only SOURCE writable again so `afterEach` can delete it.
-     *
-     * The subject here is what `copy` leaves at the DESTINATION; the source being read-only is the
-     * precondition, and a precondition that survives the test breaks the next one's teardown.
-     */
+    // Restores the read-only source so `afterEach` can delete it.
     async function unfreeze(dir: string): Promise<void> {
       await chmod(dir, 0o755);
       for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -113,8 +102,6 @@ describe("fs utilities", () => {
       await expect(fsWriteFile(path.join(dest, "nested", "b.md"), "b\n")).resolves.toBeUndefined();
     });
 
-    // ADDS the owner's write bit rather than flattening the mode — a skill that ships an
-    // executable script must still be executable after it is ejected.
     it("keeps an executable bit the source set", async () => {
       const src = path.join(tempDir, "src3");
       const dest = path.join(tempDir, "dest3");

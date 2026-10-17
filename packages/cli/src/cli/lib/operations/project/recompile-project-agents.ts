@@ -6,30 +6,9 @@ import { withCatalogueSeatedFor } from "../../loading/catalogue-seat.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 
 /**
- * Recompiles the PROJECT-scoped agents of a registered project after a global
- * config change was propagated into that project's `config.ts`.
- *
- * Propagation (`propagateGlobalChangesToProjects`) rewrites a registered
- * project's `config.ts` / `config-types.ts` but never touches its compiled
- * `.claude/agents/*.md`, so the compiled agents keep emitting whatever skill
- * reference form the OLD global data dictated. Run this per propagated project,
- * after propagation, to bring the compiled artifacts back in step.
- *
- * Scope: project only. The global agents were already recompiled by the
- * triggering operation's own pass; repeating a global pass per project would
- * rewrite `~/.claude/agents` once per registered project for no gain.
- *
- * Both inputs a compiled agent's bytes depend on are resolved from THIS
- * project's directory, and neither is inherited from the command that triggered
- * the fan-out: `skills` is passed explicitly, because without it
- * `recompileAgents` falls back to `discoverAllPluginSkills`, which sees plugin
- * skills only and would silently strip every global-local and project-local
- * skill; and the catalogue is seated by {@link withCatalogueSeatedFor}, because
- * the render reads it from a module-level singleton no argument reaches.
- *
- * Agent partials always come from the CLI itself (`getLocalAgentDefinitions`
- * returns `sourcePath: PROJECT_ROOT`), so no per-project marketplace source
- * resolution is needed.
+ * Project scope only: the triggering command already recompiled the global agents. Skills and
+ * catalogue are resolved from this project; without explicit `skills`, `recompileAgents` would
+ * see plugin skills only.
  */
 export async function recompileRegisteredProjectAgents(
   projectDir: string,
@@ -49,26 +28,14 @@ export async function recompileRegisteredProjectAgents(
 }
 
 export type PropagatedRecompileSummary = {
-  /** Projects where at least one compiled agent's content actually moved. */
   rewrittenCount: number;
-  /**
-   * Projects the fan-out reached whose agents all came back byte-identical. They
-   * were visited and left alone, which is a different fact from being recompiled
-   * and the one the old single count could not tell apart.
-   */
+  /** Projects visited whose agents all came back byte-identical. */
   unchangedCount: number;
   failedCount: number;
-  /** Per-project warnings in processing order — the caller surfaces them via warn(). */
   warnings: string[];
 };
 
-/**
- * Runs {@link recompileRegisteredProjectAgents} over every propagated project,
- * isolating per-project failures: one project's unreadable config or broken
- * template must not abort the loop or leave the remaining projects stale.
- * Projects are processed sequentially so the collected warnings keep a
- * deterministic per-project order.
- */
+/** One project's failure must not stop the rest; sequential so warnings keep a stable order. */
 export async function recompilePropagatedProjectAgents(
   projectDirs: string[],
 ): Promise<PropagatedRecompileSummary> {

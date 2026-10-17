@@ -38,10 +38,8 @@ const DEFAULT_OUTPUT_FILE = `${PLUGIN_MANIFEST_DIR}/${MARKETPLACE_JSON}`;
 
 const AUTHOR_STRING_PATTERN = /^(.*?)\s*<([^>]+)>\s*(?:\(([^)]+)\))?\s*$/;
 
-/** The entity {@link validateKebabCaseName} names in this command's refusals. */
 const MARKETPLACE_NOUN = "Marketplace";
 
-/** How a reserved name is replaced here: it is read off package.json, and `--name` overrides it. */
 const RESERVED_NAME_WAY_OUT = "set package.json 'name', or pass --name";
 
 const packageAuthorObjectSchema = z.object({
@@ -125,8 +123,7 @@ export default class BuildMarketplace extends BaseCommand {
     this.printHeader(pluginsDir, outputPath);
 
     try {
-      // Everything is read and refused before the first write: a build that fails writes nothing,
-      // so the manifest and the catalogue on disk always describe the same build.
+      // Read and refuse everything before the first write, so manifest and catalogue always agree.
       const marketplace = await this.scanPlugins(pluginsDir, flags["plugins-dir"], identity);
       const catalog = await this.readCatalog(projectRoot);
 
@@ -207,15 +204,7 @@ export default class BuildMarketplace extends BaseCommand {
     };
   }
 
-  /**
-   * The name this marketplace publishes under, refused before anything is written when
-   * it is not one `claude plugin marketplace add` will accept.
-   *
-   * Both halves are judged by the same rule and refused with different sentences: a
-   * `--name` the author typed is an argument they can retype, while a name derived from
-   * package.json is a fact about their package — an npm scoped name is legitimate there
-   * and illegitimate here — so its way out is the flag rather than a package rename.
-   */
+  /** A package.json name that fails gets a different refusal: its way out is `--name`. */
   private resolvePublishableName(
     packageName: string,
     nameOverride: string | undefined,
@@ -278,16 +267,7 @@ export default class BuildMarketplace extends BaseCommand {
     return marketplace;
   }
 
-  /**
-   * The catalogue published beside the manifest.
-   *
-   * Unconditional, and there is no flag to make it otherwise: a consumer
-   * fetching a marketplace cannot tell an author who omitted a flag from a
-   * marketplace that is broken, so an absent catalogue has to mean the second.
-   *
-   * `generatedAt` is stamped rather than carried: see {@link GENERATED_AT_BUILD}
-   * for why a published artefact records a build and not a moment.
-   */
+  /** Unconditional: consumers must be able to read an absent catalogue as a broken marketplace. */
   private async readCatalog(projectRoot: string): Promise<MergedSkillsMatrix> {
     this.log(`Reading the skills for ${CATALOG_JSON}...`);
     const matrix = await loadMarketplaceMatrix(projectRoot);
@@ -343,21 +323,7 @@ type ParsedAuthor = {
   email?: string;
 };
 
-/**
- * Refuses a manifest with no plugins in it, which the reader in this same package will not accept:
- * `marketplaceSchema.plugins` is `z.array(...).min(1)`, so `fetchMarketplace` throws
- * `plugins: Too small` on a file this command wrote and called a success. Every field that schema
- * constrains is a condition this command refuses before writing — `name`, `version` and
- * `owner.name` are the other three, all guarded off package.json. `version` was the one this
- * sentence claimed and did not have: `packageJsonSchema` types it as a bare string and the
- * generator defaults it with `??`, so `""` reached the manifest untouched. This one is only
- * knowable after the scan, which is why it sits here rather than beside them.
- *
- * The two ways in are running before `build plugins` and pointing `--plugins-dir` somewhere else, so
- * the sentence names the directory it scanned and both ways out. Written here rather than in
- * `utils/messages.ts` for the reason the `Missing package.json` refusal above it is: it has one
- * caller and composes nothing another surface has to agree with.
- */
+/** The marketplace schema requires at least one plugin, so an empty manifest is never written. */
 function noPluginsToPublish(pluginsDir: string, pluginsDirFlag: string): string {
   return (
     `No plugins found in ${pluginsDir}. A marketplace with no plugins is refused when it is read ` +
@@ -366,15 +332,7 @@ function noPluginsToPublish(pluginsDir: string, pluginsDirFlag: string): string 
   );
 }
 
-/**
- * Parses a package.json `author` field into name + optional email.
- *
- * npm supports both shorthand strings `"Name <email> (url)"` and object form
- * `{ name, email, url }`. An absent author and one that yields no name both come back
- * with an empty `name`, and the caller refuses on that — one condition, one sentence,
- * written where the refusal is. A missing EMAIL is warned about and carried on from,
- * because `owner.email` is the half the manifest schema leaves optional.
- */
+/** Accepts `"Name <email> (url)"` or `{ name, email, url }`; the caller refuses an empty name. */
 function parseAuthor(author: string | { name: string; email?: string } | undefined): ParsedAuthor {
   if (!author) return { name: "" };
 

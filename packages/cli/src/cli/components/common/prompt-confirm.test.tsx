@@ -1,10 +1,4 @@
-/**
- * `promptValue` settles on whichever of three things happens first: the prompt resolved,
- * the prompt resolved before it was even mounted, or the Ink app exited having chosen
- * nothing. The middle one is not hypothetical — Ink flushes mount effects synchronously,
- * so a component that settles on mount calls back before `render()` has returned the
- * instance the teardown needs.
- */
+// Ink flushes mount effects synchronously, so a prompt can answer before `render()` returns.
 import React, { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -14,13 +8,11 @@ const CHOSEN = "chosen";
 const NOTHING_CHOSEN = "nothing-chosen";
 
 type ProbeProps = {
-  /** When the probe calls back: during its mount effect, or a tick later. */
   when: "on-mount" | "after-mount";
   resolve: (value: string) => void;
   onUnmount: () => void;
 };
 
-/** Stands in for a prompt, with the two moments a real one can answer at. */
 const Probe: React.FC<ProbeProps> = ({ when, resolve, onUnmount }) => {
   useEffect(() => {
     if (when === "on-mount") {

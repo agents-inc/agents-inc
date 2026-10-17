@@ -107,32 +107,15 @@ const DASHBOARD_OPTIONS = [
   { label: "List", value: "list" },
 ] as const satisfies readonly SelectListItem<string>[];
 
-/** The options as the piped dashboard prints them, one bracketed label each. */
 const DASHBOARD_OPTIONS_LINE = `  ${DASHBOARD_OPTIONS.map(({ label }) => `[${label}]`).join("  ")}`;
 
-/** The commands offered by the project dashboard (single source: DASHBOARD_OPTIONS). */
 export type DashboardCommand = (typeof DASHBOARD_OPTIONS)[number]["value"];
 
-/**
- * The dashboard's title: {@link ASCII_LOGO} for an installation resting on the shipped branding,
- * and the configured name in its place for one that white-labels it.
- *
- * **The logo gives way rather than sitting above the name, because it spells the shipped name.**
- * `branding.name` replaces a heading everywhere else it is read — every configured leg of
- * `commands/branding-name-reaches-headings` asserts {@link DEFAULT_BRANDING.NAME} is ABSENT — so
- * painting `AGENTS INC` in block capitals above `Northwind` would leave the vendor's name at the
- * most prominent surface the product has, which is the one thing white-labelling is for.
- *
- * The default path is untouched by construction: {@link resolveBranding} answers
- * {@link DEFAULT_BRANDING.NAME} for a configuration with no `branding` key, so an unbranded
- * install takes the logo arm. A configuration naming the shipped name explicitly takes it too —
- * it asked for the shipped name and gets the shipped presentation of it.
- */
+/** A white-labelled name replaces the logo, because the logo spells the shipped name. */
 const DashboardTitle: React.FC<{ name: string }> = ({ name }) =>
   name === DEFAULT_BRANDING.NAME ? <Text>{ASCII_LOGO}</Text> : <Text bold>{name}</Text>;
 
 type DashboardProps = {
-  /** Everything the screen paints, exactly as {@link formatDashboardText} is handed it. */
   data: DashboardData;
   onSelect: (command: DashboardCommand) => void;
   onCancel: () => void;
@@ -165,15 +148,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, onSelect, onCancel }
   );
 };
 
-/**
- * What this installation is, as the lines both dashboards paint between the title and the menu.
- *
- * **Shared because the two paths had diverged, not for reuse.** `showDashboard` branches on
- * `process.stdin.isTTY`, and only the text branch drew these — so the screen a person sits in
- * front of was less informative than the output they get by piping it, and no assertion could see
- * it, because each path was only ever compared against itself. One producer is what makes the two
- * unable to drift apart again.
- */
+/** Shared by the TTY and piped dashboards so the two cannot drift apart. */
 export function dashboardCountLines(data: DashboardData): string[] {
   const lines = [
     `  Skills:       ${data.skillCount} installed`,
@@ -186,40 +161,29 @@ export function dashboardCountLines(data: DashboardData): string[] {
   return lines;
 }
 
-/** Formats the dashboard summary as plain text lines (for non-interactive/test output). */
 export function formatDashboardText(data: DashboardData): string {
   return [data.name, "", ...dashboardCountLines(data), "", DASHBOARD_OPTIONS_LINE].join("\n");
 }
 
-/**
- * What {@link showDashboard} answers when Ctrl+C ended it: a cancellation, as Ctrl+C is at every
- * other prompt — where Escape, which answers null, only steps back out of the dashboard.
- */
+/** Ctrl+C cancels the run; Escape (null) only leaves the dashboard. */
 const DASHBOARD_INTERRUPTED = "interrupted";
 
-/** How the dashboard was left: a command chosen, Escape (null), or Ctrl+C. */
 type DashboardAnswer = DashboardCommand | typeof DASHBOARD_INTERRUPTED | null;
 
-/**
- * Shows the project dashboard and returns the selected command, null when it was left with Escape,
- * or {@link DASHBOARD_INTERRUPTED} when Ctrl+C ended it.
- * In non-interactive environments (no TTY), prints the summary text and returns null.
- */
+/** Without a TTY, prints the summary and answers null. */
 export async function showDashboard(
   projectDir: string,
   log?: (message: string) => void,
 ): Promise<DashboardAnswer> {
   const data = await getDashboardData(projectDir);
 
-  // Non-interactive: print text summary and exit (CI, piped, tests)
   if (!process.stdin.isTTY) {
     const output = log ?? console.log;
     output(formatDashboardText(data));
     return null;
   }
 
-  // First-wins resolution via promptValue; clearOnResolve repaints a clean
-  // terminal before unmount (dashboard occupies the full height).
+  // clearOnResolve repaints a clean terminal before unmount: the dashboard fills the height.
   const selectedCommand = await promptValue<DashboardAnswer>(
     (resolve) => (
       <Dashboard
@@ -236,26 +200,13 @@ export async function showDashboard(
   return selectedCommand;
 }
 
-/** The argv a dashboard selection runs its command with: Edit opens the editor. */
 function dashboardCommandArgv(command: DashboardCommand): string[] {
   return command === "edit" ? ["--ui"] : [];
 }
 
-/**
- * What a run offered the dashboard came to: no installation to show it for, shown and left or
- * acted on, or cancelled with Ctrl+C — which the caller ends the run on as cancelled.
- */
 export type DashboardFlow = "not-installed" | "shown" | "cancelled";
 
-/**
- * Shared dashboard entry: when the project is already initialized, shows the
- * dashboard and runs the chosen command. Never exits the process — callers decide
- * from the {@link DashboardFlow} it answers (the init hook exits SUCCESS at its own
- * call site for a dashboard shown).
- *
- * A project with no installation of its own is shown the global installation's dashboard, so its
- * Edit opens the global installation in the editor.
- */
+/** Never exits the process: callers decide from the {@link DashboardFlow} it answers. */
 export async function runDashboardFlow(
   projectDir: string,
   config: Interfaces.Config,
@@ -272,56 +223,28 @@ export async function runDashboardFlow(
   return "shown";
 }
 
-/**
- * The marketplace this run was pointed at, as oclif hands it over.
- *
- * `marketplace` is a required key holding `string | undefined` rather than
- * `marketplace?: string` because that is what oclif produces: a non-required flag still gets
- * its key written on the parse result, set to `undefined` when it was not passed. Under
- * `exactOptionalPropertyTypes` the two are different types, and `?` would be describing a
- * producer that never omits the key.
- */
+/** A required key, not `?`: oclif writes the key as `undefined` when the flag is not passed. */
 type SourceFlags = { marketplace: string | undefined };
 
-/** What `init --from` decided to install, as the install sequence takes it. */
 type Selection = {
   result: InstallSelection;
   sourceResult: SourceLoadResult;
-  /**
-   * The marketplace this selection was actually loaded from, which the shared spine records in
-   * the written config. Carried on the value because a shared id may name one the command line
-   * did not, and the install has to record where its skills really came from either way.
-   */
+  /** Where the selection was actually loaded from; a shared id may name a marketplace. */
   sourceFlags: SourceFlags;
-  /**
-   * Skills in the selection that are already installed where it puts them — a global install's
-   * own, which a run from a project records as they are and never installs over.
-   */
+  /** A global install's own skills, recorded as they are and never installed over. */
   installedAlready: ReadonlySet<SkillId>;
 };
 
 /**
- * Which marketplace a shared configuration installs from.
- *
- * A payload names the one its skills were fetched from, because a skill id carries whose skill it
- * is and never where that repository lives — so without the ref the load walks on to the default
- * public catalogue and installs a different repository's skill under the same id.
- *
- * `--marketplace` still outranks it: naming one is an instruction about THIS install, while the
- * payload's ref is a record of where the sharer's came from. A payload that names none leaves the
- * flag undefined, which puts the load back on the rungs it has always walked.
+ * The payload's marketplace, since a skill id never says where its repository lives;
+ * `--marketplace` still outranks it.
  */
 function sharedConfigSourceFlags(flags: SourceFlags, payload: SeedPayload): SourceFlags {
   return { marketplace: flags.marketplace ?? payload.marketplace };
 }
 
 export default class Init extends BaseCommand {
-  /**
-   * The name this run prints itself under, resolved once on {@link install}'s spine because the
-   * closing line is printed several calls below it. Same shape and same reason as `uninstall`'s
-   * field: a plain `string` holding the shipped default rather than an optional every reader
-   * would have to answer for.
-   */
+  /** Resolved once in {@link install}; the closing line is printed several calls below. */
   private brandingName: string = DEFAULT_BRANDING.NAME;
 
   static summary = `Initialize ${DEFAULT_BRANDING.NAME} in this project`;
@@ -362,40 +285,15 @@ export default class Init extends BaseCommand {
     provider: providerFlag(),
   };
 
-  /**
-   * The command in two statements: do the work, then answer for it.
-   *
-   * {@link install} owns every path through the setup and returns however it likes; the exit
-   * code is decided once, here, after the last of them. Deciding it inside would mean deciding
-   * it at each of that method's endings, and an ending added later would inherit the exit-0
-   * default silently — which is the defect this pair exists to close. `edit` is two statements
-   * for the same reason.
-   */
+  /** The exit code is decided once, after every path through {@link install} has ended. */
   async run(): Promise<void> {
     await this.install();
     this.exitIfWorkIncomplete();
   }
 
   /**
-   * The editor, opened on whatever `--from` named — or on nothing when it named nothing.
-   *
-   * **One rule, both commands (owner ruling 2026-08-24): `--ui` opens the command's SUBJECT, and
-   * `--from` is what supplies one.** `edit --ui` alone opens this installation because that is
-   * `edit`'s subject; `init --ui` alone opens the catalogue because a fresh directory has none.
-   * Given an id, either opens that id — which is what makes a shared configuration something a
-   * recipient can look at rather than only apply blind.
-   *
-   * No publish happens here and none is needed. `edit --ui` mints an id because an installation
-   * is not a configuration the store holds yet; an id already IS one, so this is
-   * `editorConfigUrl` and nothing else — no network, no marketplace, no catalogue load.
-   *
-   * The link is PRINTED first and opened second. Over a pipe, in CI, and on a machine with no
-   * desktop session there is no browser to be anybody's — a link nobody can copy is the whole
-   * loss, so opening one is the convenience on top and a failure to open is a warning beside a
-   * link that still works.
-   *
-   * A marketplace named here cannot ride along: the address carries an id and nothing else, so
-   * the line under the link says how to add it in the editor.
+   * Opens the editor on the `--from` id, or on the catalogue. The link is printed before it is
+   * opened, so it still works where no browser can open.
    */
   private async openEditor(projectDir: string, id?: string, marketplace?: string): Promise<void> {
     const url = id === undefined ? EDITOR_URL : editorConfigUrl(id);
@@ -413,57 +311,38 @@ export default class Init extends BaseCommand {
     if (!opened.ok) this.warn(opened.error);
   }
 
-  /**
-   * Every route `init` has, in the order they are tried: the editor for `--ui` and for a
-   * marketplace named without `--from`; for a bare run, the installation's dashboard — or the
-   * editor where nothing is installed; and the install of the configuration `--from` names.
-   */
   private async install(): Promise<void> {
     const { flags } = await this.parse(Init);
     const projectDir = process.cwd();
 
-    // Above everything, including `--ui`: `--provider` names which installation this run creates,
-    // and a run that creates none has nothing for it to name. Refusing here is what leaves the
-    // filesystem untouched at both scopes — an installation half-created by a run that then
-    // refused is the state every later command has to guess about.
+    // First, so a refused `--provider` leaves the filesystem untouched at both scopes.
     this.settleTheProviderForThisRun(flags);
 
-    // Above `ensureConfigReadable`, and above every read below it, because this route needs no
-    // installation at all. A config too broken to load must not stop someone reaching the other
-    // front door, and an id somebody shared is not this directory's business either.
+    // Before `ensureConfigReadable`: a broken config must not block the editor route.
     if (opensTheEditor(flags)) return this.openEditor(projectDir, flags.from, flags.marketplace);
 
-    // Every route below reads the configs first — to show a dashboard, to refuse a shared id, or
-    // to inline the global one. One that exists but cannot be read is recreated, not installed
-    // over, and saying so here is what keeps the raw loader error off the screen.
+    // ABORT: an unreadable config is refused here, before any route reads it.
     await this.ensureConfigReadable(projectDir);
 
-    // Only a bare `init` is diverted to the dashboard. An id is an explicit instruction to install
-    // *that* configuration, so it overrides an existing installation instead.
     if (flags.from === undefined) return this.showDashboardOrOpenEditor(projectDir);
 
-    // Read once on the spine, because the closing line is printed several calls below it. The
-    // degrade arm of `resolveBrandingName` cannot fire here: `ensureConfigReadable` has already
-    // refused every config this would read.
+    // Its degrade arm cannot fire: `ensureConfigReadable` already refused every unreadable config.
     this.brandingName = await this.resolveBrandingName(projectDir);
 
     const selection = await this.selectionFromSharedConfig(flags.from, flags, projectDir);
     if (!selection) this.exit(EXIT_CODES.CANCELLED);
 
-    // A broken constraint is this catalog's verdict on what survived the decode.
     this.reportValidationErrors(selection.result.validation);
 
     await this.handleInstallation(selection);
   }
 
-  /** A bare `init`: the installation's dashboard, or the editor where nothing is installed. */
   private async showDashboardOrOpenEditor(projectDir: string): Promise<void> {
     const dashboard = await runDashboardFlow(projectDir, this.config, (msg) => this.log(msg));
     if (dashboard === "cancelled") this.error("Cancelled", { exit: EXIT_CODES.CANCELLED });
     if (dashboard === "not-installed") await this.openEditor(projectDir);
   }
 
-  /** The editor's marketplace line, or the refusal the install route gives a ref it cannot read. */
   private addMarketplaceLineOrFail(ref: string): string {
     try {
       return addMarketplaceInTheEditor(ref, isLocalSource(ref));
@@ -472,19 +351,7 @@ export default class Init extends BaseCommand {
     }
   }
 
-  /**
-   * Commits this run to the provider `--provider` named, or refuses a flag with nothing to name.
-   *
-   * **`--provider` is a LOCATION parameter, not a feature switch**, and the control that proves it
-   * is `--provider claude`: naming the default out loud installs byte-for-byte what no flag
-   * installs, because all the flag decides is which folder this run creates. Without that half
-   * "the flag selects an installation" would be indistinguishable from "the flag means Codex".
-   *
-   * **And it is meaningless without `--from` (D15).** The provider is chosen in the web app, so
-   * the only run that can be told one is the run that installs what the app produced. It also
-   * gives the placement refusal something to refuse BEFORE anything is written: with `--from`
-   * required, a provider always arrives beside a payload the pre-flight can read.
-   */
+  /** `--provider` only picks which folder an install creates, so it needs `--from`. */
   private settleTheProviderForThisRun(flags: Interfaces.InferredFlags<typeof Init.flags>): void {
     const named = providerNamedBy(flags.provider);
     if (named === undefined) return;
@@ -497,21 +364,8 @@ export default class Init extends BaseCommand {
   }
 
   /**
-   * The `--from <id>` producer: fetch and map — and, at a terminal, one question.
-   *
-   * It installs into a clean directory, which is what the first refusal is: a shared
-   * configuration is installed whole, so a directory already holding one has it applied with
-   * `edit --from` instead, or is uninstalled first. The second is about the LOCATION rather than what is already in it — a global
-   * installation holds only global-scoped content. Both fire before anything is written.
-   *
-   * A global installation ABOVE a project is not in the way. It is not this project's, so the run
-   * adds to it what it lacks and states every entry it already holds as installed (see
-   * `holdInstalledGlobal`).
-   *
-   * Before writing anything the run lists what goes into the project and what into the global
-   * install. At a terminal it then asks, and a no writes nothing. With no terminal — a CI job or a
-   * script — it prints the same lists and carries on: running headless is most of why the flag
-   * exists.
+   * Fetches and maps the `--from` id. Every refusal fires before anything is written; at a
+   * terminal it lists what goes where and asks, and headless it lists and carries on.
    */
   private async selectionFromSharedConfig(
     id: string,
@@ -528,8 +382,7 @@ export default class Init extends BaseCommand {
 
     const sourceFlags = sharedConfigSourceFlags(flags, fetched.payload);
     const { sourceResult, startupMessages } = await this.loadSourceOrFail(sourceFlags);
-    // Before the decode, because a skill the payload CARRIES answers to no catalogue: unseated,
-    // its id is skipped like any other unknown one and its content is never read.
+    // Before the decode, which would otherwise skip carried skills as unknown ids.
     const carriedSkills = this.registerExternalSkillsOrFail(
       fetched.payload,
       sourceResult.matrix,
@@ -540,9 +393,6 @@ export default class Init extends BaseCommand {
       sourceResult.matrix,
     );
 
-    // The location refusal is `BaseCommand`'s, because `edit --from` reaches the same
-    // contradiction through the other door and an invariant enforced on one producer is enforced
-    // nowhere.
     this.refuseProjectScopedContentAtHome(result, projectDir);
 
     const held = holdInstalledGlobal(
@@ -551,8 +401,7 @@ export default class Init extends BaseCommand {
     );
     const arrivingCarried = notInstalledGlobally(carriedSkills, held);
 
-    // The last refusals, and still above the lists and the question: a yes installs what was
-    // listed, so nothing listed may then be refused.
+    // Above the lists: a yes installs what was listed, so nothing listed may then be refused.
     await this.refuseSharedConfigBeforeAsking(
       held.result,
       arrivingCarried,
@@ -560,18 +409,12 @@ export default class Init extends BaseCommand {
       sourceResult,
     );
 
-    // What the load held back, directly above the skips it may explain — a skill this catalogue
-    // "does not know" is often one it ships with a file that will not parse.
+    // Above the skips: an "unknown" skill is often one whose file failed to parse.
     sayCapturedWarnings(startupMessages);
 
-    // Named, not counted. "3 skills were skipped" cannot be acted on; the ids can, and this is the
-    // one moment the user can tell whether what they shared is what they are getting. Worded once,
-    // in `messages.ts`, because `edit --from` reports the same skips about the same wire.
     if (skippedSkillIds.length > 0) this.warn(skippedUnknownSkills(skippedSkillIds));
     if (skippedAgentNames.length > 0) this.warn(skippedUnknownAgents(skippedAgentNames));
 
-    // Below the skips, which are its explanation, and above the lists: a configuration this
-    // catalogue can place nothing of has nothing to list, and nothing to ask about.
     if (selectsNothing(held.result)) {
       this.error(`Configuration '${id}' contains no skills this catalog can install.`, {
         exit: EXIT_CODES.ERROR,
@@ -584,9 +427,7 @@ export default class Init extends BaseCommand {
       return null;
     }
 
-    // After the question and before the install: every refusal this producer makes, and a no,
-    // leave nothing written, and the copy step that follows finds these skills already where they
-    // belong.
+    // After the question, so a refusal or a no leaves nothing written.
     await this.writeCarriedSkills(arrivingCarried);
 
     const arriving = notInstalledGlobally(held.result.skills, held);
@@ -604,11 +445,6 @@ export default class Init extends BaseCommand {
     };
   }
 
-  /**
-   * The two lists — what goes into this project, and what into the global install — then the
-   * global skills skipped as already installed, the held sub-agents a new skill joins, and the
-   * global entries the configuration states otherwise than they are installed, which stay.
-   */
   private logWhatGoesWhere(held: HeldGlobal): void {
     for (const line of installPlanLines(held)) {
       this.log(line);
@@ -621,7 +457,6 @@ export default class Init extends BaseCommand {
     this.log("");
   }
 
-  /** The question under the lists, defaulting to no: nothing has been written yet. */
   private async confirmInstall(): Promise<boolean> {
     const outcome = await promptConfirm(({ onConfirm, onCancel }) => (
       <Confirm
@@ -633,16 +468,7 @@ export default class Init extends BaseCommand {
     return outcome === "confirmed";
   }
 
-  /**
-   * Refuses to install a shared configuration into a directory that already has one.
-   *
-   * Project-scoped detection rather than `detectInstallation`, whose global fallback would refuse
-   * every clean project on a machine with a global install. A global install above the project is
-   * added to rather than refused over — see {@link selectionFromSharedConfig}.
-   *
-   * This runs before the fetch: there is nothing to learn from the network about a directory that
-   * is already spoken for.
-   */
+  /** Project-scoped: `detectInstallation`'s global fallback would refuse every clean project. */
   private async refuseInstalledProject(projectDir: string, id: string): Promise<void> {
     const installation = await detectProjectInstallation(projectDir);
     if (!installation) return;
@@ -652,11 +478,6 @@ export default class Init extends BaseCommand {
     });
   }
 
-  /**
-   * The decode refuses a payload the config model has nowhere to write (see
-   * `seedToInstallSelection`). That is a failure of this command, reported with this command's exit
-   * code rather than left to surface as an unhandled throw.
-   */
   private decodeSeedOrFail(payload: SeedPayload, matrix: MergedSkillsMatrix): SeedMapping {
     try {
       return seedToInstallSelection(payload, matrix);
@@ -665,14 +486,6 @@ export default class Init extends BaseCommand {
     }
   }
 
-  /**
-   * Seats the catalogue entries the payload carries with it, or refuses the run.
-   *
-   * The refusals are `registerExternalSkills`' own — a carried skill asked for as a plugin, which
-   * no marketplace serves, and a carried skill claiming an id the loaded catalogue already owns,
-   * whose bytes would be written over that catalogue's own copy — and are reported with this
-   * command's exit code for the same reason the decode's is.
-   */
   private registerExternalSkillsOrFail(
     payload: SeedPayload,
     matrix: MergedSkillsMatrix,
@@ -685,13 +498,10 @@ export default class Init extends BaseCommand {
     }
   }
 
-  /** Writes the skills the payload brought with it, and says which they were. */
   private async writeCarriedSkills(carried: ExternalSkillInstall[]): Promise<void> {
     if (carried.length === 0) return;
 
     await writeExternalSkills(carried);
-    // Named rather than counted, like the skips: these are the entries no catalogue can explain,
-    // so this line is the only place the user learns what arrived with the configuration itself.
     this.log(carriedSkillsWritten(carried.map((skill) => skill.id)));
   }
 
@@ -700,7 +510,7 @@ export default class Init extends BaseCommand {
   ): Promise<{ sourceResult: SourceLoadResult; startupMessages: StartupMessage[] }> {
     try {
       const loaded = await loadSource({
-        // The one load that may CHOOSE a marketplace rather than read the stored one.
+        // The one load that may choose a marketplace rather than read the stored one.
         caller: "init",
         ...(flags.marketplace !== undefined && { sourceFlag: flags.marketplace }),
         projectDir: process.cwd(),
@@ -729,10 +539,7 @@ export default class Init extends BaseCommand {
 
     this.logInstallPlan(installMode, ejectedSkills, pluginSkills);
 
-    // Resolve marketplace up front — BEFORE any filesystem mutation. If
-    // resolution fails in mixed mode, the hard-error must fire before
-    // `copyEjectSkillsStep` copies anything to `.claude/skills/`, otherwise
-    // we leave an orphaned half-install with no config.ts to recognise it.
+    // Before any copy, so a failed resolution cannot leave a half-install with no config.ts.
     const resolvedMarketplace =
       pluginSkills.length > 0
         ? await this.requireMarketplaceOrExit(
@@ -756,8 +563,7 @@ export default class Init extends BaseCommand {
         sourceResult.matrix,
       );
     }
-    // The shared install reporter hard-errors on any failure, so reaching here with
-    // a resolved marketplace means plugin mode fully succeeded.
+    // The install reporter hard-errors on any failure, so reaching here means plugins succeeded.
     const pluginModeSucceeded = resolvedMarketplace !== null;
 
     try {
@@ -781,11 +587,7 @@ export default class Init extends BaseCommand {
     }
   }
 
-  /**
-   * The permission notice, where there is one to show. It is an Ink app with no exit of its own,
-   * so one frame is rendered and let go: the notice is information, not a prompt, and `--from`
-   * has to complete over a pipe and in CI.
-   */
+  /** One frame, then unmount: the notice has no exit of its own and `--from` must run headless. */
   private async showPermissionNotice(projectDir: string): Promise<void> {
     const permissionWarning = await checkPermissions(projectDir);
     if (!permissionWarning) return;
@@ -810,10 +612,6 @@ export default class Init extends BaseCommand {
     );
   }
 
-  /**
-   * Copies the ejected skills and says how many landed at each scope, in the words
-   * {@link skillsCopiedLine} chooses.
-   */
   private async copyEjectSkillsStep(
     localSkills: InstallSelection["skills"],
     projectDir: string,
@@ -872,18 +670,6 @@ export default class Init extends BaseCommand {
     return { configResult, compileResult, agentScopeMap };
   }
 
-  /**
-   * What this host could not carry, after the compile summary and once per run.
-   *
-   * `init --from` is the door a configuration somebody ELSE wrote arrives through, so it is
-   * precisely the run that must not be silent about the parts of it that did not survive the
-   * translation. `compile` prints the same lines in the same order — see
-   * {@link hostCompileNotices}, which is the one place either of them gets them from.
-   *
-   * A Claude install expresses every setting and carries every sub-agent, so it gets one line at
-   * most: the trust dialog, while its project sub-agents' completion gate cannot run in this
-   * folder.
-   */
   private async reportWhatThisHostCannotCarry(cwd: string): Promise<void> {
     for (const notice of await hostCompileNotices(providerInUse(cwd), cwd)) {
       this.log(notice);
@@ -891,16 +677,8 @@ export default class Init extends BaseCommand {
   }
 
   /**
-   * What the compile pass did, including the half this command used to drop.
-   *
-   * It read `compiled` and nothing else, so a pass that lost a sub-agent printed a number that
-   * looked perfectly right — `compiled` counts successes, so it is correct either way — and the
-   * failures reached no surface at all: no count, no reason, no exit code. A user's FIRST
-   * install could silently land a roster missing a sub-agent.
-   *
-   * The compile is the last thing `init` does, so a failure here cannot be answered by aborting:
-   * the skills are on disk and `config.ts` and `config-types.ts` describe them. What is owed is
-   * the account, which {@link BaseCommand.exitIfWorkIncomplete} prints and answers for.
+   * Failures are recorded rather than aborted on: the skills and config are already written, and
+   * {@link BaseCommand.exitIfWorkIncomplete} answers for them.
    */
   private reportCompilation(compileResult: CompilationResult): void {
     const { compiled, failed, warnings } = compileResult;
@@ -915,8 +693,7 @@ export default class Init extends BaseCommand {
     for (const warning of warnings) {
       this.warn(warning);
     }
-    // Recorded off `failed` rather than off the warnings just printed: `warnings` also carries
-    // entries that are not failures, and the ending must not file those as work owed.
+    // Off `failed`, not `warnings`: warnings also carry entries that are not failures.
     this.recordIncompleteWork(agentsNotCompiled(failed), INCOMPLETE_WORK_RECOVERY.RECOMPILE);
   }
 
@@ -928,9 +705,7 @@ export default class Init extends BaseCommand {
     pluginModeSucceeded: boolean,
     copyResult: SkillCopyResult | null,
   ): void {
-    // A run with work owed ends on the failure account instead — `initialized successfully!`
-    // over a roster missing a sub-agent is the claim being withdrawn, not a line beside it.
-    // Where the install landed is still reported below: that is what the account is about.
+    // A run with work owed ends on the failure account instead of claiming success.
     if (!this.hasIncompleteWork) this.log(`${initSucceeded(this.brandingName)}\n`);
 
     const isEjectOutput =
@@ -942,18 +717,7 @@ export default class Init extends BaseCommand {
     this.reportConfiguration(configResult.configPath, agentScopeMap);
   }
 
-  /**
-   * Names the config that actually holds this install's assignments, and where a
-   * recompile of them has to be run from.
-   *
-   * Split by the same `agentScopeMap` the two reporters above split on, because the
-   * same scope decides both. A project config's `stack` is filtered down to
-   * project-scoped agents on the way out, so a wholly GLOBAL install leaves it
-   * carrying no assignment at all — naming it sends the user to a file with nothing
-   * in it — and `compile` in this cwd runs the PROJECT pass, which recompiles no
-   * global agent. At the home root both scopes resolve to one file and one pass, so
-   * there is nothing to split and the project wording stands.
-   */
+  /** Names the config(s) holding this install's assignments, split by agent scope. */
   private reportConfiguration(
     projectConfigPath: string,
     agentScopeMap: Map<AgentName, SkillScope>,
@@ -978,17 +742,7 @@ export default class Init extends BaseCommand {
     this.log("");
   }
 
-  /**
-   * Reports where the skills actually landed. `copyLocalSkills` splits by scope,
-   * so a default install driven from a project directory writes every skill
-   * under HOME — reporting the project path there names a directory that was
-   * never written.
-   *
-   * This block is a filesystem listing, so the entries are the on-disk directory
-   * names — skill ids, not display names. `copySkillsToLocalFlattened` names each
-   * destination directory after `skill.id`, so a user can copy any line and `cd`
-   * into it.
-   */
+  /** One block per scope that received skills; entries are on-disk directory names (ids). */
   private reportSkillsCopied(copyResult: SkillCopyResult): void {
     const cwd = process.cwd();
     const groups = isHomeDirectory(cwd)
@@ -1013,16 +767,7 @@ export default class Init extends BaseCommand {
     }
   }
 
-  /**
-   * Reports where the agents actually landed, mirroring the scope split
-   * `compileAgentsAllScopes` performs: one pass at the home root, otherwise a
-   * global pass under HOME and a project pass under the project directory.
-   *
-   * **The EXTENSION is the host's, per scope, and was Claude's literal `.md` until C5.** This
-   * block describes the filesystem, so every line under a path header has to be a name a user can
-   * copy out and open — and a Codex install printed `web-developer.md` above a directory holding
-   * `web-developer.toml`. The two scopes are read separately because they can be on two hosts.
-   */
+  /** Mirrors `compileAgentsAllScopes`' scope split; each scope's host picks its file extension. */
   private reportAgentsCompiled(
     compiled: AgentName[],
     agentScopeMap: Map<AgentName, SkillScope>,
@@ -1052,53 +797,27 @@ export default class Init extends BaseCommand {
   }
 }
 
-/**
- * Whether a run takes the editor route whatever is installed: `--ui`, or a marketplace named
- * without `--from` — that flag acts only beside an install, and the editor is where one is added
- * otherwise.
- */
+/** `--ui`, or `--marketplace` without `--from`: the editor is where a marketplace is added. */
 function opensTheEditor(
   flags: Pick<Interfaces.InferredFlags<typeof Init.flags>, "ui" | "from" | "marketplace">,
 ): boolean {
   return flags.ui || (flags.from === undefined && flags.marketplace !== undefined);
 }
 
-/**
- * Whether a selection holds nothing to install. A sub-agent is installable on its own — it has
- * front-matter, a prompt and a compiled file without owning a single skill — so only a selection
- * with neither is empty.
- */
+/** A sub-agent is installable without skills, so only a selection with neither is empty. */
 function selectsNothing(result: InstallSelection): boolean {
   return result.skills.length === 0 && result.selectedAgents.length === 0;
 }
 
 /**
- * Whether this run's compile covers the global install as well as the project — `edit`'s rule
- * (`compilesGlobalScope` in `commands/edit.tsx`), for the same reason.
- *
- * From a project, the global install is held as installed, so its sub-agents are recompiled only
- * when the write added something they are built from. Recompiled anyway, they would be built from
- * the catalogue THIS run loaded rather than the one the global install was made from — a skill
- * that catalogue does not ship is described by its fallback guidance instead of its own — and a
- * project run that added nothing to the global install would still have rewritten it.
+ * From a project, global sub-agents recompile only when the write changed their inputs;
+ * otherwise they would be rebuilt from this run's catalogue, not the one they were made from.
  */
 function compilesGlobalScope(cwd: string, written: GateReport): boolean {
   return isHomeDirectory(cwd) || movedGlobalAgentInputs(written);
 }
 
-/**
- * The line an eject copy ends on: how many skills landed, and where.
- *
- * A copy that landed at one scope names the directory `copyLocalSkills` wrote it into, read the
- * way that function reads it — `resolveInstallPaths` at the scope — so it is the folder the
- * `Skills copied to:` block beneath names too. The line spelled the directory from the scope ROOT
- * until 2026-10-03, so a run from a project that copied every skill under HOME printed
- * `.claude/skills/`, which, read where the command was typed, names the project's own empty
- * folder. A copy that landed at both scopes names no directory, because two scopes have two and
- * the block beneath lists each.
- *
- * In a mixed install the copies are its "local" half, beside the plugins installed after them.
- */
+/** Names the directory only when every skill landed at one scope; the block beneath lists both. */
 function skillsCopiedLine(
   copyResult: SkillCopyResult,
   installMode: InstallMode,
@@ -1118,13 +837,7 @@ function skillsCopiedLine(
   return `Copied ${copied} to ${resolveInstallPaths(projectDir, landedAt).skillsDir}/${lineEnd}`;
 }
 
-/**
- * Where one scope's sub-agents landed, and the extension the host that reads them writes.
- *
- * One read per scope, exactly as `resolveInstallPaths` reads one beside it: a project on Codex
- * under a global on Claude puts `.toml` in one block and `.md` in the other, and one answer for
- * both is how a path block names a file that is not there.
- */
+/** Per scope, because the project and global installs can be on different hosts. */
 function compiledInto(cwd: string, scope: SkillScope): { dir: string; extension: string } {
   return {
     dir: resolveInstallPaths(cwd, scope).agentsDir,
@@ -1132,17 +845,11 @@ function compiledInto(cwd: string, scope: SkillScope): { dir: string; extension:
   };
 }
 
-/** The two config files an install can write, as the closing block refers to them. */
 type ConfigPaths = { global: string; project: string };
 
-/** How this install's sub-agents fall across the two scopes, seen from the directory it ran in. */
 type AgentScopeSplit = { globalAgentCount: number; isGlobalOnly: boolean };
 
-/**
- * At the home root the two scopes resolve to ONE config file and ONE compile pass, so there
- * is nothing to split and the split reports none — which is what leaves the project wording
- * standing there unchanged. Same fork `reportAgentsCompiled` makes over the same question.
- */
+/** At the home root both scopes are one config and one pass, so there is no split. */
 function splitAgentScopes(cwd: string, agentScopeMap: Map<AgentName, SkillScope>): AgentScopeSplit {
   if (isHomeDirectory(cwd)) return { globalAgentCount: 0, isGlobalOnly: false };
 
@@ -1154,23 +861,14 @@ function splitAgentScopes(cwd: string, agentScopeMap: Map<AgentName, SkillScope>
   };
 }
 
-/**
- * The config file(s) this install's assignments actually landed in. A wholly global install
- * has none in the project file — the writer filters its `stack` down to project-scoped
- * agents — so naming it would send the user to a file with nothing in it.
- */
+/** The project `stack` holds only project-scoped agents, so a global-only install skips it. */
 function configsHoldingAssignments(split: AgentScopeSplit, paths: ConfigPaths): string[] {
   if (split.isGlobalOnly) return [paths.global];
   if (split.globalAgentCount > 0) return [paths.global, paths.project];
   return [paths.project];
 }
 
-/**
- * What changing an assignment takes, in the order it takes it. The compile step is the half
- * that has to be scope-aware: `compile` run in a project directory performs the PROJECT pass
- * only, so it recompiles no global agent — which `globalScopedAgentsHint` already says, in
- * the words `compile` itself says it in when it lands in the mirror image of this state.
- */
+/** `compile` in a project recompiles no global agent, hence the global hint. */
 function customizationSteps(
   split: AgentScopeSplit,
   globalConfigPath: string,
@@ -1188,18 +886,7 @@ function customizationSteps(
 }
 
 export type DashboardData = {
-  /**
-   * The name the dashboard is titled with — `branding.name` where the configuration supplies one
-   * and {@link DEFAULT_BRANDING.NAME} otherwise. Carried on the data rather than read by either
-   * consumer so {@link formatDashboardText} stays a pure function of what it is handed, and so
-   * the one place that reaches a configuration is the one that already loads it.
-   *
-   * **Both of {@link showDashboard}'s branches read it, and that is the invariant to keep.** This
-   * field was resolved for the piped branch alone for as long as it was, while the `Dashboard`
-   * component was handed only its callbacks and painted {@link ASCII_LOGO} — so the dashboard a
-   * person actually sees was the one surface `branding.name` never reached, and every spec on the
-   * subject drove through a pipe and could not see it.
-   */
+  /** `branding.name`, or {@link DEFAULT_BRANDING.NAME}; both dashboard branches read it. */
   name: string;
   skillCount: number;
   agentCount: number;
@@ -1207,18 +894,9 @@ export type DashboardData = {
   source?: string;
 };
 
-/**
- * Gathers dashboard data from the installation and project config.
- *
- * Both counts come from the same scope-aware installation so the summary cannot
- * mix a project-only figure with a global one — a default install driven from a
- * project directory puts every skill and agent under HOME.
- */
+/** Both counts come from one scope-aware installation, so project and global never mix. */
 export async function getDashboardData(projectDir: string): Promise<DashboardData> {
-  // ABORT is the posture on `resolveBranding`, and it is the one already in force: the
-  // `loadProjectConfig` beside it raises for the same file, so a configuration that cannot be
-  // evaluated fails this call whether branding is read or not. Nothing is degraded here that was
-  // not already, and the dashboard is only reached once an installation has been detected.
+  // ABORT: an unloadable config throws here, as `loadProjectConfig` beside it already would.
   const [info, loaded, branding] = await Promise.all([
     getInstallationInfo(),
     loadProjectConfig(projectDir),

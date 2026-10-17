@@ -84,12 +84,7 @@ export default class Compile extends BaseCommand {
     setVerbose(flags.verbose);
     const cwd = process.cwd();
 
-    // First, and before anything reads a folder: every path below resolves its provider through
-    // `providerInUse`, which answers by ROSTER ORDER when a scope holds one installation of each —
-    // so a compile with no flag rewrote the Claude one of a project that also has a Codex one, and
-    // said nothing anywhere about which it had been about. `edit`, `uninstall`, `share` and
-    // `eject` have refused this since C7b and `doctor` reports it as a finding; these two were the
-    // hole, and they are the two that WRITE.
+    // First: `providerInUse` below picks by roster order when a scope holds both providers.
     await refuseAnAmbiguousInstallation(
       cwd,
       "compile",
@@ -105,17 +100,7 @@ export default class Compile extends BaseCommand {
     await this.reportWhatThisHostCannotCarry(installations, cwd);
   }
 
-  /**
-   * What this host could not carry, once per run and after the passes.
-   *
-   * AFTER, because the trust half of it is a question about the tree as it now stands: a project
-   * whose role files this run just wrote is exactly the one whose user has to trust it, and asking
-   * before the write would answer about the previous state.
-   *
-   * `init` prints the same lines in the same order — {@link hostCompileNotices} is the one place
-   * either of them gets them from, so the two commands cannot drift into saying different things
-   * about one tree.
-   */
+  /** Runs after the passes, so the trust notice describes the tree this run wrote. */
   private async reportWhatThisHostCannotCarry(
     installations: BothInstallations,
     cwd: string,
@@ -132,9 +117,7 @@ export default class Compile extends BaseCommand {
     try {
       installations = await detectBothInstallations(cwd);
     } catch (error) {
-      // A corrupt config (file present but unparseable) must not let compile run
-      // config-less — that resurrects every deselected agent. Hard-error naming
-      // the offending file before any compilation happens.
+      // Compiling config-less would resurrect every deselected agent.
       if (error instanceof ConfigLoadError) {
         this.error(error.message, { exit: EXIT_CODES.ERROR });
       }
@@ -151,39 +134,19 @@ export default class Compile extends BaseCommand {
   }
 
   /**
-   * Refuses a configuration asking for a mode/scope cell its own host does not offer, BEFORE
-   * anything is discovered, compiled or written.
-   *
-   * **The install path's pre-flight cannot cover this, and nothing ties a folder's contents to
-   * its name.** `config.ts` carries no provider field — the ruling forbids one, so that a saved
-   * configuration installs onto either provider — which means a user who copies
-   * `.agents-inc/claude/` to `.agents-inc/codex/` has a Codex installation holding a
-   * configuration that never met `init --from --provider codex`'s refusal. This is the command
-   * that turns a configuration into files on disk, so it is the one that has to ask again.
-   *
-   * Both scopes, because a project inherits its global's rows and an unofferable row in either
-   * file is a row this run would act on. Each installation is asked about its OWN host: the two
-   * scopes can be on different providers, and asking one host about the other's configuration is
-   * how a refusal fires on a cell that is offered where the skill actually lives.
+   * Re-checked here because config.ts names no provider, so a copied installation folder can hold
+   * a configuration its host never vetted at install.
    */
   private async refuseUnofferablePlacements(cwd: string): Promise<void> {
     const [finding] = await unofferablePlacementsFound(cwd);
     if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
-  /**
-   * Names where the marketplace came from — the project's own config first, then the global
-   * one, then the default. `compile` takes no `--marketplace`: it recompiles an installation
-   * that already recorded which marketplace its skill references answer to, and reading
-   * a different one would write agents against a catalogue config.ts does not name.
-   */
+  /** No `--marketplace`: an installation recompiles against the marketplace config.ts recorded. */
   private async resolveAndLogSource(projectDir: string): Promise<void> {
     this.log(STATUS_MESSAGES.RESOLVING_SOURCE);
     try {
-      // ABORT on an unreadable config, and unreachable with one: `detectInstallation` reads the
-      // same file first and already hard-errors, at both scopes — verified by hand at both.
-      // The posture is recorded anyway, because what makes it unreachable is a guard in another
-      // command's private helper rather than anything visible from here.
+      // ABORT on an unreadable config (already refused earlier by `detectInstallations`).
       const sourceConfig = await resolveSource({ caller: "stored", projectDir });
       this.log(`Marketplace: ${sourceConfig.sourceOrigin}`);
     } catch (error) {
@@ -223,13 +186,7 @@ export default class Compile extends BaseCommand {
     }
   }
 
-  /**
-   * Discovers what this pass compiles from, and refuses the run when any installed
-   * skill's metadata.yaml exists but describes no skill — before a count is printed,
-   * an agent is written or the type unions are regenerated. Skipping such a skill is
-   * what the config-types pass already does; loading it anyway is what this pass
-   * used to do, so a single run both loaded and skipped the same file.
-   */
+  /** Refuses the run, before anything is written, when an installed skill's metadata is unusable. */
   private async discoverAllSkills(projectDir: string): Promise<DiscoveredSkills> {
     this.log(STATUS_MESSAGES.DISCOVERING_SKILLS);
     const result = await discoverInstalledSkills(projectDir);
@@ -241,11 +198,7 @@ export default class Compile extends BaseCommand {
     return result;
   }
 
-  /**
-   * Names each offending file and its reason, then exits. The detail is LOGGED and
-   * only the refusal is raised: oclif hard-wraps error text at the terminal width,
-   * and a path broken across two lines is one nobody can copy.
-   */
+  /** Detail is logged, not raised: oclif hard-wraps error text, which breaks copyable paths. */
   private refuseUnusableSkillMetadata(entries: UnusableSkillMetadata[]): never {
     for (const entry of entries) {
       this.log(skillMetadataUnusableDetail(entry));
@@ -253,12 +206,7 @@ export default class Compile extends BaseCommand {
     this.error(skillMetadataUnusableError(entries), { exit: EXIT_CODES.ERROR });
   }
 
-  /**
-   * A stack skill that is not among the discovered skills is dropped from every
-   * agent that references it. The resolver only records that at verbose level, so
-   * the default output would claim a successful recompile of an agent that no
-   * longer matches config.ts. Name each dropped skill instead.
-   */
+  /** The resolver drops a missing stack skill silently except at verbose level. */
   private async warnUnresolvedStackSkills(
     projectDir: string,
     allSkills: SkillDefinitionMap,
@@ -279,15 +227,8 @@ export default class Compile extends BaseCommand {
   }
 
   /**
-   * `config.ts` is the hand-editable half of the pair, so it can declare a pair the scope
-   * rule forbids: a GLOBAL sub-agent whose stack carries a PROJECT-scoped skill. The
-   * compile-time filter in `buildCompileAgents` drops that reference on the way to the
-   * resolver and `compile` rewrites nothing in `config.ts`, so the row survives and is
-   * dropped again on every future run — while the recompile summary reports a clean pass
-   * over an agent that no longer carries what its own config says it does.
-   *
-   * The sibling of {@link warnUnresolvedStackSkills} one layer over: there the skill is
-   * missing from disk, here it is present and unreachable from that sub-agent.
+   * A hand-edited config.ts can give a global sub-agent a project-scoped skill, which the compile
+   * filter silently drops on every run.
    */
   private async warnScopeDroppedStackPairs(projectDir: string): Promise<void> {
     const loaded = await loadProjectConfig(projectDir);
@@ -298,12 +239,7 @@ export default class Compile extends BaseCommand {
     }
   }
 
-  /**
-   * The project pass compiled no agents, but the project config may still declare
-   * global-scope agents whose stack lives in the global config. Without a pointer
-   * the "No agents to recompile" line reads as a silent no-op after a global stack
-   * change, so name the global context and the count.
-   */
+  /** Points at global-scope agents so "No agents to recompile" doesn't read as a silent no-op. */
   private async hintGlobalScopedAgents(projectDir: string): Promise<void> {
     const loaded = await loadInstalledConfig(projectDir);
     if (!loaded) return;
@@ -317,40 +253,9 @@ export default class Compile extends BaseCommand {
   }
 
   /**
-   * Loads this pass's skills catalogue and returns it, seating the module-level
-   * singleton (`matrix` in `matrix-provider.ts`) on the way — which is what the
-   * RENDER needs, because `compileAgents` reaches the catalogue through
-   * `stacks-loader.ts`'s `statedUsageFor`/`liveCategoryOf` and those read the
-   * singleton directly rather than any value a caller threads through. Called
-   * first, before anything in the pass renders. Left unseated, the singleton stays
-   * at its process-start default (`BUILT_IN_MATRIX`, which never carries a local
-   * skill), so a locally-installed skill's stated `usageGuidance` silently falls
-   * back to the generic per-category placeholder — different bytes from what
-   * `install` last wrote, so a following `compile` rewrites every agent that
-   * carries one.
-   *
-   * Scoped to `pass.projectDir`, never the invoking `cwd`: a global pass must seat
-   * the global installation's own local skills, not the invoking directory's.
-   *
-   * `skipExtraSources: true` is NOT a divergence from a full multi-source
-   * load: extra-source loading only annotates each skill's
-   * `availableSources`/`activeSource` — it never adds skills
-   * or categories to the matrix, and neither the render path nor the config-types
-   * writer ever reads those annotations, so the emitted output is byte-identical
-   * either way (pinned by the skipExtraSources parity test in
-   * local-installer.test.ts). Skipping avoids fetching every registered extra
-   * source (network on a cold cache, plus unreachable-remote warnings) on this
-   * offline compile path. `matrixOnly` keeps the default-source path itself
-   * offline too.
-   *
-   * The seated matrix is RETURNED as well as seated, and `null` on a failure, so
-   * the two halves can take the postures they each need. The RENDER degrades: it
-   * reads the singleton whatever happens, and falls back to the same
-   * category-placeholder behavior compile had before this seat existed. The type
-   * refresh ABORTS on `null` — it derives every union from the catalogue, so with
-   * none loaded it would narrow them to whatever the built-in catalogue happens
-   * to carry, dropping every marketplace-only and local category and, at global
-   * scope, propagating that into every registered project.
+   * Seats the matrix singleton the render reads (else local skills lose their stated usage), and
+   * returns it, `null` on failure: the render degrades, the type refresh skips. Extra sources only
+   * annotate skills, so skipping them keeps output identical and the path offline.
    */
   private async seatMatrixForPass(projectDir: string): Promise<MergedSkillsMatrix | null> {
     try {
@@ -367,24 +272,8 @@ export default class Compile extends BaseCommand {
   }
 
   /**
-   * The documented hand-edit workflow is "edit config.ts, then run compile", and
-   * the type unions in config-types.ts are derived from config.ts — so a compile
-   * pass that leaves them untouched strands stale unions after a hand-edit.
-   * Regenerates them from the scope's persisted config exactly as
-   * `writeConfigByScope` would: standalone narrowed unions at global scope, import-and-
-   * extend at project scope. A failed refresh downgrades to a warning — the
-   * compiled agents are already written and remain valid; only the type unions
-   * may still be stale.
-   *
-   * Takes the catalogue {@link seatMatrixForPass} returned rather than reading the
-   * singleton it seated, so this refresh cannot run against a seat that is not the
-   * one this pass asked for. `null` means the seat failed, and the refresh is
-   * skipped whole: every union here is DERIVED from the catalogue, so writing them
-   * without one is not a degraded answer but a wrong one — the unions narrow to
-   * the built-in catalogue's own categories, and `config.ts` beside them still
-   * keys its `stack` under the ones that just vanished, so the pair stops
-   * type-checking. Skipping falls under the same warning as any other failed
-   * refresh, for the same reason.
+   * Regenerates config-types.ts after a hand-edit; failure only warns, as the agents are written.
+   * Skipped without a catalogue, since unions derived from none would be wrong, not just stale.
    */
   private async refreshConfigTypes(
     pass: CompilePass,
@@ -408,9 +297,7 @@ export default class Compile extends BaseCommand {
         return;
       }
 
-      // `cwd` is excluded from the fan-out, which only a global pass can perform:
-      // whatever this invocation was run from is this command's own subject, so a
-      // fan-out must never reach back into it.
+      // A global pass's fan-out must not reach back into the invoking directory.
       report = await reconcileTypesFromDisk(
         pass.projectDir,
         loaded.config,
@@ -426,11 +313,7 @@ export default class Compile extends BaseCommand {
     this.reportPropagation(report);
   }
 
-  /**
-   * Renders the fan-out the refresh above performed. Kept out of the refresh's
-   * catch on purpose: a project the fan-out could not reach is reported as that,
-   * not as a failure to refresh the type unions — which did succeed.
-   */
+  /** Outside the refresh's catch: an unreachable project is not a failed refresh. */
   private reportPropagation(report: GateReport): void {
     this.reportProjectsOutOfReach(report.propagated);
     for (const projectPath of report.propagated.failed) {
@@ -439,7 +322,6 @@ export default class Compile extends BaseCommand {
     this.reportFanOut(report);
   }
 
-  /** Runs one pass, and answers whether it compiled rather than skipping for want of anything to. */
   private async runCompilePass(params: CompilePass, cwd: string): Promise<boolean> {
     const { label, projectDir, installation, sourcePath, scopeFilter } = params;
 
@@ -450,7 +332,6 @@ export default class Compile extends BaseCommand {
     verbose(`  Project: ${projectDir}`);
     verbose(`  Agents: ${installation.agentsDir}`);
 
-    // Before anything below reads the matrix.
     const seatedMatrix = await this.seatMatrixForPass(projectDir);
 
     const { allSkills, totalSkillCount } = await this.discoverAllSkills(projectDir);
@@ -459,8 +340,7 @@ export default class Compile extends BaseCommand {
     if (compilesBaseAgents) {
       this.log(`No skills configured for ${label.toLowerCase()} pass, compiling base agents`);
     } else if (totalSkillCount === 0) {
-      // A run is one pass, so a skipped pass is a refused run — and a refused run writes nothing,
-      // config-types.ts included (owner ruling).
+      // A skipped pass is a refused run, which writes nothing, config-types.ts included.
       this.log(`No skills found for ${label.toLowerCase()} pass, skipping`);
       return false;
     }
@@ -528,23 +408,8 @@ type CompilePass = {
 };
 
 /**
- * The single pass this invocation owns.
- *
- * A compile run inside a project is a PROJECT-scope operation and writes nothing
- * outside that project: it compiles the project's own agents and refreshes the
- * project's own type unions, and never the global install's or another
- * registered project's. Propagation is a global operation's consequence — the
- * global config is what every project's config inlines — and a project compile
- * is not one.
- *
- * The global pass is therefore reached only where no project installation is in
- * play: at the home directory (where `detectBothInstallations` returns no
- * project by construction), or in a directory that has no config of its own, so
- * the global install is the only thing there is to compile.
- *
- * `scopeFilter` still narrows the project pass whenever both installations
- * exist: the project's config inlines the global entries, so an unfiltered pass
- * would compile global-scoped agents into the project's own agents directory.
+ * One pass: the project's when there is one (writing nothing outside it), else the global's.
+ * `scopeFilter` keeps inlined global agents out of the project's agents directory.
  */
 function buildCompilePasses(
   installations: BothInstallations,
@@ -581,28 +446,14 @@ function buildCompilePasses(
   return [];
 }
 
-/**
- * The install root this run compiled, which the reports after the passes read the provider off.
- *
- * The root {@link buildCompilePasses} picks, read the same way it picks it: a project installation
- * is this run's subject and the global one is what a directory with none is about. Asking `cwd`
- * alone would answer Claude for a project that has no installation of its own under a Codex
- * global.
- */
+/** Mirrors the root {@link buildCompilePasses} picks. */
 function rootThisRunCompiled(installations: BothInstallations, cwd: string): string {
   return installations.project ? cwd : os.homedir();
 }
 
 /**
- * Whether a pass that discovered no skill still has something to compile: sub-agents its config
- * pins on with no skill at all, which the editor produces ("no skills — base agent") and `init`
- * compiles like any other roster — `compileAgentsAllScopes` asks nothing about skills. The roster
- * is read the way `compileAgents` reads it: active rows, narrowed to the pass's scope when it has
- * one.
- *
- * A config that DECLARES a skill, none of which is on disk, is not this. It is an installation
- * whose skills were lost, and compiling it would rewrite every sub-agent without them — so that
- * pass is still skipped and, with no other pass compiling, still refused.
+ * A skill-less pass still compiles a config of base agents only. One that declares skills none of
+ * which are on disk lost them, and is skipped rather than recompiled without them.
  */
 async function declaresOnlyBaseAgents(pass: CompilePass): Promise<boolean> {
   const loaded = await loadInstalledConfig(pass.projectDir);
@@ -616,14 +467,7 @@ async function declaresOnlyBaseAgents(pass: CompilePass): Promise<boolean> {
   return !declaresASkill && compilesAnAgent;
 }
 
-/**
- * Every project-scoped skill that a GLOBAL sub-agent's stack assigns to itself, with the
- * sub-agents that assign it — exactly the pairs `buildCompileAgents`' scope filter drops on
- * the way to the resolver.
- *
- * Grouped by skill rather than emitted per pair, so one sentence accounts for every
- * sub-agent one skill was kept away from.
- */
+/** Project-scoped skills a global sub-agent's stack names, grouped by skill. */
 function findScopeDroppedStackPairs(config: ProjectConfig): [SkillId, AgentName[]][] {
   const stack = config.stack ?? {};
   const globalAgentNames = config.agents
@@ -641,7 +485,6 @@ function findScopeDroppedStackPairs(config: ProjectConfig): [SkillId, AgentName[
     .filter(([, agentNames]) => agentNames.length > 0);
 }
 
-/** True when this sub-agent's stack names the skill, in any of its categories. */
 function stackAssignsSkill(agentStack: StackAgentConfig | undefined, skillId: SkillId): boolean {
   if (!agentStack) return false;
   return resolveAgentConfigToSkills(agentStack).some((ref) => ref.id === skillId);

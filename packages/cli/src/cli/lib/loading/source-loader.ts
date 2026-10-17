@@ -72,40 +72,19 @@ import { loadStacks, resolveAgentConfigToSkills } from "../stacks";
 import { initializeMatrix, matrix as currentMatrix } from "../matrix/matrix-provider";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 
-/**
- * What a load reads the marketplace for, which decides whether a marketplace other than the
- * default public catalogue without a valid manifest stops it (owner ruling 2026-10-02).
- *
- * - `"fetch"`: a command that takes from the marketplace — installs, edits, searches or ejects
- *   from it. Refused, naming the builds that write the manifest.
- * - `"upkeep"`: a load that only keeps an installation that already exists in step with a change
- *   made elsewhere — a global uninstall pruning the projects registered under it, a global change
- *   fanned out to them. Everything it touches is already installed, so it goes on: "if I want to
- *   uninstall something, I don't care if it's broken, I just want it gone".
- */
+/** `"fetch"` refuses a non-default marketplace without a valid manifest; `"upkeep"` goes on. */
 export type SourceLoadPurpose = "fetch" | "upkeep";
 
 export type SourceLoadOptions = {
-  /** What the load is for — see {@link SourceLoadPurpose}. Defaults to `"fetch"`. */
+  /** Defaults to `"fetch"`. */
   purpose?: SourceLoadPurpose;
-  /**
-   * Whether this load may reach the init-time source rungs — see {@link SourceCaller}.
-   * Defaults to `"stored"`: the ambient environment can only be reached by a caller that
-   * names itself `init`, so no path arrives there by omission.
-   */
+  /** Defaults to `"stored"`, so the environment rung is never reached by omission. */
   caller?: SourceCaller;
   sourceFlag?: string;
   projectDir?: string;
   devMode?: boolean;
-  /** Skip loading skills from extra sources (multi-source). */
   skipExtraSources?: boolean;
-  /**
-   * The caller only needs the matrix, not skill files on disk. For the default
-   * source this skips the `fetchFromSource` clone (the matrix is the pre-computed
-   * BUILT_IN_MATRIX anyway) so the load stays offline; `sourcePath` comes back
-   * empty. Sources that must be read from disk to build the matrix (local paths,
-   * custom remotes) are unaffected.
-   */
+  /** For the default source, skips the clone so the load stays offline; `sourcePath` is empty. */
   matrixOnly?: boolean;
 };
 
@@ -115,27 +94,14 @@ export type SourceLoadResult = {
   sourcePath: string;
   isLocal: boolean;
   marketplace?: string;
-  /**
-   * The skills the loaded marketplace itself carries, which are the only ones `sourcePath` holds
-   * files for. The matrix holds more: local skills merged in from `.claude/skills`, and the global
-   * installation's plugin skills seated from the marketplace that installation was made from.
-   */
+  /** The only skills `sourcePath` has files for; the matrix also holds local and global ones. */
   marketplaceSkillIds: ReadonlySet<SkillId>;
 };
 
 /** A marketplace's catalogue as read, before anything on this machine joins its matrix. */
 type CatalogueRead = Omit<SourceLoadResult, "marketplaceSkillIds">;
 
-/**
- * Loads the catalogue a run installs and compiles against, saying each warning the load raises
- * once per run.
- *
- * Once rather than once per load, because one run loads the same files many times: a global
- * change loads the marketplace for itself and then, for each registered project, once to rewrite
- * that project's config and once to recompile its agents. Each of those loads is needed — a
- * project's catalogue is its own marketplace and its own local skills, and its recompile follows
- * its rewrite — so what is held to once is the saying, not the loading.
- */
+/** Says each warning once per run: a global change reloads the same files per project. */
 export function loadSkillsMatrixFromSource(
   options: SourceLoadOptions = {},
 ): Promise<SourceLoadResult> {
@@ -152,9 +118,7 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
     matrixOnly = false,
   } = options;
 
-  // ABORT on an unreadable config. Every skill this returns is resolved against the marketplace
-  // named here, so a run that got past this rung on a config it could not read would install from
-  // a marketplace nobody chose — which is the whole of what the refusal exists to stop.
+  // Aborts on an unreadable config: every skill resolves against the marketplace named here.
   const sourceConfig = await resolveSource({ caller, flag: sourceFlag, projectDir });
   const { source } = sourceConfig;
 
@@ -164,9 +128,7 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
 
   const resolvedProjectDir = projectDir || process.cwd();
 
-  // Everything the marketplace itself carries, read before any local skill is merged on
-  // top: past this point a skill's provenance is no longer legible from the matrix, and
-  // an id the merge INTRODUCES is one nothing but the copy on disk backs.
+  // Read before any local merge, after which a skill's provenance is no longer legible.
   const result: SourceLoadResult = {
     ...catalogue,
     marketplaceSkillIds: new Set(typedKeys<SkillId>(catalogue.matrix.skills)),
@@ -197,21 +159,9 @@ async function loadCatalogue(options: SourceLoadOptions): Promise<SourceLoadResu
 }
 
 /**
- * Seats the global installation's plugin skills this catalogue does not carry, as the marketplace
- * that installation was made from describes them.
- *
- * A global installation from one marketplace under a project from another is a supported layout,
- * and every session in that project inherits the global entries, compiled into the global
- * sub-agents. An ejected global skill already reaches this matrix through
- * the global local-skill merge, from its copy under `~/.claude/skills`. A plugin leaves no such
- * copy: Claude's plugin cache holds the skill's SKILL.md and none of the catalogue's metadata. So a
- * load of the project's marketplace held no entry for it, and a project setup dropped it — the
- * global sub-agent recompiled in the same run lost the usage sentence its own catalogue states.
- *
- * The other marketplace is read only when the global installation names a skill this one lacks,
- * so a project on the global's own marketplace loads nothing more. A seated entry keeps none of
- * its relationships: they name skills of a catalogue this session does not offer, and the entry
- * is here to be shown and compiled, never picked against.
+ * Seats the global installation's plugin skills this catalogue lacks, from the marketplace that
+ * installation was made from (a plugin leaves no local copy to merge). Seated entries carry no
+ * relationships: they are shown and compiled, never picked against.
  */
 async function seatGlobalInstallationSkills(
   matrix: MergedSkillsMatrix,
@@ -227,13 +177,7 @@ async function seatGlobalInstallationSkills(
   for (const id of uncarried) seatFromCatalogue(matrix, globalCatalogue, id);
 }
 
-/**
- * The global installation's plugin skills this matrix holds no entry for.
- *
- * DEGRADE on an unreadable global config: every command that needs it readable has refused it
- * before loading, and `doctor` and `uninstall`, which run without it, must still run — so its
- * skills simply stay unseated, as they were before this pass existed.
- */
+/** Degrades on an unreadable global config: its skills simply stay unseated. */
 async function globalPluginSkillsUncarried(matrix: MergedSkillsMatrix): Promise<SkillId[]> {
   try {
     const globalConfig = await loadGlobalSourceConfig();
@@ -253,10 +197,7 @@ function isActivePlugin(skill: SkillConfig): boolean {
 }
 
 /**
- * The catalogue of the marketplace the global installation was made from, or null when that is
- * the one already loaded — whatever it lacks the global's own marketplace lacks too — or when it
- * cannot be loaded, which leaves the skills unseated rather than failing a project command over
- * another installation's marketplace.
+ * Null when it is the one already loaded, or when it cannot load (the skills then stay unseated).
  */
 async function loadGlobalInstallationCatalogue(
   loadedSource: string,
@@ -303,10 +244,7 @@ function asSeatedGlobalSkill(skill: ResolvedSkill, catalogue: CatalogueRead): Re
   };
 }
 
-/**
- * A category the matrix does not define arrives with the skill placed in it. `local` is never
- * defined, as {@link ensureCategoryDefined} says.
- */
+/** A category the matrix lacks arrives with the skill placed in it; `local` is never defined. */
 function carryCategory(
   matrix: MergedSkillsMatrix,
   from: MergedSkillsMatrix,
@@ -318,10 +256,7 @@ function carryCategory(
 }
 
 /**
- * Skills the merged matrix holds that the marketplace never offered — the local merge's own
- * additions, and the global installation's skills seated from its own marketplace. This
- * marketplace can install none of them, so they are the ids the tagging pass must leave its
- * entry off.
+ * Merged-in skills the marketplace never offered, which the tagging pass must leave its entry off.
  */
 function idsOutsideMarketplace(
   matrix: MergedSkillsMatrix,
@@ -331,10 +266,7 @@ function idsOutsideMarketplace(
 }
 
 /**
- * The shipped catalogue, in a copy this load may write into. Every collection the
- * local-skill merge writes to is copied: `BUILT_IN_MATRIX` is a module constant,
- * so a shared reference would leave one project's local skill in the catalogue
- * every later load reads.
+ * Copies every collection the local merge writes to, so `BUILT_IN_MATRIX` itself is never mutated.
  */
 function copyOfBuiltInMatrix(): MergedSkillsMatrix {
   return {
@@ -348,13 +280,8 @@ function copyOfBuiltInMatrix(): MergedSkillsMatrix {
   };
 }
 
-/** What {@link resolveBaseResult} needs of the caller's options, with their defaults applied. */
 type BaseLoadOptions = Required<Pick<SourceLoadOptions, "purpose" | "devMode" | "matrixOnly">>;
 
-/**
- * Resolves the base matrix for the configured source: the pre-computed
- * BUILT_IN_MATRIX for the default source, otherwise a local or remote load.
- */
 async function resolveBaseResult(
   sourceConfig: ResolvedConfig,
   { purpose, devMode, matrixOnly }: BaseLoadOptions,
@@ -362,11 +289,7 @@ async function resolveBaseResult(
   refuseReservedRecordedName(sourceConfig);
   const { source } = sourceConfig;
   if (isDefaultSource(source) && !devMode) {
-    // Default source: use pre-computed BUILT_IN_MATRIX instead of loading from disk.
-    // Still resolve sourcePath via fetchFromSource so skill files can be read
-    // (e.g. for eject-mode copy) — unless the caller declared matrixOnly, in
-    // which case the fetch (a network clone on a cold cache) is skipped entirely.
-    // The fetch is cached, so no network call if the clone already exists.
+    // Default source: BUILT_IN_MATRIX, still fetching (cached) for sourcePath unless matrixOnly.
     const sourcePath = matrixOnly ? "" : (await fetchFromSource(source)).path;
     return {
       matrix: copyOfBuiltInMatrix(),
@@ -383,20 +306,12 @@ async function resolveBaseResult(
     : loadFromRemote(source, sourceConfig, purpose);
 }
 
-/**
- * The way out of a reserved name an installation recorded. The manifest is not where it came from,
- * so renaming the marketplace is no way out: the file to correct is the config that recorded it.
- */
+/** The file to correct is the config that recorded the name, not the manifest. */
 function recordedNameWayOut(configPath: string): string {
   return `set this installation up again, or correct the marketplaceName it recorded in '${configPath}'`;
 }
 
-/**
- * Refuses a load labelled by a reserved name the installation's config recorded, as a manifest
- * carrying it is refused. The recorded name outranks the manifest's — so an install made before
- * the name was reserved, or a config edited by hand, would otherwise carry it past the manifest's
- * check, and every plugin installed under `eject` would be recorded as an ejected copy.
- */
+/** The recorded name outranks the manifest's, so it is checked against the reserved list too. */
 function refuseReservedRecordedName({ marketplace, marketplaceRecordedIn }: ResolvedConfig): void {
   if (marketplace === undefined) return;
   const reservedName = validateLoadedMarketplaceName(
@@ -408,30 +323,14 @@ function refuseReservedRecordedName({ marketplace, marketplaceRecordedIn }: Reso
 
 type MarketplaceLabels = Pick<SourceLoadResult, "marketplace">;
 
-/**
- * Which state a marketplace's manifest is in, as far as naming the marketplace goes.
- *
- * Four states rather than two because the failures are not one event, even where they end
- * the same way. A marketplace with no manifest has not been built; one whose manifest is
- * there and unreadable was built, or edited, into a file the reader rejects, and its
- * refusal has to carry the reader's reason — collapsing the two reported every schema
- * violation in that file as an absent file, and a reader who checked found it exactly
- * where the message said it was not. A manifest naming the marketplace something Claude
- * Code registers no plugin under is refused under a type of its own. `doctor`'s
- * `ConfigState` splits its own the same way and for the same reason.
- */
+/** Absent and unreadable stay apart so a refusal can carry the reason; a refused name too. */
 type ManifestState =
   | { kind: "absent" }
   | { kind: "refused"; reason: string }
   | { kind: "unreadable"; reason: string }
   | { kind: "named"; name: string };
 
-/**
- * {@link ManifestState} for one marketplace. Which failure it was is read off the throw's
- * TYPE rather than its text: `fetchMarketplace` is the only thing that can tell a file it
- * never found from one it found and refused, and a refused NAME from every other refusal,
- * so it says which and nothing here matches on a sentence.
- */
+/** Read off the throw's type, never its text. */
 async function readManifestState(source: string): Promise<ManifestState> {
   try {
     const { marketplace } = await fetchMarketplace(source);
@@ -445,33 +344,13 @@ async function readManifestState(source: string): Promise<ManifestState> {
   }
 }
 
-/**
- * Thrown when a marketplace other than the default public catalogue publishes no valid
- * `.claude-plugin/marketplace.json`: it has none, or one that does not parse, or one the
- * schema refuses.
- *
- * A type rather than a sentence for the reason the fetcher's own manifest errors are types:
- * `doctor` files this finding against the manifest at a severity that turns on who is
- * reading — the author of an unbuilt repository is one build from the fix, and a consumer
- * cannot load the marketplace at all — so it has to be told apart from a load that merely
- * failed without matching on the message.
- */
+/** A type, so `doctor` can file it at the reader's severity without matching text. */
 export class MarketplaceManifestRequiredError extends Error {}
 
 /** A manifest this load could not name the marketplace from. */
 type ManifestUnusable = Extract<ManifestState, { kind: "absent" | "unreadable" }>;
 
-/**
- * Resolves the marketplace name from the source's `.claude-plugin/marketplace.json`.
- * A `marketplace` already recorded in the project config wins.
- *
- * Every state but `named` ABORTS a `"fetch"` of a marketplace other than the default public
- * catalogue (owner ruling, 2026-10-02: "Why not just make it a requirement?"). Carrying on past
- * an absent or unreadable manifest labelled every skill `agents-inc` and left the only failure
- * to a Plugin install, after Confirm. A manifest naming the marketplace something Claude
- * Code registers no plugin under keeps its own type, because nothing in that marketplace is
- * installable whoever reads it.
- */
+/** A recorded `marketplace` wins. All but `named` abort a `"fetch"` of a non-default one. */
 async function resolveMarketplaceLabels(
   manifestRoot: string,
   sourceConfig: ResolvedConfig,
@@ -497,10 +376,7 @@ async function resolveMarketplaceLabels(
   }
 }
 
-/**
- * A load that may go on without a usable manifest keeps the label its config recorded. Every
- * other load is refused, naming what is wrong with the file and the builds that write it.
- */
+/** Keeps the recorded label when the load may go on; otherwise refuses, naming the builds. */
 function labelWithoutManifest(
   state: ManifestUnusable,
   sourceConfig: ResolvedConfig,
@@ -519,11 +395,7 @@ function labelWithoutManifest(
   );
 }
 
-/**
- * The two loads a missing or unreadable manifest does not stop: any load of the default public
- * catalogue, whose name is the CLI's own and which dev mode reads from `PROJECT_ROOT`, which ships
- * none; and an `"upkeep"` load, which touches nothing that is not already installed.
- */
+/** The default catalogue (dev mode reads `PROJECT_ROOT`, which ships none) and `"upkeep"`. */
 function goesOnWithoutManifest(source: string, purpose: SourceLoadPurpose): boolean {
   return isDefaultSource(source) || purpose === "upkeep";
 }
@@ -552,9 +424,7 @@ async function loadFromLocal(
   sourceConfig: ResolvedConfig,
   purpose: SourceLoadPurpose,
 ): Promise<CatalogueRead> {
-  // Resolved through `fetchFromSource` — the same call `loadFromRemote` makes — rather
-  // than joined here, so a path the user named and the CLI cannot read is REFUSED with
-  // the loader's own message. Reading it directly returned an empty matrix instead.
+  // Through `fetchFromSource`, so an unreadable named path is refused rather than read as empty.
   const skillsPath = isLocalSource(source) ? (await fetchFromSource(source)).path : PROJECT_ROOT;
 
   verbose(`Loading skills from local path: ${skillsPath}`);
@@ -594,44 +464,13 @@ async function loadFromRemote(
   };
 }
 
-/**
- * The matrix a marketplace on disk describes — its own skills, its own
- * categories and stacks, and the built-in relationship rules narrowed to the
- * slugs it actually ships.
- *
- * This is the load an AUTHOR's command makes, and it is deliberately not
- * {@link loadSkillsMatrixFromSource}: that one merges the invoking machine's
- * `~/.claude/skills` and the project's own into the result, which is right for
- * an install and wrong for anything published — a catalogue carrying the
- * author's private skills offers consumers skills that exist on one machine.
- * The local merge lives one layer up, in the install path alone.
- *
- * A marketplace's base path is also the only word anything has for WHICH
- * marketplace it is, so it stands as the source string too.
- */
+/** An author's load: no local merge, or the catalogue would carry one machine's skills. */
 export async function loadMarketplaceMatrix(marketplaceDir: string): Promise<MergedSkillsMatrix> {
   const matrix = await loadAndMergeFromBasePath(marketplaceDir, marketplaceDir);
   return { ...matrix, categories: categoriesTheseSkillsAreIn(matrix) };
 }
 
-/**
- * The categories a marketplace's own skills are in, and nothing else.
- *
- * {@link loadAndMergeFromBasePath} merges the built-in taxonomy underneath the
- * marketplace's own, so a skill sitting in a built-in category resolves to that
- * category's real definition rather than the humanized stand-in
- * `synthesizeCategory` writes. Right for the merge and wrong for the artefact: a
- * published catalogue cannot claim categories the marketplace ships nothing in,
- * and 102 of them arrived that way — beside a `skills` and a `suggestedStacks`
- * that were the marketplace's own.
- *
- * Membership is read off the SKILLS rather than off the marketplace's own
- * `skill-categories.ts`, because the two disagree in both directions: a skill may
- * sit in a category its author never declared, and a declared category may hold
- * nothing. Narrowing by what is declared would leave a consumer holding a skill
- * whose category the catalogue does not define, which is this bug with the sides
- * swapped.
- */
+/** Read off the skills, so the catalogue claims no category the marketplace ships nothing in. */
 function categoriesTheseSkillsAreIn(matrix: MergedSkillsMatrix): CategoryMap {
   const occupied = new Set<CategoryPath>(typedValues(matrix.skills).map((skill) => skill.category));
 
@@ -642,19 +481,12 @@ function categoriesTheseSkillsAreIn(matrix: MergedSkillsMatrix): CategoryMap {
   );
 }
 
-/**
- * Builds the matrix for a source read from disk, from the files under
- * `basePath`. `source` is the source string that base path stands for — the
- * loader's only word for WHICH marketplace it is reading, and one of the two
- * things {@link resolveOfferedStacks} decides the built-in catalogue's fate on.
- */
+/** `source` is the string `basePath` stands for: the only word for which marketplace it is. */
 async function loadAndMergeFromBasePath(
   basePath: string,
   source: string,
 ): Promise<MergedSkillsMatrix> {
-  // ABORT on an unreadable config. This file is where a marketplace declares which directories
-  // its skills and stacks live in, so falling back to the defaults would walk a tree the
-  // marketplace says is somewhere else and report the catalogue as empty.
+  // Aborts on an unreadable config: it declares where the skills and stacks live.
   const sourceProjectConfig = await loadSourceRepoConfig(basePath);
 
   const skillsDirRelPath = sourceProjectConfig?.skillsDir ?? SKILLS_DIR_PATH;
@@ -683,15 +515,11 @@ async function loadAndMergeFromBasePath(
 type SourceTaxonomy = {
   /** The CLI's built-in categories, with the source's own layered over them where it has any. */
   categories: CategoryMap;
-  /** The source's own relationship rules, for {@link relationshipsForSource} to merge. */
+  /** The source's own relationship rules, unmerged. */
   sourceRules: SkillRulesConfig | undefined;
 };
 
-/**
- * Reads a source's categories file and rules file, either of which it may leave out. Its
- * categories are layered over the CLI's built-in ones; its rules come back as they are, and
- * undefined when it ships none.
- */
+/** Either file may be absent; categories layer over the built-ins, rules come back as they are. */
 async function loadSourceTaxonomy(basePath: string): Promise<SourceTaxonomy> {
   const sourceCategoriesPath = path.join(basePath, SKILL_CATEGORIES_PATH);
   const sourceRulesPath = path.join(basePath, SKILL_RULES_PATH);
@@ -730,21 +558,7 @@ const CATALOGUE_SKILL_IDS: ReadonlySet<SkillId> = new Set(typedKeys(BUILT_IN_MAT
 /** How many colliding ids a refusal lists before summarising the rest. */
 const MAX_REPORTED_COLLISIONS = 10;
 
-/**
- * Refuses a marketplace shipping skill ids the public catalogue already owns.
- *
- * A skill id is the directory the skill installs into, and Claude reads
- * `~/.claude` and `./.claude` together, so two marketplaces naming one id means
- * one silently shadows the other. `build marketplace` refuses those ids at author
- * time; this is what catches a marketplace that skipped that build, was
- * hand-edited, or is lying — nothing a source ships is unforgeable, so the
- * consumer's own load has to ask the question again.
- *
- * The SOURCE is refused, not the colliding skills: dropping them would hand the
- * user a marketplace quietly missing the skills they chose it for, leave the
- * catalogue's own copies standing in under those ids, and tell the author
- * nothing. One loud refusal naming the fix beats a partial load that hides it.
- */
+/** Refuses the whole source: colliding ids would silently shadow the catalogue's on disk. */
 async function refuseCatalogueCollisions(
   basePath: string,
   source: string,
@@ -773,16 +587,7 @@ function catalogueCollisionError(collidingIds: SkillId[], source: string): strin
   ].join("\n");
 }
 
-/**
- * The stacks a source offers: the ones it ships, or — for the public
- * catalogue alone — the CLI's built-in catalogue standing in when it ships none.
- *
- * A custom marketplace gets no such stand-in. Handing it one meant offering a
- * catalogue of stacks written against a different catalogue of skills, under a
- * name the user never asked for, with most of each stack silently dropped for
- * naming ids the chosen source does not carry. A marketplace ships its own
- * stacks or offers none.
- */
+/** Built-in stacks stand in for the public catalogue only; others offer their own or none. */
 async function resolveOfferedStacks(
   basePath: string,
   stacksFile: string | undefined,
@@ -805,19 +610,7 @@ async function resolveOfferedStacks(
   return [];
 }
 
-/**
- * A stack's sub-agents split by whether the CLI declares one.
- *
- * The keys are read as the STRINGS a stack file spells: `typedKeys` types them `AgentName` because
- * `Stack["agents"]` is keyed by it, but they arrive from a marketplace's own `config/stacks.ts` and
- * nothing between that file and here narrows them — so the membership test below is a real
- * question rather than a formality, and the widening is what lets it be asked.
- *
- * Narrowed with `isAgentName` and deliberately NOT cast. Only the CLI's own `src/agents/` declares
- * a sub-agent a compile pass can honour — that directory is the whole of the roster (owner ruling
- * 2026-08-21) and is what `AGENT_NAMES` is generated from — so this is the union's own membership
- * test rather than a second list to keep in step.
- */
+/** Keys arrive unnarrowed from a stacks file, so `isAgentName` is a real test, not a cast. */
 function declaredAgentsIn(stack: Stack): { declared: AgentName[]; undeclared: string[] } {
   const named: string[] = typedKeys<AgentName>(stack.agents);
   return {
@@ -826,21 +619,7 @@ function declaredAgentsIn(stack: Stack): { declared: AgentName[]; undeclared: st
   };
 }
 
-/**
- * What a stack naming a sub-agent the CLI does not ship is told to the user.
- *
- * The stack is DROPPED FROM rather than refused, and that posture is deliberate. A stack is a
- * suggestion, not an install contract, so refusing it would take every
- * sub-agent in it — the valid ones included — over one typo in a marketplace the user may not
- * own. It is also the posture the rest of this conversion already takes: `resolveStackAgentSkills`
- * drops a skill id the matrix does not carry, and one function answering the same question two
- * ways is worse than either answer. Contrast `refuseCatalogueCollisions` above, which refuses
- * the whole source because a colliding id is UNSAFE — two marketplaces silently shadowing each
- * other on disk — where an undeclared sub-agent is merely uncompilable.
- *
- * What the drop must not be is SILENT. The stack is named because a marketplace ships many, and
- * the sub-agents are named rather than counted because only the name says what to fix.
- */
+/** The stack is dropped from, not refused (it is a suggestion), but never silently. */
 function undeclaredAgentsWarning(stack: Stack, undeclared: readonly string[]): string {
   const named = undeclared.map((name) => `'${name}'`).join(", ");
   return (
@@ -849,13 +628,7 @@ function undeclaredAgentsWarning(stack: Stack, undeclared: readonly string[]): s
   );
 }
 
-/**
- * What a stack naming a skill the catalogue does not carry is told to the user.
- *
- * The skill counterpart of {@link undeclaredAgentsWarning}, and it exists for the same reason: a
- * marketplace's `config/stacks.ts` is authored by hand against a catalogue that moves, so a stack
- * outliving one of its own skills is an ordinary authoring mistake rather than a corrupt file.
- */
+/** A stack outliving one of its skills is an ordinary authoring mistake, not a corrupt file. */
 function withdrawnSkillsWarning(stack: Stack, withdrawn: readonly string[]): string {
   const named = withdrawn.map((id) => `'${id}'`).join(", ");
   return (
@@ -864,7 +637,6 @@ function withdrawnSkillsWarning(stack: Stack, withdrawn: readonly string[]): str
   );
 }
 
-// Stack values are already skill IDs — no alias resolution needed
 export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
   const { declared, undeclared } = declaredAgentsIn(stack);
   if (undeclared.length > 0) warn(undeclaredAgentsWarning(stack, undeclared));
@@ -880,11 +652,7 @@ export function convertStackToResolvedStack(stack: Stack): ResolvedStack {
     ),
   );
 
-  // First-seen order across agents, matching the historical seen-Set accumulation — and filtered
-  // against the matrix by the SAME question `resolveStackAgentSkills` asks above. The two used to
-  // disagree: the per-category map kept only ids the catalogue carried while this list kept every
-  // id the file named, and this is the one that reaches a user: the editor's read-model counts
-  // and lists it.
+  // First-seen order, filtered by the same matrix question `resolveStackAgentSkills` asks.
   const named = unique(
     agentConfigs.flatMap(({ agentConfig }) =>
       resolveAgentConfigToSkills(agentConfig).map((ref) => ref.id),
@@ -915,7 +683,7 @@ function resolveStackAgentSkills(
   const byCategory = typedEntries<Category, SkillAssignment[]>(agentConfig)
     .map(([category, assignments]) => ({
       category,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       validIds: (assignments ?? []).filter((a) => a.id in currentMatrix.skills).map((a) => a.id),
     }))
     .filter(({ validIds }) => validIds.length > 0);
@@ -924,20 +692,13 @@ function resolveStackAgentSkills(
   );
 }
 
-/**
- * Whether this matrix carries a definition for the category. `local` never is
- * one — it is the trapdoor a skill wears when it belongs to no category at all.
- */
+/** `local` is never a defined category. */
 function declaresCategory(matrix: MergedSkillsMatrix, category: CategoryPath): boolean {
   return category !== LOCAL_PSEUDO_CATEGORY && matrix.categories[category] !== undefined;
 }
 
 /**
- * Why a custom skill was dropped, and which file places it.
- *
- * The categories on offer are deliberately not listed: they are the whole
- * catalogue's, and a refusal that prints a hundred names is one nobody reads.
- * Whatever the user picked the category in renders them already.
+ * Does not list the categories on offer: there are a hundred, and the picker already shows them.
  */
 function undeclaredCategoryRefusal(
   metadata: ExtractedSkillMetadata,
@@ -959,16 +720,10 @@ export function mergeLocalSkillsIntoMatrix(
   for (const metadata of localResult.skills) {
     const existingSkill = matrix.skills[metadata.id];
 
-    // If overwriting an existing remote skill, inherit its category unconditionally.
-    // Otherwise, use whatever the local skill declared in its metadata.yaml.
+    // An overriding local skill inherits the remote skill's category.
     const category = existingSkill?.category ?? metadata.category;
 
-    // A custom skill is PLACED in the taxonomy — its category is picked from the
-    // ones that exist, never invented — so one naming a category nothing declares
-    // means no pick happened. Synthesizing a definition for it is what let a
-    // fabricated category read as a real placement while the skill sat in a tab
-    // nothing draws. Local skills that claim no `custom` flag keep the old
-    // behaviour below; narrowing that is matrix hygiene, not this rule.
+    // A custom skill's category must exist; synthesizing one would fake a placement.
     if (metadata.custom === true && !declaresCategory(matrix, category)) {
       warn(undeclaredCategoryRefusal(metadata, category));
       continue;
@@ -977,9 +732,7 @@ export function mergeLocalSkillsIntoMatrix(
     const resolvedSkill = toLocalResolvedSkill(metadata, existingSkill, category);
     matrix.skills[metadata.id] = resolvedSkill;
 
-    // Completes the map over the matrix this merge is building: the skill went
-    // into `matrix.skills` and the slug map stayed as the source left it, so every
-    // slug a user had written themselves resolved to nothing.
+    // Completes the slug map over the matrix this merge is building.
     claimSlug(matrix.slugMap, resolvedSkill.slug, metadata.id);
 
     ensureCategoryDefined(matrix, category, metadata.domain);
@@ -990,12 +743,7 @@ export function mergeLocalSkillsIntoMatrix(
   return matrix;
 }
 
-/**
- * A local skill as the matrix holds it. One that overrides a skill the source already carries
- * inherits that skill's slug, display name and relationships; one new to the matrix takes its
- * slug and display name from its own metadata and relates to nothing. The category arrives
- * already resolved, because the caller needs it first to refuse a custom skill placed nowhere.
- */
+/** An override inherits the source skill's slug, name and relations; a new one has none. */
 function toLocalResolvedSkill(
   metadata: ExtractedSkillMetadata,
   existingSkill: ResolvedSkill | undefined,
@@ -1029,17 +777,14 @@ function toLocalResolvedSkill(
 }
 
 /**
- * Gives a local skill's category a definition in the matrix when it has none, so config-types
- * generation can discover its domain and category. Unlike the custom-skill refusal above, this
- * never judges the category: a non-custom local skill may name one nothing declares, and gets a
- * synthesized definition here.
+ * Synthesizes a definition so config-types generation finds the domain; never judges the category.
  */
 function ensureCategoryDefined(
   matrix: MergedSkillsMatrix,
   category: CategoryPath,
   domain: Domain,
 ): void {
-  // `local` is a pseudo-category, not a real Category union member, so it is never defined.
+  // `local` is a pseudo-category and never defined.
   if (category === LOCAL_PSEUDO_CATEGORY) return;
   if (matrix.categories[category]) return;
 

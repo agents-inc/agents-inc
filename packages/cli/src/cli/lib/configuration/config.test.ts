@@ -39,62 +39,31 @@ const STORED_MARKETPLACE = "github:acme/skills";
 const STORED_NAME = "acme";
 const OTHER_MARKETPLACE = "github:plain/skills";
 
-/**
- * The environment rung, mirrored as a LITERAL rather than imported from `./config`.
- * A test that reads the very constant the product reads the environment through cannot
- * fail when that constant's value changes — both sides move together and the assertion
- * asserts nothing. The name a user exports is the contract, so the test spells it.
- */
+/** A literal: a test reading the product's own constant cannot fail when its value changes. */
 const MARKETPLACE_ENV_VAR = "CC_MARKETPLACE";
 
-/**
- * The spelling that used to carry it. Pre-1.0 ships no compatibility shims, so this is
- * read by nothing: an exported `CC_SOURCE` must fall through as if it were unset rather
- * than quietly still choosing where skills come from.
- */
+/** Read by nothing: an exported `CC_SOURCE` must act as if unset. */
 const WITHDRAWN_SOURCE_ENV_VAR = "CC_SOURCE";
 
-/**
- * `init`'s flag, as every validation message names it back. Mirrored for the same reason
- * as the env var above — and passed as the `flagName` argument, which is what the
- * messages interpolate.
- */
+/** Mirrored like the env var; passed as `flagName`, which the messages interpolate. */
 const MARKETPLACE_FLAG = "--marketplace";
 
 /** A second, deliberately different label — proves the messages interpolate what they are given. */
 const OTHER_FLAG_LABEL = "--agent-marketplace";
 
-/**
- * The word withdrawn from every message this module raises. Asserted as a whole
- * word so `sourcehut:` and a path that happens to spell it are not matched.
- */
+/** Whole word, so `sourcehut:` and paths spelling it do not match. */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
 
-/**
- * The catalogue's package name, mirrored as a LITERAL for the same reason as the env var
- * above: a test that reads the constant the product reads cannot fail when its value moves.
- */
+/** A literal, like the env var above. */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-/**
- * A config file that exists and cannot be EVALUATED — the third corruption kind, distinct from a
- * shape the schema refuses and from a module whose exports are all named. Those two already
- * reached the caller as their own errors; this one was reported as absence.
- */
 const UNEVALUATABLE_CONFIG = "invalid typescript content {{";
 
-/**
- * The parser's own words for {@link UNEVALUATABLE_CONFIG}. A refusal that drops the cause leaves
- * the reader with a file to open and no line to open it at, so the reason is asserted rather than
- * assumed to ride along.
- */
+/** The parser's words: a refusal must carry the cause. */
 const UNEVALUATABLE_CONFIG_CAUSE = "Missing semicolon";
 
 /**
- * The clause of `installationConfigsUnreadable` naming the route that actually clears an unreadable
- * config. Mirrored as a LITERAL for the same reason as the env var above — and the same fragment
- * `e2e/pages/constants.ts` mirrors as `DOCTOR_TIP_RECREATE_CONFIG`, because `doctor` reports this
- * same file with this same way out.
+ * A literal, like the env var; `e2e/pages/constants.ts` mirrors it as `DOCTOR_TIP_RECREATE_CONFIG`.
  */
 const RECREATE_CONFIG_ROUTE = "still works on a config it cannot read";
 
@@ -133,9 +102,7 @@ describe("config", () => {
   });
 
   describe("getProjectConfigPath", () => {
-    // The folder a project with neither name on disk gets its config CREATED in, written as a
-    // literal: it is text on people's disks, and an assertion importing the constant the product
-    // writes would move with it and could never fail.
+    // A literal: it is text on people's disks.
     it("should return path in the folder a new installation is created in", () => {
       const configPath = getProjectConfigPath("/my/project", "claude");
       expect(configPath).toBe(`/my/project/.agents-inc/claude/${STANDARD_FILES.CONFIG_TS}`);
@@ -169,8 +136,7 @@ describe("config", () => {
     });
 
     it("should return true for paths without protocol prefix", () => {
-      // Plain directory names without / or . prefix are ambiguous
-      // but we treat them as local
+      // Bare directory names are ambiguous but treated as local
       expect(isLocalSource("my-skills")).toBe(true);
     });
 
@@ -488,12 +454,7 @@ describe("config", () => {
       });
     });
 
-    /**
-     * Every message this validator raises interpolates `flagName` and then narrates around
-     * it in its own words — "Source values must not contain null bytes", "Source URLs must
-     * not target private network addresses". The interpolation is the caller's; the prose
-     * is the product's, and it is the half a rename of the flag leaves behind.
-     */
+    /** Messages interpolate `flagName`; the prose around it must not say "source". */
     describe("the prose around the flag name", () => {
       const REFUSALS: [name: string, value: string][] = [
         ["null byte", "github:user/repo\x00"],
@@ -508,8 +469,7 @@ describe("config", () => {
       ];
 
       it.each(REFUSALS)("should not say 'source' when refusing a %s", (_name, value) => {
-        // The positive half is the subject guard: `not.toThrow` also passes for a call
-        // that never refused at all, which would make the negative vacuous.
+        // Subject guard: `not.toThrow` would also pass for a call that never refused.
         expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(MARKETPLACE_FLAG);
         expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).not.toThrow(WITHDRAWN_NOUN);
       });
@@ -548,16 +508,7 @@ describe("config", () => {
     });
 
     /**
-     * A config that EXISTS and cannot be evaluated is a state of its own, and this loader used to
-     * report it as the state next door — `null`, which is what an ABSENT file answers. Owner
-     * ruling 2026-08-20: it hard errors and says the config is unreadable.
-     *
-     * The two are not interchangeable because `resolveSource` reads the return value alone: a
-     * swallowed failure walked past this rung to the default marketplace and installed from a
-     * place nobody named, which is the whole reason the refusal exists. The ALLOWED state is
-     * pinned two specs above — an absent config still answers `null`, because that is the
-     * legitimate state `init` exists for and a guard that refused both would be indistinguishable
-     * from one that has swallowed its entire subject.
+     * Hard errors rather than answering `null`, the absent file's answer (pinned two specs above).
      */
     describe("a config that exists and cannot be evaluated", () => {
       it("refuses rather than reporting the file absent", async () => {
@@ -598,10 +549,7 @@ describe("config", () => {
 
     beforeEach(async () => {
       savedHome = process.env.HOME ?? "";
-      // Point HOME inside the temp dir so resolveSource doesn't fall back to real
-      // the home root's own source folder — and keep it a DIFFERENT directory from `tempDir`, which
-      // stands in for the project. Collapsed into one directory there is only one
-      // config file, and the project rung cannot be told apart from the global one.
+      // HOME inside the temp dir and distinct from the project, so the two rungs can be told apart.
       homeDir = path.join(tempDir, "home");
       await mkdir(homeDir, { recursive: true });
       process.env.HOME = homeDir;
@@ -649,17 +597,7 @@ describe("config", () => {
       expect(result.source).toBe(DEFAULT_SOURCE);
     });
 
-    /**
-     * The install-repointing trap, closed for the third corruption kind. `ConfigSchemaError` and
-     * `ConfigDefaultExportError` already reached here rather than being swallowed; a file that
-     * could not be EVALUATED at all was still reported as absence, and absence is what the spec
-     * directly above resolves to `DEFAULT_SOURCE`. So on a config with a syntax error this run
-     * fetched the public marketplace while a config naming a private one sat unread on disk.
-     *
-     * Both rungs are covered because both are read on the way through, and the global one is the
-     * half nothing else would catch — a project may have no config of its own and still be
-     * repointed by an unreadable global config.
-     */
+    /** An unevaluatable config must not read as absence (the default marketplace), either rung. */
     describe("a config that exists and cannot be evaluated", () => {
       it("refuses rather than walking past the project rung to the default marketplace", async () => {
         await writeRawTestConfig(tempDir, UNEVALUATABLE_CONFIG);
@@ -733,11 +671,7 @@ describe("config", () => {
       ).rejects.toThrow(/The marketplace cannot be empty/);
     });
 
-    /**
-     * The label is origin-neutral on purpose — a `"stored"` caller may name a marketplace
-     * it is reading for its own sake — so it cannot say `--marketplace`, and it must not
-     * say "source" either.
-     */
+    /** The label is origin-neutral, so it can say neither `--marketplace` nor "source". */
     it("should refuse an empty named marketplace without saying 'source'", async () => {
       await expect(
         resolveSource({ caller: "stored", flag: "", projectDir: tempDir }),
@@ -790,12 +724,7 @@ describe("config", () => {
       });
     });
 
-    /**
-     * The environment rung is marketplace-named. Pre-1.0 ships no compatibility shims, so
-     * the old spelling is not aliased, not warned about and not read — an exported
-     * `CC_SOURCE` chooses nothing, which is the only behaviour that cannot silently install
-     * from a marketplace this run never named.
-     */
+    /** Not aliased, warned about or read: `CC_SOURCE` chooses nothing. */
     describe("the environment rung names the marketplace", () => {
       let warnSpy: ReturnType<typeof vi.spyOn>;
 
@@ -980,10 +909,7 @@ describe("config", () => {
       });
 
       /**
-       * The stored name labels the marketplace it was recorded beside. A project set up from
-       * another — `init --marketplace` under a global installation, or a shared configuration
-       * naming its own — read the stored name as its own, and installed its plugins against a
-       * marketplace Claude Code registered under a different name. The case below is the control.
+       * The stored name labels the marketplace recorded beside it; the case below is the control.
        */
       it("does not label a marketplace this run names with the name stored beside another", async () => {
         await writeTestTsConfig(
@@ -1086,8 +1012,7 @@ describe("config", () => {
       });
 
       it("should not claim the marketplace flag for a caller that has none", async () => {
-        // `doctor` validates a marketplace repository by pointing the loader at a path.
-        // It is a stored caller: `--marketplace` is `init`'s flag and nobody else's.
+        // `doctor` points the loader at a path; it is a stored caller.
         await resolveSource({ caller: "stored", flag: namedSource, projectDir: tempDir });
 
         expect(consoleSpies.log).toHaveBeenCalledWith(expect.stringContaining(namedSource));
@@ -1223,12 +1148,8 @@ describe("config", () => {
   });
 
   describe("resolveBranding", () => {
-    // `resolveBranding` falls through a project config to the GLOBAL one, which
-    // `loadGlobalSourceConfig` locates with `os.homedir()`. Without both halves of
-    // this stub these cases read the developer's own global config and
-    // pass only for as long as nobody puts a `branding` block in it. The env var
-    // alone is not enough: `os.homedir()` re-reads `$HOME` under node but is fixed
-    // at startup under bun, and this suite runs under both.
+    // `resolveBranding` falls through to the global config via `os.homedir()`, which bun fixes at
+    // startup, so both HOME and the homedir are stubbed.
     let savedHome: string;
     let homeDir: string;
 
@@ -1269,19 +1190,7 @@ describe("config", () => {
       expect(branding).toStrictEqual({ name: DEFAULT_BRANDING.NAME });
     });
 
-    /**
-     * The fallback is per FIELD, not per FILE, and the difference is the whole of this block.
-     *
-     * `loadEffectiveSourceConfig` answers with the project's config if that FILE exists and the
-     * global one otherwise, which is right for `marketplace` — a project's marketplace is its own,
-     * and inheriting one would install from somewhere nobody named. Branding is the opposite: it
-     * is presentation, a user sets it once for themselves, and a project that says nothing about
-     * it is not asking for the shipped name back.
-     *
-     * Read per file, a user who brands globally stops seeing their own name the moment any project
-     * config exists — which is every installed project. Nothing announced that; the name simply
-     * reverted.
-     */
+    /** Branding falls back per field: a project config naming none still shows the global one. */
     describe("global branding reaches a project that does not override it", () => {
       const GLOBAL_NAME = "Globally Branded";
 
@@ -1289,12 +1198,6 @@ describe("config", () => {
         await writeTestTsConfig(homeDir, buildSourceConfig({ branding: { name: GLOBAL_NAME } }));
       });
 
-      /**
-       * The per-file regression itself, and it needs only ONE field to state: the project config
-       * EXISTS — so `loadEffectiveSourceConfig` would answer with it and stop — and it names no
-       * branding, so answering per file yields the shipped default and the user's own name is
-       * gone. The pair of fields this block once used made the same point twice.
-       */
       it("shows global branding through a project config that carries none", async () => {
         await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: "github:myorg/skills" }));
 

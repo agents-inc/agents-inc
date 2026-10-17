@@ -12,29 +12,17 @@ import {
 import { writeFile, glob, ensureDir } from "../utils/fs";
 import { verbose, warn } from "../utils/logger";
 import type { Marketplace, MarketplacePlugin, PluginManifest } from "../types";
-// The module rather than the `./plugins` barrel: the loader reads this file's load-side refusal,
-// and the barrel reaches the loader back through plugin discovery.
+// Not the `./plugins` barrel, which reaches the loader back through plugin discovery.
 import { readPluginManifest } from "./plugins/plugin-finder";
 
 const PLUGIN_MANIFEST_PATH = `${PLUGIN_MANIFEST_DIR}/${PLUGIN_MANIFEST_FILE}`;
 const MARKETPLACE_SCHEMA_URL = "https://anthropic.com/claude-code/marketplace.schema.json";
 
-/** Namespace a skill with no marketplace at all is given. */
 const EXTERNAL_SKILL_NAMESPACE = "external";
 
-/** Namespace a skill created in place, rather than fetched from a marketplace, is given. */
 const LOCAL_SKILL_NAMESPACE = "local";
 
-/**
- * Marketplace names that are not an author's to take.
- *
- * The public catalogue's skills ship unprefixed, so every bare id in the catalogue
- * already lives in `agents-inc`; `external` and `local` hold the skills that belong to
- * no marketplace. Publishing under any of those claims ids the marketplace does not own.
- * `eject` is the `origin` an installation records for a skill copied into it, so a
- * marketplace under that name has every skill it installs read back as an ejected copy —
- * a plugin install turned into a silent local one.
- */
+/** Ids an author does not own: the catalogue's, `external`, `local`, and `eject`. */
 const RESERVED_MARKETPLACE_NAMES: readonly string[] = [
   DEFAULT_PUBLIC_SOURCE_NAME,
   EXTERNAL_SKILL_NAMESPACE,
@@ -42,7 +30,6 @@ const RESERVED_MARKETPLACE_NAMES: readonly string[] = [
   EJECT_SOURCE,
 ];
 
-/** How many offending ids a namespace refusal lists before summarising the rest. */
 const MAX_REPORTED_NAMESPACE_VIOLATIONS = 10;
 
 type MarketplaceOptions = {
@@ -102,8 +89,7 @@ export async function generateMarketplace(
 
   const sortedPlugins = sortBy(plugins, (p) => p.name);
 
-  // Field order matters: the object is serialized verbatim into marketplace.json,
-  // so conditional fields keep the same positions the previous emissions used.
+  // Field order matters: the object is serialized verbatim into marketplace.json.
   return {
     $schema: MARKETPLACE_SCHEMA_URL,
     name: options.name,
@@ -120,27 +106,13 @@ export async function generateMarketplace(
   };
 }
 
-/**
- * The plugin directory a manifest belongs to: the first segment of its path under the plugins
- * directory.
- */
+/** The first segment of a manifest's path under the plugins directory. */
 function pluginDirNameOf(manifestFile: string): string {
   const separator = manifestFile.indexOf("/");
   return separator === -1 ? manifestFile : manifestFile.slice(0, separator);
 }
 
-/**
- * Refuses a marketplace name that belongs to a namespace the author does not own,
- * or returns null when the name is theirs to take.
- *
- * `packageName` is package.json's own `name`. It is read for one purpose: the public
- * catalogue publishes under a reserved name legitimately, and
- * {@link PUBLIC_CATALOGUE_PACKAGE} is what distinguishes it from a claimant.
- *
- * `wayOut` is the caller's, because how another name is chosen depends on where this one came
- * from: `build marketplace` reads it off package.json and takes `--name`, while `new marketplace`
- * takes it as its argument and has no package.json yet.
- */
+/** `packageName` tells the catalogue's own package from a claimant; `wayOut` is the remedy. */
 export function validateMarketplaceName(
   marketplaceName: string,
   packageName: string,
@@ -152,14 +124,7 @@ export function validateMarketplaceName(
   return reservedNameError(marketplaceName, wayOut);
 }
 
-/**
- * Refuses a marketplace being LOADED under a reserved name, or returns null — a manifest built
- * before the name was reserved, or written by hand, refused in the words the build uses.
- *
- * The list {@link validateMarketplaceName} refuses, less the public catalogue's own name: the
- * catalogue's manifest is called `agents-inc`, and a load has no package.json to tell the
- * catalogue from a claimant by, so that one name loads.
- */
+/** The reserved list less the catalogue's own name: a load has no package.json to check. */
 export function validateLoadedMarketplaceName(
   marketplaceName: string,
   wayOut: string,
@@ -171,13 +136,7 @@ export function validateLoadedMarketplaceName(
 }
 
 /**
- * Refuses a marketplace whose skill ids fall outside its own namespace, or returns
- * null when every id carries it.
- *
- * The public catalogue is exempt: its skills ship unprefixed by design and
- * `agents-inc` IS the namespace they occupy. Reading that exemption off the NAME is
- * only safe because {@link validateMarketplaceName} runs first and lets nothing but
- * the catalogue's own package hold it — the two checks are a pair, in that order.
+ * The public catalogue is exempt, which is safe only because `validateMarketplaceName` runs first.
  */
 export function validateSkillIdNamespace(marketplace: Marketplace): string | null {
   if (marketplace.name === DEFAULT_PUBLIC_SOURCE_NAME) return null;
@@ -191,15 +150,7 @@ export function validateSkillIdNamespace(marketplace: Marketplace): string | nul
   return namespaceViolationError(foreignIds, marketplace.name);
 }
 
-/**
- * Whether the reserved NAME this build publishes under is the catalogue's own, which
- * takes both halves: the name claimed is the catalogue's, and the package claiming it
- * is the catalogue's package.
- *
- * The load side asks a different question of the same identity: `isPublicCatalogueCheckout`
- * in `configuration/config.ts` asks whether a DIRECTORY is a checkout of that repository,
- * and reads the package name off it rather than being handed one.
- */
+/** Both halves: the name claimed is the catalogue's and so is the package claiming it. */
 function isCatalogueOwnReservedName(marketplaceName: string, packageName: string): boolean {
   return marketplaceName === DEFAULT_PUBLIC_SOURCE_NAME && packageName === PUBLIC_CATALOGUE_PACKAGE;
 }

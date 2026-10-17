@@ -22,8 +22,7 @@ const PERMISSIONS_DENYING_BASH = {
 };
 
 /**
- * Settings Claude Code writes for itself. The CLI has no list of these to be complete against —
- * Claude Code adds keys on its own release schedule — which is exactly why it must not judge them.
+ * Settings Claude Code writes for itself, on its own release schedule; the CLI must not judge them.
  */
 const CLAUDE_CODE_OWN_SETTINGS = {
   model: "opusplan",
@@ -43,10 +42,7 @@ async function writeSettingsFile(
 }
 
 /**
- * settings.json belongs to Claude Code; this CLI reads one key out of it (`permissions`) and owns
- * nothing else in the file. So no field in it — known, unknown, or invented next release — is
- * something this CLI may warn about. What it must still do is read the permissions block out of
- * whatever else the file happens to carry.
+ * settings.json is Claude Code's: nothing in it is warned about, but `permissions` is still read.
  */
 describe("checkPermissions settings-file field handling", () => {
   let projectDir: string;
@@ -125,8 +121,7 @@ describe("checkPermissions settings-file field handling", () => {
     const result = await checkPermissions(projectDir);
 
     expect(warn).not.toHaveBeenCalled();
-    // Null is the "permissions were read and they are fine" outcome — a file whose permissions
-    // went unread renders the "No permissions configured" notice instead.
+    // Null means the permissions were read and are fine.
     expect(result, "allow rules with no restrictive deny must render no notice").toBeNull();
   });
 
@@ -140,8 +135,7 @@ describe("checkPermissions settings-file field handling", () => {
     const result = await checkPermissions(projectDir);
 
     expect(warn).not.toHaveBeenCalled();
-    // The local file is read first, and its deny reached the notice: positive proof the
-    // permissions block was parsed out of a file full of keys this CLI ignores.
+    // The deny reaching the notice proves the permissions block was parsed.
     expect(result, "a Bash deny must still render the permission warning").not.toBeNull();
   });
 });

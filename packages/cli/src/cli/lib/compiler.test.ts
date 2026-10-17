@@ -14,10 +14,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Fixture root: __tests__/fixtures/ colocated with test helpers
 const FIXTURES_ROOT = path.resolve(__dirname, "__tests__/fixtures");
 
-// Mock logger (suppress output during tests)
 vi.mock("../utils/logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../utils/logger")>()),
   verbose: vi.fn(),
@@ -44,14 +42,9 @@ import {
   type CompiledAgentDynamicEntry,
 } from "./__tests__/helpers/compiled-agent-sections.js";
 
-/**
- * Copies fixture files into a temp directory matching the project layout
- * that the compiler expects. Uses real file I/O instead of mocking fs.
- */
 async function createProjectFromFixtures(): Promise<string> {
   const tempDir = await createTempDir("compiler-test-");
 
-  // Agent fixtures
   const WEB_DEV_FILES = [
     "identity.md",
     "playbook.md",
@@ -82,14 +75,7 @@ async function createProjectFromFixtures(): Promise<string> {
   return tempDir;
 }
 
-/**
- * Puts the fixture template where a project's own override lives — the first root
- * {@link createLiquidEngine} resolves `agent` from, and where `eject templates` writes.
- *
- * Called by the one spec whose subject is the override, and nowhere else: a project built
- * with this in place renders every agent through the fixture, and the shipped-template
- * assertions below would then be describing the fixture instead.
- */
+/** Only for the override spec: with it in place every agent renders through the fixture. */
 async function installProjectTemplateOverride(projectDir: string): Promise<void> {
   const templatesDir = path.join(
     sourceFolderInUse(projectDir, "claude").dir,
@@ -107,11 +93,7 @@ async function installProjectTemplateOverride(projectDir: string): Promise<void>
 /** The line only the fixture template emits, and therefore the one that says which rendered. */
 const PROJECT_TEMPLATE_MARKER = "Rendered by the project's own agent template.";
 
-/**
- * A frontmatter key the SHIPPED template emits unconditionally and the fixture template emits
- * never — how an override that REPLACED the shipped template is told from one whose output was
- * merely added to.
- */
+/** The shipped template always emits this and the fixture never: replacement, not addition. */
 const SHIPPED_TEMPLATE_KEY = "permissionMode:";
 
 /** A sub-agent whose own metadata carries Liquid syntax, so the sanitiser has something to strip. */
@@ -121,24 +103,17 @@ const WEB_DEV_LIQUID_INJECTION: AgentConfig = createMockAgentConfig("web-develop
 });
 
 /**
- * A sub-agent carrying BOTH optional permission fields, so a template that never reads one
- * has something to lose. A fixture leaving either unset would satisfy the emission assertions
- * from the template's own defaults and prove nothing about the lookup.
+ * Both optional permission fields set, so template defaults cannot satisfy the emission assertions.
  */
 const WEB_DEV_TUNED_PERMISSIONS: AgentConfig = createMockAgentConfig("web-developer", [], {
   permissionMode: "plan",
   disallowedTools: ["Bash", "WebFetch"],
 });
 
-/** A marketplace name — anything but {@link EJECT_SOURCE} is what earns a skill its `pluginRef`. */
+/** Any origin but eject earns a skill its `pluginRef`. */
 const MARKETPLACE_ORIGIN = "agents-inc";
 
-/**
- * Four skills that interleave the two loads and sit in no alphabetical order, so a template
- * that sorted them, grouped them by load or swapped a neighbouring pair shows up in the
- * membership rather than only in a count. The pair below differ in `source` alone: one
- * renders every skill as a plugin ref, the other renders every skill as a bare id.
- */
+/** Interleaved loads, unsorted, so sorting, grouping or a swap shows in the membership. */
 const WEB_DEV_PLUGIN_SKILLS: AgentConfig = createMockAgentConfig("web-developer", [
   createMockSkillEntry("web-testing-vitest", false, { source: MARKETPLACE_ORIGIN }),
   createMockSkillEntry("web-framework-react", true, { source: MARKETPLACE_ORIGIN }),
@@ -158,11 +133,7 @@ const PLUGIN_PRELOADED_REFS = [
   "web-styling-tailwind:web-styling-tailwind",
 ] as const satisfies readonly PluginSkillRef[];
 
-/**
- * The heading is the BARE id in plugin mode too — only the `Invoke:` line carries the ref.
- * An expectation written in the ref form on both fields reads one of the two lines and
- * describes the other wrongly.
- */
+/** The heading is the bare id in plugin mode too; only the `Invoke:` line carries the ref. */
 const PLUGIN_DYNAMIC_ENTRIES = [
   { id: "web-testing-vitest", invokeRef: "web-testing-vitest:web-testing-vitest" },
   { id: "web-state-zustand", invokeRef: "web-state-zustand:web-state-zustand" },
@@ -179,20 +150,9 @@ const EJECTED_DYNAMIC_ENTRIES = [
 ] as const satisfies readonly CompiledAgentDynamicEntry[];
 
 /**
- * Every section the shipped template opens at the top level, in the order it opens them —
- * the fixture agent's `identity.md`, `playbook.md` and `output.md` contribute the headings
- * and carry no tags of their own, so this list is the template's own structure.
- */
-/**
- * The order is a cache decision before it is an editorial one, and the last entry is the whole
- * of it. A compiled agent IS a sub-agent's system prompt, so the file's leading bytes are the
- * cacheable prefix of every invocation. The skill list is the one block that moves without the
- * agent's role moving — it is rewritten whenever a user edits their stack — and while it sat
- * mid-body, every such edit invalidated the playbook and the output format beneath it.
- *
- * `<skill_activation_protocol>` is absent from this roster rather than retired: it renders
- * NESTED inside the trailing `<system-reminder>`, and `topLevelSectionsIn` reports only the
- * blocks a body opens at depth zero.
+ * The template's top-level sections in order. The skill list comes last because it changes with the
+ * stack, and everything before it is the cacheable prompt prefix. `<skill_activation_protocol>`
+ * renders nested inside `<system-reminder>`, so it is not listed.
  */
 const SHIPPED_TEMPLATE_SECTIONS = [
   "# web-developer agent",
@@ -206,23 +166,10 @@ const SHIPPED_TEMPLATE_SECTIONS = [
   "<system-reminder>",
 ] as const;
 
-/**
- * What a stubbed engine answers for `renderFile`: a compiled agent as the fixture generator writes
- * one. Opaque to every assertion that reads it — each compares what the compile returned against
- * this same value, with or without the provenance stamp.
- */
+/** Opaque: each assertion compares the compile's return against this same value. */
 const STUB_OUTPUT = renderAgentMd("web-developer");
 
-/**
- * The two engine methods a compile calls, stubbed — `renderFile` for the template, and
- * `parseAndRender` for each of the five partials.
- *
- * `parseAndRender` is not optional and a stub without it does not merely under-report: every spec
- * here that hands the compiler a bare `{ renderFile }` died with "engine.parseAndRender is not a
- * function" the moment `renderAgent` began resolving partials through the engine, which is how the
- * source folder reaches an agent's own prose as a value rather than as a literal. The pass-through
- * is what Liquid does to text carrying no template syntax, which is all the fixture partials carry.
- */
+/** Stubs `renderFile` and `parseAndRender`, which partials resolve through. */
 function stubEngine(rendered?: string): { renderFile: Mock; parseAndRender: Mock } {
   return {
     renderFile: rendered === undefined ? vi.fn() : vi.fn().mockResolvedValue(rendered),
@@ -241,12 +188,6 @@ describe("compiler", () => {
     await cleanupTempDir(projectDir);
   });
 
-  /**
-   * What the compile reads off disk before it renders anything. The template is handed the
-   * agent's own `identity.md` and `playbook.md`, plus an `output.md` that is optional and
-   * resolved from the agent's directory first — so a spec that only counted the call could not
-   * tell a populated context from an empty one.
-   */
   describe("reading agent source files", () => {
     it("when compiling an agent, should pass agent data to template engine", async () => {
       const engine = stubEngine(STUB_OUTPUT);
@@ -307,12 +248,7 @@ describe("compiler", () => {
       expect(typeof engine.renderFile).toBe("function");
     });
 
-    /**
-     * A project's own `agent.liquid` shadowing the shipped one is the whole of what the root
-     * hierarchy is for, and what `eject templates` sells — and the pair is what makes either
-     * half a claim. An engine renders whatever is in front of it, so "the marker arrived"
-     * says nothing on its own about which template the compile chose.
-     */
+    /** An engine renders whatever it is given, so the marker alone cannot say which won. */
     it("renders a project's own agent template in place of the shipped one", async () => {
       await installProjectTemplateOverride(projectDir);
       const engine = await createLiquidEngine(projectDir);
@@ -518,10 +454,7 @@ describe("compiler", () => {
       expect(output).toBe(stampProvenanceMarker(STUB_OUTPUT));
     });
 
-    /**
-     * A project-local template override may emit the marker itself. Compiling such an
-     * agent must leave one marker, not two — the same fixed point a re-emit relies on.
-     */
+    /** A project template may emit the marker itself; the compile must leave exactly one. */
     it("does not stack a second marker when the render already carries one", async () => {
       const alreadyStamped = stampProvenanceMarker(STUB_OUTPUT);
       const engine = stubEngine(alreadyStamped);
@@ -539,23 +472,8 @@ describe("compiler", () => {
   });
 
   /**
-   * The SHIPPED template rendered by a REAL engine, asserting the VALUE of each optional
-   * frontmatter field rather than the presence of its key, and the MEMBERSHIP of each skill
-   * list rather than its length.
-   *
-   * Presence is not a test of the first two. `permissionMode` is emitted unconditionally
-   * behind a `default:` filter, so its key survives a lookup that resolves to nothing and a
-   * `toHaveProperty("permissionMode")` stays green while the agent's own setting is discarded.
-   * `disallowedTools` is the same failure with the opposite tell — the whole line vanishes — so
-   * the third case below is the control that says an absent field is what suppressed it.
-   *
-   * Length is not a test of the skill lists either: a count cannot see a swap, and the order
-   * of a sub-agent's skills IS the order its config declared them in, so a template that
-   * sorted or regrouped them would leave every count intact.
-   *
-   * `createLiquidEngine()` is called with no `projectDir` deliberately: a project-local
-   * `_templates/` override would shadow the shipped template and the assertions would describe
-   * the fixture instead.
+   * A real engine and the shipped template: asserts each optional field's value (a key survives a
+   * lookup that resolved nothing) and each skill list's members (a count cannot see a swap).
    */
   describe("shipped agent template", () => {
     it("emits the permissionMode the agent carries, not the template default", async () => {
@@ -703,9 +621,7 @@ describe("compiler", () => {
 
       const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
 
-      // Not `toBe`: the context's definition is DERIVED from the agent's now,
-      // because every compiled sub-agent is granted the Skill tool its
-      // frontmatter allowlist would otherwise withhold.
+      // Derived: every compiled sub-agent is granted the Skill tool.
       expect(result.agent).toStrictEqual({ ...agent, tools: ["Read", "Write", "Skill"] });
       expect(result.identity).toBe("Test identity content");
       expect(result.playbook).toBe("Test playbook content");
@@ -772,7 +688,6 @@ describe("compiler", () => {
       expect(result.preloadedSkills).toHaveLength(2);
       expect(result.dynamicSkills).toHaveLength(0);
       expect(result.preloadedSkillIds).toHaveLength(2);
-      // The members as well as the counts: a count cannot see a swap or a duplicate.
       expect(result.preloadedSkills).toStrictEqual(skills);
       expect(result.dynamicSkills).toStrictEqual([]);
       expect(result.preloadedSkillIds).toStrictEqual(["web-framework-react", "web-testing-vitest"]);
@@ -790,7 +705,6 @@ describe("compiler", () => {
       expect(result.preloadedSkills).toHaveLength(0);
       expect(result.dynamicSkills).toHaveLength(2);
       expect(result.preloadedSkillIds).toHaveLength(0);
-      // The members as well as the counts: a count cannot see a swap or a duplicate.
       expect(result.preloadedSkills).toStrictEqual([]);
       expect(result.dynamicSkills).toStrictEqual(skills);
       expect(result.preloadedSkillIds).toStrictEqual([]);

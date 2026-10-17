@@ -7,15 +7,7 @@ vi.mock("./exec.js", () => ({ execCommand: mockExecCommand }));
 const { browserOpenerCommand, openUrl } = await import("./open-url.js");
 const { editorConfigUrl } = await import("../consts.js");
 
-/**
- * A link of the shape the CLI actually hands a browser — the editor's, with an id on it.
- *
- * BUILT RATHER THAN TYPED, and the apex split is why. This was the literal
- * `https://agentsinc.sh/?fromId=Ab3xY9_Q`, which stayed green when the editor moved to
- * `agentsinc.sh/editor` — the comment above claimed it was the shape the CLI produces while it
- * had quietly stopped being one. Deriving it from the same function the commands call means the
- * claim cannot come apart from the code again.
- */
+// Built from the product function so it cannot drift from the real link shape.
 const EDITOR_LINK = editorConfigUrl("Ab3xY9_Q");
 const OPENER_REFUSED_EXIT = 3;
 const MISSING_OPENER_MESSAGE = "spawn xdg-open ENOENT";
@@ -59,8 +51,6 @@ describe("openUrl", () => {
 
     expect(result).toStrictEqual({ ok: true });
     expect(mockExecCommand).toHaveBeenCalledTimes(1);
-    // The link is passed as its own argument rather than interpolated into a command line:
-    // `execCommand` spawns without a shell, so the argument vector is the whole of the guard.
     expect(mockExecCommand.mock.calls[0]?.[1]).toContain(EDITOR_LINK);
   });
 

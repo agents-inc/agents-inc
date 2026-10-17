@@ -30,27 +30,12 @@ import {
 import type { LocalRawMetadata } from "../skills/local-skill-loader";
 import { METADATA_KEYS } from "../metadata-keys";
 
-/** A skill's metadata.yaml as the fields a skill is described by, or why it describes none. */
 export type SkillMetadataRead =
   { usable: true; metadata: LocalRawMetadata } | { usable: false; reason: string };
 
 /**
- * Reads one skill's metadata.yaml into the fields a skill is described by — the
- * metadata.yaml counterpart of {@link parseFrontmatter}.
- *
- * This is the single judgment of whether a metadata.yaml describes its skill, and
- * every pass that meets one shares it: `compile`'s skill discovery, the local-skill
- * discovery that feeds config-types generation, and `doctor`'s content layer. What
- * each does about a file that describes nothing differs — compile refuses the run,
- * discovery skips the skill, doctor reports it — but what they CALL describing does
- * not. Compile used to check only that the file existed, and then only that it
- * parsed, so it loaded from SKILL.md a skill the same run's config-types pass had
- * already skipped.
- *
- * Both ways of describing nothing are refused here: a file nothing can be parsed
- * out of, and a file that parses without the fields `localRawMetadataSchema`
- * requires. `doctor` layers its stricter published-skill checks on top of the
- * fields this returns; it does not disagree with them.
+ * The single judgment of whether a metadata.yaml describes its skill, shared by `compile`,
+ * local-skill discovery and `doctor`. Refuses an unparseable file and one missing required fields.
  */
 export async function readSkillMetadata(metadataPath: string): Promise<SkillMetadataRead> {
   let parsed: unknown;
@@ -73,19 +58,8 @@ export async function readSkillMetadata(metadataPath: string): Promise<SkillMeta
 }
 
 /**
- * Whether this metadata names the `local` placeholder instead of a real category.
- *
- * `local` is a trapdoor rather than a category: it belongs to no domain, so a skill wearing it
- * joins no grid tab and is dropped from every sub-agent's stack. Both passes that read an
- * installed skill's metadata.yaml share this verdict — the local-skill discovery behind the
- * matrix, and the discovery behind `compile`'s skill count. One reader loading what the
- * other refused is what printed a discovery total beside a refusal about the same skill, in a
- * single run.
- *
- * The sibling of {@link readSkillMetadata}, one question over: that one asks whether the file
- * describes a skill at all, this one whether the skill it describes can be reached. A file can
- * pass the first and fail this, which is why the two verdicts are separate and why this one is
- * not repairable — nothing in the file is malformed.
+ * `local` belongs to no domain, so a skill wearing it is unreachable. Separate from
+ * `readSkillMetadata`, and not repairable, because nothing in the file is malformed.
  */
 export function namesPlaceholderCategory(metadata: LocalRawMetadata): boolean {
   return metadata.category === LOCAL_PSEUDO_CATEGORY;
@@ -121,22 +95,14 @@ type LoadAgentsFromDirOptions = {
   agentBaseDir?: string;
   /** Propagate the `custom: true` metadata flag (source/CLI agents only). */
   includeCustomFlag?: boolean;
-  /** Label for the per-agent verbose line. */
   verboseLabel: string;
 };
 
-/**
- * The one sentence a user gets about an agent `metadata.yaml` this loader would not take.
- *
- * The path is the point: this is the last boundary that still knows which file the value came
- * from. Everything downstream reports against a compiled `.md` the user never wrote.
- */
+/** Names the path: this is the last boundary that knows which file the value came from. */
 function refusalOfAgentMetadata(metadataPath: string, reason: string): string {
   return `Skipping invalid ${STANDARD_FILES.AGENT_METADATA_YAML} at '${metadataPath}': ${reason}`;
 }
 
-// Boundary cast: agent keys come from agentYamlConfigSchema which types config.id as AgentName;
-// custom agents (not in the union) are accepted by the schema's z.string() base
 async function loadAgentsFromDir(
   agentsDir: string,
   sourceRoot: string,
@@ -149,8 +115,7 @@ async function loadAgentsFromDir(
     const fullPath = path.join(agentsDir, file);
     try {
       const content = await readFile(fullPath);
-      // safeParse rather than parse: a ZodError's own message is a JSON dump of its issues, and
-      // this warning is the only place a user is told which metadata.yaml is wrong and why.
+      // safeParse: a ZodError's message is a JSON dump, and this warning is the only report.
       const parsed = agentYamlConfigSchema.safeParse(parseYaml(content));
       if (!parsed.success) {
         warn(refusalOfAgentMetadata(fullPath, formatZodIssues(parsed.error.issues)));
@@ -168,10 +133,7 @@ async function loadAgentsFromDir(
   return agents;
 }
 
-/**
- * One parsed agent `metadata.yaml` as the definition the compiler reads, recording where it was
- * found: `file` is its path under the agents directory, whose parent becomes the agent's `path`.
- */
+/** `file` is the path under the agents directory; its parent becomes the agent's `path`. */
 function toAgentDefinition(
   config: AgentYamlConfig,
   file: string,
@@ -184,8 +146,7 @@ function toAgentDefinition(
     ...(config.model !== undefined && { model: config.model }),
     ...(config.effort !== undefined && { effort: config.effort }),
     tools: config.tools,
-    // The rest of what `agent.liquid` reads. Spread conditionally, because the template
-    // branches on presence — an explicit `undefined` renders as an empty frontmatter key.
+    // Spread conditionally: the template branches on presence; `undefined` renders a key.
     ...(config.disallowedTools !== undefined && {
       disallowedTools: config.disallowedTools,
     }),
@@ -211,10 +172,7 @@ export async function loadAllAgents(
   });
 }
 
-/**
- * Loads agent definitions from the CLI repo and a skills source in parallel,
- * merged so source definitions take precedence on name collisions.
- */
+/** Source definitions win name collisions. */
 export async function loadMergedAgents(
   sourcePath: string,
 ): Promise<Partial<Record<AgentName, AgentDefinition>>> {
@@ -238,8 +196,7 @@ export async function loadProjectAgents(
   }
 
   return loadAgentsFromDir(projectAgentsDir, projectRoot, {
-    // The recorded base is the folder this scope is actually on, so an agent's `path` names a
-    // directory the reader can open rather than the layout the product is moving to.
+    // The folder this scope is actually on, so `path` names a directory the reader can open.
     agentBaseDir: `${sourceFolder.relName}/${STANDARD_DIRS.AGENTS}`,
     verboseLabel: "project agent",
   });
@@ -249,18 +206,14 @@ export type LoadSkillsFromDirOptions = {
   /** Path prefix recorded on each skill's `path` (e.g. LOCAL_SKILLS_PATH or "skills"). */
   pathPrefix?: string;
   /**
-   * When true, a SKILL.md whose sibling metadata.yaml is missing, or present but
-   * describing no skill, is skipped (local-skill registration rule). Plugin
-   * discovery passes false — plugin skills carry no metadata.yaml.
+   * Skip a SKILL.md whose metadata.yaml is missing or describes no skill; plugin skills carry none.
    */
   requireMetadata?: boolean;
 };
 
-/** One skill directory whose metadata.yaml exists but describes no skill. */
 export type UnusableSkillMetadata = {
   /** The skill's directory name, as it appears under `.claude/skills/`. */
   skillDirName: string;
-  /** Absolute path to the offending metadata.yaml. */
   metadataPath: string;
   /** The YAML parser's own message, what the file holds instead of fields, or which fields it lacks. */
   reason: string;
@@ -268,19 +221,11 @@ export type UnusableSkillMetadata = {
 
 export type LoadedSkills = {
   skills: SkillDefinitionMap;
-  /**
-   * Skill directories refused by {@link readSkillMetadata}. Only ever non-empty
-   * under `requireMetadata` — a plugin skill carries no metadata.yaml to refuse.
-   */
+  /** Only non-empty under `requireMetadata`. */
   unusableMetadata: UnusableSkillMetadata[];
 };
 
-/**
- * Loads SKILL.md files from a directory, parsing frontmatter for skill metadata.
- * Returns the skillId -> SkillDefinition map plus every skill directory whose
- * metadata.yaml describes no skill. Missing/invalid frontmatter and per-file read
- * errors are logged and skipped, never thrown.
- */
+/** Unreadable files and bad frontmatter are logged and skipped, never thrown. */
 export async function loadSkillsFromDir(
   skillsDir: string,
   options: LoadSkillsFromDirOptions = {},
@@ -311,15 +256,10 @@ export async function loadSkillsFromDir(
   return { skills, unusableMetadata };
 }
 
-/** One SKILL.md the glob found, in each of the forms the loader reads or reports it by. */
 type SkillLocation = {
-  /** The SKILL.md relative to the skills directory, as the glob returned it. */
   skillFile: string;
-  /** Absolute path to the SKILL.md. */
   skillMdPath: string;
-  /** Absolute path to the directory holding it. */
   skillDir: string;
-  /** That directory's own name. */
   skillDirName: string;
   /** The `path` recorded on the skill: prefixed, relative, slash-terminated. */
   displayPath: string;
@@ -339,10 +279,7 @@ function locateSkill(skillsDir: string, skillFile: string, pathPrefix: string): 
   };
 }
 
-/**
- * What a skill's metadata.yaml says about loading it, under `requireMetadata`. Only an
- * `unusable` file is the caller's to report; a `skipped` skill is logged here and left out.
- */
+/** Only an `unusable` file is the caller's to report; a `skipped` skill is logged here. */
 type SkillMetadataVerdict =
   { kind: "admitted" } | { kind: "skipped" } | { kind: "unusable"; refusal: UnusableSkillMetadata };
 
@@ -355,9 +292,7 @@ async function judgeSkillMetadata(skill: SkillLocation): Promise<SkillMetadataVe
     return { kind: "skipped" };
   }
 
-  // A metadata.yaml that describes no skill is reported to the caller rather
-  // than loaded around: the local-skill discovery behind config-types
-  // generation refuses the same file, and compile refuses the whole run over it.
+  // Reported rather than loaded around: discovery and compile refuse the same file.
   const read = await readSkillMetadata(metadataPath);
   if (!read.usable) {
     verbose(`  Unusable ${STANDARD_FILES.METADATA_YAML} in '${skill.skillDirName}'`);
@@ -367,9 +302,7 @@ async function judgeSkillMetadata(skill: SkillLocation): Promise<SkillMetadataVe
     };
   }
 
-  // Skipped rather than reported, and silently: the file is intact, so there is nothing
-  // here to repair or refuse a run over — and the sentence telling the user which field
-  // to fix is `extractLocalSkill`'s, which every command reaching here also runs.
+  // Skipped silently: the file is intact, and `extractLocalSkill` says which field to fix.
   if (namesPlaceholderCategory(read.metadata)) {
     verbose(`  Placeholder ${METADATA_KEYS.CATEGORY} in '${skill.skillDirName}'`);
     return { kind: "skipped" };
@@ -378,10 +311,7 @@ async function judgeSkillMetadata(skill: SkillLocation): Promise<SkillMetadataVe
   return { kind: "admitted" };
 }
 
-/**
- * The skill a SKILL.md defines, keyed by its frontmatter `name`, or undefined — logged, never
- * thrown — when the file cannot be read or names no skill.
- */
+/** Undefined, and logged, when the file cannot be read or names no skill. */
 async function readSkillDefinition(skill: SkillLocation): Promise<SkillDefinition | undefined> {
   try {
     const content = await readFile(skill.skillMdPath);
@@ -405,11 +335,7 @@ async function readSkillDefinition(skill: SkillLocation): Promise<SkillDefinitio
   }
 }
 
-/**
- * Loads skills from a plugin's `skills/` subdirectory. Plugin skills carry no
- * metadata.yaml, so metadata is not required here — and nothing can be refused
- * for one, which is why only the skill map comes back.
- */
+/** Plugin skills carry no metadata.yaml, so nothing can be refused and only the map comes back. */
 export async function loadPluginSkills(pluginDir: string): Promise<SkillDefinitionMap> {
   const { skills } = await loadSkillsFromDir(path.join(pluginDir, "skills"), {
     pathPrefix: "skills",

@@ -12,29 +12,18 @@ export type CompileAgentsOptions = {
   skills?: SkillDefinitionMap;
   agentScopeMap?: Map<AgentName, SkillScope>;
   agents?: AgentName[];
-  /** When set, loads config and filters agents to only those matching this scope. */
   scopeFilter?: SkillScope;
   outputDir?: string;
 };
 
 export type CompilationResult = {
   compiled: AgentName[];
-  /**
-   * The subset of `compiled` whose file this pass actually wrote. A pass whose
-   * `rewritten` is empty changed nothing on disk, which is exactly what the
-   * recompile summary reports and what the count it replaced could not say.
-   */
+  /** The subset of `compiled` whose file this pass actually wrote. */
   rewritten: AgentName[];
   failed: AgentName[];
   warnings: string[];
 };
 
-/**
- * Compiles agent markdown files from templates + skill content.
- *
- * Thin wrapper around recompileAgents() that standardizes options.
- * The caller invokes this once (edit, update) or twice with scopeFilter (compile).
- */
 export async function compileAgents(options: CompileAgentsOptions): Promise<CompilationResult> {
   const { agents: resolvedAgents, agentScopeMap: resolvedAgentScopeMap } = options.scopeFilter
     ? await rosterForScope(options, options.scopeFilter)
@@ -60,12 +49,6 @@ export async function compileAgents(options: CompileAgentsOptions): Promise<Comp
   };
 }
 
-/**
- * What a scope-filtered pass compiles, read off the installed config: the requested agents
- * narrowed to those active at `scope` (all of those when none were requested), and the caller's
- * scope routing — auto-built from the config when the caller passed none. With no installed
- * config, both are the caller's as passed.
- */
 async function rosterForScope(
   options: CompileAgentsOptions,
   scope: SkillScope,
@@ -84,7 +67,6 @@ async function rosterForScope(
   };
 }
 
-/** The requested agents that appear in `activeAtScope`; either list alone when the other is absent. */
 function requestedAgentsAmong(
   requested: AgentName[] | undefined,
   activeAtScope: AgentName[] | undefined,
@@ -97,14 +79,8 @@ function requestedAgentsAmong(
 }
 
 /**
- * Compiled-agent writes are additive, so a deselected or stale agent's `.md`
- * lingers after recompile. An authoritative, scope-UNfiltered pass owns its
- * entire `outputDir` (its resolved roster is the full set for that directory),
- * so it prunes built-in agents no longer compiled there. A scope-FILTERED pass
- * (the hasBoth two-pass compile, or the registered-project recompile)
- * sees only one scope's agents and must never delete another scope's files, so
- * it skips pruning. Removing the stale files and tidying the directory they
- * emptied is one operation's job, not this pass's.
+ * Only an unfiltered pass owns its whole `outputDir`, so only it prunes agents no longer compiled
+ * there; a scope-filtered pass must never delete another scope's files.
  */
 async function pruneStaleAgentsForPass(
   options: CompileAgentsOptions,
@@ -119,8 +95,7 @@ async function pruneStaleAgentsForPass(
   await pruneCompiledAgents({
     agentsDir: options.outputDir,
     keep: compiledForDir,
-    // The host this installation compiles for — a Codex role is a `.toml`, and a prune that only
-    // knew `.md` left a deselected role in place for Codex to keep offering (CLI-896's sibling).
+    // A Codex role is a `.toml`, so the prune must know the host's extension.
     codec: agentCodec(providerInUse(options.projectDir)),
   });
 }

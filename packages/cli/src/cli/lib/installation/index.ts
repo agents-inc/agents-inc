@@ -10,12 +10,7 @@ export {
   holdsItsOwnInstallation,
 } from "./installation";
 
-/**
- * No config-pair writer is re-exported here. Writing `config.ts` /
- * `config-types.ts` — directly, by propagation, or by regenerating a scope's
- * types — is `src/cli/lib/config-gate/index.ts`'s exclusive surface, and a
- * barrel that re-exported the raw writers would be a supported way around it.
- */
+// No config writers here: writing config.ts goes through `config-gate` only.
 export {
   buildAndMergeConfig,
   setConfigMetadata,

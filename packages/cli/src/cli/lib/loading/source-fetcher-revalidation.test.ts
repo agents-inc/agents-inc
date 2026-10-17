@@ -34,7 +34,6 @@ const PUBLISHED_ETAG = 'W/"published"';
 const ORPHAN_FILE = "orphan-skill.md";
 const FRESH_FILE = "new-skill.md";
 
-/** A HEAD response carrying `etag`, or none at all when the host sends none. */
 function headResponse(etag?: string): Response {
   return new Response(null, { headers: etag === undefined ? {} : { etag } });
 }
@@ -58,7 +57,6 @@ describe("source-fetcher revalidation", () => {
     await cleanupTempDir(tempDir);
   });
 
-  /** A cache directory as a previous run left it: content, plus what it was fetched from. */
   async function seedCachedCopy(record?: { tar: string; etag?: string }): Promise<void> {
     await writeFile(path.join(cacheDir, ORPHAN_FILE), "content from the previous fetch");
     if (record) await writeFile(recordPath, JSON.stringify(record));

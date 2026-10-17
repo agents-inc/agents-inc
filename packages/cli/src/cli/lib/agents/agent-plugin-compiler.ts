@@ -25,24 +25,11 @@ export type CompiledAgentPlugin = {
   agentName: string;
 };
 
-/**
- * The frontmatter a plugin build needs, or the reason it could not be had.
- *
- * The reason is carried out rather than discarded because the throw in
- * {@link compileAgentPlugin} is the only thing a `build` run surfaces for a failed agent, and it
- * used to name `name` and `description` whatever had actually gone wrong — so an agent rejected
- * for an unknown key or a bad enum value was reported as missing two fields it declared correctly.
- *
- * Nothing is warned here, deliberately. This function is private and has one caller, which throws
- * on every failure, and {@link compileAllAgentPlugins} catches that throw and warns the message —
- * so a warning here would print the same cause twice. The shared `parseFrontmatter` on the skill
- * side keeps its own warn for the opposite reason: most of its callers skip rather than throw.
- */
+/** Carries the reason out, so the throw in `compileAgentPlugin` names what actually went wrong. */
 type AgentFrontmatterParse =
   | { ok: true; frontmatter: Pick<AgentFrontmatter, "name" | "description"> }
   | { ok: false; reason: string };
 
-/** The reason when there is no frontmatter block at all, as opposed to one the schema refused. */
 const NO_FRONTMATTER_REASON = "no YAML frontmatter block";
 
 function parseAgentFrontmatter(content: string): AgentFrontmatterParse {

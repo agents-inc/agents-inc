@@ -1,21 +1,5 @@
-/**
- * What the Claude host refuses before an argument reaches a command line, and which installation
- * every call touches.
- *
- * It arrived here from `src/cli/utils/exec.test.ts` with C3, unedited but for the module it
- * imports from and one row: `claudePluginUninstallBestEffort` is gone, because the two-scope
- * sweep is the CALLER's now — `uninstallPlugins` in `commands/uninstall.tsx` reads the scopes off
- * `PluginHost.offeredPlacements`, which is what lets a host that installs plugins globally only
- * sweep one scope rather than two. `lib/__tests__/commands/uninstall.test.ts` holds the order.
- *
- * Its siblings in `__tests__/` beside this file cover what it does not: the seam's shape, and
- * every argv the host hands the binary.
- */
-
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock child_process spawn to prevent actual command execution. Each spawn is answered in the
-// top-level beforeEach below, once the fake child it hands back has been imported.
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
   return { ...actual, spawn: vi.fn<typeof actual.spawn>() };
@@ -23,14 +7,7 @@ vi.mock("child_process", async (importOriginal) => {
 
 vi.mock("../../utils/logger");
 
-/**
- * The two filesystem reads the LISTING is made of — Claude has no `plugin list --json`, so the
- * one member of this host that spawns nothing is also the one whose pinned installation cannot be
- * seen in a spawned environment.
- *
- * Typed against the real functions, so an answer these mocks give that the functions can no
- * longer return is a compile error here rather than a value nothing reads.
- */
+// The listing reads files rather than spawning, so its installation is observed here.
 const { mockFileExists, mockReadFileSafe } = vi.hoisted(() => ({
   mockFileExists: vi.fn<typeof fileExists>(),
   mockReadFileSafe: vi.fn<typeof readFileSafe>(),
@@ -62,13 +39,9 @@ import {
   isClaudeCLIAvailable,
 } from "./claude-host";
 
-/**
- * The word withdrawn from the user-facing surface, as a whole word so
- * `resource` and a path that happens to spell it are not matched.
- */
+/** Whole word, so `resource` does not match. */
 const WITHDRAWN_NOUN = /\bsources?\b/i;
 
-/** Every spawn exits clean with nothing on either stream — the one answer every case here needs. */
 beforeEach(() => {
   vi.mocked(spawn).mockImplementation(() => fakeChildProcess());
 });
@@ -100,7 +73,6 @@ describe("Claude host argument validation", () => {
 
     it("accepts plugin path at max length", async () => {
       const maxPath = "a".repeat(1024);
-      // Validation passes at exactly max length (function returns Promise<void>)
       await expect(claudePluginInstall(maxPath, "project", "/project")).resolves.toBeUndefined();
     });
 
@@ -140,12 +112,6 @@ describe("Claude host argument validation", () => {
       );
     });
 
-    /**
-     * Each accepted value is awaited to its answer. These cases used to assert only that the call
-     * returned a Promise, which an async function does whether its validator admits the value or
-     * refuses it — so a validator that refused every path left all three green. The spawn mock
-     * above closes with exit 0, so an admitted path resolves the way the max-length case does.
-     */
     it("accepts valid plugin path", async () => {
       await expect(
         claudePluginInstall("my-skill@my-marketplace", "project", "/project"),
@@ -177,11 +143,6 @@ describe("Claude host argument validation", () => {
       );
     });
 
-    /**
-     * The four refusals narrate around the value they were handed. Each one is a
-     * `Marketplace ...` sentence, so the qualifier "source" in front of it is the word
-     * withdrawn — including the one in the character-set explanation.
-     */
     it.each([
       ["empty", ""],
       ["oversized", "a".repeat(1025)],
@@ -282,19 +243,6 @@ const PLUGIN_REF = "my-skill@my-marketplace";
 const MARKETPLACE_NAME = "my-marketplace";
 const MARKETPLACE_SOURCE = "my-org/my-repo";
 
-/**
- * Every helper that reaches the Claude CLI's config tree.
- *
- * **`isClaudeCLIAvailable` is in this list, and it was deliberately absent until 2026-09-22.**
- * The reason given for leaving it out was true of this binary and of no other: measured on
- * 2026-09-21, `claude --version` under a pinned scratch `HOME` and `CLAUDE_CONFIG_DIR` wrote
- * nothing at all. What made it the wrong call is that the seam carries the option, and the next
- * host's probe is a WRITE — `codex --version` links helper binaries under `$CODEX_HOME/tmp/arg0/`
- * before it reads an argument (re-derived on `@openai/codex` 0.155.1, 2026-09-22) — so a member
- * whose Claude implementation drops the argument makes the seam untestable for the host that
- * needs it. `listPlugins` is absent for a different reason and has its own describe below: it
- * spawns nothing, so no spawned environment can carry its answer.
- */
 const CONFIG_READING_HELPERS: Array<[string, (options?: ClaudeConfigOptions) => Promise<unknown>]> =
   [
     [
@@ -325,13 +273,7 @@ const CONFIG_READING_HELPERS: Array<[string, (options?: ClaudeConfigOptions) => 
     ["isClaudeCLIAvailable", (options) => isClaudeCLIAvailable(options)],
   ];
 
-/**
- * `CLAUDE_CONFIG_DIR` redirects the Claude CLI's whole config tree — marketplace
- * registry, installed-plugin registry and user settings — and it BEATS `HOME`
- * when both are set (measured against Claude Code 2.1.231). A helper that does
- * not forward it writes into whichever installation the calling process happens
- * to inherit, which for a test runner is the developer's own.
- */
+// `CLAUDE_CONFIG_DIR` beats `HOME`; an unforwarded one reaches the developer's own installation.
 describe("Claude config dir isolation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -351,8 +293,7 @@ describe("Claude config dir isolation", () => {
     async (_name, call) => {
       await call();
 
-      // The subject guard. With no CLAUDE_CONFIG_DIR exported by the shell, a helper that
-      // spawned nothing reads `undefined` on both sides of the assertion below and passes it.
+      // Without this, a helper that spawned nothing reads `undefined` on both sides below.
       expect(
         vi.mocked(spawn),
         "the helper spawned nothing, so the environment below was never handed to a process",
@@ -370,20 +311,6 @@ describe("Claude config dir isolation", () => {
   });
 });
 
-/**
- * Which installation the LISTING is read from, which no spawned environment can show.
- *
- * Every other member of this host hands `CLAUDE_CONFIG_DIR` to a child process, so the describe
- * above can read the answer off `spawn`. This one reads two files: the installed-plugin registry
- * under the plugins directory, and the project's own settings. A member that ignored the pinned
- * config directory would answer about the developer's own installation while every spawned call
- * beside it answered about the test's — and the two disagreeing is invisible, because a listing
- * has no exit code to be wrong.
- *
- * The paths are literals rather than the product's own constants, for the reason
- * `e2e/pages/constants.ts` exists: an assertion built from the constant the product joins moves
- * with it and could never fail.
- */
 describe("which installation a listing is read from", () => {
   const REGISTRY_FILE = "installed_plugins.json";
 

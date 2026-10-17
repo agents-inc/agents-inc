@@ -101,11 +101,8 @@ export default class BuildPlugins extends BaseCommand {
   }
 
   /**
-   * Compiles skills and returns the set of plugin directory names that should
-   * exist afterward — used to prune stale plugins. Returns `null` when pruning
-   * must be skipped: single-skill mode (would wipe every other plugin) or a
-   * partial compile failure (a failed skill is indistinguishable from a removed
-   * one, so deleting it would be a worse bug than the stale entry).
+   * Returns the plugin names that should remain, or `null` to skip pruning: in single-skill mode,
+   * or after a failure, since a failed skill is indistinguishable from a removed one.
    */
   private async compileSkills(
     skillFlag: string | undefined,
@@ -164,12 +161,7 @@ export default class BuildPlugins extends BaseCommand {
     printAgentCompilationSummary(agentResults);
   }
 
-  /**
-   * Removes skill-plugin directories in `outputDir` that no longer correspond to
-   * a compiled skill. Only skill plugins are pruned: agent plugins are preserved
-   * (this run has no authority over them) and non-plugin directories are left
-   * untouched. Callers must only invoke this after a clean full-scan compile.
-   */
+  /** Prunes skill plugins only; agent plugins and non-plugin directories are left alone. */
   private async pruneStaleSkillPlugins(
     outputDir: string,
     expectedSkillPlugins: ReadonlySet<string>,

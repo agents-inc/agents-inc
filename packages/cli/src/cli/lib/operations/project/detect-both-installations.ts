@@ -11,13 +11,7 @@ export type BothInstallations = {
   hasBoth: boolean;
 };
 
-/**
- * Detects both global and project installations.
- *
- * Skips project detection when projectDir is the home directory
- * to avoid double-compile. Returns a convenience `hasBoth` flag
- * used by callers to set scopeFilter on compile passes.
- */
+/** Skips project detection in the home directory, where it would double-compile the global. */
 export async function detectBothInstallations(projectDir: string): Promise<BothInstallations> {
   const global = await detectGlobalInstallation();
 

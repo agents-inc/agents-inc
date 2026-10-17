@@ -13,32 +13,25 @@ import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../consts";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import { firstElement } from "./__tests__/helpers/element-at.js";
 
-/** Standard marketplace-generation options shared across tests. */
 const TEST_MARKETPLACE_OPTIONS = {
   name: "test-marketplace",
   ownerName: "Test Owner",
   pluginRoot: "./plugins",
 };
 
-/** An ordinary author's package.json name — no claim on any reserved namespace. */
 const AUTHOR_PACKAGE_NAME = "acme-skills";
 
 /** The npm package the public catalogue publishes from, and the only holder of its name. */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-/** The name the public catalogue publishes its marketplace under. */
 const PUBLIC_CATALOGUE_NAME = "agents-inc";
 
-/** The way out a caller hands the reserved-name refusal — each command has its own. */
 const NAME_WAY_OUT = "pick another name";
 
-/** How many offending ids a namespace refusal spells out before summarising. */
 const LISTED_VIOLATIONS = 10;
 
-/** Enough beyond {@link LISTED_VIOLATIONS} that the summary line has to appear. */
 const OVERFLOWING_VIOLATIONS = 3;
 
-/** A marketplace published under `name` listing exactly `pluginNames`. */
 function marketplaceListing(name: string, pluginNames: string[]): Marketplace {
   return {
     name,
@@ -65,7 +58,6 @@ describe("marketplace-generator", () => {
     await cleanupTempDir(tempDir);
   });
 
-  // Helper to create a plugin with manifest
   async function createPlugin(name: string, manifest: Record<string, unknown>): Promise<void> {
     const pluginDir = path.join(pluginsDir, name);
     await mkdir(path.join(pluginDir, PLUGIN_MANIFEST_DIR), { recursive: true });
@@ -206,14 +198,12 @@ describe("marketplace-generator", () => {
     });
 
     it("should skip directories without valid plugin.json", async () => {
-      // Create a valid plugin
       await createPlugin("web-valid-a", {
         name: "web-valid-a",
         description: "Valid plugin",
         version: "1.0.0",
       });
 
-      // Create an invalid directory (no .claude-plugin)
       await mkdir(path.join(pluginsDir, "not-a-plugin"), { recursive: true });
       await writeFile(path.join(pluginsDir, "not-a-plugin", "README.md"), "# Not a plugin");
 
@@ -349,7 +339,6 @@ describe("marketplace-generator", () => {
       await writeMarketplace(outputPath, marketplace);
 
       const content = await readFile(outputPath, "utf-8");
-      // Check for 2-space indentation
       expect(content).toContain('  "name"');
       expect(content).toContain('  "version"');
     });

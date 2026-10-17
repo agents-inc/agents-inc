@@ -14,8 +14,7 @@ import {
   toPluginMigration,
 } from "./__tests__/helpers/migration-plans";
 
-// Mock dependencies before imports. Typed against the functions they replace, so a default answer
-// the real function can no longer give is a compile error rather than a value nothing reads.
+// Typed against the functions they replace, so a stale default is a compile error.
 vi.mock("../skills", () => ({
   deleteLocalSkill: vi
     .fn<(typeof import("../skills"))["deleteLocalSkill"]>()
@@ -38,7 +37,7 @@ import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { hostAt } from "../hosts/host-for.js";
 
-/** The one host every `hostAt` answer in this file is, so a spy set here is the spy called. */
+// `hostAt` answers one shared host, so these are the spies called.
 const installPlugin = hostAt("/any-root").installPlugin;
 const uninstallPlugin = hostAt("/any-root").uninstallPlugin;
 
@@ -97,7 +96,6 @@ describe("mode-migrator", () => {
     it("should handle skills with no previous selection (new skill, no migration)", () => {
       const result = detectMigrations([], buildSkillConfigs(["web-framework-react"]));
 
-      // New skills are not migrations (no old entry to compare)
       expect(result.toEject).toStrictEqual([]);
       expect(result.toPlugin).toStrictEqual([]);
     });
@@ -105,7 +103,6 @@ describe("mode-migrator", () => {
     it("should handle skills removed in new selection (no migration)", () => {
       const result = detectMigrations(buildSkillConfigs(["web-framework-react"]), []);
 
-      // Removed skills are not migrations (no new entry to compare)
       expect(result.toEject).toStrictEqual([]);
       expect(result.toPlugin).toStrictEqual([]);
     });
@@ -137,7 +134,6 @@ describe("mode-migrator", () => {
         }),
       );
 
-      // Source changed (eject -> agents-inc), so this is a toPlugin, not a scopeChange
       expect(result.toPlugin).toHaveLength(1);
       expect(result.scopeChanges).toStrictEqual([]);
     });
@@ -151,7 +147,6 @@ describe("mode-migrator", () => {
         buildSkillConfigs(["web-framework-react"], { origin: EJECT_SOURCE }),
       );
 
-      // Only react is in both old and new with a source change
       expect(result.toEject).toHaveLength(1);
       expect(firstElement(result.toEject).id).toBe("web-framework-react");
       expect(result.toPlugin).toStrictEqual([]);
@@ -430,12 +425,6 @@ describe("mode-migrator", () => {
       });
     });
 
-    /**
-     * The copy pass is the WORK of a plugin→eject migration, so a destination that refuses
-     * it is the eject twin of a rejected `claude plugin install`. These pin the three things
-     * that made the old shape unreportable: the failure had no structure, it took the whole
-     * scope down with it, and the plugin uninstall shared its sentence.
-     */
     describe("a copy the destination refused", () => {
       const UNWRITABLE = "EACCES: permission denied, mkdir";
 
@@ -491,9 +480,7 @@ describe("mode-migrator", () => {
 
         const result = await executeMigration(plan, tempDir, sourceResult);
 
-        // Read inside the test, not at describe time: vitest.setup.ts installs the
-        // isolated-home spy per test, so a value captured during collection is the
-        // developer's real home and matches nothing.
+        // Read here, not at describe time: the isolated-home spy is installed per test.
         const globalSkillsDir = path.join(os.homedir(), ".claude", "skills");
         expect(
           copySkillsToLocalFlattened,

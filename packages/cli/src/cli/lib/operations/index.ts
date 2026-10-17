@@ -1,6 +1,3 @@
-// Operations — composable building blocks for CLI commands.
-// Each operation wraps lower-level lib functions into a single typed call.
-
 export {
   loadSource,
   sayCapturedWarnings,

@@ -8,19 +8,7 @@ import { typedKeys } from "../../../utils/typed-object";
 const EXPECTED_CATEGORY_COUNT = 102;
 const EXPECTED_EXCLUSIVE_COUNT = 35;
 
-/**
- * Every field a built-in category declares, and the whole of it.
- *
- * A roster rather than a per-field `typeof` loop, because the loop beside it can only see the
- * fields it was told to look for: a field that LEAVES the shape is invisible to it, and a
- * leftover one nothing reads is invisible twice over — it still serialises into the generated
- * matrix, and from there into every catalogue the CLI and the editor parse.
- *
- * Constrained to `keyof CategoryDefinition` so a member the type stops carrying reddens on this
- * line rather than as an unassignable union member somewhere downstream. `icon` is a genuine
- * optional that no built-in category sets, so the clause is a membership test rather than an
- * exhaustive one.
- */
+/** Every field a built-in category declares, so a field leaving the shape is caught too. */
 const CATEGORY_FIELDS = [
   "id",
   "displayName",

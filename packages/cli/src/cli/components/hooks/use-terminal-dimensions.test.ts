@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import EventEmitter from "events";
 
-// The hook uses ink's useStdout, which is hard to test without the full ink
-// rendering environment, so its contract is verified through a simplified mock test.
-
 type MockStdout = EventEmitter & {
   columns: number | undefined;
   rows: number | undefined;
@@ -23,7 +20,6 @@ describe("useTerminalDimensions contract", () => {
   });
 
   it("should provide columns and rows from stdout", () => {
-    // Verify the contract: hook reads from stdout.columns and stdout.rows
     expect(mockStdout.columns).toBe(120);
     expect(mockStdout.rows).toBe(40);
   });
@@ -59,7 +55,6 @@ describe("useTerminalDimensions contract", () => {
     const DEFAULT_COLUMNS = 80;
     const DEFAULT_ROWS = 24;
 
-    // Verify the fallback logic the hook uses
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- @types/node declares this as `number`; it is undefined whenever stdout is not a TTY
     const columns = mockStdout.columns || DEFAULT_COLUMNS;
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- @types/node declares this as `number`; it is undefined whenever stdout is not a TTY

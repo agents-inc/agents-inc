@@ -5,27 +5,13 @@ import { getErrorMessage } from "../../../utils/errors.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 
 export type MarketplaceResult = {
-  /** The resolved marketplace name, or null if no marketplace is configured. */
   marketplace: string | null;
-  /** Whether a new marketplace was registered (vs. updated or already existed). */
   registered: boolean;
 };
 
 /**
- * Ensures the marketplace is registered with the host this installation runs on.
- *
- * The host is a parameter rather than something resolved here: this is the one plugin operation
- * that is handed no directory at all — a marketplace is user-level state under one HOME, and its
- * verbs take a name and a source and nothing else — so there is no folder for it to read a
- * provider off.
- *
- * If the marketplace does not exist, registers it. If it exists, updates it.
- * Handles lazy marketplace name resolution when sourceResult.marketplace is undefined.
- *
- * Reports nothing on success — commands decide what to log based on the `registered`
- * flag — but never swallows a failure: `requireMarketplace` turns a null marketplace
- * into a hard error whose text cannot tell a transient fetch failure apart from a
- * source that genuinely ships no marketplace, so the cause is warned here or nowhere.
+ * Registers the marketplace, or refreshes it when it exists. A resolution failure is warned here
+ * because `requireMarketplace`'s error cannot tell its cause.
  */
 export async function ensureMarketplace(
   sourceResult: SourceLoadResult,

@@ -30,12 +30,7 @@ import {
   deriveDomains,
   regenerateConfigTypes,
 } from "../configuration/config-types-writer";
-// The catalogue the renderers take as a parameter. It is the singleton this CLI seats at
-// startup, which is what `generateConfigSource` read directly before the renderers moved into
-// `@workspace/compile` and the editor became a second caller with a catalogue of its own.
-// Inside the fan-out it is the seat `withCatalogueSeatedFor` has put the current project's
-// catalogue in, which is why the config half needs no catalogue argument to follow the types
-// half onto the right one.
+// Inside the fan-out this is the seat `withCatalogueSeatedFor` gave the current project.
 import { matrix as activeMatrix } from "../matrix/matrix-provider";
 import { withCatalogueSeatedFor } from "../loading/catalogue-seat.js";
 import { fileExists, writeFile } from "../../utils/fs";
@@ -43,8 +38,6 @@ import { getErrorMessage } from "../../utils/errors";
 import { verbose } from "../../utils/logger";
 import { typedEntries, typedKeys } from "../../utils/typed-object";
 import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
-// The merge a project install resolves the global config through lives in `@workspace/compile`,
-// because the editor's output preview resolves the global config it draws through it too.
 import { addSessionToGlobal, type ResolvedGlobalConfig } from "@workspace/compile/global-config";
 
 export { mergeGlobalConfigs } from "@workspace/compile/global-config";
@@ -58,30 +51,12 @@ export async function writeConfigFile(
   await writeFile(configPath, source);
 }
 
-/**
- * The single normalization for every value compared against the global config's
- * `projects` array — the one written by {@link registerProjectPath}, the one the
- * gate's `deregister-project` mutation filters against, and the current-project
- * skip in {@link propagateGlobalChangesToProjects}. Symlinks are resolved, so an entry
- * stored under one of them matches byte-for-byte under the others. The two ends
- * normalizing differently is what left symlinked layouts (macOS `/tmp`, a
- * `~/dev/repo` pointing at `/data/repo`) registered forever after an uninstall.
- *
- * Throws when the directory does not exist. That is deliberate: a path that
- * cannot be resolved is an error, not a cue to fall back to a weaker
- * normalization — a second tier would reintroduce exactly the asymmetry this
- * helper exists to remove. The one caller that must survive it (`uninstall`'s
- * deregistration) already wraps the call in a warn-and-continue guard.
- */
+/** The one normalization for `projects` comparisons; resolves symlinks, throws if missing. */
 export function normalizeProjectPath(projectDir: string): string {
   return fs.realpathSync(projectDir);
 }
 
-/**
- * Registers a project directory in the global config's `projects` array.
- * Paths are normalized via {@link normalizeProjectPath} to resolve symlinks.
- * Filters stale entries (where the project's config.ts no longer exists).
- */
+/** Filters stale entries whose config.ts no longer exists. */
 async function registerProjectPath(
   globalConfig: ProjectConfig,
   projectDir: string,
@@ -89,7 +64,6 @@ async function registerProjectPath(
   const normalizedPath = normalizeProjectPath(projectDir);
   const existing = globalConfig.projects ?? [];
 
-  // Filter stale entries
   const staleChecks = await Promise.all(
     existing.map(async (p) => ({
       path: p,
@@ -110,25 +84,15 @@ function isProjectScopedEntry(entry: ScopedEntry): boolean {
   return entry.scope === "project";
 }
 
-/** True when the global config still has an active (non-excluded) skill for this id. */
 function globalHasActiveSkill(globalConfig: ProjectConfig, id: SkillId): boolean {
   return globalConfig.skills.some((s) => s.id === id && isActiveAt(s, "global"));
 }
 
-/** True when the global config still has an active (non-excluded) agent for this name. */
 function globalHasActiveAgent(globalConfig: ProjectConfig, name: AgentName): boolean {
   return globalConfig.agents.some((a) => a.name === name && isActiveAt(a, "global"));
 }
 
-/**
- * Keeps a project's own skill entries when re-inlining fresh global data, dropping
- * tombstones that no longer correspond to a real global install.
- *
- * A tombstone (`scope === "global" && excluded`) only has meaning while the global entry
- * it masks still exists. Once the skill has been removed from the global config, the
- * tombstone is stale — carrying it forward would leave the project showing a masked
- * global item that no longer exists. Project-scoped entries are always retained.
- */
+/** Keeps project-scoped entries and drops tombstones whose global entry is gone. */
 function retainProjectOwnedSkills(
   skills: SkillConfig[],
   globalConfig: ProjectConfig,
@@ -140,7 +104,6 @@ function retainProjectOwnedSkills(
   );
 }
 
-/** Agent mirror of {@link retainProjectOwnedSkills}. */
 function retainProjectOwnedAgents(
   agents: AgentScopeConfig[],
   globalConfig: ProjectConfig,
@@ -153,10 +116,7 @@ function retainProjectOwnedAgents(
 }
 
 /**
- * Category a skill belongs to according to the MERGED matrix. `undefined` when the
- * matrix has no entry for the id (a user-authored local skill carries no matrix
- * record) or when the entry sits in the `local` pseudo-category — neither
- * participates in category rules, and neither may throw.
+ * Undefined for an id the matrix lacks or a `local` skill; neither participates in category rules.
  */
 function categoryOfSkill(id: SkillId, matrix: MergedSkillsMatrix): Category | undefined {
   const category = matrix.skills[id]?.category;
@@ -164,15 +124,7 @@ function categoryOfSkill(id: SkillId, matrix: MergedSkillsMatrix): Category | un
   return category;
 }
 
-/**
- * True when the merged matrix DECLARES this category as holding at most one skill.
- * Read from the matrix passed in rather than `defaultCategories` so a source repo's
- * category overrides are honoured.
- *
- * A category the matrix does not declare is deliberately NOT treated as exclusive:
- * a rule that MASKS persisted entries must only fire on a flag the data actually
- * carries.
- */
+/** From the merged matrix, so source overrides count; an undeclared category is not exclusive. */
 function isExclusiveCategory(category: Category, matrix: MergedSkillsMatrix): boolean {
   return matrix.categories[category]?.exclusive === true;
 }
@@ -190,16 +142,7 @@ function activeProjectCategories(
   );
 }
 
-/**
- * The collision that justifies masking a live global skill. Two kinds, both read from the
- * project's OWN entries: IDENTITY — the project owns the same id at project scope; CATEGORY —
- * the project owns a different active skill in the same category and the matrix declares that
- * category exclusive.
- *
- * Shared by the mask producer ({@link maskCollidingGlobalSkills}) and the self-heal that
- * removes a mask once its collision clears ({@link dropOrphanedDerivedMasks}), so the two can
- * never disagree about what a mask means.
- */
+/** IDENTITY (same id at project scope) or CATEGORY (exclusive category); shared with self-heal. */
 function buildProjectCollisionTest(
   projectOwnedSkills: SkillConfig[],
   matrix: MergedSkillsMatrix,
@@ -220,14 +163,7 @@ function buildProjectCollisionTest(
   };
 }
 
-/**
- * Drops a derived mask that no longer masks anything, so the global install becomes
- * visible again once the collision that produced it is gone.
- *
- * A derived mask and a user-authored tombstone are BYTE-IDENTICAL in config.ts — both are
- * `{ id, scope: "global", excluded: true }`. A mask is kept iff the collision that would
- * re-derive it is still there.
- */
+/** A derived mask is byte-identical to a user tombstone, so it stays while its collision does. */
 function dropOrphanedDerivedMasks(
   projectOwnedSkills: SkillConfig[],
   matrix: MergedSkillsMatrix,
@@ -238,11 +174,7 @@ function dropOrphanedDerivedMasks(
   );
 }
 
-/**
- * Agent mirror of {@link dropOrphanedDerivedMasks}, identity collisions only: agents
- * have no categories, so the project-scoped sibling with the same name is the only thing a
- * mask can be justified by.
- */
+/** Agents have no categories, so only an identity collision justifies a mask. */
 function dropOrphanedDerivedAgentMasks(projectOwnedAgents: AgentScopeConfig[]): AgentScopeConfig[] {
   const ownedNames = new Set(activeProjectAgentNames(projectOwnedAgents));
   return projectOwnedAgents.filter(
@@ -251,26 +183,8 @@ function dropOrphanedDerivedAgentMasks(projectOwnedAgents: AgentScopeConfig[]): 
 }
 
 /**
- * Builds the tombstones that mask live global skills this project cannot show
- * alongside what it already owns at project scope. Two collision kinds, both keyed
- * against the SAME live global config:
- *
- * 1. IDENTITY — the project owns the same id at project scope. Without the
- *    mask, `partitionInlinedConfigEntries` re-inlines the global copy as a SECOND
- *    active entry, leaving one id active at BOTH scopes instead of rendering the
- *    dual-scope `[P][G]` pair.
- * 2. CATEGORY — the project owns a DIFFERENT active skill in the same category and
- *    the matrix declares that category exclusive. Reconciliation keyed on identity
- *    alone cannot see this, so a project owning Vue plus a global install of React
- *    ends up with two active skills in a category that permits one.
- *
- * The project-owned skill wins locally. Letting global win would silently uninstall the user's
- * own skill.
- *
- * Tombstones are spread from the global entry so they carry the global install's
- * `origin`. A skill the project merely inherits (no active project-scope entry, no
- * exclusive-category collision) is skipped — it stays a single active global entry.
- * A skill the project already tombstones is skipped so re-running is idempotent.
+ * Tombstones masking live global skills that collide with what the project owns; the project's own
+ * skill wins. Spread from the global entry so they carry its `origin`. Idempotent.
  */
 function maskCollidingGlobalSkills(
   projectOwnedSkills: SkillConfig[],
@@ -290,10 +204,7 @@ function maskCollidingGlobalSkills(
     .map((globalEntry) => ({ ...globalEntry, excluded: true }));
 }
 
-/**
- * Agent mirror of {@link maskCollidingGlobalSkills}, identity collisions only.
- * Agents have no categories, so there is no grouping dimension to reconcile.
- */
+/** Identity collisions only: agents have no categories. */
 function maskCollidingGlobalAgents(
   projectOwnedAgents: AgentScopeConfig[],
   globalConfig: ProjectConfig,
@@ -314,22 +225,8 @@ function maskCollidingGlobalAgents(
 }
 
 /**
- * Reconciles a project's OWN entries against the live global config, immediately
- * before the inlining writer merges the two.
- *
- * Applied at BOTH sites that write a project `config.ts` with `globalConfig` inlined:
- * `propagateGlobalChangesToProjects` (a global change fanning out to registered
- * projects) and the project-scope save branch of `writeConfigByScope` (an ordinary
- * project `init`/`edit` performed while the colliding skill is already active
- * globally). Either site alone can produce the malformed shape, so both must run it.
- *
- * Self-heal runs BEFORE masking on BOTH axes so a mask whose collision has cleared is
- * removed rather than immediately re-derived, and so masking's `alreadyTombstoned` guard
- * only sees tombstones that are still warranted.
- *
- * Masking is PROJECT-LOCAL: it is applied to the project split only. The global
- * config passed in is read, never rewritten — tombstones never belong in the
- * global config.ts.
+ * Run at both sites that inline `globalConfig` into a project config. Self-heal precedes masking,
+ * and masking is project-local: the global config is never rewritten.
  */
 export function reconcileProjectSplitAgainstGlobal(
   projectSplit: ProjectConfig,
@@ -346,18 +243,7 @@ export function reconcileProjectSplitAgainstGlobal(
 }
 
 /**
- * Computes the skill ids that this project inherited from global scope but that are
- * no longer active at global scope after the change being propagated — and that the
- * project does not own at project scope. These are the only ids that should be pruned
- * from the project's stack: a project-scoped agent may legitimately reference a
- * globally-installed skill, and once that skill is removed at global scope the
- * reference becomes dangling.
- *
- * `priorProjectSkills` is the project's pre-reconciliation (on-disk, inlined) skills.
- * A global skill that was just removed still appears here as a `scope: "global"`,
- * non-excluded entry, which is the signal we key on. Project-scoped skills and
- * user-authored local skills (which carry no SkillConfig entry at all) are never in
- * this set, so they are always preserved.
+ * Global skills the project inherited that are no longer active globally and that it does not own.
  */
 function computeRemovedGlobalSkillIds(
   priorProjectSkills: SkillConfig[],
@@ -382,14 +268,7 @@ function computeRemovedGlobalSkillIds(
   );
 }
 
-/**
- * Prunes stack references to global skills that were just removed at global scope,
- * so a project-scoped agent stops referencing a skill that no longer exists anywhere.
- * Only ids in `removedGlobalSkillIds` are dropped — every other assignment is kept
- * verbatim, in order, with its `preloaded` flag untouched. Categories and agents left
- * empty by the pruning are removed. When nothing was removed, the stack is returned
- * unchanged so unaffected projects produce byte-identical config output.
- */
+/** Drops only the removed ids and any category or agent left empty; unchanged when none were. */
 function retainReconciledStack(
   stack: Record<string, StackAgentConfig> | undefined,
   removedGlobalSkillIds: Set<SkillId>,
@@ -406,17 +285,14 @@ function retainReconciledStack(
   return reconciled;
 }
 
-/**
- * One agent's stack with the removed ids' assignments dropped, keeping every other assignment in
- * order. A category the pruning empties is left out.
- */
+/** A category the pruning empties is left out. */
 function withoutRemovedAssignments(
   agentStack: StackAgentConfig,
   removedGlobalSkillIds: Set<SkillId>,
 ): StackAgentConfig {
   const reconciledAgentStack: StackAgentConfig = {};
   for (const [category, assignments] of typedEntries<Category, SkillAssignment[]>(agentStack)) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     if (!assignments) continue;
     const kept = assignments.filter((assignment) => !removedGlobalSkillIds.has(assignment.id));
     if (kept.length > 0) reconciledAgentStack[category] = kept;
@@ -424,10 +300,7 @@ function withoutRemovedAssignments(
   return reconciledAgentStack;
 }
 
-/**
- * The registered projects one fan-out rewrote, and the ones it left alone, by why. Each project is
- * in exactly one, so a run can say which and why for each.
- */
+/** Each registered project lands in exactly one list. */
 export type PropagationResult = {
   updated: string[];
   /** Its `config.ts` is there and cannot be loaded. */
@@ -441,25 +314,11 @@ export type PropagationResult = {
 };
 
 export type PropagationOptions = {
-  /**
-   * Whether each project's config-types.ts is rewritten alongside its config.ts.
-   * False for a change that moves no type union — a project inlines the global
-   * scalars into its config half, but no union is derived from them.
-   */
+  /** False for a change that moves no type union. */
   regenerateTypes?: boolean;
 };
 
-/**
- * The single writer for a project's config pair, used by BOTH sites that emit
- * one: the per-project propagation step below and the project branch of
- * `writeConfigByScope`.
- *
- * `buildProjectTypesExtras` is fed the EFFECTIVE config — the project's own
- * reconciled rows plus the active global rows the writer is about to inline —
- * at both sites. The emitted config.ts names every one of those rows, so extras
- * derived from the project split alone declare fewer literals than the sibling
- * config.ts uses, and the pair stops type-checking against itself.
- */
+/** The one project pair writer; extras come from the effective config so the pair agrees. */
 export async function writeProjectConfigPair(
   projectDir: string,
   provider: Provider,
@@ -471,9 +330,7 @@ export async function writeProjectConfigPair(
 ): Promise<void> {
   const configPath = refuseAWriteOutsideTheInstallation(projectDir, provider);
 
-  // Reconcile-before-both-writes: the two halves are derived from the same
-  // reconciled data in the same call, so neither can describe a config the other
-  // does not.
+  // Both halves from the same reconciled data, so neither describes a config the other does not.
   await writeConfigFile(reconciledSplit, configPath, {
     isProjectConfig: true,
     globalConfig: effectiveGlobal,
@@ -481,11 +338,7 @@ export async function writeProjectConfigPair(
 
   if (options.regenerateTypes === false) return;
 
-  // Uses the same global-aware path for project types — emits
-  // `import type { SkillId as GlobalSkillId, ... }` and extends with any
-  // project-scoped items the project owns. Without this, a global-scope install
-  // would overwrite the project's import-form types with the standalone/inlined
-  // form.
+  // The global-aware path, so a global-scope install keeps the project's import-form types.
   await regenerateConfigTypes(
     projectDir,
     Promise.resolve(buildConfigTypesBackgroundData(matrix, agents)),
@@ -493,13 +346,7 @@ export async function writeProjectConfigPair(
   );
 }
 
-/**
- * The rows the inlining writer draws a project's config.ts from: the project's
- * own reconciled entries plus everything the global config contributes. Union
- * membership is decided downstream by `buildProjectTypesExtras`, which reads the
- * active entries — a tombstone's id always arrives via the live global row it
- * masks.
- */
+/** The project's own reconciled entries plus everything the global config contributes. */
 function inlinedProjectView(
   reconciledSplit: ProjectConfig,
   effectiveGlobal: ProjectConfig,
@@ -516,20 +363,7 @@ function inlinedProjectView(
   };
 }
 
-/**
- * The project's OWN entries, reconciled against the now-current global config — the
- * half the inlining writer is about to merge fresh global data into.
- *
- * Project-scoped entries, plus tombstones that still correspond to a live global
- * install. Tombstones whose global entry has been removed are dropped here so the
- * project stops referencing a global item that no longer exists. The stack is
- * reconciled against the same now-current global data so a project-scoped agent stops
- * referencing a global skill that was just removed at global scope.
- *
- * `onDisk.skills` (pre-reconciliation) is what detects the removed globals, because a
- * skill the global scope just lost is still present there as a `scope: "global"`
- * reference.
- */
+/** Project-scoped entries and live tombstones; `onDisk.skills` reveals just-removed globals. */
 function reconcileAgainstGlobal(
   onDisk: ProjectConfig,
   globalConfig: ProjectConfig,
@@ -551,22 +385,7 @@ function reconcileAgainstGlobal(
 }
 
 /**
- * The config path this project's pair is written to, checked against the installation that is
- * actually in that directory.
- *
- * C2's compile-time proof does not reach here. Propagation resolves its destination from a
- * config-derived STRING — a path out of the global config's `projects` array — so deleting the
- * provider default finds every typed caller and none of these. The assertion is the runtime half
- * of the same guarantee: a pair written into the source folder of a provider the directory does
- * not hold is a write into another installation, and the one thing this step must never do
- * quietly.
- *
- * **The two sides are two independent reads, and that is the whole of the fix.** It compared
- * `getInstalledConfigPath(projectDir)` against `sourceFolderInUse(projectDir, providerInUse(...))`
- * until 2026-09-21 — one `providerInUse` answer joined with `config.ts` on one side and left bare
- * on the other, so the comparison was `join(folder, "config.ts").startsWith(folder)` and no disk
- * state could make it fail. What the caller BELIEVES now arrives as `provider`; what the
- * installation IS is read here.
+ * The caller's believed provider checked against the installation on disk: two independent reads.
  */
 function refuseAWriteOutsideTheInstallation(projectDir: string, provider: Provider): string {
   const installed = providerInUse(projectDir);
@@ -581,21 +400,7 @@ function refuseAWriteOutsideTheInstallation(projectDir: string, provider: Provid
   return configPath;
 }
 
-/**
- * Rewrites ONE registered project's pair against the now-current global config.
- * Answers false when the project has a config file the loader returns nothing for,
- * which is the caller's cue to record it as unreached.
- *
- * Every catalogue lookup this makes is against the catalogue
- * {@link withCatalogueSeatedFor} loads for THIS project — its own local skills, and the
- * skills of the marketplace its own config names — rather than the one belonging to the
- * command that triggered the fan-out. Three readers depend on it and none of them can be
- * satisfied by the triggering command's: {@link reconcileAgainstGlobal} decides which of
- * the project's entries survive by their categories, `buildProjectTypesExtras` derives
- * the project's `Category` and `Domain` unions from them, and the config half's writer
- * reads the seated singleton directly. A skill only this project's catalogue carries used
- * to resolve to nothing in all three.
- */
+/** Looks everything up in this project's own seated catalogue. False for an empty config. */
 async function propagateToProject(
   projectPath: string,
   provider: Provider,
@@ -603,8 +408,7 @@ async function propagateToProject(
   agents: Partial<Record<AgentName, AgentDefinition>>,
   options: PropagationOptions,
 ): Promise<boolean> {
-  // Before the catalogue: its load reads this config too, and refuses it in words no caller can
-  // tell from any other failure, where this raises a ConfigLoadError.
+  // Before the catalogue load, whose refusal of this config is indistinguishable from others.
   const existingProject = await loadInstalledConfig(projectPath);
   if (!existingProject?.config) return false;
 
@@ -624,19 +428,7 @@ async function propagateToProject(
   });
 }
 
-/**
- * Propagates global config changes to all registered project configs.
- * Updates each project's config-types.ts (type unions) and config.ts (inlined global data).
- * Skips stale project paths, the current project being installed, and any registered project
- * that belongs to a DIFFERENT provider's installation.
- *
- * There is deliberately NO catalogue parameter. Each project's own is loaded per project by
- * {@link propagateToProject}, and a parameter beside that could only ever be the wrong one —
- * which is what every caller used to pass. A project whose catalogue cannot be loaded lands
- * in `failed` through the same catch as any other failure: leaving it stale is recoverable
- * by a run from inside it, where rewriting its types from another installation's catalogue
- * is the fight this exists to end.
- */
+/** No catalogue parameter: each project's own is loaded; a failed load lands in `failed`. */
 export async function propagateGlobalChangesToProjects(
   globalConfig: ProjectConfig,
   agents: Partial<Record<AgentName, AgentDefinition>>,
@@ -656,11 +448,8 @@ export async function propagateGlobalChangesToProjects(
 
   const currentNormalized = currentProjectDir ? normalizeProjectPath(currentProjectDir) : null;
 
-  // One project at a time, never `Promise.all`: each propagation seats its project's catalogue
-  // in the module-wide matrix singleton and restores the previous one after, so two in flight
-  // would render against each other's.
+  // Sequential: each propagation seats its project's catalogue in the module-wide singleton.
   for (const projectPath of projects) {
-    // Skip the project currently being installed (it's already being written)
     if (currentNormalized && projectPath === currentNormalized) continue;
 
     const outcome = await propagateToRegisteredProject(
@@ -676,17 +465,7 @@ export async function propagateGlobalChangesToProjects(
   return result;
 }
 
-/**
- * Brings one registered project's pair up to date with the global config, or leaves it alone and
- * answers why: nothing installed there any more, another provider's installation, a config that is
- * there and cannot be loaded, or a propagation that threw — loading its catalogue as much as
- * writing its pair. None of them stops the fan-out.
- *
- * Whether anything is installed there is asked first, of every provider, because the provider
- * policy cannot answer it: the layout reads a folder holding nothing as the provider a NEW
- * installation is made under, so to a global on the other provider a deleted project reads as
- * another provider's.
- */
+/** No skip reason stops the fan-out. Installation presence is asked first, of every provider. */
 async function propagateToRegisteredProject(
   projectPath: string,
   provider: Provider,
@@ -725,23 +504,7 @@ async function holdsAnInstallation(projectPath: string): Promise<boolean> {
   return configs.includes(true);
 }
 
-/**
- * Why a registered project that holds an installation is not this fan-out's to rewrite, or `null`
- * when it is.
- *
- * A global installation fans out only within its own provider family: `projects[]` is a list of
- * directories with nothing in it saying which installation each belongs to, so a project on the
- * other provider is a different installation that happens to be registered here, and rewriting
- * its pair from this global's data is the cross-installation write the folders exist to prevent.
- * A root the layout reads as this provider's while it holds no config of this provider's — a run
- * whose `--provider` named it — holds only the other provider's, so it is not ours either.
- *
- * **A refusal is a reason to skip, never a reason to abort the fan-out.** `providerInUse` refuses
- * a root whose installation this release has no host for, and a registered project it cannot act
- * on is one to leave alone — exactly as a project on the other provider is. The refusal's own
- * sentence becomes the reason, so the folder that produced it reaches the verbose log rather than
- * being replaced by a summary of it.
- */
+/** `null` when ours to rewrite. A `providerInUse` refusal skips the project, never aborts. */
 async function whyThisProjectIsNotOurs(
   projectPath: string,
   provider: Provider,
@@ -756,23 +519,8 @@ async function whyThisProjectIsNotOurs(
 }
 
 /**
- * Prunes CLI-inlined global-scoped entries from every registered project after a
- * GLOBAL uninstall. Reuses {@link propagateGlobalChangesToProjects} with an
- * emptied global config so every global skill/agent reads as removed: project-
- * scoped entries are retained verbatim, inlined global rows and tombstones are
- * dropped, per-agent stack refs lose their global-only ids, and each project's
- * config-types.ts is regenerated.
- *
- * Call AFTER the global config manifest has been removed so the regenerated
- * project types fall back to the standalone form instead of importing from the
- * now-deleted global config-types.ts. Unreachable project dirs are reported by why,
- * never thrown.
- *
- * The per-project catalogue seat comes with the reuse, and this is the case that needs it
- * most: the standalone form these projects fall back to declares its unions from the
- * catalogue outright rather than extending an imported one, so a project's own skills are
- * the ONLY thing keeping their categories in the file. Derived from the uninstalling
- * command's catalogue, a global uninstall would take a project's own taxonomy with it.
+ * Reuses the fan-out with an emptied global config. Call it after the global manifest is removed;
+ * unreachable dirs are reported, never thrown.
  */
 export async function pruneGlobalEntriesFromRegisteredProjects(
   globalConfig: ProjectConfig,
@@ -787,14 +535,7 @@ export async function pruneGlobalEntriesFromRegisteredProjects(
   return propagateGlobalChangesToProjects(emptiedGlobal, agents, provider);
 }
 
-/**
- * Resolves the global config a project install should write, and registers this project's path.
- * `globalDataChanged` gates propagation; `changed` gates the write itself.
- *
- * `authority` is `mergeConfigs`' own word for how much of what it can see the session owns, and
- * it selects between two resolutions: `matchGlobalToSession` below, and `addSessionToGlobal` from
- * `@workspace/compile`. Absent, or `"owned"`, keeps the standing additive behaviour.
- */
+/** `globalDataChanged` gates propagation and `changed` the write; `"all"` matches the session. */
 export async function resolveEffectiveGlobalConfig(
   globalSplit: ProjectConfig,
   existingGlobalConfig: ProjectConfig | undefined,
@@ -814,25 +555,7 @@ export async function resolveEffectiveGlobalConfig(
   };
 }
 
-/**
- * The resolution for a session that owns every scope it can see: the global config is made to
- * MATCH it, so a global entry the session left out is REMOVED rather than preserved.
- *
- * One caller reaches this — a confirmed `edit --from` — and it is not acting on its own
- * initiative: it states a whole roster, its plan showed every global removal under its own
- * heading, named every other registered project the removal reaches, and somebody answered yes.
- * Nothing else in the CLI may write the global config from a project, and this does not widen
- * that: the word arrives from the command, not from the shape of the data.
- *
- * `mergeConfigs` is what does it rather than a merge of this module's own, because "absent from
- * the session means deselected" is exactly what `authoritativeScope: "all"` already means at the
- * home root. It carries the global installation's identity, its stack fallback and its
- * `projects[]` registry across — a session's split says nothing about who the global
- * installation is or which projects read it, and the fan-out walks that registry.
- *
- * An empty session is a real answer here, so there is no `hasGlobalItems` shortcut: a
- * configuration that installs nothing globally removes what was.
- */
+/** Makes the global config MATCH a confirmed `edit --from` session, even an empty one. */
 function matchGlobalToSession(
   globalSplit: ProjectConfig,
   existingGlobalConfig: ProjectConfig | undefined,
@@ -845,26 +568,11 @@ function matchGlobalToSession(
 
 /** Category keys the emitted stack holds, across every agent it configures. */
 function stackCategories(stack: ProjectConfig["stack"]): Category[] {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
   return Object.values(stack ?? {}).flatMap((agentStack) => typedKeys<Category>(agentStack ?? {}));
 }
 
-/**
- * Derives the extras for regenerateConfigTypes so a project's config-types.ts declares every
- * literal its sibling config.ts holds — the two are written from the same config and must not
- * be able to disagree.
- *
- * ALL active (non-excluded) entries, not just project-scoped ones:
- * generateProjectConfigWithInlinedGlobal writes the active global rows into the project's own
- * config.ts verbatim, and the imported Global* unions cover those rows only for as long as the
- * global config still happens to contain them. A later global-scope run narrows those unions
- * and a project nobody touched stops type-checking (TS2322 on a skill id or domain, TS2353 on a
- * stack's category key).
- *
- * Domains and stack categories are read off the config's own arrays as well as derived from its
- * skill rows: `selectedDomains` is a preference no skill row has to back, and neither it
- * nor a stack entry is pruned when the last skill that would derive it leaves.
- */
+/** Extras from ALL active entries: the project's config.ts inlines the active global rows. */
 export function buildProjectTypesExtras(
   finalConfig: ProjectConfig,
   matrix: MergedSkillsMatrix,

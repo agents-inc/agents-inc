@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import path from "path";
 import { pick } from "remeda";
 
-// Mock file system and logger (manual mocks from __mocks__ directories)
 vi.mock("../../utils/fs");
 vi.mock("../../utils/logger");
 
@@ -264,8 +263,7 @@ Content`;
   it("should return null when frontmatter YAML uses tabs for indentation", () => {
     const content = "---\n\tname: skill\n\tdescription: desc\n---\n\nContent";
 
-    // YAML spec forbids tabs for indentation; extractFrontmatter catches the
-    // parser error and returns null rather than propagating the throw
+    // YAML forbids tab indentation; the parser error is caught and null returned.
     const result = parseFrontmatter(content);
 
     expect(result).toBeNull();
@@ -350,7 +348,6 @@ Content`;
 
     const result = parseFrontmatter(content);
 
-    // Extra fields are ignored by the schema (passthrough or stripped)
     expect(result).not.toBeNull();
     expect(result?.name).toBe("nested-skill");
   });
@@ -399,27 +396,7 @@ describe("loadAllAgents", () => {
     expect(result).toStrictEqual({});
   });
 
-  /**
-   * The loader builds its `AgentDefinition` from an explicit field list, so a key `metadata.yaml`
-   * declares and this list omits is dropped here — before the resolver, before the template, and
-   * without a warning, because the schema accepted it.
-   *
-   * Five fields were being dropped that way and every one is read downstream: `agent.liquid`
-   * renders `effort`, `disallowedTools`, `permissionMode`, `isolation` and `hooks`. `effort` is the
-   * one that shows the shape of the bug best — `resolveAgents` reads `agentConfig.effort ??
-   * definition.effort`, and `definition.effort` could never be anything but `undefined`, so the
-   * fallback half of a documented two-source setting had no reachable value.
-   *
-   * A roster rather than a field-by-field check: the subject is which declared fields survive the
-   * read, and a per-key assertion cannot see the next one to be dropped. Bound to
-   * {@link LOADED_OPTIONAL_FIELDS} rather than written twice, because the roster had already been
-   * outgrown by its own fixture: `experimental` was added to the metadata this test writes with no
-   * matching line in the assertion or in the sibling's filter, so deleting the loader's
-   * `experimental` spread left all 56 specs in this file green. Binding both tests to one constant
-   * makes that a compile error instead of a silent gap — add a key here and it is written into the
-   * metadata and checked by both assertions in the same edit. `resolver.test.ts` binds its own
-   * pair the same way, one layer down.
-   */
+  /** One constant feeds the metadata and both assertions, so a dropped field cannot hide. */
   const LOADED_OPTIONAL_FIELDS = {
     model: "opus",
     effort: "xhigh",
@@ -443,21 +420,7 @@ describe("loadAllAgents", () => {
     );
   });
 
-  /**
-   * The refusal that belongs at this boundary rather than two layers downstream.
-   *
-   * `agent.liquid` emits `hooks: {{ agent.hooks | json }}` from whatever this loader returned, and
-   * a compiled agent's frontmatter is read back through `agentFrontmatterValidationSchema` by
-   * `doctor` and by `compileAgentPlugin`. The loader used to take a looser hooks contract than
-   * that reader: a definition written with its actions one level flat was stripped to `{}` here
-   * with no error, the template emitted the empty definition, and the refusal then arrived against
-   * a compiled `.md` the user never wrote — with the command they did write already gone.
-   *
-   * The path is asserted alongside the field, because naming the file is the whole reason the
-   * refusal belongs here: this is the last boundary that still knows which `metadata.yaml` the
-   * value came from. The permitted case is the roster above, which declares a well-formed hooks
-   * block and must keep loading it.
-   */
+  /** Refused here, the last boundary that still knows which metadata.yaml the value came from. */
   it("refuses a hooks block declaring no actions, naming the file and the field", async () => {
     const HOOK_EVENT = "SubagentStop";
     const AGENT_DIR = "gated";
@@ -694,11 +657,7 @@ const USABLE_METADATA = [
 /** Unparseable: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_METADATA = `{{{ this is not: valid: yaml: "at all`;
 
-/**
- * A metadata.yaml describing its skill in every field, wearing the placeholder
- * category no domain claims — the one shape a reader can find nothing wrong with
- * and still have nowhere to put.
- */
+/** A complete metadata.yaml wearing the placeholder category no domain claims. */
 const PLACEHOLDER_CATEGORY_METADATA = [
   "displayName: React",
   "slug: react",
@@ -817,8 +776,7 @@ describe("loadSkillsFromDir with requireMetadata", () => {
     vi.mocked(directoryExists).mockResolvedValue(true);
     vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
     vi.mocked(fileExists).mockResolvedValue(true);
-    // The metadata.yaml is read before the SKILL.md, and refusing it means the
-    // SKILL.md is never reached — the skill is not loaded from its frontmatter.
+    // metadata.yaml is read first, so refusing it means SKILL.md is never reached.
     vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_METADATA);
 
     const result = await loadSkillsFromDir("/project/.claude/skills", {

@@ -45,10 +45,7 @@ const MAX_NAME_LENGTH = 200;
 /** Matches giget's source protocol regex to extract provider name */
 const SOURCE_PROTO_RE = /^([\w-.]+):/;
 
-/**
- * Matches giget's input regex for git URI parsing.
- * Groups: repo (org/name), subdir (optional path), ref (optional #branch)
- */
+/** giget's git URI regex. Groups: repo (org/name), subdir, ref (#branch). */
 const GIT_URI_RE = /^(?<repo>[\w.-]+\/[\w.-]+)(?<subdir>[^#]+)?(?<ref>#[\w./@-]+)?/;
 
 export type FetchOptions = {
@@ -113,15 +110,7 @@ async function fetchFromLocalSource(source: string, subdir?: string): Promise<Fe
   };
 }
 
-/**
- * Compute the giget tarball cache directory for a source.
- *
- * Replicates giget's internal cache path logic:
- *   `{gigetCacheRoot}/{providerName}/{templateName}`
- *
- * where templateName is `repo.replace("/", "-")` sanitized to `[a-zA-Z0-9-]`.
- * Returns undefined if the source format doesn't match giget's git URI pattern.
- */
+/** Replicates giget's cache path, `{root}/{provider}/{repo}`; undefined for a non-git source. */
 export function getGigetCacheDir(source: string): string | undefined {
   const protoMatch = source.match(SOURCE_PROTO_RE);
 
@@ -148,10 +137,7 @@ export function getGigetCacheDir(source: string): string | undefined {
   return path.join(gigetCacheRoot, providerName, templateName);
 }
 
-/**
- * Clear giget's tarball/ETag cache for a source so downloadTemplate()
- * performs a fresh fetch instead of short-circuiting with a stale ETag.
- */
+/** Clears giget's tarball/ETag cache so downloadTemplate() fetches fresh. */
 async function clearGigetCache(source: string): Promise<void> {
   const gigetDir = getGigetCacheDir(source);
   if (!gigetDir) return;
@@ -206,48 +192,21 @@ async function fetchFromRemoteSource(source: string, subdir?: string): Promise<F
   }
 }
 
-/**
- * What a revalidation learned about the copy in the cache.
- *
- * `unrecorded` is a cache with no fetch record beside it — written before this
- * check existed, or by hand. Nothing can be asked about it, so it is re-fetched
- * once to establish a record, and that re-fetch is not a change to announce.
- */
+/** `unrecorded`: no fetch record beside the cache, so it is re-fetched once, quietly. */
 type CacheVerdict = "current" | "superseded" | "unrecorded" | "unreachable";
 
 type SourceRevalidation = z.infer<typeof sourceRevalidationSchema>;
 
-/**
- * How long a revalidation may spend asking before the cached copy is used
- * instead. Against the default marketplace the question costs ~260ms, so five
- * seconds is around twenty times a healthy answer: a link slow enough to need
- * that much is still given the chance to answer, rather than being told its copy
- * may be stale when the source was reachable all along. Being unreachable is the
- * rare case, and a longer honest wait for it is cheaper than a wrong verdict on
- * a slow one. The bound still exists — the platform's own connect timeout is
- * ~10s, which is the wait no user with a dropped connection should sit through
- * for an answer their cache already holds.
- */
+/** About twenty times a healthy answer, and half the platform's ~10s connect timeout. */
 const REVALIDATION_TIMEOUT_MS = 5000;
 
 /** Where a cache directory's fetch record sits: beside it, never inside it. */
 const FETCH_RECORD_SUFFIX = ".etag.json";
 
-/**
- * One question per source per process. A single command loads the same source
- * more than once — the matrix and the marketplace label are separate calls — and
- * the answer cannot change between them.
- */
+/** One question per source per process: a command loads the same source more than once. */
 const askedThisRun = new Map<string, Promise<CacheVerdict>>();
 
-/**
- * The one line a re-fetch nobody asked for owes the user — and silence for
- * `unrecorded`, where the CLI cannot place the copy it holds and the re-fetch is
- * housekeeping rather than news.
- *
- * The parameter is the two verdicts that reach a download, not the whole union:
- * a new verdict that must not fall through to one fails here at the call site.
- */
+/** Silent for `unrecorded`, which is housekeeping rather than news. */
 function announceRefetch(verdict: Extract<CacheVerdict, "superseded" | "unrecorded">): void {
   if (verdict === "superseded") {
     log(STATUS_MESSAGES.MARKETPLACE_HAS_NEWER_CONTENT);
@@ -264,25 +223,13 @@ function revalidateCachedCopy(cacheDir: string, source: string): Promise<CacheVe
 }
 
 /**
- * The answer for a copy this run has just downloaded, without asking for it: the
- * record written beside it names the tarball the source served a moment ago, so
- * within this run the copy is current by construction. Without it, the later
- * loads of the same command re-read a `superseded` answer that was true when it
- * was given and has been acted on since — and download it all over again.
+ * A copy this run just downloaded is current by construction, so later loads do not re-fetch it.
  */
 function markCopyCurrentForThisRun(cacheDir: string): void {
   askedThisRun.set(cacheDir, Promise.resolve("current"));
 }
 
-/**
- * The one question a run asks about a cached copy, and everything that answer
- * owes the user.
- *
- * An unreachable source's staleness is named here rather than at the call site
- * because the verdict is memoised and the line is owed once per source per run:
- * left outside, every later load of the same run repeats a warning about a
- * question that was only asked once.
- */
+/** Warns about an unreachable source here, where the verdict is memoised: once per run. */
 async function classifyCachedCopy(cacheDir: string, source: string): Promise<CacheVerdict> {
   const record = await readFetchRecord(cacheDir);
   if (!record) return "unrecorded";
@@ -306,12 +253,7 @@ async function classifyCachedCopy(cacheDir: string, source: string): Promise<Cac
   }
 }
 
-/**
- * The tarball's ETag as the host reports it now, asked for the same way giget
- * asks — a HEAD, from the same runtime — so the two agree on what the value for
- * a given source is. A private repository needs the token giget uses; it is read
- * from the environment per request and never written into the record.
- */
+/** A HEAD from the same runtime as giget, so the two agree; the token is never stored. */
 async function fetchEtag(tar: string): Promise<string | undefined> {
   const auth = process.env.GIGET_AUTH;
   const response = await fetch(tar, {
@@ -322,12 +264,7 @@ async function fetchEtag(tar: string): Promise<string | undefined> {
   return response.headers.get("etag") ?? undefined;
 }
 
-/**
- * Where the record for a cached copy lives — exported because a second surface has to agree with
- * this one on the address: `e2e/fixtures/default-source-cache.ts` seeds a copy of the DEFAULT
- * source, and a run over a seeded copy with no record here re-downloads it over the network, which
- * is the one thing that fixture exists to avoid.
- */
+/** Exported: `e2e/fixtures/default-source-cache.ts` seeds a cache and writes its record here. */
 export function fetchRecordPath(cacheDir: string): string {
   return `${cacheDir}${FETCH_RECORD_SUFFIX}`;
 }
@@ -345,16 +282,7 @@ async function readFetchRecord(cacheDir: string): Promise<SourceRevalidation | u
   return parsed.data;
 }
 
-/**
- * Records what would prove this copy current, so the next load can ask in one
- * request.
- *
- * The tarball URL is read off giget's own result rather than rebuilt here, which
- * is what keeps this provider-agnostic — it is whatever giget resolved for the
- * source. giget's result type erases its fields to an index signature, so the
- * value arrives untyped and is narrowed rather than trusted; without one there
- * is nothing to ask about and the copy stays unrecorded.
- */
+/** The tarball URL is narrowed from giget's untyped result; without one, nothing is recorded. */
 async function recordFetchedCopy(cacheDir: string, result: DownloadTemplateResult): Promise<void> {
   const tar: unknown = result.tar;
   if (typeof tar !== "string") {
@@ -425,61 +353,24 @@ function createDetailedFetchError(error: unknown, source: string): Error {
   return new Error(`Failed to fetch ${source}: ${message}`);
 }
 
-/**
- * Thrown when a marketplace has no manifest at all, which every other failure in
- * {@link fetchMarketplace} is not.
- *
- * A type rather than a sentence a caller matches on: absent and unreadable have
- * different remedies — add the file, versus repair the file that is already there —
- * and the only way a caller can report them apart is if the throw says which it is.
- * A caller that does not care still catches an ordinary `Error`.
- */
+/** Absent and unreadable have different remedies, so absence gets its own type. */
 export class MarketplaceManifestAbsentError extends Error {}
 
-/**
- * Thrown when the manifest is there, parses, and names the marketplace something this
- * CLI refuses to publish under.
- *
- * A type of its own for the reason {@link MarketplaceManifestAbsentError} is one, and
- * one step further: this is the only manifest defect whose remedy is not "repair the
- * file so the marketplace can be named" but "there is nothing to install here at all".
- * The name is the namespace Claude Code registers every plugin under, so a name it will
- * not accept leaves a marketplace that loads and can install nothing — which is the
- * state `build marketplace` refuses to publish and this is the same rule read on load.
- * Every other refusal in {@link fetchMarketplace} is a manifest to repair or rebuild, so
- * it stays an ordinary `Error`.
- */
+/** A name Claude Code will not register plugins under: it loads but installs nothing. */
 export class MarketplaceNameRefusedError extends Error {}
 
-/**
- * The manifest field whose value a load then USES, spelled against the type so a rename
- * of it fails here rather than silently stopping the refusal below from firing.
- */
+/** Typed against `Marketplace`, so a rename fails here rather than silencing the refusal. */
 const MANIFEST_NAME_FIELD: keyof Marketplace = "name";
 
-/**
- * How a reserved name is replaced on load, worded as the schema's own name refusal words it
- * (`MARKETPLACE_NAME_REFUSAL` in `schemas.ts`): the manifest is the file being read, so it is
- * the one a reader can change.
- */
+/** Worded as the schema's own name refusal: the manifest is the file the reader can change. */
 const LOADED_NAME_WAY_OUT = "rename the marketplace in this manifest";
 
-/**
- * Whether a manifest's refusal is about its name.
- *
- * Read off the issue's PATH rather than its text, for the reason
- * {@link MarketplaceManifestAbsentError} is a type: a message is prose that gets
- * rewritten, and a caller matching on one is a caller that stops working silently.
- */
+/** Read off the issue path, not its text, which gets rewritten. */
 function refusesTheName(issues: readonly z.ZodIssue[]): boolean {
   return issues.some((issue) => issue.path.length === 1 && issue.path[0] === MANIFEST_NAME_FIELD);
 }
 
-/**
- * A refused manifest as the throw its readers tell apart — see
- * {@link MarketplaceNameRefusedError} for which refusal earns which type. The message is
- * one sentence either way: what separates them is the remedy, not the wording.
- */
+/** The same sentence either way; the error type carries the remedy. */
 function manifestRefusal(marketplacePath: string, issues: readonly z.ZodIssue[]): Error {
   const message =
     `Invalid ${MARKETPLACE_JSON} at: ${marketplacePath}\n\n` +
@@ -495,9 +386,7 @@ export async function fetchMarketplace(source: string): Promise<MarketplaceFetch
 
   const marketplacePath = marketplaceManifestPath(result.path);
 
-  // The FILE, not its directory: a plugin repository ships `.claude-plugin/plugin.json`
-  // with no marketplace beside it, and a directory check calls that manifest readable
-  // and leaves the absence to surface as a read error two statements later.
+  // The file, not its directory: a plugin repo ships `.claude-plugin/` with no marketplace in it.
   if (!(await fileExists(marketplacePath))) {
     throw new MarketplaceManifestAbsentError(
       `Marketplace not found at: ${source}\n\n` +

@@ -46,20 +46,13 @@ const BUILT_IN_STACK_ID = "nextjs-fullstack";
 /** A skill the shipped catalogue carries, named as an id so its removal is a compile error. */
 const CATALOGUE_GUIDED_SKILL: SkillId = "meta-design-expressive-typescript";
 
-/** The category key its assignment is filed under in the built-in stacks. */
 const CATALOGUE_GUIDED_CATEGORY = "meta-design";
 
-/**
- * The npm package the public catalogue publishes from. Written out rather than
- * imported from the constant the guard reads: it is an identity, and a test
- * asserting it against its own definition cannot notice that identity moving.
- */
+/** Written out: asserting an identity against its own definition cannot notice it moving. */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-/** Every repository {@link writeCataloguePackage} wrote, removed when the file is done. */
 const identityDirs: string[] = [];
 
-/** A repository holding nothing but a package.json declaring `packageName`. */
 async function writeCataloguePackage(packageName: string): Promise<string> {
   const dir = await createTempDir("cc-stack-identity-");
   identityDirs.push(dir);
@@ -70,7 +63,6 @@ async function writeCataloguePackage(packageName: string): Promise<string> {
   return dir;
 }
 
-// Matrix containing all skills referenced in stacks-loader test data
 const stacksTestMatrix = createMockMatrix(
   SKILLS.react,
   SKILLS.vue,
@@ -89,8 +81,7 @@ describe("stacks-loader", () => {
   });
 
   beforeEach(() => {
-    // Clear the internal cache between tests by re-importing
-    // The module has a stacksCache Map that persists across calls
+    // Reset the module-level stacksCache between tests.
     vi.resetModules();
     vi.clearAllMocks();
     initializeMatrix(stacksTestMatrix);
@@ -100,7 +91,6 @@ describe("stacks-loader", () => {
     it("loads and parses stacks from config/stacks.ts", async () => {
       vi.mocked(loadConfig).mockResolvedValue(createMockRawStacksConfig());
 
-      // Re-import after resetModules to clear cache
       const { loadStacks: freshLoadStacks } = await import("./stacks-loader");
       const stacks = await freshLoadStacks("/project");
 
@@ -199,14 +189,12 @@ describe("stacks-loader", () => {
       const stack = firstElement(stacks);
       expect(stack.id).toBe("multi-select-stack");
 
-      // Array values should be normalized to SkillAssignment[]
       expect(stack.agents["web-developer"]?.["meta-reviewing"]).toStrictEqual([
         createMockSkillAssignment("meta-methodology-research-methodology"),
         createMockSkillAssignment("meta-reviewing-reviewing"),
         createMockSkillAssignment("meta-reviewing-cli-reviewing"),
       ]);
 
-      // Single values normalized to SkillAssignment[]
       expect(stack.agents["web-developer"]?.["web-framework"]).toStrictEqual([
         createMockSkillAssignment("web-framework-react"),
       ]);
@@ -224,17 +212,14 @@ describe("stacks-loader", () => {
       const stack = firstElement(stacks);
       expect(stack.id).toBe("object-stack");
 
-      // Object-form with preloaded: true preserved
       expect(stack.agents["web-developer"]?.["web-framework"]).toStrictEqual([
         createMockSkillAssignment("web-framework-react", true),
       ]);
 
-      // Bare string normalized to preloaded: false
       expect(stack.agents["web-developer"]?.["web-styling"]).toStrictEqual([
         createMockSkillAssignment("web-styling-scss-modules"),
       ]);
 
-      // Mixed array: object + bare string
       expect(stack.agents["web-developer"]?.["meta-reviewing"]).toStrictEqual([
         createMockSkillAssignment("meta-methodology-research-methodology", true),
         createMockSkillAssignment("meta-reviewing-reviewing"),
@@ -283,17 +268,13 @@ describe("stacks-loader", () => {
       const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
       const stack = await freshLoadStackById(BUILT_IN_STACK_ID, "/project", DEFAULT_SOURCE);
 
-      // Should fall back to the built-in default stack
       expect(stack).not.toBeNull();
       expect(stack!.id).toBe(BUILT_IN_STACK_ID);
       expect(stack!.name).toBe("Next.js Full-Stack");
     });
 
     it("returns null for a built-in stack id under a custom source", async () => {
-      // The built-in catalogue belongs to the default public marketplace, so
-      // under any other source this id names a stack that source does not have
-      // — and standing one in would install stacks written against a different
-      // catalogue of skills.
+      // The built-in catalogue belongs to the public marketplace; other sources get no stacks.
       vi.mocked(loadConfig).mockResolvedValue(null);
 
       const { loadStackById: freshLoadStackById } = await import("./stacks-loader");
@@ -302,10 +283,7 @@ describe("stacks-loader", () => {
       expect(stack).toBeNull();
     });
 
-    // The pair with `resolveOfferedStacks`: the load offers the built-in stacks
-    // from a checkout of the catalogue's own repository, so this lookup — which the
-    // eject install makes for the id the user then picked — has to answer for the
-    // same repository. Disagreeing means offering a stack and refusing to install it.
+    // Pairs with `resolveOfferedStacks`: a stack offered from a checkout must also resolve.
     it("resolves a built-in stack id from the public catalogue's own repository", async () => {
       vi.mocked(loadConfig).mockResolvedValue(null);
       const catalogueDir = await writeCataloguePackage(PUBLIC_CATALOGUE_PACKAGE);
@@ -329,9 +307,7 @@ describe("stacks-loader", () => {
   });
 
   describe("normalizeStackRecord", () => {
-    // The move that produced this case: the id still spells `shared-monorepo`
-    // while the matrix answers `shared-task-runner`. A config saved before the
-    // move names the old key; the skill it names is the same skill.
+    // The id still spells `shared-monorepo`; the matrix now answers `shared-task-runner`.
     const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
     const STALE_CATEGORY = "shared-monorepo";
     const LIVE_CATEGORY = "shared-task-runner";
@@ -412,9 +388,7 @@ describe("stacks-loader", () => {
     });
 
     it("does not re-key a source stack's authored grouping", () => {
-      // normalizeAgentConfig is the stacks-file path. There the category key is
-      // the author's heading for the agent's prompt, shipped with the catalog it
-      // references — not persisted user data that a later release can drift under.
+      // The stacks-file path: its category key is the author's heading, not drifting user data.
       const agentConfig = normalizeAgentConfig({
         [STALE_CATEGORY]: [{ id: MOVED_SKILL, preloaded: true }],
       });
@@ -597,7 +571,6 @@ describe("stacks-loader", () => {
 
       const skills = resolveAgentConfigToSkills(agentConfig);
 
-      // All IDs passed through for downstream validation
       expect(skills).toStrictEqual([
         {
           id: "meta-methodology-research-methodology",
@@ -659,14 +632,8 @@ describe("stacks-loader", () => {
     });
 
     /**
-     * `usage` is the sentence the compiled sub-agent reads as its `Use when:` line — the
-     * only thing telling it when to reach for a dynamic skill. Every skill states that
-     * sentence itself, in its `metadata.yaml` `usageGuidance` field, and this is where a
-     * `SkillReference` either picks it up or invents one from the category key instead.
-     *
-     * The specs ABOVE all pin the category-derived form, and they are the fallback arm
-     * rather than the primary one: `stacksTestMatrix` is built from `SKILLS.*`, whose
-     * entries state no `usageGuidance` at all, so there is nothing for any of them to read.
+     * `usage` is the sub-agent's `Use when:` line. The specs above pin the category fallback, since
+     * `SKILLS.*` state no `usageGuidance`.
      */
     describe("usage", () => {
       /** The key the guided assignment below is filed under, and the word a derived usage would take. */
@@ -717,18 +684,7 @@ describe("stacks-loader", () => {
         ]);
       });
 
-      /**
-       * The three absences, and the answer chosen for all of them.
-       *
-       * There is nothing to read in any case, and `usage` is a required `string` whose sole
-       * consumer renders it into a `- Use when: ` bullet — so an empty value ships a bullet that
-       * says nothing, and a throw would refuse to install any payload naming a skill this
-       * catalogue does not carry, which is consumption failing. The category key is the only word
-       * available, exactly as `liveCategoryOf` one function above already rules for the same
-       * absence. `registerSkillOnDisk` in `seed/external-skills.ts` writes the identical
-       * sentence for a carried skill by CALLING `defaultUsageGuidance` rather than spelling it —
-       * it spelled its own until 2026-09-03 and had drifted on both the word and the punctuation.
-       */
+      /** Nothing to read: an empty bullet says nothing and a throw blocks consumption. */
       it("falls back to the category when the matrix carries no such skill", () => {
         const agentConfig: StackAgentConfig = {
           "web-tooling": [createMockSkillAssignment(CUSTOM_HOUSE_TOOLING_ID)],
@@ -742,11 +698,7 @@ describe("stacks-loader", () => {
       });
 
       it("falls back to the category when the skill it carries states an empty guidance", () => {
-        // A BLANK sentence is none, and `??` alone does not say so: `usageGuidance` is
-        // `z.string().exactOptional()` on the matrix schema, so a catalogue stating "" is valid
-        // — and `agent.liquid` renders whatever this answers as a bullet of its own, so an empty
-        // one is a row of the activation protocol saying nothing, which is strictly worse than
-        // the category sentence it displaced.
+        // A blank sentence is none: the schema admits "", and an empty bullet says nothing.
         initializeMatrix(createMockMatrix(createMockSkill(SKILLS.scss.id, { usageGuidance: " " })));
         const agentConfig: StackAgentConfig = {
           "web-styling": [createMockSkillAssignment(SKILLS.scss.id)],
@@ -772,16 +724,7 @@ describe("stacks-loader", () => {
         expect(warn, "a skill the matrix carries is not an unknown skill").not.toHaveBeenCalled();
       });
 
-      /**
-       * The shipped catalogue's own guidance, rather than a fixture's. `BUILT_IN_MATRIX` is
-       * what every real install resolves against, so its `usageGuidance` entries are the
-       * sentences that actually reach a user's sub-agents.
-       *
-       * The expected value is read from the matrix rather than written out, because the
-       * subject is the WIRING — that `usage` is `usageGuidance` — and a copy of the sentence
-       * here would redden on any edit to the skill's metadata. The paired negative below is
-       * what stops that read from being vacuous.
-       */
+      /** Read from the matrix, since the subject is the wiring; the negative keeps it honest. */
       it("carries a catalogue skill's shipped guidance", () => {
         initializeMatrix(BUILT_IN_MATRIX);
         const stated = getSkillById(CATALOGUE_GUIDED_SKILL).usageGuidance;

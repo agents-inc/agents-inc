@@ -13,13 +13,7 @@ import { buildProjectConfig } from "../__tests__/factories/config-factories";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { CLAUDE_DIR } from "../../consts";
 
-/**
- * Directory-collapse half of `deleteLocalSkill`, kept apart from
- * `local-skill-mover.test.ts` because that file mocks `utils/fs` wholesale —
- * whether a directory survives its last child is only observable against a real
- * filesystem, and asserting it through mocks would pin whichever fs helper the
- * implementation happens to call rather than the behaviour.
- */
+/** Real filesystem: whether a directory survives its last child is invisible to mocks. */
 
 const USER_OWNED_FILE = "notes.md";
 
@@ -85,14 +79,8 @@ describe("deleteLocalSkill directory collapse", () => {
   });
 });
 
-/**
- * **The host decides which directory an ejected skill lives in — CLI-895, 2026-09-26.** On a Codex
- * project it is `<repo>/.agents/skills`, and `deleteLocalSkill` joined Claude's `.claude/skills`
- * whatever the host, so the copy Codex reads survived every delete. The paired Claude directory is
- * planted with the same skill as the control: the delete has to reach the Codex copy and ONLY it.
- */
+/** On Codex the ejected copy lives in `.agents/skills`; the planted Claude copy is the control. */
 describe("deleteLocalSkill on a Codex project", () => {
-  /** The source folder a Codex installation is recognised by, as a user sees it. */
   const CODEX_SOURCE_REL = ".agents-inc/codex";
 
   let tempDir: string;

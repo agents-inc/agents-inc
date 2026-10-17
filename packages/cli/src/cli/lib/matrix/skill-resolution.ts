@@ -22,29 +22,11 @@ import type {
   Category,
 } from "../../types";
 
-/** Resolves a slug to a canonical SkillId, or null if unresolvable */
 type ResolveId = (slug: SkillSlug, context?: string) => SkillId | null;
 
 const AUTO_SYNTH_ORDER = 999;
 
-/**
- * Synthesizes a basic CategoryDefinition for a category not defined in any
- * skill-categories.ts. This is a safety net — the preferred path is for
- * skill authors to maintain proper skill-categories.ts entries.
- */
-/**
- * Warns when a second skill files an undeclared category under a different domain from the first.
- *
- * A synthesized category takes its domain from **whichever skill the glob reached first**, and the
- * order a directory walk returns is not a decision anybody made. Two skills sharing an undeclared
- * category while declaring different domains therefore file the second under a domain its own
- * `metadata.yaml` contradicts — silently, until now. The value feeds the product readers of
- * `getCategoryDomain`, `config-generator.ts` among them, so it shapes the emitted `config.ts`.
- *
- * **Reported, not resolved.** Picking a winner would need a rule the catalogue does not state, and
- * the author is the only one who can say which domain they meant. `checkCategoryDomains` does not
- * cover this — it reports a category with NO domain, and this one has two.
- */
+/** Warns when skills file an undeclared category under different domains; the first wins. */
 function warnOnDomainDisagreement(
   skill: ExtractedSkillMetadata,
   decidedBy: ExtractedSkillMetadata,
@@ -75,28 +57,12 @@ export function synthesizeCategory(category: Category, domain: Domain): Category
   };
 }
 
-/**
- * Claims a slug for a skill merged in after a marketplace's map was built — an installed copy, or
- * a skill a shared configuration carries — unless a skill already holds it.
- *
- * A held slug keeps its holder, and nothing is said. Ids carry their marketplace's namespace and
- * slugs do not, so a skill installed from one marketplace may share its slug with one the loaded
- * marketplace ships — every `new marketplace` scaffold gives its example skill the same one. Both
- * are installed and both work, so there is no collision to report and nothing is ignored.
- * Exported because the merge is not the only writer: `source-loader` and `external-skills` both
- * seat skills into an already-built map, and two writers deciding a held slug differently is how
- * a slug comes to mean one skill here and another there.
- */
+/** A held slug keeps its holder silently: another marketplace's skill may share it. */
 export function claimSlug(slugMap: SkillSlugMap, slug: SkillSlug, id: SkillId): void {
   slugMap.slugToId[slug] ??= id;
 }
 
-/**
- * Builds the slug -> ID map from one marketplace's extracted skill metadata, first claim winning
- * and every later one named. Inside ONE marketplace two skills sharing a slug is that author's
- * defect: the rules that marketplace writes name its skills by slug, so one of the two is no
- * longer reachable by them. A skill re-stating a claim it already holds is not a collision.
- */
+/** First claim wins, later ones named: in one marketplace a shared slug is the author's bug. */
 function buildSlugMap(skills: ExtractedSkillMetadata[]): SkillSlugMap {
   const slugMap: SkillSlugMap = { slugToId: {} };
 
@@ -111,12 +77,7 @@ function buildSlugMap(skills: ExtractedSkillMetadata[]): SkillSlugMap {
   return slugMap;
 }
 
-/**
- * Resolves every skill into the map the matrix is read through, keyed by id.
- * Warns on duplicate ids (first one wins) — the identity axis {@link buildSlugMap}
- * guards for slugs. Two directories whose SKILL.md declares the same name would
- * otherwise resolve in glob order, and the loser would leave no trace.
- */
+/** Warns on duplicate ids (first wins), which would otherwise resolve in glob order. */
 function buildResolvedSkillMap(
   skills: ExtractedSkillMetadata[],
   categories: CategoryMap,
@@ -164,13 +125,7 @@ function slugsNamedByRules(relationships: RelationshipDefinitions): SkillSlug[] 
   ];
 }
 
-/**
- * The slugs the rules name that no skill carries, deduplicated.
- *
- * Asked of the rules rather than counted off the resolution pass, because that
- * pass walks every rule once per skill: one typo would otherwise be reported as
- * many findings as the source has skills, which is the noise this removed.
- */
+/** Asked of the rules, not per skill, so a typo is reported once. */
 function collectUnresolvedSlugs(
   relationships: RelationshipDefinitions,
   slugToId: SkillSlugMap["slugToId"],
@@ -205,9 +160,7 @@ function narrowGroupsToSlugs<Rule extends { skills: SkillSlug[] }>(
 }
 
 /**
- * Requirements, keeping only those a present skill declares over present skills.
- * A rule left needing nothing states no requirement — resolution already treats it
- * that way — so it goes rather than resolving to an empty `needs`.
+ * Keeps requirements a present skill declares over present skills; one left needing nothing goes.
  */
 function narrowRequirementsToSlugs(
   rules: RequireRule[],
@@ -231,19 +184,7 @@ function narrowToShippedSlugs(
   };
 }
 
-/**
- * The relationships a source's skills can actually express: the source's own rules
- * verbatim, plus the built-ins narrowed to the slugs this source ships.
- *
- * The built-in rules are written against the whole public catalogue — 176 slugs — so
- * a source shipping ten of them left the rest dangling. Resolution dropped those
- * references either way; what it ALSO did was warn once per reference per skill. Narrowing
- * first removes the noise and nothing else: a member that resolves to no skill
- * contributed nothing to the resolved matrix to begin with.
- *
- * A source's OWN rules are never narrowed. A slug its author typed and its skills do
- * not carry is that source's defect, and the warning is the only place it is reported.
- */
+/** The source's own rules verbatim, plus the built-ins narrowed to the slugs this source ships. */
 export function relationshipsForSource(
   skills: ExtractedSkillMetadata[],
   sourceRules?: SkillRulesConfig,
@@ -253,19 +194,6 @@ export function relationshipsForSource(
   return sourceRules ? mergeRelationships(sourceRules.relationships, builtIn) : builtIn;
 }
 
-/**
- * Merges category definitions, relationship rules, and extracted skill metadata
- * into a fully resolved MergedSkillsMatrix.
- *
- * This is the core resolution step that combines:
- * - Category definitions from skill-categories.ts
- * - Slug-based alias maps derived from metadata
- * - Relationship rules from skill-rules.ts
- * - Extracted skill metadata (from scanning skill directories)
- *
- * Each skill's raw relationship references are resolved to canonical SkillIds.
- * The result is the complete data structure consumed by validation logic.
- */
 export function mergeMatrixWithSkills(
   categories: CategoryMap,
   relationships: RelationshipDefinitions,
@@ -274,17 +202,13 @@ export function mergeMatrixWithSkills(
   const slugMap = buildSlugMap(skills);
   const resolvedSkills = buildResolvedSkillMap(skills, categories, relationships, slugMap);
 
-  // Auto-synthesize missing categories for skills that reference undefined categories
   const synthesizedCategories = { ...categories };
   const synthesizedFrom = new Map<string, ExtractedSkillMetadata>();
   for (const skill of skills) {
     // Skip "local" pseudo-category — it's not a real Category union member
     if (skill.category === LOCAL_PSEUDO_CATEGORY) continue;
 
-    // A category the catalogue DECLARES is not ours to synthesize, and not ours to judge either:
-    // its domain is stated rather than inferred, so two skills disagreeing about it is a different
-    // defect that `checkCategoryDomains` owns. Read from the input map rather than the one being
-    // built, so a synthesized entry cannot be mistaken for a declared one.
+    // A declared category is neither synthesized nor judged here; `checkCategoryDomains` owns it.
     if (categories[skill.category]) continue;
 
     const already = synthesizedFrom.get(skill.category);
@@ -313,7 +237,6 @@ export function mergeMatrixWithSkills(
   return merged;
 }
 
-/** All resolved relationship data for a single skill */
 type ResolvedRelationships = {
   conflictsWith: SkillRelation[];
   discourages: SkillRelation[];
@@ -326,31 +249,16 @@ function resolveSlugsOrSkip(slugs: SkillSlug[], resolve: ResolveId, context: str
   return slugs.map((slug) => resolve(slug, context)).filter((id): id is SkillId => id !== null);
 }
 
-/**
- * A requirement's needs, or null when any one of them names no skill.
- *
- * Keeping what resolved would apply a requirement nobody wrote: under AND an
- * unresolved need narrows the rule to the survivors, under OR it takes an
- * alternative away — and either is presented to the user under the author's own
- * `reason`. A source's rules are its own (the CLI's built-ins are narrowed to
- * what a source ships, and the source's are left untouched), so they are taken
- * whole or not at all. The slug is warned here and reported by
- * `checkMatrixHealth`, which is where the author reads it.
- */
+/** Null when any need names no skill: keeping the rest would apply a rule nobody wrote. */
 function resolveEveryNeed(needs: SkillSlug[], resolve: ResolveId): SkillId[] | null {
-  // A rule needing nothing states no requirement, as it did before any of its
-  // members could fail to resolve.
+  // A rule needing nothing states no requirement.
   if (needs.length === 0) return null;
 
   const resolved = resolveSlugsOrSkip(needs, resolve, "requires.needs");
   return resolved.length === needs.length ? resolved : null;
 }
 
-/**
- * Members of the symmetric groups containing `skillId` (excluding itself),
- * deduplicated on first occurrence, each paired with its group's rule so the
- * caller can lift the annotation (reason/purpose).
- */
+/** Members of the groups containing `skillId`, deduped, each paired with its group's rule. */
 function collectSymmetricGroupMembers<Rule extends { skills: SkillSlug[] }>(
   rules: readonly Rule[],
   skillId: SkillId,
@@ -365,16 +273,11 @@ function collectSymmetricGroupMembers<Rule extends { skills: SkillSlug[] }>(
   return uniqueBy(members, (m) => m.memberId);
 }
 
-/**
- * Resolves all relationship data for a single skill in one pass across all
- * relationship rule types (conflicts, discourages, compatibility, requirements, alternatives).
- */
 function resolveRelationships(
   skillId: SkillId,
   relationships: RelationshipDefinitions,
   resolve: ResolveId,
 ): ResolvedRelationships {
-  // Symmetric groups: members of every group containing this skill, first-occurrence deduped
   const conflictsWith: SkillRelation[] = collectSymmetricGroupMembers(
     relationships.conflicts,
     skillId,

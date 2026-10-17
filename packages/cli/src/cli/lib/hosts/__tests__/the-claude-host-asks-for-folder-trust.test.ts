@@ -15,43 +15,27 @@ import { type IsolatedHome, setupIsolatedHome } from "../../__tests__/helpers/is
 import { agentsDir, claudeStateFile } from "../../installation/install-layout.js";
 import { claudeCompileNotices, claudeProjectNeedsTrustMessage } from "../claude-project-trust.js";
 
-/**
- * A Claude install says so when its project sub-agents' completion gate cannot run in this folder.
- *
- * Compile gives every writing sub-agent a completion gate, a `Stop` hook that runs the project's
- * typecheck. Claude Code drops a PROJECT sub-agent's frontmatter hooks until `~/.claude.json`
- * records that project's trust dialog as accepted (read from the shipped binary 2.1.259 — see
- * `compilation-pipeline.md`), and says so only in its own diagnostics. So a completion gate in an
- * untrusted folder looks exactly like one that found nothing. Owner, 2026-09-26: the install tells
- * the user.
- *
- * Every "says nothing" case is paired with the untrusted writing sub-agent that does speak, so a
- * notice that never printed could not pass this file.
- */
+// Claude Code drops a project sub-agent's frontmatter hooks until its folder is trusted.
 
 const WRITING_AGENT = "web-developer";
 const READ_ONLY_AGENT = "web-researcher";
 
-/** Tools holding `Write` or `Edit`, which earn a sub-agent the completion gate, and tools without. */
+/** `Write` or `Edit` earns a sub-agent compile's completion gate. */
 const WRITING_TOOLS = ["Read", "Write", "Edit"];
 const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
 
-/** The completion gate as compile writes it — its command is not the subject, its event is. */
 const A_STOP_HOOK = JSON.stringify({
   Stop: [{ hooks: [{ type: "command", command: "npm run --if-present --silent typecheck" }] }],
 });
 
-/** A completion gate a sub-agent declared itself, which compile keeps in place of its own. */
 const A_SUBAGENT_STOP_HOOK = JSON.stringify({
   SubagentStop: [{ hooks: [{ type: "command", command: "npm test" }] }],
 });
 
-/** A hook on another event, which is not a completion gate. */
 const A_POST_TOOL_USE_HOOK = JSON.stringify({
   PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo ran" }] }],
 });
 
-/** A `Stop` key holding nothing, which states no completion gate — compile reads it the same way. */
 const AN_EMPTY_STOP_HOOK = JSON.stringify({ Stop: [] });
 
 let home: IsolatedHome;
@@ -64,7 +48,6 @@ afterEach(async () => {
   await home.cleanup();
 });
 
-/** A sub-agent compiled at project scope with `projectDir` as the project. */
 async function compiledInto(
   projectDir: string,
   name: string,
@@ -82,20 +65,15 @@ async function compiledIntoTheProject(
   await compiledInto(home.projectDir, name, frontmatter);
 }
 
-/** A writing sub-agent as compile writes it, carrying the completion gate it was given. */
 async function writingAgentCompiled(name: string, stopHook = A_STOP_HOOK): Promise<void> {
   await compiledIntoTheProject(name, { tools: WRITING_TOOLS, hooks: stopHook });
 }
 
-/**
- * A writing sub-agent compiled from the home directory, where the project's agents folder IS the
- * global one, `~/.claude/agents/`.
- */
+/** From the home directory, the project's agents folder is the global `~/.claude/agents/`. */
 async function writingAgentCompiledFromHome(name: string): Promise<void> {
   await compiledInto(os.homedir(), name, { tools: WRITING_TOOLS, hooks: A_STOP_HOOK });
 }
 
-/** A read-only sub-agent: no completion gate from compile, only the hooks it declared, if any. */
 async function readOnlyAgentCompiled(name: string, declaredHooks?: string): Promise<void> {
   await compiledIntoTheProject(
     name,
@@ -105,7 +83,6 @@ async function readOnlyAgentCompiled(name: string, declaredHooks?: string): Prom
   );
 }
 
-/** `~/.claude.json` recording this project's trust dialog with `accepted` as its answer. */
 async function trustDialogAnswered(accepted: boolean): Promise<void> {
   await writeFile(
     claudeStateFile(),
@@ -197,38 +174,21 @@ describe("a Claude install asks for the folder to be trusted", () => {
   });
 });
 
-/**
- * Where Claude Code keeps the answer, and when it asks — read from the shipped binary 2.1.288 and
- * watched under a scratch HOME on 2026-10-03.
- *
- * - **The record is keyed by the git repository root.** Accepting the prompt in `mono/app` writes
- *   `projects["…/mono"]` and nothing for `mono/app`, and the hook gate reads the same key: the
- *   folder's repository root, or the folder itself outside any repository.
- * - **The prompt is skipped below a trusted folder.** Its check walks up from the folder to the
- *   repository root, or to `/` outside any repository, so a plain folder below a trusted one is
- *   never asked — while the gate still reads the folder's own key and keeps the hooks off.
- * - **A repository root is asked for itself.** The walk stops at the root, so a repository below a
- *   trusted plain folder still gets the prompt.
- *
- * Each case that must change is paired with one where the line, remedy included, must stay.
- */
+// Claude Code keys the record by git repository root (a worktree by its main checkout), skips the
+// prompt below a trusted plain folder, and still asks a repository root for itself.
 describe("a Claude install reads the trust record the way Claude Code does", () => {
-  /** The remedy clause: only true where Claude Code will actually show the prompt. */
+  /** Only true where Claude Code will actually show the prompt. */
   const TRUST_PROMPT_REMEDY = "accept the trust prompt";
-  /** The clause every untrusted line carries: the gate is off. */
   const GATE_OFF = "only once you trust the folder";
 
-  /** The record Claude Code's own diagnostic tells the user to set, for the folder keyed `key`. */
   function recordToSet(key: string): string {
     return `projects[${JSON.stringify(key)}].hasTrustDialogAccepted`;
   }
 
-  /** `~/.claude.json` with the trust dialog recorded as accepted under each of `keys`. */
   async function trustRecordedUnder(keys: string[]): Promise<void> {
     await writeFile(claudeStateFile(), JSON.stringify(buildClaudeTrustState(keys)));
   }
 
-  /** A folder below `parent`, holding a writing sub-agent compiled at project scope. */
   async function projectWithAWritingAgentIn(parent: string, folder: string): Promise<string> {
     const projectDir = path.join(parent, folder);
     await compiledInto(projectDir, WRITING_AGENT, { tools: WRITING_TOOLS, hooks: A_STOP_HOOK });
@@ -374,21 +334,14 @@ describe("a Claude install reads the trust record the way Claude Code does", () 
   });
 });
 
-/**
- * Where the record lives. Claude Code keeps its state in `$CLAUDE_CONFIG_DIR/.claude.json` while
- * that variable names a directory, and in `~/.claude.json` while it is unset or empty — watched
- * with Claude Code 2.1.288 under a scratch HOME on 2026-10-03. Read anywhere else, the line stays
- * after the folder is trusted, and the never-asks remedy names a file Claude Code does not read.
- */
+// The record is `$CLAUDE_CONFIG_DIR/.claude.json` while that is set, else `~/.claude.json`.
 describe("a Claude install reads the trust record where CLAUDE_CONFIG_DIR puts it", () => {
-  /** Claude Code's state file, by the name it has under either directory. */
   const STATE_FILE = ".claude.json";
 
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  /** A directory outside the home, named by CLAUDE_CONFIG_DIR. */
   async function claudeConfigDirSet(): Promise<string> {
     const configDir = path.join(home.tempDir, "claude-config");
     await mkdir(configDir, { recursive: true });
@@ -396,7 +349,6 @@ describe("a Claude install reads the trust record where CLAUDE_CONFIG_DIR puts i
     return configDir;
   }
 
-  /** The state file in `dir`, recording the trust dialog as accepted for `folder`. */
   async function trustRecordedIn(dir: string, folder: string): Promise<void> {
     await writeFile(path.join(dir, STATE_FILE), JSON.stringify(buildClaudeTrustState([folder])));
   }

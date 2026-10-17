@@ -67,8 +67,7 @@ describe("local-skill-mover", () => {
     });
 
     it("allows skill IDs that pass security checks regardless of format", async () => {
-      // validateSkillId only checks for filesystem security (null bytes, traversal, slashes)
-      // Format validation (domain prefix, casing) is handled by Zod schemas at parse boundaries
+      // validateSkillId checks filesystem safety only; Zod checks format at parse boundaries
       await deleteLocalSkill("/project", "acme-pipeline-deploy" as SkillId);
 
       expect(remove).toHaveBeenCalledWith("/project/.claude/skills/acme-pipeline-deploy");

@@ -185,9 +185,6 @@ describe("matrix-health-check", () => {
   });
 
   describe("unresolved rule slugs", () => {
-    // A slug a source's own skill-rules.ts names and its skills do not carry used to
-    // be warned during the merge and then forgotten, so `doctor` could not report the
-    // typo against the marketplace that shipped it.
     it("errors for a slug the merge could not resolve", () => {
       const issues = checkMatrixHealth(HEALTH_UNRESOLVED_RULE_SLUG_MATRIX);
       const slugIssues = issues.filter((i) => i.finding === "rule-unresolved-slug");
@@ -213,8 +210,7 @@ describe("matrix-health-check", () => {
       expect(auditIssues).toHaveLength(1);
       expect(firstElement(auditIssues).severity).toBe("error");
       expect(firstElement(auditIssues).details).toContain(SKILLS.tailwind.id);
-      // Quoted and in its clause: a bare "web-styling" is a substring of the skill id above,
-      // so it passes on the id alone and cannot tell whether the category is named at all.
+      // Quoted: a bare "web-styling" is a substring of the skill id above.
       expect(firstElement(auditIssues).details).toContain(
         "its category 'web-styling' is exclusive",
       );
@@ -253,10 +249,6 @@ describe("matrix-health-check", () => {
   });
 
   describe("unaudited skills", () => {
-    // The manifest is the built-in catalog's audit record, and only ids that
-    // catalog names could ever have an entry in it. A marketplace's own skills
-    // are namespaced and outside it by construction, so a project installed
-    // from one must still be able to reach a clean bill of health.
     it("does not flag a marketplace's own namespaced skill", () => {
       const issues = checkMatrixHealth(NAMESPACED_SKILL_MATRIX);
       const unauditedIssues = issues.filter((i) => i.finding === "skill-unaudited");

@@ -11,15 +11,11 @@ describe("readAllOf", () => {
     expect(await readAllOf(stream)).toBe('{"v":6,"skills":{}}');
   });
 
-  /** An empty pipe is a legal stream, not an error — the caller decides what emptiness means. */
   it("answers the empty string for a stream that carries nothing", async () => {
     expect(await readAllOf(Readable.from([]))).toBe("");
   });
 
-  /**
-   * `é` occupies bytes 1–2, so cutting at byte 2 splits one character across chunks: the offset is
-   * the assertion. A cut on a character boundary passes a per-chunk decode.
-   */
+  // `é` occupies bytes 1–2, so the cut at byte 2 splits it across chunks.
   it("survives a multi-byte character split down the middle", async () => {
     const encoded = Buffer.from("héllo — wörld", "utf-8");
     const midCharacter = 2;

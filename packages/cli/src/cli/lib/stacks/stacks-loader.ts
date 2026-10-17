@@ -23,16 +23,11 @@ import { defaultStacks } from "../configuration/default-stacks";
 const stacksCache = new Map<string, Stack[]>();
 
 /**
- * Normalizes a raw agent config (from Zod-parsed config) to StackAgentConfig.
- * Converts bare strings to `{ id, preloaded: false }` and wraps single values in arrays.
- * Used by both loadStacks() and loadProjectConfig() to handle all 3 config formats:
- *   1. bare string: `framework: "web-framework-react"`
- *   2. single object: `framework: { id: "web-framework-react", preloaded: true }`
- *   3. array: `methodology: [{ id: ..., preloaded: true }, { id: ... }]`
+ * Accepts a bare string, a single `{ id, preloaded }` object, or an array of either; a bare string
+ * becomes `preloaded: false`.
  */
 export function normalizeAgentConfig(agentConfig: Record<string, unknown>): StackAgentConfig {
-  // Boundary casts: Zod-parsed config has loose types (bare strings, objects, arrays)
-  // that are normalized to typed SkillAssignment[] values
+  // Boundary casts: Zod-parsed config is loose until normalized here.
   return mapValues(agentConfig, (value) => {
     const items = Array.isArray(value) ? value : [value];
     return items.map((item): SkillAssignment => {
@@ -44,12 +39,7 @@ export function normalizeAgentConfig(agentConfig: Record<string, unknown>): Stac
   });
 }
 
-/**
- * Where the live catalog says a skill's entry belongs, or `undefined` when it
- * has nothing to say: an id the matrix does not carry (local, marketplace, or
- * withdrawn) and a skill in the `local` pseudo-category both leave the key the
- * config already spells as the only word available.
- */
+/** `undefined` for an id the matrix lacks or a skill in the `local` pseudo-category. */
 function liveCategoryOf(skillId: SkillId): Category | undefined {
   const category = matrix.skills[skillId]?.category;
   if (category === undefined || category === LOCAL_PSEUDO_CATEGORY) return undefined;
@@ -66,7 +56,7 @@ type PlacedAssignment = {
 function placeAssignments(agentConfig: StackAgentConfig): PlacedAssignment[] {
   return typedEntries<Category, SkillAssignment[]>(agentConfig).flatMap(
     ([storedCategory, assignments]) =>
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       (assignments ?? []).map((assignment) => ({
         storedCategory,
         liveCategory: liveCategoryOf(assignment.id) ?? storedCategory,
@@ -76,20 +66,8 @@ function placeAssignments(agentConfig: StackAgentConfig): PlacedAssignment[] {
 }
 
 /**
- * One agent's saved stack re-keyed under each skill's live category.
- *
- * A persisted `stack` block names the category each skill sat in when it was
- * written, and every consumer downstream — the generator's preservation
- * lookup, the load-state lookup, the compiled agent's usage line — asks the
- * live catalog. When a release moves a skill between categories the two stop
- * agreeing, and a saved entry nobody can find is a saved entry nobody keeps.
- * Re-keying here is what keeps the question answerable: the category is where
- * an entry is STORED, the id is which skill it names, and only the id is
- * identity.
- *
- * A skill already under its live category wins any collision with a stale
- * duplicate of itself — it is the current word for that pair, and one skill
- * may appear once per agent.
+ * Re-keys a saved stack under each skill's live category, since only the id is identity. A skill
+ * already under its live category wins a collision with a stale duplicate of itself.
  */
 function rekeyToLiveCategories(agentConfig: StackAgentConfig): StackAgentConfig {
   const [settled, moved] = partition(
@@ -116,17 +94,7 @@ function rekeyToLiveCategories(agentConfig: StackAgentConfig): StackAgentConfig 
   );
 }
 
-/**
- * Normalizes a raw stack record (agent -> raw category config) to the typed form.
- * Applies normalizeAgentConfig to each agent entry, then re-keys the result to
- * the live catalog (see {@link rekeyToLiveCategories}).
- *
- * This is the PERSISTED-CONFIG boundary — `loadProjectConfigFromDir` and the
- * config gate's writer entry. A source's `stacks.ts` deliberately does not pass
- * through here: its category key is the author's heading for the agent prompt,
- * shipped alongside the catalog it references, so there is no drift to
- * reconcile and nothing to overrule.
- */
+/** The persisted-config boundary; a source's `stacks.ts` skips it, its keys being its own. */
 export function normalizeStackRecord(
   rawStack: Record<string, Record<string, unknown>>,
 ): Record<string, StackAgentConfig> {
@@ -151,9 +119,7 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
       return [];
     }
 
-    // Normalize: all values to SkillAssignment[] so StackAgentConfig is always SkillAssignment[]
-    // Boundary casts: Zod stacksConfigSchema outputs loose Record types;
-    // narrowing to Stack["agents"] after normalization guarantees SkillAssignment[] values
+    // Boundary casts: the schema outputs loose records; normalization makes SkillAssignment[].
     const stacks: Stack[] = raw.stacks.map((stack) => ({
       ...stack,
       agents: mapValues(
@@ -174,21 +140,7 @@ export async function loadStacks(configDir: string, stacksFile?: string): Promis
   }
 }
 
-/**
- * One stack by id.
- *
- * The source's own stacks answer first. The CLI's built-in catalogue stands in
- * only for the public catalogue — the same rule `resolveOfferedStacks` applies to
- * the list offered, read from the same {@link offersBuiltInStacks} so
- * the two cannot answer differently. They are a pair: that one decides what is
- * OFFERED and this one resolves what was PICKED, so a rule they disagree on
- * offers a stack and then refuses to install it.
- *
- * Under any other source a built-in id names a stack that source does not have,
- * and answering with one would install stacks written against a different
- * catalogue of skills, under a name the user never asked for. Null is the honest
- * answer there; the callers name the id they asked for.
- */
+/** Built-in stacks stand in for the public catalogue only, as `resolveOfferedStacks` offers. */
 export async function loadStackById(
   stackId: string,
   configDir: string,
@@ -218,14 +170,7 @@ export async function loadStackById(
   return defaultStack;
 }
 
-/**
- * What a null from {@link loadStackById} means, said once.
- *
- * Both callers turn that null into a failure, and both have to name the id they
- * asked for and the source they asked — a stack that cannot be found is only
- * actionable if the message says which stack and where it was looked for. One
- * definition so the two surfaces cannot describe the same rule differently.
- */
+/** One wording for both callers that turn a null from `loadStackById` into a failure. */
 export function stackNotOfferedMessage(stackId: string, source: string): string {
   return (
     `Stack '${stackId}' is not a stack the source '${source}' offers. ` +
@@ -234,48 +179,20 @@ export function stackNotOfferedMessage(stackId: string, source: string): string 
   );
 }
 
-/**
- * The sentence a skill's cue falls back to when the skill states none of its own — the category
- * key, as a whole sentence, because `agent.liquid` renders it verbatim as a bullet.
- *
- * Exported because more than one surface must produce it word for word, which is the carve-out
- * CLAUDE.md makes for a definition every caller is meant to reach rather than restate.
- * `registerSkillOnDisk` in `seed/external-skills.ts` is the second caller: a carried skill's
- * cue is reachable by two routes — that file writes it into the installed `metadata.yaml`, and
- * {@link statedUsageFor} answers for it during the run that seats it, before any metadata exists
- * — so two spellings meant one sub-agent could read a different sentence for the same skill
- * depending on which command last touched it. The editor's preview
- * (`apps/editor/src/features/configure/lib/output-preview.ts`) mirrors this one deliberately
- * rather than importing it.
- */
+/** Exported so every surface writes the fallback word for word; the editor preview mirrors it. */
 export function defaultUsageGuidance(category: string): string {
   return `Use when working with ${category}.`;
 }
 
-/**
- * The one sentence a compiled sub-agent reads as its cue to load a skill.
- *
- * Every skill states that sentence for itself in its `metadata.yaml` `usageGuidance`, so the
- * catalogue's own words are what a reference carries. {@link defaultUsageGuidance} is what remains
- * when there is nothing to read — an id the matrix does not carry (local, marketplace, withdrawn),
- * or one it carries that states no guidance, which is ordinary rather than malformed since the
- * field is optional on `SkillCore` and on `matrixRawMetadataSchema`.
- *
- * A BLANK sentence counts as none, and `??` alone does not say so: `usageGuidance` is
- * `z.string().exactOptional()`, so a catalogue stating an empty string is valid — and an empty
- * bullet is a row of the activation protocol saying nothing, which is strictly worse than the
- * category sentence it displaced.
- */
+/** The skill's own `usageGuidance`, or the category fallback when it has none or it is blank. */
 function statedUsageFor(skillId: SkillId, category: Category): string {
   const stated = matrix.skills[skillId]?.usageGuidance;
   return stated !== undefined && stated.trim() !== "" ? stated : defaultUsageGuidance(category);
 }
 
-// Converts a StackAgentConfig (category -> SkillAssignment[]) to an array of SkillReferences.
-// Values are already normalized to SkillAssignment[] by loadStacks().
 export function resolveAgentConfigToSkills(agentConfig: StackAgentConfig): SkillReference[] {
   return typedEntries<Category, SkillAssignment[]>(agentConfig).flatMap(([category, assignments]) =>
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     (assignments ?? []).map((assignment): SkillReference => ({
       id: assignment.id,
       usage: statedUsageFor(assignment.id, category),
@@ -284,7 +201,6 @@ export function resolveAgentConfigToSkills(agentConfig: StackAgentConfig): Skill
   );
 }
 
-/** Extracts all unique skill IDs from a stack config (agent -> category -> SkillAssignment[]). */
 export function getStackSkillIds(stack: Record<string, StackAgentConfig>): SkillId[] {
   return pipe(
     Object.values(stack),

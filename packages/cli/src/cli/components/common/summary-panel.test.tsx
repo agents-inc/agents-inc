@@ -23,24 +23,17 @@ import {
 
 const STACK_NAME = "Next.js Full-Stack";
 
-/** The label the default public marketplace resolves to — `SOURCE_DISPLAY_NAMES` maps its name. */
 const DEFAULT_MARKETPLACE_LABEL = formatSourceDisplayName(DEFAULT_PUBLIC_SOURCE_NAME);
 
-/**
- * Marketplaces `SOURCE_DISPLAY_NAMES` holds no label for, so each must render its own name
- * unchanged — the custom-marketplace case. Both lowercase and alphabetically ordered as written,
- * so the joined expectation reads in the same order the row sorts them into.
- */
+/** No display label, so each renders its own name; written in sorted order. */
 const CUSTOM_MARKETPLACE = "acme-skills";
 const OTHER_MARKETPLACE = "zeta-skills";
 const JOINED_MARKETPLACES = `${CUSTOM_MARKETPLACE} · ${OTHER_MARKETPLACE}`;
 
-/** Shorter than the header plus summary, so the panel has to clip and say so. */
 const CLIPPING_HEIGHT_ROWS = 8;
-/** Content lines the panel cannot show at {@link CLIPPING_HEIGHT_ROWS}, and so the travel a full scroll takes. */
+/** Lines hidden at {@link CLIPPING_HEIGHT_ROWS}. */
 const CLIPPED_LINES = 4;
 
-/** Nothing selected, no stack and no installation recorded; each case states only what it changes. */
 const NOTHING_SELECTED: SummaryPanelProps = {
   skillConfigs: [],
   agentConfigs: [],
@@ -156,8 +149,7 @@ describe("SummaryPanel component", () => {
     });
 
     it("should name the marketplace of a masked global install", () => {
-      // A tombstone still records a real global install and where it came from, and the summary
-      // below renders it as a row — so the header has to own it too.
+      // The summary renders a tombstone as a row, so the header owns it too.
       const { lastFrame, unmount } = renderPanel({
         skillConfigs: buildSkillConfigs([SKILLS.react.id], {
           scope: "global",

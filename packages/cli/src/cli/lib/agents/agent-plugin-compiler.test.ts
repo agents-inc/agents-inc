@@ -55,12 +55,10 @@ describe("agent-plugin-compiler", () => {
         outputDir,
       });
 
-      // Check .claude-plugin/plugin.json exists
       const manifestPath = path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
       const manifestStats = await stat(manifestPath);
       expect(manifestStats.isFile()).toBe(true);
 
-      // Check agents/{name}.md exists
       const agentMdPath = path.join(result.pluginPath, "agents", "cli-developer.md");
       const agentStats = await stat(agentMdPath);
       expect(agentStats.isFile()).toBe(true);
@@ -145,21 +143,17 @@ describe("agent-plugin-compiler", () => {
         renderAgentMd("versioned", "Versioned agent", { body: "# Version 1" }),
       );
 
-      // First compile
       const result1 = await compileAgentPlugin({ agentPath, outputDir });
       expect(result1.manifest.version).toBe("1.0.0");
 
-      // Recompile without changes - version stays the same
       const result2 = await compileAgentPlugin({ agentPath, outputDir });
       expect(result2.manifest.version).toBe("1.0.0");
 
-      // Modify content
       await writeFile(
         agentPath,
         renderAgentMd("versioned", "Versioned agent", { body: "# Version 2 - updated" }),
       );
 
-      // Recompile with changes - version should bump
       const result3 = await compileAgentPlugin({ agentPath, outputDir });
       expect(result3.manifest.version).toBe("2.0.0");
     });

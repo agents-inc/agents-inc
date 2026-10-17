@@ -163,7 +163,6 @@ describe("compile-agents", () => {
       scopeFilter: "project",
     });
 
-    // Only web-developer matches both the explicit list AND the project scope filter
     expect(mockBuildAgentScopeMap).toHaveBeenCalledWith(config);
     expect(mockRecompileAgents).toHaveBeenCalledWith({
       pluginDir: projectDir,
@@ -199,7 +198,6 @@ describe("compile-agents", () => {
       scopeFilter: "project",
     });
 
-    // api-developer is excluded, only web-developer should be compiled
     expect(mockRecompileAgents).toHaveBeenCalledWith({
       pluginDir: projectDir,
       sourcePath,
@@ -211,9 +209,7 @@ describe("compile-agents", () => {
     });
   });
 
-  // `rewritten` is a strict subset of `compiled` here on purpose: the two lists carry
-  // different facts, so a pass-through that filled `rewritten` from `compiled` would
-  // read as correct against equal lists and is caught by unequal ones.
+  // Unequal lists, so a pass-through filling `rewritten` from `compiled` is caught.
   it("should return compilation result from recompileAgents", async () => {
     mockRecompileAgents.mockResolvedValue(
       buildRecompileAgentsResult({
@@ -240,7 +236,6 @@ describe("compile-agents", () => {
   describe("stale-agent pruning", () => {
     const STALE_AGENT: AgentName = "api-developer";
     const KEPT_AGENT: AgentName = "web-developer";
-    // Basename outside the AgentName union — a file the CLI never compiled.
     const HAND_AUTHORED_AGENT = "my-custom-agent";
 
     let tempDir: string;

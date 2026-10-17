@@ -33,10 +33,7 @@ afterEach(async () => {
   await cleanupTempDir(tempDir);
 });
 
-/**
- * Strips the type-only import, type annotations, and `satisfies` — none is needed at runtime,
- * and jiti cannot resolve the config-types path in a bare temp dir.
- */
+/** jiti cannot resolve the config-types import in a bare temp dir. */
 function stripTypeOnlySyntax(source: string): string {
   return source
     .replace(/import type \{[^}]+\} from "\.\/config-types";\n/, "")
@@ -44,9 +41,6 @@ function stripTypeOnlySyntax(source: string): string {
     .replace(/const (\w+): [^=]+=/g, "const $1 =");
 }
 
-/**
- * Helper: write generated config source and load it back via jiti.
- */
 async function writeAndLoad(config: ProjectConfig): Promise<unknown> {
   const configPath = path.join(tempDir, STANDARD_FILES.CONFIG_TS);
   await writeFile(configPath, stripTypeOnlySyntax(generateConfigSource(config, matrix)));
@@ -54,11 +48,7 @@ async function writeAndLoad(config: ProjectConfig): Promise<unknown> {
   return loadConfig(configPath);
 }
 
-/**
- * Helper: write generated config source where a project keeps it and load it through the project
- * loader, so the stack normalizer runs. `writeAndLoad` above deliberately skips that — it pins
- * the literal emitted shape; this one pins what consumers actually receive.
- */
+/** Through the project loader, so the normalizer runs; `writeAndLoad` pins the emitted shape. */
 async function writeAndLoadProjectConfig(config: ProjectConfig): Promise<ProjectConfig> {
   const claudeSourceDir = sourceDir(tempDir, "claude");
   await mkdir(claudeSourceDir, { recursive: true });
@@ -72,14 +62,7 @@ async function writeAndLoadProjectConfig(config: ProjectConfig): Promise<Project
   return loaded.config;
 }
 
-/**
- * Normalize config for comparison: the writer compacts stack values
- * (bare strings for non-preloaded single skills). After round-trip,
- * bare strings come back as strings (not SkillAssignment objects).
- * We normalize the original to match.
- */
 function normalizeForComparison(config: ProjectConfig): Record<string, unknown> {
-  // Remove undefined values (same as JSON.parse(JSON.stringify(x)))
   return JSON.parse(JSON.stringify(config));
 }
 
@@ -212,7 +195,6 @@ describe("config round-trip", () => {
 
     const loaded = (await writeAndLoad(config)) as ProjectConfig;
     const webDev = loaded.stack?.["web-developer"] as Record<string, unknown>;
-    // Multiple skills: array with compacted elements
     expect(webDev["web-testing"]).toStrictEqual([
       "web-testing-vitest",
       { id: "web-testing-playwright-e2e", preloaded: true },
@@ -220,10 +202,7 @@ describe("config round-trip", () => {
   });
 
   /**
-   * Loading a config.ts and writing it straight back out must land on the same
-   * bytes. Every re-emit — a propagation fan-out, an eject, a merge — starts
-   * from a config that came off disk, so a writer that is not a fixed point
-   * rewrites files nothing changed and asks the user to read the diff.
+   * A loaded config re-emitted must be byte-identical, or every fan-out rewrites unchanged files.
    */
   it("re-emits a config it just loaded with the same bytes", async () => {
     const config = buildProjectConfig({
@@ -243,8 +222,7 @@ describe("config round-trip", () => {
 
     const loaded = await writeAndLoadProjectConfig(config);
 
-    // Subject guard: the values really did survive the round trip, so the byte
-    // comparison below is about ORDER and not about a config that came back empty.
+    // Subject guard: the values survived, so the byte comparison is about order.
     expect(loaded.marketplace).toBe(TEST_SOURCE_URL);
     expect(loaded.author).toBe("@vince");
     expect(
@@ -286,8 +264,7 @@ describe("config round-trip", () => {
 
     const loaded = await writeAndLoadProjectConfig(config);
 
-    // Subject guard: the renamed fields really did survive the round trip, so the byte
-    // comparison below is about ORDER and not about a config that came back empty.
+    // Subject guard: the renamed fields survived, so the byte comparison is about order.
     expect(loaded.marketplace).toBe(TEST_SOURCE_URL);
     expect(loaded.marketplaceName).toBe(DEFAULT_PUBLIC_SOURCE_NAME);
     expect(loaded.skills.map((skill) => skill.origin)).toStrictEqual([DEFAULT_PUBLIC_SOURCE_NAME]);
@@ -297,12 +274,7 @@ describe("config round-trip", () => {
     ).toBe(firstEmission);
   });
 
-  /**
-   * The fixed point above holds for every entry a factory builds, because the
-   * factory happens to insert keys in the loader's order. `buildSkillConfig` emits
-   * `{ id, scope, origin, excluded }`, so the tombstone here is written out of that
-   * order by hand: the writer, not the producer, has to own the order.
-   */
+  /** The tombstone is out of schema order by hand: the writer, not the producer, owns order. */
   it("re-emits a config whose skill tombstone arrives out of schema order with the same bytes", async () => {
     const skills: SkillConfig[] = [
       buildSkillConfig("web-styling-tailwind", { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
@@ -314,8 +286,7 @@ describe("config round-trip", () => {
       },
     ];
 
-    // Subject guard: the producer's key order has to DISAGREE with the loader's
-    // for the byte comparison below to be about anything at all.
+    // Subject guard: the producer's key order must disagree with the loader's.
     expect(
       Object.keys(elementAt(skills, 1)),
       "the tombstone must reach the writer with `excluded` ahead of `origin`",
@@ -330,8 +301,7 @@ describe("config round-trip", () => {
 
     const loaded = await writeAndLoadProjectConfig(config);
 
-    // Second subject guard: the tombstone survived the round trip, so the byte
-    // comparison is about ORDER and not about an entry the loader dropped.
+    // Subject guard: the tombstone survived, so the comparison is about order.
     expect(loaded.skills).toStrictEqual(skills);
     expect(
       generateConfigSource(loaded, matrix),
@@ -339,21 +309,7 @@ describe("config round-trip", () => {
     ).toBe(firstEmission);
   });
 
-  /**
-   * The agent-side twin of the pin above, and the reason it needs one of its own:
-   * `withEntriesInSchemaOrder` reorders `skills` and `agents` through two separate
-   * arms, and nothing in this repository exercised the second. Every agent entry
-   * every other spec builds is `{ name, scope }` or `{ name, scope, excluded }`,
-   * which happens to be `AgentScopeConfig`'s own declaration order — so the agent
-   * arm has nothing to move, and deleting it leaves the whole suite green.
-   *
-   * It stops being a coincidence the day an override lands. `model` and `effort`
-   * sit BETWEEN `scope` and `excluded` in the loader's schema, so an entry that
-   * carries one and reaches the writer with `excluded` first comes back off disk
-   * as different bytes. That entry is a real shape, not a fixture curiosity:
-   * `maskCollidingGlobalAgents` in `lib/config-gate/propagate.ts` mints a
-   * tombstone by spreading a live global entry, overrides and all.
-   */
+  /** The agent arm: `model` and `effort` sit between `scope` and `excluded` in the schema. */
   it("re-emits a config whose agent tombstone carries model and effort with the same bytes", async () => {
     const agents = [
       ...buildAgentConfigs(["web-developer"], { scope: "project", model: "opus", effort: "high" }),
@@ -365,11 +321,7 @@ describe("config round-trip", () => {
       }),
     ];
 
-    // Subject guard, and the one thing keeping this spec from going vacuous: the
-    // producer's key order has to DISAGREE with the loader's for the byte
-    // comparison below to be about anything at all. Reorder `buildAgentConfigs`
-    // and this line reddens saying the pin needs a producer that still disagrees,
-    // rather than passing while testing nothing.
+    // Subject guard: the producer's key order must disagree with the loader's.
     expect(
       Object.keys(elementAt(agents, 1)),
       "the tombstone must reach the writer with `excluded` ahead of the two overrides",
@@ -384,10 +336,7 @@ describe("config round-trip", () => {
 
     const loaded = await writeAndLoadProjectConfig(config);
 
-    // Second subject guard: both entries survived the round trip carrying both
-    // overrides, so the byte comparison is about ORDER and not about an entry the
-    // loader dropped or a field it stripped. `toStrictEqual` is key-order-blind,
-    // which is what makes it a guard rather than a duplicate of the comparison.
+    // Subject guard: both entries survived with both overrides; `toStrictEqual` ignores key order.
     expect(loaded.agents).toStrictEqual(agents);
     expect(
       generateConfigSource(loaded, matrix),

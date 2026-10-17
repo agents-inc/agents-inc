@@ -26,7 +26,6 @@ import type { AgentConfig, AgentName, SkillScope } from "../../types";
 
 const PROJECT_AGENT: AgentName = "web-developer";
 const GLOBAL_AGENT: AgentName = "api-developer";
-/** What the mocked compiler answers for every agent. Only where it lands is asserted, never what it says. */
 const COMPILED_BODY = renderAgentMd("agent", "compiled");
 
 const mockCompileAgentForHost = vi.mocked(compileAgentForHost);
@@ -70,8 +69,7 @@ describe("writeCompiledAgentsByScope", () => {
       new Map<AgentName, SkillScope>([[PROJECT_AGENT, "project"]]),
     );
 
-    // Subject guard: the project agent really was written, so the assertion
-    // below is about a pass that did work rather than one that no-opped.
+    // Subject guard: the pass really wrote the project agent.
     expect(outcomes).toStrictEqual([
       {
         name: PROJECT_AGENT,
@@ -135,12 +133,7 @@ describe("writeCompiledAgentsByScope", () => {
     expect(await fileExists(path.join(globalAgentsDir(), `${GLOBAL_AGENT}.md`))).toBe(true);
   });
 
-  /**
-   * Each skill's own `source` is what decides whether the compiler emits `${id}:${id}` or a
-   * bare id, and this pass is the only thing between the resolver that attaches it and the
-   * compiler that reads it. A mixed-mode sub-agent is normal, so the two are asserted per
-   * skill rather than per agent.
-   */
+  /** Each skill's own `source` decides `${id}:${id}` versus a bare id, so assert per skill. */
   describe("what reaches the compiler", () => {
     it("forwards a marketplace-sourced skill with its source intact", async () => {
       const pluginSkill = createMockSkillEntry(SKILLS.react.id, false, { source: "agents-inc" });

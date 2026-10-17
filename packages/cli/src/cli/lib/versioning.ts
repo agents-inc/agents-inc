@@ -56,11 +56,6 @@ export async function computeSkillFolderHash(skillPath: string): Promise<string>
   return computeStringHash(combined);
 }
 
-/**
- * Plugin versioning utilities shared by skill, agent, and stack plugin compilers.
- * Reads existing plugin.json + .content-hash, bumps semver major on content change.
- */
-
 const CONTENT_HASH_FILE = ".content-hash";
 
 export function parseMajorVersion(version: string): number {

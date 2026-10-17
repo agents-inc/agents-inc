@@ -1,36 +1,7 @@
 /**
- * A global installation rewrites the registered projects of its OWN provider, and its writer
- * refuses a pair aimed anywhere else.
- *
- * Two things are asked for here, and they are not the same guard:
- *
- * - *"a Claude global never propagates into a Codex project"* — a POLICY, applied per registered
- *   project inside the fan-out. `globalConfig.projects[]` is a list of directories with nothing
- *   in it saying which installation each one belongs to, and the two providers' installations
- *   register in their own global config — so a project on the other provider is a different
- *   installation that happens to be reachable, and rewriting its pair from this global's data is
- *   the cross-installation write the folders exist to prevent.
- * - *"the runtime assertion fires when the path is forced wrong"* — an ASSERTION, inside the
- *   single writer both the fan-out and the install write go through. It cannot be a
- *   compile-time proof: propagation resolves its destination from a config-derived STRING,
- *   so deleting `DEFAULT_PROVIDER` found every typed caller and none of these.
- *
- * **The assertion was a tautology until this file existed, and that is what this file is written
- * against.** `refuseAWriteOutsideTheInstallation` derived both sides of its comparison from one
- * `providerInUse(projectDir)` call: the config path it checked was built by joining `config.ts`
- * onto the very source folder it checked the path against, so the comparison was
- * `join(folder, "config.ts").startsWith(folder)` and could not fail for any disk state whatever.
- * A guard that cannot fail is worse than none — it reads as coverage. So the writer now takes the
- * provider the CALLER believes it is writing, and the assertion holds that belief against what
- * the installation on disk actually IS.
- *
- * **Refused and allowed sit in one file, per guard.** A refusal pinned alone cannot tell a
- * correctly-scoped guard from one that has swallowed its domain: a writer that threw for every
- * provider and a fan-out that skipped every project both leave the disk byte-identical and both
- * satisfy every negative assertion below.
- *
- * The folder names are literals throughout — text on people's disks, and an assertion importing
- * the constant the product joins would move with it and could never fail.
+ * A global rewrites only its own provider's registered projects (a policy), and its writer refuses
+ * a pair aimed elsewhere (an assertion). Refused and allowed cases sit together; folder names are
+ * literals so the assertions cannot move with the product's constants.
  */
 
 import path from "path";
@@ -71,17 +42,10 @@ describe("a global installation writes only into its own", () => {
     await cleanupTempDir(tempDir);
   });
 
-  // Registered AFTER the hook that creates the directory, because hooks run in registration
-  // order and this one reads it. HOME is read by the code under test rather than only by the
-  // fixtures: the fan-out loads each registered project's own catalogue, and that load merges
-  // the global local skills under `os.homedir()`.
+  // After the hook that creates the directory (hooks run in order); the code under test reads HOME.
   useFakeHome(() => tempDir);
 
-  /**
-   * A directory carrying a real config in `folder`, named by the same normalization the registrar
-   * applies — `registerProjectPath` drops a registration whose config file is gone, so a bare
-   * `mkdir` would be filtered out of `projects[]` before any assertion could see it.
-   */
+  /** A real config, since `registerProjectPath` drops a registration whose config is gone. */
   async function plantProject(name: string, folder: string): Promise<string> {
     const dir = path.join(tempDir, name);
     await plantConfigIn(dir, folder, name);
@@ -93,7 +57,6 @@ describe("a global installation writes only into its own", () => {
     await writeTestTsConfig(dir, buildProjectConfig({ name }), folder);
   }
 
-  /** The global installation's own configuration, registering the projects it fans out to. */
   function installedGlobal(projects: string[]): ProjectConfig {
     return buildProjectConfig({
       name: "global-install",
@@ -103,7 +66,6 @@ describe("a global installation writes only into its own", () => {
     });
   }
 
-  /** The project's own half, as the writer is handed it. */
   function projectSplit(name: string): ProjectConfig {
     return buildProjectConfig({ name, skills: [], agents: [] });
   }
@@ -147,14 +109,7 @@ describe("a global installation writes only into its own", () => {
   });
 
   describe("the policy inside the fan-out", () => {
-    /**
-     * **A root holding BOTH folders, because a single-provider project proves nothing here.** The
-     * fan-out already skips a project whose config file for THIS provider is absent, so a Claude
-     * project asked about as Codex is skipped by `fileExists` and the assertion reads as green
-     * whether the provider policy exists or not. With both installations in one root, the other
-     * provider's `config.ts` is there to be overwritten — and that overwrite, a global's data
-     * reconciled into a different installation's file, is the thing the folders exist to prevent.
-     */
+    /** Both folders in one root: a single-provider project is skipped by `fileExists`. */
     it("leaves the other installation in a root that holds two byte-identical", async () => {
       const project = await plantProject("two-installations", CLAUDE_SOURCE_REL);
       await plantConfigIn(project, CODEX_SOURCE_REL, "two-installations");
@@ -181,13 +136,7 @@ describe("a global installation writes only into its own", () => {
       }).toStrictEqual({ updated: [], notOurs: [project], after: before });
     });
 
-    /**
-     * The arm where the registered project's own folder is REFUSED, and the reason the answer is
-     * a skip rather than a throw: `providerInUse` refuses a root whose installation this release
-     * has no host for, and that refusal used to be raised outside the fan-out's own `try` — so
-     * one unactionable registration aborted the whole fan-out and took every other registered
-     * project with it. The Claude project beside it is what makes that visible.
-     */
+    /** A skip, not a throw: one unactionable registration must not abort the whole fan-out. */
     it("skips a registered project this release cannot act on, and keeps going", async () => {
       const claudeProject = await plantProject("claude-project", CLAUDE_SOURCE_REL);
       const codexProject = await plantProject("codex-project", CODEX_SOURCE_REL);
@@ -233,11 +182,7 @@ describe("a global installation writes only into its own", () => {
       });
     });
 
-    /**
-     * A registered folder holding nothing is gone whichever provider asks. The layout answers a
-     * folder with nothing in it with the provider a NEW installation is made under, so read
-     * through the provider policy alone, a Codex global would call it another provider's.
-     */
+    /** An empty folder reads as a new installation's provider, so the policy alone misjudges it. */
     it.each(["claude", "codex"] as const)(
       "reports a registered folder holding nothing as gone to a %s global",
       async (provider) => {

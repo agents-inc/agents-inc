@@ -1,6 +1,3 @@
-// Re-export operation-specific types for convenience.
-// Shared types (SkillConfig, ProjectConfig, etc.) stay in their original locations.
-
 export type { LoadSourceOptions, LoadedSource } from "./source/load-source.js";
 export type { MarketplaceResult } from "./source/ensure-marketplace.js";
 

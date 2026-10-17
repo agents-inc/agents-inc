@@ -1,13 +1,7 @@
-// Auto-mock for src/cli/utils/fs.ts.
-// All functions return undefined by default; configure with vi.mocked() in beforeEach.
-// It mirrors the module's full export list, and has to: `vi.mock("../../utils/fs")` replaces the
-// WHOLE module, so an export this file leaves out arrives at the call site as `undefined` and the
-// TypeError is raised inside the code under test, where it reads as a product defect.
-// `readFileSafe` and `isDirectoryEmpty` were both missing until the parity spec measured it.
+// Must mirror every export of utils/fs.ts: a missing one is `undefined` inside the code under test.
 import { vi } from "vitest";
 
-// Real implementation — pure lexical path predicate; mocking it to undefined
-// would silently invert every boundary check in consumers under test.
+// Real: a mocked path predicate would invert every boundary check under test.
 export { isPathWithin } from "../fs";
 
 export const readFile = vi.fn();

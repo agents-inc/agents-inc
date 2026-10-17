@@ -12,11 +12,7 @@ import { verbose, warn } from "../../utils/logger";
 import { resolveInstallPaths } from "../installation/install-base-dir";
 import type { SkillId, SkillScope } from "../../types";
 
-/**
- * Validates a skill ID is safe for use in filesystem paths.
- * Blocks null bytes and path traversal sequences at runtime
- * since TypeScript template literal types don't prevent malformed data from YAML/JSON.
- */
+/** Runtime check: template literal types do not stop malformed ids arriving from YAML/JSON. */
 function validateSkillId(skillId: SkillId): boolean {
   return !(
     skillId.length === 0 ||
@@ -27,16 +23,7 @@ function validateSkillId(skillId: SkillId): boolean {
   );
 }
 
-/**
- * Delete an ejected skill's directory at `<skillsDir>/<skill-id>/`, where `skillsDir` is the one the
- * installation at `projectDir` keeps ejected skills in at `scope` — `.claude/skills` on Claude,
- * `$CODEX_HOME/skills` or `<repo>/.agents/skills` on Codex.
- *
- * **Resolved per host, as the copy side resolves it** (`resolveInstallPaths(...).skillsDir`).
- * _Corrected 2026-09-26 (CLI-895):_ this joined Claude's `.claude/skills` to the base directory
- * whatever the host, so on Codex a switch to plugin mode and a deselected ejected skill both left
- * the copy where Codex reads skills — and Codex then read the skill twice.
- */
+/** Deletes `<skillsDir>/<skill-id>/`, with `skillsDir` resolved per host as the copy side does. */
 export async function deleteLocalSkill(
   projectDir: string,
   skillId: SkillId,
@@ -61,21 +48,13 @@ export async function deleteLocalSkill(
     // Skill may not exist — silently ignore
   }
 
-  // The skills directory only — the host's directory above it stays whatever happens here.
-  // Removing that one is uninstall's decision, not the edit path's.
+  // The host's directory above stays: removing it is uninstall's decision.
   await removeDirIfEmpty(skillsDir);
 
   verbose(`Deleted local skill '${skillId}'`);
 }
 
-/**
- * Migrate a local skill's files between project and global directories.
- * Used when a skill's scope changes during edit (e.g., [P] → [G] or [G] → [P]).
- *
- * Copies the skill directory to the new location.
- * For P→G, removes the old project copy. For G→P (override model), the global copy stays untouched.
- * No-op if the source directory doesn't exist (skill may be plugin-mode).
- */
+/** P→G removes the project copy; G→P overrides, keeping the global one. No-op when absent. */
 export async function migrateLocalSkillScope(
   skillId: SkillId,
   fromScope: SkillScope,
@@ -87,8 +66,7 @@ export async function migrateLocalSkillScope(
   }
 
   const toScope: SkillScope = fromScope === "global" ? "project" : "global";
-  // Each scope's skills directory as its host keeps it — see `deleteLocalSkill` (CLI-895). It
-  // resolves `os.homedir()` at call time, so test home-dir mocks apply.
+  // Resolves `os.homedir()` at call time, so test home-dir mocks apply.
   const fromSkillsDir = path.resolve(resolveInstallPaths(projectDir, fromScope).skillsDir);
   const toSkillsDir = path.resolve(resolveInstallPaths(projectDir, toScope).skillsDir);
 
@@ -116,8 +94,6 @@ export async function migrateLocalSkillScope(
   await ensureDir(toSkillsDir);
   await copy(fromPath, toPath);
 
-  // G→P is an override — the global copy stays untouched; the project copy overrides it.
-  // Only P→G should delete the old directory.
   if (fromScope === "project") {
     await remove(fromPath);
   }

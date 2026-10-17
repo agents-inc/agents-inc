@@ -4,18 +4,7 @@ import path from "path";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createMockSkillDefinition } from "../__tests__/factories/skill-factories.js";
 
-/**
- * Discovery reads the installed set off the SEAM, which is what C3 declared and did not wire.
- *
- * The mock is `lib/hosts/host-for.js` rather than Claude's two files: a spec that mocked
- * `installed_plugins.json` and `settings.json` would go on passing for a discovery path wired
- * straight to Claude, which is exactly the state it is here to stop. `createMockPluginHost` is the
- * shared spy host, so a member this module starts calling fails at the assertion rather than as a
- * TypeError from inside the code under test.
- */
-
-// Typed against the real functions, so a definition this spec hands back that the loader could no
-// longer answer — a field renamed or dropped — is a compile error rather than a green spec.
+// Mocks the host seam, not Claude's files, so a discovery path wired straight to Claude fails.
 const { mockLoadPluginSkills, mockFileExists } = vi.hoisted(() => ({
   mockLoadPluginSkills: vi.fn<typeof import("../loading").loadPluginSkills>(),
   mockFileExists: vi.fn<typeof import("../../utils/fs").fileExists>(),
@@ -47,12 +36,10 @@ import {
   listPluginNames,
 } from "./plugin-discovery";
 
-/** The one host every `hostAt` answer in this file is, so a spy set here is the spy called. */
 const mockListPlugins = vi.mocked(hostAt("/any-root").listPlugins);
 
 const REACT_SKILL_ID = "web-framework-react";
 
-/** One entry as a host reports it: the two fields discovery reads, plus the switch it filters on. */
 function installed(pluginKey: string, installPath: string, enabled = true) {
   return { pluginKey, installPath, enabled };
 }
@@ -60,8 +47,6 @@ function installed(pluginKey: string, installPath: string, enabled = true) {
 describe("plugin-discovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Every path exists unless a case says otherwise: the manifest check is discovery's own and
-    // is the subject of its own cases below.
     mockFileExists.mockResolvedValue(true);
   });
 
@@ -222,7 +207,6 @@ describe("plugin-discovery", () => {
 
       const result = await discoverAllPluginSkills("/project");
 
-      // Should still have the good plugin's skills
       expect(Object.keys(result)).toHaveLength(1);
       expect(result[skillId]).toStrictEqual({
         id: skillId,

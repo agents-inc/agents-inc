@@ -39,12 +39,7 @@ export type RecompileAgentsOptions = {
 
 export type RecompileAgentsResult = {
   compiled: AgentName[];
-  /**
-   * The subset of `compiled` whose file this pass actually wrote. `compiled` is
-   * every agent that came through the pass with a correct file at the end of it;
-   * `rewritten` is the ones whose content moved, so `compiled minus rewritten` is
-   * the count a summary reports as unchanged.
-   */
+  /** The subset of `compiled` whose file content moved; the rest count as unchanged. */
   rewritten: AgentName[];
   failed: AgentName[];
   warnings: string[];
@@ -69,9 +64,7 @@ async function resolveAgentNames(params: ResolveAgentNamesParams): Promise<Agent
     return specifiedAgents;
   }
 
-  // A present config is authoritative over its agent roster — even when empty.
-  // `agents: []` means "no agents", so it must NOT fall through to the
-  // all-agents branch below; that branch exists only for the config-LESS case.
+  // A present config is authoritative even when its roster is empty.
   if (projectConfig) {
     const agentNames = projectConfig.agents.map((a) => a.name);
     verbose(`Using agents from config: ${agentNames.join(", ")}`);
@@ -87,7 +80,6 @@ async function resolveAgentNames(params: ResolveAgentNamesParams): Promise<Agent
   return getExistingAgentNames(pluginDir);
 }
 
-/** Splits write outcomes into the recompile result; logs each success at verbose level. */
 function buildRecompileResult(
   outcomes: AgentWriteOutcome[],
   priorWarnings: string[],
@@ -119,8 +111,7 @@ export function filterExcludedEntries(config: ProjectConfig): ProjectConfig {
   const activeSkills = config.skills.filter((s) => !s.excluded);
   const activeAgents = config.agents.filter((a) => !a.excluded);
 
-  // A config with no stack keeps none — the key stays absent rather than becoming an
-  // explicit `undefined`.
+  // No stack stays absent rather than an explicit `undefined`.
   const filteredStack =
     config.stack === undefined
       ? {}
@@ -129,10 +120,7 @@ export function filterExcludedEntries(config: ProjectConfig): ProjectConfig {
   return { ...config, skills: activeSkills, agents: activeAgents, ...filteredStack };
 }
 
-/**
- * The stack with every excluded skill's assignment taken out. Each agent and category keeps its
- * key, even where that leaves a category with no assignments.
- */
+/** Each agent and category keeps its key, even when left with no assignments. */
 export function withoutExcludedAssignments(
   stack: NonNullable<ProjectConfig["stack"]>,
   excludedIds: ReadonlySet<SkillId>,
@@ -159,7 +147,6 @@ export async function recompileAgents(
   const loadedConfig = await loadProjectConfig(configDir);
   const projectConfig = loadedConfig?.config ?? null;
 
-  // Filter excluded entries once at the entry point — callees receive clean data
   const filteredConfig = projectConfig ? filterExcludedEntries(projectConfig) : null;
 
   const builtinAgents = await loadAllAgents(sourcePath);
@@ -179,15 +166,13 @@ export async function recompileAgents(
     pluginDir,
   });
 
-  // An empty pass has nothing to say: every caller reports one off `compiled`, and a warning here
-  // only ever surfaced merged into the OTHER scope's failure report, beside agents that compiled.
+  // An empty pass is not a warning: callers report it off `compiled`.
   if (agentNames.length === 0) {
     return { compiled: [], rewritten: [], failed: [], warnings: [] };
   }
 
   verbose(`Recompiling ${agentNames.length} agents in ${outputDir ?? pluginDir}`);
 
-  // When skills are not provided, discover from all plugin directories.
   const pluginSkills: SkillDefinitionMap =
     providedSkills ?? (await discoverAllPluginSkills(projectDir ?? pluginDir));
 
@@ -214,23 +199,14 @@ export async function recompileAgents(
     sourcePath,
     engine,
     projectAgentsDir: agentsDir,
-    // The same root this pass loaded its config from, so the provider that decides the FORMAT
-    // and the provider that decided the configuration are read off one installation.
+    // Same root as the config, so format and configuration come from one installation.
     projectDir: configDir,
     ...(options.agentScopeMap !== undefined && { agentScopeMap: options.agentScopeMap }),
   });
   return buildRecompileResult(outcomes, missingWarnings);
 }
 
-/**
- * The compile entries for exactly the agents this pass compiles, and a warning for each named
- * agent that neither the config nor the source defines.
- *
- * `buildCompileAgents` returns entries for ALL agents in the config, but when scopeFilter is
- * active, we only want the agents matching that scope. Without this restriction, a project pass
- * would compile global agents without their stack (since the project config omits global agent
- * stack entries) and overwrite correctly compiled global agent files.
- */
+/** Only agents the scope filter matches: a project pass must not overwrite stackless globals. */
 function compileEntriesFor(
   agentNames: AgentName[],
   config: ProjectConfig | null,

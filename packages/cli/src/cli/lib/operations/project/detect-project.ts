@@ -8,18 +8,7 @@ export type DetectedProject = {
   configPath: string | null;
 };
 
-/**
- * Detects an existing CLI installation and loads its project config.
- *
- * Uses detectInstallation() which checks project-level first, then falls back
- * to global. Returns the installation metadata plus the loaded config.
- *
- * Does NOT throw. Returns null when no installation is found OR when the config
- * file exists but is corrupt — the caller (doctor, edit) reports the resulting
- * null as a config/installation problem to the user. `compile` deliberately
- * does NOT use this wrapper: it detects scopes directly so it can hard-error on
- * a corrupt config instead of degrading to null.
- */
+/** Degrades: a corrupt config answers null, as a missing installation does. */
 export async function detectProject(projectDir?: string): Promise<DetectedProject | null> {
   const resolvedDir = projectDir ?? process.cwd();
 

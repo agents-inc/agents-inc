@@ -11,21 +11,12 @@ import { provenanceMarker } from "./agent-provenance";
 import { pruneStaleCompiledAgents, splitAgentsByProvenance } from "./list-compiled-agents";
 import type { AgentName } from "../../types";
 
-/**
- * The compiled-agent readers on Codex, where an agent is a `.toml` role and its marker sits inside
- * `developer_instructions` rather than under a frontmatter fence.
- *
- * CLI-896, found by Codex running the end-to-end check itself 2026-09-26: these readers globbed
- * `*.md` and read Claude's marker, so on Codex they found no compiled agent at all — `uninstall`
- * left every role in place while saying it had removed them, and compile's prune left a
- * deselected role for Codex to keep offering.
- */
+/** On Codex an agent is a `.toml` role whose marker sits inside `developer_instructions`. */
 
 const CODEX = agentCodec("codex");
 const COMPILED: AgentName = "web-developer";
 const DESELECTED: AgentName = "cli-developer";
 
-/** A role the user wrote: no marker, and a name that is not one of this CLI's agents. */
 const THEIR_OWN_ROLE = "their-own-role";
 
 let agentsDir: string;
@@ -38,7 +29,6 @@ afterEach(async () => {
   await cleanupTempDir(agentsDir);
 });
 
-/** A role file exactly as the Codex compile writes it, marker first in `developer_instructions`. */
 async function writeCompiledRole(name: string): Promise<void> {
   const role = renderAgentRoleToml(
     createMockAgentConfig(name),

@@ -4,7 +4,6 @@ import { isHomeDirectory, resolveInstallPaths } from "../../installation/index.j
 import type { AgentName, SkillDefinitionMap, SkillScope } from "../../../types/index.js";
 
 export type CompileAllScopesOptions = {
-  /** Working directory of the command — a project root, or home for global context. */
   projectDir: string;
   sourcePath: string;
   skills: SkillDefinitionMap;
@@ -12,12 +11,8 @@ export type CompileAllScopesOptions = {
 };
 
 /**
- * Compiles agents for every scope the current context owns.
- *
- * Home context: a single pass writing to the home agents directory.
- * Project context: a global pass (from home) then a project pass, each
- * filtered to its own scope so the project pass cannot overwrite global
- * agents with zero-skill versions. Results merge in pass order.
+ * Each pass is filtered to its own scope so the project pass cannot overwrite global agents with
+ * zero-skill versions.
  */
 export async function compileAgentsAllScopes(
   options: CompileAllScopesOptions,
@@ -43,11 +38,6 @@ export async function compileAgentsAllScopes(
   return mergeCompilationResults(globalResult, projectResult);
 }
 
-/**
- * The project pass alone, filtered to the project's own scope — what a project run compiles when
- * it leaves the global install exactly as installed, so its global pass would have nothing to
- * write but the drift it was never asked to repair.
- */
 export async function compileProjectScope(
   options: CompileAllScopesOptions,
 ): Promise<CompilationResult> {

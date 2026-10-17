@@ -19,25 +19,8 @@ export type SummaryPanelProps = SkillAgentSummaryProps & {
 };
 
 /**
- * The Marketplace row's value: the distinct marketplaces the summarised skills come from.
- *
- * `SkillConfig.origin` is authoritative for where a skill came from, and holds exactly one
- * of two things: {@link EJECT_SOURCE}, meaning the files were copied locally, or the marketplace's
- * own name as its `marketplace.json` declares it — which is why a project initialised from a
- * different marketplace names that marketplace here without any extra plumbing.
- *
- * Three cases, and the two zero-marketplace ones are NOT the same state:
- * - **No skills at all.** Nothing is claimed yet, so the default public marketplace stands in.
- * - **Skills, but every one ejected.** "eject" names no marketplace, so there is none to list;
- *   naming the default would assert an origin none of those skills has.
- * - **Any marketplace-sourced skill.** Its marketplace is named. Ejected siblings contribute no
- *   name but do not suppress the ones that do.
- *
- * Tombstoned (`excluded`) entries count. One still records a real global install and the
- * marketplace it came from, and `computeScopeDiff` renders it as a row in the summary below, so
- * dropping it here would leave the header disowning a row it sits above.
- *
- * Sorted, so the row cannot reorder between renders on config iteration order alone.
+ * No skills shows the default marketplace; all-ejected names none. Tombstoned entries count: the
+ * summary below renders them as rows.
  */
 function formatSkillMarketplaces(skillConfigs: SkillConfig[]): string {
   if (skillConfigs.length === 0) return formatSourceDisplayName(DEFAULT_PUBLIC_SOURCE_NAME);
@@ -58,17 +41,7 @@ type PanelHeaderProps = {
   stackName: string | undefined;
 };
 
-/**
- * Which marketplaces and which stack the summary below was built from.
- *
- * Rendered inside the scrolled content, so its `marginBottom` scrolls away
- * rather than permanently costing the viewport a row.
- *
- * `flexShrink={0}` is load-bearing: Ink defaults every box to `flexShrink: 1`,
- * so on a short terminal Yoga squeezes this block to fit instead of letting the
- * viewport clip it, and the Marketplace and Stack rows overprint into one
- * unreadable line. Clipping is the panel's job; the header must keep its height.
- */
+/** `flexShrink={0}`: squeezed by Yoga on a short terminal, its two rows overprint. */
 const PanelHeader: React.FC<PanelHeaderProps> = ({ sourceNames, stackName }) => (
   <Box
     flexDirection="column"
@@ -98,17 +71,7 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({ sourceNames, stackName }) => 
   </Box>
 );
 
-/**
- * Marketplace/stack header above a clipped, arrow-scrollable `SkillAgentSummary`.
- *
- * It owns the `↑`/`↓` keys through `usePanelScroll`. A host that needs other
- * keys adds its own `useInput` alongside it.
- *
- * Horizontal padding only. Vertical padding is unshrinkable, so on a short
- * terminal it claims the last row the viewport has and the content measures 0
- * before it has ever been laid out — the panel then paints neither a summary
- * row nor the affordance that would say rows are missing.
- */
+/** Horizontal padding only: unshrinkable vertical padding starves the viewport on a short terminal. */
 export const SummaryPanel: React.FC<SummaryPanelProps> = ({ stackName, ...summary }) => {
   const { viewportRef, contentRef, contentMarginTop, hiddenAbove, hiddenBelow } = usePanelScroll();
 

@@ -20,16 +20,7 @@ const UNKNOWN_SKILL_ID = "web-framework-does-not-exist";
 /** What a config records about itself: a stack's own sentence, saved at install and never its id. */
 const SHARED_DESCRIPTION = "Minimal stack for E2E testing";
 
-/**
- * The `agents` map is the only place a shared configuration can say anything about a sub-agent
- * that no skill mentions, so these cover the four ways an agent can reach — or fail to reach —
- * the install selection: named by the map, named only by an assignment, switched off, or not real.
- *
- * Every payload whose sub-agents rest at the shared selection default carries its skills at
- * `scope: "global"`: a project-scoped skill assigned to a resting sub-agent is a pair the config
- * model cannot express, and the decode now refuses it outright rather than handing the install
- * pipeline rows the project writer would drop without a word. The refusal has its own specs below.
- */
+// Skills are global where sub-agents rest at the default, since the decode refuses that pair.
 describe("seedToInstallSelection", () => {
   beforeEach(() => {
     initializeMatrix(REACT_HONO_WEB_API_DOMAINS_MATRIX);
@@ -71,8 +62,7 @@ describe("seedToInstallSelection", () => {
 
     const { result } = seedToInstallSelection(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX);
 
-    // Pinned through the shared constant AND by its word: the first binds the decode to the
-    // matrix's one spelling, the second keeps that spelling from drifting silently.
+    // Constant and literal both: one binds the decode, the other stops the spelling drifting.
     expect(result.agentConfigs).toStrictEqual(
       buildAgentConfigs(["web-developer"], { scope: DEFAULT_SELECTION_OPTIONS.scope }),
     );
@@ -92,8 +82,7 @@ describe("seedToInstallSelection", () => {
 
     const { result } = seedToInstallSelection(payload, REACT_HONO_WEB_API_DOMAINS_MATRIX);
 
-    // Sorted rather than positional: where a map-only agent lands in the roster is not part of
-    // the contract, that it is IN the roster with a global-scoped config is.
+    // Sorted: a map-only agent's roster position is not part of the contract.
     expect([...result.selectedAgents].sort()).toStrictEqual(["api-developer", "web-developer"]);
     expect(result.agentConfigs.filter((ac) => ac.name === "api-developer")).toStrictEqual(
       buildAgentConfigs(["api-developer"], { scope: "global" }),
@@ -204,12 +193,6 @@ describe("seedToInstallSelection", () => {
     });
   });
 
-  /**
-   * The description is what a resolvable `stackId` used to supply, and the payload now carries it
-   * directly. Both halves matter: a payload that has one hands the install pipeline a sentence to
-   * write, and a payload that does not must hand it nothing rather than an empty string — a config
-   * describing itself with `""` is a different file from one describing itself with no key.
-   */
   it("carries a description the payload states onto the install selection", () => {
     const payload = buildSeedPayload({
       description: SHARED_DESCRIPTION,
@@ -265,11 +248,6 @@ describe("seedToInstallSelection", () => {
     expect(result.selectedAgents).toStrictEqual(["web-developer"]);
   });
 
-  /**
-   * The decode used to declare its result validated on the grounds that the editor had already
-   * checked it. It had — against ITS catalog. This one skips ids it does not know and carries its
-   * own relationship rules, so the only catalog whose verdict is worth reporting is this one's.
-   */
   describe("revalidating the decoded selection against this catalog", () => {
     /** React needs Zustand here; the payloads below differ only in whether it arrives. */
     const REACT_ONLY_ASSIGNMENT = { "web-developer": "lazy" } as const;

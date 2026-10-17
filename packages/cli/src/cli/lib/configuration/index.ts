@@ -60,14 +60,7 @@ export { defaultCategories } from "./default-categories";
 export { defaultRules } from "./default-rules";
 export { ConfigDefaultExportError, loadConfig } from "./config-loader";
 
-/**
- * Neither half's renderer is re-exported here, and neither is the writer that
- * renders AND writes the types half. `generateConfigSource`,
- * `generateConfigTypesSource` and `regenerateConfigTypes` remain importable from
- * their own modules by `config-gate/**` and this directory (eslint-enforced), so
- * the gate can drive them — a barrel re-export would hand the same reach to
- * every command.
- */
+// The renderers stay out of the barrel so only config-gate can reach them (eslint-enforced).
 export {
   generateProjectConfigTypesSource,
   getGlobalConfigTypesPath,

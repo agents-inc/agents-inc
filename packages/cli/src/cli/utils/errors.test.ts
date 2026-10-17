@@ -1,12 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { getErrorMessage } from "./errors";
 
-/** The escape pair a parser's own message carries out of the bytes that broke it. */
 const ESCAPE = "\u001B";
 const CARRIAGE_RETURN = "\r";
 const ERASE_LINE = `${ESCAPE}[2K`;
 
-/** The thrown value, as a value — `expect().toThrow` cannot hand the error itself back. */
 function thrownBy(run: () => unknown): unknown {
   try {
     run();
@@ -38,9 +36,7 @@ describe("getErrorMessage", () => {
   });
 
   it("renders a parser's account of foreign bytes without the escapes inside them", () => {
-    // The real shape rather than an invented one: V8 quotes the offending input back inside the
-    // message, so a parse failure carries whatever caused it. The bytes came from a marketplace
-    // file or a pipe; the Error object came from Node, and only the second of those looks safe.
+    // V8 quotes the offending input back inside the message.
     const parseFailure = thrownBy(() => JSON.parse(`{"a":${ERASE_LINE}${CARRIAGE_RETURN}}`));
 
     const message = getErrorMessage(parseFailure);
@@ -51,8 +47,6 @@ describe("getErrorMessage", () => {
   });
 
   it("leaves an ordinary message exactly as it was written", () => {
-    // The permitted case for the spec above, and for every other spec in this file: a sanitiser
-    // that flattened messages would make every error in the CLI worse to read.
     expect(getErrorMessage(new Error("Could not read config: line 3, column 7"))).toBe(
       "Could not read config: line 3, column 7",
     );

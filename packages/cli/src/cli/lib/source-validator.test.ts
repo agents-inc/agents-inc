@@ -44,10 +44,7 @@ import {
 /** The yaml parser's own words for what renderUnparseableMetadataYaml() writes. */
 const PARSER_REASON = "Nested mappings are not allowed";
 
-/**
- * A marketplace name Claude Code will not register plugins under, and the same name
- * written the way it accepts.
- */
+/** A name Claude Code will not register plugins under, then the accepted spelling. */
 const MANIFEST_NAME_REFUSED = "Acme_Skills";
 const MANIFEST_NAME_ACCEPTED = "acme-skills";
 
@@ -58,26 +55,16 @@ const MARKETPLACE_MANIFEST_PATH = path.join(PLUGIN_MANIFEST_DIR, MARKETPLACE_JSO
 const MARKETPLACE_OWN_SLUG = "acme-react";
 const OTHER_MARKETPLACE_OWN_SLUG = "acme-vue";
 
-/**
- * A slug the generated catalogue really carries, read off the union rather than typed, so
- * a refusal that hands the whole union back reddens whatever the catalogue holds that day.
- * The rule under test names neither of the two above, so its presence means one thing only.
- */
+/** Read off the union, so a refusal handing the whole union back reddens whatever it holds. */
 const A_CATALOGUE_SLUG: string = firstElement(SKILL_SLUGS);
 
-/**
- * The two builds a finding about a missing or broken manifest names, in the order an author runs
- * them — `build plugins` writes what `build marketplace` lists.
- */
+/** `build plugins` writes what `build marketplace` lists. */
 const BUILDS_IN_ORDER = /build plugins[\s\S]*build marketplace/;
 
 /** The three ways a marketplace can lack a valid manifest, each a different route through the load. */
 const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
 
-/**
- * Leaves `sourceDir` without a valid manifest, in the way `defect` names. A source starts with none,
- * so "absent" writes nothing; a marketplace listing no plugin is the shape the schema refuses.
- */
+/** "absent" writes nothing; a marketplace listing no plugin is the shape the schema refuses. */
 async function writeManifestDefect(
   sourceDir: string,
   defect: (typeof MANIFEST_DEFECTS)[number],
@@ -91,7 +78,6 @@ async function writeManifestDefect(
   );
 }
 
-/** Gives a source a `.claude-plugin/marketplace.json` publishing under `name`. */
 async function writeMarketplaceManifest(sourceDir: string, name: string): Promise<void> {
   const manifestPath = marketplaceManifestPath(sourceDir);
   await mkdir(path.dirname(manifestPath), { recursive: true });
@@ -338,7 +324,6 @@ describe("source-validator", () => {
         renderSkillMd("web-framework-react", "React"),
       );
 
-      // Write invalid YAML that will fail parsing
       await writeFile(
         path.join(skillDir, STANDARD_FILES.METADATA_YAML),
         "category: web-framework\n  bad-indent: [\nunmatched bracket",
@@ -398,18 +383,8 @@ describe("source-validator", () => {
       });
     });
 
-    /**
-     * The metadata half of the class `skill-rules.ts` already carries: a closed union refusing a
-     * marketplace's own name, answered with somebody else's catalogue. An author meets this one
-     * FIRST — a `metadata.yaml` is written before a rule is.
-     *
-     * The pair is the point. The refusal on its own cannot tell a rule scoped to the catalogue
-     * from one that has swallowed every published slug, because both leave the report identical;
-     * the accepted case beside it is what says `custom: true` really is a way through, rather
-     * than a mechanism named in a message and honoured nowhere.
-     */
+    /** A marketplace's own slug in metadata.yaml; the accepted case proves `custom: true` works. */
     describe("a slug metadata.yaml declares", () => {
-      /** Writes one skill whose metadata is the valid file with the named fields replaced. */
       async function writeSkillWithMetadata(fields: Record<string, unknown>): Promise<void> {
         const skillDir = path.join(skillsDir, "acme-web-framework-react");
         await mkdir(skillDir, { recursive: true });
@@ -502,10 +477,8 @@ describe("source-validator", () => {
     });
 
     it("should not crash when source has skills dir but no agent directories", async () => {
-      // Source with skills dir but no agents dir — should not crash
       const result = await validateSource(sourceDir);
 
-      // Should complete without throwing
       expect(result).toStrictEqual(
         expect.objectContaining({
           issues: expect.any(Array),
@@ -764,8 +737,7 @@ describe("source-validator", () => {
       it("should keep naming the field the schema refused when a default export is present", async () => {
         const configDir = path.join(sourceDir, "config");
         await mkdir(configDir, { recursive: true });
-        // A real default export whose shape the schema rejects — the message must name the field,
-        // never the export, or the two faults become indistinguishable again.
+        // A default export the schema rejects: the message must name the field, not the export.
         await writeFile(path.join(sourceDir, SKILL_RULES_PATH), renderConfigTs({ version: 1 }));
 
         const result = await validateSource(sourceDir);
@@ -779,10 +751,7 @@ describe("source-validator", () => {
       });
 
       /**
-       * `skill-rules.ts` names skills by SLUG, and the schema holds every one of them to
-       * this CLI's own generated catalogue — so a marketplace author naming a skill they
-       * themselves ship is refused with a list of every slug someone else ships. The list
-       * is not the answer to their question and does not contain one.
+       * A rule naming the author's own slug must not be answered with the catalogue's slug list.
        */
       it("should say why a rule may not name this marketplace's own skill, not list the catalogue", async () => {
         const configDir = path.join(sourceDir, "config");
@@ -821,12 +790,7 @@ describe("source-validator", () => {
       });
     });
 
-    /**
-     * The name a marketplace publishes under is the namespace Claude Code registers every
-     * plugin in, so `doctor` reporting that marketplace as validated says a marketplace
-     * nothing can be installed from is healthy. The accepted-name spec beside it is what
-     * separates a guard scoped to the name from one that has swallowed every manifest.
-     */
+    /** `doctor` must not call a marketplace healthy when nothing can be installed from it. */
     describe("the name marketplace.json publishes under", () => {
       it("should be an error against the manifest when Claude Code would not register it", async () => {
         await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_REFUSED);
@@ -858,11 +822,7 @@ describe("source-validator", () => {
     });
 
     /**
-     * A custom marketplace must carry a valid manifest. One that does not cannot be loaded, so the
-     * cross-reference pass cannot run, and the finding is the manifest's — filed against the file a
-     * reader opens, not the categories file the pass happened to be reading when the load stopped.
-     * Who is reading sets how loud it is: the author is one build away from the fix, and a consumer
-     * cannot load the marketplace at all. The accepted-name spec above is the permitted twin.
+     * Filed against the manifest a reader opens; louder for a consumer, who cannot load it at all.
      */
     describe("whether marketplace.json is there and valid", () => {
       it.each(MANIFEST_DEFECTS)(
@@ -898,14 +858,7 @@ describe("source-validator", () => {
       });
     });
 
-    /**
-     * Validating a marketplace loads it, and the load says what the health check finds. The
-     * validation then read the same findings again to file them as rows, and that read said each
-     * one a second time: `doctor` printed every `[matrix]` warning twice, back to back.
-     *
-     * A warning is said once per process, so the category is this file's alone — one an earlier
-     * spec here had already said would hold this whether or not the defect does.
-     */
+    /** The load already says each health finding; filing them as rows must not say them again. */
     describe("a health finding", () => {
       const SAID_ONCE_CATEGORY = "web-styling";
       const FINDING = `Category '${SAID_ONCE_CATEGORY}' has no domain`;

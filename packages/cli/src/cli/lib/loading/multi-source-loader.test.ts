@@ -11,7 +11,6 @@ import {
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { discoverAllPluginSkills } from "../plugins";
 
-// Mock external dependencies
 vi.mock("../../utils/logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../utils/logger")>()),
   verbose: vi.fn(),
@@ -33,7 +32,7 @@ const DEFAULT_SOURCE_CONFIG: ResolvedConfig = {
 describe("multi-source-loader", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    // Reset discoverAllPluginSkills to default empty result (clearAllMocks does not reset implementations)
+    // clearAllMocks does not reset implementations
     mockDiscoverAllPluginSkills.mockResolvedValue({});
   });
 
@@ -105,7 +104,6 @@ describe("multi-source-loader", () => {
 
       const matrix = createMockMatrix({ ...SKILLS.react });
 
-      // marketplace parameter (from marketplace.json) takes precedence
       await loadSkillsFromAllSources(matrix, privateSourceConfig, "/tmp/test", "Acme Corp");
 
       const react = matrix.skills["web-framework-react"]!;
@@ -120,7 +118,6 @@ describe("multi-source-loader", () => {
     });
 
     it("should tag as public when default source has marketplace set", async () => {
-      // Edge case: default source with marketplace set should use marketplace name but remain public type
       const configWithMarketplace: ResolvedConfig = {
         source: TEST_SOURCE_URL,
         sourceOrigin: "default",
@@ -163,7 +160,6 @@ describe("multi-source-loader", () => {
         { name: "eject", type: "local", installed: true, installMode: "eject" },
       ]);
 
-      // activeSource should be the local source (installed)
       expect(react.activeSource).toStrictEqual({
         name: "eject",
         type: "local",
@@ -275,8 +271,6 @@ describe("multi-source-loader", () => {
 
   describe("plugin skill tagging", () => {
     it("marks a skill carried under another marketplace's name installed there, not under the loaded one", async () => {
-      // A global installation's skill the loaded marketplace does not carry, seated by the source
-      // loader from the marketplace that installation was made from — and so outside this one.
       const otherMarketplace = "global-marketplace";
       mockDiscoverAllPluginSkills.mockResolvedValue({
         "web-state-zustand": {
@@ -284,7 +278,6 @@ describe("multi-source-loader", () => {
           description: "Zustand",
           path: "/global/cache/zustand/skills/web/state/zustand",
         },
-        // Boundary cast: test fixture covers a subset of all SkillIds
       } satisfies Partial<Record<SkillId, SkillDefinition>>);
       const matrix = createMockMatrix({
         ...SKILLS.zustand,
@@ -313,14 +306,12 @@ describe("multi-source-loader", () => {
     });
 
     it("should tag plugin-installed skills", async () => {
-      // Mock discoverAllPluginSkills to return skills from global cache
       mockDiscoverAllPluginSkills.mockResolvedValue({
         "web-framework-react": {
           id: "web-framework-react",
           description: "React framework skill",
           path: "/global/cache/react/skills/web/framework/react",
         },
-        // Boundary cast: test fixture covers a subset of all SkillIds
       } satisfies Partial<Record<SkillId, SkillDefinition>>);
 
       const matrix = createMockMatrix({ ...SKILLS.react });
@@ -328,7 +319,6 @@ describe("multi-source-loader", () => {
       await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, "/tmp/test");
 
       const react = matrix.skills["web-framework-react"]!;
-      // Should have a single public source marked as plugin-installed
       expect(react.availableSources).toStrictEqual([
         {
           name: "agents-inc",
@@ -352,7 +342,6 @@ describe("multi-source-loader", () => {
           description: "Zustand",
           path: "/global/cache/zustand/skills/web/state/zustand",
         },
-        // Boundary cast: test fixture covers a subset of all SkillIds
       } satisfies Partial<Record<SkillId, SkillDefinition>>);
 
       const matrix = createMockMatrix({ ...SKILLS.react }, { ...SKILLS.zustand });

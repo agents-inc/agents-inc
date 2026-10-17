@@ -24,7 +24,6 @@ import { SKILLS } from "../__tests__/test-fixtures";
 import { VITEST_REACT_HONO_MATRIX } from "../__tests__/mock-data/mock-matrices";
 import { expectValidAgentMarkdown } from "../__tests__/assertions/agent-assertions";
 
-/** The shared stand-in for a project's own `agent.liquid`, which `compiler.test.ts` copies too. */
 const FIXTURE_AGENT_TEMPLATE = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../__tests__/fixtures/agents/_templates/agent.liquid",
@@ -33,7 +32,6 @@ const FIXTURE_AGENT_TEMPLATE = path.resolve(
 /** The line only the fixture template emits, and therefore the one that says which rendered. */
 const PROJECT_TEMPLATE_MARKER = "Rendered by the project's own agent template.";
 
-/** The skill definitions a caller hands the pass, in place of discovering them. */
 const REACT_AND_VITEST_SKILLS: SkillDefinitionMap = {
   [SKILLS.react.id]: createMockSkillDefinition(SKILLS.react.id),
   [SKILLS.vitest.id]: createMockSkillDefinition(SKILLS.vitest.id),
@@ -53,10 +51,6 @@ describe("agent-recompiler", () => {
   });
 
   describe("recompileAgents", () => {
-    // A pass with no sub-agent to compile is not a warning. Every caller already reports an empty
-    // pass off `compiled`, so a warning here only ever surfaced merged into ANOTHER pass's failure
-    // report — `init` and `edit` printed "No agents found to recompile" right after compiling
-    // every sub-agent but the one that failed.
     it("answers an empty pass with no warning when no agents exist", async () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
@@ -72,7 +66,7 @@ describe("agent-recompiler", () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
-        agents: ["pm"], // PM is a simple agent likely to succeed
+        agents: ["pm"],
       });
 
       expect(result.compiled).toContain("pm");
@@ -86,9 +80,7 @@ describe("agent-recompiler", () => {
     });
 
     it("writes an agent the scope map does not route into the caller's own agents directory", async () => {
-      // `agents-inc update` recompiles with no scope map at all, and a hand-authored agent has no
-      // config row in the map the other callers build — so an unrouted agent must stay where the
-      // caller pointed rather than being relocated into the user's ~/.claude.
+      // `update` passes no scope map, so an unrouted agent stays where the caller pointed.
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
@@ -104,8 +96,7 @@ describe("agent-recompiler", () => {
       const result = await recompileAgents({
         pluginDir: testDirs.pluginDir,
         sourcePath: CLI_ROOT,
-        // Boundary cast: the CLI's own source defines every `AgentName`, so the name no
-        // definition answers — one a hand-edited config.ts carries — lies outside the union.
+        // Boundary cast: a name no definition answers lies outside the AgentName union.
         agents: ["non-existent-agent-xyz" as AgentName],
       });
 
@@ -157,23 +148,13 @@ describe("agent-recompiler", () => {
       expect(result.compiled).toHaveLength(3);
       expect(result.failed).toStrictEqual([]);
 
-      // Verify all 3 agent files exist
       for (const agentName of result.compiled) {
         const agentPath = path.join(testDirs.agentsDir, `${agentName}.md`);
         expect(await fileExists(agentPath)).toBe(true);
       }
     });
 
-    /**
-     * The map handed in is where the pass reads a skill's definition from, and this case now
-     * shows it. It used to hand a skill to `pm`, a sub-agent with no stack, and assert only that
-     * `pm` compiled — which it does whatever happens to the map, so a pass that ignored the
-     * option stayed green.
-     *
-     * Discovery reads the plugins Claude's registry names, and this tree registers none, so the
-     * map is the only place the React definition exists: a compiled `web-developer` naming it
-     * can only have read it from there.
-     */
+    /** No plugin is registered here, so the map is the only place the React definition exists. */
     it("uses provided skills instead of loading from plugin", async () => {
       await writeTestTsConfig(
         testDirs.projectDir,
@@ -214,12 +195,6 @@ describe("agent-recompiler", () => {
       expectValidAgentMarkdown(content, "web-developer");
     });
 
-    /**
-     * The project's own `agent.liquid` is what renders, which is the whole of what "respects
-     * projectDir" can mean here. This case used to create the templates directory EMPTY and
-     * assert only that `pm` compiled — an engine that never looked in the project compiles it
-     * identically from the CLI's own template, so nothing here could go red.
-     */
     it("respects projectDir for local template resolution", async () => {
       const localTemplatesDir = path.join(testDirs.projectDir, CLAUDE_DIR, "templates");
       await mkdir(localTemplatesDir, { recursive: true });
@@ -269,9 +244,7 @@ describe("agent-recompiler", () => {
       const agentPath = path.join(testDirs.agentsDir, "web-developer.md");
       const content = await readFile(agentPath, "utf-8");
 
-      // Active skill should appear in compiled agent
       expect(content).toContain("web-framework-react");
-      // Excluded skill should NOT appear in compiled agent
       expect(content).not.toContain(SKILLS.vitest.id);
     });
 
@@ -305,9 +278,7 @@ describe("agent-recompiler", () => {
       const agentPath = path.join(testDirs.agentsDir, "web-developer.md");
       const content = await readFile(agentPath, "utf-8");
 
-      // Global skill should appear in global-scoped agent
       expect(content).toContain("web-testing-vitest");
-      // Project-scoped skill should NOT appear in global-scoped agent
       expect(content).not.toContain(SKILLS.react.id);
     });
   });

@@ -10,18 +10,11 @@ import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils";
 import type { SkillId } from "../../types";
 
-/**
- * A saved entry the loaded catalogue does not carry, whose one repairable file stopped describing
- * an intact install: the run refuses over it rather than dropping the entry.
- */
-
 const EJECTED_SKILL = "web-framework-react" satisfies SkillId;
 const MARKETPLACE = "agents-inc";
 
-/** The category {@link EJECTED_SKILL} is stated to belong to — one a domain does claim. */
 const PLACEABLE_CATEGORY = "web-framework";
 
-/** Unparseable YAML: a flow-mapping opener followed by nested compact mappings. */
 const UNPARSEABLE_YAML = `{{{ this is not: valid: yaml: "at all\n`;
 
 describe("unresolved-skill-entries", () => {
@@ -39,7 +32,6 @@ describe("unresolved-skill-entries", () => {
     return path.join(baseDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId);
   }
 
-  /** Writes the skill directory an ejected entry names, with whatever metadata.yaml is given. */
   async function installLocalSkill(
     baseDir: string,
     skillId: string,

@@ -6,11 +6,6 @@ import { buildSeedPayload, buildSeedSkill } from "../__tests__/factories/seed-fa
 
 import type { AgentName, SkillId } from "../../types/index.js";
 
-/**
- * The local half of `share --stdin`: every refusal happens before the POST, and nothing arrived,
- * not JSON, and refused by the contract are told apart so the producer knows which step failed.
- */
-
 /** Twelve unwritable pairs: the small end of what a repository scan emits. */
 const UNWRITABLE_AT_SCALE = {
   skills: [
@@ -40,11 +35,6 @@ describe("reading a payload off a pipe", () => {
     expect(read.payload).toStrictEqual(payload);
   });
 
-  /**
-   * A project skill on a sub-agent resting at global (the sparse default) has nowhere to be
-   * written. The local gate once read the base schema, so this passed here and failed at the store
-   * as a bare `HTTP 400`.
-   */
   it("refuses a project skill assigned to a sub-agent resting at global, before any write", () => {
     const payload = buildSeedPayload({
       skills: {
@@ -106,11 +96,6 @@ describe("reading a payload off a pipe", () => {
     expect(read.error.length).toBeLessThan(300);
   });
 
-  /**
-   * The scope rule raises one issue per (skill, sub-agent) pair, so a scan refuses with hundreds of
-   * near-identical lines. Name the first pairs, and count the rest so a clipped list is not read as
-   * complete.
-   */
   it("names the first unwritable pairs and counts the rest rather than repeating one sentence", () => {
     const payload = buildSeedPayload({
       skills: Object.fromEntries(

@@ -1,18 +1,6 @@
 /**
- * A marketplace source repository's OWN config, which is a different question from an
- * installation's and now gets its own door.
- *
- * `loadProjectSourceConfig` serves both today: "what does this installation's config say" and
- * "what layout does this source repo declare". They part company at the rename:
- *
- *   - an INSTALLATION's config lives inside a provider folder, `.agents-inc/<provider>/`,
- *     because one installation is exactly one provider and the folder is what says which;
- *   - a SOURCE REPO's config is PROVIDER-NEUTRAL — `<source>/.agents-inc/config.ts`, no
- *     provider segment — because `skillsDir` and `stacksFile` describe the repository's own
- *     layout and have nothing to do with a provider, and a marketplace serving both would
- *     otherwise declare its layout twice.
- *
- * A provider folder must not be mistaken for the repository's own declaration.
+ * A source repo's own config is provider-neutral (`<source>/.agents-inc/config.ts`); a provider
+ * folder belongs to an installation and must not be read as the repo's declaration.
  */
 
 import path from "path";
@@ -25,10 +13,8 @@ import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js"
 import { isSourceRepo } from "../../source-validator.js";
 import { loadSourceRepoConfig } from "../config.js";
 
-/** Where a source repo declares itself, with no provider segment. */
 const SOURCE_REPO_REL = ".agents-inc";
 
-/** A provider folder, which belongs to an INSTALLATION and never to a source repo. */
 const CLAUDE_INSTALL_REL = ".agents-inc/claude";
 
 /** Skills directories that say which declaration was the one that got read. */

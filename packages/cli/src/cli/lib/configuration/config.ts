@@ -25,16 +25,12 @@ import { getInstalledConfigPath, getProjectConfigPath } from "../installation/in
 import { isHomeDirectory } from "../installation/is-home-directory";
 import type { ScopeKind } from "../installation/source-scopes";
 
-// DEFAULT_SOURCE lives in @workspace/compile, because the editor's output preview records it for
-// a configuration naming no marketplace; re-exported here for existing importers of this module.
 export { DEFAULT_SOURCE };
 export const SOURCE_ENV_VAR = "CC_MARKETPLACE";
 
-// Re-export types that moved to src/cli/types/config.ts for backward compatibility
 export type { SourceEntry, BrandingConfig } from "../../types/config";
 
-// getProjectConfigPath lives in install-base-dir.ts (a neutral leaf) to avoid an
-// import cycle; re-exported here for existing importers of this module.
+// Lives in install-base-dir.ts to avoid an import cycle.
 export { getProjectConfigPath };
 
 export type ResolvedConfig = {
@@ -42,24 +38,12 @@ export type ResolvedConfig = {
   sourceOrigin: "flag" | "env" | "project" | "global" | "default";
 } & (RecordedMarketplaceName | { marketplace?: undefined; marketplaceRecordedIn?: undefined });
 
-/**
- * The marketplace name an installation recorded beside its source, and the `config.ts` it was
- * recorded in. A pair, because a refusal of the name sends the reader to the file holding it.
- */
+/** A pair, because a refusal of the name sends the reader to the file holding it. */
 type RecordedMarketplaceName = { marketplace: string; marketplaceRecordedIn: string };
 
 /**
- * Who is asking for a marketplace, and therefore whether this run may CHOOSE one.
- *
- * Choosing is an install-time decision (owner ruling 2026-08-09): `--marketplace` is
- * `init`'s flag and nobody else's, and {@link SOURCE_ENV_VAR} is the same choice made
- * without typing it — so the environment rung is read for `init` and for nothing else.
- * Every later command asks as `"stored"` and gets what the install recorded: the
- * project config, then the global one, then {@link DEFAULT_SOURCE}.
- *
- * A `"stored"` caller may still NAME a marketplace it is reading for its own sake —
- * `doctor` validating a marketplace repository points the loader at a path — which is why
- * the flag is not tied to the caller. What `init` alone gets is the ambient environment.
+ * Choosing a marketplace is install-time, so only `"init"` reads the environment rung. `"stored"`
+ * callers get project, then global, then the default, though any caller may still name one to read.
  */
 export type SourceCaller = "init" | "stored";
 
@@ -72,32 +56,9 @@ export type ResolveSourceRequest = {
 };
 
 /**
- * Reads the settings config at `dir`, or answers `null` when there is none to read.
- *
- * **A file that EXISTS and cannot be loaded is raised, never reported as absence** (owner ruling
- * 2026-08-20). `resolveSource` reads the return value alone, so a swallowed failure was
- * indistinguishable from a config that is not there: the run walked past this rung to
- * {@link DEFAULT_SOURCE} and installed from a marketplace nobody named, while the config naming a
- * private one sat unread on disk. Every way a config can fail is on the loud side of that line — a
- * file that could not be evaluated, a module whose exports are all named, a file that declared
- * nothing, and a shape the installation schema refuses.
- *
- * **The file is judged as the full-config reader judges it** (`loadProjectConfigFromDir`) before
- * its settings are read. The settings schema declares only the settings fields and lets everything
- * else through, so judged by it alone an empty file read as absent and a refused `skills` beside a
- * named marketplace read as usable — while `list`, `edit` and `doctor` refused the very same file.
- *
- * A MISSING file keeps its `null`, and that is the whole of what `null` means here: the legitimate
- * state `init` exists for, and the state `edit` reports as "no installation".
- *
- * Every call site chose a posture and states it where it stands. All but one ABORT: the marketplace
- * a run installs from is not a thing to guess at, and the two sites that read this file to locate a
- * marketplace's own skills or agent partials would otherwise walk a tree it says is elsewhere. The
- * exception is `validateRegisteredSources`, which DEGRADES — a command whose job is naming what is
- * wrong here has to survive the thing it is naming, so `doctor`'s `safeCheck` turns the raise into
- * a failed row and its `readsConfig: true` rows stand down before reaching here at all. Two further
- * sites are unreachable rather than chosen: `mergeWithExistingConfig` loads the full config first,
- * and `ensureMinimalConfig` reads only where the file is absent.
+ * `null` only when the file is absent. A present file that cannot load is raised, never reported as
+ * absence, and is judged as the full-config reader judges it. Callers abort, except
+ * `validateRegisteredSources`, which degrades.
  */
 async function loadSourceConfig(
   dir: string,
@@ -123,10 +84,7 @@ async function loadSourceConfig(
 /** How a reader words a config that is there and will not load, from the reason it gives. */
 type RefuseUnreadable = (reason: string, cause?: unknown) => Error;
 
-/**
- * The refusal for an installation's config, worded as `ensureConfigReadable` words the same file:
- * whose config it is, and the folder the way out is taken from.
- */
+/** Worded as `ensureConfigReadable` words the same file. */
 function refuseInstallationConfig(
   configPath: string,
   scope: ScopeKind,
@@ -136,15 +94,7 @@ function refuseInstallationConfig(
     new Error(installationConfigsUnreadable([{ configPath, reason, scope, scopeRoot }]), { cause });
 }
 
-/**
- * The config at `configPath` as `schema` admits it, or `null` when it evaluated and declared
- * nothing — which each caller answers for itself: an installation's file declaring nothing is
- * refused, while a source repo declaring nothing in one folder is asked about the next.
- *
- * Every way of failing raises. Split out from {@link loadSourceConfig} so that function's own body
- * reads as the states it answers, with a file that will not load named once here rather than
- * assembled from a `let` and a `try`.
- */
+/** `null` when the config evaluated and declared nothing; every failure raises. */
 async function readConfigOrRefuse<T>(
   configPath: string,
   schema: z.ZodType<T>,
@@ -158,14 +108,7 @@ async function readConfigOrRefuse<T>(
   }
 }
 
-/**
- * The settings an installation's config carries, read out of a config its installation schema has
- * already admitted.
- *
- * Parsed rather than taken as they stand, because that schema lets the settings-only fields through
- * unread — `branding` and the directory overrides are not its fields — and one of the wrong type is
- * refused here as it always was, naming the field.
- */
+/** Parsed, since the installation schema lets the settings-only fields through unread. */
 function readSettings(configPath: string, installation: unknown): Partial<ProjectConfig> {
   const settings = projectSourceConfigSchema.safeParse(installation);
   if (!settings.success) {
@@ -174,47 +117,24 @@ function readSettings(configPath: string, installation: unknown): Partial<Projec
   return settings.data;
 }
 
-/**
- * Whether a load failure already names the field or the export at fault, and so is handed on as
- * itself rather than re-worded.
- *
- * The two it admits fault a LINE of a file the user still owns and can go and correct. Everything
- * else says only that the file would not evaluate, which is what each reader's own
- * {@link RefuseUnreadable} exists to turn into a way out.
- */
+/** True for failures that already name the faulty field or export, which are passed on as-is. */
 function describesItsOwnFault(error: unknown): boolean {
   return error instanceof ConfigSchemaError || error instanceof ConfigDefaultExportError;
 }
 
 /**
- * The refusal for a marketplace repository's own config that exists and cannot be evaluated.
- *
- * `loadConfig` already names the file and the parser's own reason — `Failed to load config from
- * '<path>': ParseError: Missing semicolon` — so it is handed straight to
- * {@link configUnreadableError} rather than restated. An installation's config is refused by
- * {@link installationConfigsUnreadable} instead, which can say whose config it is.
+ * `loadConfig` already names the file and the parser's reason, so it is passed on, not restated.
  */
 const unreadableSourceRepoConfig: RefuseUnreadable = (reason, cause) =>
   new Error(configUnreadableError(reason), { cause });
 
-/**
- * The config a MARKETPLACE SOURCE REPOSITORY declares about itself, or `null` when it declares
- * none: `<base>/.agents-inc/config.ts`.
- *
- * Its own door, because it answers a different question from every other reader of this file.
- * An INSTALLATION's config lives inside a provider folder — one installation is exactly one
- * provider and the folder is what says which. A source repo's config is provider-NEUTRAL and
- * carries no provider segment: `skillsDir` and `stacksFile` describe the repository's own layout
- * and have nothing to do with a provider, and a marketplace serving both would otherwise have to
- * declare its layout twice.
- */
+/** A source repo's own `<base>/.agents-inc/config.ts`, provider-neutral: layout has no provider. */
 export async function loadSourceRepoConfig(
   basePath: string,
 ): Promise<Partial<ProjectConfig> | null> {
   return readDeclaredConfig(path.join(basePath, SOURCE_ROOT_DIR));
 }
 
-/** The config in `dir`, or `null` when that folder declares none. */
 async function readDeclaredConfig(dir: string): Promise<Partial<ProjectConfig> | null> {
   const configPath = path.join(dir, STANDARD_FILES.CONFIG_TS);
   if (!(await fileExists(configPath))) {
@@ -224,21 +144,13 @@ async function readDeclaredConfig(dir: string): Promise<Partial<ProjectConfig> |
   return readConfigOrRefuse(configPath, projectSourceConfigSchema, unreadableSourceRepoConfig);
 }
 
-/**
- * Load source config from a directory's own installation folder.
- *
- * The scope it announces is derived, not assumed: at the home root the file this reads
- * IS the global config, and a caller asking a project question there — `doctor` deciding
- * whether the cwd is a source repository — must not be told a project config was found
- * where none exists.
- */
+/** The scope it announces is derived: at the home root this file is the global config. */
 export async function loadProjectSourceConfig(
   projectDir: string,
 ): Promise<Partial<ProjectConfig> | null> {
   return loadSourceConfig(projectDir, isHomeDirectory(projectDir) ? "global" : "project");
 }
 
-/** Load source config from the global home directory's own source folder. */
 export async function loadGlobalSourceConfig(): Promise<Partial<ProjectConfig> | null> {
   return loadSourceConfig(os.homedir(), "global");
 }
@@ -267,20 +179,12 @@ async function readStoredRung(
   return config && { config, origin, configPath: getInstalledConfigPath(dir) };
 }
 
-/** The directory whose config is a project's own, or null — see {@link loadOwnProjectSourceConfig}. */
+/** The directory whose config is a project's own, or null at the home root. */
 function ownProjectDir(projectDir: string | undefined): string | null {
   return projectDir === undefined || isHomeDirectory(projectDir) ? null : projectDir;
 }
 
-/**
- * A project's OWN source config, and nothing at the home root.
- *
- * The home root's config is the global config, so reading it as a project's would label
- * one file both things at once: `compile` naming `Marketplace: project` beside
- * `Compiling global agents...`, `edit` announcing `(project)` while refusing scope toggles
- * as a global context. The axis is which FILE the settings were read from — never what
- * scope the skill and agent entries inside it carry.
- */
+/** Nothing at the home root, whose config is the global one; the axis is which file was read. */
 async function loadOwnProjectSourceConfig(
   projectDir: string | undefined,
 ): Promise<Partial<ProjectConfig> | null> {
@@ -288,7 +192,6 @@ async function loadOwnProjectSourceConfig(
   return ownDir === null ? null : loadProjectSourceConfig(ownDir);
 }
 
-/** The marketplace name the effective config recorded, with the file it recorded it in. */
 function recordedMarketplaceName(
   effective: EffectiveSourceConfig | null,
 ): RecordedMarketplaceName | undefined {
@@ -299,18 +202,12 @@ function recordedMarketplaceName(
   };
 }
 
-/**
- * Precedence: flag > env > project > global > default, with the first two rungs
- * reachable by `init` alone — see {@link SourceCaller}.
- */
+/** Precedence: flag > env > project > global > default; the env rung is read for `init` only. */
 export async function resolveSource(request: ResolveSourceRequest): Promise<ResolvedConfig> {
   const { caller, flag, projectDir } = request;
   const effective = await loadEffectiveSourceConfig(projectDir);
   const storedSource = effective?.config.marketplace ?? DEFAULT_SOURCE;
-  // The stored NAME becomes this result's `marketplace` — the ref it was read beside becomes the
-  // `source`. It labels that ref and no other: a project set up from another marketplace than the
-  // one its global installation stored read the global's name as its own, and installed plugins
-  // against a marketplace Claude Code had registered under a different one.
+  // The stored name labels only the ref it was read beside.
   const recorded = recordedMarketplaceName(effective);
   const labelFor = (source: string) => source === storedSource && recorded;
 
@@ -339,19 +236,11 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
 }
 
 /**
- * How a marketplace this run NAMED is referred to back to whoever named it.
- *
- * Origin-neutral on purpose: `--marketplace` is `init`'s flag and nobody else's, while a
- * `"stored"` caller may still name a marketplace it is reading for its own sake — `doctor`
- * points the loader at a marketplace repository. Naming the flag in a sentence that caller
- * reads blames an option it never passed.
+ * Origin-neutral: a `"stored"` caller may name a marketplace too, and never passed `--marketplace`.
  */
 const NAMED_SOURCE_LABEL = "The marketplace";
 
-/**
- * Refuses a named marketplace that cannot be one. Raised rather than warned: somebody named
- * this, so falling through to another would install from a place they did not name.
- */
+/** Raised, not warned: somebody named this, so falling through would install from elsewhere. */
 function assertNamedSourceUsable(flag: string): void {
   if (flag.trim() === "") {
     throw new Error(
@@ -361,14 +250,7 @@ function assertNamedSourceUsable(flag: string): void {
   validateSourceFormat(flag.trim(), NAMED_SOURCE_LABEL);
 }
 
-/**
- * The marketplace {@link SOURCE_ENV_VAR} names, or undefined when it names none this run.
- *
- * Unset, empty and unusable all fall through to the next rung with a warning rather than
- * a refusal — the environment is ambient, so an exported value nobody meant for this run
- * must not be able to fail it. That is the opposite of {@link assertNamedSourceUsable},
- * and deliberately so: one was typed at this command, the other was already there.
- */
+/** Unset, empty or unusable falls through with a warning: the environment is ambient. */
 function readEnvSource(): string | undefined {
   const envValue = process.env[SOURCE_ENV_VAR];
   if (!envValue) return undefined;
@@ -397,26 +279,11 @@ export async function resolveAuthor(projectDir?: string): Promise<string | undef
   return effective?.config.author;
 }
 
-/** Resolved branding with defaults applied for any missing fields */
 export type ResolvedBranding = {
   name: string;
 };
 
-/**
- * Branding resolved per FIELD: this project's, then the global one's, then the shipped default.
- *
- * Per field rather than per file, and that distinction is the whole of this function. Everything
- * else reads {@link loadEffectiveSourceConfig}, which answers with the project's config if that
- * FILE exists and the global one otherwise — right for `marketplace`, where a project's is its own
- * and inheriting one would install from somewhere nobody named. Branding is the opposite kind of
- * field: it is presentation, a user sets it once for themselves, and a project that says nothing
- * about it is not asking for the shipped name back.
- *
- * Read per file it did exactly that. A user who branded globally stopped seeing their own name the
- * moment any project config existed — which is every installed project — and nothing announced it;
- * the name simply reverted. This function's own docblock described the per-field behaviour for as
- * long as the code did not perform it.
- */
+/** Per field, not per file: the project's, then the global one's, then the shipped default. */
 export async function resolveBranding(projectDir?: string): Promise<ResolvedBranding> {
   const [own, global] = await Promise.all([
     loadOwnProjectSourceConfig(projectDir),
@@ -428,15 +295,7 @@ export async function resolveBranding(projectDir?: string): Promise<ResolvedBran
   };
 }
 
-/**
- * The one marketplace this installation reads skills from, as a {@link SourceEntry}.
- *
- * Distinct from {@link resolveSource}, which answers the same question as a
- * {@link ResolvedConfig} (source string plus where it came from). This is the shape the
- * surfaces that LIST sources want — `search` and `doctor` — and there is exactly one of
- * them: the registered-extras array this used to return alongside it was withdrawn with
- * the marketplace axis itself.
- */
+/** As a `SourceEntry`, the shape the listing surfaces (`search`, `doctor`) want. */
 export async function resolvePrimarySourceEntry(projectDir?: string): Promise<SourceEntry> {
   const resolvedConfig = await resolveSource({ caller: "stored", projectDir });
   return {
@@ -479,16 +338,8 @@ const PRIVATE_IPV4_PATTERN =
 const PRIVATE_IPV6_PATTERN =
   /^\[(?:::1|::ffff:(?:127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)|fd[0-9a-f]{2}:.*|fe80:.*)\]$/i;
 
-/**
- * Validates a marketplace string format before it reaches giget or filesystem operations.
- * Catches obviously invalid formats early with clear error messages.
- *
- * @param source - The trimmed, non-empty marketplace value to validate
- * @param flagName - What carried this value, as the error messages name it back: `init`'s
- *   `--marketplace`, {@link SOURCE_ENV_VAR}, or {@link NAMED_SOURCE_LABEL} when no flag did
- */
+/** `flagName` is what carried the value, as the messages name it back. */
 export function validateSourceFormat(source: string, flagName: string): void {
-  // Null bytes can bypass C-level string termination in downstream tools (giget, git)
   if (NULL_BYTE_PATTERN.test(source)) {
     throw new Error(
       `${flagName} contains invalid characters.\n\n` +
@@ -542,13 +393,11 @@ function validateRemoteSource(source: string, protocol: string, flagName: string
     );
   }
 
-  // For https:// and http:// URLs, validate basic URL structure
   if (protocol === "https://" || protocol === "http://") {
     validateHttpUrl(source, flagName);
     return;
   }
 
-  // For git shorthand protocols (github:, gh:, gitlab:, etc.), validate org/repo pattern
   validateGitShorthand(source, pathAfterProtocol, flagName);
 }
 
@@ -606,8 +455,7 @@ function validateGitShorthand(source: string, repoPath: string, flagName: string
 }
 
 function validateLocalPath(source: string, flagName: string): void {
-  // Check for control characters (except common whitespace)
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- control characters (bar common whitespace) are what this rejects
   const CONTROL_CHAR_PATTERN = /[\x00-\x08\x0E-\x1F\x7F]/u;
   if (CONTROL_CHAR_PATTERN.test(source)) {
     throw new Error(
@@ -619,8 +467,7 @@ function validateLocalPath(source: string, flagName: string): void {
     );
   }
 
-  // Block UNC paths (Windows network paths like \\server\share or //server/share)
-  // These can trigger SMB authentication to attacker-controlled servers, leaking credentials
+  // UNC paths can trigger SMB authentication to an attacker's server, leaking credentials.
   if (UNC_PATH_PATTERN.test(source)) {
     throw new Error(
       `${flagName} contains a UNC network path: "${source}"\n\n` +
@@ -634,20 +481,7 @@ function validateLocalPath(source: string, flagName: string): void {
   }
 }
 
-/**
- * Whether a resolved marketplace IS the default public one, asked of the source
- * STRING.
- *
- * The one place that question is answered, because more than one surface asks it
- * and they must agree: the install-mode tagger decides whether the marketplace it
- * labels skills with is public or private, and both stack lookups ask it as half
- * of {@link offersBuiltInStacks}. A marketplace named explicitly — by flag, env
- * or config — is the default one when it spells {@link DEFAULT_SOURCE}.
- *
- * A path is not this question's subject. Nothing in a source STRING that happens
- * to be a path says which repository it holds; {@link isPublicCatalogueCheckout}
- * asks the directory instead, and it is the one to use where a directory is in hand.
- */
+/** Asked of the source string; where a directory is in hand, use `isPublicCatalogueCheckout`. */
 export function isDefaultSource(source: string): boolean {
   return source === DEFAULT_SOURCE;
 }
@@ -655,21 +489,7 @@ export function isDefaultSource(source: string): boolean {
 /** The only field of a repository's package.json this module reads. */
 const packageIdentitySchema = z.object({ name: z.string() });
 
-/**
- * Whether the DIRECTORY at `basePath` is a checkout of the public catalogue's own
- * repository, read off package identity.
- *
- * Never off the name in `marketplace.json`: that name is a claim the author
- * writes, so a guard keyed on it would exempt exactly the source it exists to
- * catch. {@link PUBLIC_CATALOGUE_PACKAGE} carries what the signal is and is not
- * worth.
- *
- * The build side asks a different question of the same identity and is spelled
- * apart from this one on purpose: `isCatalogueOwnReservedName` in
- * `marketplace-generator.ts` asks whether a marketplace NAME about to be
- * published is the catalogue's own, and takes the package name it already holds
- * rather than a directory to read one from.
- */
+/** Read off package identity, never off `marketplace.json`'s name, which the author writes. */
 export async function isPublicCatalogueCheckout(basePath: string): Promise<boolean> {
   const raw = await readFileOptional(path.join(basePath, STANDARD_FILES.PACKAGE_JSON));
   return declaredPackageName(raw) === PUBLIC_CATALOGUE_PACKAGE;
@@ -688,19 +508,7 @@ function declaredPackageName(raw: string): string | null {
   return parsed.success ? parsed.data.name : null;
 }
 
-/**
- * Whether the CLI's built-in stack catalogue stands in for a marketplace that
- * ships no stacks of its own.
- *
- * Two spellings of one marketplace, and BOTH stack lookups must read this rather
- * than either half. `resolveOfferedStacks` decides the list offered and
- * `loadStackById` resolves an id from it; a rule they answer differently offers
- * a stack and refuses to install it.
- *
- * The built-in stacks ARE the public catalogue's stacks — that repository ships
- * no `config/stacks.ts` at all — so a checkout of it read off a path has to reach
- * them too, and the source string cannot say that a path is that repository.
- */
+/** Read by both stack lookups so offering and resolving agree; a catalogue checkout counts too. */
 export async function offersBuiltInStacks(basePath: string, source: string): Promise<boolean> {
   return isDefaultSource(source) || (await isPublicCatalogueCheckout(basePath));
 }

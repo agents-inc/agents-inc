@@ -9,8 +9,6 @@ import {
 import { STANDARD_FILES } from "../../consts";
 import type { SkillId } from "../../types";
 
-// For extractAllSkills tests, we mock fs/loader. For loadSkillCategories/loadSkillRules,
-// we mock loadConfig from the configuration module.
 const mockReadFile = vi.fn();
 const mockFileExists = vi.fn().mockResolvedValue(true);
 const mockGlob = vi.fn().mockResolvedValue([]);
@@ -40,7 +38,6 @@ import { loadSkillCategories, loadSkillRules, extractAllSkills } from "./matrix-
 import { warn } from "../../utils/logger";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 
-/** The marketplace tree a scan walks, and the two skill directories under it. */
 const SKILLS_DIR = "/marketplace/skills";
 const BROKEN_SKILL_DIR = "web-testing-vitest";
 const HEALTHY_SKILL_DIR = "web-framework-react";
@@ -53,11 +50,7 @@ const BROKEN_METADATA_PATH = path.join(SKILLS_DIR, BROKEN_SKILL_DIR, STANDARD_FI
 /** The yaml parser's own words for what renderUnparseableMetadataYaml() writes. */
 const PARSER_REASON = "Nested mappings are not allowed";
 
-/**
- * A scan of two skill directories where the first one's metadata.yaml is
- * unparseable — the order that proves a parse failure does not take the rest of
- * the scan down with it.
- */
+/** The broken skill comes first, proving a parse failure does not end the scan. */
 function mockBrokenSkillBeforeHealthySkill(): void {
   mockGlob.mockResolvedValue([
     `${BROKEN_SKILL_DIR}/${STANDARD_FILES.METADATA_YAML}`,
@@ -298,7 +291,6 @@ slug: react
 cliDescription: React framework
 `;
         }
-        // SKILL.md content
         return renderSkillMd("web-framework-react", "React framework", "# React");
       });
       mockParseFrontmatter.mockReturnValue({
@@ -450,7 +442,6 @@ displayName: wrong
         `skill-bad-meta/${STANDARD_FILES.METADATA_YAML}`,
       ]);
       mockFileExists.mockImplementation(async (filePath: string) => {
-        // skill-no-skillmd has no SKILL.md
         return !filePath.includes("skill-no-skillmd");
       });
       mockReadFile.mockImplementation(async (filePath: string) => {
@@ -472,7 +463,6 @@ displayName: wrong
 
       const skills = await extractAllSkills("/project/src/skills");
 
-      // Only the valid skill should be extracted
       expect(skills).toHaveLength(1);
       expect(firstElement(skills).id).toBe("skill-valid");
     });

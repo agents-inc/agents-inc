@@ -24,18 +24,12 @@ import { mergeMatrixWithSkills, synthesizeCategory } from "./skill-resolution";
 import { warn } from "../../utils/logger";
 import type { CategoryPath, Category, SkillId, SkillSlug } from "../../types";
 
-/** Two directories under one marketplace whose SKILL.md declares the same name. */
 const DUPLICATED_ID: SkillId = "web-framework-react";
 const FIRST_SKILL_PATH = "skills/web-framework-react/";
 const SECOND_SKILL_PATH = "skills/web-framework-react-copy/";
 
-/** One slug claimed by two skills that agree on nothing else — the other identity axis. */
 const COLLIDING_SLUG: SkillSlug = "react";
 
-/**
- * The slug of the fictional skill the auto-synthesis cases use. No registry
- * knows that id, so every one of its fields is stated rather than looked up.
- */
 // Boundary cast: a fixture slug outside the generated SkillSlug union
 const CUSTOM_TOOL_SLUG = "custom-tool" as SkillSlug;
 
@@ -184,7 +178,6 @@ describe("skill-resolution", () => {
         },
       ]);
 
-      // React should NOT have any requirements from this rule
       const react = merged.skills["web-framework-react"];
       expect(react!.requires).toStrictEqual([]);
     });
@@ -205,7 +198,6 @@ describe("skill-resolution", () => {
   });
 
   describe("partial requirements", () => {
-    /** Zustand — every rule below is written about it — beside the skills its needs name. */
     function mergeRequiresFixture(config: MockMatrixConfig) {
       return mergeMatrixWithSkills(config.categories, config.relationships, [
         createMockExtractedSkill("web-state-zustand"),

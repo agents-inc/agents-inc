@@ -8,23 +8,7 @@ import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js"
 import type { GateDeps } from "../index.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 
-/**
- * The two ways `mutateGlobal` decides it has nothing to do — no global config to
- * mutate at all, and a mutation whose transform is a no-op — and the report each
- * one hands back.
- *
- * The report matters beyond the files it did not write: `changes` is the caller's
- * only account of what moved, so a no-op must classify to T4. It once did not.
- * The "nothing happened" change set was built by diffing an absent config against
- * a synthetic `{ name: "", skills: [], agents: [] }`, and `name: ""` against an
- * absent name is a scalar change — so every no-op reported `scalarsChanged:
- * ["name"]` and classified as T2, the tier that propagates the config half to
- * every registered project. No caller branched on the tier, so nothing lied to a
- * user; the first one to branch on it would have inherited the phantom.
- *
- * Both projects are real directories: `deregister-project` normalizes its
- * argument through `realpathSync`, which throws on a path that does not exist.
- */
+/** Both no-op paths must classify as T4: `changes` is the caller's only account of what moved. */
 describe("mutateGlobal — a mutation that moves nothing", () => {
   let tempHome: string;
   let registeredProject: string;
@@ -35,9 +19,7 @@ describe("mutateGlobal — a mutation that moves nothing", () => {
     tempHome = await createTempDir("cc-mutate-global-noop-");
     registeredProject = await makeDir(path.join(tempHome, "registered"));
     unregisteredProject = await makeDir(path.join(tempHome, "unregistered"));
-    // `mutateGlobal` resolves the global config through `os.homedir()`, so the temp home has
-    // to be what that call returns. The spy says so directly; `vi.stubEnv("HOME", ...)` would
-    // reach it too, since `os.homedir()` reads `$HOME` on POSIX.
+    // `mutateGlobal` resolves the global config through `os.homedir()`.
     vi.spyOn(os, "homedir").mockReturnValue(tempHome);
     deps = { loadMatrix: vi.fn(), loadAgents: vi.fn() };
   });

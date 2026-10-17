@@ -167,7 +167,6 @@ describe("plugin-finder", () => {
 
       const result = await readPluginManifest("/path/to/plugin");
 
-      // Zod schema may coerce or fail; the name check verifies it's not a valid string
       expect(result).toBeNull();
     });
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { charactersOutsideKebabCase, validateKebabCaseName } from "./validate-kebab-name.js";
 
-/** The entity the refusals under test name. */
 const NOUN = "Marketplace";
 
 /** An npm scoped name — legal for a package, and the case this list exists for. */
@@ -29,8 +28,7 @@ describe("charactersOutsideKebabCase", () => {
 
 describe("the pair a refusal is built from", () => {
   it("should leave a name with no offending character refused by the rule alone", () => {
-    // The two halves disagree by design: `-leading-hyphen` breaks the SHAPE and not the
-    // alphabet, so a refusal quoting only the character list would name nothing to fix.
+    // `-leading-hyphen` breaks the shape, not the alphabet, so the character list is empty.
     expect(charactersOutsideKebabCase("-leading-hyphen")).toStrictEqual([]);
     expect(validateKebabCaseName("-leading-hyphen", NOUN)).toContain("kebab-case");
   });

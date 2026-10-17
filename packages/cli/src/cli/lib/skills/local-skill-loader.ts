@@ -9,16 +9,12 @@ import { LOCAL_DEFAULTS, METADATA_KEYS } from "../metadata-keys";
 
 export type LocalRawMetadata = {
   displayName: string;
-  /** Kebab-case short key for alias resolution */
   slug: SkillSlug;
   cliDescription?: string;
-  /** Skill category (e.g., "web-framework", "web-styling", "api-api") */
   category: CategoryPath;
   usageGuidance?: string;
   tags?: string[];
-  /** Domain this skill belongs to (e.g., "web", "api", "cli") */
   domain: Domain;
-  /** True if this skill was created outside the CLI's built-in vocabulary */
   custom?: boolean;
 };
 
@@ -69,9 +65,7 @@ async function extractLocalSkill(
     return null;
   }
 
-  // One file that describes no skill must skip its own skill, not abort discovery
-  // for every command that loads the catalog. `compile` refuses the same judgment's
-  // verdict outright, which is what keeps the two passes from disagreeing.
+  // One file that describes no skill skips its own skill, not the whole discovery.
   const read = await readSkillMetadata(metadataPath);
   if (!read.usable) {
     warn(
@@ -82,10 +76,7 @@ async function extractLocalSkill(
 
   const metadata = read.metadata;
 
-  // The verdict is `namesPlaceholderCategory`'s and is shared with the discovery behind
-  // `compile`'s skill count, so neither pass can load what the other refuses. The SENTENCE
-  // is this pass's alone: it is the one that reaches every command, so saying it here says
-  // it once per run rather than once per reader.
+  // Warned here only: this pass reaches every command, so it is said once per run.
   if (namesPlaceholderCategory(metadata)) {
     warn(
       `Skipping local skill '${skillDirName}': ${METADATA_KEYS.CATEGORY} '${LOCAL_PSEUDO_CATEGORY}' is a placeholder, not a real category, so no sub-agent can be given this skill. Set ${METADATA_KEYS.CATEGORY} in ${metadataPath} to a real one.`,

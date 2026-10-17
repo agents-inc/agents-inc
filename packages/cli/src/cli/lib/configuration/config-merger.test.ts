@@ -80,7 +80,6 @@ describe("config-merger", () => {
 
       // loadFullProjectConfig finds the config, so merged is true
       expect(result.merged).toBe(true);
-      // Author should be inherited from existing
       expect(result.config.author).toBe("@vince");
     });
 
@@ -147,18 +146,7 @@ describe("config-merger", () => {
       expect(result.config.skills.filter((s) => s.id === "web-framework-react")).toStrictEqual([]);
     });
 
-    /**
-     * `mergeWithExistingConfig` loads through `loadProjectConfig`, which falls back to
-     * `os.homedir()` when the project carries no config of its own — so on a first save
-     * into a project that sits under an existing global install, the "existing" config
-     * the merge reconciles against IS the global one. Its `name` names the global
-     * installation, never this directory, and a project config that adopts it claims an
-     * identity that belongs to another file.
-     *
-     * `os.homedir()` is spied rather than `process.env.HOME` set: the loader's fallback
-     * and `isHomeDirectory` both read the OS-level home, which ignores the environment
-     * (see helpers/isolated-home.ts).
-     */
+    /** With no project config the merge base is the global one, whose `name` is not adopted. */
     describe("a project with no config of its own, under a global install", () => {
       let projectDir: string;
       let fakeHome: string;
@@ -380,7 +368,6 @@ describe("config-merger", () => {
     });
 
     describe("stack merge — new wins (mutator output is authoritative)", () => {
-      /** Shorthand: creates a SkillAssignment[] from an id */
       function sa(id: string): SkillAssignment[] {
         return [{ id: id as SkillId, preloaded: false }];
       }
@@ -510,7 +497,6 @@ describe("config-merger", () => {
 
       await mergeWithExistingConfig(newConfig, { projectDir: tempDir });
 
-      // Original input should be unchanged
       expect(newConfig.name).toBe("new-project");
       expectAgentConfigs(newConfig, buildAgentConfigs(["api-developer"]));
       expect(newConfig.author).toBeUndefined();
@@ -537,7 +523,6 @@ describe("config-merger", () => {
   });
 
   describe("mergeConfigs", () => {
-    /** Shorthand: creates a SkillAssignment[] from an id */
     function sa(id: string): SkillAssignment[] {
       return [{ id: id as SkillId, preloaded: false }];
     }
@@ -665,11 +650,7 @@ describe("config-merger", () => {
         });
       });
 
-      /**
-       * The existing name labels the marketplace it was recorded beside. A project set up from
-       * another marketplace under a global installation merges over the GLOBAL config, whose name
-       * would otherwise be written into the project's as its own. The case above is the control.
-       */
+      /** Under a global install the merge base is the global config, whose name is not ours. */
       it("does not carry an existing marketplace name onto a config made from another marketplace", () => {
         const newConfig = buildProjectConfig({
           name: "project",
@@ -1016,8 +997,7 @@ describe("config-merger", () => {
       });
 
       it("should use new config empty stack {} (not preserve existing)", () => {
-        // An empty stack on newConfig is a deliberate mutator output (no agents survived),
-        // distinct from `undefined` (stack-untouching op). Merge must trust `{}`.
+        // An empty stack is deliberate (no agents survived), unlike `undefined`; trust `{}`.
         const newConfig = buildProjectConfig({ name: "project", skills: [], stack: {} });
         const existingConfig = buildProjectConfig({
           name: "project",
@@ -1062,7 +1042,6 @@ describe("config-merger", () => {
 
       mergeConfigs(newConfig, existingConfig);
 
-      // Original inputs should be unchanged
       expect(newConfig.name).toBe("new-project");
       expectAgentConfigs(newConfig, buildAgentConfigs(["api-developer"]));
       expect(newConfig.author).toBeUndefined();
@@ -1105,11 +1084,7 @@ describe("config-merger", () => {
       });
 
       it("should drop existing tombstone when new config is authoritative for the id (active only)", () => {
-        // newConfig carries only the active project entry — it does NOT carry
-        // the existing tombstone forward. The merge treats newConfig as
-        // authoritative for every id it references: the stale tombstone is
-        // dropped on the next merge because newConfig does not carry it.
-        // Skills at unrelated ids remain untouched.
+        // newConfig is authoritative for the ids it names, so the tombstone it omits is dropped.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
@@ -1128,8 +1103,6 @@ describe("config-merger", () => {
 
         const result = mergeConfigs(newConfig, existingConfig);
 
-        // Only the new active entry for react survives; the existing tombstone
-        // is dropped because newConfig did not re-emit it.
         const reactEntries = result.skills.filter((s) => s.id === "web-framework-react");
         expect(reactEntries).toStrictEqual([
           {
@@ -1138,7 +1111,6 @@ describe("config-merger", () => {
             origin: "eject",
           },
         ]);
-        // Existing vitest entry preserved — id is not referenced by newConfig.
         expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
           id: "web-testing-vitest",
           scope: "global",
@@ -1147,10 +1119,7 @@ describe("config-merger", () => {
       });
 
       it("should preserve dual-scope tombstone when new config explicitly carries it", () => {
-        // A config can carry BOTH the active entry and the tombstone when a
-        // dual-scope install is legitimate. In that case the merger preserves
-        // both because new is authoritative for the id and new explicitly lists
-        // both shapes.
+        // A legitimate dual-scope install lists both shapes, so both are kept.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: [
@@ -1221,7 +1190,6 @@ describe("config-merger", () => {
         const result = mergeConfigs(newConfig, existingConfig);
 
         expect(result.skills.filter((s) => s.id === "web-framework-react")).toStrictEqual([]);
-        // A genuinely-untouched inherited-global skill (no tombstone) is preserved.
         expect(result.skills.find((s) => s.id === "web-testing-vitest")).toStrictEqual({
           id: "web-testing-vitest",
           scope: "global",
@@ -1253,9 +1221,7 @@ describe("config-merger", () => {
       });
 
       it("owned-scope edit drops a deselected PROJECT skill but preserves inherited global-active skills (project-context)", () => {
-        // Project edit: newConfig keeps react (project) but omits a previously-selected project
-        // skill (zustand). The deselected project skill must drop; an inherited global-active
-        // skill the project does not own must be preserved even though it is absent from new.
+        // The deselected project skill drops; an inherited global one survives though absent.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
@@ -1271,18 +1237,13 @@ describe("config-merger", () => {
 
         const result = mergeConfigs(newConfig, existingConfig, { authoritativeScope: "owned" });
 
-        // Deselected project-owned skill dropped.
         expect(result.skills.some((s) => s.id === "web-state-zustand")).toBe(false);
-        // Inherited global-active skill preserved (not owned by the project edit).
         expect(result.skills.some((s) => s.id === "web-testing-vitest")).toBe(true);
         expect(result.skills.some((s) => s.id === "web-framework-react")).toBe(true);
       });
 
       it("drops an existing skill whose id could not be resolved this session, at both scopes", () => {
-        // A real installed skill absent from the currently-loaded source matrix never reaches
-        // newConfig. It is removed like any other
-        // absent owned entry — `edit` names it and says why rather than the config keeping an
-        // entry the same run's summary announced as gone.
+        // A skill the loaded matrix lacks never reaches newConfig, so it is removed like any other.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
@@ -1305,8 +1266,7 @@ describe("config-merger", () => {
       });
 
       it("drops an unresolvable id alongside a genuinely deselected one, keeping the selection", () => {
-        // Both absences now mean the same thing to the merge — the entry is gone from the roster
-        // the session was authoritative over — so both drop, and only what is still selected stays.
+        // Both absences mean the same, so both drop.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
@@ -1326,9 +1286,7 @@ describe("config-merger", () => {
       });
 
       it("keeps an unresolvable id an INHERITED global install owns during a project edit", () => {
-        // The one thing the drop must not reach: a global-active entry the project merely
-        // inherits. It is out of a project edit's authority whether or not this session could
-        // resolve it, so the removal never becomes a way to uninstall someone else's install.
+        // A global-active entry the project only inherits is out of a project edit's authority.
         const newConfig = buildProjectConfig({
           name: "project",
           skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "eject" }),
@@ -1410,12 +1368,7 @@ describe("config-merger", () => {
       });
 
       it("should drop existing tombstone when new config is authoritative for the name (active only)", () => {
-        // newConfig carries only the active project entry — it does NOT carry
-        // the existing global:excluded tombstone forward. The merge treats
-        // newConfig as authoritative for every name it references: the stale
-        // tombstone is dropped on the next merge because newConfig does not
-        // carry it (this is exactly how P→G scope migration cleans up).
-        // Agents at unrelated names remain untouched.
+        // newConfig is authoritative for the names it names, so the tombstone it omits is dropped.
         const newConfig = buildProjectConfig({
           name: "project",
           agents: buildAgentConfigs(["api-developer"]),
@@ -1432,8 +1385,6 @@ describe("config-merger", () => {
 
         const result = mergeConfigs(newConfig, existingConfig);
 
-        // Only the new active entry for api-developer survives; the existing
-        // tombstone is dropped because newConfig did not re-emit it.
         const apiDevEntries = result.agents.filter((a) => a.name === "api-developer");
         expect(apiDevEntries).toStrictEqual([
           {
@@ -1441,7 +1392,6 @@ describe("config-merger", () => {
             scope: "project",
           },
         ]);
-        // Existing web-developer entry preserved — name is not referenced by newConfig.
         expect(result.agents.find((a) => a.name === "web-developer")).toStrictEqual({
           name: "web-developer",
           scope: "global",
@@ -1449,10 +1399,7 @@ describe("config-merger", () => {
       });
 
       it("should preserve dual-scope tombstone when new config explicitly carries it", () => {
-        // A config can carry BOTH the active project entry and the
-        // global:excluded tombstone. In that case the merger preserves both
-        // because new is authoritative for the name and explicitly lists both
-        // shapes — exactly the G→P E2E contract.
+        // A legitimate dual-scope agent lists both shapes, so both are kept.
         const newConfig = buildProjectConfig({
           name: "project",
           agents: [
@@ -1490,10 +1437,7 @@ describe("config-merger", () => {
       });
 
       it("drops BOTH the lingering active project entry and the stale tombstone when a dual-scope agent is fully deselected", () => {
-        // Scenario B full-deselect: newConfig carries ZERO entries for the name
-        // (a fully-deselected dual-scope agent is neither an active selection nor
-        // a tombstone), while the on-disk config still has both the active project
-        // entry and the global tombstone. Both must be dropped, not preserved.
+        // Full deselect: newConfig has no entry for the name, so both on-disk entries drop.
         const newConfig = buildProjectConfig({
           name: "project",
           agents: [],
@@ -1512,7 +1456,6 @@ describe("config-merger", () => {
         const result = mergeConfigs(newConfig, existingConfig);
 
         expect(result.agents.filter((a) => a.name === "api-developer")).toStrictEqual([]);
-        // A genuinely-untouched inherited-global agent (no tombstone) is preserved.
         expect(result.agents.find((a) => a.name === "web-developer")).toStrictEqual({
           name: "web-developer",
           scope: "global",
@@ -1520,9 +1463,7 @@ describe("config-merger", () => {
       });
 
       it("drops an active global agent absent from new when newConfig is authoritative (global-context edit)", () => {
-        // A global-context edit at ~/ loads the entire global config; removing an active
-        // global agent yields a newConfig with no entry for it. Union-preserve would wrongly
-        // keep it (there is no tombstone to key on) — authoritative merge must drop it.
+        // A global-context edit must drop an absent global agent; there is no tombstone to key on.
         const newConfig = buildProjectConfig({
           name: "project",
           agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
@@ -1549,9 +1490,7 @@ describe("config-merger", () => {
       });
 
       it("owned-scope edit drops a deselected PROJECT agent but preserves inherited global-active agents (project-context)", () => {
-        // The exact reported bug: a project-only agent, never dual-scope, fully deselected in a
-        // project-context edit. It must drop. An inherited global-active agent the project does
-        // not own must survive even though it is absent from newConfig.
+        // A project-only agent fully deselected drops; an inherited global agent survives.
         const newConfig = buildProjectConfig({
           name: "project",
           agents: buildAgentConfigs(["cli-developer"], { scope: "project" }),
@@ -1569,9 +1508,7 @@ describe("config-merger", () => {
 
         const result = mergeConfigs(newConfig, existingConfig, { authoritativeScope: "owned" });
 
-        // Deselected project-only agent dropped (no tombstone to key on).
         expect(result.agents.some((a) => a.name === "cli-tester")).toBe(false);
-        // Inherited global-active agent preserved (not owned by the project edit).
         expect(result.agents.find((a) => a.name === "web-developer")).toStrictEqual({
           name: "web-developer",
           scope: "global",

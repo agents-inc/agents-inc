@@ -77,20 +77,7 @@ export default class List extends BaseCommand {
     },
   ];
 
-  /**
-   * Which of the scope's installations this report is about, said out loud where there are two.
-   *
-   * **`list` reported one of two and nothing anywhere said so.** Everything below resolves the
-   * provider through `providerInUse`, which answers by ROSTER ORDER for a scope holding one
-   * installation of each — so the report named one installation, its mode, its counts and its
-   * config path, all correct, about the half of the directory the user was not asking after. Every
-   * command that WRITES refuses this state by name and `doctor` reports it as a finding; the one
-   * command whose whole job is to say what is installed was silent about it.
-   *
-   * It reports rather than refusing, for the reason `doctor` does: a read-only command that
-   * refused would leave a user whose scope holds two installations unable to look at either,
-   * which is the one state they most need to see.
-   */
+  /** Names the other installation in this scope; reports rather than refuses, like `doctor`. */
   private async sayWhichInstallationThisIs(providerFlagValue: string | undefined): Promise<void> {
     const named = providerNamedBy(providerFlagValue);
     if (named !== undefined) {

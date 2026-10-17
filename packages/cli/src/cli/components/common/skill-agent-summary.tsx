@@ -11,7 +11,6 @@ import type {
 import { getSkillDisplayName } from "../../lib/matrix/matrix-provider.js";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config.js";
 
-/** The skills and agents to summarise, and the installation each row is marked against. */
 export type SkillAgentSummaryProps = Pick<
   ScopeDiffInput,
   "installedSkillConfigs" | "installedAgentConfigs" | "isInitMode"

@@ -3,12 +3,7 @@ import os from "os";
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 
-/**
- * The source root `loadFromLocal` reads when the DEFAULT source is resolved from disk.
- * Unset for every spec but the one that drives that path, which points it at a root the
- * test owns — otherwise the load reads this checkout, including its gitignored
- * `.agents-inc/config.ts`, whose `skillsDir` and `stacksFile` keys decide the answer.
- */
+/** Set only by the spec driving the default source from disk; else the load reads this checkout. */
 const { projectRootOverride } = vi.hoisted(() => ({
   projectRootOverride: { value: undefined as string | undefined },
 }));
@@ -84,11 +79,7 @@ import { defaultCategories } from "../configuration/default-categories";
 import { defaultStacks } from "../configuration/default-stacks";
 import { BUILT_IN_MATRIX } from "../../types/generated/matrix";
 import { allSkills, initializeMatrix, matrix } from "../matrix/matrix-provider";
-// The env rung is cleared THROUGH the constant the resolver reads, not through a literal:
-// these hooks assert nothing, so there is no "both sides move together" hazard here, and a
-// literal is what let the suite go on deleting the withdrawn `CC_SOURCE` after the rename.
-// `config.test.ts` spells its names as literals for the opposite and equally correct reason —
-// there they are the subject of assertions about what a user exports.
+// Cleared through the resolver's own constant: these hooks assert nothing.
 import { SOURCE_ENV_VAR } from "../configuration/config";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
@@ -96,11 +87,7 @@ import { firstElement } from "../__tests__/helpers/element-at.js";
 import { typedKeys } from "../../utils/typed-object";
 import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 
-/**
- * What the fixture marketplace ships, published in its own namespace: a custom
- * marketplace shipping a catalogue id is refused whole, so a fixture that reaches
- * a real load has to be a legal marketplace.
- */
+/** In its own namespace: a custom marketplace shipping a catalogue id is refused whole. */
 const FIXTURE_SKILLS = inTestMarketplace([...DEFAULT_TEST_SKILLS, ...EXTRA_DOMAIN_TEST_SKILLS]);
 
 /** The fixture marketplace's id for the skill the source's react entry publishes. */
@@ -116,13 +103,9 @@ const BUILT_IN_CATEGORY_COUNT = Object.keys(defaultCategories).length;
 /** An absolute local path with nothing at it — the loader must refuse, not load empty. */
 const MISSING_SOURCE_PATH = "/non/existent/path";
 
-/** The opening of the warning a rule naming a slug no loaded skill carries produces. */
 const UNRESOLVED_SLUG_WARNING = "Unresolved slug";
 
-/**
- * A slug the built-in rules name and no test source ships — the dangling reference
- * a source's OWN `skill-rules.ts` is written around below.
- */
+/** A slug the built-in rules name and no test source ships. */
 const SLUG_NO_TEST_SOURCE_SHIPS: SkillSlug = "angular-standalone";
 
 /** A slug only a user's own skill carries — nothing in any catalogue claims it. */
@@ -136,34 +119,25 @@ const LOCAL_DISK_SKILL_SLUG = LOCAL_ONLY_SLUG;
 /** A slug the test source does ship — read off the fixture so it cannot drift from it. */
 const SLUG_THE_TEST_SOURCE_SHIPS: SkillSlug = firstElement(FIXTURE_SKILLS).slug;
 
-/**
- * The manifest `build marketplace` wrote when package.json declared no author: a file
- * that is unmistakably present and that `marketplaceSchema` refuses, because
- * `owner.name` may not be empty.
- */
+/** A manifest `marketplaceSchema` refuses, because `owner.name` may not be empty. */
 const MANIFEST_WITH_UNNAMED_OWNER = {
   ...createMockMarketplace([createMockMarketplacePlugin("web-framework-react")]),
   owner: { name: "" },
 };
 
-/** The field {@link MANIFEST_WITH_UNNAMED_OWNER} breaks, which the refusal has to name. */
+/** The field that manifest breaks, which the refusal has to name. */
 const UNREADABLE_MANIFEST_FIELD = "owner.name";
 
-/**
- * The two builds a refusal of a marketplace with no valid manifest names, in the order an author
- * runs them — `build plugins` writes what `build marketplace` lists.
- */
+/** `build plugins` writes what `build marketplace` lists. */
 const BUILDS_IN_ORDER = /build plugins[\s\S]*build marketplace/;
 
 /**
- * The three ways a marketplace can lack a valid `marketplace.json`, each reached by a different
- * route through the loader: no file, a file that is not JSON, and JSON the schema refuses.
+ * No file, a file that is not JSON, and JSON the schema refuses: three routes through the loader.
  */
 const MANIFEST_DEFECTS = ["absent", "unparseable", "refused by the schema"] as const;
 
 type ManifestDefect = (typeof MANIFEST_DEFECTS)[number];
 
-/** A manifest that does not parse at all. */
 const UNPARSEABLE_MANIFEST = "{ this is not json";
 
 /** A marketplace on disk whose manifest is present and refused by the loader's own schema. */
@@ -189,11 +163,7 @@ async function writeMarketplaceWithManifestDefect(
   return sourceDir;
 }
 
-/**
- * Publishes a marketplace a test wrote by hand: the manifest every load of a custom marketplace
- * requires, so what the load reads is the test's subject — its paths, stacks or skills — rather
- * than a refusal of the missing file.
- */
+/** Writes the manifest a custom marketplace load requires, so the refusal is not the subject. */
 async function publishMarketplace(sourceDir: string): Promise<void> {
   const manifestPath = marketplaceManifestPath(sourceDir);
   await mkdir(path.dirname(manifestPath), { recursive: true });
@@ -206,14 +176,7 @@ async function publishMarketplace(sourceDir: string): Promise<void> {
   );
 }
 
-/**
- * A marketplace name Claude Code will not register plugins under, and the same name
- * written the way it accepts.
- *
- * The pair is what makes the refusal below mean anything: the two marketplaces differ in
- * this one field, so a guard that refused every manifest would fail the second spec
- * rather than leave the file quietly all-refusal.
- */
+/** A name Claude Code will not register plugins under, then the accepted spelling. */
 const MANIFEST_NAME_REFUSED = "Acme_Skills";
 const MANIFEST_NAME_ACCEPTED = "acme-skills";
 
@@ -237,10 +200,6 @@ async function writeMarketplaceNamed(
   return sourceDir;
 }
 
-/**
- * What the load produced and what it said, read the way `init` and `edit` read
- * it.
- */
 async function loadWithWarnings(
   sourceFlag: string,
   projectDir: string,
@@ -254,12 +213,7 @@ async function loadWithWarnings(
   }
 }
 
-/**
- * A loaded skill read by an id outside the generated union. A namespaced
- * marketplace id is a `string` — the union is the public catalogue's — while
- * `matrix.skills` is keyed by `SkillId`, so the widening happens once here rather
- * than at every call site.
- */
+/** Widens once here: namespaced ids are strings outside the `SkillId` union. */
 function loadedSkill(matrix: MergedSkillsMatrix, id: string): ResolvedSkill | undefined {
   // Boundary cast: skills keys are branded SkillId, widened to string for test indexing
   return (matrix.skills as Record<string, ResolvedSkill>)[id];
@@ -320,11 +274,8 @@ afterAll(async () => {
 });
 
 /**
- * Every `loadSkillsMatrixFromSource` here walks to the home root twice — `resolveSource`
- * falls through to the global config under HOME, and the local-skill merge reads
- * `~/.claude/skills` — so without this the suite loads whatever the developer has
- * installed. The env var alone is not enough: `os.homedir()` re-reads `$HOME` under node
- * but fixes it at startup under bun, and this package runs its tests under both.
+ * A fake home, since loads read HOME's global config and `~/.claude/skills`; bun fixes
+ * `os.homedir()` at startup.
  */
 let fakeHome: string;
 let savedHome: string | undefined;
@@ -366,12 +317,10 @@ describe("source-loader", () => {
           devMode: true,
         });
 
-        // Should load from local source in dev mode
         expect(result.isLocal).toBe(true);
         expect(typeof result.matrix.version).toBe("string");
         const loadedSkillIds = Object.keys(result.matrix.skills);
         expect(loadedSkillIds).toHaveLength(FIXTURE_SKILL_COUNT);
-        // Verify all fixture skills are present by ID
         for (const skill of FIXTURE_SKILLS) {
           expect(loadedSkillIds).toContain(skill.id);
         }
@@ -400,7 +349,6 @@ describe("source-loader", () => {
         expect(Object.keys(result.matrix.categories)).toHaveLength(BUILT_IN_CATEGORY_COUNT);
         const loadedSkillIds = Object.keys(result.matrix.skills);
         expect(loadedSkillIds).toHaveLength(FIXTURE_SKILL_COUNT);
-        // Verify specific fixture skills are present
         for (const skill of FIXTURE_SKILLS) {
           expect(loadedSkillIds).toContain(skill.id);
         }
@@ -456,13 +404,7 @@ describe("source-loader", () => {
       });
     });
 
-    /**
-     * A custom marketplace must carry a valid manifest, and a load of one that does not is
-     * refused rather than labelled by whatever the config recorded. The refusal is the remedy as
-     * well as the fault: the two builds that write the file, in the order an author runs them.
-     * The fixture loads above are this describe's permitted twin — the same loader, a manifest
-     * its builds wrote.
-     */
+    /** Refused, naming both builds in order; the fixture loads above are the permitted twin. */
     describe("a custom marketplace with no valid marketplace.json", () => {
       it.each(MANIFEST_DEFECTS)(
         "should refuse the load when the manifest is %s, naming the builds that write one",
@@ -494,13 +436,7 @@ describe("source-loader", () => {
         );
       });
 
-      /**
-       * The ruling's other half: a load that only keeps an existing installation in step — a
-       * global uninstall pruning the projects registered under it, a fan-out rewriting one — is
-       * not refused, because everything it touches is already installed. Both specs read the
-       * marketplace through the installation's own config, as those loads do, so the only thing
-       * between the load that goes on and the one refused is what the load is for.
-       */
+      /** An upkeep load is not refused: everything it touches is already installed. */
       describe("read for the upkeep of an installation that names it", () => {
         async function installationNaming(sourceDir: string): Promise<void> {
           await writeTestTsConfig(
@@ -569,13 +505,7 @@ describe("source-loader", () => {
       });
     });
 
-    /**
-     * The name an installation recorded outranks its manifest's, so an install made before
-     * `eject` was reserved, or a config edited by hand, carries the reserved name past the
-     * manifest's own check — and every plugin it installs is recorded as an ejected copy. It is
-     * refused as a manifest carrying the name is. The last spec is the permitted twin: the same
-     * installation, differing in the name it recorded alone.
-     */
+    /** A recorded name outranks the manifest's and is refused too; the last spec is the twin. */
     describe("an installation that recorded a reserved marketplace name", () => {
       async function installationRecording(marketplaceName: string): Promise<void> {
         const sourceDir = await writeMarketplaceNamed(tempDir, "recorded", MANIFEST_NAME_ACCEPTED);
@@ -623,10 +553,7 @@ describe("source-loader", () => {
 
     describe("matrixOnly", () => {
       it("should resolve the default source offline with the built-in matrix and empty sourcePath", async () => {
-        // No sourceFlag, no env var, no config in projectDir — resolves to
-        // DEFAULT_SOURCE. Without matrixOnly this branch fetches the source
-        // clone (a network call on a cold cache); with it the fetch is skipped,
-        // so a regression here fails with a fetch error instead of passing.
+        // Resolves to DEFAULT_SOURCE; without matrixOnly this would fetch and fail loudly.
         const result = await loadSkillsMatrixFromSource({
           projectDir: tempDir,
           skipExtraSources: true,
@@ -643,8 +570,7 @@ describe("source-loader", () => {
 
     describe("error handling", () => {
       it("should reject a local source path that does not exist, naming the path", async () => {
-        // A path the user named and the CLI cannot read is an argument error, not an
-        // empty catalog. This used to resolve to an empty matrix.
+        // An unreadable named path is an argument error, not an empty catalog.
         await expect(
           loadSkillsMatrixFromSource({
             sourceFlag: MISSING_SOURCE_PATH,
@@ -659,8 +585,6 @@ describe("source-loader", () => {
         await mkdir(emptySource, { recursive: true });
         await publishMarketplace(emptySource);
 
-        // With new architecture: matrix loads from CLI repo (always succeeds)
-        // Skills extraction gracefully returns empty for missing src/skills/
         const result = await loadSkillsMatrixFromSource({
           sourceFlag: emptySource,
           projectDir: tempDir,
@@ -668,7 +592,6 @@ describe("source-loader", () => {
 
         expect(typeof result.matrix.version).toBe("string");
         expect(Object.keys(result.matrix.categories)).toHaveLength(BUILT_IN_CATEGORY_COUNT);
-        // No skills should be extracted when src/skills/ directory is missing
         expect(Object.keys(result.matrix.skills)).toHaveLength(0);
       });
     });
@@ -710,27 +633,21 @@ describe("source-loader relationship rules", () => {
   });
 
   it("says nothing about the built-in slugs a source does not ship", async () => {
-    // The built-in rules are written against the whole public catalogue. A source
-    // shipping a handful of its skills leaves the rest of those names dangling, and
-    // every dangling name used to warn once per skill in the source — thousands of
-    // lines. None of them was ever actionable: the reference resolves to nothing and is dropped.
+    // Built-in rules are narrowed to the shipped slugs, so dangling built-in names warn nothing.
     const { warnings } = await loadWithWarnings(fixtureDirs.sourceDir, tempDir);
 
     expect(warnings.filter((text) => text.includes(UNRESOLVED_SLUG_WARNING))).toStrictEqual([]);
   });
 
   it("hands the health check nothing for the built-in slugs a source does not ship", async () => {
-    // The same rule the row above states in warnings, stated in the finding
-    // `doctor` reads: a built-in slug narrowed out before resolution is not the
-    // source's defect and must not be reported against it.
+    // Nor is a narrowed-out built-in slug reported against the source for `doctor`.
     const { matrix } = await loadWithWarnings(fixtureDirs.sourceDir, tempDir);
 
     expect(matrix.unresolvedSlugs).toBeUndefined();
   });
 
   it("still warns about a slug the source's own rules name and its skills do not carry", async () => {
-    // The other half of the same rule: a slug a source AUTHOR typed is that source's
-    // defect, and the load is where it is caught.
+    // A slug the source's author typed is the source's defect, caught at load.
     const dirs = await createSourceWhoseOwnRulesDangle();
     try {
       const { warnings } = await loadWithWarnings(dirs.sourceDir, tempDir);
@@ -747,8 +664,7 @@ describe("source-loader relationship rules", () => {
   });
 
   it("hands the health check the slug the source's own rules dangle", async () => {
-    // The warning above is written to a log the author may never read. `doctor`
-    // reads the matrix, so the finding has to survive the merge to reach it.
+    // `doctor` reads the matrix, so the finding must survive the merge.
     const dirs = await createSourceWhoseOwnRulesDangle();
     try {
       const { matrix } = await loadWithWarnings(dirs.sourceDir, tempDir);
@@ -772,7 +688,6 @@ describe("source-loader local skills integration", () => {
   });
 
   it("should merge local skills into matrix when .claude/skills exists", async () => {
-    // Create a local skill in the temp project
     const skillsDir = path.join(tempDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "test-my-skill");
     await mkdir(skillsDir, { recursive: true });
 
@@ -790,7 +705,6 @@ describe("source-loader local skills integration", () => {
       projectDir: tempDir,
     });
 
-    // Local skill should be in the matrix with normalized ID
     // Boundary cast: skills keys are branded SkillId, widened to string for test indexing
     const skills = result.matrix.skills as Record<string, ResolvedSkill>;
     const localSkill = skills["my-local-skill"];
@@ -850,8 +764,7 @@ describe("source-loader local skills integration", () => {
       projectDir: tempDir,
     });
 
-    // Local skills should NOT cause fake "local" or "local/custom" categories to be injected
-    // The skill uses whatever category it declared (or "local" default from local-skill-loader)
+    // Local skills must not inject fake "local" categories.
     // Boundary cast: categories keys are branded Category, widened to string for test indexing
     expect(
       (result.matrix.categories as Record<string, CategoryDefinition>)["local/custom"],
@@ -864,20 +777,16 @@ describe("source-loader local skills integration", () => {
       projectDir: tempDir, // No .claude/skills directory
     });
 
-    // Local categories should NOT be added if no local skills
-    // (Matrix may already have local categories from previous tests,
-    // so we check that no local skills are in the skills object)
+    // The matrix may carry local categories from earlier tests, so assert on local skills instead.
     const localSkills = Object.values(result.matrix.skills).filter((s) => s.local === true);
     expect(localSkills).toHaveLength(0);
   });
 
   it("should preserve remote skill category when local skill overwrites with category 'local'", async () => {
-    // Use a known fixture skill with a domain-mapped category
     const targetSkillId = FIXTURE_REACT_ID;
     const expectedCategory = "web-framework";
 
-    // Create a local skill with the SAME ID but a different category in metadata
-    // (source-loader preserves the remote skill's category when overwriting)
+    // The same id, a different category: the remote skill's category must survive.
     const skillsDir = path.join(
       tempDir,
       CLAUDE_DIR,
@@ -895,7 +804,6 @@ describe("source-loader local skills integration", () => {
       renderSkillMd(targetSkillId, "Local override", "Content"),
     );
 
-    // Load with the local skill override
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: fixtureDirs.sourceDir,
       projectDir: tempDir,
@@ -907,7 +815,6 @@ describe("source-loader local skills integration", () => {
     expect(overriddenSkill).toStrictEqual(
       expect.objectContaining({
         local: true,
-        // The category should be preserved from the remote skill
         category: expectedCategory,
       }),
     );
@@ -931,11 +838,9 @@ describe("source-loader local skills integration", () => {
       projectDir: tempDir,
     });
 
-    // Existing marketplace skills should still be present
     const marketplaceSkills = Object.values(result.matrix.skills).filter((s) => s.local !== true);
     expect(marketplaceSkills.length).toBe(FIXTURE_SKILL_COUNT);
 
-    // Local skill should also be present with normalized ID
     // Boundary cast: branded SkillId key widened to string for test indexing
     expect((result.matrix.skills as Record<string, ResolvedSkill>)["preserve-skill"]).toStrictEqual(
       expect.objectContaining({ id: "preserve-skill", local: true }),
@@ -943,7 +848,6 @@ describe("source-loader local skills integration", () => {
   });
 
   it("local skill takes precedence over plugin skill with same ID", async () => {
-    // Create a source directory with a marketplace skill
     const sourceDir = path.join(tempDir, "precedence-source");
     const skillDir = path.join(
       sourceDir,
@@ -968,7 +872,6 @@ describe("source-loader local skills integration", () => {
       'category: web-testing\nauthor: "@test"\ndisplayName: Vitest\ncliDescription: Marketplace vitest configuration\ncontentHash: abc1234\ndomain: web\nslug: vitest\n',
     );
 
-    // Load skills from source to verify marketplace skill is present
     await publishMarketplace(sourceDir);
 
     const initialResult = await loadSkillsMatrixFromSource({
@@ -987,7 +890,6 @@ describe("source-loader local skills integration", () => {
     expect(existingSkill.local).toBeUndefined(); // Should be a marketplace skill
     expect(existingSkill.description).toBe("Marketplace vitest configuration");
 
-    // Create a local skill with the SAME ID to override it
     const localSkillsDir = path.join(tempDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "local-vitest");
     await mkdir(localSkillsDir, { recursive: true });
 
@@ -1004,13 +906,11 @@ describe("source-loader local skills integration", () => {
       ),
     );
 
-    // Load again with the local skill in place
     const result = await loadSkillsMatrixFromSource({
       sourceFlag: sourceDir,
       projectDir: tempDir,
     });
 
-    // The skill should now be the LOCAL version, not the marketplace version
     const overriddenSkill = loadedSkill(result.matrix, existingSkillId)!;
     expect(overriddenSkill).toStrictEqual(
       expect.objectContaining({
@@ -1097,7 +997,6 @@ describe("source-loader config-driven paths", () => {
   it("should use custom skillsDir from source config", async () => {
     const sourceDir = path.join(tempDir, "custom-source");
 
-    // Create source config with custom skillsDir
     const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
@@ -1105,7 +1004,6 @@ describe("source-loader config-driven paths", () => {
       'export default { skillsDir: "lib/skills" };',
     );
 
-    // Create skills in the custom directory
     const skillsDir = path.join(
       sourceDir,
       "lib",
@@ -1131,7 +1029,6 @@ describe("source-loader config-driven paths", () => {
       projectDir: tempDir,
     });
 
-    // Skill should be loaded from custom path
     expect(loadedSkill(result.matrix, FIXTURE_REACT_ID)).toStrictEqual(
       expect.objectContaining({ id: FIXTURE_REACT_ID }),
     );
@@ -1140,7 +1037,6 @@ describe("source-loader config-driven paths", () => {
   it("should use custom categoriesFile path from source config", async () => {
     const sourceDir = path.join(tempDir, "custom-categories-source");
 
-    // Create source config with custom categoriesFile pointing to a non-existent path
     const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
@@ -1166,7 +1062,6 @@ describe("source-loader config-driven paths", () => {
   it("should use custom rulesFile path from source config", async () => {
     const sourceDir = path.join(tempDir, "custom-rules-source");
 
-    // Create source config with custom rulesFile pointing to a non-existent path
     const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
@@ -1190,7 +1085,6 @@ describe("source-loader config-driven paths", () => {
   it("should use custom stacksFile from source config", async () => {
     const sourceDir = path.join(tempDir, "custom-stacks-source");
 
-    // Create source config with custom stacksFile
     const configDir = path.join(sourceDir, ".agents-inc");
     await mkdir(configDir, { recursive: true });
     await writeFile(
@@ -1198,7 +1092,6 @@ describe("source-loader config-driven paths", () => {
       'export default { stacksFile: "data/stacks.ts" };',
     );
 
-    // Create stacks at the custom path
     const dataDir = path.join(sourceDir, "data");
     await mkdir(dataDir, { recursive: true });
     await writeFile(
@@ -1215,7 +1108,6 @@ describe("source-loader config-driven paths", () => {
       }),
     );
 
-    // Create empty skills dir
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
 
     await publishMarketplace(sourceDir);
@@ -1242,7 +1134,6 @@ describe("source-loader config-driven paths", () => {
       projectDir: tempDir,
     });
 
-    // Should still work using convention defaults
     expect(typeof result.matrix.version).toBe("string");
     expect(Object.keys(result.matrix.categories)).toHaveLength(BUILT_IN_CATEGORY_COUNT);
   });
@@ -1267,7 +1158,6 @@ describe("source-loader config-driven paths", () => {
       projectDir: tempDir,
     });
 
-    // Should still work using convention defaults
     expect(typeof result.matrix.version).toBe("string");
     expect(Object.keys(result.matrix.categories)).toHaveLength(BUILT_IN_CATEGORY_COUNT);
   });
@@ -1296,7 +1186,6 @@ describe("source-loader integration", () => {
       expect(loadedSkillIds).toContain(skill.id);
     }
 
-    // Verify a known skill has meaningful properties from the fixture data
     const reactSkill = loadedSkill(result.matrix, FIXTURE_REACT_ID)!;
     expect(reactSkill).toStrictEqual(
       expect.objectContaining({
@@ -1312,7 +1201,6 @@ describe("source-loader integration", () => {
       sourceFlag: fixtureDirs.sourceDir,
     });
 
-    // Should contain the fixture stack
     const fixtureStack = result.matrix.suggestedStacks.find((s) => s.id === "fixture-test-stack");
     expect(fixtureStack).toStrictEqual(
       expect.objectContaining({
@@ -1324,12 +1212,10 @@ describe("source-loader integration", () => {
   });
 
   it("should load stacks from source when source has config/stacks.ts", async () => {
-    // Create a source directory with its own stacks.ts
     const sourceDir = path.join(tempDir, "custom-source");
     const configDir = path.join(sourceDir, "config");
     await mkdir(configDir, { recursive: true });
 
-    // Write a minimal custom stacks.ts with a unique stack ID
     await writeFile(
       path.join(configDir, "stacks.ts"),
       renderConfigTs({
@@ -1354,14 +1240,12 @@ describe("source-loader integration", () => {
       projectDir: tempDir,
     });
 
-    // Should load the custom stack from source, not CLI stacks
     expect(result.matrix.suggestedStacks).toHaveLength(1);
     expect(firstElement(result.matrix.suggestedStacks).id).toBe("custom-test-stack");
     expect(firstElement(result.matrix.suggestedStacks).name).toBe("Custom Test Stack");
   });
 
   it("should offer no stacks when a custom source ships none", async () => {
-    // Create a source directory without stacks.ts
     const sourceDir = path.join(tempDir, "no-stacks-source");
     await mkdir(path.join(sourceDir, "src", STANDARD_DIRS.SKILLS), { recursive: true });
 
@@ -1372,18 +1256,12 @@ describe("source-loader integration", () => {
       projectDir: tempDir,
     });
 
-    // The built-in catalogue stands in for the default public marketplace and no
-    // other: a source the user named by path ships its own stacks or offers none.
+    // Built-in stacks stand in for the default public marketplace only.
     expect(result.matrix.suggestedStacks).toStrictEqual([]);
   });
 
   it("should stand the built-in stacks in when the DEFAULT source ships none", async () => {
-    // The default source's stacks normally come pre-resolved on BUILT_IN_MATRIX,
-    // which `resolveBaseResult` short-circuits to. Dev mode is the one runtime
-    // path that resolves the default source from disk instead, so it is where
-    // the stand-in itself is observable — and the disk it reads is PROJECT_ROOT,
-    // so the spec supplies a stackless source root of its own rather than letting
-    // the answer come off this checkout.
+    // Dev mode resolves the default source from disk, so it gets a stackless root of its own.
     const sourceRoot = path.join(tempDir, "stackless-source-root");
     await mkdir(path.join(sourceRoot, "src", STANDARD_DIRS.SKILLS), { recursive: true });
     projectRootOverride.value = sourceRoot;
@@ -1405,7 +1283,6 @@ describe("source-loader integration", () => {
     });
 
     const categoryIds = Object.keys(result.matrix.categories);
-    // Categories come from the CLI's built-in matrix — verify known categories exist
     expect(categoryIds).toContain("web-framework");
     expect(categoryIds).toContain("web-testing");
     expect(categoryIds).toContain("api-api");
@@ -1419,8 +1296,7 @@ describe("convertStackToResolvedStack", () => {
   const honoSkill = createMockSkill("api-framework-hono");
 
   beforeEach(() => {
-    // convertStackToResolvedStack reads from the module-level currentMatrix
-    // via `a.id in currentMatrix.skills`, so we must seed it
+    // convertStackToResolvedStack reads the module-level matrix, so seed it.
     const testMatrix = createMockMatrix(reactSkill, zustandSkill, honoSkill);
     initializeMatrix(testMatrix);
   });
@@ -1505,7 +1381,6 @@ describe("convertStackToResolvedStack", () => {
 
     const resolved = convertStackToResolvedStack(stack);
 
-    // The same skill appears in both agents, but allSkillIds should be deduplicated
     expect(resolved.allSkillIds).toHaveLength(1);
     expect(resolved.allSkillIds).toStrictEqual(["web-framework-react"]);
   });
@@ -1526,7 +1401,6 @@ describe("convertStackToResolvedStack", () => {
 
     const resolved = convertStackToResolvedStack(stack);
 
-    // Only the valid skill should appear in the per-agent category mapping
     const agentSkills = resolved.skills["web-developer"] as Record<string, SkillId[]>;
     expect(agentSkills["web-framework"]).toStrictEqual(["web-framework-react"]);
   });
@@ -1555,26 +1429,12 @@ describe("convertStackToResolvedStack", () => {
 
     const resolved = convertStackToResolvedStack(stack);
 
-    // Empty category should not appear in agent skills
     const agentSkills = resolved.skills["web-developer"] as Record<string, SkillId[]> | undefined;
     expect(agentSkills?.["web-framework"]).toBeUndefined();
     expect(resolved.allSkillIds).toHaveLength(0);
   });
 
-  /**
-   * A marketplace's `config/stacks.ts` is authored by hand and nothing between the file and
-   * here narrows its agent keys, so a name the CLI does not declare arrives typed `AgentName`
-   * and compiles. Only `src/agents/` declares a sub-agent a compile pass can honour — that
-   * directory is the whole of the roster (owner ruling 2026-08-21) and is what `AGENT_NAMES` is
-   * generated from — so an unknown name reaches `config.agents`, `SelectedAgentName` and
-   * `ProjectAgentName` alike and then leaves `compile` with no definition to compile.
-   *
-   * **The two cases are one claim and neither means anything alone.** The drop is a
-   * DISAPPEARANCE, and a conversion that dropped both agents, or that never ran, satisfies it
-   * for free — the surviving agent is what makes it a drop rather than a failure. And the drop
-   * without the warning is what shipped: the wizard already narrowed these names out of its
-   * grid, which is exactly why nobody was told.
-   */
+  /** The surviving agent makes it a drop, not a failure; the warning makes it not silent. */
   it("drops a sub-agent the CLI does not declare and keeps the rest of the stack", () => {
     const stack = createMockStack("part-declared", {
       name: "Part Declared",
@@ -1621,21 +1481,9 @@ describe("convertStackToResolvedStack", () => {
     ]);
   });
 
-  /**
-   * The skill half of the same question, and the half that reaches a user.
-   *
-   * `resolveStackAgentSkills` already keeps only ids the matrix carries, so the per-category
-   * `skills` map has been honest for some time. `allSkillIds` was built from a separate pass that
-   * only WARNED, so the two disagreed — and `allSkillIds` is the one that matters: it is what
-   * the editor's read-model counts and lists. So a marketplace whose `stacks.ts` named a skill its catalogue had
-   * dropped loaded without complaint and selected an id nothing could resolve, exactly as the
-   * mismatch was reported.
-   */
+  /** `allSkillIds`, which the editor lists, must drop what the per-category map drops. */
   it("drops a stack skill the catalogue does not carry from allSkillIds too", () => {
-    // A REAL catalogue id that this describe's matrix does not seed — react, zustand and hono are
-    // the whole of it. A fabricated id would need a cast past `SkillId`, and a value the union
-    // cannot hold is one no production caller can supply, so the test would assert about an
-    // impossible input rather than about the runtime check under test.
+    // A real catalogue id this matrix does not seed, so no cast past `SkillId` is needed.
     const stack = createMockStack("half-known", {
       name: "Half Known",
       agents: {
@@ -1706,11 +1554,7 @@ describe("mergeLocalSkillsIntoMatrix slug map", () => {
   });
 
   it("leaves a slug the matrix already maps with the skill holding it, and warns about nothing", () => {
-    // Ids are namespaced by their author; slugs are not, so a user's own
-    // skill can spell one the catalogue already uses. Letting it win would reroute
-    // every rule naming that slug to the local skill, silently. Sharing the slug is
-    // legal for the same reason — both skills are installed and both work — so nothing
-    // is "ignored" and nothing is said.
+    // Slugs are not namespaced, so a local skill may share one; the incumbent keeps it, silently.
     const incumbent = createMockSkill("web-framework-react");
     const localResult: LocalSkillDiscoveryResult = {
       skills: [
@@ -1812,7 +1656,6 @@ describe("mergeLocalSkillsIntoMatrix", () => {
     const result = mergeLocalSkillsIntoMatrix(matrix, localResult);
 
     const skills = result.skills as Record<string, ResolvedSkill>;
-    // Should inherit the remote skill's category, not the local's declaration
     expect(skills["web-framework-react"]).toMatchObject({
       category: "web-framework",
       local: true,
@@ -1863,7 +1706,6 @@ describe("mergeLocalSkillsIntoMatrix", () => {
     const result = mergeLocalSkillsIntoMatrix(matrix, localResult);
 
     const skills = result.skills as Record<string, ResolvedSkill>;
-    // Should preserve slug and displayName from the remote skill
     expect(skills["web-framework-react"]).toMatchObject({ slug: "react", displayName: "React" });
   });
 
@@ -1885,14 +1727,12 @@ describe("mergeLocalSkillsIntoMatrix", () => {
     const result = mergeLocalSkillsIntoMatrix(matrix, localResult);
 
     const skills = result.skills as Record<string, ResolvedSkill>;
-    // Both existing and new skill should be present
     expect(skills["web-framework-react"]).toStrictEqual(
       expect.objectContaining({ id: "web-framework-react" }),
     );
     expect(skills["web-tooling-custom"]).toStrictEqual(
       expect.objectContaining({ id: "web-tooling-custom", local: true }),
     );
-    // Existing skill should not be marked as local
     expect(skills["web-framework-react"]).not.toHaveProperty("local");
   });
 
@@ -1913,7 +1753,6 @@ describe("mergeLocalSkillsIntoMatrix", () => {
 
     const result = mergeLocalSkillsIntoMatrix(matrix, localResult);
 
-    // Should have created a category definition for web-tooling
     // Boundary cast: branded Category key widened to string for test indexing
     const categories = result.categories as Record<string, CategoryDefinition>;
     expect(categories["web-tooling"]).toStrictEqual(
@@ -2022,22 +1861,12 @@ describe("mergeLocalSkillsIntoMatrix", () => {
   });
 });
 
-/**
- * The category `web-tooling-custom` declares, as a matrix that declares it —
- * the shape a custom skill is entitled to expect, since a custom skill brings
- * no category with it.
- */
+/** The category `web-tooling-custom` declares, as a matrix declaring it. */
 const CUSTOM_SKILL_CATEGORY_MAP = buildCategoryMap({
   "web-tooling": createMockCategory("web-tooling", "Tooling"),
 });
 
-/**
- * A category no built-in defines, declared by the marketplace under test. A
- * custom skill accepted into it proves the question asked is "does this load
- * declare the category", not "is it in the CLI's generated union" — a
- * marketplace's own categories are as real as the catalogue's, and the intake's
- * dropdown offers both.
- */
+/** A marketplace's own category: what counts is that this load declares it. */
 // Boundary cast: the category is a marketplace's own, so outside the generated union by design
 const MARKETPLACE_DECLARED_CATEGORY = "acme-conventions" as Category;
 
@@ -2068,13 +1897,7 @@ function customSkillDeclaring(category: string): LocalSkillDiscoveryResult {
   };
 }
 
-/**
- * A custom skill is placed in a category that already exists, never in one it
- * invents: the intake makes the user pick from the categories the grid renders,
- * so a category no definition declares means the pick never happened. Accepting
- * one would put the skill in a tab nothing draws and a stack no sub-agent reads —
- * silently, which is the failure the placeholder taxonomy used to produce.
- */
+/** A custom skill's category must already exist; an undeclared one means no pick happened. */
 describe("mergeLocalSkillsIntoMatrix — a custom skill's category", () => {
   const matrixDeclaringMarketplaceCategory = () =>
     createMockMatrix(
@@ -2153,24 +1976,16 @@ describe("mergeLocalSkillsIntoMatrix — a custom skill's category", () => {
 });
 
 /**
- * Two ids the shipped catalogue owns. A skill id IS the directory the skill
- * installs into, so a marketplace shipping either of these names the directory
- * a catalogue skill already occupies — the shadowing the namespace rule exists
- * to make unrepresentable.
+ * Ids the catalogue owns; an id is the directory a skill installs into, so these would shadow it.
  */
 const CATALOGUE_OWNED_IDS: SkillId[] = ["web-framework-react", "web-testing-vitest"];
 
 /** A marketplace name of the author's own, and therefore the namespace its ids live in. */
 const AUTHOR_MARKETPLACE_NAME = "acme";
 
-/**
- * The npm package the public catalogue publishes from. Written out rather than
- * imported from the constant the guard reads: it is an identity, and a test
- * asserting it against its own definition cannot notice that identity moving.
- */
+/** Written out: asserting an identity against its own definition cannot notice it moving. */
 const PUBLIC_CATALOGUE_PACKAGE = "@agents-inc/skills";
 
-/** A package name that is any author's to take. */
 const AUTHOR_PACKAGE_NAME = "@acme/skills";
 
 /** The catalogue's skills as a marketplace that skipped the namespace rule ships them. */
@@ -2178,11 +1993,7 @@ function skillsUnderCatalogueIds(): TestSkill[] {
   return CATALOGUE_OWNED_IDS.map((id) => createTestSkill(id, `Published as '${id}'`));
 }
 
-/**
- * The same skills published in a marketplace's own namespace. The bare id still
- * selects the taxonomy — a namespaced id names no category, slug or domain of
- * its own — and only the published id moves.
- */
+/** The same skills in a marketplace's own namespace; only the published id moves. */
 function skillsUnderAuthorNamespace(): TestSkill[] {
   return CATALOGUE_OWNED_IDS.map((id) =>
     createTestSkill(id, `Published as '${AUTHOR_MARKETPLACE_NAME}-${id}'`, {
@@ -2191,7 +2002,6 @@ function skillsUnderAuthorNamespace(): TestSkill[] {
   );
 }
 
-/** The ids {@link skillsUnderAuthorNamespace} publishes, sorted. */
 const AUTHOR_NAMESPACED_IDS = CATALOGUE_OWNED_IDS.map(
   (id) => `${AUTHOR_MARKETPLACE_NAME}-${id}`,
 ).sort();
@@ -2204,7 +2014,6 @@ async function writeSourcePackageJson(sourceDir: string, name: string): Promise<
   );
 }
 
-/** Gives a source a marketplace.json publishing under `name`. */
 async function writeSourceMarketplaceJson(sourceDir: string, name: string): Promise<void> {
   const manifestPath = marketplaceManifestPath(sourceDir);
   await mkdir(path.dirname(manifestPath), { recursive: true });
@@ -2309,16 +2118,8 @@ describe("source-loader public catalogue collision guard", () => {
 });
 
 /**
- * A global installation of plugins from one marketplace, under a project loading another that
- * does not carry its skill.
- *
- * An ejected global skill reaches a project's matrix through the global local-skill merge; a
- * plugin leaves nothing of its catalogue entry on disk, so the load seats it from the marketplace
- * the global installation was made from, under that marketplace's name. That the seated entry is
- * the one a global sub-agent compiles to the same bytes from is the e2e
- * `lifecycle/init-marketplace-over-an-installation`'s to show: this fixture writes no usage
- * sentence to compare. The two controls are the cases that must read nothing more: an ejected
- * entry, and a global installation on the very marketplace the project loads.
+ * A plugin leaves no catalogue entry on disk, so it is seated from its own marketplace; the
+ * controls read nothing more.
  */
 describe("source-loader: a global plugin installation from another marketplace", () => {
   const GLOBAL_MARKETPLACE_NAME = "global-marketplace";

@@ -23,17 +23,15 @@ import {
 } from "../utils/messages.js";
 import type { ProjectConfig, SkillConfig } from "../types/index.js";
 
-/** A copy the user owns rather than a plugin the marketplace serves. */
 function isEjected(skill: SkillConfig): boolean {
   return skill.origin === EJECT_SOURCE;
 }
 
-/** Entries the installation actually has — an excluded entry is a tombstone, not an install. */
+/** An excluded entry is a tombstone, not an install. */
 function activeSkills(skills: SkillConfig[]): SkillConfig[] {
   return skills.filter((skill) => !skill.excluded);
 }
 
-/** The marketplaces this installation actually uses, deduplicated, in config order. */
 function configuredMarketplaces(skills: SkillConfig[]): string[] {
   return unique(skills.filter((skill) => !isEjected(skill)).map((skill) => skill.origin));
 }
@@ -51,19 +49,13 @@ export default class Update extends BaseCommand {
   async run(): Promise<void> {
     const { flags } = await this.parse(Update);
 
-    // Before the config is loaded, because loading it is already an answer: `loadProjectConfig`
-    // and `hostAt` both resolve the provider through `providerInUse`, which picks by ROSTER ORDER
-    // where a scope holds one installation of each. So a refresh with no flag read one user's
-    // Claude config, refreshed the marketplaces IT names, and reported them as refreshed with
-    // nothing saying whose they were.
+    // Before the config is loaded: loading it already picks a provider by roster order.
     await refuseAnAmbiguousInstallation(
       process.cwd(),
       "update",
       providerNamedBy(flags.provider),
       (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
-    // Both configs, not only the one this refresh reads: a project inherits the global config, so
-    // a broken global one is a config this folder uses as surely as its own.
     await this.ensureConfigReadable(process.cwd());
     await this.refuseUnofferablePlacements(process.cwd());
     const config = await this.loadInstalledConfig(process.cwd());
@@ -86,24 +78,12 @@ export default class Update extends BaseCommand {
     await this.refreshMarketplaces(marketplaces, host);
   }
 
-  /**
-   * Refuses a configuration whose own host cannot place what it asks for.
-   *
-   * The same reading `compile` and `edit` make, off the same host roster. It matters here because
-   * this command REFRESHES the marketplaces a configuration names — so on a configuration whose
-   * plugin rows the host can never install, every refresh is work done for rows that will never
-   * become an install, reported as a success.
-   */
   private async refuseUnofferablePlacements(projectDir: string): Promise<void> {
     const [finding] = await unofferablePlacementsFound(projectDir);
     if (finding !== undefined) this.error(finding, { exit: EXIT_CODES.ERROR });
   }
 
-  /**
-   * The config this directory's installation runs on — the project's own, or the
-   * global one it inherits from. A config file that exists but cannot be loaded is
-   * a fault, not an absence, so it is reported rather than read as "not installed".
-   */
+  /** ABORT on an unreadable config: a fault, not "not installed". */
   private async loadInstalledConfig(projectDir: string): Promise<ProjectConfig | null> {
     try {
       const loaded = await loadProjectConfig(projectDir);
@@ -113,29 +93,17 @@ export default class Update extends BaseCommand {
     }
   }
 
-  /** States the ownership rule once, and only where there is an ejected skill it applies to. */
   private reportEjectedSkills(skills: SkillConfig[]): void {
     if (!skills.some(isEjected)) return;
     this.log(INFO_MESSAGES.EJECTED_SKILLS_USER_OWNED);
   }
 
-  /**
-   * Gated on there being a marketplace to refresh, so an eject-only installation
-   * never fails on a host binary it had no reason to call.
-   */
   private async requireHost(host: PluginHost): Promise<void> {
     if (await host.isAvailable()) return;
-    // The host's own provider, never a constant: this command reaches either host from C4, and a
-    // fixed line tells a Codex user to install Claude Code — not the binary that is missing.
     this.error(hostCliNotFound(host.provider), { exit: EXIT_CODES.ERROR });
   }
 
-  /**
-   * One marketplace refresh per marketplace, in sequence: they write
-   * to the same registry, and interleaved progress lines would not say which
-   * marketplace each belongs to. A failure is collected rather than thrown, so one
-   * unreachable marketplace cannot hide the state of the others.
-   */
+  /** Sequential, as they share one registry; failures are collected so one cannot hide the rest. */
   private async refreshMarketplaces(marketplaces: string[], host: PluginHost): Promise<void> {
     const failed: string[] = [];
 

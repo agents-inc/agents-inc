@@ -109,7 +109,6 @@ describe("loadConfig", () => {
   });
 
   it("handles config that uses defineConfig identity function", async () => {
-    // Write a helper module that the config imports
     const helperPath = path.join(tempDir, "helper.ts");
     await writeFile(
       helperPath,

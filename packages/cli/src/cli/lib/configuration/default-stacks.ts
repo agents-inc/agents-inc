@@ -1,24 +1,9 @@
 import type { SkillAssignment, Stack } from "../../types";
 
 /**
- * Built-in stack definitions, equivalent to config/stacks.ts.
- * Source repos may override or extend these via their own stacks files.
- *
- * The `agents` keys are binding: choosing a stack installs exactly the sub-agents it
- * names, and nothing downstream re-derives that roster.
- *
- * A stack declares WHICH skills each sub-agent gets, and nothing about how any of them
- * loads: no assignment here carries `preloaded`. Eagerness is one question with one
- * answer, and it is `PRELOAD_DEFAULTS` in `@workspace/matrix` — `buildStackProperty`
- * resolves every unflagged entry against it, so a stack-picked skill lands exactly as
- * the same skill picked by hand does. The flag stays readable for the tiers that are
- * somebody's word: a user's saved config, and a third-party source's own stacks file.
- *
- * All values are already in normalized form (SkillAssignment[]).
- *
- * Every id here must be published to the marketplace — default-source installs resolve them
- * against the published catalog and hard-error on a miss. A stack edit also feeds two
- * generators: run `generate:types` and `generate:matrix`, or the unit suite goes red.
+ * Choosing a stack installs exactly the sub-agents it names. No assignment carries `preloaded`;
+ * `buildStackProperty` resolves eagerness from `PRELOAD_DEFAULTS`. Every id must be published to
+ * the marketplace, and an edit needs `generate:types` and `generate:matrix` rerun.
  */
 
 const SHARED_TOOLING: SkillAssignment[] = [

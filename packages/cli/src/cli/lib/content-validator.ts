@@ -50,11 +50,7 @@ export type ContentIssue = {
   message: string;
 };
 
-/**
- * One content pass: what it walked, what it found, and what it deliberately did
- * not check. `notes` carries neither errors nor warnings — it is the record of
- * which sources were reached and which were skipped.
- */
+/** `notes` records which sources were reached and which skipped; neither errors nor warnings. */
 export type ContentValidation = {
   count: number;
   issues: ContentIssue[];
@@ -74,7 +70,6 @@ function mergeValidations(parts: ContentValidation[]): ContentValidation {
   );
 }
 
-/** Render an absolute path with a `~/` prefix when it's under the user's home directory. */
 function displayDir(absolutePath: string): string {
   const home = os.homedir();
   if (absolutePath === home) return "~";
@@ -91,21 +86,9 @@ function toIssues(file: string, result: ValidationResult): ContentIssue[] {
   ];
 }
 
-/** Says which of the three load outcomes a config file is in, without restating the loader. */
 const CONFIG_UNREADABLE = "exists but could not be loaded";
 
-/**
- * Validates the config files this run reads: the project's own and the global one it inlines.
- *
- * A config that exists and cannot be parsed is reported here rather than left to the operational
- * layer, for the reason that layer exists to be gated on — every operational row is read OUT of
- * this file, so each would be a cascade of the same fault. It is also the only report that can
- * carry the loader's reason: the layers below re-read the file per check, and their own
- * diagnostics for it are what used to arrive spliced between the rows.
- *
- * An ABSENT config is not a finding here. It is the legitimate state `init` exists for, and the
- * operational layer already names it and offers the remedy that fits it.
- */
+/** Reported here, since every operational row reads the config; an absent one is no finding. */
 export async function validateProjectConfigFile(projectDir: string): Promise<ContentValidation> {
   const [present, failures] = await Promise.all([
     countExistingConfigs(projectDir),
@@ -115,10 +98,7 @@ export async function validateProjectConfigFile(projectDir: string): Promise<Con
   return { count: present, issues: failures.map(toUnreadableConfigIssue), notes: [] };
 }
 
-/**
- * Led by whose config it is, as every config row `doctor` prints is: from a project, the file can
- * be its own or the global one it inherits.
- */
+/** Led by whose config it is: from a project, its own or the inherited global one. */
 function toUnreadableConfigIssue(failure: ConfigLoadError): ContentIssue {
   return {
     severity: "error",
@@ -134,19 +114,9 @@ async function countExistingConfigs(projectDir: string): Promise<number> {
   return present.filter(Boolean).length;
 }
 
-/**
- * Validates the marketplace this installation reads from when it is local, plus the current
- * directory when that is itself a skills source repository — that repository is the content a
- * marketplace author runs this against, and it is not the source they read skills from.
- * A remote marketplace is recorded as skipped rather than fetched.
- *
- * Each one is validated as the reader's own or as someone else's — see {@link readerFor}.
- */
+/** The local marketplace, plus the cwd when it is a skills source repo; remote is skipped. */
 export async function validateRegisteredSources(projectDir: string): Promise<ContentValidation> {
-  // DEGRADE on an unreadable config. This pass declares `readsConfig: true`, so `doctor` stands it
-  // down before it runs whenever the config check has already reported the file — and if it is
-  // reached anyway, `safeCheck` turns the throw into a failed row rather than an aborted run. A
-  // command whose job is naming what is wrong here must survive the thing it is naming.
+  // Degrades on an unreadable config: `safeCheck` turns a throw into a failed row.
   const primary = await resolvePrimarySourceEntry(projectDir);
   const registered = [primary];
   const remote = registered.filter((source) => !isLocalSource(source.url));
@@ -183,12 +153,7 @@ function isCwdMarketplace(projectDir: string, source: SourceEntry): boolean {
   return path.resolve(projectDir, source.url) === projectDir;
 }
 
-/**
- * Where this layer decides what the reader's relationship to a marketplace is — the one place
- * that holds both the directory the command ran in and the path of each marketplace it validates.
- * The appended `CWD_SOURCE_NAME` entry answers `"author"` by construction, which is the whole of
- * why a marketplace author's own repository is judged the way they need it to be.
- */
+/** The one place knowing the cwd and each marketplace path; the cwd entry answers `"author"`. */
 function readerFor(projectDir: string, source: SourceEntry): MarketplaceReader {
   return isCwdMarketplace(projectDir, source) ? "author" : "consumer";
 }
@@ -211,7 +176,6 @@ async function validateOneSource(
   }
 }
 
-/** Validates every installed plugin bundle in the global and project plugin directories. */
 export async function validateInstalledPlugins(projectDir: string): Promise<ContentValidation> {
   const dirs = [
     getUserPluginsDir(),
@@ -240,11 +204,7 @@ async function validatePluginsDirectory(pluginsDir: string): Promise<ContentVali
   };
 }
 
-/**
- * Validates the installs recorded in the plugins directory's `installed_plugins.json`
- * (claude CLI >=2.1.220 cache layout). Returns undefined when the registry records no
- * installs so the caller can fall back to the direct-children scan (older/manual layouts).
- */
+/** Undefined when the registry records no installs; the caller then scans direct children. */
 async function validateRegistryPlugins(pluginsDir: string): Promise<ContentValidation | undefined> {
   let installs: ResolvedPlugin[];
   try {
@@ -265,8 +225,7 @@ async function validateRegistryPlugins(pluginsDir: string): Promise<ContentValid
 
   if (installs.length === 0) return undefined;
 
-  // A recorded installPath that no longer exists surfaces as an invalid plugin
-  // via validatePlugin's structure check, not a crash.
+  // A vanished installPath fails validatePlugin's structure check rather than crashing.
   const results = await Promise.all(
     installs.map(async ({ pluginKey, installPath }) =>
       toIssues(pluginKey, await validatePlugin(installPath)),
@@ -288,27 +247,8 @@ async function findPluginDirectories(pluginsDir: string): Promise<string[]> {
 }
 
 /**
- * Validates the SKILL.md and metadata.yaml of every installed skill this installation owns, both
- * scopes.
- *
- * Ownership has to be asked because `~/.claude/skills/` is CLAUDE CODE's directory, shared with
- * everything else that installs a skill there — not this CLI's private space. Judging every
- * directory in it against this CLI's schema reported a skill some other tool put there as a fault
- * in the user's install, in a file they never wrote and cannot fix from here.
- *
- * Two claims make a directory this installation's, and either is enough:
- *
- * - **The configuration in play names its id.** Both configs a run reads, because both scopes are
- *   walked. This is the claim that keeps `doctor` loud where it matters most: the provenance
- *   marker lives INSIDE metadata.yaml, so a skill whose metadata is missing or unparseable — the
- *   plainest breakage there is — can carry no marker to be recognised by.
- * - **The directory carries `forkedFrom`.** The marker this CLI stamps into every skill directory
- *   it writes, and the same question `uninstall` asks before removing anything. It answers for the
- *   skills a configuration has stopped naming, or never got the chance to.
- *
- * A directory neither claim reaches is not judged and not counted. It IS named — see
- * {@link foreignSkillNote}: a check that quietly walks past a directory is indistinguishable from
- * one that missed it.
+ * Only skills this installation owns, since `~/.claude/skills/` is shared: a directory is ours when
+ * a config in play names its id or it carries `forkedFrom`. Any other is named, not judged.
  */
 export async function validateInstalledSkills(projectDir: string): Promise<ContentValidation> {
   const configuredIds = await configuredSkillIds(projectDir);
@@ -334,17 +274,13 @@ function configuredIdsOf(loaded: LoadedProjectConfig | null): string[] {
   return loaded.config.skills.map((skill) => skill.id);
 }
 
-/** Validates the frontmatter of every compiled agent file, both scopes. */
 export async function validateInstalledAgents(projectDir: string): Promise<ContentValidation> {
   return mergeValidations(
     await Promise.all(installedDirs(projectDir, "agentsDir").map(validateAgentsDirectory)),
   );
 }
 
-/**
- * The directories to walk for an installed-content pass. At the home directory both
- * scopes resolve to the same place, so it is walked once instead of twice.
- */
+/** At the home directory both scopes resolve to one place, walked once. */
 function installedDirs(projectDir: string, key: "skillsDir" | "agentsDir"): string[] {
   const global = resolveInstallPaths(projectDir, "global")[key];
   if (isHomeDirectory(projectDir)) return [global];
@@ -359,17 +295,7 @@ export type InstalledArtifacts = {
   agents: string[];
 };
 
-/**
- * The same two walks {@link validateInstalledSkills} and {@link validateInstalledAgents} count,
- * naming what belongs to this installation instead of judging it. `doctor` reports this when no
- * configuration exists to compare the installation against: there is nothing to validate the
- * files AGAINST, and naming them is the whole finding.
- *
- * Each walk applies the same ownership question its own pass asks, minus the half that needs a
- * config to answer — see {@link listSkillDirsWithOurProvenance} and
- * {@link listAgentFilesWithOurProvenance}. Both are the question the command this row sends the
- * reader to asks before it removes anything, so what is named here is what `uninstall` takes.
- */
+/** For `doctor` with no config: names what this installation owns, as `uninstall` would take. */
 export async function listInstalledArtifacts(projectDir: string): Promise<InstalledArtifacts> {
   const [skills, agents] = await Promise.all([
     listAcrossScopes(installedDirs(projectDir, "skillsDir"), listSkillDirsWithOurProvenance),
@@ -379,40 +305,14 @@ export async function listInstalledArtifacts(projectDir: string): Promise<Instal
 }
 
 /**
- * The compiled agent files in one tree that this CLI can prove it wrote.
- *
- * The agent axis's counterpart to {@link listSkillDirsWithOurProvenance}, and deliberately
- * `splitAgentsByProvenance` rather than a second reading of the same marker: `uninstall` decides
- * what to remove with no configuration by asking that function, so a listing built any other way
- * could offer a file it then refused. It did — every `*.md` in the directory was named here while
- * the remover took only the marked ones, so a hand-authored agent was offered by one screen and
- * declined by the next.
- *
- * A file that cannot be read carries no marker and is not listed, which is that function's own
- * rule: "cannot prove it is ours" and "is not ours" call for the same answer. Nothing goes
- * unmentioned either way — {@link validateInstalledAgents} walks every agent file whatever state
- * the config is in.
+ * Asks `splitAgentsByProvenance`, as `uninstall` does, so this lists exactly what it would remove.
  */
 async function listAgentFilesWithOurProvenance(agentsDir: string): Promise<string[]> {
   const { marked } = await splitAgentsByProvenance(agentsDir);
   return marked.map((name) => `${name}${AGENT_FILE_EXTENSION}`);
 }
 
-/**
- * The skill directories in one tree that this CLI can prove it wrote.
- *
- * With no configuration left to name an id, the provenance marker is the only claim a directory
- * can carry — and it is the claim `uninstall` reads before removing anything, so every directory
- * listed here is one that command would actually remove. Listing a directory it would refuse is
- * the CLI recommending what it then declines to do.
- *
- * The marker lives INSIDE `metadata.yaml`, so a directory whose metadata is missing or unreadable
- * can carry no marker and is not listed. That is deliberate rather than a gap: "cannot prove it is
- * ours" and "is not ours" call for the same answer — leave it alone — which is the rule
- * `splitAgentsByProvenance` already applies to compiled agents. Nothing goes unmentioned either
- * way: {@link validateInstalledSkills} runs whatever state the config is in, and names every
- * directory it stepped over.
- */
+/** By `forkedFrom` alone, as `uninstall` reads it; unreadable metadata carries none. */
 async function listSkillDirsWithOurProvenance(skillsDir: string): Promise<string[]> {
   const names = await listDirectories(skillsDir);
   const judged = await Promise.all(
@@ -470,7 +370,7 @@ async function validateSkillsDirectory(
   };
 }
 
-/** Either claim this installation has on a skill directory — see {@link validateInstalledSkills}. */
+/** Either claim this installation has on a skill directory. */
 async function isOurSkillDirectory(
   skillsDir: string,
   name: string,
@@ -480,21 +380,12 @@ async function isOurSkillDirectory(
   return carriesOurProvenance(skillsDir, name);
 }
 
-/**
- * The claim a skill directory carries on its own, independent of any configuration: the
- * `forkedFrom` block the copier stamps into every directory this CLI writes. One definition,
- * because the union above and the no-config listing are the same judgement with and without its
- * other half — and `uninstall` decides what to remove by asking exactly this.
- */
+/** The `forkedFrom` block the copier stamps; `uninstall` asks exactly this. */
 async function carriesOurProvenance(skillsDir: string, name: string): Promise<boolean> {
   return (await readForkedFromMetadata(path.join(skillsDir, name))) !== null;
 }
 
-/**
- * A directory this pass declined to judge, named so the count and the directory listing do not
- * silently disagree. Not a warning: nothing here is wrong, and a reader sent to fix a skill they
- * did not install is worse off than one told plainly that it is not this CLI's to police.
- */
+/** Named so the count and the listing do not silently disagree; not a warning. */
 function foreignSkillNote(skillsDir: string, name: string): string {
   return `${displayDir(path.join(skillsDir, name))} — not installed by this CLI and named by no configuration here: not validated`;
 }
@@ -542,10 +433,7 @@ async function validateSkillFile(
 }
 
 async function validateInstalledSkillMetadata(metadataPath: string): Promise<ValidationResult> {
-  // Same judgment `compile` refuses on and local-skill discovery skips on: a file
-  // that describes no skill is reported here as the error it is. The strict
-  // published-skill checks below are layered on top of that verdict, never against
-  // it — doctor reports what the other two passes refuse, and then some.
+  // The same verdict compile and discovery use; the strict published-skill checks layer on top.
   const read = await readSkillMetadata(metadataPath);
   if (!read.usable) {
     return invalidResult(`${STANDARD_FILES.METADATA_YAML}: ${read.reason}`);

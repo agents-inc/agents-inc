@@ -1,29 +1,6 @@
 /**
- * Which config a run reads when a scope holds an installation of each provider, and what the
- * read tells the caller about the one it landed on.
- *
- * The provider is not a field in `config.ts`: the FOLDER is the answer, so `.agents-inc/claude/`
- * and `.agents-inc/codex/` under one root are TWO installations, each of exactly one provider, and
- * every question about where something goes has to say which of them it is about.
- *
- * **The state these specs are written for:** with both
- * folders on disk, `getProjectConfigPath(dir)` takes no provider at all, so the preference order
- * inside `sourceFolderInUse` picks Claude and every command silently acts on the Claude half of a
- * root that holds two installations. Nothing reports it, and nothing can: the answer is a path,
- * it exists, and it parses.
- *
- * So each spec below plants BOTH folders and asks for one of them BY NAME. A single-provider root
- * would be green under the defaulting code and the threaded code alike, which is why the
- * one-installation cases sit here as the control rather than as the subject.
- *
- * **The two config files are told apart by what they call themselves**, not by where they were
- * found: a read that came back with the other provider's `name` went to the wrong folder, and an
- * assertion comparing only paths cannot see that — `configPath` is built by the same call whose
- * routing is in question, so it agrees with itself whichever folder it chose.
- *
- * The folder names are written out as literals throughout. They are text on people's disks, and
- * an assertion importing the constant the product joins would move with it and could never fail —
- * the rule `install-layout.test.ts` states for the same two names.
+ * With both provider folders under one root, a read asked for one provider by name lands in its
+ * folder. Configs are told apart by `name`, since `configPath` agrees with itself either way.
  */
 
 import path from "path";
@@ -35,20 +12,12 @@ import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js"
 import { loadProjectConfigFromDir } from "../../configuration/project-config.js";
 import { getProjectConfigPath } from "../install-base-dir.js";
 
-/** The new layout, per provider, as it is written on disk and shown to a user. */
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
 const CODEX_SOURCE_REL = ".agents-inc/codex";
 
-/**
- * What each installation calls itself.
- *
- * Distinct strings rather than one shared fixture, because they are the only evidence a read
- * landed in the folder it was asked for: two identical configs make a wrong turn invisible.
- */
 const CLAUDE_INSTALLATION_NAME = "the-claude-installation";
 const CODEX_INSTALLATION_NAME = "the-codex-installation";
 
-/** What a read answered, in the three parts that say whether it went to the right folder. */
 type ConfigRead = {
   name: string | undefined;
   provider: string | undefined;
@@ -66,12 +35,10 @@ describe("the config path and the config read, per provider", () => {
     await cleanupTempDir(root);
   });
 
-  /** Writes a real config.ts, calling itself `name`, into `folder` under the temp root. */
   async function plantConfig(folder: string, name: string): Promise<void> {
     await writeTestTsConfig(root, buildProjectConfig({ name }), folder);
   }
 
-  /** The three parts of a read, in a shape one assertion can compare whole. */
   async function readAs(provider: "claude" | "codex"): Promise<ConfigRead> {
     const loaded = await loadProjectConfigFromDir(root, provider);
     return {
@@ -118,11 +85,7 @@ describe("the config path and the config read, per provider", () => {
   });
 
   describe("a root holding one installation", () => {
-    /**
-     * The control the two specs above need, and it discriminates in the direction they cannot:
-     * a read that answered the asked-for provider by ALWAYS answering its folder would satisfy
-     * them both, and would report a Codex installation on a root that holds only a Claude one.
-     */
+    // Control for the two specs above.
     it("reads the one that is there, and finds nothing under the provider that is not", async () => {
       await plantConfig(CLAUDE_SOURCE_REL, CLAUDE_INSTALLATION_NAME);
 

@@ -3,19 +3,9 @@ import type { AgentName, ProjectConfig, SkillId } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 
 /**
- * The work one global config write owes, decided from what actually moved
- * between the config on disk and the config being written.
- *
- * T1 — the generated type unions or the compiled agents are derived from what
- *      changed: rewrite both halves of the pair, propagate to every registered
- *      project, recompile those projects' agents.
- * T2 — a scalar the unions do not encode changed. Project configs inline the
- *      global scalars verbatim, so the config half propagates; no union moves,
- *      so no types are regenerated and no agent is recompiled.
- * T3 — only the `projects[]` registration list changed. Nothing is propagated,
- *      and the matrix / agent definitions propagation would need are never
- *      loaded.
- * T4 — nothing moved. No file is touched.
+ * T1: the type unions or compiled agents derive from what changed; rewrite both halves, propagate,
+ * recompile. T2: an inlined scalar changed; propagate the config half only. T3: only `projects[]`
+ * changed; nothing propagates. T4: nothing moved.
  */
 export type ConsequenceTier = "T1" | "T2" | "T3" | "T4";
 
@@ -23,14 +13,7 @@ export type GlobalChangeSet = {
   skills: {
     added: SkillId[];
     removed: SkillId[];
-    /**
-     * Ids whose `origin` moved — the field's name on `SkillConfig`; this one keeps the
-     * older word. Separate from `otherChanged` because the per-skill value decides the
-     * reference form a compiled agent emits
-     * (`<id>:<id>` for a marketplace-sourced skill, the bare id for an ejected
-     * one), so a source change that skipped the recompile leaves every
-     * registered project's agents naming a reference that no longer resolves.
-     */
+    /** Apart from `otherChanged`: it decides the reference form a compiled agent emits. */
     sourceChanged: SkillId[];
     otherChanged: SkillId[];
   };
@@ -46,7 +29,6 @@ export type GlobalChangeSet = {
   projectsChanged: boolean;
 };
 
-/** The identity element of {@link GlobalChangeSet} — nothing moved, so T4. */
 export const NO_CHANGES: GlobalChangeSet = {
   skills: { added: [], removed: [], sourceChanged: [], otherChanged: [] },
   agents: { added: [], removed: [], changed: [] },
@@ -63,19 +45,13 @@ const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "selectedDomains"
 const REGISTRATION_FIELD = "projects";
 
 /**
- * Normalizes a config the way the writer does immediately before emission: a
- * JSON round-trip, so an explicitly-`undefined` field and an absent one compare
- * equal. Without it every write that merely reconstructs an object produces
- * phantom diffs.
+ * A JSON round-trip, as the writer does, so an explicitly-`undefined` field equals an absent one.
  */
 function normalize(config: ProjectConfig): Record<string, unknown> {
-  // Boundary cast: `JSON.parse` is typed `any`, and round-tripping an object
-  // always yields one — the whole point of the call is that the result is the
-  // same record with its undefined-valued keys gone.
+  // Boundary cast: `JSON.parse` returns `any`; the round-trip yields the same record.
   return JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
 }
 
-/** Field value as the writer would emit it, or undefined when absent. */
 function field(config: Record<string, unknown>, key: string): unknown {
   return config[key];
 }
@@ -140,11 +116,7 @@ function diffAgents(
   };
 }
 
-/**
- * Diffs the config on disk against the config about to be written. `prev` is
- * undefined when no global config exists yet, which every field reads as a
- * change from absent.
- */
+/** `prev` is undefined when no global config exists yet; every field then reads as changed. */
 export function classifyGlobalChange(
   prev: ProjectConfig | undefined,
   next: ProjectConfig,
@@ -163,7 +135,6 @@ export function classifyGlobalChange(
   };
 }
 
-/** True when something the type unions or the compiled agents derive from moved. */
 function movesTypesOrCompiledAgents(changes: GlobalChangeSet): boolean {
   const { skills, agents } = changes;
   return (
@@ -179,7 +150,6 @@ function movesTypesOrCompiledAgents(changes: GlobalChangeSet): boolean {
   );
 }
 
-/** The work tier a change set obliges. */
 export function consequenceTier(changes: GlobalChangeSet): ConsequenceTier {
   if (movesTypesOrCompiledAgents(changes)) return "T1";
   if (changes.scalarsChanged.length > 0) return "T2";
@@ -187,17 +157,14 @@ export function consequenceTier(changes: GlobalChangeSet): ConsequenceTier {
   return "T4";
 }
 
-/** True when the tier's consequences need the matrix and agent definitions. */
 export function tierNeedsDeps(tier: ConsequenceTier): boolean {
   return tier === "T1" || tier === "T2";
 }
 
-/** True when the tier regenerates the types half and recompiles propagated agents. */
 export function tierRegeneratesTypes(tier: ConsequenceTier): boolean {
   return tier === "T1";
 }
 
-/** True when the tier fans the change out to every registered project. */
 export function tierPropagates(tier: ConsequenceTier): boolean {
   return tier === "T1" || tier === "T2";
 }

@@ -11,11 +11,7 @@ const EXPECTED_ASSIGNMENT_TOTAL = 1542;
 /** Agent slots holding each hoisted array — one number for both. */
 const EXPECTED_SHARED_ALIAS_SLOTS = 47;
 
-/**
- * The two categories whose value every stack takes from one hoisted array rather than writing
- * its own, and what each array holds. Members rather than a count: a swap inside either array
- * leaves every count in this file green.
- */
+/** Members rather than a count: a swap inside either array leaves every count green. */
 const SHARED_ALIAS_MEMBERS = {
   "shared-tooling": ["shared-tooling-typescript-config", "shared-tooling-git-hooks"],
   "shared-lint": ["shared-tooling-eslint-prettier"],
@@ -23,12 +19,7 @@ const SHARED_ALIAS_MEMBERS = {
 
 const SHARED_ALIAS_CATEGORIES = typedKeys(SHARED_ALIAS_MEMBERS);
 
-/**
- * The sub-agents the whole catalogue assigns to, and how many stacks each one appears on. Keyed by
- * name rather than counted: a count cannot tell a retired agent from a swapped one.
- *
- * Fewer than `AGENT_NAMES` on purpose — five built-ins sit on no stack at all.
- */
+/** By name: a count cannot tell a retired agent from a swapped one. Five sit on no stack. */
 const EXPECTED_STACKS_PER_AGENT = {
   "agent-summoner": 17,
   "api-developer": 15,
@@ -66,14 +57,7 @@ const EXPECTED_AGENT_COUNT_PER_STACK = {
   "cli-ink-oclif": 9,
 } as const satisfies Record<string, number>;
 
-/**
- * The (stack, sub-agent) pairs where a stack names an agent and files nothing under it.
- *
- * Named rather than absorbed. The tally above counts DECLARED slots, and under it `cli-developer`
- * and `cli-tester` sit on the same 8 — while seven of `cli-tester`'s eight are `{}`, so
- * `cli-ink-oclif` is the only stack that hands it a skill. A count cannot say which of the two readings it is, and an empty slot is the
- * only shape that makes them differ, so the difference is pinned by name instead of averaged away.
- */
+/** Pairs where a stack names an agent and files nothing under it, pinned by name. */
 const EXPECTED_EMPTY_AGENT_SLOTS = [
   "expo-mobile-fullstack > cli-tester",
   "nextjs-ai-saas > cli-tester",
@@ -84,11 +68,7 @@ const EXPECTED_EMPTY_AGENT_SLOTS = [
   "react-hono-fullstack > cli-tester",
 ] as const;
 
-/**
- * Every category the catalogue files an assignment under. Members rather than a count, for the
- * reason the roster above is: two categories exchanged leave 35 intact, and a stack keyed under a category its skill has left is the stale-key shape
- * that goes schema-invalid the moment the enum regenerates.
- */
+/** Members rather than a count: two categories exchanged leave the count intact. */
 const EXPECTED_ASSIGNED_CATEGORIES = [
   "ai-orchestration",
   "ai-patterns",
@@ -128,10 +108,7 @@ const EXPECTED_ASSIGNED_CATEGORIES = [
 ] as const satisfies readonly Category[];
 
 /**
- * Every skill the catalogue names. Members rather than a count, and here
- * the members buy a second thing the count cannot: the clause binds each id to the generated
- * `SkillId` union, so a marketplace retiring a skill reddens the line that owns its name rather
- * than scattering unassignable-union errors across the consumers of an inferred type.
+ * Members bind each id to the generated `SkillId` union, so a retired skill reddens its own line.
  */
 const EXPECTED_ASSIGNED_SKILL_IDS = [
   "ai-orchestration-vercel-ai-sdk",
@@ -189,10 +166,9 @@ const EXPECTED_ASSIGNED_SKILL_IDS = [
   "web-tooling-vite",
 ] as const satisfies readonly SkillId[];
 
-/** Flat list of every (stack, agent, category) combination for parameterized tests */
 const agentCategoryCases = defaultStacks.flatMap((stack) =>
   typedEntries(stack.agents).flatMap(([agentName, agentConfig]) => {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
     if (agentConfig == null) return [];
     return typedEntries(agentConfig).map(([category, assignments]) => ({
       stackId: stack.id,
@@ -203,9 +179,8 @@ const agentCategoryCases = defaultStacks.flatMap((stack) =>
   }),
 );
 
-/** Every assignment the catalogue holds, in one list, whichever slot it sits in. */
 const everyAssignment: SkillAssignment[] = agentCategoryCases.flatMap(
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
   ({ assignments }) => assignments ?? [],
 );
 
@@ -214,40 +189,32 @@ function slotsFiledUnder(category: Category): SkillAssignment[][] {
   return agentCategoryCases
     .filter((slot) => slot.category === category)
     .flatMap(({ assignments }) =>
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       assignments === undefined ? [] : [assignments],
     );
 }
 
-/**
- * How a (stack, sub-agent) pair is spelled. One definition because two derivations below must
- * agree on it, and a failure prints it — so it reads the way the misfiling spec's message does.
- */
+/** One spelling, shared by two derivations and the failure message. */
 function agentSlotLabel(stackId: string, agentName: AgentName): string {
   return `${stackId} > ${agentName}`;
 }
 
-/** Every sub-agent name the catalogue declares, once per stack that declares it. */
 const declaredAgentNames = defaultStacks.flatMap((stack) => typedKeys(stack.agents));
 
-/** How many stacks declare one sub-agent, whether or not they file anything under it. */
 function stacksDeclaring(agentName: AgentName): number {
   return declaredAgentNames.filter((name) => name === agentName).length;
 }
 
-/** Each declared sub-agent against the stacks naming it. */
 const stacksPerAgent = typedFromEntries(
   [...new Set(declaredAgentNames)].map(
     (agentName) => [agentName, stacksDeclaring(agentName)] as const,
   ),
 );
 
-/** Each stack's declared sub-agent count, keyed by stack id. */
 const agentCountPerStack = Object.fromEntries(
   defaultStacks.map((stack) => [stack.id, typedKeys(stack.agents).length]),
 );
 
-/** Every (stack, sub-agent) pair the catalogue declares. */
 const declaredAgentSlots = defaultStacks.flatMap((stack) =>
   typedKeys(stack.agents).map((agentName) => agentSlotLabel(stack.id, agentName)),
 );
@@ -260,10 +227,8 @@ const filledAgentSlots = new Set(
 /** Declared and unfilled: the pairs where the two tallies above disagree. */
 const emptyAgentSlots = declaredAgentSlots.filter((slot) => !filledAgentSlots.has(slot)).sort();
 
-/** Every category the catalogue files an assignment under. */
 const assignedCategories = [...new Set(agentCategoryCases.map((slot) => slot.category))].sort();
 
-/** Every skill the catalogue names, whichever slot names it. */
 const assignedSkillIds = [...new Set(everyAssignment.map((assignment) => assignment.id))].sort();
 
 describe("defaultStacks", () => {
@@ -284,8 +249,7 @@ describe("defaultStacks", () => {
     );
   });
 
-  // The pin needs the filled case beside it: an empty list and a catalogue that files nothing at
-  // all read identically here, and only `cli-ink-oclif` keeps `cli-tester` from being the second.
+  // The filled case beside the empty one: an empty list and a catalogue filing nothing read alike.
   it("names the stacks that declare a sub-agent and then file nothing under it", () => {
     expect(
       emptyAgentSlots,
@@ -304,10 +268,7 @@ describe("defaultStacks", () => {
     ).toStrictEqual([...EXPECTED_ASSIGNED_CATEGORIES]);
   });
 
-  // The misfiling spec below reads the matrix too, but its lookup drops an id the matrix does
-  // not carry — so a stale id passes that spec rather than failing it. This is where one fails.
-  // Both assertions belong here together: the roster alone cannot say the ids are real, and the
-  // membership check alone is satisfied for free by the empty list a broken derivation hands it.
+  // The misfiling spec drops ids the matrix lacks, so a stale id fails here instead.
   it("names exactly the expected skills, all of them in the vendored matrix", () => {
     const absent = assignedSkillIds.filter((id) => !(id in BUILT_IN_MATRIX.skills));
 
@@ -326,9 +287,7 @@ describe("defaultStacks", () => {
     );
   });
 
-  // The per-slot spec below says no INDIVIDUAL slot states a load. This says the same thing
-  // about the catalogue as one body — a slot the flattening above misses would satisfy the
-  // per-slot spec by never being visited.
+  // Catalogue-wide: a slot the flattening misses would pass the per-slot spec unvisited.
   it("states no load opinion anywhere in the catalogue", () => {
     const flagged = everyAssignment.filter((assignment) => assignment.preloaded !== undefined);
 
@@ -392,7 +351,7 @@ describe("defaultStacks", () => {
   it.each(agentCategoryCases)(
     "$stackId > $agentName > $category carries no load opinion",
     ({ assignments }) => {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       const flagged = (assignments ?? []).filter((a) => a.preloaded !== undefined);
 
       expect(
@@ -402,11 +361,10 @@ describe("defaultStacks", () => {
     },
   );
 
-  // A stack keys by category, so a skill filed under a key it no longer belongs to
-  // is the stale-key shape that goes schema-invalid the moment the enum regenerates.
+  // A skill filed under a category it left goes schema-invalid when the enum regenerates.
   it("files every assignment under the category its skill actually sits in", () => {
     const misfiled = agentCategoryCases.flatMap(({ stackId, agentName, category, assignments }) =>
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       (assignments ?? [])
         .map((assignment) => BUILT_IN_MATRIX.skills[assignment.id])
         .filter((skill): skill is ResolvedSkill => skill != null && skill.category !== category)

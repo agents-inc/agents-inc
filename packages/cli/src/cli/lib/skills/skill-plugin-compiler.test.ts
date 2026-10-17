@@ -84,7 +84,6 @@ describe("skill-plugin-compiler", () => {
 
       expect(manifest.name).toBe("web-state-zustand");
       expect(manifest.version).toBe("1.0.0");
-      // contentHash and updated are no longer in manifest - stored internally
       expect(manifest.contentHash).toBeUndefined();
       expect(manifest.updated).toBeUndefined();
       expect(manifest.skills).toBe("./skills/");
@@ -119,7 +118,6 @@ describe("skill-plugin-compiler", () => {
     it("should copy examples directory when present", async () => {
       const skillPath = await writeTestSkill(skillsDir, "web-testing-vitest");
 
-      // Create examples directory
       const examplesDir = path.join(skillPath, STANDARD_DIRS.EXAMPLES);
       await mkdir(examplesDir, { recursive: true });
       await writeFile(path.join(examplesDir, "basic.test.ts"), "// test example");
@@ -175,7 +173,6 @@ describe("skill-plugin-compiler", () => {
     it("should throw error when SKILL.md is missing", async () => {
       const skillPath = path.join(skillsDir, "missing-skill");
       await mkdir(skillPath, { recursive: true });
-      // Don't create SKILL.md
 
       await expect(compileSkillPlugin({ skillPath, outputDir })).rejects.toThrow(
         /is missing required SKILL\.md file/,
@@ -202,7 +199,6 @@ describe("skill-plugin-compiler", () => {
         outputDir,
       });
 
-      // Author should come from metadata.yaml
       expect(result.manifest.author?.name).toBe("@vince");
     });
 
@@ -216,7 +212,6 @@ describe("skill-plugin-compiler", () => {
         outputDir,
       });
 
-      // No author when metadata.yaml doesn't exist
       expect(result.manifest.author).toBeUndefined();
     });
 
@@ -230,7 +225,6 @@ describe("skill-plugin-compiler", () => {
         skillContent: skillContent1,
       });
 
-      // First compile
       const result1 = await compileSkillPlugin({
         skillPath,
         outputDir,
@@ -238,7 +232,6 @@ describe("skill-plugin-compiler", () => {
 
       expect(result1.manifest.version).toBe("1.0.0");
 
-      // Recompile without changes - version should stay the same
       const result2 = await compileSkillPlugin({
         skillPath,
         outputDir,
@@ -246,7 +239,6 @@ describe("skill-plugin-compiler", () => {
 
       expect(result2.manifest.version).toBe("1.0.0");
 
-      // Modify the skill content
       const newContent = renderSkillMd(
         "web-framework-vue-composition-api",
         "Vue skill",
@@ -254,7 +246,6 @@ describe("skill-plugin-compiler", () => {
       );
       await writeFile(path.join(skillPath, STANDARD_FILES.SKILL_MD), newContent);
 
-      // Update metadata.yaml contentHash to reflect new SKILL.md content
       const newHash = await computeSkillFolderHash(skillPath);
       const metadataPath = path.join(skillPath, STANDARD_FILES.METADATA_YAML);
       const metadataContent = await readFile(metadataPath, "utf-8");
@@ -264,7 +255,6 @@ describe("skill-plugin-compiler", () => {
       );
       await writeFile(metadataPath, updatedMetadata);
 
-      // Recompile with changes - version should bump major (1.0.0 -> 2.0.0)
       const result3 = await compileSkillPlugin({
         skillPath,
         outputDir,
@@ -320,22 +310,18 @@ describe("skill-plugin-compiler", () => {
     });
 
     it("should continue compiling other skills when one fails", async () => {
-      // Create valid skill
       await writeTestSkill(skillsDir, "web-framework-react");
 
-      // Create invalid skill (no frontmatter) - intentionally raw for error testing
       const badSkillPath = path.join(skillsDir, "bad-skill");
       await mkdir(badSkillPath, { recursive: true });
       await writeFile(path.join(badSkillPath, STANDARD_FILES.SKILL_MD), "# No frontmatter");
 
-      // Create another valid skill
       await writeTestSkill(skillsDir, "web-state-zustand");
 
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const { compiled: results, failed } = await compileAllSkillPlugins(skillsDir, outputDir);
 
-      // Should have compiled the valid skills
       expect(results).toHaveLength(2);
       const skillNames = results.map((r) => r.skillName);
       expect(skillNames).toContain("web-framework-react");
@@ -344,7 +330,6 @@ describe("skill-plugin-compiler", () => {
       // The failed skill is reported by directory basename so callers can skip pruning
       expect(failed).toStrictEqual(["bad-skill"]);
 
-      // Should have warned about the failed skill
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Warning:"));
 
       vi.restoreAllMocks();
@@ -370,7 +355,6 @@ describe("skill-plugin-compiler", () => {
       const { compiled: results } = await compileAllSkillPlugins(skillsDir, outputDir);
 
       for (const result of results) {
-        // Plugin name = skill name (no prefix)
         expect(result.manifest.name).toBe(result.skillName);
         expect(result.manifest.version).toBe("1.0.0");
       }

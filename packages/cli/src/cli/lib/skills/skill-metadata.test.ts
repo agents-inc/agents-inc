@@ -1,11 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SkillId } from "../../types";
 
-// Mock file system and logger (manual mocks from __mocks__ directories)
 vi.mock("../../utils/fs");
 vi.mock("../../utils/logger");
 
-// Mock versioning
 vi.mock("../versioning", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../versioning")>()),
   getCurrentDate: vi.fn().mockReturnValue("2026-01-15"),
@@ -41,12 +39,7 @@ function createMetadataWithSchemaComment(skillId: SkillId, contentHash: string):
   return `# yaml-language-server: $schema=../schema.json\n${createValidMetadataYaml(skillId, contentHash, "2026-01-01")}`;
 }
 
-/**
- * YAML no parser can read, as opposed to YAML that parses into the wrong shape.
- *
- * The two failures reach the reader by different routes — this one throws out of `parseYaml`,
- * the other is caught by `safeParse` — and only the second was ever handled.
- */
+/** YAML no parser reads, as opposed to YAML that parses into the wrong shape. */
 const UNPARSEABLE_YAML = "forkedFrom: {unclosed\n  - and: a list under a map\n";
 
 describe("skill-metadata", () => {
@@ -83,8 +76,7 @@ describe("skill-metadata", () => {
 
       const result = await readForkedFromMetadata("/project/.claude/skills/brainstorming");
 
-      // Read back whole, not merely tolerated: the schema strips what it does not declare, so a
-      // field this reader does not name is one the producer that reads it can never see.
+      // Read back whole: the schema strips undeclared fields.
       expect(result).toStrictEqual({
         skillId: "external-web-tooling-brainstorming",
         contentHash: "abc1234",
@@ -188,10 +180,7 @@ describe("skill-metadata", () => {
       );
 
       const writtenContent = elementAt(firstElement(vi.mocked(writeFile).mock.calls), 1);
-      // A marketplace resolves the ids it serves, so where inside it a skill lives is nobody
-      // else's business. A skill that answers to no catalogue has no other address, and this is
-      // the only record of it: without the pair, a producer rebuilding what this install carries
-      // has a repository and no way to say which directory of it travelled.
+      // A skill outside every catalogue has no other record of which directory travelled.
       expect(writtenContent).toContain("source: github:obra/superpowers");
       expect(writtenContent).toContain("path: skills/brainstorming");
     });
@@ -224,12 +213,6 @@ describe("skill-metadata", () => {
       expect(writtenContent).toContain("new-hash");
     });
 
-    // This asserted `.rejects.toThrow()` until 2026-08-23, pinning the defect as an invariant: the
-    // function's own docblock has always promised that "if parsing fails, only `forkedFrom` is
-    // written (with a warning logged)", and a throw is not that. The promise held for a file whose
-    // SHAPE the schema refused and not for one no parser could read, because `parseYaml` threw
-    // above the `safeParse` that was catching everything else. The contract is what stayed; the
-    // assertion is what changed.
     it("writes forkedFrom and warns when the existing file cannot be parsed", async () => {
       vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_YAML);
 
@@ -303,11 +286,6 @@ describe("skill-metadata", () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("Invalid metadata.yaml"));
     });
 
-    // The docblock promises `null` "if the file doesn't exist or is invalid", and an unparseable
-    // file is the second of those. `parseYaml` throws, so before this the promise held for a
-    // schema failure and not for a syntax one — and `classifySkillDirs` in `commands/uninstall.tsx`
-    // calls this for every installed skill inside a `Promise.all` with no catch, so one bad file
-    // ended the whole uninstall before it deleted anything.
     it("returns null and warns when metadata.yaml cannot be parsed at all", async () => {
       vi.mocked(fileExists).mockResolvedValue(true);
       vi.mocked(readFile).mockResolvedValue(UNPARSEABLE_YAML);

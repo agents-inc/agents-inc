@@ -1,13 +1,8 @@
-/** Generates a yaml-language-server schema comment for the top of YAML files. */
 export function yamlSchemaComment(schemaPath: string): string {
   return `# yaml-language-server: $schema=${schemaPath}`;
 }
 
-/**
- * Splits YAML file content into its leading yaml-language-server schema
- * comment (empty string when absent, trailing newline included when present)
- * and the parseable YAML body.
- */
+/** `schemaComment` keeps its trailing newline, or is empty when absent. */
 export function stripYamlSchemaComment(content: string): {
   schemaComment: string;
   yamlContent: string;

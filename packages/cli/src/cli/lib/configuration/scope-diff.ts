@@ -31,21 +31,8 @@ export type ScopeDiff = {
 };
 
 /**
- * Computes the per-scope diff rows.
- *
- * The diff baseline keeps tombstones as first-class entries. A tombstone
- * occupies the (id, scope) slot: it means "the global install still exists but
- * is silenced at project scope" — the dual-scope indicator. Treating the slot
- * as occupied — for both the previous-key set (isNew detection) and removal
- * (slot-occupancy match) — prevents a dual-scope G→P toggle from rendering a
- * spurious `-` at Global or a spurious `+` at Global on the next edit
- * when the stored tombstone is re-read; mode-change (`~`) tracking filters to active baseline
- * entries because tombstones don't represent a live install.
- *
- * Occupying a slot is not the same as filling it, which is why removal reads the
- * ACTIVE baseline alone and every re-surfaced global row is deduped against the
- * inherited set. A baseline tombstone masks an install rather than being one, and
- * an inherited global can be admitted as inherited and matched as removed at once.
+ * A tombstone occupies its (id, scope) slot without filling it: it silences a global install at
+ * project scope. Slot checks count tombstones; removal and `~` read the active baseline only.
  */
 export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
   const { currentSkills, currentAgents, installedSkillConfigs, installedAgentConfigs, isInitMode } =
@@ -72,11 +59,7 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
     ? new Set(installedAgentConfigs.map((a) => agentSlotKey(a.name, a.scope)))
     : null;
 
-  // The installs the baseline actually records. Both readers below want this
-  // rather than the raw snapshot: `inheritedGlobal*` re-surfaces an active global
-  // the project overrides without a tombstone — a historical no-tombstone
-  // dual-scope shape, current tombstones being handled by
-  // `uniqueExcludedGlobalSkills` — and removal reports only what an install left.
+  // The installs the baseline actually records; tombstones are not installs.
   const activeSkillBaseline = installedSkillConfigs
     ? installedSkillConfigs.filter((s) => !s.excluded)
     : [];
@@ -98,14 +81,8 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
       projectAgents.some((p) => p.name === a.name),
   );
 
-  // Slot-occupancy match over the ACTIVE baseline: an installed entry at
-  // (id, scope) is considered removed only if nothing — active OR tombstone —
-  // occupies that slot in current. A current tombstone at the same key keeps the
-  // slot occupied (dual-scope indicator, not a removal).
-  //
-  // A baseline TOMBSTONE is never a removal candidate. It masks a global install
-  // rather than being one, so its slot held nothing to delete and dropping it
-  // takes nothing away — a `-` there announces a deletion that never happens.
+  // Removed only if nothing, active or tombstone, occupies the slot in current. A baseline
+  // tombstone is never a removal: it masks an install rather than being one.
   const removedSkills = activeSkillBaseline.filter(
     (s) => !currentSkills.some((c) => c.id === s.id && c.scope === s.scope),
   );
@@ -113,13 +90,8 @@ export function computeScopeDiff(input: ScopeDiffInput): ScopeDiff {
     (a) => !currentAgents.some((c) => c.name === a.name && c.scope === a.scope),
   );
 
-  // The Global section renders at most one row per skill, so both of the ways a
-  // baseline global entry can re-surface are deduped against the inherited set:
-  // `uniqueExcludedGlobalSkills` for the current tombstone, and the removed-global
-  // rows below for the removal match. The second is not covered by the first —
-  // an inherited global that the project claims WITHOUT a tombstone occupies no
-  // slot in current, so it is admitted as inherited and matched as removed at
-  // once, and the same skill lands under Global twice.
+  // Deduped against the inherited set: an inherited global claimed without a tombstone would
+  // otherwise land under Global twice.
   const inheritedSkillIdSet = new Set(inheritedGlobalSkills.map((s) => s.id));
   const uniqueExcludedGlobalSkills = excludedGlobalSkills.filter(
     (s) => !inheritedSkillIdSet.has(s.id),
@@ -179,24 +151,15 @@ function skillSlotKey(id: SkillId, scope: SkillScope | undefined): string {
   return `${id}:${scope}`;
 }
 
-/** The `(name, scope)` SLOT key for an agent — the agent-side counterpart of {@link skillSlotKey}. */
 function agentSlotKey(name: AgentName, scope: SkillScope | undefined): string {
   return `${name}:${scope}`;
 }
 
-/** Bracketed scope badge: `[G]` for global, `[P]` for project. */
 export function formatScopeTag(scope: SkillScope): "[G]" | "[P]" {
   return scope === "global" ? "[G]" : "[P]";
 }
 
-/**
- * Classifies an active skill entry against the baseline: added, mode-changed, or unchanged.
- *
- * The comparison is on `origin`, because that field IS where a skill's install mode is
- * recorded: `eject` means the project's own copy and anything else names the marketplace the
- * plugin comes from. With no second marketplace to move between, an `origin` that changed is a
- * mode that changed, which is what the `~` marker has always meant to a reader.
- */
+/** Compares `origin`, which is where a skill's install mode is recorded. */
 function classifyDiffRow(
   skill: SkillConfig,
   prevKeySet: Set<string> | null,

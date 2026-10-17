@@ -7,7 +7,6 @@ import { initializeMatrix } from "../../lib/matrix/matrix-provider";
 import { WEB_PAIR_MATRIX, WEB_TRIO_MATRIX } from "../../lib/__tests__/mock-data/mock-matrices";
 import type { SkillConfig } from "../../types/config";
 
-/** Nothing selected and no installation recorded; each case states only what it changes. */
 const NOTHING_INSTALLED: SkillAgentSummaryProps = {
   skillConfigs: [],
   agentConfigs: [],
@@ -42,8 +41,6 @@ describe("SkillAgentSummary component", () => {
       const output = lastFrame()!;
       expect(output).toContain("~");
       expect(output).toContain("React");
-      // The compact "~" marker alone signals the source change; the verbose
-      // "<old> → <new>" transition that overflowed the column is not rendered.
       expect(output).not.toContain("→");
     });
 
@@ -109,8 +106,7 @@ describe("SkillAgentSummary component", () => {
 
   describe("dual-scope G→P toggle diff", () => {
     it("in-session G→P toggle should show + at Project and • at Global (not -)", () => {
-      // The global install survives a G→P toggle: the tombstone the toggle writes is a
-      // dual-scope indicator, not a removal, so a `-` at Global would claim a deletion.
+      // The tombstone marks dual scope, not a removal.
       const { lastFrame, unmount } = renderSummary({
         installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
         skillConfigs: [
@@ -128,8 +124,6 @@ describe("SkillAgentSummary component", () => {
     });
 
     it("re-open with saved dual-scope state should show • at Project and • at Global (not +)", () => {
-      // Both sides of the diff hold the saved dual-scope shape, so the diff is a no-op: a `+` on
-      // the tombstone row would re-tag the long-installed global as newly added.
       const savedDualScope: SkillConfig[] = [
         ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
         ...buildSkillConfigs(["web-framework-react"], { scope: "global", excluded: true }),
@@ -185,8 +179,6 @@ describe("SkillAgentSummary component", () => {
     });
 
     it("P→G restoration should show - at Project and • at Global (not +)", () => {
-      // Dropping the project override strips the tombstone too. The global install was always
-      // there, so restoring it is not an addition.
       const { lastFrame, unmount } = renderSummary({
         installedSkillConfigs: [
           ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
@@ -226,11 +218,10 @@ describe("SkillAgentSummary component", () => {
 
       const output = lastFrame()!;
 
-      // React should appear twice: once in Global (inherited •), once in Project (+)
+      // Once in Global (inherited), once in Project (added).
       const reactMatches = output.split("React").length - 1;
       expect(reactMatches).toBe(2);
 
-      // Vitest should appear once in Global (excluded)
       const vitestMatches = output.split("Vitest").length - 1;
       expect(vitestMatches).toBe(1);
 

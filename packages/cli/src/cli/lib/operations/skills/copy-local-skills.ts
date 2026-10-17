@@ -10,7 +10,6 @@ export type SkillCopyResult = {
   totalCopied: number;
 };
 
-/** Copies one scope's local skills into its skills directory. */
 async function copyScopedLocalSkills(
   scopeSkills: SkillConfig[],
   skillsDir: string,
@@ -27,12 +26,6 @@ async function copyScopedLocalSkills(
   );
 }
 
-/**
- * Copies local-source skills to their scope-appropriate directories.
- *
- * Splits skills by scope (project vs global), resolves install paths,
- * ensures directories exist, and copies from source.
- */
 export async function copyLocalSkills(
   skills: SkillConfig[],
   projectDir: string,

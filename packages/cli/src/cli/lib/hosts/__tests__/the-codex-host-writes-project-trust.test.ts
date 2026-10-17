@@ -6,27 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
 import { codexProjectTrustMessage, trustCodexProject } from "../codex-project-trust.js";
 
-/**
- * A Codex project install trusts the project in the user's GLOBAL config, and says what it wrote.
- *
- * Owner, 2026-09-26: _"it should be automated on install"_ (CLI-893). A role under
- * `<project>/.codex/agents/` reaches the model only while `$CODEX_HOME/config.toml` holds
- * `[projects."<exact absolute path>"] trust_level = "trusted"`, and every way that is missing or
- * wrong is silent — so a project install Codex never reads looked exactly like one that worked.
- *
- * The file is the user's: every line of theirs is asserted to survive, and an answer they already
- * gave (`"untrusted"`) is never overwritten. A duplicate `[projects."<dir>"]` table is a file Codex
- * refuses to load at all, so the table is asserted to occur once; that Codex then READS the entry
- * is `e2e/lifecycle/codex-agent-roles-are-read-by-codex.e2e.test.ts`'s, against the pinned binary.
- */
+// Codex reads project roles only while its global `config.toml` trusts the exact path. The file is
+// the user's: their lines survive and an answer they gave is never overwritten.
 
-/** Codex's own global configuration file, under `$CODEX_HOME`. A third party's filename. */
 const CODEX_CONFIG_TOML = "config.toml";
 
-/** The variable Codex (and this CLI) reads its home from. */
 const CODEX_HOME_VAR = "CODEX_HOME";
 
-/** A Codex user's own configuration, already in place: a marketplace, a plugin, another project. */
 const THE_USERS_OWN_CONFIG = [
   "[marketplaces.their-own]",
   'source_type = "git"',
@@ -65,12 +51,11 @@ function theConfig(): Promise<string> {
   return readFile(path.join(codexHome, CODEX_CONFIG_TOML), "utf-8");
 }
 
-/** The table this project's trust lives in, header and key, as the install writes them. */
 function trustedTable(dir: string): string {
   return `[projects."${dir}"]\ntrust_level = "trusted"`;
 }
 
-/** How many tables the file opens for `dir` — more than one is a file Codex refuses. */
+/** More than one table for a path is a file Codex refuses to load. */
 function tablesFor(config: string, dir: string): number {
   return config.split(`[projects."${dir}"]`).length - 1;
 }
@@ -100,7 +85,6 @@ describe("trusting a project for Codex", () => {
     await trustCodexProject(projectDir);
 
     const written = await theConfig();
-    // One table, not two: a duplicate header is Codex refusing the whole file.
     expect(tablesFor(written, projectDir)).toBe(1);
     expect(written).toContain(trustedTable(projectDir));
     expect(written).toContain("some_setting_of_theirs = true");

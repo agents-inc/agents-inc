@@ -16,10 +16,7 @@ import type { Marketplace } from "../../types";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { elementAt } from "../__tests__/helpers/element-at.js";
 
-/**
- * `init`'s flag as the refusal's worked example types it, mirrored as a literal — importing
- * the command's own definition would move both sides of the assertion at once.
- */
+/** A literal: importing the command's definition would move both sides of the assertion. */
 const MARKETPLACE_FLAG = "--marketplace";
 
 /** The word withdrawn from the user-facing surface, as a whole word. */
@@ -29,10 +26,7 @@ describe("source-fetcher", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    // The prefix must not spell WITHDRAWN_NOUN: the refusal below echoes this path back,
-    // and `-source-` is a whole-word match under `\b` because a hyphen is a non-word
-    // character. A prefix carrying the word would fail that negative on the fixture's
-    // own name rather than on the product's prose.
+    // The prefix must not contain WITHDRAWN_NOUN: the refusal below echoes this path back.
     tempDir = await createTempDir("cc-fetcher-test-");
   });
 
@@ -42,7 +36,6 @@ describe("source-fetcher", () => {
 
   describe("fetchFromSource with local paths", () => {
     it("should return the local path for existing directory", async () => {
-      // Create a local directory
       const localSource = path.join(tempDir, "local-skills");
       await mkdir(localSource, { recursive: true });
       await writeFile(path.join(localSource, "test.txt"), "test content");
@@ -69,11 +62,7 @@ describe("source-fetcher", () => {
       await expect(fetchFromSource(nonExistent)).rejects.toThrow(/Local marketplace not found/);
     });
 
-    /**
-     * The refusal narrates around the path and closes with a worked example that types
-     * the flag out. It is the one message in this module that names an option, so a flag
-     * rename that stops here leaves the CLI advising a spelling its own parser refuses.
-     */
+    /** The one message here that names an option, so a flag rename must reach it. */
     it("should refuse a missing local path in the marketplace vocabulary", async () => {
       const nonExistent = path.join(tempDir, "does-not-exist");
 
@@ -82,7 +71,6 @@ describe("source-fetcher", () => {
     });
 
     it("should handle subdir option for local paths", async () => {
-      // Create nested structure
       const localSource = path.join(tempDir, "source-with-subdir");
       const subdir = path.join(localSource, "nested", "path");
       await mkdir(subdir, { recursive: true });
@@ -97,9 +85,6 @@ describe("source-fetcher", () => {
   });
 
   describe("remote source URL validation", () => {
-    // These tests verify URL parsing without actually fetching
-    // (actual remote fetching would require network access)
-
     it("should identify github: as remote", () => {
       expect(isLocalSource("github:org/repo")).toBe(false);
     });
@@ -172,7 +157,6 @@ describe("source-fetcher", () => {
 
     it("should handle empty string input", () => {
       const result = sanitizeSourceForCache("");
-      // Empty string still produces a hash
       expect(result).toMatch(/^[0-9a-f]+$/);
       expect(result.length).toBe(CACHE_HASH_LENGTH);
     });
@@ -181,7 +165,6 @@ describe("source-fetcher", () => {
       const a = sanitizeSourceForCache("github:\u00FCser/r\u00E9po");
       const b = sanitizeSourceForCache("github:user/repo");
       expect(a).not.toBe(b);
-      // Should still produce a valid result
       expect(a).toMatch(/^[a-zA-Z0-9-]+$/);
     });
 
@@ -228,12 +211,8 @@ describe("source-fetcher", () => {
     });
 
     /**
-     * `eject` is the `origin` a config records for a skill copied into the installation, so a
-     * marketplace published under it has every skill it installs read back as an ejected copy:
-     * a plugin install turned into a silent local copy. The refusal is the name-refusal TYPE,
-     * because nothing in such a marketplace can be installed as what it claims to be.
-     * The accepted twin is "should parse a valid marketplace.json" above, which differs from
-     * this manifest only in its name.
+     * `eject` is the origin of an ejected copy, so a marketplace under that name would install
+     * plugins as silent local copies.
      */
     it("should refuse a manifest naming the marketplace after the ejected-copy marker", async () => {
       const source = await writeMarketplace(
@@ -246,12 +225,7 @@ describe("source-fetcher", () => {
       await expect(refusal).rejects.toThrow(/Marketplace name 'eject' is reserved/);
     });
 
-    /**
-     * `external` and `local` hold the skills that belong to no marketplace, so a marketplace
-     * under either is read back as something it is not — the names `build marketplace` and
-     * `new marketplace` refuse, refused again where a manifest built before that, or written by
-     * hand, is read.
-     */
+    /** `external` and `local` hold the skills that belong to no marketplace. */
     it.each(["external", "local"])(
       "should refuse a manifest naming the marketplace '%s', which holds skills from no marketplace",
       async (name) => {
@@ -264,12 +238,7 @@ describe("source-fetcher", () => {
       },
     );
 
-    /**
-     * The one reserved name a manifest may carry: the public catalogue publishes under it, and so
-     * does a checkout of the catalogue read as a local marketplace. The refusals above are only
-     * worth anything beside this — a check that refused every reserved name would refuse the
-     * catalogue itself.
-     */
+    /** The one reserved name a manifest may carry; the refusals above mean nothing without it. */
     it("should load a manifest naming the marketplace after the public catalogue", async () => {
       const source = await writeMarketplace(
         JSON.stringify(createValidMarketplace({ name: "agents-inc" })),
@@ -281,7 +250,6 @@ describe("source-fetcher", () => {
     });
 
     it("should reject oversized marketplace.json files", async () => {
-      // Create a marketplace file larger than 10MB
       const hugeContent = "x".repeat(11 * 1024 * 1024);
       const source = await writeMarketplace(hugeContent);
 
@@ -289,7 +257,6 @@ describe("source-fetcher", () => {
     });
 
     it("should reject deeply nested JSON structures", async () => {
-      // Build a deeply nested structure (>10 levels)
       let deep: unknown = "payload";
       for (let i = 0; i < 15; i++) {
         deep = { nested: deep };
@@ -345,7 +312,6 @@ describe("getGigetCacheDir", () => {
   const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
 
   afterEach(() => {
-    // Restore original env
     if (originalXdgCacheHome !== undefined) {
       process.env.XDG_CACHE_HOME = originalXdgCacheHome;
     } else {

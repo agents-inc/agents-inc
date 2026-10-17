@@ -9,23 +9,10 @@ import { typedKeys } from "../../../utils/typed-object";
 import type { SkillId } from "../../../types";
 import { discoverInstalledSkills } from "./discover-skills";
 
-/**
- * A run says what it finds wrong with the global installation's skills once, however many
- * projects it discovers skills for.
- *
- * A global `compile` or `edit --from` discovers the installed skills for itself and then again for
- * every registered project its fan-out recompiles, and each project's discovery reads the global
- * scope as well as its own. The global scope is one directory for every project, so a skill copied
- * into it with no metadata.yaml was said 1 + N times for N registered projects.
- *
- * The logger is real here and holds what it has said for the life of the file, which is why each
- * spec names its skills apart from every other's: the line names the skill directory relative to
- * its scope, not the temporary directory it sits in.
- */
+// The real logger remembers what it said for the whole file, so each spec uses distinct skill ids.
 
 const PROJECTS = ["project-one", "project-two"] as const;
 
-/** Writes a skill directory holding a SKILL.md and no metadata.yaml. */
 function writeStraySkill(scopeRoot: string, skillId: SkillId): Promise<string> {
   return writeTestSkill(path.join(scopeRoot, LOCAL_SKILLS_PATH), skillId, { skipMetadata: true });
 }

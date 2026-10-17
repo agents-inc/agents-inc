@@ -33,10 +33,7 @@ type StackReading = {
   unwritable: string[];
 };
 
-/**
- * A tombstone describes something NOT installed, so it has nothing to say on the wire. Exported so
- * the reader of carried content agrees with the mapper about what is installed.
- */
+/** A tombstone describes something not installed, so it has nothing to say on the wire. */
 export function isInstalled(entry: { excluded?: boolean }): boolean {
   return !entry.excluded;
 }
@@ -68,10 +65,6 @@ function unwritablePairMessage(skillId: SkillId, agent: string): string {
   return `${skillId} -> ${agent}: a project-scoped skill never reaches a sub-agent that rests at global scope`;
 }
 
-/**
- * Names everything at once. A payload quietly missing what it could not say would mint an id that
- * installs a configuration nobody chose.
- */
 function unshareableConfigError(unshareable: string[]): string {
   return [
     "This installation cannot be shared as it stands — a shared configuration has no way to carry:",
@@ -87,20 +80,12 @@ type MarketplaceReading = {
 
 type MarketplaceRecord = Pick<ProjectConfig, "marketplace" | "marketplaceName">;
 
-/**
- * `origin` is a marketplace NAME, `marketplace` its ref and `marketplaceName` joins them; without
- * both agreeing the ref would point the receiver at a repository that never served the skill.
- */
+/** `origin` is a marketplace name, `marketplace` its ref, and `marketplaceName` joins them. */
 function isRecordedMarketplace(record: MarketplaceRecord | undefined, skill: SkillConfig): boolean {
   return record?.marketplace !== undefined && skill.origin === record.marketplaceName;
 }
 
-/**
- * A payload names ONE marketplace: this configuration's own whenever a shared skill comes from it.
- * A global installation's other-marketplace skills travel and are named by
- * {@link skillsItsMarketplaceLeavesBehind}. Only a skill whose marketplace neither config records
- * is refused.
- */
+/** A payload names one marketplace; only a skill whose marketplace neither config records is refused. */
 function readMarketplace(
   config: ProjectConfig,
   skills: SkillConfig[],
@@ -119,10 +104,7 @@ function readMarketplace(
   return { ref: servesItsOwn ? config.marketplace : undefined, unnameable: [] };
 }
 
-/**
- * An install reads the one marketplace a payload names, so a plugin from another is skipped. A
- * stopgap rather than a refusal: the sharer is told which skills it leaves behind.
- */
+/** Plugins from a marketplace other than the payload's one, which an install will skip. */
 export function skillsItsMarketplaceLeavesBehind(
   config: ProjectConfig,
   payload: SeedPayload,
@@ -146,11 +128,7 @@ function unnameableModels(agents: AgentScopeConfig[]): string[] {
   );
 }
 
-/**
- * `config.stack` is keyed by sub-agent; the contract by skill. Rows for uninstalled sub-agents or
- * skills are dropped (`compile` ignores them too); rows the config model cannot write are
- * collected for the refusal, since the decoder would turn them away.
- */
+/** Re-keys rows by skill; rows the decoder would refuse are collected for the refusal. */
 function readStack(
   stack: ProjectConfig["stack"],
   skillScopes: Map<SkillId, SkillScope>,
@@ -201,10 +179,7 @@ function toSeedAgent(agent: AgentScopeConfig): SeedAgent {
   };
 }
 
-/**
- * The inverse of `seedToInstallSelection`; anything the contract cannot state is refused by name.
- * `stackId` is always null: assignments carry the expansion, `description` the rest.
- */
+/** Inverse of `seedToInstallSelection`; anything the contract cannot state is refused by name. */
 export function configToSeedPayload(
   config: ProjectConfig,
   carried: ContentReading,

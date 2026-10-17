@@ -1,14 +1,4 @@
-// Auto-mock for src/cli/utils/logger.ts.
-// It mirrors the module's full export list, and has to: a spy this file leaves out arrives at the
-// call site as `undefined`, so the TypeError is raised inside the code under test and reads as a
-// product defect. `drainBuffer` returns an array and `sayingEachWarningOnce` runs its body by
-// default for the same reason — a `vi.fn()` answering `undefined` swaps one crash for another one
-// line later.
-//
-// Each spy is typed against the function it stands in for, so a function renamed or removed in
-// logger.ts fails `tsc` here rather than leaving a spy that stands in for nothing, and the default
-// implementation below is held to the real signature. A function ADDED there is not caught this
-// way — mirroring it is still this file's job.
+// Must mirror every export of utils/logger.ts: a missing spy is `undefined` inside the code under test.
 import { vi } from "vitest";
 import type * as logger from "../logger";
 

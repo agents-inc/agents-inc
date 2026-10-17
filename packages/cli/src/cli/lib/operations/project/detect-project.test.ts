@@ -17,13 +17,10 @@ import { loadProjectConfig } from "../../configuration/index.js";
 const mockDetectInstallation = vi.mocked(detectInstallation);
 const mockLoadProjectConfig = vi.mocked(loadProjectConfig);
 
-/** What `detectInstallation` answers — handed back whole, so any installation serves. */
 const MOCK_INSTALLATION = buildInstallation();
 
-/** What `loadProjectConfig` answers — handed back whole, so any config serves. */
 const MOCK_CONFIG = buildProjectConfig();
 
-/** Where the loaded config says it was read from — the path `detectProject` reports. */
 const LOADED_CONFIG_PATH = "/tmp/project/.agents-inc/claude/config.ts";
 
 describe("detectProject", () => {

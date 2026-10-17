@@ -25,10 +25,7 @@ export function useKeyboardNavigation(
   const { wrap = true, vimKeys = true, active = true } = options;
 
   const [focusedIndex, setRenderedIndex] = useState(0);
-  // The focus the handlers read, written the moment it moves rather than once the move renders.
-  // Keys that arrive in one chunk — a fast typist, a paste — are handled one after another with no
-  // render between them, so a copy synced by an effect still held the focus from before the burst
-  // when Enter read it: Down, Down, Enter on the dashboard ran Edit.
+  // Written on every move: keys in one chunk are handled with no render between them.
   const focusedIndexRef = useRef(focusedIndex);
 
   const setFocusedIndex = useCallback<Dispatch<SetStateAction<number>>>((action) => {

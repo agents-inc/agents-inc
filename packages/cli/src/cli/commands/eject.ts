@@ -91,10 +91,7 @@ export default class Eject extends BaseCommand {
     }),
     output: Flags.string({
       char: "o",
-      // No `default:`, and no default named here either: each eject type has its own
-      // destination and this flag replaces all three at once. The reference page carries
-      // the table; a one-line description that picked one of the three would be wrong
-      // about the other two, which is what it was.
+      // No default: each eject type has its own destination and this replaces all three.
       description:
         "Write everything into this directory instead of each eject type's own destination",
     }),
@@ -104,9 +101,7 @@ export default class Eject extends BaseCommand {
     const { args, flags } = await this.parse(Eject);
     const projectDir = process.cwd();
 
-    // Above the layout settle, because that refusal is about two FOLDER NAMES of one installation
-    // and this one is about two installations. Both have to be answered before anything is
-    // written, and this one decides which installation the other is even asking about.
+    // Before the layout settle: this decides which installation that refusal is about.
     await refuseAnAmbiguousInstallation(
       projectDir,
       "eject",
@@ -114,8 +109,7 @@ export default class Eject extends BaseCommand {
       (message) => this.error(message, { exit: EXIT_CODES.INVALID_ARGS }),
     );
 
-    // Before anything is copied: a config nobody can read is recreated, not ejected over, and a
-    // refusal past this point would follow files already written.
+    // Before anything is copied, so a refusal never follows files already written.
     await this.ensureConfigReadable(projectDir);
     const ejectType = this.validateEjectType(args.type);
     const outputBase = await this.resolveOutputBase(flags, projectDir);
@@ -132,13 +126,7 @@ export default class Eject extends BaseCommand {
     this.reportEnding();
   }
 
-  /**
-   * The command's last word.
-   *
-   * `Eject complete!` claims the whole eject landed, so it is withheld whenever part of it did
-   * not — the account {@link BaseCommand.exitIfWorkIncomplete} prints replaces that tick rather
-   * than sitting under it, and carries the non-zero exit with it.
-   */
+  /** Withholds `Eject complete!` when part of the eject did not land. */
   private reportEnding(): void {
     this.log("");
     if (!this.hasIncompleteWork) this.logSuccess("Eject complete!");
@@ -244,24 +232,14 @@ export default class Eject extends BaseCommand {
   }
 
   /**
-   * The convenience step after the eject: a minimal `config.ts` so a later `compile` has
-   * something to read.
-   *
-   * It can refuse, and by the time it does the ejection has already landed — the templates,
-   * partials or skills are on disk and stay there. So the throw is caught rather than left to
-   * become the process's exit code: an `ERROR` tells the caller nothing landed and the run can
-   * be repeated, which is the wrong instruction for a tree that now holds an ejection. What is
-   * owed is the account and `EXIT_CODES.COMPLETED_WITH_FAILURES`.
-   *
-   * The refusal itself is right and is not weakened here: `ensureMinimalConfig` will not invent
-   * a config recording a marketplace it read out of a file it could not evaluate.
+   * Writes a minimal config so `compile` works afterwards. A refusal is reported as incomplete
+   * work rather than thrown, because the ejection has already landed.
    */
   private async ensureConfig(
     projectDir: string,
     sourceResult: SourceLoadResult | undefined,
   ): Promise<void> {
-    // Named once, before the write, so the success line and the failure line cannot name
-    // different files: the provider is read off the disk and the write may create the folder.
+    // Named before the write, which may create the provider folder.
     const configTsRel = relativeConfigPath(projectDir, providerInUse(projectDir));
 
     try {
@@ -339,9 +317,7 @@ export default class Eject extends BaseCommand {
 type EjectAgentPartialsOptions = {
   outputBase: string;
   force: boolean;
-  /** When true, outputBase is used directly as the destination (no subdirectory nesting). */
   directOutput?: boolean;
-  /** When true, ejects only the _templates directory instead of the full agents directory. */
   templatesOnly?: boolean;
 };
 
@@ -353,13 +329,11 @@ type EjectAgentPartialsResult =
     }
   | {
       skipped: false;
-      /** Destination directory that was written to. */
       destDir: string;
-      /** Whether templates were skipped during a full agent-partials eject (existing templates preserved). */
       templatesSkipped: boolean;
     };
 
-/** Direct output writes to the base itself; otherwise agents/ (plus templates/ in templates-only mode). */
+/** Direct output writes to the base itself; otherwise agents/, or agents/templates/. */
 function resolveEjectDestDir(
   outputBase: string,
   directOutput: boolean,
@@ -370,14 +344,6 @@ function resolveEjectDestDir(
   return templatesOnly ? path.join(agentsDir, path.basename(DIRS.templates)) : agentsDir;
 }
 
-/**
- * Copies agent partials or templates from the CLI source to a target directory.
- *
- * When `templatesOnly` is true, copies only the _templates subdirectory.
- * When false, copies the full agents directory (optionally skipping existing templates).
- *
- * Returns structured data — the command decides what to log.
- */
 async function ejectAgentPartials(
   options: EjectAgentPartialsOptions,
 ): Promise<EjectAgentPartialsResult> {
@@ -457,22 +423,11 @@ type EjectSkillsResult =
     }
   | {
       skipped: false;
-      /** Array of skills that were copied. */
       copiedSkills: CopiedSkill[];
-      /** Label describing the source that skills were copied from. */
       sourceLabel: string;
     };
 
-/**
- * Copies the marketplace's own skills from source to a target directory.
- *
- * Only the skills the loaded marketplace carries, because those are the only ones its folder
- * holds: a global installation's skill seated from another marketplace is in the matrix and not
- * on disk here. Skills already marked as local are filtered out too, then the remaining skills
- * are copied using copySkillsToLocalFlattened.
- *
- * Returns structured data — the command decides what to log.
- */
+/** Only the loaded marketplace's own non-local skills: others' skills are not on disk here. */
 async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResult> {
   const { destDir, force, sourceResult, matrix } = options;
 
@@ -511,12 +466,7 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
   };
 }
 
-/**
- * The skills folder the install copies into for the installation `projectDir` roots — at the
- * scope that directory is, on the provider this run is about — so an eject lands where that
- * installation's host reads skills: `.claude/skills`, `<repo>/.agents/skills` or
- * `$CODEX_HOME/skills`.
- */
+/** Where the host of the installation `projectDir` roots reads skills. */
 function installedSkillsDir(projectDir: string): string {
   const scope = isHomeDirectory(projectDir) ? "global" : "project";
   return resolveInstallPaths(projectDir, scope).skillsDir;
@@ -528,27 +478,15 @@ type EnsureMinimalConfigOptions = {
 };
 
 type EnsureMinimalConfigResult = {
-  /** Path to the config file. */
   configPath: string;
-  /** Whether a new config was created. */
   created: boolean;
 };
 
-/**
- * Ensures a minimal config.ts exists so `npx agents-inc compile` works after eject.
- *
- * If the config already exists, returns immediately with `created: false`.
- * Otherwise generates a minimal config from the resolved source and project metadata.
- *
- * Returns structured data — the command decides what to log.
- */
 async function ensureMinimalConfig(
   options: EnsureMinimalConfigOptions,
 ): Promise<EnsureMinimalConfigResult> {
   const { projectDir, sourceResult } = options;
 
-  // One read for the whole function: the config it may invent, and the blank global pair it may
-  // create beside it, belong to the same installation.
   const provider = providerInUse(projectDir);
   const tsConfigPath = getProjectConfigPath(projectDir, provider);
 
@@ -556,18 +494,13 @@ async function ensureMinimalConfig(
     return { configPath: tsConfigPath, created: false };
   }
 
-  // ABORT on an unreadable config. The project has none — the guard above returned for that — so
-  // what these two can meet is an unreadable GLOBAL config, and the file about to be invented
-  // would record a marketplace read from nowhere. The second call is unreachable for the same
-  // reason the guard exists: this project's own config is not there to be unreadable.
+  // ABORT on an unreadable global config: the invented file would record a marketplace from nowhere.
   const resolvedConfig =
     sourceResult?.sourceConfig ?? (await resolveSource({ caller: "stored", projectDir }));
   const existingProjectConfig = await loadProjectSourceConfig(projectDir);
   const source = resolvedConfig.source || undefined;
 
-  // At the home directory the invented config IS the global manifest, and the
-  // file it opens with `import type { ProjectConfig } from "./config-types"`
-  // cannot resolve its own types without the sibling. The gate writes the pair.
+  // At home the invented config is the global manifest, which needs its config-types sibling.
   if (isHomeDirectory(projectDir)) {
     await ensureBlankPair(provider);
     if (source) await recordSource(projectDir, source);
@@ -592,12 +525,7 @@ async function ensureMinimalConfig(
   return { configPath: tsConfigPath, created: true };
 }
 
-/**
- * Records the marketplace ref in whichever scope's config `projectDir` names. At the home
- * directory that config is the global manifest every project's generated types
- * import from, so the write goes through the gate: registered projects inline
- * the scalar and follow it.
- */
+/** At home the config is the global manifest projects inline from, so it goes through the gate. */
 async function recordSource(projectDir: string, source: string): Promise<void> {
   if (isHomeDirectory(projectDir)) {
     await mutateGlobal(
@@ -607,9 +535,7 @@ async function recordSource(projectDir: string, source: string): Promise<void> {
     return;
   }
 
-  // ABORT on an unreadable config. The `?? {}` is a fallback for a config that is not THERE; on
-  // one that is there and unreadable it would hand the writer an empty partial, and this scalar
-  // write would replace the user's whole file with a two-field one under an invented name.
+  // ABORT on an unreadable config: `?? {}` is for an absent one, and would overwrite the user's file.
   const existing = (await loadProjectSourceConfig(projectDir)) ?? {};
   await writeProjectPartial(
     projectDir,
@@ -618,7 +544,6 @@ async function recordSource(projectDir: string, source: string): Promise<void> {
   );
 }
 
-/** Checks whether the agents directory contains any agent subdirectories (not just _templates). */
 async function hasAgentPartialDirs(agentsDir: string): Promise<boolean> {
   const subdirs = await listDirectories(agentsDir);
   const templatesBasename = path.basename(DIRS.templates);

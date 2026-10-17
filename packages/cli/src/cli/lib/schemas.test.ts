@@ -333,7 +333,6 @@ describe("projectConfigLoaderSchema", () => {
   });
 });
 
-/** On disk the field is the CLI's enum, refused exactly as an unknown `model` is. */
 describe("a sub-agent's Codex model in config.ts", () => {
   const PINNED_CODEX_MODEL = "gpt-5.6-terra";
 
@@ -388,8 +387,7 @@ describe("a sub-agent's Codex model in config.ts", () => {
 });
 
 /**
- * Whether `marketplace` holds a ref or a name is pinned in the resolveSource specs. These ask only
- * whether a key is declared: a declared `z.string()` refuses a number `.passthrough()` would admit.
+ * Only whether a key is declared: a declared `z.string()` refuses a number `.passthrough()` admits.
  */
 describe("the marketplace fields the loader schemas name", () => {
   it("types marketplaceName rather than admitting it as an unrecognised passthrough key", () => {
@@ -427,10 +425,7 @@ describe("the marketplace fields the loader schemas name", () => {
   });
 });
 
-/**
- * A marketplace name is Claude Code's plugin namespace, so loading enforces the kebab-case rule
- * publishing does (owner ruling 2026-08-20). Asserted as prose a reader can act on.
- */
+/** A marketplace name is Claude Code's plugin namespace, so loading enforces kebab-case too. */
 describe("the name a marketplace may be loaded under", () => {
   /** `marketplaceSchema.plugins.min(1)` requires one before `name` is reached. */
   const ONE_PLUGIN = [createMockMarketplacePlugin("web-framework-react")];
@@ -576,9 +571,7 @@ describe("branding via projectSourceConfigSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  /**
-   * The JSON schema has `additionalProperties: false`, so for an editor a `tagline` is an error.
-   */
+  /** `additionalProperties: false`, so an editor flags a `tagline`. */
   it("publishes only a name under branding", async () => {
     const schema = await readTestJson<JsonSchemaFile>(PROJECT_SOURCE_CONFIG_SCHEMA_PATH);
     const branding = schema.properties["branding"] as JsonSchemaFile | undefined;
@@ -1035,12 +1028,7 @@ describe("formatZodIssues", () => {
   });
 });
 
-/**
- * `agentYamlConfigSchema` loads metadata.yaml and `agentFrontmatterValidationSchema` reads the
- * compiled result back, so both must name one contract for `isolation`, `experimental` and
- * `hooks`. The refusals belong on the loader: it is the last boundary that knows which file the
- * value came from.
- */
+/** Loader and read-back schema must agree; refusals belong on the loader, which knows the file. */
 describe("the agent metadata a compiled agent is written from, against the schema that reads it back", () => {
   const AGENT_METADATA = {
     id: AGENT_DEFS.webDev.name,

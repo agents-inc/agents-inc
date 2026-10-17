@@ -17,17 +17,11 @@ import { parseFrontmatter } from "./loading/loader";
 import { validateSkillMetadata } from "./schemas";
 import { exampleSkillId, writeMarketplaceScaffold } from "./marketplace-scaffold";
 
-/** The name every scaffold under test publishes under. */
 const MARKETPLACE_NAME = "acme";
 
-/** The single skill a scaffold ships, composed the way the scaffold composes it. */
 const EXAMPLE_SKILL_ID = `${MARKETPLACE_NAME}-example-skill`;
 
-/**
- * Every file the published guide promises a marketplace directory holds, relative
- * to its root and sorted — the writer's own return value is compared against this
- * whole set, because a count passes for the right number of wrong files.
- */
+/** Compared as a whole set: a count passes for the right number of wrong files. */
 const PROMISED_FILES = [
   SKILL_CATEGORIES_PATH,
   SKILL_RULES_PATH,
@@ -75,9 +69,7 @@ describe("writeMarketplaceScaffold", () => {
       name: MARKETPLACE_NAME,
       version: expect.any(String),
       description: expect.any(String),
-      // An absent author builds `owner: { name: "" }`, and the schema the CLI reads
-      // a marketplace.json back with requires a non-empty owner name — so a
-      // marketplace with no author builds one that then loads as none at all.
+      // An absent author builds an empty owner name, which the schema rejects on load.
       author: { name: `@${MARKETPLACE_NAME}` },
     });
   });
@@ -92,12 +84,7 @@ describe("writeMarketplaceScaffold", () => {
     }
   });
 
-  // The module as emitted rather than as parsed, and the whole of it rather than one field.
-  // `categoryDefinitionSchema` is a plain `z.object`: it strips a key it does not name and says
-  // nothing about having stripped it, so the loader-based sibling above stays green over a
-  // category still shipping a field the CLI stopped declaring — every author starting from a
-  // scaffold would inherit that field, and nothing on the schema side can see it. Over the
-  // file's own text an added key and a removed one both redden.
+  // Over the emitted text: the schema strips unknown keys silently.
   it("emits a category as exactly the fields it declares", async () => {
     const emitted = await readFile(path.join(marketplaceDir, SKILL_CATEGORIES_PATH), "utf-8");
 

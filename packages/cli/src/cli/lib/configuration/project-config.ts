@@ -17,28 +17,12 @@ import { loadConfig, NO_VALID_DEFAULT_EXPORT } from "./config-loader";
 export type LoadedProjectConfig = {
   config: ProjectConfig;
   configPath: string;
-  /**
-   * Which installation this config was read out of.
-   *
-   * Carried on the read because nothing inside the file records it — the folder is the only
-   * record — so a caller that has to write back, compile, or name a host directory would
-   * otherwise have to re-derive the provider and could derive a different one.
-   */
+  /** Carried on the read because only the folder records it. */
   provider: Provider;
 };
 
 /**
- * Thrown when a project config file exists on disk but cannot be loaded into a
- * usable config — a syntax/evaluation error, no default export, or a shape the
- * loader schema rejects. This is deliberately distinct from a MISSING file
- * (which is a legitimate `null`): a corrupt config is an error that callers must
- * surface, never swallow into `null`. Collapsing both into `null` let a broken
- * install pass as absent (e.g. `compile` treating it as config-less and
- * resurrecting every built-in agent).
- *
- * It carries whose installation the file is, because a refusal read from a project can be about
- * either config the project uses, and recreating it — `uninstall`, then `init --from <id>` — is run
- * from the folder holding the broken one: the home directory for the global config.
+ * A config that exists but cannot be loaded; never collapse it into the `null` of a missing file.
  */
 export class ConfigLoadError extends Error {
   readonly scope: ScopeKind;
@@ -55,17 +39,7 @@ export class ConfigLoadError extends Error {
   }
 }
 
-/**
- * Load project config from a specific directory only (no global fallback).
- *
- * Returns `null` only when the config file does not exist. When the file exists
- * but cannot be parsed into a usable config, throws {@link ConfigLoadError} —
- * the caller decides how to report it.
- *
- * The two lines it announces name the scope of the file it read, the way
- * `loadSourceConfig`'s already do: the config at the home root is the GLOBAL one,
- * and a run there that calls it a project config names a file that is not there.
- */
+/** `null` only when the file is absent; throws `ConfigLoadError` when it exists but cannot load. */
 export async function loadProjectConfigFromDir(
   projectDir: string,
   provider: Provider,
@@ -73,12 +47,7 @@ export async function loadProjectConfigFromDir(
   return loadProjectConfigAt(getProjectConfigPath(projectDir, provider), projectDir, provider);
 }
 
-/**
- * {@link loadProjectConfigFromDir} for a config at a path the caller names rather than the one the
- * resolver picks — the second of a scope's two source folders, which the resolver never reads.
- * Same contract: `null` only when the file is absent, {@link ConfigLoadError} when it is there and
- * cannot be loaded.
- */
+/** As `loadProjectConfigFromDir`, at a path the caller names rather than the resolver's pick. */
 export async function loadProjectConfigAt(
   configPath: string,
   projectDir: string,
@@ -92,12 +61,9 @@ export async function loadProjectConfigAt(
     return null;
   }
 
-  // The file exists. From here, any failure to produce a usable config means the
-  // file is corrupt — surface it as ConfigLoadError rather than returning `null`,
-  // which is indistinguishable from "missing".
+  // The file exists: from here any failure is a ConfigLoadError, never `null`.
   let raw: unknown;
   try {
-    // Load raw object and validate with Zod (lenient schema accepts custom values via z.string() casts)
     raw = await loadConfig<ProjectConfig>(configPath);
   } catch (error) {
     throw new ConfigLoadError(configPath, getErrorMessage(error), projectDir);
@@ -112,8 +78,7 @@ export async function loadProjectConfigAt(
     throw new ConfigLoadError(configPath, formatZodErrors(result.error).join("; "), projectDir);
   }
 
-  // Normalize the loose stack values (bare strings, objects, arrays) BEFORE claiming
-  // ProjectConfig, so the boundary cast below is the only one on this path.
+  // Normalize the stack before claiming ProjectConfig, so the cast below is the only one.
   const parsed = result.data;
   const normalizedStack = parsed.stack ? normalizeStackRecord(parsed.stack) : undefined;
   if (parsed.name === undefined) {
@@ -125,15 +90,8 @@ export async function loadProjectConfigAt(
     warn(`Project config at '${configPath}' is missing 'skills' array — defaulting to empty`);
   }
 
-  // The defaults are applied here rather than mutated in afterwards, so the cast is the
-  // last thing that happens and ProjectConfig's required fields are genuinely present.
-  // `agents` is defaulted for the same reason `skills` is: the loader schema admits its
-  // absence, ProjectConfig declares it required, and every caller was paying for the gap
-  // with a `?? []` the type said was dead.
-  //
-  // Boundary cast: the loader schema is lenient about the string unions (category, slug,
-  // domain), so the literal still does not satisfy ProjectConfig even with the defaults in
-  // place; validateProjectConfig enforces the strict shape after load.
+  // Boundary cast: the loader schema is lenient about the string unions; validateProjectConfig
+  // enforces the strict shape after load.
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- see above
   const config = {
     ...parsed,
@@ -151,35 +109,17 @@ export async function loadProjectConfigAt(
   };
 }
 
-/**
- * The config of whichever installation `dir` holds, read off the folder.
- *
- * The sibling of `getInstalledConfigPath`, and the form every caller that holds a directory and
- * no provider wants: the alternative is that same resolution written out at each of them, which
- * is one concept with several definitions and no name.
- */
+/** The config of whichever installation `dir` holds, read off the folder. */
 export async function loadInstalledConfig(dir: string): Promise<LoadedProjectConfig | null> {
   return loadProjectConfigFromDir(dir, providerInUse(dir));
 }
 
-/**
- * The directories whose config a run reads: the project's own, plus the global one it
- * inlines. At the home root the two collapse into one.
- */
+/** The project's own config dir plus the global one it inlines; one dir at the home root. */
 export function configDirsInPlay(projectDir: string): string[] {
   return isHomeDirectory(projectDir) ? [projectDir] : [projectDir, os.homedir()];
 }
 
-/**
- * Every config a run would read that exists and cannot be loaded, in the order the run reads
- * them. A directory whose config is absent (legitimate) or loads contributes nothing; any other
- * failure is a real fault and propagates.
- *
- * Exported rather than kept private to its first caller because two surfaces have to agree on
- * exactly which configs are in play: `BaseCommand.ensureConfigReadable`, which refuses to run over
- * one it cannot read, and `doctor`, which reports the same fault. Two answers to that question is
- * how the CLI ended up refusing a file in one command and calling it missing in another.
- */
+/** Shared by `ensureConfigReadable` and `doctor`, so both agree on which configs are in play. */
 export async function findConfigLoadFailures(projectDir: string): Promise<ConfigLoadError[]> {
   const outcomes = await Promise.all(configDirsInPlay(projectDir).map(configLoadFailure));
   return outcomes.filter((failure): failure is ConfigLoadError => failure !== undefined);
@@ -195,27 +135,12 @@ async function configLoadFailure(dir: string): Promise<ConfigLoadError | undefin
   }
 }
 
-/**
- * Load the config of the installation this run is about: the project's own, falling back to the
- * global one.
- *
- * **The fallback stays inside one provider, and the provider is read off the project rather than
- * passed in.** Each provider family inherits only within itself — the owner's ruling, and what
- * `.agents-inc/claude/` beside `.agents-inc/codex/` means — so a Codex project under a Claude
- * global inherits nothing, exactly as it would if the global were absent.
- *
- * The provider is resolved here rather than at each of the dozen callers because every one of
- * them holds a project directory and nothing else: twelve copies of the same resolution is twelve
- * places for it to drift, and the answer comes back on {@link LoadedProjectConfig.provider} for
- * the callers that need it. A caller that knows which installation it wants asks
- * {@link loadProjectConfigFromDir} by name instead.
- */
+/** The project's config, falling back to the global one of the same provider. */
 export async function loadProjectConfig(projectDir: string): Promise<LoadedProjectConfig | null> {
   const provider = providerInUse(projectDir);
   const projectResult = await loadProjectConfigFromDir(projectDir, provider);
   if (projectResult) return projectResult;
 
-  // Global fallback: try home directory
   const homeDir = os.homedir();
   if (!isHomeDirectory(projectDir)) {
     return loadProjectConfigFromDir(homeDir, provider);
@@ -224,12 +149,7 @@ export async function loadProjectConfig(projectDir: string): Promise<LoadedProje
   return null;
 }
 
-/**
- * Validates a loaded config value. Shape validity is defined by
- * `projectConfigLoaderSchema` (the single definition); on top of the schema's
- * lenient shape, a usable project config additionally requires `name` and
- * `agents` to be present.
- */
+/** On top of the lenient schema, a usable config also needs `name` and `agents`. */
 export function validateProjectConfig(config: unknown): ValidationResult {
   const result = projectConfigLoaderSchema.safeParse(config);
   if (!result.success) {

@@ -3,10 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import { fakeChildProcess } from "./fake-child-process.js";
 
-/** Everything a caller of `spawn` can observe about one child, in the order it arrived. */
 type Observed = { events: string[]; stdout: string; stderr: string };
 
-/** Subscribes the way `execCommand` does, then waits for the child to finish one way or the other. */
+/** Subscribes the way `execCommand` does. */
 function observe(child: ChildProcess): Promise<Observed> {
   const observed: Observed = { events: [], stdout: "", stderr: "" };
   return new Promise((resolve) => {

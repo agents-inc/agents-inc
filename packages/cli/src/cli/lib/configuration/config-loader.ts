@@ -14,15 +14,7 @@ const CONFIG_EXPORTS_PATH = path.resolve(
   "../../config-exports.ts",
 );
 
-/**
- * Thrown when a config file evaluated cleanly but the schema refused its SHAPE.
- *
- * Named apart from the generic load failure because the two mean different things to a caller:
- * a file that cannot be evaluated says only that something is broken, while a refused shape has
- * said exactly what is wrong with a file the user still owns. A loader may reasonably report the
- * first as "no config"; reporting the second that way is how a config carrying a stale key ends
- * up silently repointing an install at the default marketplace.
- */
+/** The config evaluated but the schema refused its shape; never report this as "no config". */
 export class ConfigSchemaError extends Error {
   constructor(
     readonly configPath: string,
@@ -33,16 +25,7 @@ export class ConfigSchemaError extends Error {
   }
 }
 
-/**
- * Thrown when a config file evaluated cleanly and exported bindings, none of which is the default
- * one every config in this project is read out of.
- *
- * Distinct from {@link ConfigSchemaError} because the two fault different lines of the file. A
- * refused shape names a field the author can go and correct; a module that exports
- * `export const skillRules = {...}` has nothing wrong with its contents at all, and validating
- * the module NAMESPACE against the schema is what told such an author their `version` was missing
- * from a file they can see it in.
- */
+/** The config evaluated but exports only named bindings, so its contents are not at fault. */
 export class ConfigDefaultExportError extends Error {
   constructor(readonly configPath: string) {
     super(`Config at '${configPath}' has no default export`);
@@ -51,33 +34,23 @@ export class ConfigDefaultExportError extends Error {
 }
 
 /**
- * The marker every ES module jiti transpiles carries, and a CommonJS one does not. It is the only
- * thing separating `export const x = {}` — a namespace whose keys are named exports — from
- * `module.exports = { x: {} }`, whose keys ARE the default export: both arrive here as a plain
- * object with no `default` key.
+ * Tells `export const x = {}` (named exports) from CommonJS `module.exports = { x }` (the default).
  */
 const ES_MODULE_MARKER = "__esModule";
 
 /**
- * The default export, or the namespace when there is none — jiti documents `import(id, { default:
- * true })` as exactly this, and the namespace is imported whole here because the option throws the
- * distinction away and {@link ConfigDefaultExportError} is made of it.
+ * The default export, or the namespace when there is none; imported whole to tell the two apart.
  */
 function unwrapDefaultExport(namespace: unknown): unknown {
   if (isRecord(namespace) && namespace.default !== undefined) return namespace.default;
   return namespace;
 }
 
-/** An ES module that exports bindings, none of them the default one. */
 function declaresNoDefaultExport(namespace: unknown): boolean {
   return isRecord(namespace) && ES_MODULE_MARKER in namespace && !("default" in namespace);
 }
 
-/**
- * The reason both readers of an installation's config give for one that is there and declared
- * nothing — the file {@link loadConfig} answers `null` for, the same value it gives a missing one,
- * which suits its other callers and not a reader that has already found the file.
- */
+/** Why a reader that found the file rejects one `loadConfig` answers `null` for. */
 export const NO_VALID_DEFAULT_EXPORT = "the file has no valid default export";
 
 /** Nothing was exported: an empty file, `export {}`, or a default export with no keys. */
@@ -85,15 +58,7 @@ function exportsNothing(value: unknown): boolean {
   return value == null || (typeof value === "object" && Object.keys(value).length === 0);
 }
 
-/**
- * Loads a TypeScript config file using jiti.
- * Returns null when the file does not exist, and when it exists but exports nothing.
- * Throws {@link ConfigDefaultExportError} for a module whose exports are all named,
- * {@link ConfigSchemaError} on validation failure, and a plain Error for a malformed/broken file.
- *
- * @param configPath - Absolute path to the .ts config file
- * @param schema - Optional Zod schema; when provided, T is inferred from it
- */
+/** Null when absent or exporting nothing; throws for named-only exports, refusals and breakage. */
 export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): Promise<T | null> {
   if (!(await fileExists(configPath))) {
     verbose(`Config not found at ${configPath}`);
@@ -102,14 +67,7 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
 
   let namespace: unknown;
   try {
-    // A fresh engine per call, and the module cache stays off, because one run both writes a
-    // config and reads it back: `init` writes `config.ts`, loads it, writes it again and loads
-    // it twice more, and `compile` re-reads that same file from every path that needs it —
-    // installation detection, source resolution, each stack warning, the recompile, and the
-    // config-types refresh. A cache spanning a run would answer each read that follows a write
-    // with the module as it stood BEFORE it, which is a config the user never wrote. What the
-    // cache would save has never been measured, and its ceiling is a few hundred milliseconds
-    // on a command already waiting on the network and the disk.
+    // A fresh engine and no module cache: one run writes a config and reads it back several times.
     const jiti = createJiti(import.meta.url, {
       moduleCache: false,
       interopDefault: true,
@@ -125,9 +83,7 @@ export async function loadConfig<T>(configPath: string, schema?: z.ZodType<T>): 
 
   const raw = unwrapDefaultExport(namespace);
 
-  // Empty or whitespace-only files produce an empty module object. Treat this the same as a
-  // missing file rather than returning a confusing empty object — and ask it BEFORE the export
-  // question, because such a file declares no exports of any kind to have opinions about.
+  // An empty file reads as missing, asked before the export question since it declares no exports.
   if (exportsNothing(raw)) {
     verbose(`Config at ${configPath} exports nothing`);
     return null;

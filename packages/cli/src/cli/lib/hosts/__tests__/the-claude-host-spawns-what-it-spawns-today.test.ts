@@ -1,41 +1,3 @@
-/**
- * Every invocation the Claude host hands the `claude` binary, recorded rather than described.
- *
- * C3 moves the `claude*` functions out of `utils/exec.ts` and behind `PluginHost`. The claim the
- * step rests on is that no Claude user notices, and the golden trees beside this file can only
- * check the half that reaches disk: on a machine with no `claude` binary — which is most CI — a
- * whole install writes its tree and spawns nothing, so an argv that changed is invisible to every
- * existing spec. This file is the other half. It pins the command name, the argument vector, the
- * working directory and the one environment variable, for each member of the seam, as the product
- * sends them today.
- *
- * **Nothing here is imported from the product.** Every expected argument is a literal, because an
- * assertion built from the array the product builds moves with it and could never fail. These are
- * also another program's command line rather than this one's vocabulary — `--scope user` is
- * Claude's word for what this CLI calls a global scope, and the translation is the thing under
- * test.
- *
- * **The spawn is mocked at `child_process`, not at `execCommand`.** The plan leaves `execCommand`
- * in `utils/exec.ts` and moves the callers, so a mock of the wrapper would go on reporting a call
- * that no longer reaches a process. Mocking the boundary the operating system is on means the
- * recording holds whichever route the implementer takes.
- *
- * Measured against `claude --version` 2.1.278 on 2026-09-21, with `CLAUDE_CONFIG_DIR` pinned to a
- * scratch directory:
- *
- * ```
- * $ claude plugin uninstall nope@nowhere --scope user
- * ✘ Failed to uninstall plugin "nope@nowhere": Plugin "nope@nowhere" not found in installed plugins
- * [exit 1, on stderr]
- * $ claude plugin marketplace list --json
- * []
- * [exit 0]
- * ```
- *
- * That first line is what the `absent` outcome is classified from, and it is why the classification
- * is a substring match on a message rather than a reading of an exit code.
- */
-
 import type { SpawnOptions } from "child_process";
 import os from "os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,20 +13,16 @@ vi.mock("../../../utils/logger");
 
 const { spawn } = await import("child_process");
 
-/** The home directory every user-scoped invocation is run from, fixed so the cwd is a literal. */
 const HOME = "/fake-home";
 
-/** The project directory a project-scoped invocation is run from. */
 const PROJECT = "/fake-home/a-project";
 
-/** A config tree somewhere other than the one the process points at, as a test would pin one. */
 const ISOLATED_CONFIG_DIR = "/fake-home/somewhere-else/.claude";
 
 const PLUGIN_REF = "web-framework-react@a-marketplace";
 const MARKETPLACE = "a-marketplace";
 const MARKETPLACE_SOURCE = "my-org/my-repo";
 
-/** One recorded invocation: what was run, with what arguments, from where, and with what added. */
 type Invocation = {
   command: string;
   args: readonly string[];
@@ -73,10 +31,8 @@ type Invocation = {
 };
 
 const invocations: Invocation[] = [];
-/** What the binary is made to answer, one reply per spawn in the order the spawns are made. */
 let replies: FakeChildReply[] = [];
 
-/** The one invocation the case under test made. More than one is the case's own failure. */
 function onlyInvocation(): Invocation {
   const [first, ...rest] = invocations;
   if (first === undefined) throw new Error("the host spawned nothing at all");
@@ -107,13 +63,7 @@ describe("the Claude host's invocations", () => {
     vi.mocked(os.homedir).mockRestore();
   });
 
-  /**
-   * Availability, which is the check `update` and `uninstall` both gate their plugin work on.
-   *
-   * It runs from wherever the process already is — no cwd is passed — and that is deliberate
-   * rather than incidental: a version check that chose a working directory would be choosing an
-   * installation to answer about.
-   */
+  // No cwd: a version check that chose a directory would be choosing an installation.
   describe("asking whether the host is available", () => {
     it("runs the binary's own version flag from nowhere in particular", async () => {
       expect(await hostFor("claude").isAvailable()).toBe(true);
@@ -139,14 +89,7 @@ describe("the Claude host's invocations", () => {
     });
   });
 
-  /**
-   * Installing, where the two halves that have to stay put are the scope word and the directory.
-   *
-   * Claude routes a user-scoped install by the CWD as well as by the flag, which is why the home
-   * directory is passed rather than left to whatever the command was run from. Codex has no scope
-   * flag at all and routes nothing by cwd, which is why the seam takes this product's scope words
-   * and each host builds its own argv from them.
-   */
+  // Claude routes a user-scoped install by the cwd as well as by `--scope`.
   describe("installing a plugin", () => {
     it("asks for the user scope from the home directory when the skill is global", async () => {
       await hostFor("claude").installPlugin(PLUGIN_REF, "global", PROJECT);
@@ -186,15 +129,6 @@ describe("the Claude host's invocations", () => {
     });
   });
 
-  /**
-   * Removal, and the classification the outcome is read from.
-   *
-   * The `absent` arm is not new behaviour: `claudePluginUninstall` already swallows a "not
-   * installed" or "not found" failure and returns. What C3 adds is that the caller can now see
-   * which of the two happened. A failure that is neither keeps throwing, and that half is the one
-   * a refactor is most likely to lose — a host that answered `absent` for every failure would
-   * satisfy the case above it and make a broken install look like an empty one.
-   */
   describe("removing a plugin", () => {
     it("asks for the user scope from the home directory when the skill is global", async () => {
       expect(await hostFor("claude").uninstallPlugin(PLUGIN_REF, "global", PROJECT)).toBe(
@@ -261,14 +195,6 @@ describe("the Claude host's invocations", () => {
     });
   });
 
-  /**
-   * The marketplace verbs, and the one that is a rename trap.
-   *
-   * Claude's refresh verb is `update`; Codex's is `upgrade`, and `codex plugin marketplace upgrade`
-   * exits 1 against a local source. That is why the member is called `refreshMarketplace` and why
-   * each host builds its own argv — swapping the binary name in one shared builder produces a
-   * command Codex does not have.
-   */
   describe("the marketplace verbs", () => {
     it("lists marketplaces as JSON and finds one by name", async () => {
       replies = [{ stdout: JSON.stringify([{ name: MARKETPLACE, source: MARKETPLACE_SOURCE }]) }];
@@ -351,14 +277,6 @@ describe("the Claude host's invocations", () => {
     });
   });
 
-  /**
-   * Which installation of the host a call reads and writes.
-   *
-   * `CLAUDE_CONFIG_DIR` redirects Claude's whole config tree and BEATS `HOME`, which is why the
-   * suite pins it rather than relying on a fake home. Codex's equivalent is `CODEX_HOME` and is
-   * inherited by every `codex` process the CLI spawns — so the option belongs on the seam, and its
-   * translation into a variable name belongs to each host.
-   */
   describe("pinning which installation a call touches", () => {
     it("passes the config directory as Claude's own variable", async () => {
       replies = [{ stdout: "[]" }];
@@ -381,15 +299,7 @@ describe("the Claude host's invocations", () => {
     });
   });
 
-  /**
-   * Listing, which on this host is a read of two files and not a command at all.
-   *
-   * Claude has no `plugin list --json`: what is installed comes from `installed_plugins.json` in
-   * the plugins directory, and what is switched on comes from `settings.json`. Codex answers a
-   * command instead. Pinning the silence is what stops a host extraction inventing a Claude
-   * subcommand that does not exist — a call that would exit non-zero and be read as an empty
-   * listing.
-   */
+  // Claude has no `plugin list`; the installed set is read from two files on disk.
   describe("listing what is installed", () => {
     it("spawns nothing at all", async () => {
       await hostFor("claude").listPlugins(PROJECT);

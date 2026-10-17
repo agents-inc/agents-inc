@@ -135,8 +135,7 @@ describe("typedValues", () => {
   });
 
   it("should filter explicitly-undefined slots", () => {
-    // exactOptionalPropertyTypes rejects `{ b: undefined }` as a literal, so the slot is
-    // written after construction — the only way this state still reaches typedValues.
+    // exactOptionalPropertyTypes rejects `{ b: undefined }` as a literal.
     const obj: Partial<Record<"a" | "b", number>> = { a: 1 };
     Object.assign(obj, { b: undefined });
 

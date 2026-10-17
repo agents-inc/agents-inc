@@ -34,9 +34,7 @@ describe("skillAudit", () => {
   });
 
   it("records no verdict from before the fan-out's verification date", () => {
-    // Later dates are legitimate: a skill that lands after the fan-out (Xquik, by external
-    // PR) is audited on arrival. What this guards against is a stale row the fan-out never
-    // re-confirmed.
+    // Later dates are legitimate: a skill landing after the fan-out is audited on arrival.
     const offDate = entries.filter(([, entry]) => entry.audited < AUDIT_DATE).map(([id]) => id);
 
     expect(offDate).toStrictEqual([]);
@@ -73,8 +71,6 @@ describe("skillAudit", () => {
     expect(malformed).toStrictEqual([]);
   });
 
-  // The manifest's whole purpose is that a verdict is a claim about a mechanism, not a mood.
-  // Checking all 237 rows against the live rules catches transcription slips no reviewer would.
   it("backs every constrained verdict with a requires rule or an exclusive category", () => {
     const unbacked = entries
       .filter(
@@ -103,14 +99,10 @@ describe("skillAudit", () => {
 });
 
 describe("auditVerdictsPendingApply", () => {
-  // The manifest recorded these verdicts against category shapes that had not landed.
-  // With every one of those dispositions applied, the live rules back all 237 rows.
   it("is empty, since no verdict is still waiting on a category disposition", () => {
     expect(typedKeys(auditVerdictsPendingApply)).toStrictEqual([]);
   });
 
-  // A stale exemption is as damaging as a missing one: it would silently re-open the
-  // "empty means audited, or nobody looked?" ambiguity the manifest exists to close.
   it("matches the live gap exactly, so entries cannot outlive the disposition they wait on", () => {
     const liveGap = entries
       .filter(([id, entry]) => {
@@ -125,7 +117,7 @@ describe("auditVerdictsPendingApply", () => {
 
   it("names the batch that owns each pending disposition", () => {
     const unattributed = typedEntries<SkillId, string>(auditVerdictsPendingApply)
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- typedEntries/Object.entries launders the `| undefined` a Partial<Record> admits out of its result type, so this guard reads as dead while still covering an explicitly-undefined slot
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Object.entries drops the `| undefined` a Partial<Record> admits
       .filter(([, reason]) => !/^B\d+ — pending /.test(reason ?? ""))
       .map(([id]) => id);
 

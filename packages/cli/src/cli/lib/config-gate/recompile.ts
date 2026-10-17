@@ -1,6 +1,5 @@
 import type { PropagatedRecompileSummary } from "../operations/project/recompile-project-agents.js";
 
-/** The summary of a fan-out that recompiled nothing, so callers render one shape. */
 export const NOTHING_RECOMPILED: PropagatedRecompileSummary = {
   rewrittenCount: 0,
   unchangedCount: 0,
@@ -8,15 +7,7 @@ export const NOTHING_RECOMPILED: PropagatedRecompileSummary = {
   warnings: [],
 };
 
-/**
- * Recompiles the agents of every project a global write propagated into.
- *
- * Imported lazily: `recompile-project-agents` lives in the operations layer,
- * which imports back into `installation`, so a static import here would form a
- * load-time cycle.
- * Per-project failure isolation lives in `recompilePropagatedProjectAgents` and
- * is unchanged by running it from inside the write.
- */
+/** Imported lazily: a static import of the operations layer would form a load-time cycle. */
 export async function recompilePropagated(
   projectDirs: string[],
 ): Promise<PropagatedRecompileSummary> {
