@@ -1,84 +1,18 @@
 ---
-/**
- * The marketing landing page.
- *
- * Its one job is the thing people say they struggle with most: understanding
- * *why* they would use this. A visitor who reads only the top third should be
- * able to say what it is and what it does for them. Everything here is
- * subordinate to that.
- *
- * The sections were the five of the research note's "minimum first ship" until
- * 2026-08-27, and that list was missing the one block the note calls the
- * centrepiece — so the page did not meet its own stated bar. It now runs nav ·
- * hero · stats · what-it-is · catalogue · how-it-works · recording ·
- * write-your-own · free-and-open-source · final CTA · footer.
- *
- * TWO OF THE NOTE'S TWELVE ARE DELIBERATELY ABSENT, and neither is an
- * oversight. "Three pillars" is a shape rather than a claim, and "The
- * approach" already does that job in prose. A proof block has nothing true to
- * put in it — no users, no testimonial, no dated benchmark — and the note's
- * own anti-pattern list is what rules it out: an empty proof block is how
- * `warp.dev` came to serve "0K Active Developers". The same reasoning keeps a
- * GitHub star count out of the nav; it would render zero.
- *
- * This page is not a Starlight page. It gets no sidebar, no docs header and no
- * prefetch script; it shares only the design tokens, via the stylesheet below.
- *
- * Every LABEL here is the design language already running in apps/editor — the
- * outline CTA is packages/ui's Button `outline` variant, and the mark and nav
- * links are the editor's NavRail.
- * Nothing new was invented for this page; where a value looks arbitrary it was
- * copied.
- *
- * THE PROSE IS THE EXCEPTION, and it is the exception on purpose. Copying the
- * editor's classes for prose too is what produced 9.9px section headings sitting
- * above 12.1px body text — the editor's scale is a scale of label sizes, because
- * the editor has no prose to size. Every paragraph and heading below now uses
- * the site's own prose scale, defined once in src/styles/site.css and read by
- * the documentation through the same tokens. See the TYPE block there.
- */
+/** The landing page. Not a Starlight page: it shares only the design tokens, via site.css. */
 import "../styles/site.css"
 import FontPreloads from "../components/font-preloads.astro"
 import SiteHeader from "../components/site-header.astro"
 
-/**
- * The eyebrow's three facts are real signal, so two of them are read from the
- * package that actually ships rather than restated here — a hand-copied
- * version is wrong from the first release after somebody forgets it.
- */
+// Read from the shipping package so the eyebrow cannot go stale.
 import cliPackage from "../../../../packages/cli/package.json"
 
-/**
- * The third is read the same way, from the catalogue package rather than from
- * the one that ships. It was a hand-typed 222 here until 2026-08-06, which is
- * how it survived the catalogue growing to 228 — see src/lib/catalog-counts.ts.
- */
 import { SKILL_COUNT } from "../lib/catalog-counts"
 
-/**
- * The stats strip and the catalogue teaser both count rather than claim. The
- * research note this page follows is explicit about why: a round number reads
- * as invented where `turborepo`'s "9,001,168 hours of compute saved" reads as
- * measured. 238 / 18 / 9 are odd because they are real, and they are read from
- * the catalogue at build time so they cannot drift from it.
- */
 import { AGENT_COUNT, DOMAIN_COUNT } from "../lib/catalog-counts"
 import { CATALOG } from "@workspace/matrix"
 
-/**
- * THE CATALOGUE TEASER'S DATA. A teaser, not a catalogue — the research note's
- * one hard limit is "never the whole catalogue", because dumping it is the
- * failure mode this section exists to fix.
- *
- * Six categories per domain and four skills each, so the widest tab shows
- * about twenty of its skills and says how many it did not show. The shape is
- * the editor's own grid in miniature: categories down, skills within, which
- * makes this a preview of the thing rather than a word cloud.
- *
- * Ordered as the catalogue orders them rather than by size. Sorting by
- * skill-count would put whichever category grew last at the top and quietly
- * reorder the page on a catalogue change nobody made for this page.
- */
+/** A teaser, never the whole catalogue. Catalogue order, so a growing category cannot reorder it. */
 const TEASER_CATEGORIES = 6
 const TEASER_SKILLS_PER_CATEGORY = 4
 
@@ -95,27 +29,17 @@ const TEASER_DOMAINS = CATALOG.domains.map((domain) => {
     label: domain.label,
     skillCount: domain.skillCount,
     categories,
-    // Suppressed at zero rather than rendered as "+ 0 more": the CLI domain
-    // ships three skills in two categories, so the teaser shows all of them.
     remaining: domain.skillCount - shown,
   }
 })
 
-/**
- * THE TAB RULES, generated from the same array the markup renders so a domain
- * cannot appear in one and not the other. Nine `:checked` pairs: one showing
- * that domain's panel, one marking its label. Written as a raw string and
- * shipped `is:inline` because Astro's scoped styles rewrite selectors, and
- * these are generated rather than authored.
- */
+// Generated from the array the markup renders. Inline, because Astro's scoped
+// styles would rewrite the selectors.
 const CATALOGUE_CSS = [
-  /* Off-screen but still focusable: `hidden` would take the tabs out of the
-     keyboard order, and the radios ARE the keyboard interface. */
+  /* Off-screen, not `hidden`: the radios are the keyboard interface. */
   ".catalogue-input{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}",
   ".catalogue-panel{display:none}",
-  /* The resting and hover halves of packages/ui's Chip, `size: filter`. The
-     active half is generated per domain below, because only a `:checked`
-     sibling selector knows which one it is. */
+  /* packages/ui's Chip resting and hover states; the active state needs a `:checked` rule per domain. */
   ".catalogue-tab{border-color:var(--color-chip-border);background:transparent;color:var(--color-muted-foreground)}",
   ".catalogue-tab:hover{border-color:var(--color-line-hover)}",
   ...CATALOG.domains.flatMap((domain) => [
@@ -123,28 +47,15 @@ const CATALOGUE_CSS = [
     `#catalogue-${domain.id}:checked~div label[for="catalogue-${domain.id}"]{border-color:var(--color-brand-border);background:var(--color-wash);color:var(--color-brand-ink)}`,
     `#catalogue-${domain.id}:focus-visible~div label[for="catalogue-${domain.id}"]{outline:1px solid var(--color-ring);outline-offset:2px}`,
   ]),
-  /* SECTION HEADINGS ARE THEIR OWN ANCHOR. Clicking one puts its id in the
-     address bar, so any section on this page can be linked to directly — which
-     is what replaced the `#id` labels that used to sit in the margin beside
-     them. Amber on hover, the same accent the chips carry, because following
-     one is a deliberate act. */
+  /* Section headings are their own anchors. */
   ".heading-anchor{color:inherit;text-decoration:none}",
   ".heading-anchor:hover{color:var(--color-brand-ink)}",
   ".heading-anchor:focus-visible{outline:1px solid var(--color-ring);outline-offset:3px}",
 ].join("")
 
-/** The tab that opens. Web is the largest domain and the one most visitors are in. */
 const TEASER_DEFAULT = TEASER_DOMAINS[0]?.id ?? "web"
 
-/**
- * HOW IT WORKS, as three steps rather than as an argument. This replaced a
- * section headed "Two front doors" whose closing words were "use whichever you
- * prefer" — which the owner overruled on 2026-08-27: the two are not on equal
- * footing, and they are not alternatives at all. A browser cannot write to a
- * filesystem, so selecting and installing are sequential, and every editor
- * visitor runs a CLI command. Steps show that; a comparison argued the
- * opposite.
- */
+// Steps, not a comparison: selecting in the editor and installing with the CLI are sequential.
 const STEPS = [
   {
     label: "Choose",
@@ -164,7 +75,6 @@ const STEPS = [
 ]
 
 
-/** The destinations this page shares with the header, the footer and 404. */
 import {
   DOCS_PATH,
   EDITOR_URL,
@@ -177,54 +87,19 @@ const PAGE_TITLE = "Agents Inc — compose Claude Code sub-agents from skills"
 const PAGE_DESCRIPTION =
   "An agent composition framework for Claude Code. Pick the skills matching your stack and the CLI compiles them into sub-agents."
 
-/**
- * A ROW OF LABELS, of which this page has two: the repository pair under
- * "Free and open source" and the footer. They were the same six declarations
- * written twice, which is how the footer ended up mono while the pair above it
- * inherited nothing and rendered as ordinary sans links.
- *
- * `text-10` rather than the `text-9` both rows carried before. Nothing about
- * the intent changed — that class rendered at 9.9px while the site inherited
- * the editor's 110% root, and site.css now sets the site to the design's
- * native 100%, so the same class would render 9px. This is the same size the
- * row has always had, said in a way that does not depend on a zoom setting
- * belonging to a different app.
- */
+// Shared by the repository pair and the footer.
 const LABEL_ROW_CLASS =
   "font-mono text-10 font-medium tracking-[.13em] text-muted-foreground uppercase"
 
-// The resting and hover colours a label-row link carries. Restated on each
-// anchor rather than inherited: globals.css colours every bare `a` amber in
-// @layer base, and rule 4 reserves amber for what the user deliberately chose.
+// Restated per anchor: globals.css colours every bare `a` amber, which is reserved for user choices.
 const FOOTER_LINK_CLASS = "text-muted-foreground hover:text-ink"
 
-/**
- * A SECTION HEADING, AND THE ONE THING ON THIS PAGE THAT CHANGED REGISTER.
- *
- * It was packages/ui's DialogPaneHeading, verbatim: `font-mono text-9
- * font-semibold tracking-[.13em] uppercase`, which rendered at 9.9px above
- * 12.1px body text — a heading smaller than the paragraph it headed.
- *
- * The mono treatment went with the size, and that half is a design-language
- * argument rather than a measurement. Rule 3 reads "Inter for human names, IBM
- * Plex Mono for every label/id/badge". "The approach" is a human sentence, not
- * a label and not an id, so Inter is what the rule actually asks for. What
- * DialogPaneHeading heads is a pane of a dialog in a dense desktop tool —
- * chrome, correctly mono — and borrowing it for prose was the same category
- * error as borrowing its size. Everything on this page that IS a label — the
- * eyebrow, the nav, the buttons, the footer — is still mono
- * and still uppercase, so the page keeps its voice.
- *
- * `text-h2` is the same token the documentation's own `h2` resolves to, so the
- * two halves cannot render this role at different sizes.
- */
+// Inter, not mono: a heading is a human sentence, not a label. Same token as the docs' h2.
 const SECTION_HEADING_CLASS = "text-h2 font-semibold text-ink"
 
-// Body copy, at the size the documentation sets its own paragraphs.
 const PARAGRAPH_CLASS = "text-body text-ink-3"
 
-// A file path or a command inside a sentence. Mono, because that IS an id —
-// sized to sit inside the prose around it rather than on the label scale.
+// Mono because it is an id, sized for the prose around it.
 const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
 ---
 
@@ -240,68 +115,20 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
   </head>
   <!-- No colour classes on <body>: globals.css already styles it in @layer base. -->
   <body class="framed">
-    {/*
-      Every developer-facing note below this line is a JSX-style comment rather
-      than an HTML one, because Astro strips these from the output and ships
-      the others. The one HTML comment above is the scaffold's own and is left
-      as it was found.
-
-      Rule 5 of the design language — whitespace separates content, not rules —
-      so there is no hairline under this header and none between any two
-      sections below. The only borders on the page enclose something: the mark,
-      the outline buttons and the video slot.
-
-      THE FRAME IS THE ONE RULED EXCEPTION, added 2026-08-27. `body.framed` in
-      site.css draws a hatched gutter, a content rail each side and a tick
-      ruler along the top. The rails comply with rule 5 as written — they
-      enclose the content column — but the hatch and the ruler are vocabulary
-      the rule does not cover, and they are deliberate rather than drift.
-      Chosen by the owner from a lab of eleven treatments; the reasoning is in
-      site.css's FRAME block and the constraint is recorded in todo/www.md so
-      a later pass does not read them as a violation and remove them.
-    */}
-    {/*
-      `px-8 sm:px-gutter` on all three wrappers — the header's is inside the
-      component — and it is the only responsive thing on the page. The 60px
-      gutter is the design's structural constant and it is right everywhere the
-      product itself runs, because the product is a three-column desktop editor
-      — but it is a desktop constant. Held at 60px on a 390px phone it leaves a
-      258px column, which is where this copy stops being readable. The editor
-      carries no breakpoints at all for that reason; a landing page is the one
-      surface that has to survive a phone, so it carries exactly one.
-    */}
+    {/* `px-8 sm:px-gutter` is the page's one breakpoint: the 60px gutter is a desktop constant. */}
     <SiteHeader />
 
     <main class="mx-auto max-w-page px-8 pt-gutter pb-gutter sm:px-gutter">
       <section aria-labelledby="headline">
-        {/* Muted, not amber: rule 4 reserves the accent for what the user
-            deliberately chose, and an eyebrow is not a choice. The same six
-            declarations as the two label rows further down, and now literally
-            the same constant — they were three independent copies before. */}
+        {/* Muted, not amber: an eyebrow is not a user choice. */}
         <p class={LABEL_ROW_CLASS}>
           {cliPackage.license} &middot; v{cliPackage.version} &middot; {SKILL_COUNT} skills
         </p>
 
-        {/* The headline names the PAIN, not the mechanism. The version it
-            replaced — "Compose Claude Code sub-agents from atomic skills" —
-            presumed the reader already knew what a Claude Code sub-agent was
-            and why composing them mattered, which is the one thing a stranger
-            does not know. Pain first, mechanism second, in that order. */}
         <h1 id="headline" class="text-h1 text-ink mt-4 max-w-measure font-semibold">
           Hand-written Claude Code sub-agents duplicate each other and go stale
         </h1>
 
-        {/* THE PROBLEM, in the hero rather than 870px down the page. This was
-            its own section under an h2 until 2026-08-03, and it is here now
-            because a visitor who reads only the top third has to meet the
-            problem — measured at 1440x900, that h2 sat at y=872, on the very
-            bottom edge of the fold. The section it used to be is gone rather
-            than duplicated; "The approach" below answers this paragraph.
-
-            The wording is the `why` page's, which says it better than this
-            page ever did: prompt files "duplicate each other, drift apart, and
-            cannot be composed". Concrete rather than abstract on purpose — the
-            same paragraph pasted three times is the thing people recognise. */}
         <p class="text-body text-ink-3 mt-4 max-w-measure">
           A sub-agent is a specialised Claude Code assistant with its own instructions —
           in practice, a long prompt file. Once you have three of them, all three need the
@@ -309,18 +136,13 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
           and you update one.
         </p>
 
-        {/* And only now the mechanism, kept to two sentences: the fuller
-            version is "The approach" below, and repeating it verbatim here
-            would just be the same paragraph twice. */}
         <p class="text-body text-ink-3 mt-4 max-w-measure">
           Agents Inc breaks that expertise into atomic skills instead and compiles them
           into sub-agents. The React knowledge exists once; recompile, and every sub-agent
           built from it is rewritten.
         </p>
 
-        {/* The Button primitive's `outline` variant, and the hero's one call
-            to action. No command sits beside it: the one worth running is the
-            one the editor hands back. */}
+        {/* packages/ui's Button `outline` variant. */}
         <a
           href={EDITOR_URL}
           class="mt-8 inline-flex shrink-0 cursor-pointer items-center justify-center border border-rule bg-cell px-[0.9375rem] py-[0.625rem] font-mono text-9_5 font-semibold tracking-[.11em] whitespace-nowrap text-ink-3 uppercase outline-none select-none hover:border-dialog-border hover:text-ink focus-visible:ring-1 focus-visible:ring-ring"
@@ -328,18 +150,7 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         >
       </section>
 
-      {/*
-        THE STATS STRIP. Three counted facts, and every one of them is read
-        from the catalogue at build time — see the note on the imports. The
-        research warns against two things here specifically and both are
-        avoided: no round numbers, because they read as invented, and no
-        animated counters, because a counter with no static fallback is how
-        `warp.dev` came to serve "0K Active Developers" to anybody whose
-        JavaScript had not run. These are three numbers in the markup.
-
-        Rule 5 — whitespace separates content, not rules — so the three sit in
-        a grid with no dividers between them and no border around them.
-      */}
+      {/* Counted at build time, and static: no animated counters. */}
       <section class="mt-gutter" aria-label="The catalogue in numbers">
         <dl class="grid grid-cols-3 gap-x-8 gap-y-6 sm:gap-x-10">
           <div>
@@ -357,8 +168,6 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         </dl>
       </section>
 
-      {/* WHAT IT IS. The problem used to open this run of sections; it is in
-          the hero now, so what remains is what this does instead. */}
       <section class="mt-gutter max-w-measure" aria-labelledby="the-approach">
         <h2 id="the-approach" class={SECTION_HEADING_CLASS}>
           <a class="heading-anchor" href="#the-approach">The approach</a>
@@ -372,24 +181,7 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         </p>
       </section>
 
-      {/*
-        THE CATALOGUE TEASER — the centrepiece, in the research note's own
-        words, and the section whose absence meant this page did not meet its
-        own stated minimum. It answers the question a stranger actually has:
-        what is in it.
-
-        NO JAVASCRIPT. The tabs are nine radio inputs and CSS sibling
-        selectors. Radios give keyboard support for free — arrow keys move
-        between them, exactly what a tab strip should do. The inputs are positioned off-screen rather than
-        `hidden`, because `hidden` takes them out of the focus order too.
-
-        Rule 5 holds here as it does everywhere else on this page: the tabs are
-        separated from the grid by space, not by a rule, and no cell has a box
-        around it. The one visual marker is the active tab, and it is ink
-        against muted rather than amber — rule 4 reserves amber for what the
-        user deliberately chose, and which tab is open is a view, not a choice
-        about their stack.
-      */}
+      {/* No JavaScript: radio inputs and sibling selectors, which give arrow-key navigation for free. */}
       <section class="mt-gutter" aria-labelledby="the-catalogue">
         <h2 id="the-catalogue" class={SECTION_HEADING_CLASS}>
           <a class="heading-anchor" href="#the-catalogue">The catalogue</a>
@@ -460,11 +252,6 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         >
       </section>
 
-      {/*
-        HOW IT WORKS. See the STEPS note in the frontmatter for what this
-        replaced and why. Three columns at the page's full width, which is what
-        the 20% widening bought — at 48rem this was two columns and a widow.
-      */}
       <section class="mt-gutter" aria-labelledby="how-it-works">
         <h2 id="how-it-works" class={SECTION_HEADING_CLASS}>
           <a class="heading-anchor" href="#how-it-works">How it works</a>
@@ -484,33 +271,8 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
       </section>
 
       {/*
-        RECORDING SLOT — EMPTY ON PURPOSE, AND HOLDING ITS SPACE.
-
-        WHY IT IS DOWN HERE rather than in the hero, where it was until
-        2026-08-03. Measured at 1440x900 it started at y=409 and ran about
-        400px tall, so the whole second half of the fold was one empty
-        rectangle and every block that does the explaining was pushed below
-        it — "The problem" heading landed at y=872, on the edge. A slot
-        that cannot do its job until somebody records a video must not be the
-        thing standing between a visitor and the explanation. Below the
-        explanation it costs nothing while empty and pays off when filled,
-        because by then the reader has been told what they are looking at.
-
-        WHY IT STILL RESERVES ITS SPACE. Collapsing it to nothing would only
-        move the problem: the page would settle at one height now and shove
-        everything below it down the day a real file lands. `aspect-video` on
-        a fixed-width box holds exactly the space the file will occupy.
-
-        WHY max-w-measure. Same measure as every paragraph on this page, so it
-        reads as part of the column rather than as a banner across it. It also
-        shrinks: measured at 1440 wide, 576x324, where full-bleed in `main` it
-        would be 660x371. (It was 634x356 until 2026-08-21, when site.css
-        stopped the site inheriting the editor's 110% root font-size — the box
-        is the same `aspect-video max-w-measure` it always was, and 36rem simply
-        stopped meaning 634px.)
-
-        TO FILL IT IN: drop the file into apps/www/public/ and replace the
-        whole <div> below with
+        Recording slot. `aspect-video` reserves the file's space so the page does
+        not jump when it lands. To fill it, replace the <div> with:
 
           <video
             class="block aspect-video w-full border border-hairline"
@@ -519,34 +281,16 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
             autoplay muted loop playsinline preload="metadata"
             aria-label="<what the recording shows>"
           ></video>
-
-        Keep `aspect-video` (or set width and height on the element) so the
-        reserved space still matches the file and the page does not jump.
       */}
       <div
         class="mt-gutter flex aspect-video w-full max-w-measure items-center justify-center border border-hairline bg-code"
       >
-        {/* `subtle`, not the quieter `faint` one step below it: `faint` on
-            this surface measures 3.4:1, under the 4.5:1 this size of text
-            needs. `subtle` is 5.4:1 and is still the quietest step that
-            clears it. */}
+        {/* `subtle`, not `faint`: faint is under 4.5:1 on this surface. */}
         <span class="font-mono text-8 font-medium tracking-[.13em] text-subtle uppercase"
           >Video coming soon</span
         >
       </div>
 
-      {/* FREE AND OPEN SOURCE. This sits where a commercial site puts pricing
-          and does the same job: it answers "what does this cost me" before
-          anyone has to go looking. No star count and no contributor avatars —
-          both would have to be fetched, and a number nobody measured is worse
-          than no number. */}
-      {/*
-        AUTHOR YOUR OWN. The catalogue teaser says what exists; this says the
-        set is not closed. It sits after the teaser and before the licence
-        block for the reason the research gives — the reader has just seen the
-        scale of the thing, and the next question is whether they are stuck
-        with it.
-      */}
       <section class="mt-gutter max-w-measure" aria-labelledby="author-your-own">
         <h2 id="author-your-own" class={SECTION_HEADING_CLASS}>
           <a class="heading-anchor" href="#author-your-own">Write your own</a>
@@ -586,11 +330,6 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
         </p>
       </section>
 
-      {/*
-        THE FINAL CTA. One, and it is the editor. Nothing new is claimed here;
-        it is the same destination the page opened with, offered again to
-        somebody who has now read why.
-      */}
       <section class="mt-gutter" aria-labelledby="start">
         <h2 id="start" class={SECTION_HEADING_CLASS}>
           <a class="heading-anchor" href="#start">Start with your stack</a>
@@ -612,10 +351,6 @@ const INLINE_CODE_CLASS = "font-mono text-body-sm text-ink not-italic"
     >
       <span>{cliPackage.license} licensed</span>
       <span>v{cliPackage.version}</span>
-      {/* The resting colour is restated on each anchor, not inherited from the
-          row: globals.css colours every bare `a` amber in @layer base, and
-          rule 4 reserves amber for what the user deliberately chose — which a
-          footer link is not. */}
       <a href={DOCS_PATH} class={`ml-auto ${FOOTER_LINK_CLASS}`}>Docs</a>
       <a href={GITHUB_REPO_URL} {...EXTERNAL_LINK_ATTRS} class={FOOTER_LINK_CLASS}>GitHub</a>
     </footer>

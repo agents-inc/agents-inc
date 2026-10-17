@@ -1,94 +1,10 @@
 /**
- * The fourth thing this site cannot see about itself: whether the address it
- * gives for the editor is the address the editor is at.
- *
- * WHY THIS EXISTS. The editor used to be the apex. It is now `/editor` on the
- * same hostname — a Cloudflare Route on its own Worker, decided under WWW-03 —
- * and when it moved, thirty references across twenty-one documentation pages
- * stayed pointing at the apex. Every gate here stayed green: `astro build`
- * builds a page whose links are wrong, `astro check` reads types and a link is
- * a string, `eslint` reads syntax, and the other three checks read the type
- * scale, the fonts and the syntax theme. They were found by a hand sweep.
- *
- * A wrong one does not 404, which is the whole problem. `agentsinc.sh` serves
- * the landing page, so a reader sent there arrives somewhere that renders,
- * knows nothing about `?fromId=`, and does not say it is the wrong place. The
- * defect fails as a reader's confusion, and confusion has no exit code.
- *
- * The same class had already bitten the CLI's own suite —
- * `e2e/commands/init-ui.e2e.test.ts` asserted `toContain("agentsinc.sh")` and
- * `src/cli/utils/open-url.test.ts` hardcoded the share link — and both stayed
- * green across the split. Both were fixed by DERIVING rather than typing, and
- * that is what this pushes the documentation towards too.
- *
- * WHAT IT CHECKS, as four claims about one address:
- *
- *   1. THE TWO CONSTANTS THAT SPELL IT AGREE. `EDITOR_URL` in
- *      packages/cli/src/cli/consts.ts is the absolute address; `EDITOR_URL` in
- *      this site's src/lib/links.ts is the same address as a path on its own
- *      host. Nothing has ever held the second to the first, which is the
- *      headline of the row this exists for: every relative `/editor` link on
- *      the site is correct only because those two strings happen to match.
- *
- *   2. EVERY ADDRESS THE DOCUMENTATION WRITES ON THIS SITE'S OWN HOST IS THE
- *      EDITOR'S. The editor is the only thing on this host the documentation
- *      sends a reader to by hostname — everything else on the site is linked
- *      by path, because an absolute self-link breaks in `astro dev` and in
- *      `astro preview`. So a hostname written out with a scheme in front of it
- *      or a path behind it is an editor address, and must carry the segment.
- *
- *   3. EVERY SHARE LINK IS THE SHAPE `editorConfigUrl` BUILDS. Read from that
- *      function's own template literal, so the slash before `?` is derived
- *      rather than transcribed: `editorConfigUrl` interpolates
- *      `${EDITOR_URL}/?fromId=`, and a reader trimming that slash as redundant
- *      writes an address claim 2 cannot tell from a correct one.
- *
- *   4. EVERY LINK WHOSE TEXT NAMES THIS HOST WRITES THE FULL ADDRESS AND
- *      TARGETS IT. `[agentsinc.sh/editor](/editor)` — both halves, because the
- *      two rot separately and a link whose text and target disagree is a lie
- *      told twice.
- *
- * WHAT IT BINDS TO. `EDITOR_URL` and `editorConfigUrl` in
- * packages/cli/src/cli/consts.ts, through the TypeScript AST, and `EDITOR_URL`
- * in this site's src/lib/links.ts the same way. Nothing is transcribed: the
- * host, the path segment and the query the share link carries are all read out
- * of those two files, so moving the editor to `/studio` reddens this on the
- * next run rather than on the next hand sweep. It reads SOURCE on both sides
- * and no build output, for the reason check-cli-claims.ts gives.
- *
- * WHAT IT DELIBERATELY CANNOT SEE, said plainly because a checker's silence is
- * read as a pass:
- *
- *   · A HOST OR A QUERY USED AS A NAME RATHER THAN AS AN ADDRESS. `the
- *     agentsinc.sh store` is the config store and is correct; `opens it at
- *     agentsinc.sh` was one of the thirty and is wrong. They are the same bytes
- *     in the same shape, and only English separates them. Five of the thirty
- *     were this form. The same holds for a bare `` `?fromId=` ``, which three
- *     reference pages write as the NAME of the parameter with no address in
- *     front of it — there is nothing there to judge. An allowlist of the
- *     innocent ones would fail on the first rewording and get this switched
- *     off, which is worse than not looking.
- *
- *   · A LINK WHOSE TEXT NAMES NO ADDRESS. `[editor](/editor)` is bound to
- *     nothing here — claim 4 needs the text to name the host. Its DEFECT form,
- *     `[editor](https://agentsinc.sh)`, is caught by claim 2, so the split
- *     itself was covered; a later typo in the relative path would not be. That
- *     wants a link checker over the built site, which is a different check.
- *
- *   · THE WORDING OF QUOTED CLI OUTPUT. Three pages reproduce blocks the CLI
- *     prints. The ADDRESS inside those blocks is claim 2's and claim 3's; that
- *     `Install it:` is still spelled `Install it:` is a separate claim about
- *     `sharedConfigDestinations`, and this does not make it.
- *
- *   · ANYTHING OUTSIDE src/content/docs/. astro.config.ts names the apex on
- *     purpose — it is the landing page — and would fail claim 2 if it were
- *     read. The documentation is the surface that went stale.
- *
- * A CHECK THAT JUDGES NOTHING IS A FAILURE, NOT A PASS. A missing constants
- * file, a constant that is not a string, a share-link builder in a shape no
- * reader can resolve, an editor URL with no path below the host, a missing
- * documentation tree, a tree with no pages, and a documentation set that names
- * the editor's host nowhere at all — all refuse loudly.
+ * Holds the docs to the editor address in packages/cli/src/cli/consts.ts: the
+ * site's `EDITOR_URL` path agrees, every address on this host is the editor's,
+ * share links have `editorConfigUrl`'s shape, and a link whose text names the
+ * host writes and targets the full address. A wrong address does not 404 (the
+ * apex serves the landing page), so nothing else notices. Cannot see a host used
+ * as a name, link text naming no address, or anything outside src/content/docs/.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs"
@@ -97,41 +13,34 @@ import { fileURLToPath } from "node:url"
 
 import ts from "typescript"
 
-/** The CLI's own definition of where the editor is. */
 const CONSTS = fileURLToPath(
   new URL("../../../packages/cli/src/cli/consts.ts", import.meta.url)
 )
 const CONSTS_LABEL = "packages/cli/src/cli/consts.ts"
 
-/** This site's definition of the same address, as a path on its own host. */
 const LINKS = fileURLToPath(new URL("../src/lib/links.ts", import.meta.url))
 const LINKS_LABEL = "src/lib/links.ts"
 
-/** The pages that write both of them out by hand. */
 const DOCS = fileURLToPath(new URL("../src/content/docs/", import.meta.url))
 const DOCS_LABEL = "src/content/docs/"
 
-/** The constant both files declare, under the same name, for the same thing. */
 const EDITOR_URL_CONSTANT = "EDITOR_URL"
 
-/** The function that builds a share link out of it. */
 const SHARE_LINK_FUNCTION = "editorConfigUrl"
 
 const PAGE_EXTENSIONS = [".md", ".mdx"]
 
-/** A markdown link. Spans newlines, because a long one wraps. */
+// Spans newlines, because a long link wraps.
 const MARKDOWN_LINK = /\[([^\]]*)\]\(([^)\s]*)\)/g
 
-/** What a hostname is made of, so `api.agentsinc.sh` is not read as this host. */
+// So `api.agentsinc.sh` is not read as this host.
 const HOSTNAME_CHARACTER = /[A-Za-z0-9.-]/
 
-/** What follows a host in a URL, and in nothing else. */
 const URL_CONTINUES = /^[/?#]/
 
-/** What a path segment is made of, so `/editorial` is not read as `/editor`. */
+// So `/editorial` is not read as `/editor`.
 const PATH_SEGMENT_CHARACTER = /[A-Za-z0-9_-]/
 
-/** The two halves of the token a span falls in, for a message a reader can grep. */
 const TOKEN_HEAD = /[^\s`([]*$/
 const TOKEN_TAIL = /^[^\s`)\],]*/
 
@@ -139,21 +48,18 @@ const SCHEME_SEPARATOR = "://"
 const QUERY_SEPARATOR = "?"
 const ROOT_PATH = "/"
 
-/** The editor's address, as the two constants define it between them. */
 type EditorAddress = {
   url: string
   host: string
   path: string
-  /** The whole of a share link up to its id: host, path, and the query. */
+  /** Up to the id. */
   shareLink: string
-  /** The query alone, which is how a share link is found however it is spelled. */
+  /** Finds a share link however the rest is spelled. */
   query: string
 }
 
-/** One page, kept whole so an offence can name a line a reader opens. */
 type Page = { label: string; text: string; lines: string[] }
 
-/** One thing a file writes, and whether it is what the constants say. */
 type Written = {
   where: string
   wrote: string
@@ -161,10 +67,8 @@ type Written = {
   agrees: boolean
 }
 
-/** One claim's answer. A claim that agrees produces nothing to report. */
 type Drift = { claim: string; offences: Written[] }
 
-/** Everything this run looked at, so a pass can say what it judged. */
 type Judged = {
   pages: Page[]
   addresses: Written[]
@@ -206,11 +110,6 @@ function judge(
   }
 }
 
-/**
- * The address the CLI holds, taken apart into the pieces a page writes: the
- * host on its own, the path segment that must follow it, and the share link's
- * prefix up to the id.
- */
 function readEditorAddress(): EditorAddress {
   const declared = parseModule(CONSTS, CONSTS_LABEL)
   const url = stringConstantIn(declared, EDITOR_URL_CONSTANT, CONSTS_LABEL)
@@ -242,12 +141,7 @@ function hostAndPathOf(url: string): { host: string; path: string } {
   return { host, path: pathname }
 }
 
-/**
- * The literal `editorConfigUrl` puts between the editor's address and the id —
- * `/?fromId=` at the time of writing, and whatever it says at the time of
- * reading. Read from the template rather than transcribed, because the slash
- * in front of the `?` is the piece a reader deletes as redundant.
- */
+/** Read from the template, not transcribed: the slash before `?` is what a reader drops. */
 function whatShareLinksAppend(declared: ts.SourceFile): string {
   const built = returnedExpressionOf(declared)
   if (!ts.isTemplateExpression(built)) {
@@ -295,7 +189,6 @@ function queryWithin(appended: string): string {
   return appended.slice(opensAt)
 }
 
-/** The path this site links the editor by, which every relative `/editor` rests on. */
 function readSiteEditorPath(): string {
   return stringConstantIn(
     parseModule(LINKS, LINKS_LABEL),
@@ -372,12 +265,7 @@ function readPage(entry: string): Page {
   return { label: `${DOCS_LABEL}${entry}`, text, lines: text.split("\n") }
 }
 
-/**
- * Every address on this site's host the page writes out, each judged against
- * the editor's. A hostname is an ADDRESS where a scheme precedes it or a path,
- * query or fragment follows it; the bare host used as a name — `the
- * agentsinc.sh store` — is neither, and is out of reach here.
- */
+/** A host is an address when a scheme precedes it or a path, query or fragment follows. */
 function addressesIn(page: Page, address: EditorAddress): Written[] {
   return page.lines.flatMap((line, index) =>
     occurrencesOf(line, address.host)
@@ -392,7 +280,6 @@ function addressesIn(page: Page, address: EditorAddress): Written[] {
   )
 }
 
-/** Whether the host found here is this host, rather than the tail of a longer one. */
 function isThisHost(line: string, at: number): boolean {
   const before = line[at - 1]
 
@@ -415,13 +302,7 @@ function namesTheEditor(rest: string, address: EditorAddress): boolean {
   return next === undefined || !PATH_SEGMENT_CHARACTER.test(next)
 }
 
-/**
- * Every share link the page writes out, found by the query alone so that one
- * with the wrong host, the wrong path or no slash before its `?` is still
- * found and still judged. A query standing on its own — `` `?fromId=` `` as
- * the NAME of the parameter, which three reference pages write — has no
- * address in front of it to judge, and is passed over.
- */
+/** Found by query alone, so a wrong host or path is still judged; a bare `?fromId=` is skipped. */
 function shareLinksIn(page: Page, address: EditorAddress): Written[] {
   return page.lines.flatMap((line, index) =>
     occurrencesOf(line, address.query)
@@ -437,10 +318,6 @@ function shareLinksIn(page: Page, address: EditorAddress): Written[] {
   )
 }
 
-/**
- * Every link whose text names this host, judged on both halves: the text
- * writes the editor's whole address, and the target is the editor.
- */
 function hostLinksIn(
   page: Page,
   address: EditorAddress,
@@ -456,7 +333,6 @@ function hostLinksIn(
     }))
 }
 
-/** Both halves: the text writes the editor's whole address, and the target is it. */
 function isEditorLink(
   link: RegExpExecArray,
   address: EditorAddress,
@@ -479,7 +355,6 @@ function targetOf(link: RegExpExecArray): string {
   return link[2] ?? ""
 }
 
-/** The link text from its hostname on, which is the part claim 4 judges. */
 function addressWithin(text: string, address: EditorAddress): string {
   return text.slice(text.indexOf(address.host))
 }
@@ -497,14 +372,13 @@ function occurrencesOf(line: string, needle: string): number[] {
   return found
 }
 
-/** The whole token a span falls in, so a message shows an address and not a fragment. */
+/** The whole token, so a message shows an address, not a fragment. */
 function tokenAround(line: string, from: number, to: number): string {
   const tail = TOKEN_TAIL.exec(line.slice(to))?.[0] ?? ""
 
   return `${tokenHeadBefore(line, from)}${line.slice(from, to)}${tail}`
 }
 
-/** Whether something precedes this in the same token, which is what makes it an address. */
 function followsAnAddress(line: string, at: number): boolean {
   return tokenHeadBefore(line, at).length > 0
 }
@@ -559,7 +433,7 @@ function exitWith(drift: Drift[], judged: Judged): never {
   process.exit(1)
 }
 
-/** Every way of judging nothing, said out loud. A quiet empty read is the defect, not a pass. */
+/** An empty read is the defect, not a pass. */
 function refuse(reason: string): never {
   throw new Error(`editor address: ${reason}`)
 }

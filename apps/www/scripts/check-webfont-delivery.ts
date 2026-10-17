@@ -1,49 +1,8 @@
 /**
- * The one thing this site could not previously see about itself: that clicking
- * a link makes it re-fetch its own fonts.
- *
- * WHY THIS EXISTS. Every navigation on this site is a full document load —
- * `prefetch: false` in astro.config.ts and no client router, both deliberate —
- * so every page re-resolves the whole font stack from scratch. That is fine
- * when the files are in the browser's cache and free to apply. It was not:
- * Cloudflare's static-asset server sends `cache-control: public, max-age=0,
- * must-revalidate` on EVERYTHING, content-hashed `/_astro/*` files included, so
- * a browser had to ask about all three of this site's webfonts on every click
- * before it was allowed to paint a single word in them. Until the answer came
- * back, `font-display: swap` painted the fallback — and the fallback is 25%
- * narrower than IBM Plex Mono, which this design puts on the header nav, the
- * buttons, the labels and every code block. The whole page reflowed, once per
- * link, and every gate in this repository was green throughout.
- *
- * Nothing else here can see it. `astro check` reads types; `astro build` reads
- * whether the thing compiles; a `_headers` file that does not exist is not a
- * syntax error anywhere. The defect only exists once a browser has been asked
- * to navigate twice, so a browser is what has to look.
- *
- * WHAT IT CHECKS, both stated as claims about the product rather than about the
- * configuration that currently satisfies them:
- *
- *   1. A SECOND VISIT DOWNLOADS NO FONT. This is the reported bug written down.
- *      It is measured through a server that applies `public/_headers`, so the
- *      assertion is about what Cloudflare will send rather than about what a
- *      convenient test server would have sent on its own — a static server with
- *      no opinion caches nothing, and would fail this for a reason production
- *      does not have.
- *
- *   2. A FONT NEEDED AT FIRST PAINT IS PRELOADED. Caching only helps a reader
- *      who has already been somewhere. The first page anybody opens is still a
- *      cold one, and a font referenced from inside a 65 KB stylesheet is not
- *      discovered until that stylesheet has downloaded and parsed. This asserts
- *      the discovery is declared in the HTML instead, and it is derived rather
- *      than listed: whatever a page actually asks for is what it must preload,
- *      so a fourth font added later joins this check by being used.
- *
- * WHAT IT DELIBERATELY DOES NOT CHECK. Not the flash itself — a screenshot diff
- * of a repaint is a timing test, and a timing test on a build machine measures
- * the build machine. Both claims above are discrete and survive a slow runner.
- *
- * Run against `dist/`, so it needs `astro build` first — apps/www/turbo.json
- * says so.
+ * Holds that a second page visit downloads no font (served with Cloudflare's
+ * default caching plus `public/_headers`), and that every font a page requests
+ * is preloaded. Not the flash itself: a repaint timing test measures the
+ * runner. Reads `dist/`, so needs `astro build`.
  */
 
 import { createServer } from "node:http"
@@ -56,16 +15,9 @@ import type { Page } from "playwright"
 
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url))
 
-/** Any free port; the browser is the only client and it is told which. */
 const PORT = 4320
 
-/**
- * One page from each half of the site, and the pair is the point rather than
- * the coverage: the landing page is hand-built `.astro` and the documentation
- * is Starlight's own layout, so they have separate heads and a preload added to
- * one of them is not added to the other. The navigation runs between the two
- * documentation pages, because that is the click the bug was reported against.
- */
+// One page per half, since each has its own head.
 const COLD_PAGES = ["/", "/docs/quickstart/"]
 const NAVIGATE_FROM = "/docs/quickstart/"
 const NAVIGATE_TO = "/docs/why/"
@@ -109,14 +61,7 @@ async function main(): Promise<void> {
   exitWith(failures)
 }
 
-/**
- * Every font a page requests, checked against the preloads that page declares.
- *
- * Derived from the request log rather than from a list here, so this cannot
- * drift from what the site actually loads: the subset a page needs is decided
- * by `unicode-range` against the glyphs on it, and hard-coding that decision
- * here would be a second copy of it.
- */
+/** Derived from the request log, so a newly used font joins the check. */
 async function fontsPreloadedWherePagesUseThem(page: Page): Promise<Failure[]> {
   const failures: Failure[] = []
 
@@ -162,21 +107,8 @@ async function fontsPreloadedWherePagesUseThem(page: Page): Promise<Failure[]> {
 }
 
 /**
- * The reported bug: click a link, and the fonts come down again.
- *
- * The first visit is what fills the cache, so it is setup rather than
- * assertion; only the second one is measured.
- *
- * MEASURED FROM INSIDE THE PAGE, and that is not a stylistic preference — it is
- * the difference between this check working and this check lying. Playwright
- * reports a `request` event for a font served out of the browser's own cache
- * exactly as it does for one fetched over the wire, so a listener counting
- * requests calls a fixed site broken; it was written that way first and passed
- * judgement on a page that had already stopped touching the network. The
- * Resource Timing API distinguishes them: a `transferSize` of zero against a
- * non-zero `encodedBodySize` is a cache hit, because nothing crossed the
- * connection to produce a body that exists. Same-origin, so the sizes are not
- * masked the way a cross-origin entry's would be.
+ * Measured with Resource Timing, not request events: Playwright reports cache
+ * hits as requests too. A zero `transferSize` is a cache hit.
  */
 async function fontsRefetchedOnNavigation(page: Page): Promise<Failure[]> {
   await visit(page, NAVIGATE_FROM)
@@ -218,12 +150,8 @@ async function visit(page: Page, path: string): Promise<void> {
 }
 
 /**
- * `public/_headers`, parsed the way Cloudflare parses it: a line at column zero
- * is a path pattern, and the indented lines under it are headers to apply.
- *
- * A missing file is not an error here. It is the state this check was written
- * against, and it fails through the assertions above — which say what the
- * reader will experience — rather than through a message about a file.
+ * Parsed as Cloudflare does: column-zero lines are patterns, indented lines are
+ * headers. A missing file fails through the assertions, not here.
  */
 function headerRules(): HeaderRule[] {
   const source = fileURLToPath(new URL("../public/_headers", import.meta.url))
@@ -253,15 +181,8 @@ const patternOf = (path: string) =>
   )
 
 /**
- * A static server that answers the way the deployed Worker answers.
- *
- * Two halves, and the second is why this is not the server in
- * check-type-scale.ts. Cloudflare sends `cache-control: public, max-age=0,
- * must-revalidate` on every asset it has not been told otherwise about, and
- * sends an ETag with it — so a server that sent nothing would fail the
- * navigation claim for a reason production does not have, and a server that
- * cached everything would pass it for one production does not have either.
- * `public/_headers` is then applied on top, exactly as Cloudflare applies it.
+ * Answers as the deployed Worker does: Cloudflare's revalidating default plus
+ * an ETag, with `public/_headers` applied on top.
  */
 function serveDist(rules: HeaderRule[]): Promise<Server> {
   const server = createServer((request, response) => {

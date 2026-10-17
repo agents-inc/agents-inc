@@ -1,59 +1,8 @@
 /**
- * The other thing this site could not previously see about itself: whether the
- * commands it tells people to run exist.
- *
- * WHY THIS EXISTS. `todo/www.md` carried WWW-04 — "three pages tell readers to
- * run `new skill` / `new agent` / `new marketplace`" — for a fortnight, and by
- * the time anybody looked, every clause of it had gone stale in a different
- * direction. `new agent` had been deleted and is never returning. `new skill`
- * had been deleted and is deferred. `new marketplace` had been deleted and had
- * come BACK, so the row was telling a reader to remove a page documenting a
- * live command. Meanwhile `share` shipped and `edit` grew `--ui` and `--from`,
- * and the reference documented neither: one page said in as many words that
- * "there is no `share` command" while `agents-inc share` worked.
- *
- * That is one defect with two faces, and only one of them is the loud one. A
- * page naming a command that exits 127 is caught by the first reader who tries
- * it. A page silently missing a command is caught by nobody, ever — a reader
- * cannot miss what they were never shown. Both are the same drift, so both are
- * judged here, as MEMBERSHIP in both directions rather than as a count.
- *
- * WHAT IT CHECKS, as two claims about the product:
- *
- *   1. THE COMMAND REFERENCE NAMES EVERY COMMAND THE CLI SHIPS, AND NO OTHER.
- *      Aliases included: `ls` went undocumented for months because it is not a
- *      file, and a reader looking for it in the reference concluded it was not
- *      real.
- *
- *   2. EACH ROW'S FLAGS CELL NAMES THAT COMMAND'S FLAGS, AND NO OTHERS. Bound
- *      per command rather than as one pooled set, because a flag that moves
- *      between two commands leaves a pooled set identical.
- *
- * WHAT IT BINDS TO. `packages/cli/src/cli/commands/**` and nothing else, which
- * is the CLI's own definition of its roster: `oclif.commands.strategy` is
- * `pattern`, so a module under that tree IS a command, nothing anywhere
- * declares an id, and a topic is a directory. The two stock oclif commands —
- * `help` and `autocomplete` — arrive from plugins rather than that tree, and
- * are out of scope for a reference about this CLI's own surface.
- *
- * It reads SOURCE, not `dist/`. A `--help` diff would answer a richer question
- * and need the CLI built, installed and on PATH, which would put the site's
- * gate behind another workspace's build. The tree and the class bodies carry
- * everything either claim needs.
- *
- * WHAT IT DELIBERATELY DOES NOT CHECK. Not the per-command prose below the
- * matrix, which is written for a reader rather than in a notation, and not
- * whether a description is accurate — a checker cannot read English, and one
- * that pretends to would fail on rewording and be switched off within the
- * week. The matrix is the roster; the prose is commentary on it.
- *
- * A CHECK THAT JUDGES NOTHING IS A FAILURE, NOT A PASS. A missing tree, a
- * missing document, a section marker that has moved or appears twice, a table
- * with no rows, a renamed column, a flag whose name no reader can resolve —
- * all refuse loudly. Silently reading an empty list is how the binding was
- * lost in the first place.
- *
- * Reads no build output, so unlike check-type-scale.ts it needs no `dist/`.
+ * Holds that the command reference's matrix names every command (aliases
+ * included) under packages/cli/src/cli/commands/** and no other, and per row
+ * exactly the visible flags that command declares. Membership both ways, since
+ * a count cannot see a swap. Reads source, not a build. An empty read refuses.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs"
@@ -62,21 +11,19 @@ import { fileURLToPath } from "node:url"
 
 import ts from "typescript"
 
-/** The roster, per `oclif.commands` in packages/cli/package.json. */
+// oclif's `pattern` strategy: every module here is a command.
 const COMMANDS_DIR = fileURLToPath(
   new URL("../../../packages/cli/src/cli/commands/", import.meta.url)
 )
 
-/** The document that claims to enumerate it. */
 const REFERENCE = fileURLToPath(
   new URL("../src/content/docs/docs/reference/commands.md", import.meta.url)
 )
 
-/** For a failure message, which has to name a path a reader can open. */
 const COMMANDS_DIR_LABEL = "packages/cli/src/cli/commands/"
 const REFERENCE_LABEL = "src/content/docs/docs/reference/commands.md"
 
-/** What separates a topic from its command in an id, per `oclif.topicSeparator`. */
+// Per `oclif.topicSeparator`.
 const TOPIC_SEPARATOR = " "
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"]
@@ -84,33 +31,24 @@ const MODULE_EXTENSIONS = [".ts", ".tsx"]
 /** A spec beside a command module is not a command. */
 const SPEC_SUFFIXES = [".test.ts", ".test.tsx"]
 
-/** The two static members of a command class that either claim reads. */
 const ALIASES_MEMBER = "aliases"
 const FLAGS_MEMBER = "flags"
 
-/** The option naming a flag's short form, and the one holding it back from `--help`. */
 const FLAG_CHAR_OPTION = "char"
 const FLAG_HIDDEN_OPTION = "hidden"
 
-/**
- * The section of the reference holding the matrix. Both markers are text the
- * document uses exactly once, and appearing twice refuses rather than picking
- * the first — an opener that has drifted onto a second heading would silently
- * read the wrong table.
- */
+// Each marker must appear exactly once, or the wrong table could be read.
 const MATRIX_OPENS_AT = "## Command matrix"
 const MATRIX_CLOSES_AT = "**This table is the roster, and it is checked.**"
 
-/** The two columns read, by name. A renamed heading refuses rather than reading nothing. */
+// Read by name; a renamed heading refuses.
 const COMMAND_COLUMN = "Command"
 const FLAGS_COLUMN = "Flags"
 
 const TABLE_CELL_DELIMITER = "|"
 
-/** A markdown table's rule row, which separates its heading from the rows worth reading. */
 const TABLE_RULE = /^\|[\s:|-]+\|\s*$/
 
-/** A backticked span, which is how a cell writes one name. */
 const CODE_SPAN = /`([^`]+)`/g
 
 /** The `<id>` or `<name>` a cell writes beside a command or a flag that takes a value. */
@@ -118,13 +56,10 @@ const VALUE_PLACEHOLDER = /\s*<[^>]*>/g
 
 const MODULE_EXTENSION = /\.[^.]+$/
 
-/** One command, as its own module declares it. */
 type Command = { id: string; aliases: string[]; flags: string[] }
 
-/** One row of the matrix, as the document writes it. */
 type MatrixRow = { command: string; aliases: string[]; flags: string[] }
 
-/** One claim's answer. A claim that agrees produces nothing to report. */
 type Drift = {
   claim: string
   namedButAbsent: string[]
@@ -143,10 +78,6 @@ function main(): void {
   exitWith(drift, commands)
 }
 
-/**
- * Every command module under the tree, each read for the two things the
- * document states about it.
- */
 function readCommands(): Command[] {
   if (!existsSync(COMMANDS_DIR)) {
     refuse(`there is no command tree at ${COMMANDS_DIR_LABEL}`)
@@ -160,7 +91,6 @@ function readCommands(): Command[] {
   return commands
 }
 
-/** Every module under a directory, deepest last, as paths relative to it. */
 function modulesUnder(directory: string, prefix = ""): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const relativePath = join(prefix, entry.name)
@@ -197,12 +127,7 @@ function commandIdOf(modulePath: string): string {
     .join(TOPIC_SEPARATOR)
 }
 
-/**
- * The class oclif loads, which is the DEFAULT-exported one and not merely the
- * first in the file. All thirteen are written `export default class … extends
- * BaseCommand`; reading the first class instead would answer confidently and
- * wrongly the day a module grows a helper class above it.
- */
+/** The default-exported class, which is what oclif loads, not merely the first. */
 function commandClassIn(modulePath: string): ts.ClassDeclaration {
   const file = parseModule(join(COMMANDS_DIR, modulePath))
   const declared = file.statements
@@ -229,11 +154,7 @@ function parseModule(filePath: string): ts.SourceFile {
   )
 }
 
-/**
- * A `static <member> = [...]` of string literals. A class that declares no such
- * member states an empty list, which is the ordinary case — one command in the
- * CLI has an alias and one has none, and both are correct.
- */
+/** A `static <member> = [...]` of string literals; absent means empty. */
 function staticStringsOf(
   declared: ts.ClassDeclaration,
   member: string,
@@ -250,14 +171,7 @@ function staticStringsOf(
   )
 }
 
-/**
- * Every flag a command declares, written the way the reference writes one:
- * `--name`, or `--name/-c` where the flag has a short form.
- *
- * A hidden flag is not part of the documented surface and is dropped. A computed
- * key on a VISIBLE flag still refuses, because that is a flag the document is
- * expected to name and this cannot say what it is called.
- */
+/** Written as the reference does: `--name` or `--name/-c`. Hidden flags are dropped. */
 function staticFlagsOf(
   declared: ts.ClassDeclaration,
   modulePath: string
@@ -292,7 +206,6 @@ function flagNotationOf(
   return [char === undefined ? `--${name}` : `--${name}/-${char}`]
 }
 
-/** The options object a `Flags.<kind>(…)` call carries, or nothing where it carries none. */
 function flagOptionsOf(
   initializer: ts.Expression,
   modulePath: string
@@ -320,7 +233,6 @@ function flagNameOf(name: ts.PropertyName, modulePath: string): string {
   )
 }
 
-/** Whether the flag is held back from `--help`, and so out of the document's scope. */
 function isHidden(options: ts.ObjectLiteralExpression | undefined): boolean {
   return (
     propertyOf(options, FLAG_HIDDEN_OPTION)?.kind === ts.SyntaxKind.TrueKeyword
@@ -390,7 +302,7 @@ function hasModifier(node: ts.HasModifiers, kind: ts.SyntaxKind): boolean {
   return node.modifiers?.some((modifier) => modifier.kind === kind) === true
 }
 
-/** Every row of the matrix, read by column name rather than by position. */
+/** Read by column name, not position. */
 function readMatrixRows(): MatrixRow[] {
   if (!existsSync(REFERENCE)) {
     refuse(`there is no document at ${REFERENCE_LABEL}`)
@@ -420,11 +332,6 @@ function readMatrixRows(): MatrixRow[] {
   )
 }
 
-/**
- * The text strictly between the two markers. Each must appear exactly once: a
- * marker the document has lost, and one it has grown a second of, are both
- * reasons to stop rather than to read whatever is there.
- */
 function sectionBetween(document: string, from: string, to: string): string {
   const opensAt = onlyIndexOf(document, from)
   const closesAt = onlyIndexOf(document, to)
@@ -476,11 +383,7 @@ function columnIndexOf(heading: string, column: string): number {
   return first
 }
 
-/**
- * One row's two claims. The first name in the Command cell is the command and
- * the rest are its aliases, which is how the document writes them:
- * `` `list` (alias `ls`) ``.
- */
+/** The first name in the Command cell is the command; the rest are its aliases. */
 function matrixRowOf(
   cells: string[],
   commandColumn: number,
@@ -507,11 +410,7 @@ function cellAt(cells: string[], index: number, column: string): string {
   )
 }
 
-/**
- * Every name a cell writes, which is every backticked span in it with any value
- * placeholder taken off — `` `search <query>` `` names `search`, and
- * `(none — no base)` names nothing at all.
- */
+/** Every backticked span, value placeholder removed: `search <query>` names `search`. */
 function namesIn(cell: string): string[] {
   return [...cell.matchAll(CODE_SPAN)]
     .map((span) => withoutValuePlaceholder(span[1] ?? ""))
@@ -522,7 +421,6 @@ function withoutValuePlaceholder(span: string): string {
   return span.replace(VALUE_PLACEHOLDER, "").trim()
 }
 
-/** Every name the CLI answers to: one per module, plus each alias it declares. */
 function rosterOf(commands: Command[]): string[] {
   return commands.flatMap((command) => [command.id, ...command.aliases])
 }
@@ -531,7 +429,7 @@ function rosterNamedBy(rows: MatrixRow[]): string[] {
   return rows.flatMap((row) => [row.command, ...row.aliases])
 }
 
-/** Each flag bound to the command that declares it, so a flag cannot drift between rows unseen. */
+/** Bound per command, so a flag moving between rows is seen. */
 function flagsOf(commands: Command[]): string[] {
   return commands.flatMap((command) =>
     command.flags.map((flag) => `${command.id} ${flag}`)
@@ -592,7 +490,7 @@ function exitWith(drift: Drift[], commands: Command[]): never {
   process.exit(1)
 }
 
-/** Every way of judging nothing, said out loud. A quiet empty read is the defect, not a pass. */
+/** An empty read is the defect, not a pass. */
 function refuse(reason: string): never {
   throw new Error(`cli claims: ${reason}`)
 }

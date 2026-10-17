@@ -1,33 +1,15 @@
-// The documentation site: the landing page at `/` and Starlight at `/docs`.
-// Like the editor's Worker there is deliberately no `main` — a Worker serving
-// only static assets needs no script, and asset requests are then unmetered.
+// No `main`: a static-assets-only Worker needs no script.
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "agents-inc-www",
   "compatibility_date": "2025-10-01",
   "assets": {
     "directory": "./dist",
-    // Astro emits a real file per route plus `404.html`, so an unmatched
-    // request is a genuine miss rather than a client-side route — the opposite
-    // of the editor, which is a single-page app and rewrites everything to
-    // `index.html`.
+    // Astro emits a file per route plus `404.html`, unlike the editor SPA.
     "not_found_handling": "404-page",
   },
 
-  // THE APEX, as a Custom Domain. It was deliberately absent while this build
-  // was unreachable by name: `agentsinc.sh` was a Custom Domain on the editor's
-  // Worker, and a hostname binds to one Worker at a time, so claiming it here
-  // would have taken the live site away from the editor the moment it deployed.
-  //
-  // That is what the split resolved. This Worker now catches everything
-  // unclaimed on the hostname — `/` the landing page, `/docs` Starlight — while
-  // `agents-inc-editor` holds the Route `agentsinc.sh/editor*`, which takes
-  // precedence beneath it.
-  //
-  // THE MOVE IS A DASHBOARD STEP, NOT THIS LINE. Deploying this while the apex
-  // is still bound to the editor's Worker does not reassign it. The Custom
-  // Domain has to be moved onto this Worker in the Cloudflare dashboard, and
-  // `wrangler deploy` in CI is non-interactive, so a claim that needs
-  // confirmation fails there rather than doing the right thing quietly.
+  // The apex. The editor's Worker holds the more specific `agentsinc.sh/editor*`
+  // route. Moving the Custom Domain onto this Worker is a dashboard step.
   "routes": [{ "pattern": "agentsinc.sh", "custom_domain": true }],
 }
