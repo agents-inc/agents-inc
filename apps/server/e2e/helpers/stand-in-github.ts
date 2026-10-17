@@ -14,25 +14,10 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Duplex } from "node:stream"
 import type { RequestHandler } from "msw"
 
-// GitHub, for a process this suite spawns rather than one it runs in.
-//
-// msw intercepts inside the process that installs it, and `bun run dev` is a
-// tree of other processes — so the crawl it runs can only be answered from
-// outside, on the network path. This is that path: an HTTPS proxy the whole
-// tree is pointed at through `HTTPS_PROXY`, which opens a tunnel to GitHub's two
-// hosts only and answers what arrives through it from msw handlers, resolved
-// with msw's own `getResponse` — what `answerFor` in `@workspace/api-mocks`
-// does, and for the same reason. (That package's root entry cannot be imported
-// under this tsconfig; the TS2379 note at the top of src/crawl.test.ts says
-// why.)
-//
-// The tunnel is real TLS. Its certificate is made for the run and trusted
-// through NODE_EXTRA_CA_CERTS, which bun and Node both read, so certificate
-// checking stays ON: a process told to skip it would skip it for every host,
-// not only these two.
-//
-// Any other host is refused at the tunnel, so nothing the tree reaches for
-// beyond GitHub leaves the machine either.
+// msw cannot reach the processes `bun run dev` spawns, so GitHub is answered
+// through an HTTPS proxy (`HTTPS_PROXY`) that tunnels only GitHub's two hosts
+// to msw handlers. Its run-scoped certificate is trusted via
+// NODE_EXTRA_CA_CERTS, so certificate checking stays on.
 
 const GITHUB_HOSTS = [GITHUB_API_ORIGIN, GITHUB_RAW_ORIGIN].map(
   (origin) => new URL(origin).hostname
@@ -40,13 +25,11 @@ const GITHUB_HOSTS = [GITHUB_API_ORIGIN, GITHUB_RAW_ORIGIN].map(
 
 const LOOPBACK = "127.0.0.1"
 
-/** One entry of a git tree, in the three fields the crawl reads. */
 export type StandInTreeEntry = { path: string; type: string; size?: number }
 
 export type StandInRepo = {
   stars: number
   defaultBranch: string
-  /** The git tree, as the API reports it. */
   tree: readonly StandInTreeEntry[]
   /** Path → what raw.githubusercontent serves. A tree path absent here 404s. */
   files: Readonly<Record<string, string>>
@@ -55,7 +38,6 @@ export type StandInRepo = {
 export type StandInGitHub = {
   /** What a spawned process needs in its environment to reach this, not GitHub. */
   environment: Record<string, string>
-  /** Every URL GitHub would have been asked for, in order. */
   requested: () => readonly string[]
   close: () => Promise<void>
 }
@@ -65,12 +47,10 @@ type RepoParams = { owner: string; name: string }
 const notFound = () =>
   HttpResponse.json({ message: "Not Found" }, { status: 404 })
 
-// `/{owner}/{name}/{branch}/{path...}` minus its first three segments — read
-// off the URL, as src/crawl.test.ts does and for its reason.
+// The repository-relative path of a raw URL.
 const fileRequestedBy = (url: string) =>
   new URL(url).pathname.split("/").slice(4).join("/")
 
-/** GitHub's three answers the crawl reads, for the repositories given. */
 export const githubServing = (
   repos: Readonly<Record<string, StandInRepo>>
 ): RequestHandler[] => {

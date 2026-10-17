@@ -1,19 +1,6 @@
-// Started as `@better-auth/cli generate` output and is NOW HAND-MAINTAINED,
-// because the generator cannot produce a correct file for the library we run.
-//
-// `@better-auth/cli` tops out at 1.4.21 (1.5.0-beta.13 on the beta tag) while
-// `better-auth` is 1.7.2 — which `better-auth-cloudflare` requires, since it
-// peers on ^1.5.0. The version-lagged generator emits a 1.4-era `accounts`
-// table with no `issuer` column, and the failure is invisible until somebody
-// actually signs in: "the field issuer does not exist in the schema for the
-// model accounts", from inside the library, at the callback. Every test passed
-// and the worker booted.
-//
-// `auth-schema.test.ts` is the guard. It asks the INSTALLED better-auth what
-// columns it expects, through its own `getAuthTables`, and compares them to
-// this file — so the next version that adds a field fails a test instead of a
-// sign-in. Re-running the generator would delete the fix; regenerate only after
-// checking the CLI has caught up, and re-run that test either way.
+// Hand-maintained: `@better-auth/cli generate` lags the installed better-auth
+// and omits `accounts.issuer`. Regenerating would drop it; auth-schema.test.ts
+// compares this file to what the installed library expects.
 import { relations, sql } from "drizzle-orm"
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
 
@@ -64,7 +51,7 @@ export const accounts = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // Added by hand — see the note at the head of this file.
+    // Added by hand; see the note at the head of this file.
     issuer: text("issuer"),
     accessToken: text("access_token"),
     refreshToken: text("refresh_token"),

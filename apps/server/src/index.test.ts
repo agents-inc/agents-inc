@@ -16,35 +16,17 @@ import { seedSession } from "./db/seed-session"
 import type { SeedPayload } from "@workspace/matrix/seed"
 import type { AppType } from "./index"
 
-// These run against the real worker in the real runtime, so they cover the
-// whole contract a client sees: status codes, idempotent ids, CORS, and the
-// round trip.
-
 const BASE = "https://api.test"
 
-// The canonical configuration, from the shared fixture rather than written out
-// again here. The copy this replaced restated every field the suite does not
-// exercise — the version as a bare `5`, the project-scoped skill, the sub-agent
-// pinned so that skill can reach it — each free to drift from the contract and
-// from the payload both of apps/editor's suites read. The builder parses itself
-// with `seedPayloadSchema`, so drift fails at import rather than as a 400 in
-// whichever assertion happens to provoke one.
-//
-// `stackId` is the one field every spec here overrides: the default is `null`,
-// and a round trip reading back `null` cannot tell a value that survived from
-// one that was never sent. The specs about the store's scope rule override
-// `skills` and `agents` as well, because those two fields ARE that rule's
-// subject — see `PROJECT_SKILL_ON_WEB_DEVELOPER`.
+// Specs override `stackId`, since a round trip of the default `null` proves
+// nothing.
 const payload = (overrides: Partial<SeedPayload> = {}) =>
   seedPayload({ stackId: "next", ...overrides })
 
 const WEB_DEVELOPER = "web-developer"
 
-// The pair the store's scope rule is about: a project-scoped skill assigned to
-// `web-developer`. Stated here rather than inherited from the shared fixture,
-// which happens to hold the same pair today — a refusal whose cause sits in
-// another package's defaults goes on passing, or starts failing, for a reason
-// nobody reading the spec can see.
+// Stated here rather than inherited from the shared fixture, so the refusal's
+// cause is visible in the spec.
 const PROJECT_SKILL_ON_WEB_DEVELOPER: SeedPayload["skills"] = {
   "web-framework-react": {
     install: "plugin",
@@ -85,55 +67,36 @@ describe("POST /configs", () => {
     expect(response.status).toBe(400)
   })
 
-  // The one refusal on this route a caller can do something about, and the
-  // reason it needs a status of its own. The writer here is a long-lived
-  // browser tab: it mints the version it was BUILT with, its own bundled schema
-  // accepts that, and a worker deployed since refuses it — forever, identically,
-  // on every click. Folded into the 400 above it is indistinguishable from a
-  // malformed body, which is what let this reach the tracker as a console
-  // screenshot rather than as something the app said.
+  // A stale browser tab: a reload fixes it, so it needs its own status.
   it("answers a payload minted by an older build with 409, not a generic 400", async () => {
     const response = await post({ ...payload(), v: SEED_VERSION - 1 })
 
     expect(response.status).toBe(409)
   })
 
-  // A version this worker has never served is the same situation seen from the
-  // other side — a tab built against a bump that has not deployed yet — and
-  // wants the same answer, so the rule is "not our version" rather than "older".
+  // "Not our version", not "older".
   it("answers a payload from a version it has never served the same way", async () => {
     const response = await post({ ...payload(), v: SEED_VERSION + 1 })
 
     expect(response.status).toBe(409)
   })
 
-  // The status is only half of it: nothing downstream can turn `409` into words
-  // on its own, and a caller reading the body by hand is the person who needs
-  // the sentence most.
   it("names reloading as the fix in the body it sends", async () => {
     const response = await post({ ...payload(), v: SEED_VERSION - 1 })
 
     expect(await response.text()).toContain("Reload")
   })
 
-  // The control. Without it, a rule that answered 409 for every refusal would
-  // pass all three assertions above — and the whole point is that the two are
-  // told apart.
+  // The control: a malformed body still gets 400.
   it("keeps 400 for a body that is malformed at the current version", async () => {
     const response = await post({ ...payload(), skills: "not-a-record" })
 
     expect(response.status).toBe(400)
   })
 
-  // Well past `MAX_BODY_BYTES`, which is sized for a payload carrying several
-  // external skills' whole directories — the largest real one measures 84 KB.
   const OVERSIZED_FIELD_CHARS = 1_200_000
 
-  // The store is where a bad link stops being one person's mistake and becomes
-  // an address other people paste. A project-scoped skill assigned to a
-  // sub-agent resting at global scope has nowhere to be written on whoever
-  // installs it, so minting an id for one produces a link that fails at the
-  // recipient — worse than no link at all.
+  // Such a link would fail at every recipient.
   it("refuses a project skill assigned to a sub-agent resting at global", async () => {
     const response = await post(
       payload({
@@ -145,10 +108,7 @@ describe("POST /configs", () => {
     expect(response.status).toBe(400)
   })
 
-  // The control for the refusal above, differing from it in the sub-agent's
-  // scope and nothing else. Both outcomes leave KV untouched from outside, so a
-  // refusal pinned on its own cannot tell a rule that fires on the pair from
-  // one that has swallowed every payload.
+  // The control: differs only in the sub-agent's scope.
   it("stores the same configuration once the sub-agent is pinned", async () => {
     const response = await post(
       payload({
@@ -170,9 +130,7 @@ describe("POST /configs", () => {
     expect(response.status).toBe(413)
   })
 
-  // The reason the cap moved. A skill added from outside the catalogue travels
-  // its whole directory inline, which is tens of KB against the ~2 KB the rest
-  // of a payload weighs — so the old 32 KB cap refused one external skill.
+  // An external skill travels its whole directory inline.
   it("stores a payload carrying an external skill's directory", async () => {
     const withContent: SeedPayload = {
       ...payload(),
@@ -206,23 +164,14 @@ describe("GET /configs/:id", () => {
     expect(await response.json()).toEqual(payload())
   })
 
-  // The body as well as the status, and against the constant packages/api-mocks
-  // serves rather than a literal restated here. That package mirrors this
-  // worker's refusals so the editor's suites assert on what really arrives, and
-  // nothing held the mirror to the worker: a reworded body here would have left
-  // every one of those suites green against a sentence the worker had stopped
-  // sending. This is the assertion that reddens instead.
+  // Against the api-mocks constant, so its mirror of this body cannot drift.
   it("404s an unknown id", async () => {
     const response = await SELF.fetch(`${BASE}/configs/unknown1`)
     expect(response.status).toBe(404)
     expect(await response.text()).toBe(NO_CONFIG_BODY)
   })
 
-  // Nothing this worker writes can land here — the POST validates first and the
-  // id is the payload's own hash. Writing straight to the binding is how the
-  // case becomes reachable at all, and it is worth reaching: without the parse,
-  // the route serves arbitrary stored bytes on a response its OpenAPI contract
-  // declares to be a seed payload.
+  // Written straight to the binding: no worker write can produce this.
   it("500s rather than serving a stored payload that no longer validates", async () => {
     await env.CONFIGS.put(
       "corrupt1",
@@ -245,14 +194,8 @@ describe("GET /configs/:id", () => {
   })
 })
 
-// The editor reaches every route this block calls through `packages/api`'s
-// `hc<AppType>` client rather than a hand-written fetch, which makes the
-// exported type half of the contract and not a convenience. Running that
-// client against the real worker here is what keeps the two halves honest
-// about each other: a route that stops being chained onto the exported app
-// disappears from the client's surface and this block stops compiling, and a
-// body that drifts from what the route declares fails an assertion that no
-// cast is standing in front of.
+// Through the `hc<AppType>` client the editor uses, so a route dropped from
+// the exported type stops this compiling.
 describe("the typed client the editor uses", () => {
   const client = hc<AppType>(BASE, { fetch: SELF.fetch.bind(SELF) })
 
@@ -280,8 +223,7 @@ describe("the typed client the editor uses", () => {
     expect(await response.json()).toEqual(payload())
   })
 
-  // The one failure the editor treats as ordinary rather than reportable, so
-  // it is the one status the client has to be able to tell apart.
+  // The editor treats this one as ordinary, so the client must tell it apart.
   it("404s an unknown id", async () => {
     const response = await client.configs[":id"].$get({
       param: { id: "unknown1" },
@@ -313,8 +255,6 @@ describe("the typed client the editor uses", () => {
     expect((await listed.json()).map((stack) => stack.id)).toEqual([id])
   })
 
-  // The status `createStack` and `composeProposal` read as signed out rather
-  // than as a refusal.
   it("answers a request with no session 401", async () => {
     const save = await client.stacks.$post({ json: STACK })
     const compose = await client.compose.$post({ json: { sentence: "a" } })
@@ -389,12 +329,8 @@ describe("CORS", () => {
     expect(response.headers.get("access-control-allow-origin")).toBeNull()
   })
 
-  // The class, not one status. A refusal a browser cannot READ is a refusal
-  // that reaches the app as a network error, so every answer this route can
-  // give has to carry the header — and a refusal produced by middleware ahead
-  // of the handler (the size cap) or *inside* the validator (the version
-  // mismatch) is exactly where that is easy to lose. Listed as bodies rather
-  // than as statuses so each row provokes its own answer for real.
+  // Every answer, including middleware and validator refusals, must carry the
+  // header or the browser sees a network error.
   const REFUSED_BODIES = {
     "malformed at the current version": { v: SEED_VERSION, skills: "no" },
     "minted by another build": { ...payload(), v: SEED_VERSION - 1 },
@@ -424,10 +360,7 @@ describe("CORS", () => {
   )
 })
 
-// The tunnel exists so browser tracking prevention cannot silently drop error
-// reports. What makes it worth testing is the guard: an endpoint that forwards
-// whatever it is handed is an open relay into any Sentry account, paid for by
-// this worker's quota.
+// The DSN guard keeps the tunnel from being an open relay.
 describe("POST /monitoring", () => {
   const INGEST = "o4509197991346176.ingest.de.sentry.io"
   const PROJECT = "4511832531796048"
@@ -468,7 +401,6 @@ describe("POST /monitoring", () => {
     expect(response.status).toBe(400)
   })
 
-  // The relay itself, which every case above stops short of.
   it("relays an envelope addressed to this project", async () => {
     const sentry = vi.fn(() => new HttpResponse(null, { status: 200 }))
     upstreamMock.use(

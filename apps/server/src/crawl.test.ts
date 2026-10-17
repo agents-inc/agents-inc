@@ -13,31 +13,9 @@ import { INDEXED_REPOS, crawlSkillIndex } from "./crawl"
 
 import type { SkillIndex } from "@workspace/matrix/skill-index"
 
-// The crawl against a stand-in GitHub. Nothing here touches KV or the worker:
-// this module is what the scheduled Action runs, and these are the tests that
-// moved with it when the crawl left the request path.
-//
-// GitHub is answered by msw rather than by a stubbed `fetch`, so what the crawl
-// sends is matched as a URL by a router instead of by the string prefixes this
-// file used to compare against — and `onUnhandledRequest: "error"` in
-// `vitest.setup.ts` turns a request no case described into a failure rather
-// than the invented `500` that used to stand in for one.
-//
-// The ESTATE stays here and is per-test on purpose. `@workspace/api-mocks`
-// describes the two skills the editor's add-skills dialog stages, at one repo
-// each; every case below turns on a repository shape of its own — sixty skills,
-// a same-prefixed neighbour, a blob GitHub reported no size for — and answering
-// them from a fixed pair would be asserting about a different question. What IS
-// shared is the two origins.
-//
-// `githubNotFound` from that package's ROOT entry is the obvious third thing to
-// take and cannot be taken yet: importing it pulls `handlers.ts` into this
-// program, where `carriesMarketplaceToken` annotates its parameter with the
-// ambient `Request` — the WORKERS `Request` under this tsconfig's
-// `@cloudflare/vitest-pool-workers/types`, which msw's `StrictRequest` is not
-// assignable to with `exactOptionalPropertyTypes` on (TS2379). `./fixtures` is
-// msw-free by design and imports cleanly, which is why the origins arrive from
-// there.
+// The crawl against a stand-in GitHub served by msw. Each case builds its own
+// estate. `githubNotFound` cannot come from api-mocks' root entry: its handlers
+// clash with the Workers `Request` type here (TS2379).
 
 const REPO_API = `${GITHUB_API_ORIGIN}/repos/`
 const RAW = `${GITHUB_RAW_ORIGIN}/`
@@ -46,45 +24,32 @@ const REPO_FACTS_URL = `${GITHUB_API_ORIGIN}/repos/:owner/:name`
 const TREE_URL = `${GITHUB_API_ORIGIN}/repos/:owner/:name/git/trees/:branch`
 const RAW_URL = `${GITHUB_RAW_ORIGIN}/:owner/:name/:branch/*`
 
-// Named rather than spelled out so the tests keep working when the allowlist
-// is re-ordered — what they assert is the policy, not which repo won.
+// Named so a re-ordered allowlist does not break the tests.
 const [FIRST_REPO, SECOND_REPO, THIRD_REPO] = INDEXED_REPOS
 
 const STARS = 268_868
 
-// More skills than the old one-repository-per-request design could verify
-// inside a Worker's 50-subrequest budget. Nothing bounds the crawl now.
 const MORE_SKILLS_THAN_A_REQUEST_COULD_VERIFY = 60
 
 const TOKEN = "ghs-not-a-real-token"
 
-// The sizes the stand-in git tree reports, far enough apart that a sum can only
-// come out right one way. They are the tree's numbers rather than the files' —
-// the crawl weighs a skill from the listing and never downloads it to check.
+// Far apart so a sum comes out right one way only. Tree sizes, not file bytes.
 const MANIFEST_BYTES = 1_024
 const REFERENCE_BYTES = 30_000
 const SIBLING_BYTES = 500_000
 const README_BYTES = 12
 
-// A SKILL.md with no frontmatter, named so the weight the crawl reports for its
-// directory can be checked against the one thing in it.
 const GAMMA_MANIFEST = "# Gamma Skill\n\nSome prose.\n"
 
-/**
- * GitHub's own refusal for a repository that is not there, and for one the
- * caller may not see — the same answer on purpose. The crawl reads only the
- * status; the body is GitHub's so that stays true if it ever reads more.
- */
+/** GitHub's refusal, the same for missing and private repositories. */
 const notFound = () =>
   HttpResponse.json({ message: "Not Found" }, { status: 404 })
 
-/** One entry of the git tree, in the three fields the crawl reads. */
 type TreeEntry = { path: string; type: string; size?: number }
 
 type FakeRepo = {
   stars: number
   defaultBranch: string
-  /** The git tree, exactly as the API reports it. */
   tree: readonly TreeEntry[]
   /** Path → what raw.githubusercontent serves. A tree path absent here 404s. */
   files: Readonly<Record<string, string>>
@@ -105,16 +70,13 @@ const skillMd = (name: string, description: string) =>
     "",
   ].join("\n")
 
-// A file, weighed the way the crawl weighs one: the tree's own reported size,
-// never the bytes raw.githubusercontent goes on to serve.
 const blob = (path: string, size: number): TreeEntry => ({
   path,
   type: "blob",
   size,
 })
 
-// A directory. GitHub reports no size for one, which is why the entry's TYPE is
-// what tells a file from a directory rather than the presence of a number.
+// GitHub reports no size for a directory.
 const directory = (path: string): TreeEntry => ({ path, type: "tree" })
 
 const fakeRepo = (
@@ -129,8 +91,6 @@ const fakeRepo = (
   files,
 })
 
-// One skill in each allowlisted repository, distinguishable by name. Enough to
-// tell which repositories a crawl has reached.
 const everyRepo = (): Record<string, FakeRepo> =>
   Object.fromEntries(
     INDEXED_REPOS.map((repo, position) => [
@@ -144,34 +104,19 @@ const everyRepo = (): Record<string, FakeRepo> =>
     ])
   )
 
-/** The repository facts endpoint's answer, in the two fields the crawl reads. */
 const factsOf = (repo: FakeRepo) => ({
   stargazers_count: repo.stars,
   default_branch: repo.defaultBranch,
 })
 
 /**
- * The file a raw.githubusercontent URL is asking for, relative to the
- * repository root: `/{owner}/{name}/{branch}/{path...}` minus the first three
- * segments. Read off the URL because msw parks a `*` match in `params[0]`,
- * where it is addressed by position rather than by name.
- *
- * Takes the url and not the request. The ambient `Request` under this
- * tsconfig is the WORKERS one, and msw hands its resolvers a
- * `StrictRequest<DefaultBodyType>`, which is not assignable to it with
- * `exactOptionalPropertyTypes` on (TS2379).
+ * The repository-relative path of a raw URL (msw parks `*` in `params[0]`).
+ * Takes the url, not the request, to avoid the Workers `Request` (TS2379).
  */
 const fileRequestedBy = (url: string) =>
   new URL(url).pathname.split("/").slice(4).join("/")
 
-/**
- * GitHub holding exactly these repositories and nothing else — the three
- * endpoints the crawl reads, over the origins `@workspace/api-mocks` names.
- *
- * A repository the estate does not carry is refused with GitHub's own body
- * rather than a shape invented here, which is the same 404 an unauthenticated
- * caller gets for a repository that exists and is not theirs.
- */
+// GitHub holding exactly these repositories; anything else gets its own 404.
 const serveGitHub = (repos: Record<string, FakeRepo>) => {
   const repoIn = (params: RepoParams) => repos[`${params.owner}/${params.name}`]
 
@@ -197,20 +142,9 @@ const serveGitHub = (repos: Record<string, FakeRepo>) => {
 }
 
 /**
- * GitHub unreachable rather than answering an error — the harsher of the two,
- * and the one case in this file msw cannot express.
- *
- * `HttpResponse.error()` is what msw offers for it, and in THIS pool every one
- * of them leaks an unhandled rejection out of `@mswjs/interceptors` that fails
- * the run whether or not the caller catches the fetch. Reproduced on msw 2.15.0
- * with a single error response awaited inside `expect(...).rejects`: the
- * assertion passes and the file still reports `Errors 1`, one per error
- * response issued. A resolver that THROWS is not the same thing — msw turns
- * that into a 500, which is a repository answering rather than a repository
- * that cannot be reached, and this test is about the difference.
- *
- * So the global goes back for this one case, which is what `vitest.config.ts`
- * describes and what the rest of the file no longer needs.
+ * GitHub unreachable. Stubs the global `fetch`: msw's `HttpResponse.error()`
+ * leaks an unhandled rejection in this pool, and a throwing resolver is a 500,
+ * not an unreachable host.
  */
 const serveGitHubUnreachable = () => {
   vi.stubGlobal("fetch", () =>
@@ -219,12 +153,7 @@ const serveGitHubUnreachable = () => {
 }
 
 /**
- * @returns every call the crawl made, in order.
- *
- * Read off msw's own lifecycle rather than out of a resolver, so a request an
- * estate refuses is recorded exactly like one it answers — the token assertions
- * below are about what was SENT, and a recorder that only saw the successes
- * would be blind to the case that matters.
+ * @returns every call the crawl made, in order, refused or answered.
  */
 const recordCalls = () => {
   const calls: Call[] = []
@@ -239,9 +168,6 @@ const recordCalls = () => {
   return calls
 }
 
-// Parsed with the shared schema rather than asserted field by field: what the
-// script publishes is what this returns, and the script publishes nothing that
-// does not satisfy this schema.
 const crawled = async (
   repos: readonly string[],
   token?: string
@@ -249,9 +175,7 @@ const crawled = async (
   skillIndexSchema.parse(await crawlSkillIndex(repos, token))
 
 describe("crawlSkillIndex", () => {
-  // For `serveGitHubUnreachable` alone. `clearMocks: true` from the shared
-  // config clears mock CALLS and not stubbed globals, so without this the rest
-  // of the file would run against a `fetch` msw is no longer patching.
+  // `clearMocks` does not restore stubbed globals.
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -261,9 +185,7 @@ describe("crawlSkillIndex", () => {
       [FIRST_REPO]: fakeRepo(
         {
           "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things"),
-          // Readable, so its absence from the index can only be the path
-          // filter: a repository-root SKILL.md describes the repository, and
-          // a skill is a directory in every consumer of this index.
+          // Readable, so its absence can only be the root-path filter.
           "SKILL.md": skillMd("the-repo-itself", "Not a skill"),
         },
         [
@@ -312,8 +234,7 @@ describe("crawlSkillIndex", () => {
     serveGitHub({
       [FIRST_REPO]: fakeRepo({
         "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things"),
-        // YAML forbids tabs for indentation, so this block exists and cannot
-        // be read — which is the case install-proof is about.
+        // YAML forbids tab indentation, so this frontmatter cannot be read.
         "skills/broken/SKILL.md":
           "---\nname: broken\n\tdescription: tabs\n---\n\n# broken\n",
       }),
@@ -343,12 +264,7 @@ describe("crawlSkillIndex", () => {
     ])
   })
 
-  // The weight is why the size came into the contract at all. The editor's own
-  // listing already reads these numbers off the same endpoint — see
-  // `apps/editor/src/lib/api/skill-contents.ts` — but only at confirm, so a
-  // skill nothing could ever carry was refused at the end of the funnel. The
-  // tree the crawl already fetched holds the answer, and summing it costs no
-  // request at all.
+  // Summed from the tree the crawl already fetched; no extra request.
   it("weighs the whole skill directory rather than its SKILL.md alone", async () => {
     serveGitHub({
       [FIRST_REPO]: fakeRepo(
@@ -368,9 +284,7 @@ describe("crawlSkillIndex", () => {
     ])
   })
 
-  // The separator is the whole of it: without it `skills/alpha` would also
-  // swallow `skills/alpha-legacy`, and a skill would be refused for the weight
-  // of a neighbour that merely starts the same way.
+  // The separator keeps `skills/alpha` from weighing `skills/alpha-legacy`.
   it("weighs a skill without its neighbours, however alike their paths", async () => {
     serveGitHub({
       [FIRST_REPO]: fakeRepo(
@@ -400,11 +314,7 @@ describe("crawlSkillIndex", () => {
     })
   })
 
-  // Zero, and indexed anyway. GitHub reports a size for every blob, so this is
-  // the case that should not arise — and if it ever does, the honest answer is
-  // the same number the editor's own listing computes from the same response,
-  // which still refuses the skill at confirm. A producer and its backstop
-  // disagreeing about a weight would be worse than either.
+  // Zero and still indexed, matching the editor's own listing.
   it("weighs a directory GitHub reports no sizes for as nothing", async () => {
     serveGitHub({
       [FIRST_REPO]: fakeRepo(
@@ -418,9 +328,7 @@ describe("crawlSkillIndex", () => {
     expect(index.skills.map((skill) => skill.bytes)).toStrictEqual([0])
   })
 
-  // The index carries what the repositories hold, cap or no cap. Dropping an
-  // oversized skill here would leave the dialog unable to say why it is not
-  // offering one — which is the same silence, moved.
+  // Oversized skills stay indexed so the dialog can say why it refuses them.
   it("indexes a skill far past the per-skill cap rather than dropping it", async () => {
     serveGitHub({
       [FIRST_REPO]: fakeRepo(
@@ -438,8 +346,6 @@ describe("crawlSkillIndex", () => {
     expect(index.skills[0]?.bytes).toBeGreaterThan(MAX_EXTERNAL_SKILL_BYTES)
   })
 
-  // What replaced the incremental fill. The Action has no subrequest budget to
-  // stay inside, so one pass produces the whole index rather than a third of it.
   it("crawls every allowlisted repository in one pass", async () => {
     serveGitHub(everyRepo())
 
@@ -452,8 +358,6 @@ describe("crawlSkillIndex", () => {
     ])
   })
 
-  // The old design refused a repository holding more than 40 skills, because
-  // one Worker request could not verify them. Nothing refuses one now.
   it("indexes a repository holding more skills than one worker request could verify", async () => {
     const enormous = Object.fromEntries(
       Array.from(
@@ -471,9 +375,7 @@ describe("crawlSkillIndex", () => {
     expect(index.skills).toHaveLength(MORE_SKILLS_THAN_A_REQUEST_COULD_VERIFY)
   })
 
-  // All or nothing, and that is what makes the stored index safe to keep
-  // forever: a run that could not see everything publishes nothing, so the
-  // last complete index stays in KV rather than being replaced by a smaller one.
+  // All or nothing, so the last complete index is never replaced by a smaller one.
   it("fails rather than returning a partial index when a repository is unreachable", async () => {
     serveGitHubUnreachable()
 
@@ -500,10 +402,7 @@ describe("crawlSkillIndex", () => {
     expect(Date.parse(index.builtAt)).toBeGreaterThanOrEqual(before)
   })
 
-  // 5000 requests an hour instead of 60, which is the whole reason the crawl
-  // moved somewhere it can hold a token. raw.githubusercontent is a different
-  // host serving public files and spends no API budget at all, so it is sent
-  // no credential — a token travels to exactly the host that issued it.
+  // The token goes to the API only, never to raw.githubusercontent.
   it("authenticates to the API and sends no token to raw content", async () => {
     const calls = recordCalls()
     serveGitHub(everyRepo())
@@ -535,9 +434,7 @@ describe("crawlSkillIndex", () => {
 })
 
 describe("the allowlist", () => {
-  // The dialog this index feeds exists for what the editor's own grid lacks,
-  // and the grid already IS this project's catalog. Indexing our own skills
-  // would put every one of them in the "external" half of the UI.
+  // The editor's grid already is this project's catalog.
   it("never carries this project's own catalog", () => {
     expect(
       INDEXED_REPOS.filter((repo) => repo.startsWith("agents-inc/"))

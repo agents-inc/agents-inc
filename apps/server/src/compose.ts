@@ -10,29 +10,16 @@ import type { RouteHandler } from "@hono/zod-openapi"
 
 type WorkerEnv = { Bindings: Env }
 
-// Long enough for a paragraph describing a project, short enough that it cannot
-// be a payload. Input tokens are billed, so an unbounded prompt is an unbounded
-// bill and nothing else here caps what one signed-in caller can paste.
+// Input tokens are billed; this caps what one caller can paste.
 const MAX_SENTENCE = 600
 
-/**
- * WHAT THE MODEL IS ALLOWED TO DECIDE, and it is deliberately almost nothing.
- *
- * Skill ids and a sentence of reasoning. Not scopes, not install modes, not
- * which sub-agents carry what — `resolveAssignment` and `PRELOAD_DEFAULTS` in
- * packages/matrix already answer those, the CLI generates from the same rules,
- * and a model inventing a preload policy would produce a configuration the CLI
- * then contradicts. The editor derives everything else from the ids.
- */
+// The model picks skill ids only; everything else derives from them.
 const proposalSchema = z.object({
   skillIds: z.array(z.string()),
   reason: z.string(),
 })
 
-// The catalogue, rendered once per isolate rather than per request. It is the
-// stable half of the prompt and the cached half — see the `cache_control` below
-// — so it must be byte-identical between calls, which a per-request `map` over
-// an object's keys is not guaranteed to be.
+// Rendered once and sorted: the cached prompt prefix must be byte-identical.
 const CATALOGUE_LINES = Object.values(CATALOG.skillsById)
   .map((skill) => `${skill.id} — ${skill.displayName}: ${skill.description}`)
   .sort()
@@ -53,22 +40,8 @@ saying why. Rules:
 
 ${CATALOGUE_LINES}`
 
-/**
- * The ids the editor is allowed to see, out of the ids the model returned.
- *
- * THE MODEL'S IDS ARE NOT TRUSTED, in two ways it gets them wrong.
- *
- * An id that is not in the catalogue at all — a plausible near-miss is the
- * likeliest shape — is dropped, so the editor never receives one it cannot
- * resolve and a hallucinated skill is silently absent rather than a broken row
- * on screen.
- *
- * An id named TWICE is worse than it looks (EDITOR-60): the editor draws a row
- * per id and applying the proposal toggles each one, so a repeat turned a
- * skill on and straight back off — a proposal reading "2 changes" that changed
- * nothing. Deduplicated at this boundary rather than in the editor, because
- * this is where the ids are already being made trustworthy.
- */
+// Drops ids outside the catalogue and deduplicates (a repeat would toggle a
+// skill on and back off in the editor).
 const trustedIds = (skillIds: string[]) => [
   ...new Set(skillIds.filter((id) => id in CATALOG.skillsById)),
 ]
@@ -112,36 +85,16 @@ export const composeRoute = createRoute({
   },
 })
 
-// SIGNED-IN ONLY, and `authenticated` is the abuse control rather than a
-// nicety. Every call spends real money, so the thing worth having is an
-// identity that can be rate-limited and quota'd — which is why EDITOR-54's
-// Turnstile requirement was re-derived once accounts landed: a CAPTCHA proves a
-// human was present once and says nothing about their hundredth request.
+// Signed-in only: an identity is what can be rate-limited.
 export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
   authenticated(async (c, session) => {
     const sentence = c.req.valid("json").sentence.trim()
-    // Refused BEFORE the model is reached, both of them. A blank prompt costing
-    // a token is the cheapest bug to have and the easiest never to notice.
     if (sentence.length === 0) return c.json({ error: "empty" }, 400)
     if (sentence.length > MAX_SENTENCE) {
       return c.json({ error: "too long" }, 400)
     }
 
-    // ABOVE THE MODEL AND BELOW THE GUARDS, and both halves are load-bearing.
-    //
-    // Above, because this limiter exists to bound what one signed-in caller can
-    // SPEND, and everything past this line spends. Below, because the two
-    // guards above reach no model and cost no money, so counting them charged
-    // for something that never happened: a visitor who pasted a long paragraph
-    // a few times was then told "too many requests", which is a second wrong
-    // message caused by the first and describes neither.
-    //
-    // This weakens nothing. Every path to Anthropic still passes here, so the
-    // spend is bounded exactly as before, and the work an over-long request can
-    // now reach without being counted is one JSON parse and one comparison —
-    // both of which already ran ahead of this line, since `authenticated` has
-    // spent a D1 session read and the route's validator has parsed the body
-    // before the handler body starts.
+    // After the free guards, before anything that spends.
     const { success } = await c.env.COMPOSE_CALLS.limit({
       key: session.user.id,
     })
@@ -149,10 +102,7 @@ export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
 
     const client = new Anthropic({
       apiKey: c.env.ANTHROPIC_API_KEY,
-      // The AI Gateway when one is configured, Anthropic directly when not. BYOK
-      // either way — the key is this worker's and the gateway adds no markup — so
-      // the gateway is caching, analytics and a second place to throttle rather
-      // than a dependency this route needs to function.
+      // The AI Gateway is optional; the key is this worker's either way.
       ...(c.env.AI_GATEWAY_URL ? { baseURL: c.env.AI_GATEWAY_URL } : {}),
     })
 
@@ -160,9 +110,7 @@ export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
       const response = await client.messages.parse({
         model: "claude-opus-5",
         max_tokens: 2048,
-        // The catalogue is ~200 lines and identical on every call, so it is the
-        // cached prefix and the sentence is the only thing that varies. Order is
-        // system then messages, which is why the sentence goes second.
+        // The catalogue is the cached prefix; only the sentence varies.
         system: [
           {
             type: "text",
@@ -171,9 +119,7 @@ export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
           },
         ],
         messages: [{ role: "user", content: sentence }],
-        // Low effort on purpose: this is a constrained selection from a list
-        // that is entirely in the prompt, not a problem to reason about, and the
-        // whole route exists under a cost concern.
+        // A constrained selection from a list, not a reasoning problem.
         thinking: { type: "adaptive" },
         output_config: {
           effort: "low",
@@ -189,8 +135,7 @@ export const compose: RouteHandler<typeof composeRoute, WorkerEnv> =
         200
       )
     } catch (error) {
-      // Logged rather than returned. An upstream message can carry request ids,
-      // account details and quota figures, none of which belong in a browser.
+      // Upstream messages can carry account details; log, don't return.
       console.error({ event: "compose_failure", message: messageOf(error) })
       return c.json({ error: "the model did not answer" }, 502)
     }

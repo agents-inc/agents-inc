@@ -18,41 +18,24 @@ import type { SkillIndex, SkillIndexEntry } from "@workspace/matrix/skill-index"
 import type { DevSession } from "./helpers/local-dev"
 import type { StandInGitHub, StandInRepo } from "./helpers/stand-in-github"
 
-// `bun run dev` is how a developer starts the worker the editor talks to, and
-// it has to leave that worker able to do what production's does (owner,
-// 2026-10-02, journey 25: "Get local in line with prod").
-//
-// Two things stood in the way. `GET /skills` serves one KV key that only the
-// daily workflow writes, and it writes production's store — so a local worker
-// answered 503 and the editor's Add skill search found nothing. And nothing
-// applied the D1 migrations, so signing in failed. The ruling: before the
-// worker starts, `bun run dev` builds the local skill index the way the
-// workflow does whenever the store has none or holds one older than three
-// days, and applies the local migrations.
-//
-// Each case starts `bun run dev` over a store of its own, with GitHub played
-// by a stand-in on the network path, and asks the running worker what the
-// editor would. Nothing here reaches github.com.
+// `bun run dev` builds the local skill index when missing or older than three
+// days, and applies the local D1 migrations, before the worker starts. Each
+// case runs over its own store with a stand-in GitHub.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-// Either side of the three days the ruling and the worker's own `freshnessOf`
-// draw the line at, far enough from it that the run's own minutes cannot
-// carry a build across.
+// Far enough either side of three days that the run's own minutes don't matter.
 const OLDER_THAN_THREE_DAYS = 4 * DAY_MS
 const YOUNGER_THAN_THREE_DAYS = 1 * DAY_MS
 
-// What the stand-in tree reports for each skill's two files. The crawl weighs
-// a directory from these, so an entry carrying their sum came from the crawl.
+// An entry carrying their sum came from the crawl.
 const MANIFEST_BYTES = 1_024
 const REFERENCE_BYTES = 2_048
 
-// Where signing in sends the browser next.
 const GITHUB_AUTHORIZE = /^https:\/\/github\.com\/login\/oauth\/authorize\?/
 
 const builtAgo = (ms: number) => new Date(Date.now() - ms).toISOString()
 
-/** One skill in each allowlisted repository, as the crawl should index it. */
 const standInSkill = (repo: string, at: number): SkillIndexEntry => {
   const name = `stand-in-skill-${String(at + 1)}`
   return {
@@ -98,8 +81,7 @@ const ESTATE: Record<string, StandInRepo> = Object.fromEntries(
   CRAWLED.map((skill) => [skill.repo, repoHolding(skill)])
 )
 
-// What a store held before this run — named so that seeing it served means
-// the store was left alone, and not seeing it means it was rebuilt.
+// Served means the store was left alone; absent means it was rebuilt.
 const LEFT_OVER: SkillIndexEntry = {
   name: "left-over-skill",
   description: "What the store held before this run of `bun run dev`",
@@ -109,23 +91,17 @@ const LEFT_OVER: SkillIndexEntry = {
   bytes: 1,
 }
 
-// GitHub answering nothing the crawl can use, which is what a developer who
-// is offline, or on a bad day for GitHub, gets from it.
 const GITHUB_DOWN = [
   http.all("*", () => new HttpResponse(null, { status: 503 })),
 ]
 
-// The crawl's requests, and not wrangler's own: run under an AI agent,
-// wrangler asks GitHub for its skill list whenever the day-long cache in its
-// global config has lapsed, and that wait is not the crawl's.
+// Wrangler's own GitHub requests are excluded.
 const askedByTheCrawl = (url: string) => {
   const { pathname } = new URL(url)
   return INDEXED_REPOS.some((repo) => pathname.includes(`/${repo}`))
 }
 
-// GitHub taking every request the crawl makes and answering none, which is
-// what a network that drops packets gets from it: the crawl waits on each
-// until its runtime gives up, about five minutes later.
+// A network that drops packets.
 const GITHUB_SILENT = [
   http.all("*", ({ request }) =>
     askedByTheCrawl(request.url)
@@ -147,8 +123,7 @@ const parseJson = (raw: string): unknown => {
   }
 }
 
-// What the editor's Add skill dialog asks for. The body is always read, so no
-// response holds its connection open while the worker is stopped.
+// Reads the body so no connection stays open while the worker stops.
 const askForIndex = async (running: DevSession) => {
   const response = await fetch(`${running.origin}/skills`)
   return {
@@ -158,9 +133,7 @@ const askForIndex = async (running: DevSession) => {
   }
 }
 
-// The first call the editor's Sign in button makes. Better Auth records the
-// OAuth state in D1 before it answers, so this fails on a database nothing
-// migrated, and needs no network: it only builds GitHub's URL.
+// Better Auth writes OAuth state to D1 first, so this fails unmigrated.
 const startSigningIn = async (running: DevSession) => {
   const response = await fetch(`${running.origin}/api/auth/sign-in/social`, {
     method: "POST",
@@ -222,9 +195,7 @@ describe("`bun run dev` in apps/server", () => {
     })
   })
 
-  // The other half of "whenever it is missing or older than three days":
-  // an index still inside the window is the current picture, and rebuilding
-  // it on every start would spend GitHub's anonymous allowance for nothing.
+  // A fresh index is not rebuilt.
   it("keeps an index younger than three days, and asks GitHub for nothing", async () => {
     const kept = indexBuiltAgo(YOUNGER_THAN_THREE_DAYS)
     publishIntoLocalStore(store(), kept, environment())
@@ -250,9 +221,7 @@ describe("`bun run dev` in apps/server", () => {
     })
   })
 
-  // Owner's decision after the red stage, 2026-10-02: GitHub out of reach
-  // never stops the worker from starting, and `bun run dev` says in one line
-  // what skill search will do instead.
+  // GitHub out of reach never stops the worker from starting.
   describe("when GitHub cannot be reached", () => {
     beforeEach(async () => {
       await github.close()
@@ -271,8 +240,7 @@ describe("`bun run dev` in apps/server", () => {
       expect(github.requested()).not.toStrictEqual([])
     })
 
-    // A stale index is still served, marked stale, so saying 503 here would
-    // be false.
+    // A stale index is still served, so 503 would be false.
     it("still starts the worker over a stale index, and says it serves that copy marked stale", async () => {
       const left = indexBuiltAgo(OLDER_THAN_THREE_DAYS)
       publishIntoLocalStore(store(), left, environment())
@@ -289,12 +257,7 @@ describe("`bun run dev` in apps/server", () => {
     })
   })
 
-  // Review of the same change, 2026-10-02: on a network that drops packets
-  // the worker did not start for about five minutes, with nothing on screen
-  // but the line saying the index was being built. The crawl now gets 30 s,
-  // and running out of them is the offline case, said the offline way.
-  // `startDev` gives up on a worker not ready within 90 s, so a crawl left
-  // to wait out its runtime fails here.
+  // The crawl gets 30 s; `startDev` gives up after 90 s.
   describe("when GitHub never answers", () => {
     beforeEach(async () => {
       await github.close()

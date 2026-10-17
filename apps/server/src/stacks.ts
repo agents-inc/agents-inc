@@ -10,10 +10,7 @@ import type { Context } from "hono"
 
 type WorkerEnv = { Bindings: Env }
 
-// What a stack looks like on the wire. `configId` is a pointer into KV rather
-// than a payload — the bytes are fetched with the same `GET /configs/:id` a
-// share link uses, by the same client, so nothing here duplicates the
-// configuration contract or its version gate.
+// `configId` points into KV; the payload is fetched via `GET /configs/:id`.
 const savedStackSchema = z
   .object({
     id: z.string(),
@@ -24,8 +21,6 @@ const savedStackSchema = z
   })
   .openapi("SavedStack")
 
-// Long enough for a sentence, short enough that the column is not a place to
-// put a document. A name is how a person tells two of their own stacks apart.
 const nameSchema = z.string().trim().min(1).max(80)
 
 const dbOf = (c: Context<WorkerEnv>) => drizzle(c.env.DATABASE)
@@ -99,11 +94,7 @@ export const deleteStackRoute = createRoute({
   },
 })
 
-// The owner is how a row is scoped and is nobody's business on the wire — the
-// caller is the owner, so the column tells them what they already knew and
-// tells anyone else something they should not have. Written once. It was
-// written twice, in two spellings, and a projection that stops dropping a
-// column does it in only one of them.
+// The owner is the caller, so the column is dropped from the wire.
 const withoutOwner = ({
   userId: _userId,
   ...stack
@@ -116,9 +107,7 @@ export const listStacks: RouteHandler<typeof listStacksRoute, WorkerEnv> =
       .from(savedStacks)
       .where(eq(savedStacks.userId, session.user.id))
 
-    // Sorted here rather than in SQL: the list is a person's own stacks, which
-    // is tens of rows at the outside, and an ORDER BY would need an index that
-    // exists to serve nothing else.
+    // A person's own stacks are few; sorting here avoids an index.
     return c.json(
       rows
         .map(withoutOwner)
@@ -146,9 +135,7 @@ export const createStack: RouteHandler<typeof createStackRoute, WorkerEnv> =
     return c.json(stack, 201)
   })
 
-// `and(id, userId)` on the write rather than a read-then-check: scoping the
-// mutation itself is what makes another person's id un-actionable, and it
-// cannot be forgotten between two statements.
+// Scoping the mutation itself makes another person's id un-actionable.
 export const renameStack: RouteHandler<typeof renameStackRoute, WorkerEnv> =
   authenticated(async (c, session) => {
     const { id } = c.req.valid("param")
@@ -162,9 +149,7 @@ export const renameStack: RouteHandler<typeof renameStackRoute, WorkerEnv> =
       )
       .returning()
 
-    // 404 rather than 403 for somebody else's id, deliberately: telling a
-    // stranger that a stack exists but is not theirs is telling them it
-    // exists.
+    // 404, not 403: don't confirm another person's stack exists.
     if (!row) return c.json({ error: "not found" }, 404)
 
     return c.json(withoutOwner(row), 200)
@@ -181,7 +166,6 @@ export const deleteStack: RouteHandler<typeof deleteStackRoute, WorkerEnv> =
         )
       )
 
-    // 204 whether or not a row went, because the caller's question is "make
-    // this not exist" and the answer is the same either way.
+    // 204 either way: the request is "make this not exist".
     return c.body(null, 204)
   })

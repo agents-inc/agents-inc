@@ -9,25 +9,14 @@ import { SKILL_INDEX_KEY } from "../../src/skill-index"
 
 import type { SkillIndex } from "@workspace/matrix/skill-index"
 
-// `bun run dev` in apps/server, run the way a developer runs it: from this
-// workspace, as a tree of real processes, over a local store of its own.
-//
-// Every run gets a `--persist-to` of its own, so nothing here reads or writes
-// the developer's `.wrangler/state`, and wrangler's logs and dev registry go to
-// the run's scratch directory rather than `~/.wrangler`. Arguments after the
-// script name reach `wrangler dev`, and `--persist-to` reaches the steps
-// `bun run dev` takes before it.
+// `bun run dev` as real processes, with a `--persist-to` and wrangler state of
+// its own per run, so the developer's `.wrangler` is untouched.
 
-/** apps/server: where `bun run` finds the script and wrangler its config. */
 export const SERVER_DIR = join(dirname(fileURLToPath(import.meta.url)), "../..")
 
-// The binding .github/workflows/build-skill-index.yml publishes through.
 const INDEX_BINDING = "CONFIGS"
 
-// The three secrets, held to values that cannot buy anything — the same ones,
-// for the same reason, as `FAKE_SECRETS` in vitest.config.ts. A developer's
-// `.dev.vars` holds real ones and `wrangler dev` reads it; `--var` wins over
-// that file, so the worker started here never holds them.
+// Worthless secrets (as in vitest.config.ts); `--var` overrides `.dev.vars`.
 const FAKE_SECRETS = {
   ANTHROPIC_API_KEY: "sk-ant-not-a-real-key",
   BETTER_AUTH_SECRET: "not-a-real-secret-not-a-real-secret-32",
@@ -45,18 +34,12 @@ const READY_WITHIN_MS = 90_000
 const STOP_WITHIN_MS = 10_000
 
 export type DevSession = {
-  /** Where the worker answers, as wrangler announced it. */
   origin: string
-  /** Everything the run printed so far, colour codes removed. */
   output: () => string
   stop: () => Promise<void>
 }
 
-/**
- * The environment every process here runs in: the caller's, less any GitHub
- * token — the ruled step needs none — and with wrangler kept off the network
- * and out of `~/.wrangler`.
- */
+// The caller's environment minus any GitHub token, with wrangler offline.
 export const devEnvironment = (
   scratch: string,
   overrides: Record<string, string>
@@ -99,11 +82,7 @@ const sleep = (ms: number) =>
     setTimeout(resolve, ms)
   })
 
-/**
- * The workflow's own publish step — `wrangler kv key put` under the key the
- * worker reads — with `--local` where the workflow says `--env production
- * --remote`. How a store comes to hold an index of a given age.
- */
+// The workflow's publish step, run `--local`.
 export const publishIntoLocalStore = (
   store: string,
   index: SkillIndex,
@@ -136,11 +115,7 @@ export const publishIntoLocalStore = (
   }
 }
 
-/**
- * `bun run dev`, started over `store` and returned once wrangler says the
- * worker is ready. Its own process group, so `stop` reaches workerd as well
- * as the script.
- */
+// Its own process group, so `stop` reaches workerd as well.
 export const startDev = async (
   store: string,
   environment: NodeJS.ProcessEnv

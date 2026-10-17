@@ -8,21 +8,12 @@ import { SKILL_INDEX_KEY } from "../src/skill-index"
 
 import type { SkillIndex } from "@workspace/matrix/skill-index"
 
-// Builds the federated skill index and writes it to a file. Publishing it is
-// the workflow's job — `.github/workflows/build-skill-index.yml` hands the
-// file to `wrangler kv key put` — so this script needs no Cloudflare
-// credential and can be run against live GitHub by anyone, which is how it is
-// verified:
+// Builds the skill index to a file; the workflow publishes it. Needs no
+// Cloudflare credential:
 //
 //   bun run build:skill-index /tmp/skill-index.json
-//
-// Everything it does that is worth testing lives in `../src/crawl.ts` and is
-// tested beside it. What is left here is argument handling, the schema gate
-// and the counts it prints.
 
-// A crawl that reached every repository and found nothing is not an empty
-// catalog, it is a discovery rule that has stopped matching — and publishing it
-// would replace a good index with a hole that lasts until someone notices.
+// Finding nothing means the discovery rule stopped matching, not an empty catalog.
 const NOTHING_FOUND = 0
 
 const usage = "Usage: bun run build:skill-index <output.json>"
@@ -31,9 +22,7 @@ const main = async () => {
   const destination = process.argv[2]
   if (destination === undefined) throw new Error(usage)
 
-  // Parsed, not trusted. This is the same schema the worker validates against
-  // before serving, so anything that fails here would have been a 503 at the
-  // edge — better a red build than a published index the route refuses.
+  // The worker's own schema: failing here beats a 503 at the edge.
   const index = skillIndexSchema.parse(
     await crawlSkillIndex(INDEXED_REPOS, process.env.GITHUB_TOKEN)
   )
@@ -65,9 +54,7 @@ const summarize = (index: SkillIndex) =>
     `  total: ${String(index.skills.length)}`,
   ].join("\n")
 
-// So the workflow can publish under this key without spelling it out in YAML.
-// The key is defined once, in the module the worker reads it from; a workflow
-// that hardcoded it would be a second definition with nothing comparing them.
+// Lets the workflow publish under this key without restating it.
 const announceKeyToActions = () => {
   const output = process.env.GITHUB_OUTPUT
   if (output === undefined) return

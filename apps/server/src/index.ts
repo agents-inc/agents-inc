@@ -28,46 +28,23 @@ import {
 import type { RouteHandler, RouteHook } from "@hono/zod-openapi"
 import type { Context } from "hono"
 
-// This worker's own bindings, named once. `Env` is the global `wrangler types`
-// writes; wrapping it is what the app, its handlers and the CORS callback all
-// need, and spelling that wrapper out four times is four places to get wrong.
 type WorkerEnv = { Bindings: Env }
 
-// Sized on measured payloads rather than on a guess, and raised from 32 KB when
-// the payload started carrying skill CONTENT (seed v5).
-//
-// A catalogue-only configuration is 1.9 KB — twenty skills, their assignments
-// and an agent map — which is what the old cap was set against. An external
-// skill travels its whole directory inline, and those are 20-84 KB each in the
-// allowlisted repositories, so one of them alone outgrew that cap: three
-// together measure 161 KB raw and 48 KB gzipped.
-//
-// 1 MB therefore holds a dozen typical external skills or six at the per-skill
-// cap `seedPayloadSchema` enforces, which is far past any configuration anyone
-// has built. It is 4% of KV's 25 MiB value limit and nothing against a Worker's
-// 128 MB, so the refusal is about what a share link should reasonably be rather
-// than about what this can hold.
+// External skills travel their whole directory inline; 1 MB holds about a dozen.
 const MAX_BODY_BYTES = 1_048_576
 
-// 8 base64url chars = 48 bits. Content-addressing makes collisions a birthday
-// problem (~16M configs before one is likely), far beyond this store's scale.
+// 48 bits: a collision is unlikely before ~16M configs.
 const ID_LENGTH = 8
 
 const YEAR_SECONDS = 31_536_000
 
-// When a refused write may try again. It is `CONFIG_WRITES`' whole `period` in
-// wrangler.jsonc, restated, because `limit()` answers `success` and nothing
-// else: the binding never says when the current window ends, so the period is
-// the one bound this worker can state without guessing.
+// Mirrors `CONFIG_WRITES`' period in wrangler.jsonc; `limit()` never says when
+// the window ends.
 const CONFIG_WRITE_WINDOW_SECONDS = 60
 
-// Standard, and still named once: the limiter sets it, `cors()` has to expose
-// it, and a browser hides it from the editor if the two ever disagree.
 const RETRY_AFTER_HEADER = "retry-after"
 
-// The id is the payload's own hash: the same config always mints the same id,
-// a retry can never double-store, and a stored payload can never change under
-// its id — which is what lets the GET declare itself immutable.
+// The id is the payload's hash, so a stored payload never changes under its id.
 const contentAddress = async (body: string) => {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -90,12 +67,8 @@ const createConfigRoute = createRoute({
   tags: ["Configs"],
   request: {
     body: {
-      // The INSTALLABLE schema, not the base one, and the asymmetry with the
-      // GET below is the point. Storing is where a link is created, so a
-      // configuration nobody could install must be refused before it has an
-      // address; reading has to stay lenient, because links holding the pair
-      // are already out in the world and the editor's whole repair flow
-      // depends on being able to open one.
+      // Stricter than the GET: an uninstallable config gets no link, but
+      // existing links must still open for the editor to repair them.
       content: {
         "application/json": { schema: installableSeedPayloadSchema },
       },
@@ -108,19 +81,12 @@ const createConfigRoute = createRoute({
       content: { "application/json": { schema: configIdSchema } },
     },
     400: { description: "Body is not a valid seed payload" },
-    // Split out of the 400 above rather than added to it. The two refusals ask
-    // different things of the caller: a malformed body is a bug nobody reading
-    // it can fix, while a payload naming another seed version is a browser tab
-    // running a bundle from before the last deploy — which one hard reload
-    // fixes. A status is the only part of this answer a client is guaranteed to
-    // read, so it is where the difference has to live.
+    // Distinct from 400: a stale bundle, which a reload fixes.
     409: {
       description: "Body names a seed version this worker does not serve",
     },
     413: { description: "Body exceeds the size cap" },
-    // Declared although middleware answers it, because `AppType` is read off
-    // this list: a status missing here is one the typed client cannot compare
-    // against, so the editor could only read the limit as an anonymous refusal.
+    // Middleware answers it; declared so the typed client knows the status.
     429: {
       description: "This address has spent its writes for the window",
       headers: z.object({ [RETRY_AFTER_HEADER]: z.string() }),
@@ -146,10 +112,7 @@ const getConfigRoute = createRoute({
   },
 })
 
-// The whole index in one response, on purpose. Three repositories yield a list
-// of a few dozen skills — small enough that the add-skills dialog filters it in
-// the browser, which is worth far more than a server-side query: no call per
-// keystroke, no debounce, and no rate limit to design around.
+// The whole index in one response; it is small enough to filter in the browser.
 const skillIndexRoute = createRoute({
   method: "get",
   path: "/skills",
@@ -169,27 +132,10 @@ const skillIndexRoute = createRoute({
 
 const app = new OpenAPIHono<WorkerEnv>()
 
-// Registered before the routes so a preflight never reaches them. Only the
-// configured web origin may call from a browser; the CLI is not a browser and
-// is unaffected.
-// `cors` types its callback's context as the default `Env`, whose bindings are
-// `any` — so the annotation is what makes `WEB_ORIGIN` a checked read of this
-// worker's own binding rather than a property fetched off `any`.
-//
-// `exposeHeaders` is what lets the editor read `x-skill-index` at all. A custom
-// response header is hidden from a cross-origin caller unless the server names
-// it here — `hono/cors` exposes nothing by default and emits the header only
-// when this array is non-empty — so setting the header on the index response is
-// half the job and sending it is the other half. Nothing in either workspace's
-// suite is a browser, which is why the editor keeps a Playwright stub that
-// withholds this and a spec asserting the dialog survives it.
-//
-// `credentials: true` arrived with SERVER-04 and is not optional for any route
-// a signed-in browser touches. Without it the browser accepts the response and
-// SILENTLY DROPS THE COOKIE — sign-in appears to work, the next request is
-// anonymous again, and nothing on either side logs a reason. It is set for
-// every route rather than only the authenticated ones because the value has to
-// agree with what the preflight said, and one middleware is one answer.
+// Registered before the routes so a preflight never reaches them. The context
+// annotation types `WEB_ORIGIN` (cors defaults to `any` bindings). Custom
+// headers are hidden cross-origin unless exposed; without `credentials` the
+// browser silently drops the session cookie.
 const allowOnlyWebOrigin = cors({
   origin: (origin, c: Context<WorkerEnv>) =>
     origin === c.env.WEB_ORIGIN ? origin : null,
@@ -199,44 +145,23 @@ const allowOnlyWebOrigin = cors({
 
 app.use("/configs/*", allowOnlyWebOrigin)
 app.use("/configs", allowOnlyWebOrigin)
-// A plain GET preflights nothing, but the browser still refuses to hand the
-// body to the app without an allow-origin header on the response — so the
-// index needs this as much as the routes that do preflight.
 app.use("/skills", allowOnlyWebOrigin)
 app.use("/skills/*", allowOnlyWebOrigin)
-// The tunnel is called cross-origin from the web app, and an envelope's
-// content type is not CORS-safelisted, so it preflights like the rest.
 app.use("/monitoring", allowOnlyWebOrigin)
 app.use("/stacks", allowOnlyWebOrigin)
 app.use("/stacks/*", allowOnlyWebOrigin)
 app.use("/api/auth/*", allowOnlyWebOrigin)
 app.use("/compose", allowOnlyWebOrigin)
 
-// Better Auth owns everything under its own base path — the GitHub redirect,
-// the callback, the session endpoint, the sign-out. Mounted with `app.on`
-// rather than folded into the OpenAPI chain below because it is one handler
-// serving a dozen paths this repository does not define: describing them in
-// `createRoute` would be transcribing somebody else's contract, and the
-// transcription would be what rots. The editor reaches these through Better
-// Auth's own client rather than through `hc<AppType>`, so nothing is lost by
-// their absence from that type.
+// Better Auth owns these paths; the editor calls them through its own client,
+// so they stay out of the OpenAPI chain.
 app.on(["GET", "POST"], "/api/auth/*", (c) =>
   createAuth(c.env).handler(c.req.raw)
 )
 
-// BEFORE the body is read, and before anything is parsed: a refusal has to be
-// cheaper than the flood it refuses, or the limiter is just a slower way to
-// spend the same resources. Keyed on the caller's address — `cf-connecting-ip`
-// is set by Cloudflare's own edge and cannot be spoofed by a client, unlike
-// `x-forwarded-for`.
-//
-// Only the write. `GET /configs/:id` is left alone deliberately: it is what the
-// CLI calls to resolve a share link, and it neither writes nor costs a quota.
-//
-// A missing address is let through rather than refused. It means the request
-// did not arrive through Cloudflare's edge — a test that sends none — and
-// failing closed there would fail those runs rather than any attacker.
-// `wrangler dev` does send one, so the limit is live locally too.
+// Limits writes before the body is read, so a refusal stays cheap.
+// `cf-connecting-ip` is set by Cloudflare's edge; it is absent only off-edge
+// (tests), where the request is let through.
 app.use("/configs", async (c, next) => {
   if (c.req.method !== "POST") return next()
 
@@ -251,50 +176,29 @@ app.use("/configs", async (c, next) => {
       })
 })
 
-// Refused on the declared length alone — bodies without one parse as usual and
-// the JSON validator rejects anything that is not a payload anyway.
+// Declared length only; the validator rejects anything else anyway.
 app.use("/configs", async (c, next) => {
   const declared = Number(c.req.header("content-length") ?? 0)
   if (declared > MAX_BODY_BYTES) return c.text("Payload too large", 413)
   return next()
 })
 
-// A KV write is the one thing here that can fail for reasons outside this
-// code: the free tier allows 1000 a day, and past that a share fails with
-// nothing anywhere saying why. `messageOf` lives in ./log because the skill
-// index logs the same way and importing it back from here would be a cycle.
 const logKvFailure = (operation: string, error: unknown) =>
   console.error({ event: "kv_failure", operation, message: messageOf(error) })
 
-// The other thing worth a dashboard query. Unlike a KV failure this one cannot
-// happen by quota or outage: it means the bytes under a content-addressed key
-// are not the bytes that were hashed into it, so the id is logged alongside.
 const logCorruptPayload = (id: string, error: unknown) =>
   console.error({ event: "corrupt_payload", id, message: messageOf(error) })
 
-// `v` is `z.literal(SEED_VERSION)`, so every way of getting it wrong — an
-// older number, a newer one, or no `v` at all — arrives as one issue on this
-// one path. That is exactly the question worth asking: the body is addressed to
-// a contract this worker does not serve, and no amount of retrying it changes
-// that.
+// `v` is a literal, so any wrong or missing version is one issue on this path.
 const namesAnotherSeedVersion = (error: z.ZodError) =>
   error.issues.some((issue) => issue.path.length === 1 && issue.path[0] === "v")
 
-// The shape `@hono/zod-openapi` hands a validation hook, read off the library's
-// own type so it cannot drift. The return type below is narrowed by hand because
-// `RouteHook` also admits `void`, which the route registration does not.
+// The return type below is narrowed by hand: `RouteHook` also admits `void`.
 type BodyValidation = Parameters<
   RouteHook<typeof createConfigRoute, WorkerEnv>
 >[0]
 
-// Runs on the POST's body validation and only ever *narrows*: returning
-// nothing hands the request back to the validator's own 400, so a body that is
-// malformed at the current version answers exactly as it did before this
-// existed.
-//
-// The sentence matters as much as the status. `409` is what a client branches
-// on, but a person reading this by hand — from a console, from curl — is the
-// one who most needs to be told that reloading is the whole fix.
+// Returning nothing falls back to the validator's own 400.
 const refuseAnotherSeedVersion = (
   validation: BodyValidation,
   c: Context<WorkerEnv>
@@ -314,17 +218,12 @@ const createConfig: RouteHandler<typeof createConfigRoute, WorkerEnv> = async (
 ) => {
   const payload = c.req.valid("json")
 
-  // What is stored is the re-serialized *validated* payload, so unknown keys
-  // are already stripped and the hash covers exactly what a GET returns.
+  // The validated payload, so unknown keys are stripped before hashing.
   const body = JSON.stringify(payload)
   const id = await contentAddress(body)
 
   try {
-    // Content-addressed, so a key that exists already holds byte-identical
-    // content: re-writing it would spend one of the free tier's 1000 daily
-    // writes to store what is already there. Reads are 100x more plentiful,
-    // and that asymmetry is what makes minting an id every time the install
-    // dialog opens affordable — fifty opens of one config cost a single write.
+    // An existing key already holds identical content; skip the scarcer write.
     const existing = await c.env.CONFIGS.get(id)
     if (existing === null) await c.env.CONFIGS.put(id, body)
   } catch (error) {
@@ -348,13 +247,8 @@ const getConfig: RouteHandler<typeof getConfigRoute, WorkerEnv> = async (c) => {
 
   if (stored === null) return c.text("No config under this id", 404)
 
-  // The route's 200 declares `seedPayloadSchema`, so what is served has to be
-  // one — and `JSON.parse` alone promises nothing. Reaching here with something
-  // else means the store diverged from what this worker wrote: the POST
-  // validates before storing, and the key is the payload's own hash, so no
-  // write of ours can produce it. That is an integrity failure on our side,
-  // which is 500 — not 404 (the config is present) and not 503 (the store
-  // answered). Serving it unvalidated would make the contract a lie instead.
+  // No write of ours stores an invalid payload, so one here is an integrity
+  // failure: 500.
   let payload: unknown
   try {
     payload = JSON.parse(stored)
@@ -369,27 +263,14 @@ const getConfig: RouteHandler<typeof getConfigRoute, WorkerEnv> = async (c) => {
     return c.text("Stored config is unreadable", 500)
   }
 
-  // Content-addressed, therefore immutable: a CLI or proxy may cache forever.
+  // Content-addressed, therefore immutable.
   return c.json(parsed.data, 200, {
     "cache-control": `public, max-age=${YEAR_SECONDS}, immutable`,
   })
 }
 
-// One KV read. Whatever the scheduled build last published is what this
-// serves, complete, with no upstream anywhere in the request — see
-// `skill-index.ts` for why the crawl is not here any more. The stored value
-// carries no expiry, so the last good index survives an upstream outage, a
-// broken workflow and a revoked token alike.
-//
-// 503 is therefore the one narrow case left: no build has ever succeeded, or
-// what is stored is no longer readable as an index. Neither is a degraded
-// answer this route could improve on by trying harder.
-//
-// `x-skill-index` still says whether the list is the current picture, but the
-// question it answers has changed with the design. It no longer means "this is
-// part of the index" — every answer is the whole index now — it means the
-// build behind it has stopped running. Callers already handle both words and
-// need no change.
+// Serves whatever the scheduled build last published; 503 only when no build
+// has succeeded or the stored index is unreadable.
 const getSkillIndex: RouteHandler<typeof skillIndexRoute, WorkerEnv> = async (
   c
 ) => {
@@ -407,21 +288,8 @@ const getSkillIndex: RouteHandler<typeof skillIndexRoute, WorkerEnv> = async (
   })
 }
 
-// ── Sentry tunnel ────────────────────────────────────────────────────────
-//
-// Browsers block `*.ingest.sentry.io` by default — not only via extensions
-// but through Edge's Tracking Prevention, Safari's ITP and Firefox's ETP. A
-// site whose users are developers loses a large and self-selecting share of
-// its error reports that way, which is worse than losing all of them: what
-// survives looks authoritative and is not.
-//
-// Relaying through this worker makes the request same-site, so there is
-// nothing for a blocklist to match. Sentry documents the SDK half (`tunnel`)
-// but hosts nothing, so the endpoint is ours to write.
-//
-// The envelope's first line is a JSON header carrying the DSN it was built
-// for. Checking it against the one project this worker serves is what stops
-// the route being an open relay into anyone's Sentry account.
+// Sentry tunnel: browsers block Sentry's ingest host, so envelopes relay
+// same-site. The DSN check keeps it from being an open relay.
 const tunnelRoute = createRoute({
   method: "post",
   path: "/monitoring",
@@ -450,6 +318,7 @@ const tunnelEnvelope: RouteHandler<typeof tunnelRoute, WorkerEnv> = async (
 
   let dsn: URL
   try {
+    // Untrusted JSON; `dsn` is checked on the next line.
     const header = JSON.parse(envelope.slice(0, headerEnd)) as { dsn?: string }
     if (!header.dsn) return c.text("Envelope carries no DSN", 400)
     dsn = new URL(header.dsn)
@@ -471,18 +340,12 @@ const tunnelEnvelope: RouteHandler<typeof tunnelRoute, WorkerEnv> = async (
     { method: "POST", body: envelope }
   )
 
-  // The browser has nothing to do with Sentry's response body, and forwarding
-  // it would only widen what this route can be used to probe.
+  // Sentry's body is withheld so the route cannot be used to probe.
   return new Response(null, { status: upstream.status })
 }
 
-// One chain, not three statements, and that is a type-level requirement rather
-// than a style. `.openapi()` returns the app with the route folded into its
-// *type* while returning the very same instance at runtime, so registering
-// each route on its own line throws the return value away and leaves
-// `typeof app` claiming to serve nothing. `packages/api` infers the editor's
-// client from exactly that type, so a route dropped out of this chain would
-// vanish from the editor's API surface rather than fail here.
+// One chain: `.openapi()` adds each route to the returned type, which
+// `packages/api` infers its client from.
 const api = app
   .openapi(createConfigRoute, createConfig, refuseAnotherSeedVersion)
   .openapi(getConfigRoute, getConfig)
@@ -494,16 +357,8 @@ const api = app
   .openapi(deleteStackRoute, deleteStack)
   .openapi(composeRoute, compose)
 
-// What `packages/api` imports, and the only thing anything imports from this
-// worker: `hc<AppType>` reads the routes off it and gives the editor and the
-// CLI one client that cannot outlive them. Neither front door reaches in here
-// itself — `@workspace/api` is the single seam, and
-// `grep -rn 'from "server"' apps packages --include='*.ts'` is what says so. A
-// type erases at compile time, so nothing here reaches either bundle.
 export type AppType = typeof api
 
-// Named for build-time OpenAPI spec generation; default for the Workers
-// runtime. Both are the chained value, not the bare instance above: they are
-// the same object either way, but only this one carries the routes in its type.
+// Named for OpenAPI spec generation; default for the Workers runtime.
 export { api as app }
 export default api
