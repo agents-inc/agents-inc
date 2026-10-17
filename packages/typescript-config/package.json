@@ -2,7 +2,7 @@
   "name": "@workspace/typescript-config",
   "version": "0.0.0",
   "private": true,
-  "//no-shared-tsconfig": "These are the shared configs every other workspace extends; it cannot extend itself. Read by scripts/check-shared-tsconfig.ts in packages/cli.",
+  "//no-shared-tsconfig": "These are the shared configs; they cannot extend themselves.",
   "files": [
     "base.json",
     "react-library.json",

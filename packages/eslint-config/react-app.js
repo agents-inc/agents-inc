@@ -3,7 +3,6 @@ import { defineConfig } from "eslint/config"
 
 import { reactLibraryConfig } from "./react-library.js"
 
-/** React library rules plus fast-refresh checks, which only mean something in a Vite app. */
 export const reactAppConfig = defineConfig([
   ...reactLibraryConfig,
   {

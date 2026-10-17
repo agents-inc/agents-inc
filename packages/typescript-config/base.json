@@ -2,11 +2,7 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "display": "Base",
 
-  // No noUnusedLocals / noUnusedParameters anywhere in this package. Every workspace here holds
-  // code it does not author — packages/matrix vendors the CLI's types verbatim, packages/ui holds
-  // shadcn output that `shadcn add` overwrites, and apps/editor pulls both in through path aliases.
-  // tsc has no per-directory escape, so the rule is ESLint's (@typescript-eslint/no-unused-vars),
-  // which can ignore those directories and still enforce on our own source.
+  // No noUnusedLocals/Parameters: tsc cannot exempt vendored or shadcn code, so ESLint enforces it.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022"],
@@ -19,16 +15,6 @@
     "skipLibCheck": true,
     "strict": true,
 
-    // Both of these were prescribed by the house TypeScript standards until a
-    // docs-consolidation commit deleted the file that carried them; no decision to drop
-    // them was ever recorded, and the code kept behaving as though they were on.
-    // `noUncheckedIndexedAccess` types `arr[i]` and `record[key]` as `T | undefined`,
-    // which is what the call sites already believed — step-agents.tsx wrote
-    // `focusableIds[0]!` (a no-op without the flag) and the editor `?.`-guards lookups
-    // whose types claim they cannot miss. `exactOptionalPropertyTypes` keeps "absent"
-    // and "present but undefined" distinct, so an optional property accepts `undefined`
-    // only when its type says `| undefined`; the spread-conditional
-    // `...(v !== undefined && { x: v })` is how a maybe-value reaches one.
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
 

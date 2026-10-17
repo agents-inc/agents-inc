@@ -4,13 +4,7 @@ import { defineConfig } from "eslint/config"
 
 import { baseConfig } from "./base.js"
 
-/**
- * For React code that ships as a library rather than as a Vite app.
- *
- * Note what is absent: `eslint-plugin-react-refresh`. Fast refresh is an app-dev concern, and its
- * `only-export-components` rule forbids exactly what shadcn components do — export a component
- * beside its cva variants (`button`/`buttonVariants`). Apps get it via ./react-app.js.
- */
+/** No react-refresh: its `only-export-components` forbids a component beside its cva variants. */
 export const reactLibraryConfig = defineConfig([
   ...baseConfig,
   {
