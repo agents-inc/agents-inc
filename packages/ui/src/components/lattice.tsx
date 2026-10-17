@@ -5,8 +5,7 @@ import { cn } from "@workspace/ui/lib/utils"
 
 const ACTIVATION_KEYS = ["Enter", " "]
 
-// The grid draws nothing. Its padding equals each card's line inset, so the
-// edge cards carry the same white as the inner ones.
+// Padding equals each card's line inset, so edge cards carry the same white as inner ones.
 const latticeVariants = cva("grid p-lattice", {
   variants: {
     columns: {
@@ -33,8 +32,7 @@ function Lattice({
   )
 }
 
-// The card's line is an inset `::after` outline, so it takes no room. Selected
-// changes only the line's colour and takes no hover tint.
+// The line is an inset `::after` outline, taking no room.
 const latticeCellVariants = cva(
   "relative flex min-w-0 flex-col bg-cell after:pointer-events-none after:absolute after:inset-lattice after:outline-1 after:-outline-offset-1 after:outline-hairline after:content-['']",
   {
@@ -47,15 +45,11 @@ const latticeCellVariants = cva(
         true: "after:outline-brand",
         false: "",
       },
-      // Incompatible cells recede to the column colour rather than fade. Not
-      // `pointer-events-none`: the tooltip explaining why has to open. Callers
-      // pass `interactive={false}` and guard their own handlers.
+      // Not `pointer-events-none`: the explaining tooltip must open. Callers guard their handlers.
       disabled: {
         true: "cursor-default bg-column",
         false: "",
       },
-      // Clipped so a long name cannot bleed past the card's line, except when
-      // hosting the popover, which is positioned just outside the cell.
       overflow: {
         clip: "overflow-hidden",
         visible: "overflow-visible",
@@ -77,8 +71,7 @@ const latticeCellVariants = cva(
   }
 )
 
-// Only for a cell that is itself the control. Inset because the cell clips
-// what overflows it.
+// Only for a cell that is itself the control; inset because the cell clips.
 const FOCUSABLE_CELL =
   "outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
 
@@ -108,14 +101,8 @@ function LatticeCell({
   )
 }
 
-// The primary action of a cell that holds controls of its own. `role="button"`
-// on the cell would make those controls presentational (axe's
-// `nested-interactive`), so the surface is a sibling <button> stretched over
-// the cell at `z-0`. The cell's controls take `relative z-1`, and the content
-// between is `pointer-events-none` so it does not swallow the click.
-//
-// `cursor-[inherit]` keeps the cell's `interactive`/`disabled` cursor. The ring
-// is inset because the cell's `overflow-hidden` would clip an outset one.
+// A sibling button stretched over a cell that holds controls: `role="button"` on the cell would
+// make them presentational. Controls take `relative z-1`; content between is `pointer-events-none`.
 function LatticeCellButton({ className, ...props }: ComponentProps<"button">) {
   return (
     <button
@@ -134,9 +121,7 @@ function LatticeRows({ className, ...props }: ComponentProps<"div">) {
   return <div data-slot="lattice-rows" className={cn(className)} {...props} />
 }
 
-// `outline-none` sits in the unselected branch, not the base: Tailwind emits
-// `.outline-none` after `.outline-1` at equal specificity, so in the base it
-// would erase the selected row's amber outline.
+// `outline-none` only when unselected: Tailwind emits it after `.outline-1`, erasing the amber.
 const latticeRowVariants = cva(
   "relative -mt-px flex cursor-pointer items-start gap-3 border border-hairline bg-cell px-3 py-2.5 focus-visible:ring-1 focus-visible:ring-ring",
   {
@@ -150,8 +135,7 @@ const latticeRowVariants = cva(
   }
 )
 
-// A `<div>` with button semantics because a row holds flow content, which a
-// `<button>` does not admit. Nothing focusable may be nested inside one.
+// A `<div>` because a row holds flow content a `<button>` does not admit.
 function LatticeRow({
   className,
   selected,
@@ -175,8 +159,7 @@ function LatticeRow({
   )
 }
 
-// A real click rather than a call to `onClick`, so the pointer and the keyboard
-// share one handler.
+// A real click, so pointer and keyboard share one handler.
 function activateOnEnterOrSpace(event: KeyboardEvent<HTMLDivElement>) {
   if (!ACTIVATION_KEYS.includes(event.key)) return
 

@@ -11,13 +11,10 @@ import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
 const ROLES = ["dev", "pm", "rsrch", "rev", "test"]
 
-// A domain × role pair with no sub-agent behind it, as distinct from a pair
-// that has one and is simply unassigned (`null`, the third `LoadState`).
+// No sub-agent behind the pair, unlike an unassigned `null` cell.
 const ABSENT = "absent"
 type Slot = LoadState | typeof ABSENT
 
-// One spy for the whole grid — every cell reports the same way, and Storybook
-// resets it between stories.
 const onCycle = fn()
 
 const row = (label: string, slots: Slot[]): MatrixRow => ({
@@ -30,7 +27,6 @@ const row = (label: string, slots: Slot[]): MatrixRow => ({
   }),
 })
 
-// The panel this grid lives in is 210px wide.
 const meta = {
   title: "Components/MatrixGrid",
   component: MatrixGrid,
@@ -54,16 +50,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// Unassigned · lazy · preloaded, all three at once. The word in the cell *is*
-// the state — the design has no legend and no icons.
 export const AllStates: Story = {}
 
 export const NothingAssigned: Story = {
   args: { rows: [row("web", [null, null, null, null, null])] },
 }
 
-// Clicking a cell cycles it. The grid does not own the state, so what it owes
-// the caller is that the click arrives, addressed to the right cell.
 export const ClickingACellCycles: Story = {
   play: async ({ canvas }) => {
     await userEvent.click(canvas.getByRole("button", { name: "web pm" }))
@@ -72,8 +64,6 @@ export const ClickingACellCycles: Story = {
   },
 }
 
-// Every cell is a real `<button>`, so the grid is operable without a pointer.
-// This is the assertion that keeps it that way.
 export const CellsAreKeyboardOperable: Story = {
   play: async ({ canvas }) => {
     const cell = canvas.getByRole("button", { name: "web dev" })
@@ -87,17 +77,13 @@ export const CellsAreKeyboardOperable: Story = {
   },
 }
 
-// A slot with no sub-agent behind it must not be reachable at all — it is
-// `aria-hidden` and is not a button, so it is neither a tab stop nor announced.
 export const AbsentSlotsAreNotButtons: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.queryByRole("button", { name: "ai pm" })).toBeNull()
   },
 }
 
-// A cell is a button, and the package draws one focus ring on every button it
-// ships. Axe cannot check a focus indicator — it is not machine-decidable — so
-// this is the only thing holding a cell to that ring.
+// Axe cannot check focus indicators.
 export const FocusDrawsTheRing: Story = {
   play: async ({ canvas }) => {
     const cell = canvas.getByRole("button", { name: "web dev" })

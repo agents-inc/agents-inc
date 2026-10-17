@@ -3,31 +3,8 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-// Every button in the design is a square mono block. There are only five, and
-// three of them are the same filled ink — filled elements are rare enough that
-// the design calls `add skill` "the page's only solid-filled element" in the
-// main column, with Install being the roster's equivalent.
-//
-// No transition: the design animates the filter bar's padding and nothing else.
-//
-// outline — dialog footer buttons (Close, Cancel)
-// primary — the confirming footer button (Add N skills)
-// block   — `add skill`, stretched to the filter bar's height
-// full    — `Install`, full width in the roster footer
-// action  — Save / Share / Preview, three equal cells in one row above Install
-//
-// `action` is `outline` at the roster's scale and NOT a size of it: it is the
-// only button in the design with no fill at all (`outline` paints the cell
-// colour), because three filled cells stacked over Install would make Install
-// the fourth thing rather than the panel's one filled element. It is also the
-// only one that shares its row, so it flexes — the three are equal cells and
-// the label ellipsizes inside its own.
-//
-// `onDark` is the 84a stuck filter bar: the band around this button is already
-// the ink it is filled with, so the fill goes and a hairline takes over —
-// leaving it the only bordered thing on the band — and the block shrinks to
-// its own padding. Named for the surface rather than for the bar's own state,
-// so the primitive never has to know why.
+// `action` has no fill so Install stays the roster's one filled element, and flexes as one of
+// three equal cells. `onDark` is for the stuck filter bar, whose band is already ink.
 const buttonVariants = cva(
   "inline-flex shrink-0 cursor-pointer items-center justify-center font-mono font-semibold whitespace-nowrap uppercase outline-none select-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
   {

@@ -13,18 +13,12 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-// Dialog footer buttons — Close, Cancel.
 export const Outline: Story = {}
 
-// The confirming footer button.
 export const Primary: Story = {
   args: { variant: "primary", children: "add 3 skills" },
 }
 
-// `+ add skill`, stretched to the filter bar's height. The mark is a drawn
-// glyph rather than a fullwidth plus sign, so it is a flex item and the row's
-// gap is what spaces it — a text glyph carried that spacing in the font, which
-// is why it never sat level with the label beside it.
 export const Block: Story = {
   args: {
     variant: "block",
@@ -38,7 +32,6 @@ export const Block: Story = {
   },
 }
 
-// Install, full width in the roster footer.
 export const Full: Story = {
   args: { variant: "full", children: "install" },
   decorators: [
@@ -50,10 +43,6 @@ export const Full: Story = {
   ],
 }
 
-// Save / Share / Preview: three equal cells sharing one row above Install. The
-// only button in the design with no fill at all — three fills stacked over
-// Install would make Install the fourth thing on the row rather than the
-// panel's one filled element.
 export const Action: Story = {
   args: { variant: "action", children: "save" },
   decorators: [
@@ -70,8 +59,6 @@ export const Action: Story = {
   ],
 }
 
-// The stuck filter bar: the band is already the ink this button is filled with,
-// so the fill goes and a hairline takes over.
 export const BlockOnDark: Story = {
   args: {
     variant: "block",
@@ -93,8 +80,7 @@ export const BlockOnDark: Story = {
   ],
 }
 
-// `disabled:pointer-events-none` is styling, and styling is not a guarantee —
-// this is the assertion that a disabled button cannot be actioned.
+// `disabled:pointer-events-none` is styling, not a guarantee.
 export const DisabledBlocksClicks: Story = {
   args: { disabled: true },
   play: async ({ args, canvas }) => {

@@ -9,19 +9,8 @@ import {
 import { Glyph } from "@workspace/ui/components/glyph"
 import { cn } from "@workspace/ui/lib/utils"
 
-// The shared dialog shell. Both dialogs (Install, Add skill) are the same
-// square white sheet pinned 96px from the top of the viewport — never centred
-// vertically, so a tall dialog grows downward from a fixed position rather
-// than drifting as its content changes.
-//
-// No entrance animation: the design animates the filter bar's padding and
-// nothing else. Closing is available on ✕, on the footer button and on the
-// backdrop.
-//
-// `✕` IS A TEXT GLYPH AND STAYS ONE. The design has an icon set now, and it is
-// a closed list of nine shapes with no close mark in it — the prototype draws
-// this exact character in every dialog header it has. Drawing one would be
-// inventing a tenth glyph, not applying the set.
+// Pinned 96px from the top, never centred, so a tall dialog grows downward. `✕` stays a text
+// glyph: the icon set has no close mark.
 
 function Dialog(props: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
@@ -65,15 +54,8 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         data-fullscreen={fullscreen ? "" : undefined}
-        // The fullscreen arm goes LAST, after `className`, so a call site's own
-        // width cannot beat it — every one of them sets one.
-        //
-        // `inset-6` rather than a `calc(100vw - …)` width: it sets all four
-        // edges at once, so the sheet can never grow past the bottom of the
-        // viewport and take its footer — and its only Close button — with it.
-        // That is the design's "size against the veil, not the viewport" in the
-        // one form available here, where the backdrop is a sibling rather than
-        // a padded container the sheet is laid out inside.
+        // Fullscreen goes after `className` so call-site widths cannot beat it; `inset-6` keeps the
+        // footer on screen.
         className={cn(
           "fixed top-24 left-1/2 z-[200] flex max-h-[calc(100vh-10rem)] max-w-[calc(100vw-2.5rem)] -translate-x-1/2 flex-col border border-dialog-border bg-cell shadow-dialog outline-none",
           wide ? "w-[38.75rem]" : "w-[35rem]",
@@ -89,13 +71,7 @@ function DialogContent({
   )
 }
 
-// Title · subtitle · ✕, on one baseline — and, on a dialog that offers it, the
-// maximise glyph between the subtitle and the ✕.
-//
-// `onToggleFullscreen` is what draws that control rather than a `fullscreen`
-// boolean, so a dialog that cannot be maximised cannot accidentally render a
-// button that does nothing. It is a real `<button>`: a clickable span here
-// would be an unnamed control in a dialog every axe run audits.
+// `onToggleFullscreen` rather than a boolean draws the maximise button, so it can never be inert.
 function DialogHeader({
   className,
   title,
@@ -131,9 +107,7 @@ function DialogHeader({
           type="button"
           data-slot="dialog-fullscreen"
           aria-pressed={fullscreen}
-          // The name says the ACTION, and the exit arm names the key as well:
-          // `esc` steps out of fullscreen before it closes, and that ladder is
-          // otherwise something a visitor can only discover by pressing it.
+          // Names `esc`, which exits fullscreen before it closes.
           aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
           title={fullscreen ? "exit fullscreen — esc" : "fullscreen"}
           onClick={onToggleFullscreen}
@@ -144,12 +118,7 @@ function DialogHeader({
       ) : null}
       <DialogPrimitive.Close
         aria-label="Close"
-        // The package's one focus ring. The glyph has no box of its own, so
-        // the ring is the only thing that says the keyboard is on it.
-        //
-        // `ml-auto` only while nothing precedes it takes that job: with the
-        // maximise glyph present it is the glyph that pushes the pair right,
-        // and this keeps the design's 12px between the two.
+        // Flush right unless the maximise glyph already pushes the pair there.
         className={cn(
           "cursor-pointer font-mono text-13 leading-none font-normal text-faint outline-none hover:text-ink focus-visible:ring-1 focus-visible:ring-ring",
           onToggleFullscreen ? "ml-3" : "ml-auto"
@@ -179,7 +148,6 @@ function DialogBody({
   )
 }
 
-// The install dialog's two-column inventory.
 function DialogPanes({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
@@ -190,20 +158,8 @@ function DialogPanes({ className, ...props }: ComponentProps<"div">) {
   )
 }
 
-// Two splits, one component, and a `side` value belongs to one of them.
-//
-//   left  / right    — a flexible body with a fixed 196px sidebar after it,
-//                      divided by the sheet's own hairline. The install and
-//                      contents dialogs.
-//   tree  / content  — the inverse: a fixed 250px column FIRST, divided by the
-//                      quieter `tree-border` hairline, and the body taking
-//                      whatever is left. The output preview.
-//
-// The second pair is here rather than spelled out at its call site because
-// both halves of it are design-system decisions — the column's width, and a
-// divider one hex digit lighter than the sheet's, chosen so a split inside a
-// dialog reads quieter than the dialog's own rules. A className override in a
-// feature file would put both somewhere nobody looking for them would find them.
+// `left`/`right`: flexible body, fixed sidebar after. `tree`/`content`: fixed column first, with
+// the quieter `tree-border` divider.
 const PANE_SIDES = {
   left: "flex-1 border-r border-hairline",
   right: "w-[12.25rem] flex-none",
@@ -211,16 +167,7 @@ const PANE_SIDES = {
   content: "flex-1",
 } as const
 
-/**
- * The tree column's resting width and the bounds a drag may not leave, in
- * DESIGN pixels — the unit every dimension in this package is written in,
- * before `:root`'s sizing knob scales it.
- *
- * Clamped at both ends because neither pane may be dragged out of existence,
- * and the tension is real rather than defensive: long paths and long generated
- * lines are competing for one width, and a reader who wants all of one still
- * needs to be able to get back.
- */
+// In design pixels, before `:root`'s sizing knob scales them.
 const TREE_WIDTH_DEFAULT_PX = 250
 const TREE_WIDTH_MIN_PX = 180
 const TREE_WIDTH_MAX_PX = 560
@@ -228,21 +175,9 @@ const TREE_WIDTH_MAX_PX = 560
 const clampTreeWidth = (width: number) =>
   Math.min(TREE_WIDTH_MAX_PX, Math.max(TREE_WIDTH_MIN_PX, width))
 
-// The two ways a drag ends. Named together because they are handled
-// identically — a cancelled pointer leaves the pane wherever the last move put
-// it, which is what a released one does too.
 const DRAG_END_EVENTS = ["pointerup", "pointercancel"] as const
 
-/**
- * A drag in progress, as a function from where the pointer is now to the width
- * the tree should take.
- *
- * The rem scale is read ONCE, as the drag starts. It is a layout read, and
- * taking it on every move would cost one per frame — and it cannot change
- * mid-drag anyway. Measured rather than assumed, because the package's sizing
- * knob is a live value and a constant here would drift the handle away from the
- * pointer the day it moved.
- */
+// The rem scale is read once per drag: a layout read, and the sizing knob can move.
 const dragFrom = (startX: number, startWidth: number) => {
   const remScale =
     parseFloat(getComputedStyle(document.documentElement).fontSize) / 16
@@ -252,21 +187,8 @@ const dragFrom = (startX: number, startWidth: number) => {
 }
 
 /**
- * The handle between a `tree` pane and the `content` pane after it.
- *
- * 5px wide with -2px margins either side, so it takes the pointer across a
- * comfortable band while occupying no layout at all — the two panes sit exactly
- * as close as they did without it, and the 1px amber line it draws under the
- * pointer lands on the divider that is already there.
- *
- * POINTER CAPTURE rather than document-level listeners: the drag stays alive
- * over the code pane, which is a scroll container that would otherwise swallow
- * the move, and it ends itself if the pointer is cancelled — so there is no
- * cleanup effect that can leak a listener when the dialog closes mid-drag.
- *
- * The ratio back to design pixels is MEASURED off the document rather than
- * assumed, because the sizing knob is a live value: reading it means the handle
- * still tracks the pointer one-for-one if that knob ever moves.
+ * Occupies no layout (5px with -2px margins). Pointer capture keeps the drag alive over the
+ * scrolling code pane and ends it on cancel, so no listener can leak.
  */
 function DialogPaneSplitter({
   width,
@@ -303,9 +225,6 @@ function DialogPaneSplitter({
   return (
     <div
       data-slot="dialog-pane-splitter"
-      // A real separator with a value, so the drag is announced rather than
-      // merely available: without `aria-valuenow` this is a landmark that
-      // reports nothing about the thing it moves.
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize the file tree"
@@ -315,8 +234,7 @@ function DialogPaneSplitter({
       onPointerDown={beginDrag}
       className={cn(
         "relative z-[2] -mx-0.5 w-[0.3125rem] flex-none cursor-col-resize",
-        // The line stays 1px at every scale — it is a hairline, and the
-        // package's sizing knob deliberately leaves those alone.
+        // A hairline: stays 1px at every scale.
         "after:absolute after:inset-y-0 after:left-0.5 after:w-px after:content-['']",
         dragging ? "after:bg-brand" : "hover:after:bg-brand",
         className

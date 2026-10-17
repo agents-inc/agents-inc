@@ -14,7 +14,6 @@ type Story = StoryObj<typeof meta>
 
 export const Plus: Story = {}
 
-// The sizes the app draws, in design px.
 export const EverySize: Story = {
   render: () => (
     <div className="flex items-center gap-4 text-ink">
@@ -41,9 +40,7 @@ export const EveryGlyph: Story = {
   ),
 }
 
-// THE CLAIM THE SET EXISTS FOR. Round caps against a design with no radius
-// anywhere is the defect this replaced, and it is invisible at 11px until two
-// glyphs sit on one row — so it is asserted rather than looked at.
+// Round caps are invisible at 11px until two glyphs share a row, so this is asserted.
 export const OneGeometryForEveryGlyph: Story = {
   ...EveryGlyph,
   play: async ({ canvas }) => {
@@ -57,8 +54,6 @@ export const OneGeometryForEveryGlyph: Story = {
   },
 }
 
-// Every glyph sits inside a control that already names itself, so none of them
-// puts a second name into the accessible one.
 export const HiddenFromTheAccessibilityTree: Story = {
   play: async ({ canvasElement }) => {
     await expect(

@@ -3,7 +3,6 @@ import { Fragment, type ComponentProps } from "react"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-// Not assigned · assigned and lazily loaded · assigned and always in context.
 type LoadState = "lazy" | "preloaded" | null
 
 const matrixCellVariants = cva(
@@ -21,7 +20,6 @@ const matrixCellVariants = cva(
 )
 
 type MatrixCell = {
-  // Stable key — typically the sub-agent id.
   key: string
   state: LoadState
   label: string
@@ -31,19 +29,11 @@ type MatrixCell = {
 type MatrixRow = {
   key: string
   label: string
-  // One entry per column. `null` means no sub-agent exists for that
-  // domain × role pair. The design draws those exactly like an unassigned
-  // cell — the grid reads as a plain 5 × 4 field — so the slot is only
-  // distinguished by being inert.
+  // `null`: no sub-agent for that domain and role; drawn like an empty cell but inert.
   cells: (MatrixCell | null)[]
 }
 
-// The sub-agent assignment matrix in the skill options panel: domains down the
-// left, roles across the top. Clicking a cell cycles it
-// empty → lazy → preloaded → empty, and the word in the cell *is* the state —
-// the design has no legend and no icons.
-//
-// The leading `auto` column holds the row labels; roles share the rest evenly.
+// Clicking cycles empty → lazy → preloaded; the cell's word is the state.
 function MatrixGrid({
   className,
   columns,
@@ -81,9 +71,7 @@ function MatrixGrid({
                 key={cell.key}
                 type="button"
                 aria-label={`${row.label} ${cell.label}`}
-                // The package's one focus ring, on the button rather than in
-                // the cva: the gap below draws from the same variants and can
-                // never take focus.
+                // Focus ring here, not in the cva: the inert gap shares the variants.
                 className={cn(
                   matrixCellVariants({ state: cell.state ?? "empty" }),
                   "outline-none focus-visible:ring-1 focus-visible:ring-ring"

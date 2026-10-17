@@ -10,7 +10,7 @@ import {
 
 const INSTALL_MODES = ["plugin", "eject"] as const
 
-// The panel this row lives in is 210px wide, and the segments divide it evenly.
+// The panel is 210px wide.
 const meta = {
   title: "Components/Segmented",
   component: Segmented,
@@ -36,7 +36,6 @@ export const InstallMode: Story = {
   },
 }
 
-// The uppercase mono caption above a row.
 export const WithFieldLabel: Story = {
   render: () => (
     <>
@@ -52,9 +51,7 @@ export const WithFieldLabel: Story = {
   ),
 }
 
-// `Segmented` holds no state — the caller owns which item is active, exactly as
-// the skill options panel does, where one store field decides the whole row. So
-// every story that moves the choice has to hold it.
+// `Segmented` holds no state, so stories that move the choice hold it.
 function ControlledRow() {
   const [selected, setSelected] = useState<string>("plugin")
 
@@ -75,8 +72,6 @@ function ControlledRow() {
   )
 }
 
-// What the component owes is that a click reaches the caller and that `active`
-// reads back as checked.
 export const ClickMovesTheActiveSegment: Story = {
   render: () => <ControlledRow />,
   play: async ({ canvas }) => {
@@ -92,8 +87,6 @@ export const ClickMovesTheActiveSegment: Story = {
   },
 }
 
-// The row is one choice, not several independent toggles — and the grouping is
-// the only thing that says so to a screen reader.
 export const TheRowAnnouncesOneExclusiveChoice: Story = {
   render: () => <ControlledRow />,
   play: async ({ canvas }) => {
@@ -103,8 +96,6 @@ export const TheRowAnnouncesOneExclusiveChoice: Story = {
   },
 }
 
-// One tab stop for the row rather than one per segment: only the active segment
-// is tabbable, and the arrows move within the row from there.
 export const OnlyTheActiveSegmentIsATabStop: Story = {
   render: () => <ControlledRow />,
   play: async ({ canvas }) => {
@@ -115,9 +106,6 @@ export const OnlyTheActiveSegmentIsATabStop: Story = {
   },
 }
 
-// Selection follows focus, as it does in a native radio group — and it goes
-// through the segment's own click, so the caller's handler stays the only place
-// a choice is ever made.
 export const ArrowKeysMoveTheActiveSegment: Story = {
   render: () => <ControlledRow />,
   play: async ({ canvas }) => {

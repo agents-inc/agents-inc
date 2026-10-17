@@ -16,24 +16,12 @@ type Story = StoryObj<typeof meta>
 
 export const Default: Story = {}
 
-// The install dialog's block, which the user is expected to copy.
 export const Copyable: Story = {
   args: { copyable: true, onClick: fn() },
 }
 
-// The `$` is decoration, not content — a screen reader reading this block out
-// should say the command, not "dollar sign" first, and a reader copying the
-// line should get the command and nothing else.
-//
-// ASSERTED AS AN ABSENCE FROM THE BLOCK'S TEXT, because that is what the
-// mechanism became. It was a `<span aria-hidden>$</span>` and this story read
-// `getByText("$")` and checked the attribute; the prompt is a generated
-// `::before` now, so there is no element to find and the story went red naming
-// a missing ELEMENT rather than a missing behaviour. A `::before` is outside
-// the accessibility tree, outside a selection and outside `textContent` alike,
-// so the one honest statement covering all three is that the block's text IS
-// the command — and it is the assertion that still means something if the
-// decoration ever comes back as an element.
+// The `$` is a `::before`, outside the accessibility tree, selection and `textContent`, so the
+// block's text is exactly the command.
 export const PromptIsNotPartOfTheCommand: Story = {
   play: async ({ canvasElement }) => {
     const block = canvasElement.querySelector("[data-slot=command-block]")
@@ -43,8 +31,7 @@ export const PromptIsNotPartOfTheCommand: Story = {
   },
 }
 
-// `copyable` buys the affordance, not the copying — the handler is the caller's.
-// This is the assertion that a click on the block reaches it.
+// `copyable` buys the affordance; the handler is the caller's.
 export const CopyableClickReachesHandler: Story = {
   args: { copyable: true, onClick: fn() },
   play: async ({ args, canvas }) => {
@@ -54,8 +41,6 @@ export const CopyableClickReachesHandler: Story = {
   },
 }
 
-// The block is the install dialog's only action, so `copyable` has to put it in
-// the tab order — a hover border is a picture of an affordance, not one.
 export const CopyableTakesKeyboardFocus: Story = {
   args: { copyable: true, onClick: fn() },
   play: async ({ canvas }) => {
@@ -67,8 +52,6 @@ export const CopyableTakesKeyboardFocus: Story = {
   },
 }
 
-// Enter reaches the caller's `onClick` — the same handler the pointer path
-// uses, so the two devices cannot drift into meaning different things.
 export const CopyableEnterReachesHandler: Story = {
   args: { copyable: true, onClick: fn() },
   play: async ({ args }) => {

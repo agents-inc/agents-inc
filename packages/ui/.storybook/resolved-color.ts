@@ -1,8 +1,4 @@
-/**
- * A colour token as the page resolves it now, in the `rgb(…)` form a computed
- * style reports. Read through a throwaway element because the root reports a
- * custom property as declared, and `#d8d3c4` never equals `rgb(216, 211, 196)`.
- */
+/** Via a throwaway element: the root reports a custom property as declared, not as `rgb(…)`. */
 export const resolvedColor = (token: `--color-${string}`) => {
   const probe = document.createElement("span")
   probe.style.color = `var(${token})`

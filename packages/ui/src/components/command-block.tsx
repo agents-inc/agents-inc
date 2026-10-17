@@ -4,17 +4,8 @@ import { cn } from "@workspace/ui/lib/utils"
 
 const ACTIVATION_KEYS = ["Enter", " "]
 
-// A shell command the user is expected to copy — the install dialog's whole
-// point, since installing is a CLI action and the dialog deliberately has no
-// Install button.
-//
-// The `$` is decoration, not content, and it is drawn by CSS so that it is not
-// content anywhere: a generated `::before` is outside the accessibility tree,
-// outside a text selection and outside `textContent`, where an `aria-hidden`
-// span still put it. That last one is what made it a bug rather than a detail —
-// an assertion reading the whole of a block's text read `$npx agents-inc init`,
-// so the only way to pin a command exactly was to write the decoration into the
-// expectation and call it part of the command.
+// The `$` is a CSS `::before`, so it is outside the accessibility tree, selection and
+// `textContent`.
 function CommandBlock({
   className,
   copyable = false,
@@ -22,14 +13,7 @@ function CommandBlock({
   onKeyDown,
   ...props
 }: ComponentProps<"div"> & {
-  // Whole-block click-to-copy. A prop rather than classes at the call site,
-  // so the affordance cannot drift between the blocks that have it — which
-  // means the semantics as well as the look: a copyable block is announced as
-  // a button, takes focus, and answers Enter and Space.
-  //
-  // It still buys the affordance rather than the copying. The clipboard write
-  // is the caller's `onClick`, and the keyboard path below routes through that
-  // same handler rather than a second one that could drift from it.
+  // Whole-block click-to-copy semantics; the clipboard write is the caller's `onClick`.
   copyable?: boolean
 }) {
   return (
@@ -56,8 +40,7 @@ function CommandBlock({
   )
 }
 
-// A real click rather than a call to `onClick`: it is what a native button does
-// with these two keys, and it keeps the pointer and the keyboard on one handler.
+// A real click, as a native button does, so pointer and keyboard share one handler.
 function activateOnEnterOrSpace(event: KeyboardEvent<HTMLDivElement>) {
   if (!ACTIVATION_KEYS.includes(event.key)) return
 

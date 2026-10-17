@@ -23,9 +23,8 @@ const hingeVariants = cva("flex items-center", {
   defaultVariants: { variant: "column" },
 })
 
-// The padding is offset by a matching negative margin, so the hover fill
-// appears around the words without moving them. The glyph is `invisible`
-// rather than unmounted so it holds its box when it appears.
+// Negative margin offsets the padding so the hover fill does not move the words. The glyph is
+// `invisible`, not unmounted, so it holds its box.
 const HINGE_TOGGLE =
   "group/title -ml-2 inline-flex cursor-pointer items-center gap-4 px-2 py-1 outline-none select-none hover:bg-title-hover focus-visible:ring-1 focus-visible:ring-ring"
 const HINGE_GLYPH =
@@ -48,9 +47,8 @@ function HingeLabel({
           {index}
         </span>
       ) : null}
-      {/* The space before the noun is part of the label's own text node: a
-          whitespace-only node between the two is dropped from the accessible
-          name, which then reads `then yourstack`. */}
+      {/* The space lives in the label's text node: a whitespace-only node is dropped from the
+          accessible name. */}
       <span data-slot="hinge-words" className={HINGE_WORDS}>
         {emphasis ? (
           <>

@@ -3,30 +3,8 @@ import type { ComponentProps } from "react"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-// The bordered mono toggle. One idiom at three sizes: `filter`, which is the
-// default, `segment` inside the skill options panel, and `stage` on the
-// add-skill result rows.
-//
-// `filter` is named for where it started rather than for where it is: the
-// filter bar's domain chips, then the `selected` toggle beside them. Both left,
-// and they left in different directions — the domains became the strip's own
-// cells, and `selected` became a two-cell `ButtonGroup` on the skills hinge in
-// the 2026-09-06 refresh, because a chip states one value and the refresh is
-// about showing both. `filter` is the size the dialogs still reach for.
-//
-// Off is a hairline outline on nothing; on is amber ink on the accent wash
-// with an amber border. Hover only firms the border — it never goes amber,
-// because amber is reserved for what the user actually chose.
-//
-// `chipVariants` is exported for the cases that need the look without the
-// semantics: the stage marker sits inside an already-clickable row, so it must
-// render as a `<span>` rather than nest a button.
-//
-// `onDark` is the 84a stuck filter bar: the surface turns #242320, so the
-// border goes — it is the one thing on the band that keeps none — and the chip
-// reads as ink lifted on a translucent white wash instead. Named for the
-// surface rather than for the bar's own state, so the primitive never has to
-// know why, and so a chip in a dialog can never be caught by it.
+// Hover only firms the border: amber is reserved for what the user chose. `chipVariants` is
+// exported for a passive `<span>` inside a clickable row. `onDark` is for the stuck filter bar.
 const chipVariants = cva(
   "cursor-pointer border font-mono font-medium whitespace-nowrap uppercase",
   {
@@ -89,9 +67,7 @@ function Chip({
       type={type}
       data-slot="chip"
       aria-pressed={active ?? false}
-      // The package's one focus ring, on the element rather than in the cva:
-      // `chipVariants` is shared with the passive `<span>` above, and a thing
-      // that cannot take focus should not carry a rule about being focused.
+      // Focus ring here, not in the cva: `chipVariants` also dresses a passive `<span>`.
       className={cn(
         chipVariants({ size, active, onDark }),
         "outline-none focus-visible:ring-1 focus-visible:ring-ring",

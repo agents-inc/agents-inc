@@ -4,10 +4,8 @@ import type { ComponentProps } from "react"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-// Borderless: the border is the wrapper's, the padding the field's own. `p-0`
-// is only the default; a wrapper hands its inset down through `className` so
-// every pixel inside its border takes the caret (`field-hit-area.spec.ts`).
-// `onDark` is the stuck filter bar's dark band.
+// Borderless; a wrapper hands its inset down through `className` so every pixel inside its border
+// takes the caret.
 const inputVariants = cva(
   "min-w-0 flex-1 border-0 bg-transparent p-0 font-mono font-normal outline-none focus-visible:ring-1 focus-visible:ring-ring",
   {

@@ -10,19 +10,8 @@ const STEP_BY_KEY: Record<string, number> = {
 }
 
 /**
- * Arrow-key movement for a row of `role="radio"` children, wrapping at both
- * ends with selection following focus — what a native radio group does, and
- * what a roving tabindex owes the keyboard once the row has become one tab stop
- * instead of one per option.
- *
- * The move goes through the option's own `click`, so the caller's `onClick`
- * stays the only place a choice is ever made.
- *
- * SHARED BY THE PACKAGE'S TWO RADIO ROWS rather than written in each. They are
- * the same interaction on two different drawings — `Segmented`'s spaced chips
- * inside the skill options panel, and `ButtonGroup`'s butted cells — and the
- * second copy of this function is how the two would come to disagree about
- * whether the row wraps, or which keys move it.
+ * Roving radio row: arrows wrap and selection follows focus. Moves through the option's `click`, so
+ * `onClick` stays the only place a choice is made. Shared by `Segmented` and `ButtonGroup`.
  */
 export function moveToAdjacentRadio(event: KeyboardEvent<HTMLDivElement>) {
   const step = STEP_BY_KEY[event.key]

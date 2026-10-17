@@ -5,8 +5,7 @@ import { Hinge, Rule } from "@workspace/ui/components/divider"
 
 import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
-// The column variant bleeds out by `-mx-gutter`, so it needs a gutter to bleed
-// into or it renders off the canvas.
+// The column variant bleeds by `-mx-gutter`, so it needs a gutter to bleed into.
 const meta = {
   title: "Components/Divider",
   component: Hinge,

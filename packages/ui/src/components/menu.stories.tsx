@@ -12,23 +12,13 @@ import {
 
 import { expectVisibleFocusRing } from "../../.storybook/focus-ring"
 
-// The one menu the product draws: the roster panel's grouping control, two
-// mutually exclusive values, no icons and no separator.
 const GROUP_BYS = ["domain", "scope"] as const
 type GroupBy = (typeof GROUP_BYS)[number]
 
-// The trigger is the caller's, so this is the app's own shape: the accessible
-// name is the ACTION, because the visible text is the current value and says
-// nothing about what pressing it would do.
+// Named for the action: the visible text is the current value.
 const TRIGGER = "Group sub-agents"
 
-// `MenuRadioGroup` is controlled by construction — the wrapper omits
-// `defaultValue`, because the value lives in a store and the menu is never its
-// owner. So every story holds it.
-//
-// `setGroupBy` is accepted here without an annotation only because the wrapper
-// is generic over the value: base-ui types `onValueChange` as `(value: any)`,
-// which would have swallowed a handler of the wrong type silently.
+// `MenuRadioGroup` is controlled by construction, so every story holds the value.
 function GroupControl(props: ComponentProps<typeof Menu>) {
   const [groupBy, setGroupBy] = useState<GroupBy>("domain")
 
@@ -48,8 +38,7 @@ function GroupControl(props: ComponentProps<typeof Menu>) {
   )
 }
 
-// The menu is portalled, so everything here is queried from `screen` rather
-// than from the story canvas.
+// Portalled, so queries go through `screen`.
 const meta = {
   title: "Components/Menu",
   component: Menu,
@@ -71,9 +60,6 @@ export const TheTriggerOpensTheMenu: Story = {
   },
 }
 
-// The two options are one choice, not two independent toggles, and the roles
-// are the only thing that says so — the design's own prototype draws the same
-// picture out of plain `<div>`s and tells a screen reader nothing at all.
 export const TheOptionsAnnounceOneExclusiveChoice: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -99,10 +85,7 @@ export const OnlyTheActiveOptionIsChecked: Story = {
   },
 }
 
-// The tick sits in an `aria-hidden` slot, so the active option is named by its
-// label alone. Left exposed it would announce as `domain ✓`, and every
-// exact-name query — this suite's and the editor's E2E — would stop reaching
-// the one row that matters.
+// The tick is `aria-hidden`, so exact-name queries reach the active row.
 export const TheActiveOptionIsNamedByItsLabelAlone: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -114,8 +97,7 @@ export const TheActiveOptionIsNamedByItsLabelAlone: Story = {
   },
 }
 
-// The trigger's visible text is the current value, so it reading `scope ▾` is
-// the caller's handler having been reached with the option that was picked.
+// The trigger shows the current value, so `scope ▾` proves the handler ran.
 export const PickingReportsTheChoice: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -129,8 +111,6 @@ export const PickingReportsTheChoice: Story = {
   },
 }
 
-// Base UI leaves a radio item open on click and this wrapper does not; a
-// two-item mode switch has nothing further to offer once one is taken.
 export const PickingClosesTheMenu: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -144,14 +124,7 @@ export const PickingClosesTheMenu: Story = {
   },
 }
 
-// The whole reason this is a primitive rather than hand-rolled markup: the
-// design's prototype has no keyboard path at all. Arrows and Enter, no pointer
-// anywhere.
-//
-// Every step between the presses is a wait rather than a read, because Base UI
-// moves focus into the popup in one effect and the highlight in another. An
-// arrow sent before the popup has focus reaches nothing, and an Enter sent
-// before the highlight has landed picks whichever option it had reached.
+// Waits between presses: Base UI moves focus into the popup and the highlight in separate effects.
 export const TheKeyboardCanPick: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -184,13 +157,7 @@ export const TheKeyboardCanPick: Story = {
   },
 }
 
-// Every focusable control this package ships draws one ring, and a menu item
-// is the one a pointer never has to reach — arrows are its whole path. Axe
-// cannot check a focus indicator, so this story is the entire gate.
-//
-// The waits are `TheKeyboardCanPick`'s and are there for its reason: Base UI
-// moves focus into the popup in one effect and the highlight in another, and
-// an arrow sent before the popup has focus reaches nothing.
+// Axe cannot check focus indicators; waits as in `TheKeyboardCanPick`.
 export const FocusDrawsTheRing: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -205,24 +172,19 @@ export const FocusDrawsTheRing: Story = {
       await expect(option).toHaveFocus()
     })
 
-    // The unfocused row reads `none`, so this is the ring and nothing else.
+    // The unfocused row reads `none`.
     await expectVisibleFocusRing(option)
   },
 }
 
-// The trigger draws the same one ring. It is reached with a real Tab rather
-// than `.focus()`, because the ring is bound to `:focus-visible` and a
-// programmatic focus does not reliably match it.
-//
-// The menu stays closed here — this story is about the trigger, and every
-// other story that opens one moves focus into the popup.
+// A real Tab, since `:focus-visible` does not reliably match programmatic focus.
 export const TheTriggerDrawsTheRing: Story = {
   play: async () => {
     await userEvent.tab()
     const trigger = screen.getByRole("button", { name: TRIGGER })
     await expect(trigger).toHaveFocus()
 
-    // The unfocused trigger reads `none`, so this is the ring and nothing else.
+    // The unfocused trigger reads `none`.
     await expectVisibleFocusRing(trigger)
   },
 }

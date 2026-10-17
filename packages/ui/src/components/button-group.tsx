@@ -4,9 +4,7 @@ import type { ComponentProps } from "react"
 import { moveToAdjacentRadio } from "@workspace/ui/lib/radio-row"
 import { cn } from "@workspace/ui/lib/utils"
 
-// The inactive cell stays legible: it is what tells you what a click will do,
-// so the active cell is marked by going amber, never by the others going pale.
-// A `radiogroup` with one tab stop; `radio-row.ts` moves the arrow keys.
+// Active goes amber; inactive cells stay legible because they say what a click will do.
 const buttonGroupVariants = cva("inline-flex w-fit items-stretch")
 
 function ButtonGroup({
@@ -28,9 +26,7 @@ function ButtonGroup({
   )
 }
 
-// `badge` is a skill cell's placement pairs; `segment` is every other pair,
-// with `preset` setting padding and `tone` the surface. Amber has no hover
-// step: nothing the pointer does may mask the visitor's choice.
+// Amber has no hover step: the pointer must not mask the visitor's choice.
 const buttonGroupItemVariants = cva(
   "flex cursor-pointer items-center font-mono font-medium whitespace-nowrap uppercase",
   {
@@ -143,8 +139,7 @@ function ButtonGroupItem({
   ...props
 }: ComponentProps<"button"> &
   Omit<VariantProps<typeof buttonGroupItemVariants>, "unavailable">) {
-  // `null` as well as `undefined`, because that is what the cva's own variant
-  // type admits and `aria-checked` does not.
+  // The cva variant type admits `null`, which `aria-checked` does not.
   const checked = active ?? false
   // Read from `aria-disabled` so one attribute drives both semantics and paint.
   const unavailable = isRefused(props["aria-disabled"])
@@ -155,8 +150,7 @@ function ButtonGroupItem({
       data-slot="button-group-item"
       role="radio"
       aria-checked={checked}
-      // Roving tabindex: the checked cell is the group's tab stop, and the
-      // arrow keys move from there.
+      // Roving tabindex.
       tabIndex={checked ? 0 : -1}
       className={cn(
         buttonGroupItemVariants({
@@ -167,8 +161,7 @@ function ButtonGroupItem({
           unavailable,
           error,
         }),
-        // On the element rather than in the cva, because the cva is exported
-        // for a caller that renders the look without the control.
+        // Not in the cva: it is exported for passive renders.
         "outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className
       )}
@@ -177,7 +170,6 @@ function ButtonGroupItem({
   )
 }
 
-// `aria-disabled` admits the string forms as well as the boolean.
 function isRefused(ariaDisabled: ComponentProps<"button">["aria-disabled"]) {
   return ariaDisabled === true || ariaDisabled === "true"
 }

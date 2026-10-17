@@ -3,33 +3,17 @@ import { cva } from "class-variance-authority"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-// The one dropdown in the product: a flat list on the tooltip surface, no
-// border, no shadow, no accent edge — the same field the where-used popup and
-// the options panel's info tip sit on. Radius 0, like everything else.
-//
-// It is a primitive rather than hand-rolled markup in the app for the reason
-// every other base-ui wrapper here is one: the design's own prototype has no
-// keyboard path at all, no `role="menu"`, no `aria-expanded` and no
-// `aria-haspopup`. All of those, plus Escape and outside-click, come free from
-// the primitive, and the app never has to know how any of them work.
-//
-// The trigger is the caller's: its accessible name and its glyph are app copy.
+// A base-ui wrapper for the keyboard path and ARIA the design's prototype lacks. The trigger's
+// name and glyph are the caller's.
 
-// Floating positioning is a device-pixel API — it feeds `transform:
-// translate()`, not a stylesheet — so this is the one measurement in the
-// package that cannot be a rem token. Four pixels of air under the trigger.
+// Floating positioning takes device pixels, so this cannot be a rem token.
 const MENU_SIDE_OFFSET_PX = 4
 
 function Menu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root {...props} />
 }
 
-// The one thing on the trigger that is NOT the caller's: every focusable
-// control this package ships draws one ring, and a bare pass-through would
-// fall through to the base layer's `* { outline-ring/50 }`, which names a
-// colour and leaves whether anything is drawn to the user agent. Written here
-// once rather than at the call site — a caller restating it is the drift the
-// rule exists to stop.
+// The package's one focus ring, so the trigger does not fall back to the base layer's outline.
 function MenuTrigger({
   className,
   ...props
@@ -46,17 +30,8 @@ function MenuTrigger({
   )
 }
 
-// Portal · Positioner · Popup in one part, the way `DialogContent` composes its
-// own three: the caller cannot put a positioning prop on the popup, where it
-// would land on the DOM node as an unknown attribute.
-//
-// Every prop but `className` is the POSITIONER's, and `className` is the
-// POPUP's — the two are different elements with different state types, so the
-// positioner's own type cannot describe it. It is narrowed to `string` rather
-// than carrying the popup's `string | ((state) => string | undefined)`,
-// because `cn` is `twMerge(clsx(...))` and clsx drops a function with no
-// error: typed as the primitive types it, the callback form would compile and
-// then silently produce no class at all.
+// Portal, Positioner and Popup in one part. Props go to the positioner; `className` to the popup,
+// narrowed to `string` because `cn` silently drops the callback form.
 function MenuPopup({
   className,
   children,
@@ -74,8 +49,7 @@ function MenuPopup({
         side={side}
         align={align}
         sideOffset={sideOffset}
-        // Above the roster's sticky bands, which sit at 5 — a menu opened from
-        // the panel header must not be covered by a band scrolling under it.
+        // Above the roster's sticky bands (z-5).
         className="z-[130]"
         {...props}
       >
@@ -93,10 +67,7 @@ function MenuPopup({
   )
 }
 
-// Generic over the value, which Base UI types as `any` on both the prop and
-// the handler. A radio group's members are one union by construction, so the
-// caller gets that union back rather than having to narrow an `any` at every
-// call site — which would be a cast wearing an annotation.
+// Generic so callers get their value union back instead of base-ui's `any`.
 function MenuRadioGroup<Value extends string>({
   value,
   onValueChange,
@@ -118,12 +89,7 @@ function MenuRadioGroup<Value extends string>({
   )
 }
 
-// The active row is amber TEXT only — no fill, no left edge, no bold — and it
-// has NO hover step, for the reason `Chip` reserves amber at all: it means
-// "the user chose this", so nothing the pointer does may mask it. The design's
-// own cascade declares `.grpi:hover` after `.grpi.on` at equal specificity, so
-// hovering the active row there makes it look inactive; that is an accident
-// and it is not reproduced.
+// Active is amber text with no hover step: amber means "chosen" and the pointer must not mask it.
 const menuRadioItemVariants = cva(
   "flex cursor-pointer gap-[0.625rem] font-mono text-8_5 leading-[1.75] font-normal whitespace-nowrap normal-case outline-none focus-visible:ring-1 focus-visible:ring-ring",
   {
@@ -140,8 +106,7 @@ const menuRadioItemVariants = cva(
 function MenuRadioItem({
   className,
   children,
-  // Base UI leaves a radio item open on click; the design closes on pick, and
-  // a two-item mode switch has nothing further to offer once one is taken.
+  // Base UI keeps a radio item open on click; the design closes on pick.
   closeOnClick = true,
   ...props
 }: Omit<MenuPrimitive.RadioItem.Props, "className"> & { className?: string }) {
@@ -155,11 +120,8 @@ function MenuRadioItem({
       {...props}
     >
       {children}
-      {/* The slot is always drawn and the tick only sometimes, so the row
-          height never changes with the selection. `aria-hidden` because the
-          state is already on the accessibility tree as `aria-checked` — left
-          exposed, the active row's accessible name becomes `domain ✓` and no
-          exact-name query can reach it. */}
+      {/* Always drawn so row height is stable; `aria-hidden` since `aria-checked` carries the
+          state and the tick would pollute the accessible name. */}
       <span aria-hidden className="ml-auto">
         <MenuPrimitive.RadioItemIndicator>✓</MenuPrimitive.RadioItemIndicator>
       </span>

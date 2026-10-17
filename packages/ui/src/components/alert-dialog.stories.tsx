@@ -17,8 +17,7 @@ const TRIGGER = "switch stack"
 const CANCEL = "Keep my setup"
 const CONFIRM = "Switch"
 
-// The one use is the stack switch, where the cost of a stray click is the
-// user's whole selection. Portalled, so queries come from `screen`.
+// Portalled, so queries come from `screen`.
 const meta = {
   title: "Components/AlertDialog",
   component: AlertDialog,
@@ -55,7 +54,7 @@ export const OpensAndTakesFocus: Story = {
 
     const dialog = await screen.findByRole("alertdialog", { name: TITLE })
 
-    // Base UI moves focus in an effect, so this is a wait rather than a read.
+    // Base UI moves focus in an effect.
     await waitFor(async () => {
       await expect(dialog.contains(document.activeElement)).toBe(true)
     })
@@ -75,8 +74,6 @@ export const CancelCloses: Story = {
   },
 }
 
-// The difference from `Dialog`, and the reason this component exists at all:
-// a stray click on the backdrop must not discard the user's selection.
 export const BackdropDoesNotClose: Story = {
   args: { defaultOpen: true },
   play: async () => {

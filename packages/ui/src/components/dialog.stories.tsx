@@ -24,8 +24,7 @@ const TITLE = "Install"
 const TRIGGER = "open install"
 const INSTALL_COMMAND = "npx agents-inc@latest install --from abc123"
 
-// The dialog is portalled, so everything here is queried from `screen` rather
-// than from the story canvas.
+// Portalled, so queries go through `screen`.
 const meta = {
   title: "Components/Dialog",
   component: Dialog,
@@ -53,7 +52,6 @@ export const Default: Story = {
   args: { defaultOpen: true },
 }
 
-// The install dialog's two-column inventory, on the wider sheet.
 export const WideWithPanes: Story = {
   args: { defaultOpen: true },
   render: (args) => (
@@ -80,16 +78,13 @@ export const WideWithPanes: Story = {
   ),
 }
 
-// Opening has to do two things at once: put a dialog on screen that announces
-// what it is, and move focus into it — a modal the keyboard is still outside of
-// is not modal.
 export const OpensAndTakesFocus: Story = {
   play: async ({ canvas }) => {
     await userEvent.click(canvas.getByRole("button", { name: TRIGGER }))
 
     const dialog = await screen.findByRole("dialog", { name: TITLE })
 
-    // Base UI moves focus in an effect, so this is a wait rather than a read.
+    // Base UI moves focus in an effect.
     await waitFor(async () => {
       await expect(dialog.contains(document.activeElement)).toBe(true)
     })
@@ -109,9 +104,7 @@ export const EscapeCloses: Story = {
   },
 }
 
-// The ✕ is a button like every other one the package ships, so it draws the
-// same focus ring. Axe cannot check a focus indicator — it is not
-// machine-decidable — so this is the only thing holding the glyph to it.
+// Axe cannot check focus indicators.
 export const CloseGlyphFocusDrawsTheRing: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -124,8 +117,7 @@ export const CloseGlyphFocusDrawsTheRing: Story = {
   },
 }
 
-// `✕` is a text glyph rather than an icon, so its accessible name is an
-// explicit `aria-label` — without one it would announce as "multiplication x".
+// Without `aria-label` the `✕` announces as "multiplication x".
 export const CloseGlyphCloses: Story = {
   args: { defaultOpen: true },
   play: async () => {
@@ -139,18 +131,10 @@ export const CloseGlyphCloses: Story = {
   },
 }
 
-// ── Fullscreen, and the tree/code splitter ───────────────────────────────
-//
-// The output preview's code pane is ~60 characters at 760px, which is narrow
-// enough that generated source wraps and stops looking like the file it claims
-// to be. Fullscreen is the answer; the splitter is the answer to the tension
-// underneath it — long paths and long code lines competing for one width. Free
-// window resizing was built and rejected: nobody wants 812px, they want MORE.
 
 const FULLSCREEN = "Fullscreen"
 const SPLITTER = "Resize the file tree"
 
-// A split sheet at rest, with both controls the preview adds.
 export const SplitWithFullscreen: Story = {
   args: { defaultOpen: true },
   render: (args) => (
@@ -180,9 +164,7 @@ export const SplitWithFullscreen: Story = {
   ),
 }
 
-// Sized against the sheet's own inset on all four edges rather than by a width:
-// `calc(100vw - 48px)` pushed the footer, and with it the only Close button,
-// off the bottom of the screen.
+// Inset on all four edges, so the footer's Close button stays on screen.
 export const Fullscreen: Story = {
   ...SplitWithFullscreen,
   render: (args) => (
@@ -207,9 +189,6 @@ export const Fullscreen: Story = {
   ),
 }
 
-// The control names the ACTION rather than the state, so the name changes with
-// it — and a dialog that cannot be maximised draws no control at all, which is
-// why the handler rather than a boolean is what summons it.
 export const MaximiseNamesTheAction: Story = {
   ...SplitWithFullscreen,
   play: async () => {
@@ -233,8 +212,6 @@ export const MaximiseFocusDrawsTheRing: Story = {
   },
 }
 
-// A separator that reports the width it moves. Without a value it is a landmark
-// saying nothing about the thing it controls.
 export const SplitterReportsItsWidth: Story = {
   ...SplitWithFullscreen,
   play: async () => {

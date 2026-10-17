@@ -3,28 +3,11 @@ import type { ComponentProps } from "react"
 import { cn } from "@workspace/ui/lib/utils"
 
 /**
- * ONE ICON SET, ONE GEOMETRY.
- *
- * Five glyphs used to come from four different places: `＋` and `−` were
- * FULLWIDTH CJK PUNCTUATION, `↩` and `▾` were typographic characters, and only
- * the code brackets were drawn. That is why they never sat together — a text
- * glyph inherits the font's own weight and baseline and an SVG does not, so
- * two controls a row apart disagreed about where the middle of a line is.
- *
- * Everything drawn in this app now comes through here, at Lucide's geometry
- * and ONE stroke: 1.75, `butt` caps, `miter` joins. The caps are the half that
- * is easy to get wrong and impossible to unsee — round caps softened every
- * corner against a design that has no radius anywhere, and the difference is
- * visible at 11px. Mixing them across two glyphs on one row is the failure
- * this file exists to make unavailable.
- *
- * The GitHub mark is the one exception and stays where it is used: it is a
- * brand's own artwork at its own geometry, not a glyph in this set.
+ * Every drawn glyph, at Lucide geometry and one stroke: 1.75, `butt` caps, `miter` joins (round
+ * caps clash with a radius-free design). The GitHub mark is brand artwork and lives where it is used.
  */
 
-// Path data, verbatim from the design's own `GLYPH` factory. Several of these
-// differ from the shapes the README prints beside them — `enter` most visibly
-// — and the assembled prototype is the spec in every such case.
+// Verbatim from the design prototype's `GLYPH` factory, which wins over the README.
 const PATHS = {
   plus: ["M12 5v14", "M5 12h14"],
   minus: ["M5 12h14"],
@@ -34,10 +17,7 @@ const PATHS = {
   chevronRight: ["M9 6l6 6-6 6"],
   expand: ["M4 10V4h6", "M20 14v6h-6", "M4 4l6 6", "M20 20l-6-6"],
   shrink: ["M10 4v6H4", "M14 20v-6h6", "M10 10L4 4", "M14 14l6 6"],
-  // The sun's rays are eight separate paths in the design rather than one
-  // concatenated `d`, and they stay separate: a single path with eight
-  // subpaths renders identically only while the caps are `butt`, which is
-  // exactly the property this set is here to stop anybody assuming.
+  // Separate paths: one path of subpaths renders the same only while caps are `butt`.
   sun: [
     "M12 3v2",
     "M12 19v2",
@@ -50,30 +30,16 @@ const PATHS = {
     "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
   ],
   moon: ["M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"],
-  // The two circled glyphs, which are the same drawing turned upside down: the
-  // info dot sits above its stem, the warning dot below it. They are named for
-  // what they SAY rather than for the shape, because that is the only thing
-  // separating them.
+  // The same drawing inverted; named for what they say.
   info: ["M12 11v5.5", "M12 7.6v.1"],
   warning: ["M12 7v5.5", "M12 16.3v.1"],
 } as const
 
 export type GlyphName = keyof typeof PATHS
 
-// The circled pair carry a ring the others have no use for.
 const RINGED = new Set<GlyphName>(["info", "warning"])
 
-/**
- * `aria-hidden` by default and not by accident.
- *
- * Every glyph in this design sits inside a control that already names itself —
- * the add-skill block says "add skill", a step title and a roster band say
- * their own words. A glyph that published a
- * name of its own would put a second, worse name into the accessible one.
- * Passing `aria-hidden={false}` alongside a `role`/`aria-label` is available
- * for the case that is genuinely the only content of its control, and there is
- * none today.
- */
+/** Hidden by default: every glyph sits in a control that already names itself. */
 function Glyph({
   name,
   size = 13,
@@ -99,9 +65,7 @@ function Glyph({
       strokeLinecap="butt"
       strokeLinejoin="miter"
       aria-hidden
-      // `block` kills the inline baseline gap under the box, which is what put
-      // a glyph and the word beside it on two different lines in the first
-      // place. `shrink-0` because every one of these sits in a flex row.
+      // `block` removes the inline baseline gap; `shrink-0` for flex rows.
       className={cn("block shrink-0", className)}
       {...props}
     >
