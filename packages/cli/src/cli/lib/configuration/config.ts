@@ -1,3 +1,4 @@
+import { BlockList, isIPv4 } from "net";
 import os from "os";
 import path from "path";
 import { z } from "zod";
@@ -223,6 +224,7 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
   }
 
   if (effective?.config.marketplace) {
+    assertStoredSourceUsable(effective.config.marketplace, effective.configPath);
     verbose(`Marketplace from ${effective.origin} config: ${effective.config.marketplace}`);
     return {
       source: effective.config.marketplace,
@@ -238,7 +240,7 @@ export async function resolveSource(request: ResolveSourceRequest): Promise<Reso
 /**
  * Origin-neutral: a `"stored"` caller may name a marketplace too, and never passed `--marketplace`.
  */
-const NAMED_SOURCE_LABEL = "The marketplace";
+export const NAMED_SOURCE_LABEL = "The marketplace";
 
 /** Raised, not warned: somebody named this, so falling through would install from elsewhere. */
 function assertNamedSourceUsable(flag: string): void {
@@ -248,6 +250,11 @@ function assertNamedSourceUsable(flag: string): void {
     );
   }
   validateSourceFormat(flag.trim(), NAMED_SOURCE_LABEL);
+}
+
+/** Raised as a named one is, naming the file: whoever wrote it there chose it as surely. */
+function assertStoredSourceUsable(source: string, configPath: string): void {
+  validateSourceFormat(source, `${NAMED_SOURCE_LABEL} in ${configPath}`);
 }
 
 /** Unset, empty or unusable falls through with a warning: the environment is ambient. */
@@ -329,14 +336,74 @@ const PATH_TRAVERSAL_PATTERN = /\.\./;
 // These can trigger SMB authentication to attacker-controlled servers
 const UNC_PATH_PATTERN = /^(?:\/\/|\\\\)/;
 
-// Private/reserved IPv4 ranges that should not appear in source URLs (SSRF prevention)
-// Matches: 127.x.x.x, 10.x.x.x, 172.16-31.x.x, 192.168.x.x, 0.0.0.0, 169.254.x.x
-const PRIVATE_IPV4_PATTERN =
-  /^(?:127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|0\.0\.0\.0|169\.254\.\d+\.\d+)$/;
+type Subnet = { network: string; prefix: number };
 
-// IPv6 loopback and private addresses in URL hostname brackets
-const PRIVATE_IPV6_PATTERN =
-  /^\[(?:::1|::ffff:(?:127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)|fd[0-9a-f]{2}:.*|fe80:.*)\]$/i;
+/**
+ * Private and reserved ranges a marketplace URL must not target (SSRF prevention via giget).
+ *
+ * KNOWN LIMIT: this reads the URL's text, so it cannot see where a connection really goes: a
+ * redirect giget's fetch follows, a `.json` source naming another URL to download, a domain name
+ * that resolves to a private address, or a NAT64 prefix of an operator's own choosing. Only a
+ * check of the resolved address at connect time could, and there is none.
+ */
+const PRIVATE_IPV4_SUBNETS: readonly Subnet[] = [
+  { network: "127.0.0.0", prefix: 8 },
+  { network: "10.0.0.0", prefix: 8 },
+  { network: "172.16.0.0", prefix: 12 },
+  { network: "192.168.0.0", prefix: 16 },
+  { network: "169.254.0.0", prefix: 16 },
+  { network: "0.0.0.0", prefix: 8 }, // "this network"; 0.0.0.0 itself connects to the loopback
+  { network: "100.64.0.0", prefix: 10 }, // shared carrier-grade NAT space
+  { network: "192.0.0.0", prefix: 24 }, // IETF protocol assignments
+  { network: "198.18.0.0", prefix: 15 }, // benchmarking
+  { network: "224.0.0.0", prefix: 4 }, // multicast
+  { network: "240.0.0.0", prefix: 4 }, // reserved, up to the broadcast 255.255.255.255
+];
+
+const PRIVATE_IPV6_SUBNETS: readonly Subnet[] = [
+  { network: "::", prefix: 128 }, // unspecified: 0.0.0.0's twin, and it too connects to the loopback
+  { network: "::1", prefix: 128 },
+  { network: "fc00::", prefix: 7 }, // unique local
+  { network: "fe80::", prefix: 10 }, // link-local
+  { network: "ff00::", prefix: 8 }, // multicast
+];
+
+/** Where an IPv6 address holds the IPv4 one it carries: its lowest bit, and whether inverted. */
+type CarriedIPv4 = Readonly<{ lowestBit: bigint; inverted: boolean }>;
+
+const IN_THE_LAST_32_BITS: CarriedIPv4 = { lowestBit: 0n, inverted: false };
+
+/** IPv6 forms that carry an IPv4 address; a connection to one reaches the address it carries. */
+const IPV4_CARRYING_FORMS: readonly (Subnet & { carries: readonly CarriedIPv4[] })[] = [
+  { network: "::ffff:0:0", prefix: 96, carries: [IN_THE_LAST_32_BITS] }, // IPv4-mapped
+  { network: "::ffff:0:0:0", prefix: 96, carries: [IN_THE_LAST_32_BITS] }, // IPv4-translated
+  { network: "::", prefix: 96, carries: [IN_THE_LAST_32_BITS] }, // IPv4-compatible
+  { network: "64:ff9b::", prefix: 96, carries: [IN_THE_LAST_32_BITS] }, // NAT64
+  { network: "2002::", prefix: 16, carries: [{ lowestBit: 80n, inverted: false }] }, // 6to4
+  // Teredo: the server that relays to the client, and the client, inverted.
+  {
+    network: "2001::",
+    prefix: 32,
+    carries: [
+      { lowestBit: 64n, inverted: false },
+      { lowestBit: 0n, inverted: true },
+    ],
+  },
+];
+
+const PRIVATE_IPV4_ADDRESSES = blockListOf(PRIVATE_IPV4_SUBNETS, "ipv4");
+const PRIVATE_IPV6_ADDRESSES = blockListOf(PRIVATE_IPV6_SUBNETS, "ipv6");
+const IPV4_CARRIERS = IPV4_CARRYING_FORMS.map(({ carries, ...subnet }) => ({
+  carries,
+  addresses: blockListOf([subnet], "ipv6"),
+}));
+
+const IPV6_GROUP_COUNT = 8;
+const IPV6_GROUP_BITS = 16n;
+const HEX_RADIX = 16;
+const IPV4_BITS_MASK = 0xffff_ffffn;
+const IPV4_OCTET_LOWEST_BITS = [24n, 16n, 8n, 0n];
+const OCTET_MASK = 0xffn;
 
 /** `flagName` is what carried the value, as the messages name it back. */
 export function validateSourceFormat(source: string, flagName: string): void {
@@ -402,13 +469,9 @@ function validateRemoteSource(source: string, protocol: string, flagName: string
 }
 
 function validateHttpUrl(source: string, flagName: string): void {
-  // Basic URL structure check: must have a hostname with at least one dot or localhost
-  const afterProtocol = source.replace(/^https?:\/\//, "");
-  // Strip port number for hostname validation (e.g., "localhost:8080" -> "localhost")
-  const hostnameWithPort = afterProtocol.split("/")[0] ?? "";
-  const hostname = hostnameWithPort.split(":")[0] ?? "";
+  const hostname = parsedHostname(source);
 
-  if (!namesAcceptedHost(hostname, hostnameWithPort)) {
+  if (hostname === null || !namesAcceptedHost(hostname)) {
     throw new Error(
       `${flagName} has an invalid URL: "${source}"\n\n` +
         `The URL must include a valid hostname.\n` +
@@ -418,8 +481,7 @@ function validateHttpUrl(source: string, flagName: string): void {
     );
   }
 
-  // Block private/reserved IP addresses (SSRF prevention via giget)
-  if (PRIVATE_IPV4_PATTERN.test(hostname) || PRIVATE_IPV6_PATTERN.test(hostnameWithPort)) {
+  if (namesPrivateAddress(hostname)) {
     throw new Error(
       `${flagName} points to a private or reserved IP address: "${source}"\n\n` +
         `Marketplace URLs must not target private network addresses.\n` +
@@ -432,13 +494,93 @@ function validateHttpUrl(source: string, flagName: string): void {
 }
 
 /**
- * Whether the URL names an accepted host: a dotted hostname (github.com), localhost, or a
- * bracketed IPv6 address ([::1]).
+ * The host as giget's download reads it (`new URL`), with userinfo, port, query and fragment
+ * stripped and an IPv4 address in dotted decimal however it was spelled; null when unreadable.
  */
-function namesAcceptedHost(hostname: string, hostnameWithPort: string): boolean {
-  if (!hostname) return false;
-  const isBracketedIPv6 = hostnameWithPort.startsWith("[") && hostnameWithPort.includes("]");
-  return hostname.includes(".") || hostname === "localhost" || isBracketedIPv6;
+function parsedHostname(source: string): string | null {
+  return URL.canParse(source) ? new URL(source).hostname : null;
+}
+
+/**
+ * A dotted hostname (github.com), localhost, or an IPv6 address ([::1]).
+ *
+ * `localhost` is let through though it is the loopback, on purpose: a marketplace served from this
+ * machine is how a remote, cached source is exercised without a public server — the e2e suite's
+ * `startTarballSourceServer` (`e2e/helpers/tarball-source-server.ts`) and hand runs both name
+ * `http://localhost:<port>`, and with 127.0.0.1 and [::1] refused it is the one way left to.
+ */
+function namesAcceptedHost(hostname: string): boolean {
+  return hostname.includes(".") || hostname === "localhost" || isIPv6Host(hostname);
+}
+
+/** A domain name is not an address, so it is never private by this check. */
+function namesPrivateAddress(hostname: string): boolean {
+  if (isIPv6Host(hostname)) return isPrivateIPv6(hostname.slice(1, -1));
+  return isIPv4(hostname) && isPrivateIPv4(hostname);
+}
+
+function isPrivateIPv4(address: string): boolean {
+  return PRIVATE_IPV4_ADDRESSES.check(address, "ipv4");
+}
+
+function isPrivateIPv6(address: string): boolean {
+  return (
+    PRIVATE_IPV6_ADDRESSES.check(address, "ipv6") ||
+    carriedIPv4Addresses(address).some(isPrivateIPv4)
+  );
+}
+
+/** Every IPv4 address `address` carries, in each form it is written in. */
+function carriedIPv4Addresses(address: string): string[] {
+  const bits = ipv6Bits(address);
+  return formsWrittenIn(address).flatMap(({ carries }) =>
+    carries.map((carried) => ipv4Carried(bits, carried)),
+  );
+}
+
+function formsWrittenIn(address: string): typeof IPV4_CARRIERS {
+  return IPV4_CARRIERS.filter(({ addresses }) => addresses.check(address, "ipv6"));
+}
+
+function ipv4Carried(bits: bigint, { lowestBit, inverted }: CarriedIPv4): string {
+  const held = (bits >> lowestBit) & IPV4_BITS_MASK;
+  return dottedQuad(inverted ? held ^ IPV4_BITS_MASK : held);
+}
+
+function dottedQuad(ipv4Bits: bigint): string {
+  return IPV4_OCTET_LOWEST_BITS.map((octetBit) => (ipv4Bits >> octetBit) & OCTET_MASK).join(".");
+}
+
+/** The address as one 128-bit number. */
+function ipv6Bits(address: string): bigint {
+  return ipv6Groups(address).reduce((bits, group) => (bits << IPV6_GROUP_BITS) | BigInt(group), 0n);
+}
+
+/** Read as the URL parser writes an IPv6 host: lowercase hex groups, one `::` at most, no IPv4 tail. */
+function ipv6Groups(address: string): number[] {
+  const gap = address.indexOf("::");
+  if (gap === -1) return hexGroups(address);
+
+  const head = hexGroups(address.slice(0, gap));
+  const tail = hexGroups(address.slice(gap + "::".length));
+  const zeros = Array.from({ length: IPV6_GROUP_COUNT - head.length - tail.length }, () => 0);
+  return [...head, ...zeros, ...tail];
+}
+
+function hexGroups(part: string): number[] {
+  if (part === "") return [];
+  return part.split(":").map((group) => Number.parseInt(group, HEX_RADIX));
+}
+
+/** The URL parser writes an IPv6 host in brackets, and only an IPv6 host. */
+function isIPv6Host(hostname: string): boolean {
+  return hostname.startsWith("[");
+}
+
+function blockListOf(subnets: readonly Subnet[], family: "ipv4" | "ipv6"): BlockList {
+  const blockList = new BlockList();
+  subnets.forEach(({ network, prefix }) => blockList.addSubnet(network, prefix, family));
+  return blockList;
 }
 
 function validateGitShorthand(source: string, repoPath: string, flagName: string): void {

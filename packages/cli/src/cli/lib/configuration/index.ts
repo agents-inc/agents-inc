@@ -1,5 +1,6 @@
 export {
   DEFAULT_SOURCE,
+  NAMED_SOURCE_LABEL,
   SOURCE_ENV_VAR,
   type BrandingConfig,
   type SourceEntry,

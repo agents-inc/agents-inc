@@ -27,7 +27,12 @@ import {
 } from "../../utils/fs";
 import { log, verbose, warn } from "../../utils/logger";
 import { sourceUnreachableUsingCache, STATUS_MESSAGES } from "../../utils/messages";
-import { DEFAULT_SOURCE, isLocalSource } from "../configuration";
+import {
+  DEFAULT_SOURCE,
+  isLocalSource,
+  NAMED_SOURCE_LABEL,
+  validateSourceFormat,
+} from "../configuration";
 import { validateLoadedMarketplaceName } from "../marketplace-generator";
 import {
   formatZodIssues,
@@ -75,11 +80,13 @@ function getCacheDir(source: string): string {
   return path.join(cacheRoot(), "sources", sanitized);
 }
 
+/** Every fetch passes the check `resolveSource` applies, whoever chose the source. */
 export async function fetchFromSource(
   source: string,
   options: FetchOptions = {},
 ): Promise<FetchResult> {
   const { subdir } = options;
+  validateSourceFormat(source, NAMED_SOURCE_LABEL);
 
   if (isLocalSource(source)) {
     return fetchFromLocalSource(source, subdir);

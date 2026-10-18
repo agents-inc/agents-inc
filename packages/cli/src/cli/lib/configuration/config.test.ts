@@ -22,11 +22,18 @@ import {
   isLocalSource,
   isPublicCatalogueCheckout,
   loadProjectSourceConfig,
+  loadSourceRepoConfig,
   resolveBranding,
   resolvePrimarySourceEntry,
   resolveSource,
   validateSourceFormat,
 } from "./config";
+import { ConfigDefaultExportError, ConfigSchemaError } from "./config-loader";
+import {
+  renderConfigTsWithNamedExportOnly,
+  renderSchemaViolatingConfigTs,
+  renderUnparseableConfigTs,
+} from "../__tests__/factories/unloadable-config-factories.js";
 import { DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
 
 /** A source named by the config that lives at the home root — i.e. the global one. */
@@ -38,6 +45,14 @@ const PROJECT_CONFIG_SOURCE = "github:project-of-its-own/skills";
 const STORED_MARKETPLACE = "github:acme/skills";
 const STORED_NAME = "acme";
 const OTHER_MARKETPLACE = "github:plain/skills";
+
+/** Marketplaces a config file may name: the cloud metadata service, and its private neighbours. */
+const METADATA_ENDPOINT = "http://169.254.169.254/latest";
+const PRIVATE_NETWORK_MARKETPLACE = "https://10.0.0.1/team/skills";
+const LOOPBACK_MARKETPLACE = "http://[::1]:8080/skills";
+const NETWORK_SHARE = "//attacker.example/share";
+const PUBLIC_MARKETPLACE = "https://gitlab.company.com/team/skills";
+const LOCALHOST_MARKETPLACE = "http://localhost:47322/source.tar.gz";
 
 /** A literal: a test reading the product's own constant cannot fail when its value changes. */
 const MARKETPLACE_ENV_VAR = "CC_MARKETPLACE";
@@ -874,6 +889,78 @@ describe("config", () => {
       });
     });
 
+    /** Raised, as for a named one: falling through would install from a marketplace nobody named. */
+    describe("a marketplace a config names, checked as one this run names", () => {
+      it("refuses a project config's private address, naming the file it is in", async () => {
+        const configPath = await writeTestTsConfig(
+          tempDir,
+          buildSourceConfig({ marketplace: METADATA_ENDPOINT }),
+        );
+
+        await expect(resolveSource({ caller: "stored", projectDir: tempDir })).rejects.toThrow(
+          `The marketplace in ${configPath} points to a private or reserved IP address: "${METADATA_ENDPOINT}"`,
+        );
+      });
+
+      it("refuses the global config's private address", async () => {
+        const configPath = await writeTestTsConfig(
+          homeDir,
+          buildSourceConfig({ marketplace: PRIVATE_NETWORK_MARKETPLACE }),
+        );
+
+        await expect(resolveSource({ caller: "stored", projectDir: tempDir })).rejects.toThrow(
+          `The marketplace in ${configPath} points to a private or reserved IP address: "${PRIVATE_NETWORK_MARKETPLACE}"`,
+        );
+      });
+
+      it("refuses a config's private address for an init caller too, which reads the same rung", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: LOOPBACK_MARKETPLACE }));
+
+        await expect(resolveSource({ caller: "init", projectDir: tempDir })).rejects.toThrow(
+          "points to a private or reserved IP address",
+        );
+      });
+
+      it("refuses a network share a config names", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: NETWORK_SHARE }));
+
+        await expect(resolveSource({ caller: "stored", projectDir: tempDir })).rejects.toThrow(
+          `contains a UNC network path: "${NETWORK_SHARE}"`,
+        );
+      });
+
+      it("still names a public address a config carries", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: PUBLIC_MARKETPLACE }));
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result.source).toBe(PUBLIC_MARKETPLACE);
+        expect(result.sourceOrigin).toBe("project");
+      });
+
+      it("still names a marketplace a config serves from localhost", async () => {
+        await writeTestTsConfig(homeDir, buildSourceConfig({ marketplace: LOCALHOST_MARKETPLACE }));
+
+        const result = await resolveSource({ caller: "stored", projectDir: tempDir });
+
+        expect(result.source).toBe(LOCALHOST_MARKETPLACE);
+        expect(result.sourceOrigin).toBe("global");
+      });
+
+      it("takes a usable named marketplace over a config naming a private address it then never reaches", async () => {
+        await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: METADATA_ENDPOINT }));
+
+        const result = await resolveSource({
+          caller: "init",
+          flag: PUBLIC_MARKETPLACE,
+          projectDir: tempDir,
+        });
+
+        expect(result.source).toBe(PUBLIC_MARKETPLACE);
+        expect(result.sourceOrigin).toBe("flag");
+      });
+    });
+
     describe("marketplace resolution", () => {
       it("should return marketplace from project config", async () => {
         await writeTestTsConfig(
@@ -1232,5 +1319,429 @@ describe("config", () => {
         expect(branding).toStrictEqual({ name: DEFAULT_BRANDING.NAME });
       });
     });
+  });
+});
+
+/** Each refusal, word for word, as the flag that carried the value reads it back. */
+const SOURCE_REFUSALS: [name: string, value: string, message: string][] = [
+  [
+    "a null byte",
+    "github:user/repo\x00",
+    "--marketplace contains invalid characters.\n\nMarketplace values must not contain null bytes.\nExamples:\n  --marketplace ./my-skills\n  --marketplace github:user/repo",
+  ],
+  [
+    "an over-long value",
+    "a".repeat(513),
+    "--marketplace value is too long (513 characters, max 512).\n\nProvide a shorter marketplace path or URL.\nExamples:\n  --marketplace ./my-skills\n  --marketplace github:user/repo",
+  ],
+  [
+    "an incomplete remote",
+    "github:x",
+    '--marketplace has an incomplete URL: "github:x"\n\nA repository path is required after the protocol prefix.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo',
+  ],
+  [
+    "a path traversal",
+    "github:user/repo/../other",
+    "--marketplace contains path traversal in URL: \"github:user/repo/../other\"\n\nRemote marketplace URLs must not contain '..' sequences.\nExamples:\n  --marketplace github:user/repo\n  --marketplace https://github.com/user/repo",
+  ],
+  [
+    "a URL with no hostname",
+    "https://not-a-host/repo",
+    '--marketplace has an invalid URL: "https://not-a-host/repo"\n\nThe URL must include a valid hostname.\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+  ],
+  [
+    "a private address",
+    "https://192.168.1.100/repo",
+    '--marketplace points to a private or reserved IP address: "https://192.168.1.100/repo"\n\nMarketplace URLs must not target private network addresses.\nUse a public hostname instead.\nExamples:\n  --marketplace https://github.com/user/repo\n  --marketplace https://gitlab.company.com/team/skills',
+  ],
+  [
+    "a git shorthand with no owner",
+    "github:just-a-name",
+    '--marketplace has an invalid repository reference: "github:just-a-name"\n\nGit shorthand marketplaces require an owner/repo format.\nExamples:\n  --marketplace github:user/repo\n  --marketplace gh:organization/skills',
+  ],
+  [
+    "a control character",
+    "my\x07skills",
+    '--marketplace contains invalid characters: "my\x07skills"\n\nMarketplace paths must not contain control characters.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills',
+  ],
+  [
+    "a UNC path",
+    "//attacker.com/payload",
+    '--marketplace contains a UNC network path: "//attacker.com/payload"\n\nNetwork paths (\\\\server\\share or //server/share) are not allowed for security reasons.\nUse a local directory path or a remote URL instead.\nExamples:\n  --marketplace ./my-skills\n  --marketplace /home/user/skills\n  --marketplace https://github.com/user/repo',
+  ],
+];
+
+describe("the marketplace value checks, at their edges", () => {
+  it.each(SOURCE_REFUSALS)("refuses %s in these words", (_name, value, message) => {
+    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(
+      expect.objectContaining({ message }),
+    );
+  });
+
+  it("accepts a value of exactly the maximum length", () => {
+    expect(() => validateSourceFormat(`./${"a".repeat(510)}`, MARKETPLACE_FLAG)).not.toThrow();
+  });
+
+  it("accepts the shortest repository path after a protocol, and refuses one shorter", () => {
+    expect(() => validateSourceFormat("github:a/b", MARKETPLACE_FLAG)).not.toThrow();
+    expect(() => validateSourceFormat("github:ab", MARKETPLACE_FLAG)).toThrow(/incomplete URL/);
+  });
+
+  it("measures the repository path without the spaces around it", () => {
+    expect(() => validateSourceFormat("github:   ab  ", MARKETPLACE_FLAG)).toThrow(
+      /incomplete URL/,
+    );
+  });
+
+  it.each(["https://:8080/repo", "https:///repo", "https://[::1/repo", "https://host]/repo"])(
+    "refuses %s, whose hostname is empty or half-bracketed",
+    (value) => {
+      expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/invalid URL/);
+    },
+  );
+
+  it.each([
+    "https://[::1]:8080/repo",
+    "https://[fe80::1]:443/repo",
+    "https://[::ffff:10.0.0.1]:80/repo",
+  ])("refuses a private IPv6 address with a port as it refuses one without: %s", (value) => {
+    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/private or reserved IP/);
+  });
+
+  it("accepts a public IPv6 address with a port", () => {
+    expect(() =>
+      validateSourceFormat("https://[2001:db8::1]:8443/repo", MARKETPLACE_FLAG),
+    ).not.toThrow();
+  });
+
+  /** Written out in full, with no `::`, and ending in a one-digit group. */
+  it("accepts a public IPv6 address that has no zeros to elide", () => {
+    expect(() =>
+      validateSourceFormat("https://[2606:4700:4700:1111:0:1:2:3]/repo", MARKETPLACE_FLAG),
+    ).not.toThrow();
+  });
+
+  it("treats an absolute path that climbs a level as local, without the traversal refusal", () => {
+    expect(isLocalSource("/srv/skills/../shared")).toBe(true);
+  });
+});
+
+describe("the marketplace a run names, checked once trimmed", () => {
+  it("refuses a UNC path behind leading spaces", async () => {
+    await expect(resolveSource({ caller: "init", flag: "  //attacker.com/share" })).rejects.toThrow(
+      /UNC network path/,
+    );
+  });
+
+  it("refuses an empty marketplace in these words", async () => {
+    await expect(resolveSource({ caller: "init", flag: "" })).rejects.toThrow(
+      expect.objectContaining({
+        message:
+          "The marketplace cannot be empty. Provide a valid marketplace: a local directory path or a git repository URL (e.g., './my-skills' or 'https://github.com/user/repo')",
+      }),
+    );
+  });
+});
+
+describe("what the config readers say and raise", () => {
+  const consoleSpies = silenceConsole(["log"]);
+  let tempDir: string;
+  let homeDir: string;
+  let savedHome: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-config-readers-");
+    homeDir = path.join(tempDir, "home");
+    await mkdir(homeDir, { recursive: true });
+    savedHome = process.env.HOME ?? "";
+    process.env.HOME = homeDir;
+    vi.spyOn(os, "homedir").mockReturnValue(homeDir);
+    delete process.env[MARKETPLACE_ENV_VAR];
+    setVerbose(true);
+  });
+
+  afterEach(async () => {
+    setVerbose(false);
+    process.env.HOME = savedHome;
+    vi.mocked(os.homedir).mockRestore();
+    delete process.env[MARKETPLACE_ENV_VAR];
+    await cleanupTempDir(tempDir);
+  });
+
+  it("says a project has no config, naming it as the project's", async () => {
+    await loadProjectSourceConfig(tempDir);
+
+    expect(consoleSpies.log).toHaveBeenCalledWith(
+      `  Project config not found at ${getProjectConfigPath(tempDir, "claude")}`,
+    );
+  });
+
+  it("says the home directory has no config, naming it as the global one", async () => {
+    await resolveSource({ caller: "stored" });
+
+    expect(consoleSpies.log).toHaveBeenCalledWith(
+      `  Global config not found at ${getProjectConfigPath(homeDir, "claude")}`,
+    );
+    expect(consoleSpies.log).toHaveBeenCalledWith(`  Using default marketplace: ${DEFAULT_SOURCE}`);
+  });
+
+  it("says which config it loaded and which marketplace it read from it", async () => {
+    await writeTestTsConfig(tempDir, buildSourceConfig({ marketplace: STORED_MARKETPLACE }));
+
+    await resolveSource({ caller: "stored", projectDir: tempDir });
+
+    expect(consoleSpies.log).toHaveBeenCalledWith(`  Loaded project config from ${tempDir}`);
+    expect(consoleSpies.log).toHaveBeenCalledWith(
+      `  Marketplace from project config: ${STORED_MARKETPLACE}`,
+    );
+  });
+
+  it("says the marketplace came from the environment", async () => {
+    process.env[MARKETPLACE_ENV_VAR] = OTHER_MARKETPLACE;
+
+    await resolveSource({ caller: "init", projectDir: tempDir });
+
+    expect(consoleSpies.log).toHaveBeenCalledWith(
+      `  Marketplace from CC_MARKETPLACE env var: ${OTHER_MARKETPLACE}`,
+    );
+  });
+
+  it("answers null for a marketplace repository with no config, and says it has none", async () => {
+    const config = await loadSourceRepoConfig(tempDir);
+
+    expect(config).toBeNull();
+    expect(consoleSpies.log).toHaveBeenCalledWith(
+      `  Source config not found at ${path.join(tempDir, ".agents-inc", STANDARD_FILES.CONFIG_TS)}`,
+    );
+  });
+
+  it("refuses a config that exports nothing as having no valid default export", async () => {
+    await writeRawTestConfig(tempDir, "export default {};\n");
+
+    await expect(loadProjectSourceConfig(tempDir)).rejects.toThrow(
+      "the file has no valid default export",
+    );
+  });
+
+  it("keeps the loader's own failure as the cause of an unreadable installation config", async () => {
+    await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
+
+    await expect(loadProjectSourceConfig(tempDir)).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: expect.stringContaining("Failed to load config from"),
+      }),
+    });
+  });
+
+  it("keeps the loader's own failure as the cause of an unreadable marketplace config", async () => {
+    await writeRawTestConfig(tempDir, renderUnparseableConfigTs(), ".agents-inc");
+
+    await expect(loadSourceRepoConfig(tempDir)).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: expect.stringContaining("Failed to load config from"),
+      }),
+    });
+  });
+
+  it("passes a schema refusal on as it is, since it already names the field", async () => {
+    await writeRawTestConfig(tempDir, renderSchemaViolatingConfigTs());
+
+    await expect(loadProjectSourceConfig(tempDir)).rejects.toBeInstanceOf(ConfigSchemaError);
+  });
+
+  it("passes a missing default export on as it is, since it already names the export", async () => {
+    await writeRawTestConfig(tempDir, renderConfigTsWithNamedExportOnly({ name: "named-only" }));
+
+    await expect(loadProjectSourceConfig(tempDir)).rejects.toBeInstanceOf(ConfigDefaultExportError);
+  });
+});
+
+describe("the private-address refusal, octet by octet", () => {
+  it.each([
+    "127.10.20.30",
+    "10.20.30.40",
+    "172.16.20.30",
+    "172.25.20.30",
+    "172.31.20.30",
+    "192.168.20.30",
+    "169.254.20.30",
+    "[::ffff:127.10.20.30]",
+    "[::ffff:10.20.30.40]",
+    "[::ffff:192.168.20.30]",
+    "[fd12:3456::1]",
+    "[fe80::abcd]",
+  ])("refuses https://%s/repo, every octet more than one digit long", (host) => {
+    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+      /private or reserved IP/,
+    );
+  });
+
+  it.each(["172.15.20.30", "172.32.20.30", "10.20.30.40.example.com", "110.20.30.40"])(
+    "accepts https://%s/repo, which lies outside every private range",
+    (host) => {
+      expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
+    },
+  );
+
+  it.each([
+    "127.255.255.255",
+    "10.255.255.255",
+    "172.31.255.255",
+    "192.168.255.255",
+    "169.254.255.255",
+    "[fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]",
+    "[fe80:ffff:ffff:ffff:ffff:ffff:ffff:ffff]",
+  ])("refuses https://%s/repo, the last address of its private range", (host) => {
+    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+      /private or reserved IP/,
+    );
+  });
+
+  it.each([
+    "126.255.255.255",
+    "128.0.0.0",
+    "9.255.255.255",
+    "11.0.0.0",
+    "172.15.255.255",
+    "172.32.0.0",
+    "192.167.255.255",
+    "192.169.0.0",
+    "169.253.255.255",
+    "169.255.0.0",
+  ])("accepts https://%s/repo, a public address just outside a private range", (host) => {
+    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
+  });
+
+  it("accepts a local path that merely holds a double slash", () => {
+    expect(() => validateSourceFormat("./skills//nested", MARKETPLACE_FLAG)).not.toThrow();
+  });
+});
+
+describe("the private-address refusal, for a host written in a form a URL parser reads differently", () => {
+  it.each([
+    "https://user.name@10.0.0.5/repo",
+    "https://github.com@192.168.1.1:8080/repo",
+    "https://a.b@[::1]/repo",
+    "https://10.0.0.5?ref=main",
+    "https://[::1]:8080?ref=main",
+    "https://10.0.0.5#main",
+    "https://127.1/repo",
+    "https://0x7f.0.0.1/repo",
+    "https://0177.0.0.1/repo",
+    "https://%31%30.0.0.1/repo",
+    "https://１０.0.0.1/repo",
+    "https://1\t0.0.0.1/repo",
+    "https://10.0.0.1\\repo",
+    "https://10.0.0.1./repo",
+    "https://[0:0:0:0:0:0:0:1]/repo",
+    "https://[::ffff:172.16.0.1]/repo",
+    "https://[::ffff:169.254.1.1]/repo",
+    "https://[::ffff:0.0.0.0]/repo",
+    "https://[::ffff:7f00:1]/repo",
+  ])("refuses %s, which reaches a private address", (value) => {
+    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/private or reserved IP/);
+  });
+
+  it.each([
+    "https://user.name@github.com/repo",
+    "https://github.com?ref=main",
+    "https://8.8.8.8#main",
+    "https://0x8.8.8.8/repo",
+    "https://github.com./repo",
+    "https://[::ffff:8.8.8.8]/repo",
+  ])("accepts %s, the same spelling of a public host", (value) => {
+    expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).not.toThrow();
+  });
+
+  it.each(["https://a10.20.30.40/repo", "https://git hub.com/repo"])(
+    "refuses %s, whose host the URL parser cannot read",
+    (value) => {
+      expect(() => validateSourceFormat(value, MARKETPLACE_FLAG)).toThrow(/invalid URL/);
+    },
+  );
+});
+
+/**
+ * Each range by an address inside it and its last address, beside the public addresses just
+ * outside it. The IPv6 ranges have no such neighbours: what borders them is reserved, not public.
+ */
+describe("the private-address refusal, for the reserved ranges", () => {
+  it.each([
+    ["0.20.30.40", "0.0.0.0/8, this network"],
+    ["0.255.255.255", "0.0.0.0/8, this network"],
+    ["100.64.20.30", "100.64.0.0/10, shared carrier-grade NAT space"],
+    ["100.127.255.255", "100.64.0.0/10, shared carrier-grade NAT space"],
+    ["192.0.0.20", "192.0.0.0/24, IETF protocol assignments"],
+    ["192.0.0.255", "192.0.0.0/24, IETF protocol assignments"],
+    ["198.18.20.30", "198.18.0.0/15, benchmarking"],
+    ["198.19.255.255", "198.18.0.0/15, benchmarking"],
+    ["224.0.0.1", "224.0.0.0/4, multicast"],
+    ["239.255.255.255", "224.0.0.0/4, multicast"],
+    ["240.20.30.40", "240.0.0.0/4, reserved"],
+    ["255.255.255.255", "240.0.0.0/4, reserved, at the broadcast address"],
+    ["4294967295", "240.0.0.0/4, reserved, at the broadcast address written as one number"],
+    ["[::]", "::/128, the unspecified address, which connects to the loopback"],
+    ["[0:0:0:0:0:0:0:0]", "::/128, the unspecified address, which connects to the loopback"],
+    ["[fc00::1]", "fc00::/7, unique local"],
+    ["[fcff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]", "fc00::/7, unique local"],
+    ["[fe81::1]", "fe80::/10, link-local"],
+    ["[febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff]", "fe80::/10, link-local"],
+    ["[ff02::1]", "ff00::/8, multicast"],
+    ["[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]", "ff00::/8, multicast"],
+  ])("refuses https://%s/repo, in %s", (host) => {
+    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+      /private or reserved IP/,
+    );
+  });
+
+  it.each([
+    ["1.0.0.0", "0.0.0.0/8"],
+    ["100.63.255.255", "100.64.0.0/10"],
+    ["100.128.0.0", "100.64.0.0/10"],
+    ["191.255.255.255", "192.0.0.0/24"],
+    ["192.0.1.0", "192.0.0.0/24"],
+    ["198.17.255.255", "198.18.0.0/15"],
+    ["198.20.0.0", "198.18.0.0/15"],
+    ["223.255.255.255", "224.0.0.0/4"],
+  ])("accepts https://%s/repo, a public address just outside %s", (host) => {
+    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
+  });
+});
+
+/** The IPv4 ranges decide these, so each form is shown carrying a private and a public address. */
+describe("the private-address refusal, for an IPv6 address that carries an IPv4 one", () => {
+  it.each([
+    ["[::127.0.0.1]", "IPv4-compatible, carrying 127.0.0.1"],
+    ["[::ffff:0:127.0.0.1]", "IPv4-translated, carrying 127.0.0.1"],
+    ["[64:ff9b::127.0.0.0]", "NAT64, carrying 127.0.0.0"],
+    ["[64:ff9b::192.168.1.1]", "NAT64, carrying 192.168.1.1"],
+    ["[2002:7f00:1::]", "6to4, carrying 127.0.0.1"],
+    ["[2002:c0a8:101::1]", "6to4, carrying 192.168.1.1"],
+    ["[2001:0:4136:e378:8000:63bf:80ff:fffe]", "Teredo, carrying the client 127.0.0.1"],
+    ["[2001:0:a00:1:8000:63bf:f7f7:f7f7]", "Teredo, carrying the server 10.0.0.1"],
+    ["[2001:0:c0a8:101:8000:63bf:f7f7:f7f7]", "Teredo, carrying the server 192.168.1.1"],
+  ])("refuses https://%s/repo, %s", (host) => {
+    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).toThrow(
+      /private or reserved IP/,
+    );
+  });
+
+  it.each([
+    ["[::8.8.8.8]", "IPv4-compatible, carrying 8.8.8.8"],
+    ["[::ffff:0:8.8.8.8]", "IPv4-translated, carrying 8.8.8.8"],
+    ["[64:ff9b::126.255.255.255]", "NAT64, carrying 126.255.255.255, just below 127.0.0.0/8"],
+    ["[64:ff9b::128.0.0.0]", "NAT64, carrying 128.0.0.0, just above 127.0.0.0/8"],
+    ["[2002:808:808::]", "6to4, carrying 8.8.8.8"],
+    ["[2003:7f00:1::]", "just outside 6to4's 2002::/16, where 6to4 would carry 127.0.0.1"],
+    [
+      "[2001:0:4136:e378:8000:63bf:f7f7:f7f7]",
+      "Teredo, carrying the server 65.54.227.120 and the client 8.8.8.8",
+    ],
+    [
+      "[2001:0:4136:e378::f7f7:f7f7]",
+      "Teredo, carrying the same two, with flags and port of 0 written as ::",
+    ],
+  ])("accepts https://%s/repo, %s", (host) => {
+    expect(() => validateSourceFormat(`https://${host}/repo`, MARKETPLACE_FLAG)).not.toThrow();
   });
 });
