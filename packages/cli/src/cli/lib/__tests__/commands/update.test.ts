@@ -7,6 +7,7 @@ import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { createTempDir, cleanupTempDir } from "../test-fs-utils";
 import { buildSkillConfig } from "../helpers/index.js";
 import { writeTestTsConfig } from "../helpers/config-io.js";
+import { flattenCliOutput } from "../helpers/flatten-cli-output.js";
 import { buildProjectConfig } from "../factories/config-factories.js";
 import { EJECT_SOURCE } from "../../../consts";
 import { EXIT_CODES } from "../../exit-codes";
@@ -178,6 +179,116 @@ describe("update command", () => {
 
       expect(error).toBeUndefined();
       expect(mockMarketplaceUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("what update says", () => {
+    /** Written out: a rendering assertion must not move with the constant it renders. */
+    const EJECTED_SKILLS_LINE =
+      "Ejected skills are yours to own — 'npx agents-inc update' does not change them.";
+
+    function refreshLines(marketplace: string): string[] {
+      return [`Refreshing marketplace ${marketplace}...`, `  Updated marketplace ${marketplace}`];
+    }
+
+    it("names each marketplace as it refreshes it, then counts the listings", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE }),
+        ],
+      });
+
+      const { stdout, error } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
+
+      expect(error).toBeUndefined();
+      expect(stdout).toBe(
+        [
+          ...refreshLines(MARKETPLACE),
+          ...refreshLines(OTHER_MARKETPLACE),
+          "✓ Refreshed 2 marketplace listings. Installed plugins were not changed.",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("says first that ejected skills are left alone when some skills are ejected", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: EJECT_SOURCE }),
+          buildSkillConfig("web-testing-vitest", { origin: MARKETPLACE }),
+        ],
+      });
+
+      const { stdout } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
+
+      expect(stdout).toBe(
+        [
+          EJECTED_SKILLS_LINE,
+          ...refreshLines(MARKETPLACE),
+          "✓ Refreshed 1 marketplace listing. Installed plugins were not changed.",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("says nothing about ejected skills when none is ejected", async () => {
+      await installConfig({
+        skills: [buildSkillConfig("web-framework-react", { origin: MARKETPLACE })],
+      });
+
+      const { stdout } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
+
+      expect(stdout).not.toContain(EJECTED_SKILLS_LINE);
+    });
+
+    it("says there is nothing to refresh for an eject-only installation", async () => {
+      await installConfig({
+        skills: [buildSkillConfig("web-framework-react", { origin: EJECT_SOURCE })],
+      });
+
+      const { stdout } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
+
+      expect(stdout).toBe(
+        [
+          EJECTED_SKILLS_LINE,
+          "No plugin marketplaces are configured — nothing to refresh.",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("warns that there is no installation to refresh", async () => {
+      const { stdout, stderr } = await captureOutput(() => Update.run([], { root: CLI_ROOT }));
+
+      expect(stdout).toBe("");
+      expect(flattenCliOutput(stderr)).toBe(
+        "Warning: No installation found. Run 'npx agents-inc init' first to set up Agents Inc.",
+      );
+    });
+
+    it("warns for the marketplace that failed and still refreshes the rest", async () => {
+      await installConfig({
+        skills: [
+          buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+          buildSkillConfig("api-framework-hono", { origin: OTHER_MARKETPLACE }),
+        ],
+      });
+      mockMarketplaceUpdate.mockRejectedValueOnce(new Error(MARKETPLACE_FAILURE));
+
+      const { stdout, stderr, error } = await captureOutput(() =>
+        Update.run([], { root: CLI_ROOT }),
+      );
+
+      expect(stdout).toBe(
+        [`Refreshing marketplace ${MARKETPLACE}...`, ...refreshLines(OTHER_MARKETPLACE), ""].join(
+          "\n",
+        ),
+      );
+      expect(flattenCliOutput(stderr)).toBe(
+        `Warning: Could not update marketplace ${MARKETPLACE}: ${MARKETPLACE_FAILURE}`,
+      );
+      expect(error?.message).toBe(`1 marketplace could not be updated: ${MARKETPLACE}`);
     });
   });
 

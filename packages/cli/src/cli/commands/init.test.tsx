@@ -11,17 +11,22 @@ import Init, {
   type DashboardData,
 } from "./init";
 import { DEFAULT_BRANDING } from "../consts";
+import { EXIT_CODES } from "../lib/exit-codes";
 import { buildProjectConfig } from "../lib/__tests__/factories/config-factories";
 import { CLI_ROOT } from "../lib/__tests__/helpers/cli-runner";
 import { writeTestTsConfig } from "../lib/__tests__/helpers/config-io";
 import { standAtTerminal } from "../lib/__tests__/helpers/terminal-input";
 import {
   ARROW_DOWN,
+  CTRL_C,
   delay,
   ENTER,
   INPUT_DELAY_MS,
   RENDER_DELAY_MS,
 } from "../lib/__tests__/test-constants";
+
+/** The key Escape sends; Ink reads it as `key.escape`. */
+const ESCAPE = "\u001B";
 import { cleanupTempDir, createTempDir } from "../lib/__tests__/test-fs-utils";
 
 /** Expected lines come from {@link dashboardCountLines}, so the TTY and piped paths cannot drift. */
@@ -187,5 +192,113 @@ describe("the dashboard's keys", () => {
     }
 
     expect(chosen()).toBe("doctor");
+  });
+});
+
+describe("the dashboard's title", () => {
+  it("is the shipped logo for the shipped name", async () => {
+    const frame = await frameFor(WITH_MARKETPLACE);
+
+    expect(frame).toContain("█████╗  ██████╗ ███████╗███╗   ██╗████████╗███████╗");
+  });
+
+  it("is the configured name, in place of the logo, for a white-labelled installation", async () => {
+    const frame = await frameFor({ ...WITH_MARKETPLACE, name: "Northwind" });
+
+    expect(frame).toContain("Northwind");
+    expect(frame).not.toContain("█████╗");
+  });
+});
+
+describe("the dashboard printed without a terminal", () => {
+  it("is the name, the counts and the commands, each block a blank line apart", () => {
+    expect(formatDashboardText(WITH_MARKETPLACE)).toBe(
+      [
+        "Agents Inc.",
+        "",
+        "  Skills:       12 installed",
+        "  Agents:       3 compiled",
+        "  Mode:         Plugin",
+        "  Marketplace:  github:agents-inc/skills",
+        "",
+        "  [Edit in the web editor]  [Compile]  [Doctor]  [List]",
+      ].join("\n"),
+    );
+  });
+});
+
+/** The run is real up to the command it chooses, which is recorded rather than run. */
+describe("leaving the dashboard", () => {
+  const terminal = standAtTerminal();
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tempDir = await createTempDir("cc-init-dashboard-leave-");
+    const projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    vi.stubEnv("HOME", tempDir);
+    process.chdir(projectDir);
+    await writeTestTsConfig(projectDir, buildProjectConfig());
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    vi.unstubAllEnvs();
+    await cleanupTempDir(tempDir);
+  });
+
+  async function leaveWith(keys: string[]): Promise<{
+    painted: string;
+    ran: unknown[][];
+    error: (Error & { oclif?: { exit?: number } }) | undefined;
+  }> {
+    const chunks: string[] = [];
+    const painted = vi.spyOn(process.stdout, "write").mockImplementation((chunk, ...rest) => {
+      chunks.push(String(chunk));
+      const onWritten = rest.find((argument) => typeof argument === "function");
+      if (onWritten !== undefined) queueMicrotask(() => onWritten());
+      return true;
+    });
+    const runCommand = vi.spyOn(Config.prototype, "runCommand").mockResolvedValue(undefined);
+    try {
+      const run = Init.run([], { root: CLI_ROOT }).then(
+        () => undefined,
+        (error: Error & { oclif?: { exit?: number } }) => error,
+      );
+      await delay(RENDER_DELAY_MS);
+      for (const key of keys) {
+        terminal.input.push(key);
+        await delay(INPUT_DELAY_MS);
+      }
+      const error = await run;
+      return { painted: chunks.join(""), ran: runCommand.mock.calls, error };
+    } finally {
+      painted.mockRestore();
+      runCommand.mockRestore();
+    }
+  }
+
+  it("runs compile with no arguments, and clears the screen it filled", async () => {
+    const { painted, ran } = await leaveWith([ARROW_DOWN, ENTER]);
+
+    expect(ran).toStrictEqual([["compile", []]]);
+    expect(painted.endsWith("\x1b[H\x1b[2J\x1b[3J")).toBe(true);
+  });
+
+  it("runs nothing and ends quietly on Escape", async () => {
+    const { ran, error } = await leaveWith([ESCAPE]);
+
+    expect(ran).toStrictEqual([]);
+    expect(error).toBeUndefined();
+  });
+
+  it("cancels the run on Ctrl+C", async () => {
+    const { ran, error } = await leaveWith([CTRL_C]);
+
+    expect(ran).toStrictEqual([]);
+    expect(error?.message).toBe("Cancelled");
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
   });
 });

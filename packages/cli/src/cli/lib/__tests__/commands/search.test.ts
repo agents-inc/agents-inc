@@ -300,4 +300,99 @@ describe("search command", () => {
       expect(stdout).toContain(TEST_MARKETPLACE_ORIGIN_CELL);
     });
   });
+
+  describe("what a search prints", () => {
+    let sourceDirs: TestDirs;
+
+    beforeEach(async () => {
+      sourceDirs = await createTestSource({ skills: inTestMarketplace(DEFAULT_TEST_SKILLS) });
+      await writeTestTsConfig(projectDir, {
+        name: "test-project",
+        skills: [],
+        agents: [],
+        marketplace: sourceDirs.sourceDir,
+      });
+    });
+
+    afterEach(async () => {
+      await cleanupTestSource(sourceDirs);
+    });
+
+    /** Two skills on disk whose names order differently by case: "_" sits between Z and a. */
+    const BROWSER_SKILLS = [
+      { id: "web-testing-playwright-e2e", slug: "playwright-e2e", display: "Browsers" },
+      { id: "web-testing-cypress-e2e", slug: "cypress-e2e", display: "Browser_Tests" },
+    ] as const satisfies readonly { id: SkillId; slug: string; display: string }[];
+
+    async function ejectBrowserSkills(): Promise<void> {
+      for (const skill of BROWSER_SKILLS) {
+        const skillDir = path.join(projectDir, LOCAL_SKILLS_PATH, skill.id);
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd(skill.id, "End-to-end browser testing"),
+        );
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+          renderMetadataYaml({
+            displayName: skill.display,
+            category: "web-testing",
+            slug: skill.slug,
+            domain: "web",
+            contentHash: "e5f6a7b",
+          }),
+        );
+      }
+    }
+
+    it("counts the matches in the plural and lays them out as one table between blank lines", async () => {
+      const { stdout, error } = await runCliCommand(["search", "web"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toMatchInlineSnapshot(`
+        "Loading skills...
+
+        Found 4 skills matching "web"
+
+        ┌──────────────────────────────────┬──────────────────────────────────┬──────────────┬──────────────────┬──────────────────────────────────────────────┐
+        │ ID                               │ Name                             │ Origin       │ Category         │ Description                                  │
+        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-api-framework-hono  │ test-fixture-api-framework-hono  │ test-fixture │ api-api          │ Lightweight web framework for the edge       │
+        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-web-framework-react │ test-fixture-web-framework-react │ test-fixture │ web-framework    │ React framework for building user interfaces │
+        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-web-state-zustand   │ test-fixture-web-state-zustand   │ test-fixture │ web-client-state │ Bear necessities state management            │
+        ├──────────────────────────────────┼──────────────────────────────────┼──────────────┼──────────────────┼──────────────────────────────────────────────┤
+        │ test-fixture-web-testing-vitest  │ test-fixture-web-testing-vitest  │ test-fixture │ web-testing      │ Next generation testing framework            │
+        └──────────────────────────────────┴──────────────────────────────────┴──────────────┴──────────────────┴──────────────────────────────────────────────┘
+
+
+        "
+      `);
+    });
+
+    it("orders the rows by display name whatever their case", async () => {
+      await ejectBrowserSkills();
+
+      const { stdout, error } = await runCliCommand(["search", "e2e"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toMatchInlineSnapshot(`
+        "Loading skills...
+
+        Found 2 skills matching "e2e"
+
+        ┌────────────────────────────┬───────────────┬────────┬─────────────┬────────────────────────────┐
+        │ ID                         │ Name          │ Origin │ Category    │ Description                │
+        ├────────────────────────────┼───────────────┼────────┼─────────────┼────────────────────────────┤
+        │ web-testing-cypress-e2e    │ Browser_Tests │ eject  │ web-testing │ End-to-end browser testing │
+        ├────────────────────────────┼───────────────┼────────┼─────────────┼────────────────────────────┤
+        │ web-testing-playwright-e2e │ Browsers      │ eject  │ web-testing │ End-to-end browser testing │
+        └────────────────────────────┴───────────────┴────────┴─────────────┴────────────────────────────┘
+
+
+        "
+      `);
+    });
+  });
 });

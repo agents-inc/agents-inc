@@ -190,6 +190,30 @@ describe("build:marketplace command", () => {
       expect(marketplace.owner.email).toBeUndefined();
     });
 
+    it("parses an author whose email follows the name without a space", async () => {
+      await writeTestPackageJson(projectDir, { author: "Jane Doe<jane@example.com>" });
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      expect((await readMarketplaceJson(outputPath)).owner).toStrictEqual({
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+    });
+
+    it("keeps an author with text after the email whole, as a name with no email", async () => {
+      await writeTestPackageJson(projectDir, { author: "Jane Doe <jane@example.com>extra" });
+
+      const { error, stderr } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      expect(stderr).toContain("no parseable email");
+      expect((await readMarketplaceJson(outputPath)).owner).toStrictEqual({
+        name: "Jane Doe <jane@example.com>extra",
+      });
+    });
+
     it('should parse string-form author with trailing URL "Name <email> (url)"', async () => {
       await writeTestPackageJson(projectDir, {
         author: "Jane Doe <jane@example.com> (https://jane.example.com)",
@@ -796,6 +820,317 @@ describe("build:marketplace command", () => {
       expect(error).toBeInstanceOf(Error);
       expect(error!.message).toContain("reserved");
       expect(await fileExists(outputPath)).toBe(false);
+    });
+  });
+
+  describe("what a build says, line by line", () => {
+    let pluginsDir: string;
+    let outputPath: string;
+
+    beforeEach(async () => {
+      await writeTestPackageJson(projectDir);
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      await mkdir(pluginsDir, { recursive: true });
+    });
+
+    it("names its inputs, counts the categories busiest first, and samples the plugins", async () => {
+      await createPluginDir(pluginsDir, skillId("api-framework-hono"), "Hono", { category: "api" });
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React", {
+        category: "web",
+      });
+      await createPluginDir(pluginsDir, skillId("web-framework-vue"), "Vue", { category: "web" });
+
+      const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toBe(
+        [
+          "",
+          "Generating marketplace.json",
+          `  Plugins directory: ${pluginsDir}`,
+          `  Output file: ${outputPath}`,
+          "",
+          "Scanning plugins...",
+          "Found 3 plugins",
+          "Reading the skills for catalog.json...",
+          "Writing marketplace.json...",
+          `Wrote ${outputPath}`,
+          "Writing catalog.json...",
+          `Wrote ${path.join(projectDir, "catalog.json")}`,
+          "",
+          "Category breakdown:",
+          "  web: 2",
+          "  api: 1",
+          "",
+          "Sample plugins:",
+          `  ${skillId("api-framework-hono")} v1.0.0 [api]`,
+          "    Hono",
+          `  ${skillId("web-framework-react")} v1.0.0 [web]`,
+          "    React",
+          `  ${skillId("web-framework-vue")} v1.0.0 [web]`,
+          "    Vue",
+          "",
+          "✓ Marketplace generated with 3 plugins!",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("leaves out the category and description a plugin does not carry", async () => {
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "");
+
+      const { stdout } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(stdout).toContain(
+        [
+          "Sample plugins:",
+          `  ${skillId("web-framework-react")} v1.0.0 `,
+          "",
+          "✓ Marketplace",
+        ].join("\n"),
+      );
+    });
+
+    it("leaves out the version a plugin's manifest does not carry", async () => {
+      const id = skillId("web-framework-react");
+      await writeTestPluginManifest(path.join(pluginsDir, id), {
+        name: id,
+        description: "React",
+        category: "web",
+      });
+
+      const { stdout, error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        ["Sample plugins:", `  ${id}  [web]`, "    React", "", "✓ Marketplace"].join("\n"),
+      );
+    });
+
+    it("samples all five plugins of a marketplace holding five, with nothing left to count", async () => {
+      for (const bare of ["a", "b", "c", "d", "e"]) {
+        await createPluginDir(pluginsDir, skillId(`web-tooling-${bare}`), `Tool ${bare}`, {
+          category: "web",
+        });
+      }
+
+      const { stdout } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(stdout).toContain(
+        [
+          `  ${skillId("web-tooling-e")} v1.0.0 [web]`,
+          "    Tool e",
+          "",
+          "✓ Marketplace generated with 5 plugins!",
+        ].join("\n"),
+      );
+    });
+
+    it("samples five plugins and counts the rest", async () => {
+      for (const bare of ["a", "b", "c", "d", "e", "f", "g"]) {
+        await createPluginDir(pluginsDir, skillId(`web-tooling-${bare}`), `Tool ${bare}`, {
+          category: "web",
+        });
+      }
+
+      const { stdout } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(stdout).toContain(
+        [
+          "Sample plugins:",
+          `  ${skillId("web-tooling-a")} v1.0.0 [web]`,
+          "    Tool a",
+          `  ${skillId("web-tooling-b")} v1.0.0 [web]`,
+          "    Tool b",
+          `  ${skillId("web-tooling-c")} v1.0.0 [web]`,
+          "    Tool c",
+          `  ${skillId("web-tooling-d")} v1.0.0 [web]`,
+          "    Tool d",
+          `  ${skillId("web-tooling-e")} v1.0.0 [web]`,
+          "    Tool e",
+          "  ... and 2 more",
+          "",
+        ].join("\n"),
+      );
+    });
+  });
+
+  describe("what a refused build says", () => {
+    let pluginsDir: string;
+    let outputPath: string;
+    let packageJsonPath: string;
+
+    beforeEach(async () => {
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      packageJsonPath = path.join(projectDir, "package.json");
+      await mkdir(pluginsDir, { recursive: true });
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
+    });
+
+    it("names the directory a missing package.json was looked for in", async () => {
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error?.message).toBe(
+        `Missing package.json at ${projectDir}. build marketplace reads marketplace identity from package.json.`,
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+
+    it("names every field package.json is missing", async () => {
+      await writeFile(packageJsonPath, JSON.stringify({ description: "no identity" }));
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error?.message).toBe(
+        `package.json at ${packageJsonPath} is missing required fields: name, version. build marketplace reads marketplace identity from package.json.`,
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+
+    it("refuses a version of only spaces", async () => {
+      await writeTestPackageJson(projectDir, { version: "   " });
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error?.message).toBe(
+        [
+          `A marketplace must have a version, and 'version' in ${packageJsonPath} is empty.`,
+          "Nothing was written: a marketplace.json whose 'version' is empty is refused by this CLI's own reader, so the build would have reported success for a marketplace nobody can install from.",
+          `Set 'version' in that file — "0.1.0" if this is its first release — and build again.`,
+        ].join("\n\n"),
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(await fileExists(outputPath)).toBe(false);
+    });
+
+    it("refuses an author whose name is only spaces", async () => {
+      await writeTestPackageJson(projectDir, { author: { name: "   " } });
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error?.message).toContain(
+        `A marketplace's owner must have a name, and no name could be read from 'author' in ${packageJsonPath}.`,
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+
+    it("refuses a reserved name as an error", async () => {
+      await writeTestPackageJson(projectDir, { name: "local" });
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error?.message).toContain(
+        "Choose a name of your own: set package.json 'name', or pass --name.",
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+
+    it("refuses an unusable --name as a usage error", async () => {
+      await writeTestPackageJson(projectDir);
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath, "--name", "Not Kebab");
+
+      expect(error?.message).toBe(
+        "Invalid --name 'Not Kebab': Marketplace name must be kebab-case (lowercase letters, numbers, and hyphens, starting with a letter)",
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+    });
+
+    it("refuses a package name a marketplace cannot publish under, as an error", async () => {
+      await writeTestPackageJson(projectDir, { name: "@acme/skills" });
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error?.message).toContain(
+        `Marketplace name '@acme/skills', read from 'name' in ${packageJsonPath}, is not a name a marketplace may publish under.`,
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+
+    it("refuses an empty plugins directory, naming it and the flag that would point elsewhere", async () => {
+      await writeTestPackageJson(projectDir);
+      const emptyDir = path.join(projectDir, "empty");
+      await mkdir(emptyDir, { recursive: true });
+
+      const { stdout, error } = await runBuildMarketplace(emptyDir, outputPath);
+
+      expect(error?.message).toBe(
+        `No plugins found in ${emptyDir}. A marketplace with no plugins is refused when it is read back, so none was written. Run 'npx agents-inc build plugins' first, or point --plugins-dir at the directory holding them (it is '${emptyDir}' for this run).`,
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout.endsWith("Found 0 plugins\nGeneration failed\n")).toBe(true);
+    });
+
+    it("refuses a skill id outside the marketplace's namespace, as an error", async () => {
+      await writeTestPackageJson(projectDir);
+      await createPluginDir(pluginsDir, "web-framework-vue", "Vue");
+
+      const { error } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      expect(error?.message).toContain("web-framework-vue");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    });
+  });
+
+  describe("what a build records", () => {
+    let pluginsDir: string;
+    let outputPath: string;
+
+    beforeEach(async () => {
+      pluginsDir = path.join(projectDir, "dist", "plugins");
+      outputPath = path.join(projectDir, "marketplace.json");
+      await mkdir(pluginsDir, { recursive: true });
+      await createPluginDir(pluginsDir, skillId("web-framework-react"), "React");
+    });
+
+    it("trims the owner's name and email out of a padded author string", async () => {
+      await writeTestPackageJson(projectDir, { author: "  Jane Doe   <  jane@example.com  >  " });
+
+      await runBuildMarketplace(pluginsDir, outputPath);
+
+      const { owner } = await readMarketplaceJson(outputPath);
+      expect([owner.name, owner.email]).toStrictEqual(["Jane Doe", "jane@example.com"]);
+    });
+
+    it("trims a padded author with no email, and warns that the owner has none", async () => {
+      await writeTestPackageJson(projectDir, { author: "  Jane Doe  " });
+
+      const { stderr } = await runBuildMarketplace(pluginsDir, outputPath);
+
+      const { owner } = await readMarketplaceJson(outputPath);
+      expect(owner.name).toBe("Jane Doe");
+      expect(stderr).toContain(
+        `package.json 'author' field "  Jane Doe  " has no parseable email — marketplace owner.email will be empty`,
+      );
+    });
+
+    it("records the plugin root as the --plugins-dir it was given", async () => {
+      await writeTestPackageJson(projectDir);
+
+      await runCliCommand([
+        "build",
+        "marketplace",
+        "--plugins-dir",
+        "dist/plugins",
+        "--output",
+        outputPath,
+      ]);
+
+      expect((await readMarketplaceJson(outputPath)).metadata?.pluginRoot).toBe("./dist/plugins");
+    });
+
+    it("says what each step does under --verbose", async () => {
+      await writeTestPackageJson(projectDir);
+
+      const quiet = await runBuildMarketplace(pluginsDir, outputPath);
+      const verbose = await runBuildMarketplace(pluginsDir, outputPath, "--verbose");
+
+      const scanLine = `  Scanning plugins directory: ${pluginsDir}`;
+      expect(quiet.stdout).not.toContain(scanLine);
+      expect(verbose.stdout).toContain(scanLine);
     });
   });
 });

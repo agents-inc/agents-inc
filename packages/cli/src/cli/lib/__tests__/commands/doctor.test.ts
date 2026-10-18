@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, rm, writeFile } from "fs/promises";
 import { missingArgsRefusal, runCliCommand } from "../helpers/cli-runner.js";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { EXIT_CODES } from "../../exit-codes";
@@ -391,6 +391,36 @@ describe("doctor command", () => {
       // `uninstall` without config keeps unmarked agents, so offering this one would contradict it.
       expect(output).toMatch(new RegExp(`No Orphans\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped`));
       expect(output).not.toContain("no configuration declares them");
+    });
+
+    it("names a stranded skill alone, word for word", async () => {
+      await installContentWithoutConfig();
+      await rm(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS), { recursive: true });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    No Orphans              ✗  1 skill installed here, and no configuration declares them",
+          `                               - ${path.join(projectDir, LOCAL_SKILLS_PATH, ORPHANED_SKILL_ID)}`,
+          "    Skills Installed",
+        ].join("\n"),
+      );
+    });
+
+    it("names a stranded agent alone, word for word", async () => {
+      await installContentWithoutConfig();
+      await rm(path.join(projectDir, LOCAL_SKILLS_PATH), { recursive: true });
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    No Orphans              ✗  1 agent installed here, and no configuration declares them",
+          `                               - ${path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS, `${ORPHANED_AGENT_NAME}.md`)}`,
+          "    Skills Installed",
+        ].join("\n"),
+      );
     });
 
     it("still stands down for a config that exists and cannot be read", async () => {

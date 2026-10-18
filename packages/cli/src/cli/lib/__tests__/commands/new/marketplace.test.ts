@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { chmod, mkdir, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runCliCommand } from "../../helpers/cli-runner.js";
@@ -128,5 +128,85 @@ describe("new:marketplace command", () => {
 
       expect(stdout).toContain(`${MARKETPLACE_NAME}-`);
     });
+  });
+
+  describe("what it says, word for word", () => {
+    it("lists what it wrote, then numbers each next step", async () => {
+      const marketplaceDir = path.join(projectDir, MARKETPLACE_NAME);
+
+      const { stdout, error } = await runCliCommand(["new", "marketplace", MARKETPLACE_NAME]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toBe(
+        [
+          "",
+          `✓ Created marketplace '${MARKETPLACE_NAME}' at ${marketplaceDir}`,
+          "  package.json",
+          "  config/skill-categories.ts",
+          "  config/skill-rules.ts",
+          "  config/stacks.ts",
+          "  src/skills/acme-example-skill/SKILL.md",
+          "  src/skills/acme-example-skill/metadata.yaml",
+          "",
+          "Next steps:",
+          "  1. cd acme",
+          "  2. Replace the placeholder 'author' in package.json with your own handle — it is what 'build marketplace' records as this marketplace's owner",
+          "  3. Replace src/skills/acme-example-skill/ with a skill of your own. Every skill id must begin with 'acme-'",
+          "  4. npx agents-inc build plugins",
+          "  5. npx agents-inc build marketplace",
+          "  6. Push it to GitHub, then add it from the Marketplace button at https://agentsinc.sh/editor",
+          `  7. npx agents-inc init --from <id> --marketplace ${marketplaceDir}   (from a project — tests your local changes against a configuration built there)`,
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("says what a marketplace name must look like", async () => {
+      const { error } = await runCliCommand(["new", "marketplace", "AcmeSkills"]);
+
+      expect(error?.message).toBe(
+        "Marketplace name must be kebab-case (lowercase letters, numbers, and hyphens, starting with a letter)",
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.INVALID_ARGS);
+    });
+
+    it("says why a reserved name is refused and which command to run instead", async () => {
+      const { error } = await runCliCommand(["new", "marketplace", "local"]);
+
+      expect(error?.message).toBe(
+        "Marketplace name 'local' is reserved. 'agents-inc' is the public catalogue's own namespace, 'external' and 'local' hold the skills that belong to no marketplace, and 'eject' is what an installation records for a skill copied into it rather than installed as a plugin — a marketplace under any of them is read back as something it is not. Choose a name of your own: run 'npx agents-inc new marketplace <other-name>'.",
+      );
+    });
+
+    it("says why it will not write into a directory that already holds files", async () => {
+      const occupied = path.join(projectDir, MARKETPLACE_NAME);
+      await mkdir(occupied, { recursive: true });
+      await writeFile(path.join(occupied, STANDARD_FILES.PACKAGE_JSON), "{}\n");
+
+      const { error } = await runCliCommand(["new", "marketplace", MARKETPLACE_NAME]);
+
+      expect(error?.message).toBe(
+        `${occupied} already holds files. A scaffold writes a whole marketplace, so it will not write into a directory that already has contents. Choose another name, or empty that directory first.`,
+      );
+    });
+
+    // Root writes through the mode bits, so the refusal under test cannot happen there.
+    it.skipIf(process.getuid?.() === 0)(
+      "fails with the cause when the scaffold cannot be written",
+      async () => {
+        await chmod(projectDir, 0o555);
+        try {
+          const { error } = await runCliCommand(["new", "marketplace", MARKETPLACE_NAME]);
+
+          expect(error?.message).toBe(
+            `EACCES: permission denied, mkdir '${path.join(projectDir, MARKETPLACE_NAME)}'`,
+          );
+          expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+        } finally {
+          await chmod(projectDir, 0o755);
+        }
+      },
+    );
   });
 });

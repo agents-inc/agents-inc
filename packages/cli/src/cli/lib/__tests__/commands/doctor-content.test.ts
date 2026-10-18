@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
-import { mkdir, rm, writeFile } from "fs/promises";
+import { chmod, mkdir, rm, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import { runCliCommand } from "../helpers/cli-runner.js";
+import { compactCliOutput } from "../helpers/flatten-cli-output.js";
 import {
   writeRawTestConfig,
   writeTestPackageJson,
@@ -40,7 +41,8 @@ import {
   createMockMarketplace,
   createMockMarketplacePlugin,
 } from "../factories/plugin-factories.js";
-import type { RelationshipDefinitions } from "../../../types";
+import type { AgentName, RelationshipDefinitions } from "../../../types";
+import { resolveInstallPaths } from "../../installation/index.js";
 import {
   TEST_MARKETPLACE_NAME,
   testMarketplaceSkillId,
@@ -624,6 +626,36 @@ describe("doctor content checks", () => {
       expect(stdout).toMatch(/1 marketplace: 1 error/);
       expect(stdout).toMatch(/1 plugin: 1 error/);
       expect(stdout).toMatch(/1 skill: 1 error/);
+    });
+
+    it("should name both passes whose errors a stood-down row would only restate", async () => {
+      // A source with no skills dir is a marketplace error; a skill missing metadata.yaml is a
+      // skill error. The skills row reads through both.
+      const sourceDir = path.join(tempDir, "source");
+      await mkdir(sourceDir, { recursive: true });
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "test-project",
+          skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+          agents: buildAgentConfigs(["web-developer"]),
+          marketplace: sourceDir,
+        }),
+      );
+      const skillDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR, "web-framework-react");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(
+        path.join(skillDir, STANDARD_FILES.SKILL_MD),
+        renderSkillMd("web-framework-react", "React"),
+      );
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toMatch(
+        new RegExp(
+          `${ROW_SKILLS_RESOLVED}\\s+${UI_SYMBOLS.SKIPPED}\\s+Skipped — this row would only restate the marketplace and skill errors above\\n`,
+        ),
+      );
     });
 
     /** The author stands in the repo with the typo; the consumer is told about someone else's. */
@@ -1885,5 +1917,667 @@ describe("plugin-validator (validatePlugin)", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes("Invalid JSON"))).toBe(true);
+  });
+});
+
+/** The whole report for states a person meets, so a changed word, row or symbol is a red test. */
+describe("the doctor report, line by line", () => {
+  let tempDir: string;
+  let projectDir: string;
+  let fakeHome: string;
+  let cleanup: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ tempDir, projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-doctor-report-"));
+  });
+
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  const HEADER = ["", "Agents Inc. Doctor", "", "  Checking configuration health...", ""];
+
+  function cleanContent(sourceDir: string, { skills, agents }: { skills: number; agents: number }) {
+    return [
+      "  Content checks",
+      "    Config                  ✓  1 config validated",
+      "    Marketplaces            ✓  1 marketplace validated",
+      `                               - marketplace (${sourceDir}) — 1 skill`,
+      "    Plugins                 ✓  No plugins to validate",
+      `    Skills                  ✓  ${skills === 0 ? "No skills to validate" : `${skills} skill validated`}`,
+      `    Agents                  ✓  ${agents === 0 ? "No agents to validate" : `${agents} agent validated`}`,
+      "",
+    ];
+  }
+
+  function reachedLocally(sourceDir: string, namedBy: string): string[] {
+    return [
+      `    Marketplace Reachable   ✓  Connected to local: ${sourceDir}`,
+      "                               1 skill available",
+      `                               Read ${sourceDir} from disk — ${namedBy}`,
+    ];
+  }
+
+  async function installEjectedReact(): Promise<string> {
+    const sourceDir = await setupValidatedProject(tempDir, projectDir, {
+      skills: [
+        ...buildSkillConfigs([CONFIGURED_SKILL_ID], { origin: "eject" }),
+        // Excluded, and installed nowhere: no row may count it.
+        ...buildSkillConfigs(["web-testing-vitest"], { origin: "eject", excluded: true }),
+      ],
+    });
+    await writeValidInstalledSkill(
+      path.join(projectDir, INSTALLED_SKILLS_SUBDIR),
+      CONFIGURED_SKILL_ID,
+    );
+    await writeValidInstalledAgent(
+      path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+    return sourceDir;
+  }
+
+  it("reports a healthy installation row by row, with no tip", async () => {
+    const sourceDir = await installEjectedReact();
+
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        ...cleanContent(sourceDir, { skills: 1, agents: 1 }),
+        "  Operational checks",
+        "    Config Valid            ✓  This project: .agents-inc/claude/config.ts is valid",
+        "    Layout                  ✓  This project is on .agents-inc/claude/",
+        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Skills Resolved         ✓  1/1 skill found",
+        "    Agents Compiled         ✓  1/1 agent compiled",
+        "    No Orphans              ✓  No orphaned agent files",
+        "    Skills Installed        ✓  1/1 eject-mode skill installed",
+        "    Plugins Installed       ✓  No plugin-mode skills configured",
+        ...reachedLocally(sourceDir, "named by this project's configuration"),
+        "",
+        "  Summary: 14 passed, 0 warnings, 0 errors",
+        "",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("reports a project with no configuration, skipping the rows that read one", async () => {
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(stdout).toContain(
+      [
+        "  Operational checks",
+        "    Config Valid            ✗  This project: .agents-inc/claude/config.ts not found",
+        "                               Run 'npx agents-inc init' to create a configuration",
+        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Skills Resolved         –  Skipped (config invalid)",
+        "    Agents Compiled         –  Skipped (config invalid)",
+        "    No Orphans              –  Skipped (config invalid)",
+        "    Skills Installed        –  Skipped (config invalid)",
+        "    Plugins Installed       –  Skipped (config invalid)",
+        "    Marketplace Reachable   ✓  Connected to remote: ",
+      ].join("\n"),
+    );
+    expect(stdout).toContain(
+      "Fetched github:agents-inc/skills over the network — nothing here names one, so this is the default\n",
+    );
+    expect(
+      stdout.endsWith(
+        [
+          "  Summary: 7 passed, 0 warnings, 1 error",
+          "",
+          "  Tip: Run 'npx agents-inc init' to create or fix configuration",
+          "",
+          "",
+        ].join("\n"),
+      ),
+    ).toBe(true);
+  });
+
+  it("names the global config a project without its own inherits, and the agent it must recompile", async () => {
+    const sourceDir = await setupValidatedProject(tempDir, fakeHome, {
+      agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+    });
+
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        ...cleanContent(sourceDir, { skills: 0, agents: 0 }),
+        "  Operational checks",
+        "    Config Valid            ✓  This project: no config.ts, using the global installation's (~/.agents-inc/claude/config.ts), which is valid",
+        "    Layout                  ✓  The global installation is on .agents-inc/claude/",
+        "    Placements Offered      ✓  Every configured skill is placeable",
+        "    Skills Resolved         ✓  No skills configured",
+        "    Agents Compiled         !  1 agent needs recompilation",
+        "                               - web-developer (missing)",
+        "    No Orphans              ✓  No agents directory",
+        "    Skills Installed        ✓  No eject-mode skills configured",
+        "    Plugins Installed       ✓  No plugin-mode skills configured",
+        ...reachedLocally(sourceDir, "named by the global configuration"),
+        "",
+        "  Summary: 13 passed, 1 warning, 0 errors",
+        "",
+        "  Tip: Run 'npx agents-inc compile' to generate missing agent files",
+        "",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("names the home directory's own config by its home-relative path", async () => {
+    await setupValidatedProject(tempDir, fakeHome);
+    process.chdir(fakeHome);
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      "    Config Valid            ✓  The global installation: ~/.agents-inc/claude/config.ts is valid\n",
+    );
+  });
+
+  it("names the one agent whose file is missing beside one that is compiled", async () => {
+    await setupValidatedProject(tempDir, projectDir, {
+      agents: buildAgentConfigs([CONFIGURED_AGENT_NAME, "api-developer"]),
+    });
+    const agentsDir = path.join(projectDir, INSTALLED_AGENTS_SUBDIR);
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(path.join(agentsDir, `${CONFIGURED_AGENT_NAME}.md`), "# compiled\n");
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Agents Compiled         !  1 agent needs recompilation",
+        "                               - api-developer (missing)",
+      ].join("\n"),
+    );
+  });
+
+  it("counts several agents that need recompiling in the plural", async () => {
+    await setupValidatedProject(tempDir, projectDir, {
+      agents: buildAgentConfigs([CONFIGURED_AGENT_NAME, "api-developer"]),
+    });
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Agents Compiled         !  2 agents need recompilation",
+        "                               - web-developer (missing)",
+        "                               - api-developer (missing)",
+      ].join("\n"),
+    );
+  });
+
+  it.each([
+    ["the project's", () => projectDir],
+    ["the home directory's", () => fakeHome],
+  ])(
+    "counts a configured skill found in %s own skills folder, and names each found nowhere",
+    async (_where, rootOf) => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([
+          CONFIGURED_SKILL_ID,
+          "web-framework-react",
+          "web-testing-vitest",
+        ]),
+      });
+      await writeValidInstalledSkill(
+        path.join(rootOf(), INSTALLED_SKILLS_SUBDIR),
+        "web-framework-react",
+      );
+
+      const { stdout, error } = await runCliCommand(["doctor"]);
+
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(stdout).toContain(
+        [
+          "    Skills Resolved         ✗  2/3 skills found",
+          "                               - web-testing-vitest (not found)",
+          "    Agents Compiled",
+        ].join("\n"),
+      );
+      expect(stdout).toContain("  Tip: Check skill IDs in config match available skills\n");
+    },
+  );
+
+  it("names each agent file no configuration claims", async () => {
+    await setupValidatedProject(tempDir, projectDir);
+    await writeValidInstalledAgent(
+      path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+    await writeValidInstalledAgent(
+      path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+      ORPHANED_AGENT_NAME,
+    );
+    await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "global-orphan");
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    No Orphans              !  2 orphaned agent files",
+        `                               - ${ORPHANED_AGENT_NAME}.md (not in config)`,
+        "                               - global-orphan.md (not in config)",
+      ].join("\n"),
+    );
+  });
+
+  it("counts a global agent's file as known, excluded or not, beside the project's own", async () => {
+    await setupValidatedProject(tempDir, projectDir, {
+      agents: [
+        ...buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        ...buildAgentConfigs(["api-developer"], { scope: "global", excluded: true }),
+        ...buildAgentConfigs(["cli-developer"], { scope: "global" }),
+      ],
+    });
+    await writeValidInstalledAgent(
+      path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+    await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "api-developer");
+    await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "cli-developer");
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
+  });
+
+  it("counts a project agent's file in the global folder as an orphan", async () => {
+    await setupValidatedProject(tempDir, projectDir);
+    await writeValidInstalledAgent(
+      path.join(projectDir, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+    await writeValidInstalledAgent(
+      path.join(fakeHome, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    No Orphans              !  1 orphaned agent file",
+        `                               - ${CONFIGURED_AGENT_NAME}.md (not in config)`,
+      ].join("\n"),
+    );
+  });
+
+  it("at home, counts the global agents beside the project ones in the one folder they share", async () => {
+    await setupValidatedProject(tempDir, fakeHome, {
+      agents: [
+        ...buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+        ...buildAgentConfigs(["api-developer"], { scope: "project" }),
+      ],
+    });
+    await writeValidInstalledAgent(
+      path.join(fakeHome, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+    await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "api-developer");
+    process.chdir(fakeHome);
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
+  });
+
+  it("names each plugin-mode skill no enabled plugin provides", async () => {
+    await setupValidatedProject(tempDir, projectDir, {
+      skills: buildSkillConfigs([CONFIGURED_SKILL_ID], { origin: PLUGIN_MODE_ORIGIN }),
+    });
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Plugins Installed       !  1 skill not installed as plugins",
+        `                               - ${CONFIGURED_SKILL_ID} (no enabled plugin found)`,
+      ].join("\n"),
+    );
+  });
+
+  it("names the finding a second installation here makes for every acting command", async () => {
+    await setupValidatedProject(tempDir, projectDir);
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({ name: "codex-one", skills: [], agents: [] }),
+      ".agents-inc/codex",
+    );
+
+    const { stdout, error } = await runCliCommand(["doctor"]);
+
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(compactCliOutput(stdout)).toContain(
+      compactCliOutput(
+        [
+          "    Placements Offered      ✗  1 finding would stop a command acting here",
+          `                               - ${process.cwd()} holds 2 installations — claude and codex — so every command that acts on one cannot tell which one you mean. Name it with --provider <claude|codex>. Nothing has been changed.`,
+          "    Skills Resolved",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("names a placement the host of this installation cannot fill", async () => {
+    const sourceDir = path.join(tempDir, "source");
+    await buildValidSource(sourceDir);
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "codex-one",
+        skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "acme" }),
+        agents: [],
+        marketplace: sourceDir,
+      }),
+      ".agents-inc/codex",
+    );
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(compactCliOutput(stdout)).toContain(
+      compactCliOutput(
+        [
+          "    Placements Offered      ✗  1 finding would stop a command acting here",
+          "                               - Refusing to install web-framework-react as plugin+project: the codex host offers plugin+global, eject+global, eject+project. Nothing has been changed.",
+          "    Skills Resolved",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  describe("a Codex installation", () => {
+    const CODEX_FOLDER = ".agents-inc/codex";
+
+    async function installOnCodex(agentNames: AgentName[]): Promise<void> {
+      const sourceDir = path.join(tempDir, "source");
+      await buildValidSource(sourceDir);
+      await writeTestTsConfig(
+        projectDir,
+        buildProjectConfig({
+          name: "codex-one",
+          skills: [],
+          agents: buildAgentConfigs(agentNames),
+          marketplace: sourceDir,
+        }),
+        CODEX_FOLDER,
+      );
+    }
+
+    it("passes the agents row when Codex leaves every configured sub-agent out, naming each", async () => {
+      await installOnCodex(["agent-summoner", "skill-summoner"]);
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    Agents Compiled         ✓  No sub-agent in this configuration is carried by codex",
+          "                               - agent-summoner (left out of codex)",
+          "                               - skill-summoner (left out of codex)",
+          "    No Orphans",
+        ].join("\n"),
+      );
+    });
+
+    it("counts only the sub-agents Codex carries, and finds them by Codex's file name", async () => {
+      await installOnCodex(["agent-summoner", CONFIGURED_AGENT_NAME]);
+      const { agentsDir } = resolveInstallPaths(projectDir, "project");
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(path.join(agentsDir, `${CONFIGURED_AGENT_NAME}.toml`), "");
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Agents Compiled         ✓  1/1 agent compiled\n");
+    });
+  });
+
+  it("at home, names an orphan in the one agents folder both scopes share once", async () => {
+    await setupValidatedProject(tempDir, fakeHome, {
+      agents: buildAgentConfigs([CONFIGURED_AGENT_NAME], { scope: "global" }),
+    });
+    await writeValidInstalledAgent(
+      path.join(fakeHome, INSTALLED_AGENTS_SUBDIR),
+      CONFIGURED_AGENT_NAME,
+    );
+    await writeValidInstalledAgent(
+      path.join(fakeHome, INSTALLED_AGENTS_SUBDIR),
+      ORPHANED_AGENT_NAME,
+    );
+    process.chdir(fakeHome);
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    No Orphans              !  1 orphaned agent file",
+        `                               - ${ORPHANED_AGENT_NAME}.md (not in config)`,
+        "    Skills Installed",
+      ].join("\n"),
+    );
+  });
+
+  it("reads the global agents folder when the project has none of its own", async () => {
+    await setupValidatedProject(tempDir, projectDir, {
+      agents: buildAgentConfigs(["cli-developer"], { scope: "global" }),
+    });
+    await writeValidInstalledAgent(path.join(fakeHome, INSTALLED_AGENTS_SUBDIR), "cli-developer");
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain("    No Orphans              ✓  No orphaned agent files\n");
+  });
+
+  it("counts a global agent's file in the project's folder as an orphan", async () => {
+    await setupValidatedProject(tempDir, projectDir, {
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+    });
+    await writeValidInstalledAgent(path.join(projectDir, INSTALLED_AGENTS_SUBDIR), "api-developer");
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    No Orphans              !  1 orphaned agent file",
+        "                               - api-developer.md (not in config)",
+      ].join("\n"),
+    );
+  });
+
+  describe("plugin-mode skills", () => {
+    const PLUGIN_KEY = `${CONFIGURED_SKILL_ID}@${PLUGIN_MODE_ORIGIN}`;
+
+    async function installPluginForTheProject(): Promise<void> {
+      const installPath = path.join(
+        fakeHome,
+        CLAUDE_DIR,
+        PLUGINS_SUBDIR,
+        "cache",
+        CONFIGURED_SKILL_ID,
+      );
+      await writeTestPluginManifest(installPath, { name: CONFIGURED_SKILL_ID, version: "1.0.0" });
+      await writeTestInstalledPluginsRegistry(path.join(fakeHome, CLAUDE_DIR, PLUGINS_SUBDIR), {
+        [PLUGIN_KEY]: [installPath],
+      });
+      await mkdir(path.join(projectDir, CLAUDE_DIR), { recursive: true });
+      await writeFile(
+        path.join(projectDir, CLAUDE_DIR, "settings.json"),
+        JSON.stringify({ enabledPlugins: { [PLUGIN_KEY]: true } }),
+      );
+    }
+
+    it("counts a plugin skill its scope's registry enables as installed", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: buildSkillConfigs([CONFIGURED_SKILL_ID], {
+          origin: PLUGIN_MODE_ORIGIN,
+          scope: "project",
+        }),
+      });
+      await installPluginForTheProject();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain("    Plugins Installed       ✓  1/1 plugin-mode skill installed\n");
+    });
+
+    it("judges each skill against its own scope's registry", async () => {
+      await setupValidatedProject(tempDir, projectDir, {
+        skills: [
+          ...buildSkillConfigs([CONFIGURED_SKILL_ID], {
+            origin: PLUGIN_MODE_ORIGIN,
+            scope: "project",
+          }),
+          ...buildSkillConfigs(["web-framework-react"], {
+            origin: PLUGIN_MODE_ORIGIN,
+            scope: "global",
+          }),
+        ],
+      });
+      await installPluginForTheProject();
+
+      const { stdout } = await runCliCommand(["doctor"]);
+
+      expect(stdout).toContain(
+        [
+          "    Plugins Installed       !  1 skill not installed as plugins",
+          "                               - web-framework-react (no enabled plugin found)",
+          "    Marketplace Reachable",
+        ].join("\n"),
+      );
+    });
+  });
+
+  // Root reads through the mode bits, so the failure under test cannot happen there.
+  it.skipIf(process.getuid?.() === 0)(
+    "turns a check that throws into that row's failure, with the cause, and finishes the report",
+    async () => {
+      await setupValidatedProject(tempDir, projectDir);
+      const agentsDir = path.join(projectDir, INSTALLED_AGENTS_SUBDIR);
+      await writeValidInstalledAgent(agentsDir, CONFIGURED_AGENT_NAME);
+      await chmod(agentsDir, 0o000);
+      try {
+        const { stdout } = await runCliCommand(["doctor"]);
+
+        expect(stdout).toContain(
+          [
+            "    No Orphans              ✗  Check threw",
+            `                               EACCES: permission denied, scandir '${agentsDir}'`,
+          ].join("\n"),
+        );
+        expect(stdout).toContain("  Summary:");
+      } finally {
+        await chmod(agentsDir, 0o755);
+      }
+    },
+  );
+
+  it("marks a content row holding only warnings as a warning, and counts errors and warnings apart", async () => {
+    await setupValidatedProject(tempDir, projectDir);
+    const globalSkillsDir = path.join(fakeHome, INSTALLED_SKILLS_SUBDIR);
+    await writeValidInstalledSkill(globalSkillsDir, "web-framework-react", {
+      cliDescription: "x".repeat(75),
+    });
+
+    const warned = await runCliCommand(["doctor"]);
+
+    expect(warned.stdout).toContain(
+      "    Skills                  !  1 skill: 0 errors, 1 warning\n",
+    );
+
+    await writeValidInstalledSkill(globalSkillsDir, "web-framework-vue-composition-api", {
+      cliDescription: "",
+    });
+
+    const failed = await runCliCommand(["doctor"]);
+
+    expect(failed.stdout).toContain(
+      "    Skills                  ✗  2 skills: 1 error, 1 warning\n",
+    );
+  });
+
+  it("indents every line of a detail that runs to paragraphs, leaving its blank lines out", async () => {
+    const goneSource = path.join(tempDir, "marketplace-that-is-gone");
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({
+        name: "test-project",
+        skills: [],
+        agents: buildAgentConfigs([CONFIGURED_AGENT_NAME]),
+        marketplace: goneSource,
+      }),
+    );
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Marketplace Reachable   ✗  Failed to load marketplace",
+        `                               Local marketplace not found: '${goneSource}'`,
+        "                               Nothing is at that path, and a local marketplace must be a directory holding skills.",
+        "                               Check it for a typo, or name a marketplace that exists:",
+        "                                 --marketplace github:agents-inc/skills",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("tells how to recreate a config it cannot read", async () => {
+    await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "    Marketplaces            –  Skipped — the configuration that names them cannot be read",
+        "    Plugins                 ✓  No plugins to validate",
+        "    Skills                  –  Skipped — the configuration that names them cannot be read",
+        "    Agents                  ✓  No agents to validate",
+        "",
+        "  Operational checks",
+        "    Skipped — fix the content errors above first",
+        "",
+      ].join("\n"),
+    );
+
+    expect(stdout).toContain(
+      `  Tip: There is no automatic repair — recreate the configuration by running 'npx agents-inc uninstall' from '${process.cwd()}', which still works on a config it cannot read, then 'npx agents-inc init --from <id>' with an id from https://agentsinc.sh/editor\n`,
+    );
+  });
+
+  it("skips the operational rows in a marketplace repository nothing is installed in", async () => {
+    await buildValidSource(projectDir);
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      [
+        "  Operational checks",
+        "    Skipped — no installation here (marketplace repository)",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("still runs the operational rows in a marketplace repository that holds a config", async () => {
+    await buildValidSource(projectDir);
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({ name: "repo", skills: [], agents: [] }),
+    );
+
+    const { stdout } = await runCliCommand(["doctor"]);
+
+    expect(stdout).toContain(
+      "    Config Valid            !  This project: .agents-inc/claude/config.ts is valid but declares no skills and no agents\n",
+    );
   });
 });
