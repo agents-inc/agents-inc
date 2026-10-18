@@ -37,6 +37,12 @@ describe("domainStops", () => {
     expect(domainStops([0, 300, 600], MAX)).toStrictEqual([0, 300, 600])
   })
 
+  it("spreads from the last of several reachable stops", () => {
+    expect(domainStops([0, 200, 400, 1200, 1300], MAX)).toStrictEqual([
+      0, 200, 400, 700, 1000,
+    ])
+  })
+
   it("answers nothing for no domains", () => {
     expect(domainStops([], MAX)).toStrictEqual([])
   })

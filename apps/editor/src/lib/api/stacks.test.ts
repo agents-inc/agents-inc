@@ -133,3 +133,16 @@ describe("createStack", () => {
     ])
   })
 })
+
+// Only an answer the worker stood behind lists anything.
+describe("listStacks on a refused answer", () => {
+  it("lists nothing even when its body holds stacks", async () => {
+    configMockServer.use(
+      http.get(STACKS_URL, () =>
+        HttpResponse.json(SAVED_STACKS, { status: SERVER_ERROR })
+      )
+    )
+
+    expect(await listStacks()).toStrictEqual([])
+  })
+})

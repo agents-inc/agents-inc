@@ -266,3 +266,92 @@ describe("fetchCatalog", () => {
     configMockServer.events.removeAllListeners()
   })
 })
+
+describe("parseMarketplaceRef on a pasted address", () => {
+  it("reads an http address as the repository behind it", () => {
+    expect(parseMarketplaceRef("http://github.com/acme/skills")).toStrictEqual({
+      owner: "acme",
+      repo: "skills",
+    })
+  })
+})
+
+describe("what fetchCatalog asks GitHub for", () => {
+  // The raw bytes, rather than the base64 envelope the API answers by default.
+  it("asks for the catalogue's raw bytes", async () => {
+    const fetching = serving(MARKETPLACE_CATALOG)
+    vi.stubGlobal("fetch", fetching)
+
+    await fetchCatalog(MARKETPLACE_REF)
+
+    expect(fetching).toHaveBeenCalledWith(
+      catalogUrl({ owner: "acme", repo: "skills" }),
+      { headers: { Accept: "application/vnd.github.raw+json" } }
+    )
+  })
+})
+
+const INTERNAL_SERVER_ERROR = 500
+
+describe("what fetchCatalog says when it cannot read a catalogue", () => {
+  // No token fixes a server error, so the advice is to retry.
+  it("offers a retry for a status no token can change, and reports it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(null, { status: INTERNAL_SERVER_ERROR })
+        )
+    )
+
+    const result = await fetchCatalog(MARKETPLACE_REF)
+
+    expect(result).toStrictEqual({
+      ok: false,
+      kind: "unreachable",
+      error: "acme/skills could not be read (500) — try again",
+    })
+    expect(sink.issue).toHaveBeenCalledWith("Marketplace catalog GET failed", {
+      status: INTERNAL_SERVER_ERROR,
+    })
+  })
+
+  it("names the root when what was published is not a catalogue at all", async () => {
+    vi.stubGlobal("fetch", serving("not a catalogue"))
+
+    const result = await fetchCatalog(MARKETPLACE_REF)
+
+    expect(result).toStrictEqual({
+      ok: false,
+      kind: "invalid",
+      error:
+        "acme/skills published an unreadable catalog.json — (root): invalid_type",
+    })
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Marketplace published an unreadable catalog",
+      { issues: ["(root): invalid_type"] }
+    )
+  })
+
+  it("names every field a malformed catalogue got wrong, in one message", async () => {
+    vi.stubGlobal("fetch", serving({ ...MALFORMED_CATALOG, version: 7 }))
+
+    const result = await fetchCatalog(MARKETPLACE_REF)
+
+    expect(result).toStrictEqual({
+      ok: false,
+      kind: "invalid",
+      error:
+        "acme/skills published an unreadable catalog.json — version: invalid_type, skills: invalid_type",
+    })
+  })
+
+  it("names the marketplace as typed, without the padding around it", async () => {
+    expect(await fetchCatalog("  acme  ")).toStrictEqual({
+      ok: false,
+      kind: "invalid",
+      error: 'acme is not a marketplace — name one as "owner/repo"',
+    })
+  })
+})

@@ -5,13 +5,15 @@ import {
   PRIVATE_MARKETPLACE_CANONICAL_REF,
   PRIVATE_MARKETPLACE_REF,
 } from "@workspace/api-mocks"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setReportingSink } from "@/lib/observability/report"
 
 import {
   migrateSavedMarketplaces,
   readSavedMarketplaces,
+  tokenFor,
+  useMarketplaceStore,
 } from "./marketplace-store"
 
 const EMPTY = { current: "", saved: {} }
@@ -245,5 +247,102 @@ describe("migrateSavedMarketplaces", () => {
     migrateSavedMarketplaces({ marketplace: MARKETPLACE_REF }, 0)
 
     expect(sink.issue).not.toHaveBeenCalled()
+  })
+})
+
+describe("readSavedMarketplaces on a blob that is not an object", () => {
+  it("names the root as what it could not read", () => {
+    readSavedMarketplaces("acme/skills")
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Discarded unreadable saved marketplaces",
+      expect.objectContaining({ issues: ["(root): invalid_type"] })
+    )
+  })
+})
+
+// zustand migrates only on a version mismatch; called at the current version,
+// the blob is already this version's.
+describe("migrateSavedMarketplaces at the current version", () => {
+  const CURRENT_VERSION = 2
+
+  it("hands the blob back untouched", () => {
+    const blob = { marketplace: MARKETPLACE_REF }
+
+    expect(migrateSavedMarketplaces(blob, CURRENT_VERSION)).toBe(blob)
+  })
+})
+
+describe("the marketplace store's actions", () => {
+  beforeEach(() => {
+    useMarketplaceStore.setState({ current: "", saved: {} })
+  })
+
+  it("files a token under its marketplace and chooses it, keeping the others", () => {
+    useMarketplaceStore.getState().remember(MARKETPLACE_CANONICAL_REF, "")
+    useMarketplaceStore
+      .getState()
+      .remember(PRIVATE_MARKETPLACE_CANONICAL_REF, MARKETPLACE_TOKEN)
+
+    const { current, saved } = useMarketplaceStore.getState()
+    expect({ current, saved }).toStrictEqual({
+      current: PRIVATE_MARKETPLACE_CANONICAL_REF,
+      saved: {
+        [MARKETPLACE_CANONICAL_REF]: "",
+        [PRIVATE_MARKETPLACE_CANONICAL_REF]: MARKETPLACE_TOKEN,
+      },
+    })
+  })
+
+  it("chooses a saved marketplace without touching any token", () => {
+    useMarketplaceStore
+      .getState()
+      .remember(PRIVATE_MARKETPLACE_CANONICAL_REF, MARKETPLACE_TOKEN)
+    useMarketplaceStore.getState().remember(MARKETPLACE_CANONICAL_REF, "")
+
+    useMarketplaceStore.getState().choose(PRIVATE_MARKETPLACE_CANONICAL_REF)
+
+    expect(useMarketplaceStore.getState().current).toBe(
+      PRIVATE_MARKETPLACE_CANONICAL_REF
+    )
+    expect(tokenFor(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(MARKETPLACE_TOKEN)
+  })
+
+  it("goes back to the public catalogue, keeping the tokens", () => {
+    useMarketplaceStore
+      .getState()
+      .remember(PRIVATE_MARKETPLACE_CANONICAL_REF, MARKETPLACE_TOKEN)
+
+    useMarketplaceStore.getState().choosePublic()
+
+    expect(useMarketplaceStore.getState().current).toBe("")
+    expect(tokenFor(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe(MARKETPLACE_TOKEN)
+  })
+
+  it("holds no token for a marketplace nobody saved", () => {
+    expect(tokenFor(PRIVATE_MARKETPLACE_CANONICAL_REF)).toBe("")
+  })
+})
+
+describe("the marketplace slot", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("persists under a key of its own", async () => {
+    const written = new Map<string, string>()
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: () => null,
+        setItem: (key: string, value: string) => written.set(key, value),
+        removeItem: (key: string) => written.delete(key),
+      },
+    })
+    vi.resetModules()
+    const { useMarketplaceStore: store } = await import("./marketplace-store")
+
+    store.getState().remember(MARKETPLACE_CANONICAL_REF, "")
+
+    expect([...written.keys()]).toStrictEqual(["agents-inc:marketplace:v1"])
   })
 })

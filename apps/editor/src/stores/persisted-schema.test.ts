@@ -604,3 +604,13 @@ describe("migrateConfig", () => {
     )
   })
 })
+
+describe("the model a sub-agent rests on", () => {
+  it("is the one its own metadata names", () => {
+    expect(restingAgentOptions(KNOWN_AGENT).model).toBe("opus")
+  })
+
+  it("is sonnet for a sub-agent whose metadata names none", () => {
+    expect(restingAgentOptions("retired-agent").model).toBe("sonnet")
+  })
+})

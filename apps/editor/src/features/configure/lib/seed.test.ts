@@ -597,3 +597,15 @@ describe("matchesSavedStack", () => {
     expect(matchesSavedStack(config(), null)).toBe(false)
   })
 })
+
+// `inherit` never leaves the browser, so an entry holding only it says nothing.
+describe("an agent whose only choice is one the wire leaves out", () => {
+  it("travels no entry for it", () => {
+    const inheritOnly = {
+      ...config(),
+      agents: { [AGENT]: { codexModel: "inherit" as const } },
+    }
+
+    expect(toSeedPayload(inheritOnly).agents).toStrictEqual({})
+  })
+})

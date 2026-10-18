@@ -88,3 +88,13 @@ describe("dropsSelection", () => {
     expect(dropsSelection(MARKETPLACE_CATALOG, [])).toBe(false)
   })
 })
+
+describe("the sentence switchConsequence says", () => {
+  it("lists the dropped skills by name, comma-separated, after the count", () => {
+    expect(
+      switchConsequence(MARKETPLACE_REF, MARKETPLACE_CATALOG, [FIRST, SECOND])
+    ).toBe(
+      `Switching to ${MARKETPLACE_REF} will drop 2 of your 2 skills: ${nameOf(FIRST)}, ${nameOf(SECOND)}.`
+    )
+  })
+})

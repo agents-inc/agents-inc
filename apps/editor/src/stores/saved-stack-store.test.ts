@@ -210,3 +210,33 @@ describe("save", () => {
     expect(names()).toStrictEqual(["B", "A"])
   })
 })
+
+describe("the saves before anything has been read", () => {
+  it("holds no save and owes the account nothing", () => {
+    const { saves, owed } = useSavedStackStore.getInitialState()
+
+    expect({ saves, owed }).toStrictEqual({ saves: [], owed: [] })
+  })
+})
+
+describe("rename", () => {
+  // Parsed, as the store holds them.
+  const stored = (name: string) => ({
+    id: `id-${name}`,
+    name,
+    payload: valid(),
+  })
+
+  beforeEach(() => {
+    useSavedStackStore.setState({ saves: [stored("A"), stored("B")] })
+  })
+
+  it("renames the one save it names and leaves the rest as they were", () => {
+    useSavedStackStore.getState().rename("id-B", "B renamed")
+
+    expect(useSavedStackStore.getState().saves).toStrictEqual([
+      stored("A"),
+      { ...stored("B"), name: "B renamed" },
+    ])
+  })
+})

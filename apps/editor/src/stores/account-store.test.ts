@@ -298,3 +298,168 @@ describe("a save landing beside a refusal", () => {
     })
   })
 })
+
+describe("the account before anything has been read", () => {
+  // `ready` holds the rail's sign-in button back until the first answer.
+  it("is not ready and holds no clash", () => {
+    const { ready, clashes } = useAccountStore.getInitialState()
+
+    expect({ ready, clashes }).toStrictEqual({ ready: false, clashes: [] })
+  })
+
+  it("is ready once a signed-out answer lands", async () => {
+    await useAccountStore.getState().refresh()
+
+    expect(useAccountStore.getState().ready).toBe(true)
+  })
+
+  it("is ready once a signed-in answer lands", async () => {
+    accountHolding([])
+
+    await useAccountStore.getState().refresh()
+
+    expect(useAccountStore.getState().ready).toBe(true)
+  })
+})
+
+// An owed save whose name the account lists is asked for a new name.
+describe("an owed save whose name the account already lists", () => {
+  const owedAndClashing = async (payload: SeedPayload) => {
+    accountHolding([savedStack("B"), savedStack("A")])
+    const clashing = local("a", payload)
+    withLocalSaves(local("B", STORED_PAYLOAD), clashing)
+    useSavedStackStore.setState({ owed: [clashing.id] })
+    useAccountStore.setState({ clashes: [] })
+    await useAccountStore.getState().refresh()
+    return clashing
+  }
+
+  it("is asked for a new name", async () => {
+    const clashing = await owedAndClashing(STORED_PAYLOAD)
+
+    expect(useAccountStore.getState().clashes).toStrictEqual([clashing.id])
+  })
+
+  // The account would refuse it under any name.
+  it("is not asked for one when the account would refuse it anyway", async () => {
+    await owedAndClashing(OUT_OF_SCOPE_PAYLOAD)
+
+    expect(useAccountStore.getState().clashes).toStrictEqual([])
+  })
+
+  it("is carried in under the new name, and owed no longer", async () => {
+    const clashing = await owedAndClashing(STORED_PAYLOAD)
+    const { named } = recordWrites()
+
+    const carried = await useAccountStore
+      .getState()
+      .carryRenamed(clashing, "A renamed")
+
+    expect(carried.ok).toBe(true)
+    expect(named).toStrictEqual(["A renamed"])
+    expect(useAccountStore.getState().stacks).toStrictEqual([
+      savedStack("A renamed"),
+      savedStack("B"),
+      savedStack("A"),
+    ])
+    expect(useAccountStore.getState().clashes).toStrictEqual([])
+    expect(useSavedStackStore.getState().owed).toStrictEqual([])
+    expect(
+      useSavedStackStore.getState().saves.map((save) => save.name)
+    ).toStrictEqual(["B", "A renamed"])
+  })
+
+  it("stays owed under its old name when the account refuses the new one", async () => {
+    const clashing = await owedAndClashing(STORED_PAYLOAD)
+    recordWrites(new Set(["A renamed"]))
+
+    const carried = await useAccountStore
+      .getState()
+      .carryRenamed(clashing, "A renamed")
+
+    expect(carried).toStrictEqual({ ok: false, refusal: "refused" })
+    expect(useAccountStore.getState().clashes).toStrictEqual([clashing.id])
+    expect(useSavedStackStore.getState().owed).toStrictEqual([clashing.id])
+  })
+
+  // Deferred, it is asked again at the next sign-in, not before.
+  it("stops being asked about once deferred, while staying owed", async () => {
+    const clashing = await owedAndClashing(STORED_PAYLOAD)
+
+    useAccountStore.getState().defer(clashing.id)
+
+    expect(useAccountStore.getState().clashes).toStrictEqual([])
+    expect(useSavedStackStore.getState().owed).toStrictEqual([clashing.id])
+  })
+
+  it("drops the question on a sign-out", async () => {
+    await owedAndClashing(STORED_PAYLOAD)
+
+    configMockServer.resetHandlers()
+    await useAccountStore.getState().refresh()
+
+    expect(useAccountStore.getState().clashes).toStrictEqual([])
+  })
+})
+
+// The owed list is written only on a change: the slot is every tab's.
+describe("the owed list a refresh settles", () => {
+  it("is left as it was when the refresh changes nothing in it", async () => {
+    accountHolding([])
+    recordWrites(new Set(["A"]))
+    withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
+    await useAccountStore.getState().refresh()
+    const owed = useSavedStackStore.getState().owed
+    expect(owed).toStrictEqual(["local-A"])
+
+    accountNowLists([savedStack("B")])
+    await useAccountStore.getState().refresh()
+
+    expect(useSavedStackStore.getState().owed).toBe(owed)
+  })
+
+  it("is rewritten when one id of a list the same length changed", async () => {
+    accountHolding([])
+    recordWrites(new Set(["A", "B"]))
+    withLocalSaves(local("B", STORED_PAYLOAD), local("A", STORED_PAYLOAD))
+    useSavedStackStore.setState({ owed: ["local-A", "local-gone"] })
+
+    await useAccountStore.getState().refresh()
+
+    expect(useSavedStackStore.getState().owed).toStrictEqual([
+      "local-A",
+      "local-B",
+    ])
+  })
+})
+
+describe("two owed saves whose names the account lists", () => {
+  const bothClashing = async () => {
+    accountHolding([savedStack("A"), savedStack("B")])
+    const first = local("a", STORED_PAYLOAD)
+    const second = local("b", STORED_PAYLOAD)
+    withLocalSaves(second, first)
+    useSavedStackStore.setState({ owed: [first.id, second.id] })
+    useAccountStore.setState({ clashes: [] })
+    await useAccountStore.getState().refresh()
+    return { first, second }
+  }
+
+  it("keeps asking about the other once one is carried in", async () => {
+    const { first, second } = await bothClashing()
+    recordWrites()
+
+    await useAccountStore.getState().carryRenamed(first, "A renamed")
+
+    expect(useAccountStore.getState().clashes).toStrictEqual([second.id])
+    expect(useSavedStackStore.getState().owed).toStrictEqual([second.id])
+  })
+
+  it("keeps asking about the other once one is deferred", async () => {
+    const { first, second } = await bothClashing()
+
+    useAccountStore.getState().defer(first.id)
+
+    expect(useAccountStore.getState().clashes).toStrictEqual([second.id])
+  })
+})

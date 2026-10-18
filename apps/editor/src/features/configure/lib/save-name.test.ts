@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { validateSaveName } from "./save-name"
+import { sameName, validateSaveName } from "./save-name"
 
 // The server's `nameSchema` cap, which also trims first.
 const MAX = 80
@@ -63,5 +63,13 @@ describe("validateSaveName", () => {
       ok: true,
       name: "client work",
     })
+  })
+})
+
+describe("sameName", () => {
+  // The account's own names arrive as it stored them.
+  it("matches two names that differ only in case and padding, on either side", () => {
+    expect(sameName("Weekday", " weekday ")).toBe(true)
+    expect(sameName(" WEEKDAY ", "weekday")).toBe(true)
   })
 })

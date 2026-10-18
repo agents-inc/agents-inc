@@ -19,7 +19,7 @@ import { setReportingSink } from "@/lib/observability/report"
 
 import type { ReportingSink } from "@/lib/observability/report"
 
-import { createSharedConfig, fetchSharedConfig } from "./configs"
+import { createSharedConfig, fetchSharedConfig, isRateLimited } from "./configs"
 
 const sink = {
   issue: vi.fn<ReportingSink["issue"]>(),
@@ -193,5 +193,95 @@ describe("fetchSharedConfig", () => {
       error: "loading the shared config failed (500)",
     })
     expect(sink.issue).toHaveBeenCalledWith("Share GET failed", { status: 500 })
+  })
+})
+
+const SERVICE_UNAVAILABLE = 503
+
+describe("isRateLimited", () => {
+  it("tells a refusal that says when to try again from a plain one", () => {
+    expect(
+      isRateLimited({ ok: false, refusal: "refused", retryAfterSeconds: 60 })
+    ).toBe(true)
+    expect(isRateLimited({ ok: false, refusal: "refused" })).toBe(false)
+  })
+})
+
+describe("what createSharedConfig makes of the worker's answer", () => {
+  // A window on anything but a 429 is not this worker's limiter speaking.
+  it("reads a refusal carrying a Retry-After window as a plain refusal unless it is a 429", async () => {
+    configMockServer.use(
+      http.post(
+        CONFIGS_URL,
+        () =>
+          new HttpResponse(null, {
+            status: SERVICE_UNAVAILABLE,
+            headers: { "retry-after": "60" },
+          })
+      )
+    )
+
+    expect(await createSharedConfig(STORED_PAYLOAD)).toStrictEqual({
+      ok: false,
+      refusal: "refused",
+    })
+  })
+
+  it("refuses a minted answer that carries no id, and reports it", async () => {
+    configMockServer.use(
+      http.post(CONFIGS_URL, () => HttpResponse.json({}, { status: 201 }))
+    )
+
+    expect(await createSharedConfig(STORED_PAYLOAD)).toStrictEqual({
+      ok: false,
+      refusal: "refused",
+    })
+    expect(sink.issue.mock.calls).toStrictEqual([
+      ["Share POST returned an unreadable body", undefined],
+    ])
+  })
+
+  // The path names the skill and the row; the message names the sub-agent.
+  it("reports the write contract's objection as a sentence led by its path", async () => {
+    await createSharedConfig(OUT_OF_SCOPE_PAYLOAD)
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Share POST refused a configuration nobody could install",
+      {
+        problems: [
+          `skills.${UNWRITABLE_SKILL}.assignments.${RESTING_AGENT}: a project-scoped skill has nowhere to be written on '${RESTING_AGENT}', which rests at global scope`,
+        ],
+      }
+    )
+  })
+})
+
+const READ_CONFIG_URL = `${CONFIGS_URL}/:id`
+
+describe("what fetchSharedConfig says when it cannot hand back a payload", () => {
+  it("names a stored config the contract no longer reads, and reports it", async () => {
+    configMockServer.use(
+      http.get(READ_CONFIG_URL, () => HttpResponse.json({ v: "not a payload" }))
+    )
+
+    expect(await fetchSharedConfig(STORED_ID)).toStrictEqual({
+      ok: false,
+      error: "this share link holds an unreadable config",
+    })
+    expect(sink.issue.mock.calls).toStrictEqual([
+      ["Stored config no longer matches the seed contract", undefined],
+    ])
+  })
+
+  it("says the sharing service is unreachable, and reports it", async () => {
+    configMockServer.use(http.get(READ_CONFIG_URL, () => HttpResponse.error()))
+
+    expect(await fetchSharedConfig(STORED_ID)).toStrictEqual({
+      ok: false,
+      error: "sharing service unreachable",
+    })
+    expect(sink.issue.mock.calls).toStrictEqual([
+      ["Share GET could not reach the worker", undefined],
+    ])
   })
 })

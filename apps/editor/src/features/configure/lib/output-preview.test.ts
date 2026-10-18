@@ -4,8 +4,10 @@ import {
   seedPayload,
 } from "@workspace/api-mocks"
 import { generateConfigSource } from "@workspace/compile/config-source"
+import { generateProjectConfigTypesSource } from "@workspace/compile/config-types-source"
 import { seatedCatalog } from "@workspace/compile"
 import { provenanceMarker } from "@workspace/compile/agent-source"
+import { ACTIVATION_DESCRIPTIONS } from "@workspace/matrix/activation-descriptions"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -16,6 +18,7 @@ import {
 } from "@/stores/catalog-store"
 
 import { buildOutputPreview } from "./output-preview"
+import { COMPUTED_AT_INSTALL } from "./render-tokens"
 
 import type { SeedExternalSkill, SeedPayload } from "@workspace/matrix"
 
@@ -982,6 +985,31 @@ describe("a skill the configuration carries", () => {
     expect(metadata).toContain(`\n  path: ${CARRIED.path}\n`)
   })
 
+  // Its files are drawn as rows of their own, so the directory needs no note.
+  it("leaves the carried skill's directory row without a note", async () => {
+    const directory = rootOf(await carriedPreview(), GLOBAL_BASE)?.nodes.find(
+      (node) => node.id === CARRIED_DIR
+    )
+
+    expect(
+      directory?.marker,
+      "the preview drew no ejected directory row for the carried skill"
+    ).toStrictEqual("eject")
+    expect(directory?.body).toStrictEqual("")
+  })
+
+  it("draws the files it carried in byte order, as the tree lists them", async () => {
+    expect(
+      writtenIn(await carriedPreview(), GLOBAL_BASE).filter((path) =>
+        path.startsWith(CARRIED_DIR)
+      )
+    ).toStrictEqual([
+      `${CARRIED_DIR}SKILL.md`,
+      `${CARRIED_DIR}metadata.yaml`,
+      `${CARRIED_DIR}visual-companion.md`,
+    ])
+  })
+
   // `custom: true` splits the global SkillId union under // Custom.
   it("files it under // Custom in the global config-types.ts, as the install does", async () => {
     expect(
@@ -1120,5 +1148,514 @@ describe("the footer's file count", () => {
     ).toContain("eject")
 
     expect(asEject.fileCount).toStrictEqual(asPlugin.fileCount)
+  })
+})
+
+// A row as the tree draws it: where it sits, what it is called, and its badge.
+const rowsOf = (
+  preview: Awaited<ReturnType<typeof buildOutputPreview>>,
+  base: string
+) =>
+  (rootOf(preview, base)?.nodes ?? []).map(({ id, name, depth, marker }) => ({
+    id,
+    name,
+    depth,
+    marker,
+  }))
+
+const row = (
+  id: string,
+  name: string,
+  depth: number,
+  marker: "new" | "plugin" | "eject" | null = null
+) => ({ id, name, depth, marker })
+
+// A wholly global Claude install with one plugin skill on one sub-agent.
+const globalPluginPayload = () =>
+  payload({ [REACT]: skill("global", "plugin") })
+
+// A project sub-agent carrying a project skill it ejects and a machine-wide plugin.
+const mixedScopePayload = () =>
+  payload(
+    {
+      [REACT]: skill("project", "eject"),
+      [TAILWIND]: skill("global", "plugin"),
+    },
+    { [WEB_DEVELOPER]: { on: true, scope: "project" } }
+  )
+
+const CLAUDE_SOURCE = ".agents-inc/claude/"
+const CODEX_SOURCE = ".agents-inc/codex/"
+
+describe("the tree the preview draws", () => {
+  it("draws a Claude install's config pair, its compiled sub-agent under .claude/agents/ and its plugin in a group of its own", async () => {
+    const preview = await buildOutputPreview(globalPluginPayload(), "claude")
+
+    expect(rowsOf(preview, GLOBAL_BASE)).toStrictEqual([
+      row("~/", "~/", 0),
+      row(`~/${CLAUDE_SOURCE}`, CLAUDE_SOURCE, 1),
+      row(`~/${CLAUDE_SOURCE}config.ts`, "config.ts", 2, "new"),
+      row(`~/${CLAUDE_SOURCE}config-types.ts`, "config-types.ts", 2, "new"),
+      row("~/.claude/", ".claude/", 1),
+      row("~/.claude/agents/", "agents/", 2),
+      row(
+        `~/.claude/agents/${WEB_DEVELOPER}.md`,
+        `${WEB_DEVELOPER}.md`,
+        3,
+        "new"
+      ),
+      row("~/plugin skills", "plugin skills", 1),
+      row(REACT, REACT, 2, "plugin"),
+    ])
+  })
+
+  // Nothing is compiled or ejected there, so no `.claude/` and no plugin group.
+  it("draws only the config pair in a root that holds nothing else", async () => {
+    const preview = await buildOutputPreview(globalPluginPayload(), "claude")
+
+    expect(rowsOf(preview, PROJECT_BASE)).toStrictEqual([
+      row("./", "./", 0),
+      row(`./${CLAUDE_SOURCE}`, CLAUDE_SOURCE, 1),
+      row(`./${CLAUDE_SOURCE}config.ts`, "config.ts", 2, "new"),
+      row(`./${CLAUDE_SOURCE}config-types.ts`, "config-types.ts", 2, "new"),
+    ])
+  })
+
+  it("draws a Claude project's ejected skill under .claude/skills/, after its sub-agents", async () => {
+    const preview = await buildOutputPreview(mixedScopePayload(), "claude")
+
+    expect(rowsOf(preview, PROJECT_BASE)).toStrictEqual([
+      row("./", "./", 0),
+      row(`./${CLAUDE_SOURCE}`, CLAUDE_SOURCE, 1),
+      row(`./${CLAUDE_SOURCE}config.ts`, "config.ts", 2, "new"),
+      row(`./${CLAUDE_SOURCE}config-types.ts`, "config-types.ts", 2, "new"),
+      row("./.claude/", ".claude/", 1),
+      row("./.claude/agents/", "agents/", 2),
+      row(
+        `./.claude/agents/${WEB_DEVELOPER}.md`,
+        `${WEB_DEVELOPER}.md`,
+        3,
+        "new"
+      ),
+      row("./.claude/skills/", "skills/", 2),
+      row(`./.claude/skills/${REACT}/`, `${REACT}/`, 3, "eject"),
+    ])
+  })
+
+  it("draws a Codex project's ejected skill at .agents/skills/, outside .codex/", async () => {
+    const preview = await buildOutputPreview(mixedScopePayload(), "codex")
+
+    expect(rowsOf(preview, PROJECT_BASE)).toStrictEqual([
+      row("./", "./", 0),
+      row(`./${CODEX_SOURCE}`, CODEX_SOURCE, 1),
+      row(`./${CODEX_SOURCE}config.ts`, "config.ts", 2, "new"),
+      row(`./${CODEX_SOURCE}config-types.ts`, "config-types.ts", 2, "new"),
+      row("./.codex/", ".codex/", 1),
+      row("./.codex/agents/", "agents/", 2),
+      row(
+        `./.codex/agents/${WEB_DEVELOPER}.toml`,
+        `${WEB_DEVELOPER}.toml`,
+        3,
+        "new"
+      ),
+      row("./.agents/skills/", ".agents/skills/", 1),
+      row(`./.agents/skills/${REACT}/`, `${REACT}/`, 2, "eject"),
+    ])
+  })
+
+  it("draws a Codex machine-wide ejected skill under ~/.codex/skills/", async () => {
+    const preview = await buildOutputPreview(
+      payload({ [REACT]: skill("global", "eject") }),
+      "codex"
+    )
+
+    expect(rowsOf(preview, GLOBAL_BASE)).toStrictEqual([
+      row("~/", "~/", 0),
+      row(`~/${CODEX_SOURCE}`, CODEX_SOURCE, 1),
+      row(`~/${CODEX_SOURCE}config.ts`, "config.ts", 2, "new"),
+      row(`~/${CODEX_SOURCE}config-types.ts`, "config-types.ts", 2, "new"),
+      row("~/.codex/", ".codex/", 1),
+      row("~/.codex/agents/", "agents/", 2),
+      row(
+        `~/.codex/agents/${WEB_DEVELOPER}.toml`,
+        `${WEB_DEVELOPER}.toml`,
+        3,
+        "new"
+      ),
+      row("~/.codex/skills/", "skills/", 2),
+      row(`~/.codex/skills/${REACT}/`, `${REACT}/`, 3, "eject"),
+    ])
+  })
+
+  // The folder is drawn for what it holds, so an ejected skill alone opens it.
+  it("draws the .claude/ folder a Claude ejected skill lives in when no sub-agent is compiled", async () => {
+    const preview = await buildOutputPreview(
+      payload({ [REACT]: skill("global", "eject", []) }),
+      "claude"
+    )
+
+    expect(rowsOf(preview, GLOBAL_BASE)).toStrictEqual([
+      row("~/", "~/", 0),
+      row(`~/${CLAUDE_SOURCE}`, CLAUDE_SOURCE, 1),
+      row(`~/${CLAUDE_SOURCE}config.ts`, "config.ts", 2, "new"),
+      row(`~/${CLAUDE_SOURCE}config-types.ts`, "config-types.ts", 2, "new"),
+      row("~/.claude/", ".claude/", 1),
+      row("~/.claude/skills/", "skills/", 2),
+      row(`~/.claude/skills/${REACT}/`, `${REACT}/`, 3, "eject"),
+    ])
+  })
+
+  // `.agents/skills/` is not inside `.codex/`, so it does not open it.
+  it("leaves .codex/ out of a Codex project whose only write is an ejected skill", async () => {
+    const preview = await buildOutputPreview(
+      payload(
+        { [REACT]: skill("project", "eject", []) },
+        { [WEB_DEVELOPER]: { on: false } }
+      ),
+      "codex"
+    )
+
+    expect(rowsOf(preview, PROJECT_BASE)).toStrictEqual([
+      row("./", "./", 0),
+      row(`./${CODEX_SOURCE}`, CODEX_SOURCE, 1),
+      row(`./${CODEX_SOURCE}config.ts`, "config.ts", 2, "new"),
+      row(`./${CODEX_SOURCE}config-types.ts`, "config-types.ts", 2, "new"),
+      row("./.agents/skills/", ".agents/skills/", 1),
+      row(`./.agents/skills/${REACT}/`, `${REACT}/`, 2, "eject"),
+    ])
+  })
+
+  // A directory or a group is a heading, so it has nothing to show when picked.
+  it("draws no body on a row that names a directory or a group", async () => {
+    const preview = await buildOutputPreview(globalPluginPayload(), "claude")
+    const headings = (rootOf(preview, GLOBAL_BASE)?.nodes ?? []).filter(
+      (node) => node.marker === null
+    )
+
+    expect(headings.map((node) => node.id)).toStrictEqual([
+      "~/",
+      `~/${CLAUDE_SOURCE}`,
+      "~/.claude/",
+      "~/.claude/agents/",
+      "~/plugin skills",
+    ])
+    expect(headings.map((node) => node.body)).toStrictEqual([
+      "",
+      "",
+      "",
+      "",
+      "",
+    ])
+  })
+
+  it.each([
+    ["Claude", "claude", `./${CLAUDE_SOURCE}config.ts`],
+    ["Codex", "codex", `./${CODEX_SOURCE}config.ts`],
+  ] as const)(
+    "opens on the project's config.ts on %s",
+    async (_label, provider, configTs) => {
+      const preview = await buildOutputPreview(globalPluginPayload(), provider)
+
+      expect(preview.defaultSelectionId).toStrictEqual(configTs)
+    }
+  )
+})
+
+describe("the note on a plugin skill's row", () => {
+  it("says on Claude where the plugin resolves from and where ejecting would write it", async () => {
+    const preview = await buildOutputPreview(globalPluginPayload(), "claude")
+
+    expect(
+      rootOf(preview, GLOBAL_BASE)?.nodes.find((node) => node.id === REACT)
+        ?.body
+    ).toStrictEqual(
+      [
+        REACT,
+        "",
+        "Installed as a plugin, at global scope. No files are written",
+        "under ~/ for it — Claude Code owns where a plugin lands, and the",
+        "skill resolves from the agents-inc marketplace at run time, as",
+        `${REACT}:${REACT}.`,
+        "",
+        "Switch it to eject and the CLI writes a copy you own, at",
+        `~/.claude/skills/${REACT}/.`,
+      ].join("\n")
+    )
+  })
+
+  // Machine-wide, Codex keeps skills under its own folder, not `.agents/skills/`.
+  it("names Codex as the host on Codex, with the machine-wide skills folder to eject into", async () => {
+    const preview = await buildOutputPreview(mixedScopePayload(), "codex")
+
+    expect(
+      rootOf(preview, GLOBAL_BASE)?.nodes.find((node) => node.id === TAILWIND)
+        ?.body
+    ).toStrictEqual(
+      [
+        TAILWIND,
+        "",
+        "Installed as a plugin, at global scope. No files are written",
+        "under ~/ for it — Codex owns where a plugin lands, and the",
+        "skill resolves from the agents-inc marketplace at run time, as",
+        `${TAILWIND}:${TAILWIND}.`,
+        "",
+        "Switch it to eject and the CLI writes a copy you own, at",
+        `~/.codex/skills/${TAILWIND}/.`,
+      ].join("\n")
+    )
+  })
+})
+
+describe("the note on an ejected skill's row", () => {
+  it("says the CLI copies a catalogue skill's directory verbatim, from where, and why nothing in it is listed", async () => {
+    const preview = await buildOutputPreview(mixedScopePayload(), "claude")
+
+    expect(
+      rootOf(preview, PROJECT_BASE)?.nodes.find(
+        (node) => node.id === `./.claude/skills/${REACT}/`
+      )?.body
+    ).toStrictEqual(
+      [
+        `${REACT}/`,
+        "",
+        "Ejected: the CLI copies this directory out of the marketplace at install",
+        "time, verbatim. Nothing in it is generated, so nothing in it is drawn.",
+        "",
+        `Source: agents-inc/src/skills/${REACT}`,
+        "",
+        "The preview makes no network call, so it cannot list what is inside.",
+      ].join("\n")
+    )
+  })
+})
+
+describe("what the project config.ts records", () => {
+  // The first stack is the one a lookup that ignored the id would find.
+  it("carries the description of the stack the configuration applied, not of another", async () => {
+    const [first, applied] = activeStacks()
+
+    expect(
+      applied,
+      "the seated catalogue offers fewer than two stacks, so a wrong pick cannot show"
+    ).toBeDefined()
+    expect(
+      applied!.description,
+      "the two stacks share a description, so a wrong pick cannot show"
+    ).not.toStrictEqual(first!.description)
+
+    const preview = await buildOutputPreview(
+      { ...globalPluginPayload(), stackId: applied!.id },
+      "claude"
+    )
+    const configTs = bodyOf(preview, PROJECT_BASE, CONFIG_TS)
+
+    expect(configTs).toContain(applied!.description)
+    expect(configTs).not.toContain(first!.description)
+  })
+
+  it("names the public catalogue for a configuration ejecting one skill and installing another as a plugin", async () => {
+    const preview = await buildOutputPreview(
+      payload({
+        [REACT]: skill("global", "plugin"),
+        [TAILWIND]: skill("global", "eject"),
+      }),
+      "claude"
+    )
+
+    expect(bodyOf(preview, PROJECT_BASE, CONFIG_TS)).toContain(
+      "\n  marketplaceName: 'agents-inc',\n"
+    )
+  })
+
+  // No plugin registers the marketplace, so its manifest name is never read.
+  it("records no marketplace name for a configuration that ejects everything", async () => {
+    const configTs = bodyOf(
+      await buildOutputPreview(
+        payload({ [REACT]: skill("global", "eject") }),
+        "claude"
+      ),
+      PROJECT_BASE,
+      CONFIG_TS
+    )
+
+    expect(
+      configTs,
+      "the project config.ts records no marketplace, so the absent name below has no subject"
+    ).toContain("\n  marketplace: 'github:agents-inc/skills',\n")
+    expect(configTs).not.toContain("marketplaceName:")
+  })
+
+  it("records the domains its skills come from", async () => {
+    expect(
+      bodyOf(
+        await buildOutputPreview(globalPluginPayload(), "claude"),
+        PROJECT_BASE,
+        CONFIG_TS
+      )
+    ).toContain("\nconst selectedDomains: Domain[] = ['web']\n")
+  })
+})
+
+// The CLI's renderer, handed every literal the project config.ts holds; global
+// rows are inlined there, so they count too.
+describe("the project config-types.ts", () => {
+  it.each([
+    {
+      label: "a project sub-agent with a project skill and a global plugin",
+      build: mixedScopePayload,
+      expected: {
+        projectSkillIds: [REACT, TAILWIND],
+        projectAgentNames: [WEB_DEVELOPER],
+        projectDomains: ["web"],
+        projectCategories: ["web-framework", "web-styling"],
+        selectedAgentNames: [WEB_DEVELOPER],
+        projectScopedAgentNames: [WEB_DEVELOPER],
+      },
+    },
+    {
+      label: "a wholly global configuration",
+      build: globalPluginPayload,
+      expected: {
+        projectSkillIds: [REACT],
+        projectAgentNames: [WEB_DEVELOPER],
+        projectDomains: ["web"],
+        projectCategories: ["web-framework"],
+        selectedAgentNames: [WEB_DEVELOPER],
+      },
+    },
+    {
+      label: "a configuration holding no skill",
+      build: () => payload({}),
+      expected: {
+        projectSkillIds: [],
+        projectAgentNames: [],
+        projectDomains: [],
+        projectCategories: [],
+      },
+    },
+  ])(
+    "types every literal the project config.ts holds, for $label",
+    async ({ build, expected }) => {
+      const preview = await buildOutputPreview(build(), "claude")
+
+      expect(bodyOf(preview, PROJECT_BASE, CONFIG_TYPES_TS)).toStrictEqual(
+        generateProjectConfigTypesSource({
+          globalTypesImportPath: COMPUTED_AT_INSTALL,
+          ...expected,
+        })
+      )
+    }
+  )
+})
+
+describe("the global config-types.ts", () => {
+  // A sub-agent the catalogue declares is not filed under // Custom.
+  it("lists a catalogue sub-agent as a plain member of AgentName", async () => {
+    expect(
+      bodyOf(
+        await buildOutputPreview(globalPluginPayload(), "claude"),
+        GLOBAL_BASE,
+        CONFIG_TYPES_TS
+      )
+    ).toContain(`\nexport type AgentName = '${WEB_DEVELOPER}'\n`)
+  })
+})
+
+describe("how a compiled sub-agent invokes its skills", () => {
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  it("invokes a plugin skill by its plugin reference and an ejected one by its id", async () => {
+    const body = bodyOf(
+      await buildOutputPreview(mixedScopePayload(), "claude"),
+      PROJECT_BASE,
+      `${WEB_DEVELOPER}.md`
+    )
+
+    expect(body, "the preview drew no compiled sub-agent").toBeTruthy()
+    expect(body).toContain(
+      `### ${TAILWIND}\n- Description: ${ACTIVATION_DESCRIPTIONS[TAILWIND]}\n- Invoke: \`skill: "${TAILWIND}:${TAILWIND}"\`\n`
+    )
+    expect(body).toContain(
+      `### ${REACT}\n- Description: ${ACTIVATION_DESCRIPTIONS[REACT]}\n- Invoke: \`skill: "${REACT}"\`\n`
+    )
+  })
+
+  // Blank is blank with spaces in it too.
+  it("falls back to the category sentence for a skill stating only whitespace", async () => {
+    const acme = MARKETPLACE_CATALOG.skills[ACME_SKILL]
+
+    expect(
+      acme,
+      "the marketplace fixture no longer carries the skill this seats"
+    ).toBeDefined()
+
+    useCatalogStore.getState().load(
+      {
+        ...MARKETPLACE_CATALOG,
+        skills: {
+          ...MARKETPLACE_CATALOG.skills,
+          [ACME_SKILL]: { ...acme!, usageGuidance: "   " },
+        },
+      },
+      MARKETPLACE_CANONICAL_REF
+    )
+
+    const body = bodyOf(
+      await buildOutputPreview(
+        payload({ [ACME_SKILL]: skill("global", "plugin") }),
+        "claude"
+      ),
+      GLOBAL_BASE,
+      `${WEB_DEVELOPER}.md`
+    )
+
+    expect(body).toContain(`\n- Use when working with ${acme?.category}.\n`)
+  })
+})
+
+// No shipped definition declares these, so the metadata is mocked, as for effort.
+describe("the frontmatter a sub-agent's own metadata declares", () => {
+  afterEach(() => {
+    vi.doUnmock("@workspace/matrix")
+    vi.resetModules()
+  })
+
+  it("carries its disallowed tools, permission mode, isolation and cache lifetime", async () => {
+    vi.doMock("@workspace/matrix", async () => {
+      const actual =
+        await vi.importActual<typeof import("@workspace/matrix")>(
+          "@workspace/matrix"
+        )
+
+      return {
+        ...actual,
+        AGENT_DEFINITIONS: {
+          ...actual.AGENT_DEFINITIONS,
+          [WEB_DEVELOPER]: {
+            ...actual.AGENT_DEFINITIONS[WEB_DEVELOPER],
+            disallowedTools: ["WebFetch", "WebSearch"],
+            permissionMode: "plan",
+            isolation: "worktree",
+            experimental: { cacheTtl: "1h" },
+          },
+        },
+      }
+    })
+    vi.resetModules()
+
+    const { buildOutputPreview: build } = await import("./output-preview")
+    const lines = bodyOf(
+      await build(globalPluginPayload(), "claude"),
+      GLOBAL_BASE,
+      `${WEB_DEVELOPER}.md`
+    )?.split("\n")
+
+    expect(lines, "the preview drew no compiled sub-agent").toBeDefined()
+    expect(lines).toContain("disallowedTools: WebFetch, WebSearch")
+    expect(lines).toContain("permissionMode: plan")
+    expect(lines).toContain("isolation: worktree")
+    expect(lines).toContain('experimental: {"cacheTtl":"1h"}')
   })
 })

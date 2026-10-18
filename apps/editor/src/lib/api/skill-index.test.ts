@@ -1,10 +1,12 @@
 import {
   SKILL_INDEX,
+  SKILL_INDEX_URL,
   STALE_SKILL_INDEX,
   skillIndexUnavailableHandler,
   staleSkillIndexHandler,
 } from "@workspace/api-mocks"
 import { configMockServer } from "@workspace/api-mocks/node"
+import { HttpResponse, http } from "msw"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setReportingSink } from "@/lib/observability/report"
@@ -73,5 +75,39 @@ describe("formatStars", () => {
 
   it("drops a trailing zero from the fraction", () => {
     expect(formatStars(2000)).toBe("2k")
+  })
+})
+
+describe("what fetchSkillIndex says when it cannot hand back an index", () => {
+  it("names an index it cannot read, and reports it", async () => {
+    configMockServer.use(
+      http.get(SKILL_INDEX_URL, () => HttpResponse.json({ skills: "none" }))
+    )
+
+    expect(await fetchSkillIndex()).toStrictEqual({
+      ok: false,
+      error: "the skill index is unreadable",
+    })
+    expect(sink.issue.mock.calls).toStrictEqual([
+      ["Skill index returned an unreadable body", undefined],
+    ])
+  })
+
+  it("says the index is unreachable, and reports it", async () => {
+    configMockServer.use(http.get(SKILL_INDEX_URL, () => HttpResponse.error()))
+
+    expect(await fetchSkillIndex()).toStrictEqual({
+      ok: false,
+      error: "the skill index is unreachable",
+    })
+    expect(sink.issue.mock.calls).toStrictEqual([
+      ["Skill index GET could not reach the worker", undefined],
+    ])
+  })
+})
+
+describe("formatStars past ten thousand", () => {
+  it("rounds to a whole thousand rather than keeping a fraction", () => {
+    expect(formatStars(12_345)).toBe("12k")
   })
 })

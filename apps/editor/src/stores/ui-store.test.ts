@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+import type { MarketplaceRecovery } from "@/features/configure/lib/seat-catalog"
 
 import {
   ROSTER_GROUP_BYS,
@@ -273,5 +275,175 @@ describe("persistedUiSchema", () => {
 
   it("offers exactly the two grouping modes, in declaration order", () => {
     expect(ROSTER_GROUP_BYS).toStrictEqual(["domain", "scope"])
+  })
+})
+
+// What the recovery dialog finishes with; the endings are the caller's.
+const RECOVERY: MarketplaceRecovery = {
+  marketplace: "github:acme/skills",
+  failure: { kind: "unreachable", error: "acme/skills is unreachable" },
+  onSeated: () => undefined,
+  onPublic: () => undefined,
+}
+
+describe("the ui store's transient actions", () => {
+  it("opens one skill's options panel and closes it again", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().openPanel("web-framework-react")
+    expect(store.getState().openPanelSkillId).toBe("web-framework-react")
+
+    store.getState().openPanel(null)
+    expect(store.getState().openPanelSkillId).toBeNull()
+  })
+
+  it("toggles a panel shut, and moves an open one to the skill pressed", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().togglePanel("web-framework-react")
+    expect(store.getState().openPanelSkillId).toBe("web-framework-react")
+
+    store.getState().togglePanel("web-styling-tailwind")
+    expect(store.getState().openPanelSkillId).toBe("web-styling-tailwind")
+
+    store.getState().togglePanel("web-styling-tailwind")
+    expect(store.getState().openPanelSkillId).toBeNull()
+  })
+
+  it("holds a stack switch for confirmation until it is dismissed", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+    const request = { kind: "stack", stackId: "nextjs-fullstack" } as const
+
+    store.getState().requestStack(request)
+    expect(store.getState().pendingStack).toStrictEqual(request)
+
+    store.getState().dismissStackRequest()
+    expect(store.getState().pendingStack).toBeNull()
+  })
+
+  it("holds a marketplace switch for confirmation until it is dismissed", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().requestMarketplace(RECOVERY.marketplace)
+    expect(store.getState().pendingMarketplace).toBe(RECOVERY.marketplace)
+
+    store.getState().dismissMarketplaceRequest()
+    expect(store.getState().pendingMarketplace).toBeNull()
+  })
+
+  it("shows an added skill's contents and puts them away", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().previewSkill("external-web-styling-house-styles")
+    expect(store.getState().previewSkillId).toBe(
+      "external-web-styling-house-styles"
+    )
+
+    store.getState().previewSkill(null)
+    expect(store.getState().previewSkillId).toBeNull()
+  })
+
+  it("remembers the output preview's open row", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().selectOutputNode("./.claude/agents/web-developer.md")
+
+    expect(store.getState().outputSelection).toBe(
+      "./.claude/agents/web-developer.md"
+    )
+  })
+
+  it("sets the palette", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().setTheme("dark")
+
+    expect(store.getState().theme).toBe("dark")
+  })
+
+  it("parks a marketplace that could not be seated behind its dialog, in one step", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().parkCatalogue(RECOVERY, "Waiting for acme/skills")
+
+    const { marketplaceRecovery, catalogueNotice, dialog } = store.getState()
+    expect({ marketplaceRecovery, catalogueNotice, dialog }).toStrictEqual({
+      marketplaceRecovery: RECOVERY,
+      catalogueNotice: "Waiting for acme/skills",
+      dialog: "marketplace",
+    })
+  })
+
+  // An outcome ends whatever was parked.
+  it("says what the seat came to and lets the parked recovery go", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+    store.getState().parkCatalogue(RECOVERY, "Waiting for acme/skills")
+
+    store.getState().sayCatalogue("Loaded acme/skills")
+
+    expect(store.getState().catalogueNotice).toBe("Loaded acme/skills")
+    expect(store.getState().marketplaceRecovery).toBeNull()
+  })
+})
+
+// How long the roster tints a sub-agent a selection reached.
+const PULSE_MS = 2600
+
+describe("the pulse through the roster", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("starts with nobody pulsing", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    expect(store.getState().flashedAgentIds).toStrictEqual([])
+  })
+
+  it("pulses the sub-agents it is given, then fades", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+
+    store.getState().flashAgents(["web-developer", "pm"])
+    expect(store.getState().flashedAgentIds).toStrictEqual([
+      "web-developer",
+      "pm",
+    ])
+
+    vi.advanceTimersByTime(PULSE_MS - 1)
+    expect(store.getState().flashedAgentIds).toStrictEqual([
+      "web-developer",
+      "pm",
+    ])
+
+    vi.advanceTimersByTime(1)
+    expect(store.getState().flashedAgentIds).toStrictEqual([])
+  })
+
+  it("lets a new pulse replace the last and run its own full length", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+    store.getState().flashAgents(["web-developer"])
+    vi.advanceTimersByTime(PULSE_MS - 100)
+
+    store.getState().flashAgents(["pm"])
+    vi.advanceTimersByTime(200)
+
+    expect(store.getState().flashedAgentIds).toStrictEqual(["pm"])
+  })
+
+  it("stops a pulse at once when asked, so its fade cannot cut a later one short", async () => {
+    const store = await uiStoreOnAStandingBrowser()
+    store.getState().flashAgents(["web-developer"])
+
+    store.getState().clearFlash()
+    expect(store.getState().flashedAgentIds).toStrictEqual([])
+
+    vi.advanceTimersByTime(PULSE_MS - 100)
+    store.getState().flashAgents(["pm"])
+    vi.advanceTimersByTime(200)
+    expect(store.getState().flashedAgentIds).toStrictEqual(["pm"])
   })
 })

@@ -13,12 +13,17 @@ import {
   offAssignment,
   skillEntry,
 } from "@/__tests__/factories/config-selection-factories"
+import {
+  HOUSE_SKILL_ID,
+  houseSkill,
+} from "@/__tests__/factories/external-skill-factories"
 import type { ConfigureSearch } from "@/routes/search"
 import {
   externalSkillId,
   useCatalogStore,
   type ExternalSkill,
 } from "@/stores/catalog-store"
+import { useConfigStore } from "@/stores/config-store"
 import type { RosterGroupBy, SkillEntry } from "@/stores/persisted-schema"
 import { stackAgentPins } from "./default-assignments"
 import {
@@ -33,10 +38,12 @@ import {
   selectInstalledAgents,
   selectReachability,
   selectRosterGroups,
+  selectUnofferedPlacements,
   summarize,
   toSkillContents,
   type ConfigSelection,
   type DomainView,
+  type SkillCellView,
 } from "./derive"
 
 const SEARCH: ConfigureSearch = {
@@ -1297,5 +1304,405 @@ describe("catalogueSkillCount", () => {
     expect(catalogueSkillCount()).toBe(
       selectDomainTabs().reduce((total, tab) => total + tab.skillCount, 0)
     )
+  })
+})
+
+describe("monogramOf on a name ending in separators", () => {
+  // One word, so the name's own first two characters stand for it.
+  it("reads it as one word", () => {
+    expect(monogramOf("C++")).toBe("C+")
+  })
+})
+
+const allCells = (
+  config: ConfigSelection,
+  over: Partial<ConfigureSearch> = {}
+) =>
+  selectDomainViews(config, search(over)).flatMap((domain) =>
+    domain.categories.flatMap((category) => category.cells)
+  )
+
+const cellOf = (cells: SkillCellView[], skillId: string) =>
+  cells.find((cell) => cell.skill.id === skillId)
+
+describe("a grid cell's provenance", () => {
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  it("marks an added skill as added, and a catalogue skill as not", () => {
+    useCatalogStore.getState().addExternal([houseSkill()])
+    const cells = allCells(scratch())
+
+    expect(cellOf(cells, HOUSE_SKILL_ID)?.skill.added).toBe(true)
+    expect(cellOf(cells, "web-framework-react")?.skill.added).toBe(false)
+  })
+})
+
+describe("the grid's search", () => {
+  it.each([
+    ["only its slug holds", "nextjs", "web-meta-framework-nextjs"],
+    ["only its description holds", "runes", "web-framework-svelte"],
+  ])(
+    "finds a skill by a word %s, whatever the case",
+    (_label, word, skillId) => {
+      const ids = allCells(scratch(), { q: word.toUpperCase() }).map(
+        (cell) => cell.skill.id
+      )
+
+      expect(ids).toStrictEqual([skillId])
+    }
+  )
+})
+
+describe("selectReachability on a selection the catalogue has since dropped", () => {
+  it("leaves the dropped id out of what the selection reaches", () => {
+    const { reached } = selectReachability(
+      new Set(["web-framework-react", "web-framework-retired"])
+    )
+
+    expect(reached.has("web-framework-retired")).toBe(false)
+    expect(reached.has("web-framework-react")).toBe(true)
+  })
+})
+
+// The vendored catalogue keeps its conflicts inside pick-one categories and
+// discourages nothing, so these seat the marketplace's with the relation added.
+describe("what a cell says about a relation to the selection", () => {
+  const WIDGETS = "acme-web-widgets"
+  const LEGACY = "acme-web-legacy-widgets"
+  const GATEWAY = "acme-api-gateway"
+
+  const seatWithGateway = (
+    relations: Partial<(typeof MARKETPLACE_CATALOG)["skills"][string]>
+  ) => {
+    const gateway = MARKETPLACE_CATALOG.skills[GATEWAY]!
+    useCatalogStore.getState().load(
+      {
+        ...MARKETPLACE_CATALOG,
+        skills: {
+          ...MARKETPLACE_CATALOG.skills,
+          [GATEWAY]: { ...gateway, ...relations },
+        },
+      },
+      MARKETPLACE_REF
+    )
+  }
+
+  const withWidgets = () =>
+    scratch({ [WIDGETS]: skillEntry({ assignments: {} }) })
+
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  it("names the selected skill a cell conflicts with", () => {
+    seatWithGateway({
+      conflictsWith: [{ skillId: WIDGETS, reason: "Two runtimes" }],
+    })
+
+    expect(cellOf(allCells(withWidgets()), GATEWAY)).toMatchObject({
+      incompatible: true,
+      incompatibleReason: "Conflicts with Acme Widgets",
+    })
+  })
+
+  // Clicking a selected skill off is the way out, so it is never disabled.
+  it("never marks a selected skill incompatible, even beside one it conflicts with", () => {
+    seatWithGateway({
+      conflictsWith: [{ skillId: WIDGETS, reason: "Two runtimes" }],
+    })
+    const both = scratch({
+      [WIDGETS]: skillEntry({ assignments: {} }),
+      [GATEWAY]: skillEntry({ assignments: {} }),
+    })
+
+    expect(cellOf(allCells(both), GATEWAY)).toMatchObject({
+      selected: true,
+      incompatible: false,
+    })
+  })
+
+  it("carries the reason a selected skill discourages a cell, without disabling it", () => {
+    seatWithGateway({
+      discourages: [
+        { skillId: WIDGETS, reason: "Widgets bring their own edge" },
+      ],
+    })
+
+    expect(cellOf(allCells(withWidgets()), GATEWAY)).toMatchObject({
+      incompatible: false,
+      discouragedReason: "Widgets bring their own edge",
+    })
+  })
+
+  // "One of" for a single candidate would read as a choice there is not.
+  it("names a lone candidate of an any-of requirement plainly", () => {
+    seatWithGateway({
+      requires: [{ skillIds: [LEGACY], needsAny: true, reason: "Runs legacy" }],
+    })
+
+    expect(cellOf(allCells(withWidgets()), GATEWAY)?.incompatibleReason).toBe(
+      "Needs Acme Legacy Widgets"
+    )
+  })
+})
+
+describe("the reasons a vendored cell gives", () => {
+  const cellsWith = (skillId: string) =>
+    allCells(scratch({ [skillId]: skillEntry({ assignments: {} }) }))
+
+  it("lists every candidate of an any-of requirement, comma-separated", () => {
+    expect(
+      cellOf(cellsWith("web-framework-react"), "web-state-pinia")
+        ?.incompatibleReason
+    ).toBe("Needs one of Vue, Nuxt")
+  })
+
+  it("lists every member of an all-of requirement, joined by and", () => {
+    expect(
+      cellOf(
+        cellsWith("api-framework-express"),
+        "api-auth-better-auth-drizzle-hono"
+      )?.incompatibleReason
+    ).toBe("Needs Drizzle and Hono")
+  })
+})
+
+describe("the roster's rows", () => {
+  const rowFor = (config: ConfigSelection, agentId: string) =>
+    rosterGroups(config)
+      .flatMap((group) => group.agents)
+      .find((row) => row.agent.id === agentId)!
+
+  // Tailwind sits before Jotai in the grid and after it by name.
+  it("lists a sub-agent's skills in the grid's order", () => {
+    const row = rowFor(
+      scratch({
+        "web-state-jotai": skillEntry({
+          assignments: { [WRITING_AGENT]: liveAssignment() },
+        }),
+        "web-styling-tailwind": skillEntry({
+          assignments: { [WRITING_AGENT]: liveAssignment() },
+        }),
+      }),
+      WRITING_AGENT
+    )
+
+    expect(row.skills.map((skill) => skill.id)).toStrictEqual([
+      "web-styling-tailwind",
+      "web-state-jotai",
+    ])
+  })
+
+  it("names as a skill's users only the sub-agents whose row is live", () => {
+    const row = rowFor(
+      scratch(
+        {
+          "web-framework-react": skillEntry({
+            assignments: {
+              [WRITING_AGENT]: liveAssignment(),
+              reviewer: offAssignment(),
+            },
+          }),
+        },
+        { reviewer: { on: true } }
+      ),
+      WRITING_AGENT
+    )
+
+    expect(row.skills[0]?.usedBy.map((agent) => agent.id)).toStrictEqual([
+      WRITING_AGENT,
+    ])
+  })
+
+  it("tells a project skill's row on a global sub-agent how to fix it", () => {
+    const row = rowFor(
+      scratch({
+        "web-framework-react": skillEntry({
+          scope: "project",
+          assignments: { [WRITING_AGENT]: liveAssignment() },
+        }),
+      }),
+      WRITING_AGENT
+    )
+
+    expect(row.skills[0]?.scopeError).toBe(
+      "This sub-agent must be set to project scope too"
+    )
+  })
+})
+
+describe("summarize on rows the roster switched off", () => {
+  it("counts only the live rows of a sub-agent that is on", () => {
+    expect(
+      summarize(
+        scratch(
+          {
+            "web-framework-react": skillEntry({
+              assignments: {
+                [WRITING_AGENT]: liveAssignment(),
+                reviewer: offAssignment(),
+              },
+            }),
+          },
+          { reviewer: { on: true } }
+        )
+      ).assignmentCount
+    ).toBe(1)
+  })
+
+  it("counts each ejected skill and no plugin", () => {
+    expect(
+      summarize(
+        scratch({
+          "web-framework-react": skillEntry({ install: "eject" }),
+          "web-styling-tailwind": skillEntry({ install: "eject" }),
+          "web-state-zustand": skillEntry(),
+        })
+      ).ejectedCount
+    ).toBe(2)
+  })
+})
+
+describe("selectUnofferedPlacements", () => {
+  const PLUGIN_AT_PROJECT = { install: "plugin", scope: "project" } as const
+
+  const mixed = () =>
+    scratch({
+      "web-state-zustand": skillEntry(PLUGIN_AT_PROJECT),
+      "web-framework-react": skillEntry(PLUGIN_AT_PROJECT),
+      "web-styling-tailwind": skillEntry({
+        install: "eject",
+        scope: "project",
+      }),
+    })
+
+  it("names, by display name, each skill Codex has no placement for", () => {
+    expect(selectUnofferedPlacements(mixed(), "codex")).toStrictEqual([
+      "React",
+      "Zustand",
+    ])
+  })
+
+  it("names none on Claude, which offers every placement", () => {
+    expect(selectUnofferedPlacements(mixed(), "claude")).toStrictEqual([])
+  })
+})
+
+describe("the install inventory's skills", () => {
+  afterEach(() => {
+    useCatalogStore.getState().reset()
+  })
+
+  it("lists them by display name, marking only an added one as added", () => {
+    useCatalogStore.getState().addExternal([houseSkill()])
+    const inventory = selectInstallInventory(
+      scratch({
+        "web-state-zustand": skillEntry(),
+        [HOUSE_SKILL_ID]: skillEntry({ install: "eject" }),
+        "web-framework-react": skillEntry(),
+      }),
+      "claude"
+    )
+
+    expect(
+      inventory.global.map(({ displayName, added }) => ({ displayName, added }))
+    ).toStrictEqual([
+      { displayName: "House Styles", added: true },
+      { displayName: "React", added: false },
+      { displayName: "Zustand", added: false },
+    ])
+  })
+})
+
+describe("isStackCustom on a stack's pins and rows", () => {
+  it("is true once a row the stack never placed is added", () => {
+    const applied = asApplied()
+    const current = applied.skills[FIRST_SKILL]!
+    const unplaced = SUB_AGENT_GROUPS.flatMap((group) => group.agents).find(
+      (agent) => !(agent.id in current.assignments)
+    )!
+
+    expect(
+      isStackCustom(
+        edit({
+          assignments: {
+            ...current.assignments,
+            [unplaced.id]: liveAssignment(),
+          },
+        })
+      )
+    ).toBe(true)
+  })
+
+  it("is true once a sub-agent the stack pinned is given a choice too", () => {
+    const applied = asApplied()
+    const [pinned] = Object.keys(applied.agents)
+
+    expect(
+      pinned,
+      "the sampled stack pins no sub-agent, so this has no subject"
+    ).toBeDefined()
+    expect(
+      isStackCustom({
+        ...applied,
+        agents: { ...applied.agents, [pinned!]: { on: true, model: "haiku" } },
+      })
+    ).toBe(true)
+  })
+})
+
+// The vendored stacks pin one skill-less sub-agent at most, so this seats a
+// marketplace stack that pins two.
+describe("isStackCustom on a stack that pins two sub-agents", () => {
+  const HOUSE_STACK = MARKETPLACE_CATALOG.suggestedStacks[0]!
+
+  const appliedTwoPinStack = (): ConfigSelection => {
+    useCatalogStore.getState().load(
+      {
+        ...MARKETPLACE_CATALOG,
+        suggestedStacks: [
+          {
+            ...HOUSE_STACK,
+            skills: {
+              ...HOUSE_STACK.skills,
+              "cli-tester": {},
+              "web-tester": {},
+            },
+          },
+        ],
+      },
+      MARKETPLACE_REF
+    )
+    useConfigStore.getState().applyStack(HOUSE_STACK.id)
+    const { stackId, skills, agents } = useConfigStore.getState()
+    return { stackId, skills, agents }
+  }
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+    useCatalogStore.getState().reset()
+  })
+
+  it("is false for the stack exactly as applied, both pins on", () => {
+    const applied = appliedTwoPinStack()
+
+    expect(applied.agents).toStrictEqual({
+      "cli-tester": { on: true },
+      "web-tester": { on: true },
+    })
+    expect(isStackCustom(applied)).toBe(false)
+  })
+
+  it("is true once one of the two pins is switched off", () => {
+    const applied = appliedTwoPinStack()
+
+    expect(
+      isStackCustom({
+        ...applied,
+        agents: { ...applied.agents, "web-tester": { on: false } },
+      })
+    ).toBe(true)
   })
 })

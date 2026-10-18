@@ -203,3 +203,16 @@ describe("signOut", () => {
     ])
   })
 })
+
+// Only an answer the worker stood behind signs anyone in.
+describe("readSession on a refused answer", () => {
+  it("reads it as signed out even when its body names a user", async () => {
+    configMockServer.use(
+      http.get(SESSION_URL, () =>
+        HttpResponse.json({ user: SIGNED_IN_USER }, { status: REFUSED })
+      )
+    )
+
+    expect(await readSession()).toBeNull()
+  })
+})

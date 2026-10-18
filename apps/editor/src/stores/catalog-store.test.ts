@@ -225,3 +225,45 @@ describe("adding an external skill", () => {
     expect(useCatalogStore.getState().external).toStrictEqual({})
   })
 })
+
+describe("externalSkillId on a name with runs of punctuation", () => {
+  it("folds each run into one separator", () => {
+    expect(externalSkillId("web-tooling", "docx  //  Word Docs")).toBe(
+      "external-web-tooling-docx-word-docs"
+    )
+  })
+})
+
+// The seat is replaced only when something changes, so nothing re-renders for
+// a no-op.
+describe("adding and removing what the seat already reflects", () => {
+  beforeEach(() => {
+    useCatalogStore.getState().addExternal([houseSkill()])
+  })
+
+  it("keeps the first copy of a skill added again under the same id", () => {
+    useCatalogStore
+      .getState()
+      .addExternal([houseSkill({ description: "A later copy." })])
+
+    expect(useCatalogStore.getState().external[HOUSE_ID]?.description).toBe(
+      "The house React skill."
+    )
+  })
+
+  it("leaves the seat untouched when every skill added is already held", () => {
+    const before = useCatalogStore.getState()
+
+    before.addExternal([houseSkill()])
+
+    expect(useCatalogStore.getState()).toBe(before)
+  })
+
+  it("leaves the seat untouched when the skill removed is not held", () => {
+    const before = useCatalogStore.getState()
+
+    before.removeExternal(externalSkillId(EXCLUSIVE_CATEGORY, "Nobody's"))
+
+    expect(useCatalogStore.getState()).toBe(before)
+  })
+})

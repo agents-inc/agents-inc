@@ -1,14 +1,28 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { STACKS } from "@workspace/matrix"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   liveAssignment,
+  offAssignment,
   persistedConfig,
   savedConfigBlob,
   skillEntry,
 } from "@/__tests__/factories/config-selection-factories"
+import {
+  HOUSE_SKILL_ID,
+  houseSkill,
+} from "@/__tests__/factories/external-skill-factories"
 import { summarize } from "@/features/configure/lib/derive"
+import { setAnalyticsSink } from "@/lib/analytics/track"
 
-import { unknownSavedIds, useConfigStore, withoutWrites } from "./config-store"
+import {
+  freshEntry,
+  isEjectOnly,
+  unknownSavedIds,
+  useConfigStore,
+  withoutWrites,
+} from "./config-store"
+import { useCatalogStore } from "./catalog-store"
 
 import type { ReportingSink } from "@/lib/observability/report"
 import type { PersistStorage, StorageValue } from "zustand/middleware"
@@ -18,6 +32,7 @@ import {
   PERSIST_VERSION,
   isAgentOn,
   restingAgentOptions,
+  type PersistedConfig,
 } from "./persisted-schema"
 import { useUiStore } from "./ui-store"
 
@@ -659,5 +674,733 @@ describe("a saved configuration holding the bad pair", () => {
 
     expect(isAgentOn(store.getState(), KNOWN_AGENT)).toBe(true)
     expect(summarize(store.getState()).unscopedAgentCount).toBe(1)
+  })
+})
+
+const EXCLUSIVE_SIBLING = "web-framework-vue-composition-api"
+const OTHER_CATEGORY_SKILL = "web-styling-tailwind"
+const OTHER_AGENT = "api-tester"
+const STACK_ID = STACKS[0]!.id
+
+// Applied wholesale, so each spec states its own starting selection.
+const startingFrom = (config: Parameters<typeof persistedConfig>[0]) => {
+  useConfigStore.getState().applySavedStack(persistedConfig(config))
+}
+
+const held = () => useConfigStore.getState()
+
+describe("picking a skill whose category takes one", () => {
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("sets aside only the sibling it replaces, keeping a skill of another category", () => {
+    const configured = skillEntry({
+      assignments: { [KNOWN_AGENT]: liveAssignment() },
+    })
+    startingFrom({
+      skills: { [KNOWN_SKILL]: configured, [OTHER_CATEGORY_SKILL]: configured },
+    })
+
+    useConfigStore.getState().toggleSkill(EXCLUSIVE_SIBLING)
+
+    expect(Object.keys(held().skills)).toStrictEqual([
+      OTHER_CATEGORY_SKILL,
+      EXCLUSIVE_SIBLING,
+    ])
+    expect(held().remembered).toStrictEqual({ [KNOWN_SKILL]: configured })
+  })
+})
+
+describe("deselecting a skill", () => {
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("keeps the setup of a skill that reached a sub-agent", () => {
+    const configured = skillEntry({
+      assignments: { [KNOWN_AGENT]: liveAssignment() },
+    })
+    startingFrom({ skills: { [KNOWN_SKILL]: configured } })
+
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(held().remembered).toStrictEqual({ [KNOWN_SKILL]: configured })
+  })
+
+  // Restoring it would equal picking it fresh, so there is nothing to keep.
+  it("forgets a skill left as a fresh pick of it would start, minus its sub-agents", () => {
+    startingFrom({ skills: { [KNOWN_SKILL]: skillEntry() } })
+
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(held().skills).toStrictEqual({})
+    expect(held().remembered).toStrictEqual({})
+  })
+})
+
+// A third-party skill always installs as a copy: a plugin would serve their
+// repository without our metadata.
+describe("an added skill's install mode", () => {
+  const events: unknown[] = []
+
+  beforeEach(() => {
+    useCatalogStore.getState().addExternal([houseSkill()])
+    setAnalyticsSink((event) => events.push(event))
+  })
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+    useCatalogStore.getState().reset()
+    setAnalyticsSink(() => undefined)
+    events.length = 0
+  })
+
+  it("counts an added skill as eject-only and a catalogue skill as not", () => {
+    expect(isEjectOnly(HOUSE_SKILL_ID)).toBe(true)
+    expect(isEjectOnly(KNOWN_SKILL)).toBe(false)
+  })
+
+  it("starts an added skill as eject and a catalogue skill as a plugin", () => {
+    expect(freshEntry(HOUSE_SKILL_ID).install).toBe("eject")
+    expect(freshEntry(KNOWN_SKILL).install).toBe("plugin")
+  })
+
+  it("keeps an added skill at eject when plugin is asked for, and says so", () => {
+    useConfigStore.getState().toggleSkill(HOUSE_SKILL_ID)
+
+    useConfigStore
+      .getState()
+      .setSkillOption(HOUSE_SKILL_ID, { install: "plugin" })
+
+    expect(held().skills[HOUSE_SKILL_ID]?.install).toBe("eject")
+    expect(
+      events.filter(
+        (event) => (event as { name: string }).name === "skill_configured"
+      )
+    ).toStrictEqual([
+      {
+        name: "skill_configured",
+        skillId: HOUSE_SKILL_ID,
+        field: "install",
+        value: "eject",
+      },
+    ])
+  })
+
+  it("passes any other option on an added skill through untouched", () => {
+    useConfigStore.getState().toggleSkill(HOUSE_SKILL_ID)
+
+    useConfigStore
+      .getState()
+      .setSkillOption(HOUSE_SKILL_ID, { scope: "project" })
+
+    expect(
+      events.filter(
+        (event) => (event as { name: string }).name === "skill_configured"
+      )
+    ).toStrictEqual([
+      {
+        name: "skill_configured",
+        skillId: HOUSE_SKILL_ID,
+        field: "scope",
+        value: "project",
+      },
+    ])
+  })
+
+  it("lets a catalogue skill go back from eject to plugin", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+    useConfigStore.getState().setSkillOption(KNOWN_SKILL, { install: "eject" })
+
+    useConfigStore.getState().setSkillOption(KNOWN_SKILL, { install: "plugin" })
+
+    expect(held().skills[KNOWN_SKILL]?.install).toBe("plugin")
+  })
+})
+
+// The roster tints the sub-agents a selection just reached.
+describe("the pulse a selection sends through the roster", () => {
+  const pulsing = () => useUiStore.getState().flashedAgentIds
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+    useUiStore.getState().clearFlash()
+  })
+
+  it("pulses every sub-agent a picked skill reaches", () => {
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(pulsing()).toStrictEqual(
+      Object.keys(freshEntry(KNOWN_SKILL).assignments)
+    )
+  })
+
+  it("leaves out a row the roster switched off when a set-aside skill comes back", () => {
+    startingFrom({
+      remembered: {
+        [KNOWN_SKILL]: skillEntry({
+          assignments: {
+            [KNOWN_AGENT]: liveAssignment(),
+            [OTHER_AGENT]: offAssignment(),
+          },
+        }),
+      },
+    })
+
+    useConfigStore.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(pulsing()).toStrictEqual([KNOWN_AGENT])
+  })
+
+  // Whatever was pulsing belonged to the selection being replaced.
+  it.each([
+    ["applying a stack", () => useConfigStore.getState().applyStack(STACK_ID)],
+    ["starting from scratch", () => useConfigStore.getState().applyStack(null)],
+    [
+      "applying a saved stack",
+      () => useConfigStore.getState().applySavedStack(persistedConfig()),
+    ],
+    [
+      "importing a shared configuration",
+      () => useConfigStore.getState().importConfig(persistedConfig()),
+    ],
+    [
+      "pruning to the catalogue",
+      () => useConfigStore.getState().pruneToCatalog(),
+    ],
+    ["resetting", () => useConfigStore.getState().reset()],
+  ])("stops on %s", (_label, replace) => {
+    useUiStore.getState().flashAgents([KNOWN_AGENT])
+
+    replace()
+
+    expect(pulsing()).toStrictEqual([])
+  })
+})
+
+describe("replacing the whole selection", () => {
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("empties it on Start from scratch", () => {
+    useConfigStore.getState().applyStack(STACK_ID)
+    expect(held().stackId).toBe(STACK_ID)
+
+    useConfigStore.getState().applyStack(null)
+
+    expect({
+      stackId: held().stackId,
+      skills: held().skills,
+      remembered: held().remembered,
+      agents: held().agents,
+    }).toStrictEqual(persistedConfig())
+  })
+
+  it("takes a shared configuration as it arrives", () => {
+    const shared = persistedConfig({
+      stackId: STACK_ID,
+      skills: { [KNOWN_SKILL]: skillEntry() },
+    })
+
+    useConfigStore.getState().importConfig(shared)
+
+    expect(held().stackId).toBe(STACK_ID)
+    expect(held().skills).toStrictEqual(shared.skills)
+  })
+})
+
+// empty → lazy → preloaded → empty; a switched-off row counts as empty.
+describe("cycling a sub-agent's cell", () => {
+  const cellAfterOneCycle = (start: ReturnType<typeof liveAssignment>) => {
+    startingFrom({
+      skills: {
+        [KNOWN_SKILL]: skillEntry({ assignments: { [KNOWN_AGENT]: start } }),
+      },
+    })
+    useConfigStore.getState().cycleAssignment(KNOWN_SKILL, KNOWN_AGENT)
+    return held().skills[KNOWN_SKILL]?.assignments
+  }
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("re-enables a switched-off row at lazy", () => {
+    expect(cellAfterOneCycle(offAssignment("preloaded"))).toStrictEqual({
+      [KNOWN_AGENT]: liveAssignment("lazy"),
+    })
+  })
+
+  it("moves a lazy row to preloaded", () => {
+    expect(cellAfterOneCycle(liveAssignment("lazy"))).toStrictEqual({
+      [KNOWN_AGENT]: liveAssignment("preloaded"),
+    })
+  })
+
+  it("empties a preloaded row", () => {
+    expect(cellAfterOneCycle(liveAssignment("preloaded"))).toStrictEqual({})
+  })
+})
+
+// Configuring never selects: the options wait in `remembered`.
+describe("an option set on a skill nobody selected", () => {
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("is kept for when the skill is picked, without picking it", () => {
+    useConfigStore.getState().setSkillOption(KNOWN_SKILL, { scope: "project" })
+
+    expect(held().skills).toStrictEqual({})
+    expect(held().remembered).toStrictEqual({
+      [KNOWN_SKILL]: { ...freshEntry(KNOWN_SKILL), scope: "project" },
+    })
+  })
+})
+
+describe("a row the roster holds", () => {
+  const rowAfter = (
+    start: ReturnType<typeof liveAssignment>,
+    change: "toggleAssignmentEnabled" | "flipAssignmentLoad"
+  ) => {
+    startingFrom({
+      skills: {
+        [KNOWN_SKILL]: skillEntry({ assignments: { [KNOWN_AGENT]: start } }),
+      },
+    })
+    useConfigStore.getState()[change](KNOWN_SKILL, KNOWN_AGENT)
+    return held().skills[KNOWN_SKILL]?.assignments
+  }
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("switches off, keeping its load", () => {
+    expect(
+      rowAfter(liveAssignment("preloaded"), "toggleAssignmentEnabled")
+    ).toStrictEqual({ [KNOWN_AGENT]: offAssignment("preloaded") })
+  })
+
+  it("switches back on, keeping its load", () => {
+    expect(
+      rowAfter(offAssignment("preloaded"), "toggleAssignmentEnabled")
+    ).toStrictEqual({ [KNOWN_AGENT]: liveAssignment("preloaded") })
+  })
+
+  it("flips from lazy to preloaded", () => {
+    expect(
+      rowAfter(liveAssignment("lazy"), "flipAssignmentLoad")
+    ).toStrictEqual({ [KNOWN_AGENT]: liveAssignment("preloaded") })
+  })
+
+  it("flips from preloaded to lazy", () => {
+    expect(
+      rowAfter(liveAssignment("preloaded"), "flipAssignmentLoad")
+    ).toStrictEqual({ [KNOWN_AGENT]: liveAssignment("lazy") })
+  })
+})
+
+// Only a non-resting choice is stored; a pin is kept whatever it says.
+describe("a sub-agent's stored choices", () => {
+  const resting = restingAgentOptions(KNOWN_AGENT)
+  const otherModel = AGENT_MODELS.find((model) => model !== resting.model)!
+
+  const storedFor = () => held().agents[KNOWN_AGENT]
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("stores a model and nothing beside it", () => {
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { model: otherModel })
+
+    expect(storedFor()).toStrictEqual({ model: otherModel })
+  })
+
+  it("keeps a pin beside a choice made after it", () => {
+    useConfigStore.getState().toggleAgentPin(KNOWN_AGENT)
+
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { model: otherModel })
+
+    expect(storedFor()).toStrictEqual({ on: true, model: otherModel })
+  })
+
+  it("keeps a choice beside a pin made after it", () => {
+    useConfigStore.getState().setAgentOption(KNOWN_AGENT, { model: otherModel })
+
+    useConfigStore.getState().toggleAgentPin(KNOWN_AGENT)
+
+    expect(storedFor()).toStrictEqual({ model: otherModel, on: true })
+  })
+
+  it.each([
+    ["model", { model: otherModel }, { model: resting.model }],
+    ["effort", { effort: "high" }, { effort: resting.effort }],
+    ["scope", { scope: "project" }, { scope: resting.scope }],
+  ] as const)(
+    "loses the %s once it is set back to where it rests",
+    (_label, chosen, back) => {
+      useConfigStore.getState().setAgentOption(KNOWN_AGENT, chosen)
+      expect(storedFor()).toStrictEqual(chosen)
+
+      useConfigStore.getState().setAgentOption(KNOWN_AGENT, back)
+
+      expect(storedFor()).toBeUndefined()
+    }
+  )
+})
+
+describe("what the store tells analytics", () => {
+  const events: unknown[] = []
+
+  beforeEach(() => {
+    setAnalyticsSink((event) => events.push(event))
+  })
+
+  afterEach(() => {
+    useConfigStore.getState().reset()
+    setAnalyticsSink(() => undefined)
+    events.length = 0
+  })
+
+  it("reports each option a skill was given as its own event", () => {
+    useConfigStore
+      .getState()
+      .setSkillOption(KNOWN_SKILL, { scope: "project", install: "eject" })
+
+    expect(events).toStrictEqual([
+      {
+        name: "skill_configured",
+        skillId: KNOWN_SKILL,
+        field: "scope",
+        value: "project",
+      },
+      {
+        name: "skill_configured",
+        skillId: KNOWN_SKILL,
+        field: "install",
+        value: "eject",
+      },
+    ])
+  })
+
+  it("reports each choice made for a sub-agent as its own event", () => {
+    useConfigStore
+      .getState()
+      .setAgentOption(KNOWN_AGENT, { effort: "high", scope: "project" })
+
+    expect(events).toStrictEqual([
+      {
+        name: "agent_configured",
+        agentId: KNOWN_AGENT,
+        field: "effort",
+        value: "high",
+      },
+      {
+        name: "agent_configured",
+        agentId: KNOWN_AGENT,
+        field: "scope",
+        value: "project",
+      },
+    ])
+  })
+
+  // An imported id the catalogue cannot place has no domain to name.
+  it("names no domain for a skill the catalogue cannot place", () => {
+    useConfigStore
+      .getState()
+      .importConfig(
+        persistedConfig({ skills: { [UNKNOWN_SKILL]: skillEntry() } })
+      )
+
+    useConfigStore.getState().toggleSkill(UNKNOWN_SKILL)
+
+    expect(events.at(-1)).toStrictEqual({
+      name: "skill_toggled",
+      skillId: UNKNOWN_SKILL,
+      domainId: "unknown",
+      selected: false,
+    })
+  })
+})
+
+describe("pruneToCatalog on a selection the catalogue cannot place", () => {
+  afterEach(() => {
+    useConfigStore.getState().reset()
+  })
+
+  it("drops what it cannot place and keeps the rest", () => {
+    useConfigStore.getState().importConfig(
+      persistedConfig({
+        skills: {
+          [UNKNOWN_SKILL]: skillEntry(),
+          [KNOWN_SKILL]: skillEntry(),
+        },
+      })
+    )
+
+    useConfigStore.getState().pruneToCatalog()
+
+    expect(Object.keys(held().skills)).toStrictEqual([KNOWN_SKILL])
+  })
+})
+
+// The answer `readSavedConfig` gives, beside the store it read into.
+const readingASlot = async (blob: string | null) => {
+  const slot = new Map<string, string>()
+  if (blob !== null) slot.set(SLOT, blob)
+  const writes: string[] = []
+
+  vi.stubGlobal("window", {
+    localStorage: {
+      getItem: (key: string) => slot.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (key === SLOT) writes.push(value)
+        slot.set(key, value)
+      },
+      removeItem: (key: string) => slot.delete(key),
+    },
+  })
+
+  vi.resetModules()
+  const { setReportingSink } = await import("@/lib/observability/report")
+  setReportingSink(sink)
+
+  const configStore = await import("./config-store")
+  const { useCatalogStore: catalog } = await import("./catalog-store")
+
+  return { ...configStore, catalog, slot, writes }
+}
+
+const SAVED_REACT = savedConfigBlob(
+  persistedConfig({ skills: { [KNOWN_SKILL]: skillEntry() } })
+)
+const SAVED_TAILWIND = savedConfigBlob(
+  persistedConfig({ skills: { [OTHER_CATEGORY_SKILL]: skillEntry() } })
+)
+
+describe("reading the saved configuration", () => {
+  afterEach(() => {
+    sink.issue.mockClear()
+  })
+
+  // Hydration prunes against the catalogue, which is not seated at import.
+  it("reads nothing until it is asked to", async () => {
+    const { useConfigStore: store, readSavedConfig } =
+      await readingASlot(SAVED_REACT)
+
+    expect(store.getState().skills).toStrictEqual({})
+
+    await readSavedConfig()
+
+    expect(Object.keys(store.getState().skills)).toStrictEqual([KNOWN_SKILL])
+  })
+
+  it("reads it once per session, answering with nothing the second time", async () => {
+    const holdingAnUnknownSkill = savedConfigBlob(
+      persistedConfig({
+        skills: { [KNOWN_SKILL]: skillEntry(), [UNKNOWN_SKILL]: skillEntry() },
+      })
+    )
+    const {
+      useConfigStore: store,
+      readSavedConfig,
+      slot,
+    } = await readingASlot(holdingAnUnknownSkill)
+    expect(await readSavedConfig()).toStrictEqual([UNKNOWN_SKILL])
+    slot.set(SLOT, SAVED_TAILWIND)
+
+    expect(await readSavedConfig()).toStrictEqual([])
+    expect(Object.keys(store.getState().skills)).toStrictEqual([KNOWN_SKILL])
+  })
+
+  it("answers with nothing for an empty slot, and reports nothing", async () => {
+    const { readSavedConfig } = await readingASlot(null)
+
+    expect(await readSavedConfig()).toStrictEqual([])
+    expect(sink.issue).not.toHaveBeenCalled()
+  })
+
+  it("reports nothing for a configuration the catalogue places whole", async () => {
+    const { readSavedConfig } = await readingASlot(SAVED_REACT)
+
+    await readSavedConfig()
+
+    expect(sink.issue).not.toHaveBeenCalled()
+  })
+
+  // A blob that is not an object at all fails at the root, with no field.
+  it("names the root when the saved state is not a configuration at all", async () => {
+    const { readSavedConfig } = await readingASlot(
+      savedConfigBlob("not a configuration")
+    )
+
+    await readSavedConfig()
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Discarded unreadable saved configuration",
+      expect.objectContaining({ issues: ["(root): invalid_type"] })
+    )
+  })
+})
+
+// Each skill, each of its rows and each sub-agent is one id.
+describe("the count the pruned-ids door reports", () => {
+  afterEach(() => {
+    sink.issue.mockClear()
+  })
+
+  it("counts a dropped skill, its rows and a dropped sub-agent, beside a stack it kept", async () => {
+    const { readSavedConfig } = await readingASlot(
+      savedConfigBlob(
+        persistedConfig({
+          stackId: STACK_ID,
+          skills: {
+            [KNOWN_SKILL]: skillEntry(),
+            [UNKNOWN_SKILL]: skillEntry({
+              assignments: {
+                [KNOWN_AGENT]: liveAssignment(),
+                [OTHER_AGENT]: liveAssignment(),
+              },
+            }),
+          },
+          agents: { "acme-runner": {} },
+        })
+      )
+    )
+
+    await readSavedConfig()
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Pruned saved ids the catalog no longer knows",
+      { droppedIds: 4, droppedStack: false }
+    )
+  })
+
+  it("says no stack was dropped for a configuration that applied none", async () => {
+    const { readSavedConfig } = await readingASlot(
+      savedConfigBlob(
+        persistedConfig({ skills: { [UNKNOWN_SKILL]: skillEntry() } })
+      )
+    )
+
+    await readSavedConfig()
+
+    expect(sink.issue).toHaveBeenCalledWith(
+      "Pruned saved ids the catalog no longer knows",
+      { droppedIds: 1, droppedStack: false }
+    )
+  })
+})
+
+describe("what the saved slot holds", () => {
+  const lastSaved = (writes: string[]) =>
+    (JSON.parse(writes.at(-1)!) as { state: PersistedConfig }).state
+
+  it("holds the catalogue's skills, never an added one or one it cannot place", async () => {
+    const { useConfigStore: store, catalog, writes } = await readingASlot(null)
+    catalog.getState().addExternal([houseSkill()])
+    store.getState().importConfig(
+      persistedConfig({
+        skills: { [UNKNOWN_SKILL]: skillEntry(), [KNOWN_SKILL]: skillEntry() },
+        remembered: {
+          [OTHER_CATEGORY_SKILL]: skillEntry({ scope: "project" }),
+        },
+      })
+    )
+
+    store.getState().toggleSkill(HOUSE_SKILL_ID)
+    store.getState().toggleSkill(HOUSE_SKILL_ID)
+
+    expect(Object.keys(lastSaved(writes).skills)).toStrictEqual([KNOWN_SKILL])
+    expect(Object.keys(lastSaved(writes).remembered)).toStrictEqual([
+      OTHER_CATEGORY_SKILL,
+    ])
+  })
+})
+
+// A shared address runs on this browser's slot without writing it, and hands
+// the saved configuration back on the way home.
+describe("holding the slot for a shared configuration", () => {
+  const SHARED = persistedConfig({
+    skills: { [OTHER_CATEGORY_SKILL]: skillEntry() },
+  })
+
+  it("writes nothing to the slot while the shared configuration is open", async () => {
+    const {
+      useConfigStore: store,
+      detachSavedConfig,
+      writes,
+    } = await readingASlot(null)
+
+    detachSavedConfig()
+    store.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(writes).toStrictEqual([])
+  })
+
+  it("writes again once it is home", async () => {
+    const {
+      useConfigStore: store,
+      detachSavedConfig,
+      readSavedConfig,
+      writes,
+    } = await readingASlot(null)
+    detachSavedConfig()
+    await readSavedConfig()
+
+    store.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(writes).not.toStrictEqual([])
+  })
+
+  it("holds a second shared address as it held the first", async () => {
+    const {
+      useConfigStore: store,
+      detachSavedConfig,
+      readSavedConfig,
+      writes,
+    } = await readingASlot(null)
+    detachSavedConfig()
+    await readSavedConfig()
+    const writtenAtHome = [...writes]
+
+    detachSavedConfig()
+    store.getState().toggleSkill(KNOWN_SKILL)
+
+    expect(writes).toStrictEqual(writtenAtHome)
+  })
+
+  it("hands this browser's saved configuration back on the way home", async () => {
+    const {
+      useConfigStore: store,
+      detachSavedConfig,
+      readSavedConfig,
+    } = await readingASlot(SAVED_REACT)
+    await readSavedConfig()
+    detachSavedConfig()
+    store.getState().importConfig(SHARED)
+
+    await readSavedConfig()
+
+    expect(Object.keys(store.getState().skills)).toStrictEqual([KNOWN_SKILL])
+  })
+
+  // With nothing saved, the read keeps what is in memory, which is not ours.
+  it("drops the shared configuration on the way home to an empty slot", async () => {
+    const {
+      useConfigStore: store,
+      detachSavedConfig,
+      readSavedConfig,
+    } = await readingASlot(null)
+    detachSavedConfig()
+    store.getState().importConfig(SHARED)
+
+    await readSavedConfig()
+
+    expect(store.getState().skills).toStrictEqual({})
   })
 })

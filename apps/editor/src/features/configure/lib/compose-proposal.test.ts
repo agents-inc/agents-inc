@@ -77,3 +77,26 @@ describe("groupsFor", () => {
     })
   })
 })
+
+// The load a row names is the one a click would give the skill.
+describe("the load a proposed row names", () => {
+  const PRELOADED_EVERYWHERE = entry("web-framework-react", "React")
+  const MIXED = entry("web-styling-tailwind", "Tailwind")
+  const PLACED_NOWHERE = entry(UNKNOWN_ID, "Not placed")
+
+  const stateOf = (skill: CatalogSkill) =>
+    groupsFor([skill.id], () => skill, nothingSelected).groups[0]?.rows[0]
+      ?.state
+
+  it("names the one load every sub-agent would take it at", () => {
+    expect(stateOf(PRELOADED_EVERYWHERE)).toBe("preloaded")
+  })
+
+  it("says mixed when sub-agents would take it at different loads", () => {
+    expect(stateOf(MIXED)).toBe("mixed")
+  })
+
+  it("says no sub-agent when the resolver places it on none", () => {
+    expect(stateOf(PLACED_NOWHERE)).toBe("no sub-agent")
+  })
+})

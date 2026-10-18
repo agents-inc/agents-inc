@@ -151,3 +151,20 @@ describe("composeProposal", () => {
     ])
   })
 })
+
+// One 400 serves two guards; only the worker's own word for one picks it.
+describe("a 400 naming a guard other than the cap", () => {
+  it("reads as a plain refusal, not as a sentence past the cap", async () => {
+    configMockServer.use(
+      http.post(COMPOSE_URL, () =>
+        HttpResponse.json({ error: "empty" }, { status: BAD_REQUEST })
+      ),
+      ...signedInHandlers
+    )
+
+    await expect(composeProposal(SENTENCE)).resolves.toStrictEqual({
+      ok: false,
+      refusal: "refused",
+    })
+  })
+})
