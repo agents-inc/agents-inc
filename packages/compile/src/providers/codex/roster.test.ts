@@ -138,3 +138,20 @@ describe("the settings a Codex role file cannot express", () => {
     )
   })
 })
+
+describe("the words of each Codex line", () => {
+  it("counts the roster against every shipped sub-agent before naming the absent ones", () => {
+    expect(agentsLeftOutOfCodexMessage()).toBe(
+      `Codex compiles ${CODEX_ROSTER.length} of the ${CODEX_ROSTER.length + LEFT_OUT.length} sub-agents: ` +
+        "agent-summoner and skill-summoner are left out for v1, because their roster mechanics on " +
+        "Codex are not proven."
+    )
+  })
+
+  it("says what becomes of the settings a role file cannot express", () => {
+    expect(unexpressibleOnCodexMessage()).toBe(
+      "Codex cannot express Claude models, tool allowlists, permissionMode, isolation, " +
+        "experimental and preloaded skills, so the agent role files it wrote carry none of them."
+    )
+  })
+})

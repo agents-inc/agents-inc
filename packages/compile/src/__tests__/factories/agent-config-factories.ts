@@ -22,13 +22,13 @@ export function buildAgentConfig(
 /** `preloaded` is required: specs assert on both sides of it. */
 export function buildSkill(
   id: SkillId,
-  { preloaded }: Pick<Skill, "preloaded">
+  fields: Pick<Skill, "preloaded"> & Partial<Omit<Skill, "id">>
 ): Skill {
   return {
     id,
     path: `skills/${id}`,
     description: `The ${id} skill`,
     usage: `when working with ${id}`,
-    preloaded,
+    ...fields,
   }
 }

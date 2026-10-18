@@ -377,3 +377,55 @@ describe("the rendered file as TOML", () => {
     )
   })
 })
+
+/** Each codepoint either side of the ranges TOML refuses raw inside a string. */
+const CONTROL_BOUNDARIES = "a\u0000b\u0008c\td\ne\u000bf\u001fg h\u007fi~"
+
+describe("the characters TOML refuses raw", () => {
+  it("escapes every forbidden control character in the instructions and leaves tab and newline raw", () => {
+    expect(renderAgentRoleToml(WRITER, CONTROL_BOUNDARIES)).toContain(
+      'developer_instructions = """\na\\u0000b\\u0008c\td\ne\\u000bf\\u001fg h\\u007fi~\n"""'
+    )
+  })
+
+  it("parses the escaped instructions back to the characters they stand for", () => {
+    const parsed = parse(renderAgentRoleToml(WRITER, CONTROL_BOUNDARIES))
+
+    expect(
+      asString(parsed.developer_instructions, "developer_instructions")
+    ).toBe(`${CONTROL_BOUNDARIES}\n`)
+  })
+
+  it("puts a description's newline and tab on one line as escapes", () => {
+    const multiline: AgentConfig = {
+      ...WRITER,
+      description: "First line\nsecond\tline",
+    }
+
+    const rendered = renderAgentRoleToml(multiline, BODY)
+
+    expect(rendered).toContain('\ndescription = "First line\\nsecond\\tline"\n')
+    expect(parse(rendered).description).toBe(multiline.description)
+  })
+})
+
+describe("the quotes in the instructions", () => {
+  const BODY_ENDING_ITS_OWN_STRING =
+    'Write """ to close a string, or "" for an empty one.'
+
+  it("escapes only a run that would close the string, so the markdown stays readable", () => {
+    expect(renderAgentRoleToml(WRITER, BODY_ENDING_ITS_OWN_STRING)).toContain(
+      'Write \\"\\"\\" to close a string, or "" for an empty one.'
+    )
+  })
+
+  it("parses that run back as the quotes it was", () => {
+    const parsed = parse(
+      renderAgentRoleToml(WRITER, BODY_ENDING_ITS_OWN_STRING)
+    )
+
+    expect(
+      asString(parsed.developer_instructions, "developer_instructions")
+    ).toBe(`${BODY_ENDING_ITS_OWN_STRING}\n`)
+  })
+})

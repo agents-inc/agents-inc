@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { seatDiagnostics } from "./diagnostics"
 import { seedToInstallSelection } from "./seed-to-config"
+import {
+  buildCatalog,
+  buildCatalogCategory,
+  buildCatalogSkill,
+} from "./__tests__/factories/catalog-factories"
+import { buildSeedPayload } from "./__tests__/factories/seed-factories"
 
 const WEB_DEV = "web-developer"
 const REACT = "web-framework-react"
@@ -100,5 +106,324 @@ describe("a sub-agent's Codex model, decoded", () => {
       { name: WEB_DEV, scope: "global", model: "haiku" },
     ])
     expect(warnings).toStrictEqual([])
+  })
+})
+
+const TAILWIND = "web-styling-tailwind"
+const HONO = "api-framework-hono"
+const SVELTE = "web-framework-svelte"
+const ACME_DEPLOY = "acme-pipeline-deploy"
+const ZETA_RUNBOOK = "zeta-ops-runbook"
+
+/** Two categories in domains no built-in list holds, and one no domain claims. */
+const SEED_CATALOG = buildCatalog(
+  {
+    "web-framework": buildCatalogCategory({
+      displayName: "Framework",
+      domain: "web",
+      exclusive: true,
+    }),
+    "web-styling": buildCatalogCategory({
+      displayName: "Styling",
+      domain: "web",
+    }),
+    "api-api": buildCatalogCategory({ displayName: "API", domain: "api" }),
+    "acme-pipeline": buildCatalogCategory({
+      displayName: "Pipeline",
+      domain: "acme",
+    }),
+    "zeta-ops": buildCatalogCategory({ displayName: "Ops", domain: "zeta" }),
+    "shared-tooling": buildCatalogCategory({ displayName: "Tooling" }),
+  },
+  [
+    buildCatalogSkill(REACT, {
+      displayName: "React",
+      category: "web-framework",
+      availableSources: [
+        { name: "agents-inc" },
+        { name: "acme-market", primary: true },
+      ],
+    }),
+    buildCatalogSkill(SVELTE, {
+      displayName: "Svelte",
+      category: "web-framework",
+    }),
+    buildCatalogSkill(TAILWIND, {
+      displayName: "Tailwind",
+      category: "web-styling",
+    }),
+    buildCatalogSkill(HONO, {
+      displayName: "Hono",
+      category: "api-api",
+      availableSources: [{ name: "acme-market" }],
+    }),
+    buildCatalogSkill(ACME_DEPLOY, {
+      displayName: "Deploy",
+      category: "acme-pipeline",
+    }),
+    buildCatalogSkill(ZETA_RUNBOOK, {
+      displayName: "Runbook",
+      category: "zeta-ops",
+    }),
+    buildCatalogSkill("shared-tooling-misc", {
+      displayName: "Misc",
+      category: "shared-tooling",
+    }),
+  ]
+)
+
+describe("a shared configuration, decoded into the install it describes", () => {
+  it("installs each skill from its primary marketplace or as a copy, and each assignment at its load", () => {
+    const decoded = seedToInstallSelection(
+      buildSeedPayload({
+        stackId: "web-stack",
+        description: "Shared web setup",
+        skills: {
+          [REACT]: {
+            install: "plugin",
+            scope: "global",
+            assignments: { [WEB_DEV]: "preloaded", "web-tester": "lazy" },
+          },
+          [TAILWIND]: {
+            install: "eject",
+            scope: "project",
+            assignments: { "web-tester": "lazy" },
+          },
+        },
+        agents: { "web-tester": { scope: "project", model: "haiku" } },
+      }),
+      SEED_CATALOG
+    )
+
+    expect(decoded).toStrictEqual({
+      result: {
+        skills: [
+          { id: REACT, scope: "global", origin: "acme-market" },
+          { id: TAILWIND, scope: "project", origin: "eject" },
+        ],
+        selectedAgents: [WEB_DEV, "web-tester"],
+        agentConfigs: [
+          { name: WEB_DEV, scope: "global" },
+          { name: "web-tester", scope: "project", model: "haiku" },
+        ],
+        assignedStack: {
+          [WEB_DEV]: { "web-framework": [{ id: REACT, preloaded: true }] },
+          "web-tester": {
+            "web-framework": [{ id: REACT, preloaded: false }],
+            "web-styling": [{ id: TAILWIND, preloaded: false }],
+          },
+        },
+        selectedStackId: "web-stack",
+        description: "Shared web setup",
+        selectedDomains: ["web"],
+        validation: { valid: true, errors: [] },
+      },
+      skippedSkillIds: [],
+      skippedAgentNames: [],
+    })
+  })
+
+  it("installs a marketplace skill with no primary source from the public marketplace, and carries no absent description", () => {
+    const { result } = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [TAILWIND]: { install: "plugin", scope: "global", assignments: {} },
+          [HONO]: { install: "plugin", scope: "global", assignments: {} },
+        },
+        agents: {},
+      }),
+      SEED_CATALOG
+    )
+
+    expect(result).toStrictEqual({
+      skills: [
+        { id: TAILWIND, scope: "global", origin: "agents-inc" },
+        { id: HONO, scope: "global", origin: "agents-inc" },
+      ],
+      selectedAgents: [],
+      agentConfigs: [],
+      assignedStack: {},
+      selectedStackId: null,
+      selectedDomains: ["web", "api"],
+      validation: { valid: true, errors: [] },
+    })
+  })
+
+  it("orders domains no built-in list holds first, alphabetically, then the built-in ones in their order", () => {
+    const { result } = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [HONO]: { install: "plugin", scope: "global", assignments: {} },
+          [ZETA_RUNBOOK]: {
+            install: "plugin",
+            scope: "global",
+            assignments: {},
+          },
+          [REACT]: { install: "plugin", scope: "global", assignments: {} },
+          [ACME_DEPLOY]: {
+            install: "plugin",
+            scope: "global",
+            assignments: {},
+          },
+        },
+        agents: {},
+      }),
+      SEED_CATALOG
+    )
+
+    expect(result.selectedDomains).toStrictEqual(["acme", "zeta", "web", "api"])
+  })
+
+  it("revalidates the selection against this catalogue", () => {
+    const { result } = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [REACT]: { install: "plugin", scope: "global", assignments: {} },
+          [SVELTE]: { install: "plugin", scope: "global", assignments: {} },
+        },
+        agents: {},
+      }),
+      SEED_CATALOG
+    )
+
+    expect(result.validation).toStrictEqual({
+      valid: false,
+      errors: [
+        {
+          type: "categoryExclusive",
+          message:
+            'Category "Framework" only allows one selection, but multiple selected: React, Svelte',
+          skills: [REACT, SVELTE],
+        },
+      ],
+    })
+  })
+})
+
+describe("what a shared configuration names that this install cannot", () => {
+  it("skips a skill this catalogue lacks or places in no domain, and a sub-agent nobody ships", () => {
+    const decoded = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          "nope-skill": {
+            install: "plugin",
+            scope: "global",
+            assignments: { "ghost-from-a-skipped-skill": "lazy" },
+          },
+          "shared-tooling-misc": {
+            install: "plugin",
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy" },
+          },
+          [REACT]: {
+            install: "plugin",
+            scope: "global",
+            assignments: { "acme-deployer": "lazy", [WEB_DEV]: "lazy" },
+          },
+        },
+        agents: { "ghost-agent": { on: true } },
+      }),
+      SEED_CATALOG
+    )
+
+    expect({
+      skills: decoded.result.skills,
+      selectedAgents: decoded.result.selectedAgents,
+      assignedStack: decoded.result.assignedStack,
+      skippedSkillIds: decoded.skippedSkillIds,
+      skippedAgentNames: decoded.skippedAgentNames,
+    }).toStrictEqual({
+      skills: [{ id: REACT, scope: "global", origin: "acme-market" }],
+      selectedAgents: [WEB_DEV],
+      assignedStack: {
+        [WEB_DEV]: { "web-framework": [{ id: REACT, preloaded: false }] },
+      },
+      skippedSkillIds: ["nope-skill", "shared-tooling-misc"],
+      skippedAgentNames: ["ghost-agent", "acme-deployer"],
+    })
+  })
+})
+
+describe("the sub-agents a shared configuration switches", () => {
+  it("drops a switched-off sub-agent with its assignments", () => {
+    const { result } = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {
+          [REACT]: {
+            install: "plugin",
+            scope: "global",
+            assignments: { [WEB_DEV]: "lazy", "web-tester": "preloaded" },
+          },
+        },
+        agents: { "web-tester": { on: false } },
+      }),
+      SEED_CATALOG
+    )
+
+    expect({
+      selectedAgents: result.selectedAgents,
+      agentConfigs: result.agentConfigs,
+      assignedStack: result.assignedStack,
+    }).toStrictEqual({
+      selectedAgents: [WEB_DEV],
+      agentConfigs: [{ name: WEB_DEV, scope: "global" }],
+      assignedStack: {
+        [WEB_DEV]: { "web-framework": [{ id: REACT, preloaded: false }] },
+      },
+    })
+  })
+
+  it("installs a sub-agent switched on with no skill, and not one merely described", () => {
+    const { result } = seedToInstallSelection(
+      buildSeedPayload({
+        skills: {},
+        agents: {
+          pm: { on: true, effort: "high" },
+          reviewer: { model: "opus" },
+        },
+      }),
+      SEED_CATALOG
+    )
+
+    expect({
+      selectedAgents: result.selectedAgents,
+      agentConfigs: result.agentConfigs,
+    }).toStrictEqual({
+      selectedAgents: ["pm"],
+      agentConfigs: [{ name: "pm", scope: "global", effort: "high" }],
+    })
+  })
+})
+
+describe("a shared configuration with nowhere to write an assignment", () => {
+  it("is refused, naming every project skill assigned to a global sub-agent", () => {
+    expect(() =>
+      seedToInstallSelection(
+        buildSeedPayload({
+          skills: {
+            [REACT]: {
+              install: "plugin",
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy", "web-tester": "lazy" },
+            },
+            [TAILWIND]: {
+              install: "plugin",
+              scope: "project",
+              assignments: { [WEB_DEV]: "lazy" },
+            },
+          },
+          agents: { "web-tester": { scope: "project" } },
+        }),
+        SEED_CATALOG
+      )
+    ).toThrow(
+      [
+        "This configuration cannot be installed: a project-scoped skill never reaches a sub-agent " +
+          "that rests at global scope, so these assignments have nowhere to be written:",
+        `  ${REACT} -> ${WEB_DEV}`,
+        `  ${TAILWIND} -> ${WEB_DEV}`,
+        "Re-share it with each sub-agent above pinned to the project, or each skill above at global scope.",
+      ].join("\n")
+    )
   })
 })
