@@ -89,6 +89,7 @@ import {
   withUnplaceableAssignees,
   type Arrivals,
   type HeldGlobal,
+  type InstalledGlobal,
   type KeptFromRoundTrip,
   type UnassignedRow,
 } from "../lib/seed/seed-apply.js";
@@ -236,6 +237,8 @@ type EditSelection = {
   carried: ExternalSkillInstall[];
   /** From a project, the held global sub-agents an arriving skill's row joins. */
   joinedGlobalAgents: AgentName[];
+  /** The global config itself, read from a project; `null` at home or with no global install. */
+  installedGlobal: InstalledGlobal | null;
 };
 
 type SharedConfigPlan = {
@@ -318,7 +321,8 @@ type AppliedChanges = PlannedChanges & { rewrittenSkills: SkillId[] };
 /**
  * In a project only the project's own sub-agents count; a global one keeps its installed rows and
  * gains only an arriving skill's (`restoreInstalledGlobal`), which `HeldGlobal.joined` names. A
- * sub-agent already counted as added is not counted twice.
+ * sub-agent already counted as added, or whose project copy arrives beside the global one, is not
+ * counted twice.
  */
 function withReassignments(
   changes: ConfigChanges,
@@ -327,11 +331,15 @@ function withReassignments(
   editRoot: EditRoot,
 ): ReassignedChanges {
   const { assignedStack } = result;
+  const arrivingCopies = arrivingProjectHalves(
+    changes.agentScopeChanges,
+    changes.dualScopeAgentTransitions,
+  );
 
   const ownedHere = (agent: AgentScopeConfig): boolean =>
     editRoot.isGlobal || isActiveAt(agent, "project");
   const countedAsAdded = (agent: AgentScopeConfig): boolean =>
-    changes.addedAgents.includes(agent.name);
+    changes.addedAgents.includes(agent.name) || arrivingCopies.has(agent.name);
   const rowsMoved = (agent: AgentScopeConfig): boolean =>
     !sameAssignments(assignedStack[agent.name], installedStack?.[agent.name]);
 
@@ -498,12 +506,13 @@ export default class Edit extends BaseCommand {
       ? { ...context.projectConfig, skills: activeOldSkills, agents: activeOldAgents }
       : null;
 
+    const keptInstalled = globalHalvesKeptInstalled(selection.installedGlobal);
     const planned: PlannedChanges = {
       ...withReassignments(
         detectConfigChanges(filteredOldConfig, filteredResult, {
-          newSkills: result.skills,
+          newSkills: [...result.skills, ...keptInstalled.skills],
           oldSkills: context.projectConfig?.skills ?? [],
-          newAgents: result.agentConfigs,
+          newAgents: [...result.agentConfigs, ...keptInstalled.agents],
           oldAgents: context.projectConfig?.agents ?? [],
         }),
         filteredResult,
@@ -517,7 +526,7 @@ export default class Edit extends BaseCommand {
     const rewritten = await this.confirmAndWriteCarried(selection, planned, filteredResult);
     const changes: AppliedChanges = {
       ...planned,
-      rewrittenSkills: difference(rewritten, planned.addedSkills),
+      rewrittenSkills: difference(rewritten, skillsNewHere(planned)),
     };
 
     // One authority for the merger's config row and the global config the gate commits.
@@ -578,10 +587,8 @@ export default class Edit extends BaseCommand {
       authoredHere: await this.readAuthoredHere(context.projectConfig, editRoot.dir),
       unplaceable,
     });
-    const held = restoreInstalledGlobal(
-      reconciled.result,
-      editRoot.isGlobal ? null : await readInstalledGlobal(editRoot.dir),
-    );
+    const installedGlobal = editRoot.isGlobal ? null : await readInstalledGlobal(editRoot.dir);
+    const held = restoreInstalledGlobal(reconciled.result, installedGlobal);
     const arrivingCarried = notInstalledGlobally(carried, held);
 
     await this.refuseSharedConfigBeforeAsking(
@@ -610,6 +617,7 @@ export default class Edit extends BaseCommand {
       ],
       carried: arrivingCarried,
       joinedGlobalAgents: held.joined.map(({ agentName }) => agentName),
+      installedGlobal,
     };
   }
 
@@ -1381,35 +1389,65 @@ export function detectConfigChanges(
     dualScopeSkillTransitions,
     fullEntries?.oldSkills ?? [],
   );
+  const dualScopeAgentTransitions = detectDualScopeTransitions(
+    agentScopeChanges,
+    fullEntries?.newAgents ?? [],
+    fullEntries?.oldAgents ?? [],
+    (a) => a.name,
+  );
+  const arrivingSkills = arrivingProjectHalves(scopeChanges, dualScopeSkillTransitions);
 
   return {
     addedSkills: difference(newSkillIds, oldSkillIds),
     removedSkills: difference(oldSkillIds, newSkillIds),
     addedAgents: difference(newAgentNames, oldAgentNames),
     removedAgents: difference(oldAgentNames, newAgentNames),
-    sourceChanges: detectPropertyChanges(
-      selection.skills,
-      indexBy(withMaskedGlobalsRestored(oldConfig?.skills ?? [], collapsedPairs), (s) => s.id),
-      (s) => s.id,
-      (s) => s.origin,
+    sourceChanges: withoutKeys(
+      detectPropertyChanges(
+        selection.skills,
+        indexBy(withMaskedGlobalsRestored(oldConfig?.skills ?? [], collapsedPairs), (s) => s.id),
+        (s) => s.id,
+        (s) => s.origin,
+      ),
+      arrivingSkills,
     ),
     scopeChanges,
     agentScopeChanges,
     dualScopeSkillTransitions,
     collapsedPairs,
-    dualScopeAgentTransitions: detectDualScopeTransitions(
-      agentScopeChanges,
-      fullEntries?.newAgents ?? [],
-      fullEntries?.oldAgents ?? [],
-      (a) => a.name,
-    ),
-    tuningChanges: detectPropertyChanges(
-      selection.agentConfigs,
-      oldAgentsByName,
-      (a) => a.name,
-      describeTuning,
+    dualScopeAgentTransitions,
+    // Either half of a pair is measured against the other install, which this edit never retunes.
+    tuningChanges: withoutKeys(
+      detectPropertyChanges(selection.agentConfigs, oldAgentsByName, (a) => a.name, describeTuning),
+      dualScopeAgentTransitions,
     ),
   };
+}
+
+/** Added, or a project copy arriving beside the global install: files written, not rewritten. */
+function skillsNewHere(changes: ConfigChanges): SkillId[] {
+  return [
+    ...changes.addedSkills,
+    ...arrivingProjectHalves(changes.scopeChanges, changes.dualScopeSkillTransitions),
+  ];
+}
+
+/**
+ * The `[P][G]` pairs this edit opens: the project's own copy arrives beside the global install,
+ * so the diff, which measures it against that install, records a change nothing made.
+ */
+function arrivingProjectHalves<K extends string>(
+  scopeChanges: ReadonlyMap<K, ScopeChange>,
+  dualScopeTransitions: ReadonlySet<K>,
+): Set<K> {
+  const arriving = [...scopeChanges].filter(
+    ([key, change]) => change.to === "project" && dualScopeTransitions.has(key),
+  );
+  return new Set(arriving.map(([key]) => key));
+}
+
+function withoutKeys<K, V>(changes: ReadonlyMap<K, V>, keys: ReadonlySet<K>): Map<K, V> {
+  return new Map([...changes].filter(([key]) => !keys.has(key)));
 }
 
 const RESTING_TUNING = "defaults";
@@ -1440,6 +1478,28 @@ function detectPropertyChanges<T, K extends string, V>(
     }
   }
   return changes;
+}
+
+/**
+ * The global install's entries as the tombstones a project half arriving beside one leaves: the
+ * write masks the global entry rather than moving it (`reconcileProjectSplitAgainstGlobal`). No
+ * decoded selection carries these, so without them a project add over a global install reads as
+ * the global install moving. Only a key that moves from global to project is looked up in them.
+ */
+function globalHalvesKeptInstalled(installedGlobal: InstalledGlobal | null): {
+  skills: SkillConfig[];
+  agents: AgentScopeConfig[];
+} {
+  if (installedGlobal === null) return { skills: [], agents: [] };
+
+  return {
+    skills: installedGlobal.skills.map(asTombstone),
+    agents: installedGlobal.agents.map(asTombstone),
+  };
+}
+
+function asTombstone<T extends { excluded?: boolean }>(entry: T): T {
+  return { ...entry, excluded: true };
 }
 
 /**

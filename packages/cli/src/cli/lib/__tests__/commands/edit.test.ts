@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
+import type { MockInstance } from "vitest";
 import type { ReactElement } from "react";
 import { storedConfigHandlerFor } from "@workspace/api-mocks";
 import { configMockServer } from "@workspace/api-mocks/node";
 import os from "os";
 import path from "path";
-import { mkdir } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import type { Errors } from "@oclif/core";
 import { parseRefusal, runCliCommand, CLI_ROOT } from "../helpers/cli-runner.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
@@ -30,9 +31,9 @@ import {
   STANDARD_DIRS,
 } from "../../../consts";
 import { ERROR_MESSAGES } from "../../../utils/messages";
-import { initializeMatrix } from "../../matrix/matrix-provider";
+import { getSkillById, initializeMatrix } from "../../matrix/matrix-provider";
 import { hostAt } from "../../hosts/host-for.js";
-import type { ProjectConfig, SkillId, SkillScope } from "../../../types";
+import type { ProjectConfig, SkillId, SkillScope, StackAgentConfig } from "../../../types";
 import type { InstallSelection } from "@workspace/compile/seed-to-config";
 import type { getAgentDefinitions } from "../../agents/index.js";
 import type { loadProjectConfig } from "../../configuration/index.js";
@@ -43,6 +44,8 @@ import type { copySkillsToLocalFlattened, deleteLocalSkill } from "../../skills/
 import type { seedToInstallSelection } from "../../seed/seed-to-selection.js";
 import type { ensureDir } from "../../../utils/fs.js";
 import { firstElement } from "../helpers/element-at.js";
+import { flattenCliOutput } from "../helpers/flatten-cli-output.js";
+import { sa } from "../factories/skill-factories.js";
 import { stubInkInstance } from "../helpers/stub-ink-instance.js";
 import { standAtTerminal } from "../helpers/terminal-input.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
@@ -875,6 +878,34 @@ describe("migratePluginSkillScopes", () => {
     expect(result.failed).toHaveLength(1);
     expect(firstElement(result.failed).id).toBe("web-framework-react");
   });
+
+  it("uninstalls nothing when re-scoping from global to project", async () => {
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global", to: "project" }],
+    ]);
+    const skills = buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" });
+
+    await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
+
+    expect(uninstallSpy.mock.calls).toStrictEqual([]);
+    expect(installSpy.mock.calls).toStrictEqual([
+      ["web-framework-react@agents-inc", "project", "/project"],
+    ]);
+  });
+
+  it("judges each change by its own skill, not by the first one listed", async () => {
+    const scopeChanges = new Map<SkillId, { from: SkillScope; to: SkillScope }>([
+      ["web-framework-react", { from: "global", to: "project" }],
+    ]);
+    const skills = [
+      ...buildSkillConfigs(["web-state-zustand"], { origin: EJECT_SOURCE }),
+      ...buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
+    ];
+
+    const result = await migratePluginSkillScopes(scopeChanges, skills, "agents-inc", "/project");
+
+    expect(result.migrated).toStrictEqual(["web-framework-react"]);
+  });
 });
 
 describe("detectConfigChanges", () => {
@@ -1277,6 +1308,75 @@ describe("detectConfigChanges", () => {
     expect(changes.dualScopeSkillTransitions.size).toBe(0);
     expect(changes.dualScopeAgentTransitions.size).toBe(0);
   });
+
+  it("keeps a G→P move a migration when the tombstone beside it is another skill's", () => {
+    const oldConfig = buildProjectConfig({
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      agents: [],
+    });
+    const movedReact = buildSkillConfigs(["web-framework-react"], { scope: "project" });
+    const fullEntries = {
+      newSkills: [
+        ...movedReact,
+        ...buildSkillConfigs(["web-state-zustand"], { scope: "global", excluded: true }),
+      ],
+      oldSkills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(oldConfig, buildInstallSelection(movedReact), fullEntries);
+
+    expect(changes.dualScopeSkillTransitions).toStrictEqual(new Set());
+  });
+
+  it("keeps a G→P move a migration when the global entry beside it is still installed", () => {
+    const oldConfig = buildProjectConfig({
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      agents: [],
+    });
+    const bothScopes = [
+      ...buildSkillConfigs(["web-framework-react"], { scope: "project" }),
+      ...buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+    ];
+    const fullEntries = {
+      newSkills: bothScopes,
+      oldSkills: buildSkillConfigs(["web-framework-react"], { scope: "global" }),
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(oldConfig, buildInstallSelection(bothScopes), fullEntries);
+
+    expect(changes.dualScopeSkillTransitions).toStrictEqual(new Set());
+  });
+
+  it("reads a collapsed pair's halves off its own skill among others", () => {
+    const zustand = buildSkillConfigs(["web-state-zustand"], { scope: "project" });
+    const projectHalf = buildSkillConfigs(["web-framework-react"], { scope: "project" });
+    const maskedGlobal = buildSkillConfigs(["web-framework-react"], {
+      scope: "global",
+      excluded: true,
+    });
+    const resurfaced = buildSkillConfigs(["web-framework-react"], { scope: "global" });
+    const oldConfig = buildProjectConfig({ skills: [...zustand, ...projectHalf], agents: [] });
+    const fullEntries = {
+      newSkills: [...zustand, ...resurfaced],
+      oldSkills: [...zustand, ...projectHalf, ...maskedGlobal],
+      newAgents: [],
+      oldAgents: [],
+    };
+
+    const changes = detectConfigChanges(
+      oldConfig,
+      buildInstallSelection([...zustand, ...resurfaced]),
+      fullEntries,
+    );
+
+    expect(changes.collapsedPairs).toStrictEqual([
+      { projectHalf: firstElement(projectHalf), maskedGlobal: firstElement(maskedGlobal) },
+    ]);
+  });
 });
 
 describe("edit change summary display", () => {
@@ -1512,5 +1612,629 @@ describe("edit change summary display", () => {
     expect(output).toContain("~ React");
     expect(output).not.toContain("- React");
     expect(output).not.toContain("+ React");
+  });
+
+  it("drops the project half of a collapsed ejected pair and leaves the global copy as it was", async () => {
+    const skillPath = (root: string) =>
+      path.join(root, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "web-framework-react", "SKILL.md");
+    const home = os.homedir();
+    for (const [root, content] of [
+      [projectDir, "the project's copy"],
+      [home, "the global copy"],
+    ] as const) {
+      await mkdir(path.dirname(skillPath(root)), { recursive: true });
+      await writeFile(skillPath(root), content);
+    }
+    const projectHalf = buildSkillConfigs(["web-framework-react"], {
+      scope: "project",
+      origin: EJECT_SOURCE,
+    });
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({
+        skills: [
+          ...projectHalf,
+          ...buildSkillConfigs(["web-framework-react"], {
+            scope: "global",
+            origin: EJECT_SOURCE,
+            excluded: true,
+          }),
+        ],
+      }),
+    );
+    mockDeleteLocalSkill.mockClear();
+    applyingSelection(
+      buildInstallSelection(
+        buildSkillConfigs(["web-framework-react"], { scope: "global", origin: EJECT_SOURCE }),
+        { agentConfigs: buildAgentConfigs(["web-developer"]) },
+      ),
+    );
+
+    await runEditFrom().catch(() => {});
+
+    expect(stdoutChunks.join("")).toContain("Changes:\n  - React [P]\n\n");
+    expect(stdoutChunks.join("")).toContain("\nNo agents to recompile\n");
+    expect(await readFile(skillPath(home), "utf-8")).toBe("the global copy");
+    expect(mockDeleteLocalSkill.mock.calls).toStrictEqual([
+      [projectDir, "web-framework-react", "project"],
+    ]);
+  });
+
+  describe("an edit that changes one kind of thing only", () => {
+    const INSTALLED_SKILLS = buildSkillConfigs(["web-framework-react"]);
+    const REACT_FOR_WEB_DEVELOPER: ProjectConfig["stack"] = {
+      "web-developer": { "web-framework": [{ id: "web-framework-react", preloaded: false }] },
+    };
+
+    async function outputOfApplying(selection: InstallSelection): Promise<string> {
+      applyingSelection(selection);
+      await runEditFrom().catch(() => {});
+      return stdoutChunks.join("");
+    }
+
+    it("says nothing changed when the configuration is the one installed", async () => {
+      mockProjectConfig(projectDir, buildProjectConfig({ skills: INSTALLED_SKILLS }));
+
+      const output = await outputOfApplying(
+        buildInstallSelection(INSTALLED_SKILLS, {
+          agentConfigs: buildAgentConfigs(["web-developer"]),
+        }),
+      );
+
+      expect(output).toContain("No changes made.");
+      expect(output).not.toContain("Changes:");
+    });
+
+    it("applies a sub-agent dropped and nothing else", async () => {
+      mockProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          skills: INSTALLED_SKILLS,
+          agents: buildAgentConfigs(["web-developer", "api-developer"]),
+        }),
+      );
+
+      const output = await outputOfApplying(
+        buildInstallSelection(INSTALLED_SKILLS, {
+          agentConfigs: buildAgentConfigs(["web-developer"]),
+        }),
+      );
+
+      expect(output).toContain("Changes:\n  - api-developer (agent)\n\n");
+    });
+
+    it("applies a sub-agent moved to the global install and nothing else", async () => {
+      mockProjectConfig(projectDir, buildProjectConfig({ skills: INSTALLED_SKILLS }));
+
+      const output = await outputOfApplying(
+        buildInstallSelection(INSTALLED_SKILLS, {
+          agentConfigs: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+
+      expect(output).toContain("Into the global install:\n  Sub-agents:\n    web-developer\n");
+      expect(output).toContain("Changes:\n  ~ web-developer ([P] → [G])\n\n");
+    });
+
+    it("applies a sub-agent retuned and nothing else", async () => {
+      mockProjectConfig(projectDir, buildProjectConfig({ skills: INSTALLED_SKILLS }));
+
+      const output = await outputOfApplying(
+        buildInstallSelection(INSTALLED_SKILLS, {
+          agentConfigs: buildAgentConfigs(["web-developer"], { model: "opus" }),
+        }),
+      );
+
+      expect(output).toContain("Changes:\n  ~ web-developer (agent: defaults → model opus)\n\n");
+    });
+
+    it("applies a sub-agent added to the project over its global install as a project add", async () => {
+      mockProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          skills: INSTALLED_SKILLS,
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+
+      const output = await outputOfApplying(
+        buildInstallSelection(INSTALLED_SKILLS, {
+          agentConfigs: [
+            ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+            ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+          ],
+        }),
+      );
+
+      expect(output).toContain("Into this project:\n  Sub-agents:\n    web-developer\n");
+      expect(output).toContain("Changes:\n  + web-developer [P] (agent)\n\n");
+    });
+
+    it("labels a skill added beside a skill of the other scope with its own scope", async () => {
+      mockProjectConfig(projectDir, buildProjectConfig({ skills: INSTALLED_SKILLS }));
+
+      const output = await outputOfApplying(
+        buildInstallSelection(
+          [...INSTALLED_SKILLS, ...buildSkillConfigs(["api-framework-hono"], { scope: "global" })],
+          { agentConfigs: buildAgentConfigs(["web-developer"]) },
+        ),
+      );
+
+      expect(output).toContain("Changes:\n  + Hono [G]\n\n");
+    });
+
+    it("labels a skill removed beside a skill of the other scope with its own scope", async () => {
+      mockProjectConfig(
+        projectDir,
+        buildProjectConfig({
+          skills: [
+            ...INSTALLED_SKILLS,
+            ...buildSkillConfigs(["api-framework-hono"], { scope: "global" }),
+          ],
+        }),
+      );
+
+      const output = await outputOfApplying(
+        buildInstallSelection(INSTALLED_SKILLS, {
+          agentConfigs: buildAgentConfigs(["web-developer"]),
+        }),
+      );
+
+      expect(output).toContain("Changes:\n  - Hono [G]\n\n");
+    });
+
+    it("applies a sub-agent's skills reassigned and nothing else", async () => {
+      mockProjectConfig(
+        projectDir,
+        buildProjectConfig({ skills: INSTALLED_SKILLS, stack: REACT_FOR_WEB_DEVELOPER }),
+      );
+
+      const output = await outputOfApplying(
+        buildInstallSelection(INSTALLED_SKILLS, {
+          agentConfigs: buildAgentConfigs(["web-developer"]),
+        }),
+      );
+
+      expect(output).toContain("Changes:\n  ~ web-developer (agent: skills reassigned)\n\n");
+    });
+  });
+});
+
+describe("what edit --from does to plugins and saved copies", () => {
+  let tempDir: string;
+  let projectDir: string;
+  let originalCwd: string;
+  let stdoutChunks: string[] = [];
+  let stderrChunks: string[] = [];
+  let outputSpies: MockInstance[] = [];
+
+  const MARKETPLACE = "agents-inc";
+  const REACT_PLUGIN = "web-framework-react@agents-inc";
+  const HONO_PLUGIN = "api-framework-hono@agents-inc";
+  const UNRESOLVABLE_SOURCE = "/test/source";
+  const AGENTS = buildAgentConfigs(["web-developer"]);
+  const host = hostAt("/any-root");
+  const installSpy = vi.mocked(host.installPlugin);
+  const uninstallSpy = vi.mocked(host.uninstallPlugin);
+
+  /** Built per test: resolving a marketplace writes the name it found onto the result. */
+  const withMarketplace = () =>
+    buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE, { marketplace: MARKETPLACE });
+  /** Nothing at `/test/source` names a marketplace, so resolving one fails. */
+  const withoutMarketplace = () => buildSourceResult(FULLSTACK_PAIR_MATRIX, UNRESOLVABLE_SOURCE);
+
+  const refusedForWantOfAMarketplace = (purpose: string) =>
+    `Cannot ${purpose}: marketplace could not be resolved from '${UNRESOLVABLE_SOURCE}'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.`;
+
+  const skillFileAt = (root: string) =>
+    path.join(root, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "web-framework-react", "SKILL.md");
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tempDir = await createTempDir("cc-edit-apply-");
+    projectDir = path.join(tempDir, "project");
+    await mkdir(projectDir, { recursive: true });
+    process.chdir(projectDir);
+
+    stdoutChunks = [];
+    stderrChunks = [];
+    outputSpies = [
+      vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        stdoutChunks.push(String(chunk));
+        return true;
+      }),
+      vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+        stderrChunks.push(String(chunk));
+        return true;
+      }),
+    ];
+
+    mockRender.mockClear();
+    mockDeleteLocalSkill.mockReset().mockResolvedValue(undefined);
+    mockCopySkillsToLocalFlattened.mockReset().mockResolvedValue([]);
+    mockDetectInstallation.mockResolvedValue(buildEjectInstallation(projectDir));
+    mockDiscoverAllPluginSkills.mockResolvedValue({});
+    installSpy.mockReset().mockResolvedValue(undefined);
+    uninstallSpy.mockReset().mockResolvedValue("removed");
+    vi.mocked(host.marketplaceExists).mockReset().mockResolvedValue(true);
+    vi.mocked(host.refreshMarketplace).mockReset().mockResolvedValue(undefined);
+    initializeMatrix(FULLSTACK_PAIR_MATRIX);
+  });
+
+  const fakeHome = useFakeHome(() => tempDir);
+
+  afterEach(async () => {
+    for (const spy of outputSpies) spy.mockRestore();
+    process.chdir(originalCwd);
+    await cleanupTempDir(tempDir);
+  });
+
+  function installed(
+    skills: ProjectConfig["skills"],
+    agents: ProjectConfig["agents"] = AGENTS,
+  ): void {
+    mockProjectConfig(
+      projectDir,
+      buildProjectConfig({ skills, agents, stack: onWebDeveloper(skills) }),
+    );
+  }
+
+  /** Runs `edit --from` over the selection, answered yes, and returns what it threw. */
+  async function applying(
+    sourceResult: ReturnType<typeof buildSourceResult>,
+    skills: InstallSelection["skills"],
+    agentConfigs: InstallSelection["agentConfigs"] = AGENTS,
+  ): Promise<(Error & Partial<Errors.CLIError>) | undefined> {
+    mockLoadSkillsMatrixFromSource.mockResolvedValue(sourceResult);
+    applyingSelection(
+      buildInstallSelection(skills, {
+        agentConfigs,
+        selectedAgents: agentConfigs.map((agent) => agent.name),
+        assignedStack: onWebDeveloper(skills),
+      }),
+    );
+    try {
+      await runEditFrom();
+      return undefined;
+    } catch (error) {
+      if (error instanceof Error) return error;
+      throw error;
+    }
+  }
+
+  /** Each active skill on web-developer under its own category, so none is left unassigned. */
+  function onWebDeveloper(skills: InstallSelection["skills"]): InstallSelection["assignedStack"] {
+    const rows = skills
+      .filter((skill) => !skill.excluded)
+      .map((skill): StackAgentConfig => ({ [getSkillById(skill.id).category]: [sa(skill.id)] }));
+    return { "web-developer": rows.reduce((stack, row) => ({ ...stack, ...row }), {}) };
+  }
+
+  const stderr = () => flattenCliOutput(stderrChunks.join(""));
+
+  const plugin = (ids: SkillId[], scope: SkillScope, extra?: { excluded: boolean }) =>
+    buildSkillConfigs(ids, { scope, origin: MARKETPLACE, ...extra });
+  const saved = (ids: SkillId[], scope: SkillScope) =>
+    buildSkillConfigs(ids, { scope, origin: EJECT_SOURCE });
+
+  describe("a plugin skill moved between scopes", () => {
+    it("uninstalls it here and installs it globally", async () => {
+      installed(plugin(["web-framework-react"], "project"));
+
+      const error = await applying(withMarketplace(), plugin(["web-framework-react"], "global"));
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toContain("Changes:\n  ~ React ([P] → [G])\n\n");
+      expect(uninstallSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "project", projectDir]]);
+      expect(installSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "global", projectDir]]);
+      expect(stderr()).toBe("");
+    });
+
+    it("moves the one that moved when a saved copy that stays is listed first", async () => {
+      installed([
+        ...saved(["web-framework-react"], "project"),
+        ...plugin(["api-framework-hono"], "project"),
+      ]);
+
+      const error = await applying(withMarketplace(), [
+        ...saved(["web-framework-react"], "project"),
+        ...plugin(["api-framework-hono"], "global"),
+      ]);
+
+      expect(error).toBeUndefined();
+      expect(uninstallSpy.mock.calls).toStrictEqual([[HONO_PLUGIN, "project", projectDir]]);
+      expect(installSpy.mock.calls).toStrictEqual([[HONO_PLUGIN, "global", projectDir]]);
+      expect(stderr()).toBe("");
+    });
+
+    it("refuses when no marketplace can be resolved, and writes nothing", async () => {
+      installed(plugin(["web-framework-react"], "project"));
+
+      const error = await applying(withoutMarketplace(), plugin(["web-framework-react"], "global"));
+
+      expect(error?.message).toBe(refusedForWantOfAMarketplace("migrate plugin skill scopes"));
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(installSpy).not.toHaveBeenCalled();
+      expect(await configsWrittenUnder(projectDir)).toStrictEqual([]);
+    });
+
+    it("names the skill whose install at the new scope failed, and exits with failures", async () => {
+      installed(plugin(["web-framework-react"], "project"));
+      installSpy.mockRejectedValue(new Error("plugin ref not found"));
+
+      const error = await applying(withMarketplace(), plugin(["web-framework-react"], "global"));
+
+      expect(stdoutChunks.join("")).toContain(
+        [
+          "Completed with 1 failure(s) — the changes above landed, these did not:",
+          "  Failed to migrate plugin scope for web-framework-react: plugin ref not found",
+          "    Run 'npx agents-inc doctor' to see what this installation is left holding.",
+        ].join("\n"),
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.COMPLETED_WITH_FAILURES);
+    });
+  });
+
+  describe("a saved copy moved between scopes", () => {
+    it("carries its files to the global install without a marketplace, beside a plugin listed first", async () => {
+      await mkdir(path.dirname(skillFileAt(projectDir)), { recursive: true });
+      await writeFile(skillFileAt(projectDir), "the saved copy");
+      installed([
+        ...plugin(["api-framework-hono"], "project"),
+        ...saved(["web-framework-react"], "project"),
+      ]);
+
+      const error = await applying(withoutMarketplace(), [
+        ...plugin(["api-framework-hono"], "project"),
+        ...saved(["web-framework-react"], "global"),
+      ]);
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toContain("Changes:\n  ~ React ([P] → [G])\n\n");
+      expect(await readFile(skillFileAt(fakeHome.dir), "utf-8")).toBe("the saved copy");
+      expect(await fileExists(skillFileAt(projectDir))).toBe(false);
+    });
+  });
+
+  describe("a collapsed [P][G] pair of plugins", () => {
+    const projectHalfOverGlobal = [
+      ...plugin(["web-framework-react"], "project"),
+      ...plugin(["web-framework-react"], "global", { excluded: true }),
+    ];
+
+    it("uninstalls the project's plugin and leaves the global one installed", async () => {
+      installed(projectHalfOverGlobal);
+
+      const error = await applying(withMarketplace(), plugin(["web-framework-react"], "global"));
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toContain("Changes:\n  - React [P]\n\n");
+      expect(stdoutChunks.join("")).toContain("\nRemoved 1 plugin(s)\n");
+      expect(uninstallSpy.mock.calls).toStrictEqual([[REACT_PLUGIN, "project", projectDir]]);
+      expect(installSpy).not.toHaveBeenCalled();
+      expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
+    });
+
+    it("warns of the project plugin it could not uninstall, and claims no removal", async () => {
+      installed(projectHalfOverGlobal);
+      uninstallSpy.mockRejectedValue(new Error("uninstall refused"));
+
+      const error = await applying(withMarketplace(), plugin(["web-framework-react"], "global"));
+
+      expect(error).toBeUndefined();
+      expect(stderr()).toContain(
+        "Warning: Failed to uninstall plugin web-framework-react: uninstall refused",
+      );
+      expect(stdoutChunks.join("")).not.toContain("Removed 0 plugin(s)");
+    });
+
+    it("warns that the project plugin stays when no marketplace is known", async () => {
+      installed(projectHalfOverGlobal);
+
+      const error = await applying(withoutMarketplace(), plugin(["web-framework-react"], "global"));
+
+      expect(error).toBeUndefined();
+      expect(stderr()).toContain(
+        "Warning: Could not uninstall this project's plugin for web-framework-react: no marketplace",
+      );
+      expect(uninstallSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("a skill the configuration adds or drops", () => {
+    it("uninstalls a dropped plugin listed after a saved copy that stays", async () => {
+      installed([
+        ...saved(["web-framework-react"], "project"),
+        ...plugin(["api-framework-hono"], "project"),
+      ]);
+
+      const error = await applying(withMarketplace(), saved(["web-framework-react"], "project"));
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toContain("\nRemoved 1 plugin(s)\n");
+      expect(uninstallSpy.mock.calls).toStrictEqual([[HONO_PLUGIN, "project", projectDir]]);
+      expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
+    });
+
+    it("warns of a dropped plugin it could not uninstall, and claims no removal", async () => {
+      installed(plugin(["api-framework-hono"], "project"));
+      uninstallSpy.mockRejectedValue(new Error("uninstall refused"));
+
+      const error = await applying(withMarketplace(), []);
+
+      expect(error).toBeUndefined();
+      expect(stderr()).toContain(
+        "Warning: Failed to uninstall plugin api-framework-hono: uninstall refused",
+      );
+      expect(stdoutChunks.join("")).not.toContain("Removed 0 plugin(s)");
+    });
+
+    it("refuses to add a plugin when no marketplace can be resolved", async () => {
+      installed([]);
+
+      const error = await applying(withoutMarketplace(), plugin(["api-framework-hono"], "project"));
+
+      expect(error?.message).toBe(
+        refusedForWantOfAMarketplace("install or uninstall plugin skills"),
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(await configsWrittenUnder(projectDir)).toStrictEqual([]);
+    });
+
+    it("deletes a dropped saved copy listed after a plugin that stays", async () => {
+      installed([
+        ...plugin(["api-framework-hono"], "project"),
+        ...saved(["web-framework-react"], "project"),
+      ]);
+
+      const error = await applying(withMarketplace(), plugin(["api-framework-hono"], "project"));
+
+      expect(error).toBeUndefined();
+      expect(mockDeleteLocalSkill.mock.calls).toStrictEqual([
+        [projectDir, "web-framework-react", "project"],
+      ]);
+      expect(uninstallSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("a skill switched between a plugin and a saved copy", () => {
+    it("refuses to switch a saved copy to a plugin when no marketplace can be resolved, keeping the copy", async () => {
+      installed(saved(["web-framework-react"], "project"));
+
+      const error = await applying(
+        withoutMarketplace(),
+        plugin(["web-framework-react"], "project"),
+      );
+
+      expect(error?.message).toBe(refusedForWantOfAMarketplace("migrate skills to plugin mode"));
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
+      expect(await configsWrittenUnder(projectDir)).toStrictEqual([]);
+    });
+
+    it("deletes no local copy when a plugin skill only changes marketplace", async () => {
+      installed(plugin(["web-framework-react"], "project"));
+
+      const error = await applying(
+        withMarketplace(),
+        buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "acme" }),
+      );
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toContain("Changes:\n  ~ React (Agents Inc → acme)\n\n");
+      expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
+    });
+
+    it("keeps the global copy of a skill switched to a project plugin", async () => {
+      installed(saved(["web-framework-react"], "global"));
+
+      const error = await applying(withMarketplace(), plugin(["web-framework-react"], "project"));
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toContain("Switching 1 skill(s) to Plugin (native install)");
+      expect(mockDeleteLocalSkill).not.toHaveBeenCalled();
+    });
+
+    it("warns of the plugin it could not uninstall once the saved copy landed", async () => {
+      installed(plugin(["web-framework-react"], "project"));
+      mockCopySkillsToLocalFlattened.mockResolvedValue([
+        {
+          skillId: "web-framework-react",
+          sourcePath: "/test/source/web-framework-react",
+          destPath: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, "web-framework-react"),
+          contentHash: "hash-switched",
+        },
+      ]);
+      uninstallSpy.mockRejectedValue(new Error("uninstall refused"));
+
+      const error = await applying(withMarketplace(), saved(["web-framework-react"], "project"));
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toContain("\nCopied 1 local skill(s)\n");
+      expect(stderr()).toContain(
+        "Warning: Could not uninstall plugin for web-framework-react: uninstall refused",
+      );
+    });
+
+    it("refuses when the saved copy cannot be written, naming the skill and writing no config", async () => {
+      installed(plugin(["web-framework-react"], "project"));
+      mockCopySkillsToLocalFlattened.mockRejectedValue(new Error("EACCES: permission denied"));
+
+      const error = await applying(withMarketplace(), saved(["web-framework-react"], "project"));
+
+      expect(stderr()).toContain(
+        "Warning: Failed to copy web-framework-react for eject: EACCES: permission denied",
+      );
+      expect(error?.message).toBe(
+        "Failed to copy 1 skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with 'npx agents-inc edit --from <id>' — or switch the affected skills back to plugin mode.",
+      );
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      expect(uninstallSpy).not.toHaveBeenCalled();
+      expect(await configsWrittenUnder(projectDir)).toStrictEqual([]);
+    });
+  });
+
+  describe("a [P][G] pair", () => {
+    it("adds a skill over its global install as one project add", async () => {
+      installed(saved(["web-framework-react"], "global"));
+
+      const error = await applying(withMarketplace(), [
+        ...saved(["web-framework-react"], "project"),
+        ...buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: EJECT_SOURCE,
+          excluded: true,
+        }),
+      ]);
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toBe(
+        [
+          "Fetching configuration EditApply1...",
+          "Into this project:",
+          "  Skills:",
+          "    React (web-framework-react)",
+          "",
+          "Changes:",
+          "  + React [P]",
+          "",
+          "No agents to recompile",
+          "",
+          "✓ Done",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
+
+    it("collapses a sub-agent's pair into its global install, listing no arrival", async () => {
+      const skills = saved(["web-framework-react"], "project");
+      installed(skills, [
+        ...buildAgentConfigs(["web-developer"], { scope: "project" }),
+        ...buildAgentConfigs(["web-developer"], { scope: "global", excluded: true }),
+      ]);
+
+      const error = await applying(
+        withMarketplace(),
+        skills,
+        buildAgentConfigs(["web-developer"], { scope: "global" }),
+      );
+
+      expect(error).toBeUndefined();
+      expect(stdoutChunks.join("")).toBe(
+        [
+          "Fetching configuration EditApply1...",
+          "",
+          "Changes:",
+          "  - web-developer [P] (agent)",
+          "",
+          "No agents to recompile",
+          "",
+          "✓ Done",
+          "",
+          "",
+        ].join("\n"),
+      );
+    });
   });
 });
