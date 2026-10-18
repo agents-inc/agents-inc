@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest"
 
+import type {
+  Matrix,
+  MatrixCategory,
+  MatrixSkill,
+  MatrixStack,
+} from "../matrix-schema"
 import { resolveAssignment } from "./assignment-defaults"
-import { CATALOG, skillById } from "./catalog"
+import { CATALOG, buildCatalog, skillById } from "./catalog"
 import { DOMAIN_LABELS } from "./domains"
 import { MATRIX } from "./source"
-import { STACKS, createStackExpander, expandStack } from "./stacks"
+import { STACKS, buildStacks, createStackExpander, expandStack } from "./stacks"
 import { SUB_AGENTS_BY_ID, SUB_AGENT_GROUPS, subAgentById } from "./sub-agents"
 
 const ADDED_SKILL_ID = "github:software-mansion/react-native-reanimated"
@@ -246,6 +252,164 @@ describe("expandStack", () => {
 
     expect(expand(SKILL_LESS_STACK)!.skillLessAgentIds).toStrictEqual([
       SKILL_LESS_AGENT,
+    ])
+  })
+})
+
+const matrixCategory = (
+  id: string,
+  over: Partial<Omit<MatrixCategory, "id">> = {}
+): MatrixCategory => ({
+  id,
+  displayName: id,
+  description: "",
+  exclusive: false,
+  order: 1,
+  ...over,
+})
+
+const matrixSkill = (
+  id: string,
+  category: string,
+  over: Partial<Omit<MatrixSkill, "id" | "category">> = {}
+): MatrixSkill => ({
+  id,
+  slug: id,
+  displayName: id,
+  description: "",
+  category,
+  conflictsWith: [],
+  discourages: [],
+  requires: [],
+  ...over,
+})
+
+const matrixOf = (
+  categories: readonly MatrixCategory[],
+  skills: readonly MatrixSkill[]
+): Matrix => ({
+  version: "0.0.0-test",
+  categories: Object.fromEntries(
+    categories.map((category) => [category.id, category])
+  ),
+  skills: Object.fromEntries(skills.map((skill) => [skill.id, skill])),
+  suggestedStacks: [],
+})
+
+// Authored out of order, so every sort has something to do.
+const UNSORTED_MATRIX = matrixOf(
+  [
+    matrixCategory("api-core", { domain: "api", order: 1 }),
+    matrixCategory("web-styling", { domain: "web", order: 3 }),
+    matrixCategory("web-state", { domain: "web", order: 2 }),
+    matrixCategory("web-framework", { domain: "web", order: 1 }),
+    matrixCategory("unplaced"),
+    matrixCategory("off-map", { domain: "mars" }),
+  ],
+  [
+    matrixSkill("zustand", "web-state", { displayName: "Zustand" }),
+    matrixSkill("jotai", "web-state", { displayName: "Jotai" }),
+    matrixSkill("tailwind", "web-styling"),
+    matrixSkill("react", "web-framework"),
+    matrixSkill("hono", "api-core"),
+    matrixSkill("stray", "unplaced"),
+    matrixSkill("martian", "off-map"),
+  ]
+)
+
+describe("buildCatalog", () => {
+  it("orders the domains, then each domain's categories by their authored order", () => {
+    expect(
+      buildCatalog(UNSORTED_MATRIX).domains.map((domain) => [
+        domain.id,
+        domain.categories.map((category) => category.id),
+      ])
+    ).toStrictEqual([
+      ["web", ["web-framework", "web-state", "web-styling"]],
+      ["api", ["api-core"]],
+    ])
+  })
+
+  it("drops a category with no domain, or one the UI has no section for", () => {
+    const catalog = buildCatalog(UNSORTED_MATRIX)
+
+    expect(Object.keys(catalog.categoriesById).sort()).toStrictEqual([
+      "api-core",
+      "web-framework",
+      "web-state",
+      "web-styling",
+    ])
+    expect(Object.keys(catalog.skillsById).sort()).toStrictEqual([
+      "hono",
+      "jotai",
+      "react",
+      "tailwind",
+      "zustand",
+    ])
+  })
+
+  it("orders a category's skills by display name", () => {
+    const webState = buildCatalog(UNSORTED_MATRIX).categoriesById["web-state"]
+    if (!webState) throw new Error("Category not found: web-state")
+
+    expect(webState.skills.map((skill) => skill.displayName)).toStrictEqual([
+      "Jotai",
+      "Zustand",
+    ])
+  })
+})
+
+const stackWith = (over: Partial<MatrixStack>): MatrixStack => ({
+  ...matrixStack(SKILL_LESS_STACK),
+  ...over,
+})
+
+const matrixWithStack = (stack: MatrixStack): Matrix => ({
+  ...MATRIX,
+  suggestedStacks: [stack],
+})
+
+describe("buildStacks", () => {
+  it("carries a stack's group onto the entry the rail shows", () => {
+    const grouped = stackWith({ group: "Starters" })
+
+    expect(buildStacks(matrixWithStack(grouped))).toStrictEqual([
+      {
+        id: grouped.id,
+        name: grouped.name,
+        description: grouped.description,
+        philosophy: grouped.philosophy,
+        group: "Starters",
+        skillCount: grouped.allSkillIds.length,
+      },
+    ])
+  })
+
+  it("leaves the group off a stack that names none", () => {
+    for (const stack of STACKS) {
+      expect(stack, stack.id).not.toHaveProperty("group")
+    }
+  })
+})
+
+describe("createStackExpander", () => {
+  it("assigns a sub-agent once to a skill it lists under two categories", () => {
+    const twice = stackWith({
+      skills: {
+        "web-developer": {
+          "web-framework": ["web-framework-react"],
+          "web-meta-framework": ["web-framework-react"],
+        },
+      },
+    })
+    const expansion = createStackExpander(matrixWithStack(twice))(twice.id)
+    if (!expansion) throw new Error(`Stack not found: ${twice.id}`)
+
+    const targets = expansion.assignmentsBySkill["web-framework-react"]
+    if (!targets) throw new Error("Assignments not found: web-framework-react")
+
+    expect(targets.map((target) => target.agentId)).toStrictEqual([
+      "web-developer",
     ])
   })
 })

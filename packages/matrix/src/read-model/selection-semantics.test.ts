@@ -5,10 +5,13 @@ import {
   type SelectionScenario,
 } from "../contract/selection-scenarios"
 import {
+  catalogFactsOf,
   createSelectionSemantics,
   judgeSelection,
   type SelectionCatalogFacts,
+  type SelectionSkillFacts,
 } from "./selection-semantics"
+import { MATRIX } from "./source"
 
 // Fabricated ids isolating each rule.
 const FACTS: SelectionCatalogFacts = {
@@ -282,4 +285,167 @@ describe("the shared semantics honour the selection contract", () => {
       assertScenario(scenario)
     })
   }
+})
+
+// A skill with no relations; each test names only the ones it isolates.
+const skillFact = (
+  id: string,
+  over: Partial<Omit<SelectionSkillFacts, "id">> = {}
+): SelectionSkillFacts => ({
+  id,
+  categoryId: "companions",
+  conflictsWith: [],
+  discourages: [],
+  requires: [],
+  ...over,
+})
+
+const judgeAmong = (
+  skills: readonly SelectionSkillFacts[],
+  exclusiveCategoryIds: readonly string[] = []
+) =>
+  createSelectionSemantics({
+    skills,
+    exclusiveCategoryIds: new Set(exclusiveCategoryIds),
+  })
+
+describe("the requires-closure, by kind of requirement", () => {
+  it("implies every member of a requirement that needs them all", () => {
+    const judgeAllOf = judgeAmong([
+      skillFact("app", {
+        requires: [{ skillIds: ["router", "store"], needsAny: false }],
+      }),
+      skillFact("router"),
+      skillFact("store"),
+    ])
+
+    expect([...judgeAllOf(["app"]).implied].sort()).toStrictEqual([
+      "router",
+      "store",
+    ])
+  })
+
+  it("implies the one skill a needs-any requirement offers no alternative to", () => {
+    const judgeSoleOption = judgeAmong([
+      skillFact("app", {
+        requires: [{ skillIds: ["router"], needsAny: true }],
+      }),
+      skillFact("router"),
+    ])
+
+    expect(judgeSoleOption(["app"]).implied).toStrictEqual(["router"])
+  })
+
+  it("settles a requirement cycle", () => {
+    const judgeCycle = judgeAmong([
+      skillFact("client", {
+        requires: [{ skillIds: ["server"], needsAny: false }],
+      }),
+      skillFact("server", {
+        requires: [{ skillIds: ["client"], needsAny: false }],
+      }),
+    ])
+
+    expect(judgeCycle(["client"]).implied).toStrictEqual(["server"])
+  })
+})
+
+describe("the dependent fixpoint, in any catalogue order", () => {
+  it("strands a dependent the catalogue lists before what it depends on", () => {
+    const judgeOutOfOrder = judgeAmong([
+      skillFact("starter", {
+        requires: [{ skillIds: ["meta-framework"], needsAny: false }],
+      }),
+      skillFact("meta-framework", {
+        requires: [{ skillIds: ["vue"], needsAny: false }],
+      }),
+      skillFact("vue"),
+      skillFact("react", { conflictsWith: ["vue"] }),
+    ])
+
+    expect([...judgeOutOfOrder(["react"]).outOfReach].sort()).toStrictEqual([
+      "meta-framework",
+      "starter",
+      "vue",
+    ])
+  })
+})
+
+describe("a skill's relations to itself", () => {
+  it("never rules a selected skill out for conflicting with itself", () => {
+    const judgeSelfConflict = judgeAmong([
+      skillFact("solo", { conflictsWith: ["solo"] }),
+    ])
+
+    expect(judgeSelfConflict(["solo"]).verdictOf("solo")).toStrictEqual({
+      status: "normal",
+    })
+  })
+
+  it("never warns a selected skill off itself", () => {
+    const judgeSelfWarning = judgeAmong([
+      skillFact("solo", {
+        discourages: [{ skillId: "solo", reason: "Pick another" }],
+      }),
+    ])
+
+    expect(judgeSelfWarning(["solo"]).verdictOf("solo")).toStrictEqual({
+      status: "normal",
+    })
+  })
+})
+
+describe("soft warnings name their pairing", () => {
+  it("warns no skill the reached skill's warning does not name", () => {
+    expect(judge(["scss"]).verdictOf("react")).toStrictEqual({
+      status: "normal",
+    })
+  })
+
+  it("warns a skill only once the partner its warning names is reached", () => {
+    expect(judge(["react"]).verdictOf("scss")).toStrictEqual({
+      status: "normal",
+    })
+  })
+})
+
+describe("the pick-one swap rule, outside an impossibility", () => {
+  it("keeps a conflict between two skills of a category that is not pick-one", () => {
+    const judgeCompanions = judgeAmong([
+      skillFact("styled", { conflictsWith: ["emotion"] }),
+      skillFact("emotion"),
+    ])
+
+    expect(judgeCompanions(["styled"]).verdictOf("emotion")).toStrictEqual({
+      status: "incompatible",
+      cause: { kind: "conflict", skillId: "styled" },
+    })
+  })
+
+  it("keeps a pick-one sibling's warning, since the swap re-judges only an impossibility", () => {
+    const judgeRenderers = judgeAmong(
+      [
+        skillFact("react", {
+          categoryId: "framework",
+          discourages: [{ skillId: "solid", reason: "One renderer at a time" }],
+        }),
+        skillFact("solid", { categoryId: "framework" }),
+      ],
+      ["framework"]
+    )
+
+    expect(judgeRenderers(["react"]).verdictOf("solid")).toStrictEqual({
+      status: "discouraged",
+      reason: "One renderer at a time",
+    })
+  })
+})
+
+describe("catalogFactsOf", () => {
+  it("makes pick-one only the categories the catalogue marks exclusive", () => {
+    const { exclusiveCategoryIds } = catalogFactsOf(MATRIX)
+
+    expect(exclusiveCategoryIds.has("web-framework")).toBe(true)
+    expect(exclusiveCategoryIds.has("web-styling")).toBe(false)
+  })
 })

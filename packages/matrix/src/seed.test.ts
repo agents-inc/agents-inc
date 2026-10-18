@@ -365,3 +365,105 @@ describe("the read schema is deliberately lenient about the same pair", () => {
     expect(seedPayloadSchema.safeParse(restingPairPayload()).success).toBe(true)
   })
 })
+
+describe("the vocabularies a payload speaks", () => {
+  it.each(["opus", "fable", "sonnet", "haiku"])(
+    "accepts a sub-agent on the %s model",
+    (model) => {
+      expect(seedPayloadSchema.safeParse(withAgent({ model })).success).toBe(
+        true
+      )
+    }
+  )
+
+  it("refuses a Claude model no build offers", () => {
+    expect(
+      seedPayloadSchema.safeParse(withAgent({ model: "gpt-4o" })).success
+    ).toBe(false)
+  })
+
+  it.each(["low", "medium", "high", "xhigh", "max"])(
+    "accepts a sub-agent at %s effort",
+    (effort) => {
+      expect(seedPayloadSchema.safeParse(withAgent({ effort })).success).toBe(
+        true
+      )
+    }
+  )
+
+  it("refuses an effort no build offers", () => {
+    expect(
+      seedPayloadSchema.safeParse(withAgent({ effort: "extreme" })).success
+    ).toBe(false)
+  })
+
+  it.each(["plugin", "eject"])("accepts a skill installed by %s", (install) => {
+    const skill = { ...skillAt("global", {}), install }
+
+    expect(
+      seedPayloadSchema.safeParse(payload({ skills: { [REACT]: skill } }))
+        .success
+    ).toBe(true)
+  })
+
+  it("refuses an install mode no build offers", () => {
+    const skill = { ...skillAt("global", {}), install: "copy" }
+
+    expect(
+      seedPayloadSchema.safeParse(payload({ skills: { [REACT]: skill } }))
+        .success
+    ).toBe(false)
+  })
+})
+
+type Refusal = { path: PropertyKey[]; message: string }
+
+const refusalsOf = (result: {
+  success: boolean
+  error?: { issues: Refusal[] }
+}): Refusal[] => {
+  if (result.success || !result.error) throw new Error("Expected a refusal")
+
+  return result.error.issues.map(({ path, message }) => ({ path, message }))
+}
+
+describe("what a refusal says", () => {
+  it("says a skill directory must hold its SKILL.md", () => {
+    const orphaned = { "reference/api.md": "# API\n" }
+
+    expect(
+      refusalsOf(
+        seedExternalSkillSchema.safeParse(external({ files: orphaned }))
+      )
+    ).toStrictEqual([
+      { path: ["files"], message: "a skill directory must hold SKILL.md" },
+    ])
+  })
+
+  it("says how many bytes a skill directory may hold", () => {
+    const huge = files({
+      "reference/big.md": "x".repeat(MAX_EXTERNAL_SKILL_BYTES),
+    })
+
+    expect(
+      refusalsOf(seedExternalSkillSchema.safeParse(external({ files: huge })))
+    ).toStrictEqual([
+      {
+        path: ["files"],
+        message: "a skill directory may not exceed 262144 bytes",
+      },
+    ])
+  })
+
+  it("names the project skill's assignment that has nowhere to be written", () => {
+    expect(
+      refusalsOf(installableSeedPayloadSchema.safeParse(restingPairPayload()))
+    ).toStrictEqual([
+      {
+        path: ["skills", REACT, "assignments", AGENT_ID],
+        message:
+          "a project-scoped skill has nowhere to be written on 'web-developer', which rests at global scope",
+      },
+    ])
+  })
+})

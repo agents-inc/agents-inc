@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { AGENT_DEFINITIONS } from "../generated/agents"
+import type * as GeneratedMatrix from "../vendor/generated/matrix"
 import {
   SKILL_IDS,
   type AgentName,
@@ -25,6 +26,7 @@ vi.mock("node:fs/promises", () => {
 })
 
 const FRAMEWORK_SKILL: SkillId = "web-framework-react"
+const FRAMEWORK_CATEGORY = "web-framework"
 const TESTING_SKILL: SkillId = "web-testing-vitest"
 const UNLISTED_IN_FIXTURE: SkillId = "web-state-zustand"
 // Shared skills skip the domain gate.
@@ -338,6 +340,20 @@ describe("domain affinity gate", () => {
     ).toBe("preloaded")
   })
 
+  it("keeps a meta-flavor agent to a meta skill's row, not a domain skill's", () => {
+    const resolveMetaRows = createLoadStateResolver({
+      [META_SKILL]: ["meta"],
+      [FRAMEWORK_SKILL]: ["meta"],
+    })
+
+    expect(
+      resolveMetaRows({ skillId: META_SKILL, agentId: AGENT_SUMMONER })
+    ).toBe("preloaded")
+    expect(
+      resolveMetaRows({ skillId: FRAMEWORK_SKILL, agentId: AGENT_SUMMONER })
+    ).toBe("lazy")
+  })
+
   it("lets an explicit flag beat the gate", () => {
     expect(
       resolve({
@@ -397,6 +413,36 @@ describe("data integrity", () => {
     ).toThrow(/architect/)
 
     vi.doUnmock("../generated/agents")
+    vi.resetModules()
+  })
+
+  it("throws on a shipped skill whose category the catalogue cannot place", async () => {
+    vi.resetModules()
+    vi.doMock("../vendor/generated/matrix", async (importOriginal) => {
+      const { BUILT_IN_MATRIX } = await importOriginal<typeof GeneratedMatrix>()
+      const placed = BUILT_IN_MATRIX.categories[FRAMEWORK_CATEGORY]
+      if (!placed) throw new Error(`Category not found: ${FRAMEWORK_CATEGORY}`)
+      const { domain: _dropped, ...unplaced } = placed
+
+      return {
+        BUILT_IN_MATRIX: {
+          ...BUILT_IN_MATRIX,
+          categories: {
+            ...BUILT_IN_MATRIX.categories,
+            [FRAMEWORK_CATEGORY]: unplaced,
+          },
+        },
+      }
+    })
+
+    const { resolveLoadState: resolveUnplaced } =
+      await import("./preload-defaults")
+
+    expect(() =>
+      resolveUnplaced({ skillId: FRAMEWORK_SKILL, agentId: WEB_DEVELOPER })
+    ).toThrow(`Skill domain not found: ${FRAMEWORK_SKILL}`)
+
+    vi.doUnmock("../vendor/generated/matrix")
     vi.resetModules()
   })
 
