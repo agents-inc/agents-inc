@@ -7,6 +7,15 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.170.2] - 2026-10-18
+
+**Mutation testing finds what the tests missed: a marketplace naming a private address is refused wherever it is set, and `uninstall`'s plan, `edit --from`'s report, `eject --output` and `compile`'s skill count are fixed**
+
+- REPO-44: a marketplace naming a private or reserved address is refused however it is spelled, and one set in `config.ts` is checked too. `uninstall`'s plan names only what it removes, and a project holding only your own skills has nothing to uninstall. `edit --from` reports a project copy beside a global install once. `eject --output` writes into an existing folder, and `eject all --output` copies the skills into a new one. Registering a project no longer rewrites every registered project, a skill id of `.` no longer deletes the skills folder, and `compile` counts a plugin installed at both scopes once.
+- StrykerJS mutation testing runs from the repository root (`bun run mutation`), and every workspace's specs catch what its mutants showed they missed. The commit hook formats `.mjs` and `.cjs` files, and comments across the repository say only what the code cannot.
+
+See [changelogs/0.170.2.md](./changelogs/0.170.2.md) for full details.
+
 ## [0.170.1] - 2026-10-17
 
 **The built-in catalogue carries the skills repository's rewritten meta skills, and replaces the unpublished 0.170.0**
