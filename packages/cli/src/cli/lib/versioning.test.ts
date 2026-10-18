@@ -8,7 +8,10 @@ import {
   computeSkillFolderHash,
   parseMajorVersion,
   bumpMajorVersion,
+  determinePluginVersion,
 } from "./versioning";
+import { getPluginManifestPath } from "./plugins/plugin-finder";
+import { silenceConsole } from "./__tests__/helpers/silence-console";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import { STANDARD_FILES } from "../consts";
 
@@ -192,5 +195,118 @@ describe("bumpMajorVersion", () => {
 
   it("should handle non-semver by bumping from default 1", () => {
     expect(bumpMajorVersion("latest")).toBe("2.0.0");
+  });
+});
+
+describe("computeSkillFolderHash, the hashed text", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("versioning-hashed-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("hashes each file as its path and content, in path order, between separators", async () => {
+    await writeFile(path.join(tempDir, STANDARD_FILES.SKILL_MD), "# Test");
+    await mkdir(path.join(tempDir, "examples"), { recursive: true });
+    await writeFile(path.join(tempDir, "examples", "b.ts"), "// B");
+    await writeFile(path.join(tempDir, "examples", "a.ts"), "// A");
+
+    expect(await computeSkillFolderHash(tempDir)).toBe(
+      computeStringHash(
+        ["SKILL.md:# Test", "examples/a.ts:// A", "examples/b.ts:// B"].join("\n---\n"),
+      ),
+    );
+  });
+});
+
+describe("computeSkillFolderHash, nested example files", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("versioning-nested-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("hashes a nested file and a top-level one in path order, not the order they are found", async () => {
+    await writeFile(path.join(tempDir, STANDARD_FILES.SKILL_MD), "# Test");
+    await mkdir(path.join(tempDir, "examples", "a"), { recursive: true });
+    await writeFile(path.join(tempDir, "examples", "a", "z.ts"), "// nested");
+    await writeFile(path.join(tempDir, "examples", "b.ts"), "// top level");
+
+    expect(await computeSkillFolderHash(tempDir)).toBe(
+      computeStringHash(
+        ["SKILL.md:# Test", "examples/a/z.ts:// nested", "examples/b.ts:// top level"].join(
+          "\n---\n",
+        ),
+      ),
+    );
+  });
+});
+
+describe("parseMajorVersion, a version that does not open with its major", () => {
+  it("reads it as major 1", () => {
+    expect(parseMajorVersion("v2.0.0")).toBe(1);
+  });
+});
+
+describe("determinePluginVersion", () => {
+  const consoleSpies = silenceConsole(["warn"]);
+  const NEW_HASH = "abc1234";
+  let pluginDir: string;
+
+  beforeEach(async () => {
+    pluginDir = await createTempDir("versioning-plugin-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(pluginDir);
+  });
+
+  async function pluginOnDisk(manifest: string, contentHash?: string): Promise<string> {
+    const manifestPath = getPluginManifestPath(pluginDir);
+    await mkdir(path.dirname(manifestPath), { recursive: true });
+    await writeFile(manifestPath, manifest);
+    if (contentHash !== undefined) {
+      await writeFile(path.join(path.dirname(manifestPath), ".content-hash"), contentHash);
+    }
+    return manifestPath;
+  }
+
+  it("starts a plugin with no manifest at 1.0.0, warning about nothing", async () => {
+    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
+      version: "1.0.0",
+      contentHash: NEW_HASH,
+    });
+    expect(consoleSpies.warn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the version when the recorded hash matches, a trailing newline aside", async () => {
+    await pluginOnDisk(JSON.stringify({ name: "acme-react", version: "3.0.0" }), `${NEW_HASH}\n`);
+
+    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
+      version: "3.0.0",
+      contentHash: NEW_HASH,
+    });
+  });
+
+  it("starts over at 1.0.0 from a manifest it cannot read, and names it", async () => {
+    const manifestPath = await pluginOnDisk("{ not json");
+
+    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
+      version: "1.0.0",
+      contentHash: NEW_HASH,
+    });
+    expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(
+        new RegExp(`^  Warning: Failed to read plugin manifest at '${manifestPath}': .+`),
+      ),
+    );
   });
 });

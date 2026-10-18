@@ -84,7 +84,7 @@ import { SOURCE_ENV_VAR } from "../configuration/config";
 import { LOCAL_DEFAULTS } from "../metadata-keys";
 import type { LocalSkillDiscoveryResult } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
-import { typedKeys } from "../../utils/typed-object";
+import { typedEntries, typedKeys, typedValues } from "../../utils/typed-object";
 import { buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 
 /** In its own namespace: a custom marketplace shipping a catalogue id is refused whole. */
@@ -424,6 +424,18 @@ describe("source-loader", () => {
         },
       );
 
+      it("should call a manifest that is not there absent rather than unreadable", async () => {
+        const sourceDir = await writeMarketplaceWithManifestDefect(tempDir, "absent");
+
+        const refusal = await refusalLoading(sourceDir, tempDir);
+
+        expect(refusal).toBe(
+          `'${sourceDir}' has no .claude-plugin/marketplace.json, so it is not a marketplace yet.\n\n` +
+            "Every marketplace other than the default one must publish a valid .claude-plugin/marketplace.json. " +
+            "Run 'npx agents-inc build plugins' and then 'npx agents-inc build marketplace' in that marketplace's repository, which write it.",
+        );
+      });
+
       it("should name the field that failed when the manifest is there and the schema refuses it", async () => {
         const refusal = await refusalLoading(
           await writeMarketplaceWithUnreadableManifest(tempDir),
@@ -532,6 +544,18 @@ describe("source-loader", () => {
         await expect(refusal).rejects.toThrow(`Marketplace name '${EJECT_SOURCE}' is reserved`);
       });
 
+      it("should send the reader to the config that recorded the reserved name", async () => {
+        const sourceDir = await writeMarketplaceNamed(tempDir, "recorded", MANIFEST_NAME_ACCEPTED);
+        const configPath = await writeTestTsConfig(
+          tempDir,
+          buildProjectConfig({ marketplace: sourceDir, marketplaceName: EJECT_SOURCE }),
+        );
+
+        await expect(loadInstallation()).rejects.toThrow(
+          `Choose a name of your own: set this installation up again, or correct the marketplaceName it recorded in '${configPath}'.`,
+        );
+      });
+
       it("should refuse it over the public catalogue too, which is read without a manifest", async () => {
         await writeTestTsConfig(tempDir, buildProjectConfig({ marketplaceName: EJECT_SOURCE }));
 
@@ -565,6 +589,34 @@ describe("source-loader", () => {
         expect(Object.keys(result.matrix.skills)).toStrictEqual(
           Object.keys(BUILT_IN_MATRIX.skills),
         );
+      });
+    });
+
+    describe("the public catalogue read offline", () => {
+      it("should carry the built-in stacks and slug map as they ship", async () => {
+        const result = await loadSkillsMatrixFromSource({
+          projectDir: tempDir,
+          skipExtraSources: true,
+          matrixOnly: true,
+        });
+
+        expect(result.matrix.suggestedStacks).toStrictEqual(BUILT_IN_MATRIX.suggestedStacks);
+        expect(result.matrix.slugMap.slugToId).toStrictEqual(BUILT_IN_MATRIX.slugMap.slugToId);
+      });
+
+      it("should label it with the marketplace name its installation recorded", async () => {
+        await writeTestTsConfig(
+          tempDir,
+          buildProjectConfig({ marketplaceName: DEFAULT_PUBLIC_SOURCE_NAME }),
+        );
+
+        const result = await loadSkillsMatrixFromSource({
+          projectDir: tempDir,
+          skipExtraSources: true,
+          matrixOnly: true,
+        });
+
+        expect(result.marketplace).toBe(DEFAULT_PUBLIC_SOURCE_NAME);
       });
     });
 
@@ -1519,6 +1571,44 @@ describe("convertStackToResolvedStack", () => {
     expect(warnings.join(" ")).toContain("web-styling-tailwind");
   });
 
+  it("names every sub-agent it dropped, comma-separated", () => {
+    const stack = createMockStack("two-undeclared", {
+      name: "Two Undeclared",
+      agents: {
+        "frontend-dev": { "web-framework": [createMockSkillAssignment("web-framework-react")] },
+        "backend-dev": { "api-api": [createMockSkillAssignment("api-framework-hono")] },
+      },
+    });
+
+    const { warnings } = convertStackWithWarnings(stack);
+
+    expect(warnings).toStrictEqual([
+      "Stack 'two-undeclared' names 2 sub-agent(s) this CLI does not define: 'frontend-dev', 'backend-dev'. " +
+        "Left out of the stack — a sub-agent must be one the CLI ships.",
+    ]);
+  });
+
+  it("names every skill the catalogue does not carry, comma-separated", () => {
+    const stack = createMockStack("two-withdrawn", {
+      name: "Two Withdrawn",
+      agents: {
+        "web-developer": {
+          "web-framework": [
+            createMockSkillAssignment("web-styling-tailwind"),
+            createMockSkillAssignment("web-testing-vitest"),
+          ],
+        },
+      },
+    });
+
+    const { warnings } = convertStackWithWarnings(stack);
+
+    expect(warnings).toStrictEqual([
+      "Stack 'two-withdrawn' names 2 skill(s) this marketplace's catalogue does not carry: 'web-styling-tailwind', 'web-testing-vitest'. " +
+        "Left out of the stack — selecting it would install nothing.",
+    ]);
+  });
+
   it("says nothing about a stack whose sub-agents the CLI all declares", () => {
     const stack = createMockStack("all-declared", {
       name: "All Declared",
@@ -1607,6 +1697,95 @@ describe("mergeLocalSkillsIntoMatrix slug map", () => {
       "an override inherits the slug the matrix already maps, so it claims none of its own",
     ).toBeUndefined();
     expect(warnings).toStrictEqual([]);
+  });
+});
+
+describe("mergeLocalSkillsIntoMatrix — what a local skill carries in", () => {
+  const LOCAL_ID = "web-tooling-custom" as SkillId;
+  // Boundary cast: a local category outside the generated union
+  const LOCAL_CATEGORY = "web-tooling" as CategoryPath;
+
+  function mergedLocalSkill(
+    overrides: Parameters<typeof createMockExtractedSkill>[1],
+  ): ResolvedSkill | undefined {
+    const merged = mergeLocalSkillsIntoMatrix(createMockMatrix(), {
+      skills: [
+        createMockExtractedSkill(LOCAL_ID, {
+          local: true,
+          category: LOCAL_CATEGORY,
+          domain: "web",
+          slug: "tooling" as SkillSlug,
+          ...overrides,
+        }),
+      ],
+      localSkillsPath: "/project/.claude/skills",
+    });
+    return loadedSkill(merged, LOCAL_ID);
+  }
+
+  it("carries the activation description and usage guidance its metadata declares", () => {
+    expect(
+      mergedLocalSkill({
+        activationDescription: "Use when tooling",
+        usageGuidance: "Use this skill when configuring tools.",
+      }),
+    ).toMatchObject({
+      activationDescription: "Use when tooling",
+      usageGuidance: "Use this skill when configuring tools.",
+    });
+  });
+
+  it("adds neither field when the metadata declares neither", () => {
+    const skill = mergedLocalSkill({});
+
+    expect(skill).toBeDefined();
+    expect(Object.keys(skill ?? {})).not.toContain("activationDescription");
+    expect(Object.keys(skill ?? {})).not.toContain("usageGuidance");
+  });
+
+  it("synthesizes a definition for a category the matrix lacks, as a local one", () => {
+    const merged = mergeLocalSkillsIntoMatrix(createMockMatrix(), {
+      skills: [
+        createMockExtractedSkill(LOCAL_ID, {
+          local: true,
+          category: LOCAL_CATEGORY,
+          domain: "web",
+          slug: "tooling" as SkillSlug,
+        }),
+      ],
+      localSkillsPath: "/project/.claude/skills",
+    });
+
+    expect((merged.categories as Record<string, CategoryDefinition>)[LOCAL_CATEGORY]).toStrictEqual(
+      {
+        id: LOCAL_CATEGORY,
+        displayName: LOCAL_CATEGORY,
+        description: "Local skill category",
+        domain: "web",
+        exclusive: false,
+        order: 0,
+      },
+    );
+  });
+
+  it("keeps the definition of a category the matrix already has", () => {
+    const declared = createMockCategory("web-framework", "Framework");
+    const merged = mergeLocalSkillsIntoMatrix(
+      createMockMatrix({}, { categories: buildCategoryMap({ "web-framework": declared }) }),
+      {
+        skills: [
+          createMockExtractedSkill(LOCAL_ID, {
+            local: true,
+            category: "web-framework",
+            domain: "web",
+            slug: "tooling" as SkillSlug,
+          }),
+        ],
+        localSkillsPath: "/project/.claude/skills",
+      },
+    );
+
+    expect(merged.categories["web-framework"]).toStrictEqual(declared);
   });
 });
 
@@ -1962,6 +2141,20 @@ describe("mergeLocalSkillsIntoMatrix — a custom skill's category", () => {
     expect(refusal).toContain(`${CUSTOM_LOCAL_SKILL_PATH}${STANDARD_FILES.METADATA_YAML}`);
   });
 
+  it("refuses in words that send the author to the metadata.yaml to edit", () => {
+    const { warnings } = mergeLocalSkillsWithWarnings(
+      matrixDeclaringMarketplaceCategory(),
+      customSkillDeclaring(UNDECLARED_CATEGORY),
+    );
+
+    expect(warnings).toStrictEqual([
+      `Skipping local skill '${CUSTOM_LOCAL_SKILL_ID}': category '${UNDECLARED_CATEGORY}' is not one this ` +
+        "installation declares, so the skill belongs in no grid tab and can be given to no sub-agent. " +
+        `Set category in ${CUSTOM_LOCAL_SKILL_PATH}${STANDARD_FILES.METADATA_YAML} to a category that already exists — a skill ` +
+        "is placed in the taxonomy, it does not extend it.",
+    ]);
+  });
+
   it("leaves the slug of a refused custom skill unclaimed", () => {
     const { matrix } = mergeLocalSkillsWithWarnings(
       matrixDeclaringMarketplaceCategory(),
@@ -2065,6 +2258,54 @@ describe("source-loader public catalogue collision guard", () => {
       sourceDirs.sourceDir,
     );
     expect(refusal, "the fix is a namespace, and the refusal must say so").toContain("namespace");
+  });
+
+  it("lists the first ten colliding ids and counts the ones it leaves out", async () => {
+    const published = typedEntries(BUILT_IN_MATRIX.skills)
+      .slice(0, 12)
+      .map(([id, skill]) => {
+        const category = typedValues(BUILT_IN_MATRIX.categories).find(
+          ({ id: categoryId }) => categoryId === skill.category,
+        );
+        if (!category?.domain)
+          throw new Error(`no domain for catalogue category '${skill.category}'`);
+        return createTestSkill(id, `Published as '${id}'`, {
+          slug: skill.slug,
+          category: skill.category,
+          domain: category.domain,
+        });
+      });
+    const collidingIds = published.map((skill) => skill.id);
+    sourceDirs = await createTestSource({ skills: published });
+
+    const refusal = await refusalLoading(sourceDirs.sourceDir, tempDir);
+
+    expect(refusal).toContain(
+      `Marketplace '${sourceDirs.sourceDir}' ships 12 skill id(s) the public catalogue already owns:\n`,
+    );
+    // Ten of the twelve, in whatever order the skills were read, then the count of the rest.
+    expect(refusal).toMatch(
+      new RegExp(
+        `already owns:\\n(?:  (?:${collidingIds.join("|")})\\n){10}  \\.\\.\\. and 2 more\\n`,
+      ),
+    );
+    expect(refusal).toContain(
+      "\n  ... and 2 more\nA skill id is the directory the skill installs into, so these would shadow the public catalogue's own skills. Every id must carry its marketplace's name as a namespace — '<marketplace>-<id>'. Rename each skill and the 'name' in its SKILL.md, then re-run 'build marketplace', which refuses the same ids before they are published.",
+    );
+  });
+
+  it("lists every colliding id when there are ten or fewer", async () => {
+    sourceDirs = await createTestSource({ skills: skillsUnderCatalogueIds() });
+
+    const refusal = await refusalLoading(sourceDirs.sourceDir, tempDir);
+
+    expect(refusal).toContain(
+      `Marketplace '${sourceDirs.sourceDir}' ships 2 skill id(s) the public catalogue already owns:\n`,
+    );
+    for (const id of CATALOGUE_OWNED_IDS) expect(refusal).toContain(`\n  ${id}\n`);
+    expect(refusal).not.toContain("... and");
+    // The last id is followed by the remedy itself, with no line between them.
+    expect(refusal).toMatch(/\n {2}\S+\nA skill id is the directory the skill installs into/);
   });
 
   it("loads a marketplace whose skill ids all carry its own namespace", async () => {

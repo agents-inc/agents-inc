@@ -131,6 +131,13 @@ describe("source-fetcher", () => {
       expect(result).toMatch(/^github-org-repo-[0-9a-f]+$/);
     });
 
+    it("should collapse a run of separators into one dash", () => {
+      const result = sanitizeSourceForCache("https://github.com/org/repo");
+      expect(result).toMatch(
+        new RegExp(`^https-github-com-org-repo-[0-9a-f]{${CACHE_HASH_LENGTH}}$`),
+      );
+    });
+
     it("should include a hex hash suffix", () => {
       const result = sanitizeSourceForCache("github:org/repo");
       const parts = result.split("-");
@@ -352,6 +359,14 @@ describe("getGigetCacheDir", () => {
     expect(result).toBe(path.join(expectedBase, "github", "myorg-myrepo"));
   });
 
+  it("should default to github provider when a colon comes only after the owner/repo", () => {
+    delete process.env.XDG_CACHE_HOME;
+    const result = getGigetCacheDir("myorg/myrepo/sub:dir");
+
+    const expectedBase = path.resolve(os.homedir(), ".cache", "giget");
+    expect(result).toBe(path.join(expectedBase, "github", "myorg-myrepo"));
+  });
+
   it("should return undefined for http: protocol", () => {
     const result = getGigetCacheDir("http://example.com/repo");
 
@@ -364,10 +379,21 @@ describe("getGigetCacheDir", () => {
     expect(result).toBeUndefined();
   });
 
+  it.each(["http:org/repo", "https:org/repo"])(
+    "should return undefined for an http(s) source even when it reads like org/repo: %s",
+    (source) => {
+      expect(getGigetCacheDir(source)).toBeUndefined();
+    },
+  );
+
   it("should return undefined for unparseable git URI", () => {
     const result = getGigetCacheDir("not-a-valid-uri");
 
     expect(result).toBeUndefined();
+  });
+
+  it("should return undefined when the git URI does not open with its owner/repo", () => {
+    expect(getGigetCacheDir("github:/org/repo")).toBeUndefined();
   });
 
   it("should use XDG_CACHE_HOME when set", () => {
@@ -410,5 +436,25 @@ describe("getGigetCacheDir", () => {
     const expectedBase = path.resolve(os.homedir(), ".cache", "giget");
     // giget replaces non-alphanumeric chars (except dash) with dash
     expect(result).toBe(path.join(expectedBase, "github", "org-my-repo-name"));
+  });
+});
+
+describe("fetchFromSource for a local marketplace that is not there", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-source-fetcher-missing-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("names the path, why it is refused, and a marketplace that exists", async () => {
+    const missing = path.join(tempDir, "no-such-marketplace");
+
+    await expect(fetchFromSource(missing)).rejects.toThrow(
+      `Local marketplace not found: '${missing}'\n\nNothing is at that path, and a local marketplace must be a directory holding skills.\n\nCheck it for a typo, or name a marketplace that exists:\n  --marketplace github:agents-inc/skills`,
+    );
   });
 });

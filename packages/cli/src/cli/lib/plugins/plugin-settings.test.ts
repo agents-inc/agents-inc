@@ -8,6 +8,7 @@ import {
 } from "./plugin-settings";
 import { CLAUDE_DIR } from "../../consts";
 import {
+  buildLocalPluginInstallation,
   buildProjectPluginInstallation,
   buildUserPluginInstallation,
   renderEnabledPluginsSettings,
@@ -26,6 +27,8 @@ vi.mock("../../utils/fs", async (importOriginal) => ({
 }));
 
 vi.mock("../../utils/logger");
+
+import { verbose } from "../../utils/logger";
 
 describe("plugin-settings", () => {
   beforeEach(() => {
@@ -391,6 +394,99 @@ describe("plugin-settings", () => {
       mockReadFileSafe.mockRejectedValue(new Error("Read error"));
 
       await expect(listRegisteredPluginInstalls("/plugins-dir")).rejects.toThrow("Read error");
+    });
+  });
+
+  describe("what reading the settings says", () => {
+    const SETTINGS_PATH = path.join("/project", CLAUDE_DIR, "settings.json");
+    const PLUGIN_KEY = "web-framework-react@my-marketplace";
+
+    it("says there is no settings.json, and reads nothing", async () => {
+      mockFileExists.mockResolvedValue(false);
+
+      await getEnabledPluginKeys("/project");
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        `No settings.json found at '${SETTINGS_PATH}'`,
+      );
+      expect(mockReadFileSafe).not.toHaveBeenCalled();
+    });
+
+    it("says how many plugins settings.json enables", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFileSafe.mockResolvedValue(renderEnabledPluginsSettings({ [PLUGIN_KEY]: true }));
+
+      await getEnabledPluginKeys("/project");
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith("Found 1 enabled plugins in settings.json");
+    });
+
+    it("says settings.json enables no plugins at all", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFileSafe.mockResolvedValue(JSON.stringify({ model: "opus" }));
+
+      await getEnabledPluginKeys("/project");
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        `No enabledPlugins found in '${SETTINGS_PATH}'`,
+      );
+    });
+
+    it("answers no keys and says why for a settings.json of the wrong shape", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFileSafe.mockResolvedValue(JSON.stringify({ enabledPlugins: "all of them" }));
+
+      expect(await getEnabledPluginKeys("/project")).toStrictEqual([]);
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        expect.stringMatching(/^Invalid settings\.json structure: /),
+      );
+    });
+
+    it("says why it could not read settings.json", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFileSafe.mockResolvedValue("{ not json");
+
+      await getEnabledPluginKeys("/project");
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        expect.stringMatching(/^Failed to read settings\.json: /),
+      );
+    });
+
+    it("says which plugin has no installation belonging to the project", async () => {
+      mockReadFileSafe.mockResolvedValue(
+        renderInstalledPluginsRegistry({
+          [PLUGIN_KEY]: [
+            buildProjectPluginInstallation("/cache/elsewhere/react/1.0.0", "/somewhere-else"),
+          ],
+        }),
+      );
+
+      await listPluginInstallsForProject("/plugins-dir", "/project");
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        `No installation of '${PLUGIN_KEY}' belongs to '/project'`,
+      );
+    });
+
+    it("reads a record installed at local scope", async () => {
+      mockReadFileSafe.mockResolvedValue(
+        renderInstalledPluginsRegistry({
+          [PLUGIN_KEY]: [buildLocalPluginInstallation("/cache/local/react/1.0.0")],
+        }),
+      );
+
+      expect(await listRegisteredPluginInstalls("/plugins-dir")).toStrictEqual([
+        { pluginKey: PLUGIN_KEY, installPath: "/cache/local/react/1.0.0" },
+      ]);
+    });
+
+    it("names every problem in a registry the schema refuses", async () => {
+      mockReadFileSafe.mockResolvedValue(JSON.stringify({ version: "two", plugins: "none" }));
+
+      await expect(listRegisteredPluginInstalls("/plugins-dir")).rejects.toThrow(
+        "Invalid installed_plugins.json: version: Invalid input: expected number, received string; plugins: Invalid input: expected record, received string",
+      );
     });
   });
 });

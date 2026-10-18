@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { TEST_SOURCE_URL } from "../__tests__/test-constants.js";
-import { loadSkillsFromAllSources } from "./multi-source-loader";
+import os from "os";
+import { isLocalOnlySkill, loadSkillsFromAllSources } from "./multi-source-loader";
 import type { SkillDefinition, SkillId } from "../../types";
 import type { ResolvedConfig } from "../configuration";
 import { SKILLS } from "../__tests__/test-fixtures";
@@ -10,6 +11,8 @@ import {
 } from "../__tests__/mock-data/mock-skills.js";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { discoverAllPluginSkills } from "../plugins";
+import { createMockSkillSource } from "../__tests__/factories/skill-factories";
+import { verbose } from "../../utils/logger";
 
 vi.mock("../../utils/logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../utils/logger")>()),
@@ -370,5 +373,148 @@ describe("multi-source-loader", () => {
         },
       ]);
     });
+  });
+});
+
+const REACT_PLUGIN = {
+  "web-framework-react": {
+    id: "web-framework-react",
+    description: "React framework skill",
+    path: "/global/cache/react/skills/web/framework/react",
+  },
+} satisfies Partial<Record<SkillId, SkillDefinition>>;
+
+const LOCAL_SOURCE = {
+  name: "eject",
+  type: "local",
+  installed: true,
+  installMode: "eject",
+} as const;
+
+describe("multi-source-loader — what the tagging pass says and adds", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDiscoverAllPluginSkills.mockResolvedValue({});
+  });
+
+  /** Plugins found only under the home directory, as a global plugin install leaves them. */
+  function pluginsInstalledGlobally(): void {
+    mockDiscoverAllPluginSkills.mockImplementation(async (dir) =>
+      dir === os.homedir() ? REACT_PLUGIN : {},
+    );
+  }
+
+  it("counts the local skills it tagged", async () => {
+    const matrix = createMockMatrix({ ...SKILLS.react, local: true });
+
+    await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, "/tmp/test");
+
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 local skills with local source");
+  });
+
+  it("says no plugin skill was found, and tags none, when no plugin is installed", async () => {
+    const matrix = createMockMatrix({ ...SKILLS.react });
+
+    await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, "/tmp/test");
+
+    expect(verbose).toHaveBeenCalledWith("No plugin skills discovered from settings.json");
+    expect(verbose).not.toHaveBeenCalledWith("Tagged 0 plugin-installed skills");
+    expect(verbose).not.toHaveBeenCalledWith("Found 0 global plugin skill(s)");
+  });
+
+  it("marks a skill installed as a plugin from the home directory, and says so", async () => {
+    pluginsInstalledGlobally();
+    const matrix = createMockMatrix({ ...SKILLS.react });
+
+    await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, "/tmp/test");
+
+    expect(matrix.skills["web-framework-react"]?.availableSources).toStrictEqual([
+      { name: "agents-inc", type: "public", installed: true, installMode: "plugin", primary: true },
+    ]);
+    expect(verbose).toHaveBeenCalledWith("Found 1 global plugin skill(s)");
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skills");
+    expect(verbose).not.toHaveBeenCalledWith("No plugin skills discovered from settings.json");
+  });
+
+  it("reads the home directory's plugins once when the load is for the home directory", async () => {
+    pluginsInstalledGlobally();
+    const matrix = createMockMatrix({ ...SKILLS.react });
+
+    await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, os.homedir());
+
+    expect(mockDiscoverAllPluginSkills).toHaveBeenCalledTimes(1);
+    expect(verbose).not.toHaveBeenCalledWith("Found 1 global plugin skill(s)");
+  });
+
+  it("says how many project plugin skills it tagged, and never that none were found", async () => {
+    mockDiscoverAllPluginSkills.mockImplementation(async (dir) =>
+      dir === os.homedir() ? {} : REACT_PLUGIN,
+    );
+    const matrix = createMockMatrix({ ...SKILLS.react });
+
+    await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, "/tmp/test");
+
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skills");
+    expect(verbose).not.toHaveBeenCalledWith("No plugin skills discovered from settings.json");
+  });
+
+  it("adds no source to a skill no marketplace carries that another already has as a plugin", async () => {
+    mockDiscoverAllPluginSkills.mockResolvedValue(REACT_PLUGIN);
+    const installedElsewhere = createMockSkillSource("private", {
+      name: "acme",
+      installed: true,
+      installMode: "plugin",
+    });
+    const matrix = createMockMatrix({
+      ...SKILLS.react,
+      availableSources: [installedElsewhere, LOCAL_SOURCE],
+    });
+
+    await loadSkillsFromAllSources(
+      matrix,
+      DEFAULT_SOURCE_CONFIG,
+      "/tmp/test",
+      undefined,
+      new Set<SkillId>(["web-framework-react"]),
+    );
+
+    expect(matrix.skills["web-framework-react"]?.availableSources).toStrictEqual([
+      installedElsewhere,
+      LOCAL_SOURCE,
+    ]);
+  });
+
+  it("adds a plugin source beside the local copy of a skill no marketplace carries", async () => {
+    mockDiscoverAllPluginSkills.mockResolvedValue(REACT_PLUGIN);
+    const matrix = createMockMatrix({ ...SKILLS.react, local: true });
+
+    await loadSkillsFromAllSources(
+      matrix,
+      DEFAULT_SOURCE_CONFIG,
+      "/tmp/test",
+      undefined,
+      new Set<SkillId>(["web-framework-react"]),
+    );
+
+    expect(matrix.skills["web-framework-react"]?.availableSources).toStrictEqual([
+      LOCAL_SOURCE,
+      { name: "agents-inc", type: "public", installed: true, installMode: "plugin", primary: true },
+    ]);
+  });
+});
+
+describe("isLocalOnlySkill", () => {
+  it("answers true only for a skill whose every source is its local copy", () => {
+    expect(isLocalOnlySkill(undefined)).toBe(false);
+    expect(isLocalOnlySkill({ ...SKILLS.react, availableSources: [LOCAL_SOURCE] })).toBe(true);
+    expect(
+      isLocalOnlySkill({
+        ...SKILLS.react,
+        availableSources: [
+          LOCAL_SOURCE,
+          { name: "agents-inc", type: "public", installed: false, primary: true },
+        ],
+      }),
+    ).toBe(false);
   });
 });

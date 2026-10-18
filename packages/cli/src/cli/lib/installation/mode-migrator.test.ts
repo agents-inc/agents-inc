@@ -32,7 +32,8 @@ vi.mock("../hosts/host-for.js", async () => {
 
 vi.mock("../../utils/logger");
 
-import { detectMigrations, executeMigration } from "./mode-migrator";
+import { detectMigrations, ejectCopyFailureError, executeMigration } from "./mode-migrator";
+import { verbose } from "../../utils/logger";
 import { deleteLocalSkill, copySkillsToLocalFlattened } from "../skills";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 import { hostAt } from "../hosts/host-for.js";
@@ -514,5 +515,103 @@ describe("mode-migrator", () => {
         ]);
       });
     });
+  });
+});
+
+describe("mode-migrator, what it says", () => {
+  const MARKETPLACE = "https://marketplace.example.com";
+  let tempDir: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    tempDir = await createTempDir("mode-migrator-said-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  const withMarketplace = () =>
+    buildSourceResult(WEB_PAIR_MATRIX, "/test/source", { marketplace: MARKETPLACE });
+  const withoutMarketplace = () => buildSourceResult(WEB_PAIR_MATRIX, "/test/source");
+
+  it("plans no scope change for a skill that stayed where it was", () => {
+    const unchanged = buildSkillConfigs(["web-framework-react"], {
+      scope: "project",
+      origin: EJECT_SOURCE,
+    });
+
+    expect(detectMigrations(unchanged, unchanged)).toStrictEqual(buildMigrationPlan({}));
+  });
+
+  it("explains a failed eject copy and the two ways out", () => {
+    expect(ejectCopyFailureError(2)).toBe(
+      "Failed to copy 2 skill(s) for eject. Eject intent could not be honored. Check that the destination skills directory is writable, then apply the same id again with 'npx agents-inc edit --from <id>' — or switch the affected skills back to plugin mode.",
+    );
+  });
+
+  it("names the source a plugin install found no marketplace in, and the two ways out", async () => {
+    const plan = buildMigrationPlan({
+      toPlugin: [toPluginMigration("web-state-zustand", { from: "project", to: "project" })],
+    });
+
+    await expect(executeMigration(plan, tempDir, withoutMarketplace())).rejects.toThrow(
+      "Cannot install skills as plugins: marketplace could not be resolved from '/test/source'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.",
+    );
+  });
+
+  it("ejects without a marketplace, warning only that it could not uninstall the plugin", async () => {
+    vi.mocked(copySkillsToLocalFlattened).mockResolvedValue([
+      createMockCopiedSkill("web-framework-react"),
+    ]);
+    const plan = buildMigrationPlan({
+      toEject: [toEjectMigration("web-framework-react", { from: "project", to: "project" })],
+    });
+
+    const result = await executeMigration(plan, tempDir, withoutMarketplace());
+
+    expect(result.warnings).toStrictEqual([
+      "Could not uninstall plugin for web-framework-react: no marketplace configured",
+    ]);
+    expect(uninstallPlugin).not.toHaveBeenCalled();
+  });
+
+  it("says each plugin it installed or uninstalled, and each global one it kept", async () => {
+    vi.mocked(copySkillsToLocalFlattened).mockImplementation(async (ids) =>
+      ids.map((id) => createMockCopiedSkill(id)),
+    );
+    vi.mocked(uninstallPlugin).mockResolvedValue("removed");
+    vi.mocked(installPlugin).mockResolvedValue(undefined);
+    const plan = buildMigrationPlan({
+      toEject: [
+        toEjectMigration("web-framework-react", { from: "project", to: "project" }),
+        toEjectMigration("web-state-zustand", { from: "global", to: "project" }),
+      ],
+      toPlugin: [toPluginMigration("web-testing-vitest", { from: "global", to: "project" })],
+    });
+
+    await executeMigration(plan, tempDir, withMarketplace());
+
+    expect(vi.mocked(verbose).mock.calls).toStrictEqual([
+      ["Uninstalled plugin for web-framework-react"],
+      ["Keeping global plugin for web-state-zustand (migrated to project-eject)"],
+      ["Installed plugin for web-testing-vitest"],
+      ["Keeping global local skill for web-testing-vitest (migrated to project-plugin)"],
+    ]);
+  });
+
+  it("deletes the global working copy of a skill that became a global plugin", async () => {
+    vi.mocked(installPlugin).mockResolvedValue(undefined);
+    const plan = buildMigrationPlan({
+      toPlugin: [toPluginMigration("web-state-zustand", { from: "global", to: "global" })],
+    });
+
+    await executeMigration(plan, tempDir, withMarketplace());
+
+    expect(deleteLocalSkill).toHaveBeenCalledExactlyOnceWith(
+      tempDir,
+      "web-state-zustand",
+      "global",
+    );
   });
 });

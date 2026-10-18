@@ -5,6 +5,11 @@ import { z } from "zod";
 import { loadConfig } from "../config-loader";
 import { createTempDir, cleanupTempDir } from "../../__tests__/test-fs-utils";
 import { STANDARD_FILES } from "../../../consts";
+import { renderConfigTs } from "../../__tests__/content-generators";
+import { renderUnparseableConfigTs } from "../../__tests__/factories/unloadable-config-factories";
+import { silenceConsole } from "../../__tests__/helpers/silence-console";
+import { setVerbose } from "../../../utils/logger";
+import { defaultStacks } from "../default-stacks";
 
 let tempDir: string;
 
@@ -126,5 +131,82 @@ describe("loadConfig", () => {
     const result = await loadConfig<{ name: string }>(configPath);
     expect(result).not.toBeNull();
     expect(result!.name).toBe("defined");
+  });
+});
+
+describe("loadConfig, further", () => {
+  const configPath = () => path.join(tempDir, STANDARD_FILES.CONFIG_TS);
+
+  it("reads a default export that is a number as that number, not as nothing", async () => {
+    await writeFile(configPath(), "export default 42;\n");
+
+    expect(await loadConfig(configPath())).toBe(42);
+  });
+
+  it("resolves the agents-inc/config import a written config carries", async () => {
+    await writeFile(
+      configPath(),
+      [
+        `import { defineConfig } from "agents-inc/config";`,
+        `export default defineConfig({ name: "aliased", agents: [], skills: [] });`,
+      ].join("\n"),
+    );
+
+    expect(await loadConfig(configPath())).toStrictEqual({
+      name: "aliased",
+      agents: [],
+      skills: [],
+    });
+  });
+
+  it("resolves defaultStacks, which only the agents-inc/config entry exports", async () => {
+    await writeFile(
+      configPath(),
+      [
+        `import { defaultStacks } from "agents-inc/config";`,
+        `export default { stacks: defaultStacks };`,
+      ].join("\n"),
+    );
+
+    expect(await loadConfig(configPath())).toStrictEqual({ stacks: defaultStacks });
+  });
+
+  it("reads a rewritten config afresh rather than from a cache", async () => {
+    await writeFile(configPath(), renderConfigTs({ name: "first" }));
+    await loadConfig(configPath());
+    await writeFile(configPath(), renderConfigTs({ name: "second" }));
+
+    expect(await loadConfig(configPath())).toStrictEqual({ name: "second" });
+  });
+
+  it("names each refusal by its class and carries the loader's own error as the cause", async () => {
+    await writeFile(configPath(), renderConfigTs({ count: 42 }));
+    await expect(loadConfig(configPath(), z.object({ name: z.string() }))).rejects.toMatchObject({
+      name: "ConfigSchemaError",
+    });
+
+    await writeFile(configPath(), "export const stacks = {};\n");
+    await expect(loadConfig(configPath())).rejects.toMatchObject({
+      name: "ConfigDefaultExportError",
+    });
+
+    await writeFile(configPath(), renderUnparseableConfigTs());
+    await expect(loadConfig(configPath())).rejects.toMatchObject({ cause: expect.any(Error) });
+  });
+
+  describe("verbose", () => {
+    const consoleSpies = silenceConsole(["log"]);
+
+    beforeEach(() => setVerbose(true));
+    afterEach(() => setVerbose(false));
+
+    it("says where it found no config, and which config exports nothing", async () => {
+      await loadConfig(configPath());
+      expect(consoleSpies.log).toHaveBeenCalledWith(`  Config not found at ${configPath()}`);
+
+      await writeFile(configPath(), "");
+      await loadConfig(configPath());
+      expect(consoleSpies.log).toHaveBeenCalledWith(`  Config at ${configPath()} exports nothing`);
+    });
   });
 });

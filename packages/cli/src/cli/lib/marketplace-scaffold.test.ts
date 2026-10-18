@@ -107,6 +107,78 @@ describe("writeMarketplaceScaffold", () => {
     `);
   });
 
+  // Over the emitted text: a comment or a description is read by a person, never by the loader.
+  const emittedAt = (relativePath: string) =>
+    readFile(path.join(marketplaceDir, relativePath), "utf-8");
+
+  it("emits the rules with the comment that says what they may name", async () => {
+    expect(await emittedAt(SKILL_RULES_PATH)).toMatchInlineSnapshot(`
+      "// Relationships between skills — conflicts, requires, alternatives.
+      //
+      // Rules may only name skills the public catalogue carries; this marketplace's own
+      // skills cannot be named here yet, and a rule that names one will not load.
+      export default {
+        "version": "1.0.0"
+      };
+      "
+    `);
+  });
+
+  it("emits the starter stack word for word", async () => {
+    expect(await emittedAt(STACKS_FILE_PATH)).toMatchInlineSnapshot(`
+      "// The stacks this marketplace offers.
+      export default {
+        "stacks": [
+          {
+            "id": "acme-starter",
+            "name": "acme starter",
+            "description": "Every skill acme ships",
+            "agents": {
+              "web-developer": {
+                "web-example": [
+                  {
+                    "id": "acme-example-skill"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      };
+      "
+    `);
+  });
+
+  it("emits the package.json word for word", async () => {
+    expect(await emittedAt(STANDARD_FILES.PACKAGE_JSON)).toMatchInlineSnapshot(`
+      "{
+        "name": "acme",
+        "version": "0.1.0",
+        "description": "Skills curated for acme's conventions",
+        "author": {
+          "name": "@acme"
+        }
+      }
+      "
+    `);
+  });
+
+  it("emits the example skill's metadata word for word", async () => {
+    expect(
+      await emittedAt(path.join(SKILLS_DIR_PATH, EXAMPLE_SKILL_ID, STANDARD_FILES.METADATA_YAML)),
+    ).toMatchInlineSnapshot(`
+      "custom: true
+      domain: web
+      author: "@acme"
+      displayName: Example Skill
+      category: web-example
+      slug: example-skill
+      cliDescription: "A placeholder skill to replace with your own"
+      usageGuidance: "Use when you need a worked example of this marketplace's skill shape"
+      "
+    `);
+  });
+
   it("writes rules the loader accepts, declaring no relationship at all", async () => {
     const rules = await loadSkillRules(path.join(marketplaceDir, SKILL_RULES_PATH));
 

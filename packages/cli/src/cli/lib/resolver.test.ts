@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import type { Liquid } from "liquidjs";
 import { pick } from "remeda";
 import {
@@ -17,7 +17,9 @@ import {
   sa,
   saUnflagged,
 } from "./__tests__/factories/skill-factories";
-import { createMockAgentConfig } from "./__tests__/factories/agent-factories";
+import { createMockAgent, createMockAgentConfig } from "./__tests__/factories/agent-factories";
+import { silenceConsole } from "./__tests__/helpers/silence-console.js";
+import { setVerbose } from "../utils/logger";
 import { createMockCompileConfig } from "./__tests__/factories/plugin-factories";
 import { RESOLVE_AGENTS_DEFINITIONS } from "./__tests__/mock-data/mock-agents.js";
 import {
@@ -33,6 +35,7 @@ import { typedKeys } from "../utils/typed-object.js";
 import type {
   AgentConfig,
   AgentDefinition,
+  AgentName,
   CompileAgentConfig,
   Skill,
   SkillDefinition,
@@ -756,5 +759,87 @@ describe("resolveAgents", () => {
         "an absent field must stay absent — an explicit undefined renders as an empty frontmatter key",
       ).toStrictEqual([]);
     });
+  });
+});
+
+describe("what resolving says", () => {
+  /** Seven sub-agents, two more than an unknown-agent refusal lists. */
+  const SEVEN_AGENTS = [
+    "web-developer",
+    "api-developer",
+    "cli-developer",
+    "web-tester",
+    "api-tester",
+    "cli-tester",
+    "pm",
+  ] as const;
+
+  function definitionsOf(names: readonly AgentName[]): Partial<Record<AgentName, AgentDefinition>> {
+    return Object.fromEntries(names.map((name) => [name, createMockAgent(name)]));
+  }
+
+  function refusalFor(agents: Partial<Record<AgentName, AgentDefinition>>) {
+    return resolveAgents(
+      agents,
+      RESOLVE_AGENTS_SKILL_MAP,
+      createMockCompileConfig({ "unknown-agent": {} }),
+      "/test/path",
+    );
+  }
+
+  describe("verbose", () => {
+    const consoleSpies = silenceConsole(["log"]);
+
+    afterEach(() => setVerbose(false));
+
+    it("says which skill reference it skipped for want of a definition", () => {
+      setVerbose(true);
+
+      resolveSkillReference({ id: "web-state-zustand", usage: "Use when", preloaded: false }, {});
+
+      expect(consoleSpies.log).toHaveBeenCalledExactlyOnceWith(
+        "  Skill 'web-state-zustand' not found in available skills, skipping",
+      );
+    });
+  });
+
+  it("says no agents were found when the scan found none", async () => {
+    await expect(refusalFor({})).rejects.toThrow(
+      "Agent 'unknown-agent' referenced in compile config but not found in scanned agents. No agents found in scanned directories. Check that src/agents/unknown-agent/metadata.yaml exists.",
+    );
+  });
+
+  it("lists five available agents and counts the rest", async () => {
+    await expect(refusalFor(definitionsOf(SEVEN_AGENTS))).rejects.toThrow(
+      "Available agents: web-developer, api-developer, cli-developer, web-tester, api-tester (and 2 more). Check",
+    );
+  });
+
+  it("lists exactly five available agents with no count", async () => {
+    await expect(refusalFor(definitionsOf(SEVEN_AGENTS.slice(0, 5)))).rejects.toThrow(
+      "Available agents: web-developer, api-developer, cli-developer, web-tester, api-tester. Check",
+    );
+  });
+
+  it("carries a definition's source root and agent base dir only when it records them", async () => {
+    const result = await resolveAgents(
+      {
+        "web-developer": createMockAgent("web-developer", {
+          sourceRoot: "/marketplace",
+          agentBaseDir: ".agents-inc/claude/agents",
+        }),
+        "api-developer": createMockAgent("api-developer"),
+      },
+      RESOLVE_AGENTS_SKILL_MAP,
+      createMockCompileConfig({ "web-developer": {}, "api-developer": {} }),
+      "/test/path",
+    );
+
+    expect(result["web-developer"]).toMatchObject({
+      sourceRoot: "/marketplace",
+      agentBaseDir: ".agents-inc/claude/agents",
+    });
+    expect(result["api-developer"]).not.toHaveProperty("sourceRoot");
+    expect(result["api-developer"]).not.toHaveProperty("agentBaseDir");
   });
 });

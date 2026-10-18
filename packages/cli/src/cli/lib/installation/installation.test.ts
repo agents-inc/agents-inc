@@ -13,7 +13,11 @@ import { getProjectConfigPath } from "./install-base-dir.js";
 
 vi.mock("../../utils/logger");
 
-import { detectInstallation, detectProjectInstallation } from "./installation";
+import {
+  detectInstallation,
+  detectProjectInstallation,
+  holdsItsOwnInstallation,
+} from "./installation";
 
 // The sub-agent makes it an installation; the empty skill list reads as eject.
 const AN_EJECT_INSTALLATION = buildProjectConfig({
@@ -131,6 +135,22 @@ describe("installation", () => {
       const result = await detectProjectInstallation(tempDir);
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe("holdsItsOwnInstallation", () => {
+    it("answers yes for a folder holding an installation and no for one holding none", async () => {
+      expect(await holdsItsOwnInstallation(tempDir)).toBe(false);
+
+      await writeTestTsConfig(tempDir, AN_EJECT_INSTALLATION);
+
+      expect(await holdsItsOwnInstallation(tempDir)).toBe(true);
+    });
+
+    it("answers yes for a folder whose config is there and cannot be read", async () => {
+      await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
+
+      expect(await holdsItsOwnInstallation(tempDir)).toBe(true);
     });
   });
 

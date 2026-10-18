@@ -1,7 +1,11 @@
 import path from "path";
 import { mkdir, writeFile } from "fs/promises";
+import { render } from "ink-testing-library";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CLAUDE_DIR, STANDARD_FILES } from "../consts.js";
+import { buildProjectConfig } from "./__tests__/factories/config-factories.js";
+import { writeTestTsConfig } from "./__tests__/helpers/config-io.js";
+import { useFakeHome } from "./__tests__/helpers/isolated-home.js";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils.js";
 import { checkPermissions } from "./permission-checker.js";
 
@@ -30,6 +34,20 @@ const CLAUDE_CODE_OWN_SETTINGS = {
   effortLevel: "high",
   attributionSettings: { coAuthoredBy: false },
 };
+
+/** Allows what agents need but denies one tool other than Bash: nothing to warn about. */
+const PERMISSIONS_DENYING_WRITE = {
+  permissions: { allow: ["Read(*)"], deny: ["Write(*)"] },
+};
+
+/** Not JSON, as a hand edit can leave the file. */
+const MALFORMED_SETTINGS = "{ not json";
+
+/** Where a Codex installation's config sits under a project; a literal, as a person types it. */
+const CODEX_INSTALLATION_FOLDER = ".agents-inc/codex";
+
+const BASH_DENIED = "⚠ Bash is denied in permissions.";
+const NO_ALLOW_RULES = "⚠ No allow rules configured. Agents will prompt for each tool use.";
 
 async function writeSettingsFile(
   projectDir: string,
@@ -137,5 +155,138 @@ describe("checkPermissions settings-file field handling", () => {
     expect(warn).not.toHaveBeenCalled();
     // The deny reaching the notice proves the permissions block was parsed.
     expect(result, "a Bash deny must still render the permission warning").not.toBeNull();
+  });
+});
+
+/** What a person running the command sees for each state of the settings files. */
+describe("checkPermissions notices", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    projectDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(projectDir);
+  });
+
+  useFakeHome(() => projectDir);
+
+  async function shown(): Promise<string | undefined> {
+    const notice = await checkPermissions(projectDir);
+    if (notice === null) throw new Error("expected a notice, and checkPermissions advised nothing");
+    const { lastFrame, unmount } = render(notice);
+    const frame = lastFrame();
+    unmount();
+    return frame;
+  }
+
+  it("asks for a permissions block in the settings file when none is configured", async () => {
+    expect(await shown()).toMatchInlineSnapshot(`
+      "╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+      │                                                                                                  │
+      │ Permission Notice                                                                                │
+      │ No permissions configured in .claude/settings.json                                               │
+      │ Agents will prompt for approval on each tool use.                                                │
+      │                                                                                                  │
+      │ For autonomous operation, add to .claude/settings.json:                                          │
+      │                                                                                                  │
+      │ {                                                                                                │
+      │   "permissions": {                                                                               │
+      │     "allow": [                                                                                   │
+      │       "Read(*)",                                                                                 │
+      │       "Bash(git *)",                                                                             │
+      │       "Bash(bun *)"                                                                              │
+      │     ]                                                                                            │
+      │   }                                                                                              │
+      │ }                                                                                                │
+      │                                                                                                  │
+      ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯"
+    `);
+  });
+
+  it("reads a malformed settings file as having no permissions, and says it skipped it", async () => {
+    const settingsPath = path.join(projectDir, CLAUDE_DIR, STANDARD_FILES.SETTINGS_JSON);
+    await mkdir(path.dirname(settingsPath), { recursive: true });
+    await writeFile(settingsPath, MALFORMED_SETTINGS);
+
+    expect(await shown()).toContain("No permissions configured in .claude/settings.json");
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      `Malformed settings file at '${settingsPath}' — skipping`,
+    );
+  });
+
+  it("takes the permissions of settings.local.json over those of settings.json", async () => {
+    await writeSettingsFile(projectDir, PERMISSIONS_WITH_ALLOWS);
+    await writeSettingsFile(
+      projectDir,
+      PERMISSIONS_DENYING_BASH,
+      STANDARD_FILES.SETTINGS_LOCAL_JSON,
+    );
+
+    expect(await shown()).toContain(BASH_DENIED);
+  });
+
+  it("falls back to settings.json when settings.local.json configures no permissions", async () => {
+    await writeSettingsFile(projectDir, PERMISSIONS_DENYING_BASH);
+    await writeSettingsFile(
+      projectDir,
+      CLAUDE_CODE_OWN_SETTINGS,
+      STANDARD_FILES.SETTINGS_LOCAL_JSON,
+    );
+
+    expect(await shown()).toContain(BASH_DENIED);
+  });
+
+  it.each(["Bash(*)", "Bash"])(
+    "warns about Bash denied as %s, and only about that",
+    async (rule) => {
+      await writeSettingsFile(projectDir, { permissions: { allow: ["Read(*)"], deny: [rule] } });
+
+      const frame = await shown();
+
+      expect(frame).toContain(
+        "⚠ Bash is denied in permissions. Some agents require Bash for git, testing, and build commands.",
+      );
+      expect(frame).not.toContain(NO_ALLOW_RULES);
+    },
+  );
+
+  it("warns about Bash denied among other denied tools", async () => {
+    await writeSettingsFile(projectDir, {
+      permissions: { allow: ["Read(*)"], deny: ["Write(*)", "Bash(*)"] },
+    });
+
+    expect(await shown()).toContain(BASH_DENIED);
+  });
+
+  it("says nothing about a denied tool other than Bash", async () => {
+    await writeSettingsFile(projectDir, PERMISSIONS_DENYING_WRITE);
+
+    expect(await checkPermissions(projectDir)).toBeNull();
+  });
+
+  it.each([
+    ["an empty allow list", { permissions: { allow: [] } }],
+    ["no allow list", { permissions: { deny: ["Write(*)"] } }],
+  ])("warns about %s, and only about that", async (_case, settings) => {
+    await writeSettingsFile(projectDir, settings);
+
+    const frame = await shown();
+
+    expect(frame).toContain(NO_ALLOW_RULES);
+    expect(frame).not.toContain(BASH_DENIED);
+  });
+
+  it("advises nothing for a project whose installation is Codex's", async () => {
+    await writeTestTsConfig(
+      projectDir,
+      buildProjectConfig({ name: "codex-project" }),
+      CODEX_INSTALLATION_FOLDER,
+    );
+
+    expect(await checkPermissions(projectDir)).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
   });
 });

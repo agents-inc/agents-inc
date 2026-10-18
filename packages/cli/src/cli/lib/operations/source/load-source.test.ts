@@ -7,9 +7,9 @@ vi.mock("../../loading/index.js", () => ({
 // The manual mock, because an inline factory omitting the buffering functions breaks loadSource.
 vi.mock("../../../utils/logger.js");
 
-import { loadSource } from "./load-source";
+import { loadSource, sayCapturedWarnings } from "./load-source";
 import { loadSkillsMatrixFromSource } from "../../loading/index.js";
-import { enableBuffering, drainBuffer, disableBuffering } from "../../../utils/logger.js";
+import { enableBuffering, drainBuffer, disableBuffering, warn } from "../../../utils/logger.js";
 import type { SourceLoadResult } from "../../loading/index.js";
 import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
 
@@ -137,5 +137,31 @@ describe("loadSource", () => {
       sourceFlag: "github:custom/source",
       projectDir: "/tmp/project",
     });
+  });
+
+  it("passes the caller through to the load", async () => {
+    await loadSource({ projectDir: "/tmp/project", caller: "init" });
+
+    expect(mockLoadSkillsMatrixFromSource).toHaveBeenCalledExactlyOnceWith({
+      caller: "init",
+      projectDir: "/tmp/project",
+    });
+  });
+
+  it("leaves buffering alone on a failed load it was not capturing for", async () => {
+    mockLoadSkillsMatrixFromSource.mockRejectedValue(new Error("Network error"));
+
+    await expect(loadSource({ projectDir: "/tmp/project" })).rejects.toThrow("Network error");
+
+    expect(mockDisableBuffering).not.toHaveBeenCalled();
+  });
+
+  it("says each captured warning, in order", () => {
+    sayCapturedWarnings([
+      { level: "warn", text: "first captured" },
+      { level: "warn", text: "second captured" },
+    ]);
+
+    expect(vi.mocked(warn).mock.calls).toStrictEqual([["first captured"], ["second captured"]]);
   });
 });

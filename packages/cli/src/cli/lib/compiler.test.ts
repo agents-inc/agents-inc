@@ -32,8 +32,8 @@ import {
   buildAgentTemplateContext,
 } from "./compiler";
 import { hasProvenanceMarker, stampProvenanceMarker } from "./agents/agent-provenance.js";
-import { warn } from "../utils/logger";
-import { DIRS, EJECT_SOURCE, STANDARD_DIRS } from "../consts";
+import { verbose, warn } from "../utils/logger";
+import { CLAUDE_DIR, DIRS, EJECT_SOURCE, STANDARD_DIRS } from "../consts";
 import { sourceFolderInUse } from "./installation/install-layout.js";
 import type { CompiledAgentData, PluginSkillRef, SkillId } from "../types";
 import { elementAt, firstElement } from "./__tests__/helpers/element-at.js";
@@ -238,6 +238,102 @@ describe("compiler", () => {
           engine as never,
         ),
       ).rejects.toThrow(/nonexistent-agent/);
+    });
+  });
+
+  describe("what an agent's files hand the template", () => {
+    const CATEGORY_OUTPUT = "## Output\n\nThe category's own output section.";
+
+    /** An agent nested under a category folder that carries the category's output.md. */
+    async function categorisedAgent(ownOutput?: string): Promise<AgentConfig> {
+      const agentDir = path.join(projectDir, "src/agents/developer/api-developer");
+      await mkdir(agentDir, { recursive: true });
+      for (const file of ["identity.md", "playbook.md"] as const) {
+        await fsWrite(
+          path.join(agentDir, file),
+          await fsReadFile(path.join(FIXTURES_ROOT, "agents/api-developer", file), "utf-8"),
+        );
+      }
+      if (ownOutput !== undefined) await fsWrite(path.join(agentDir, "output.md"), ownOutput);
+      await fsWrite(path.join(projectDir, "src/agents/developer/output.md"), CATEGORY_OUTPUT);
+      return createMockAgentConfig("api-developer", [], { path: "developer/api-developer" });
+    }
+
+    it("hands empty critical sections and no output for an agent whose files hold none", async () => {
+      const engine = stubEngine(STUB_OUTPUT);
+
+      await compileAgentForHost(
+        "claude",
+        "api-developer",
+        createMockAgentConfig("api-developer"),
+        projectDir,
+        engine as never,
+      );
+
+      expect(engine.renderFile).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({ criticalRequirementsTop: "", criticalReminders: "", output: "" }),
+      );
+      expect(verbose).toHaveBeenCalledWith("Compiling agent: api-developer (claude)");
+    });
+
+    it.each([
+      ["has no output.md", undefined],
+      ["has an empty output.md", ""],
+    ])("hands the category's output when the agent %s", async (_case, ownOutput) => {
+      const engine = stubEngine(STUB_OUTPUT);
+
+      await compileAgentForHost(
+        "claude",
+        "api-developer",
+        await categorisedAgent(ownOutput),
+        projectDir,
+        engine as never,
+      );
+
+      expect(engine.renderFile).toHaveBeenCalledWith(
+        "agent",
+        expect.objectContaining({ output: CATEGORY_OUTPUT }),
+      );
+    });
+  });
+
+  describe("which templates an engine reads, and what it says", () => {
+    beforeEach(() => {
+      vi.mocked(verbose).mockClear();
+    });
+
+    it("says it uses the source folder's templates when the project has them", async () => {
+      await installProjectTemplateOverride(projectDir);
+
+      await createLiquidEngine(projectDir);
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        `Using local templates from: ${path.join(sourceFolderInUse(projectDir, "claude").dir, "agents", "_templates")}`,
+      );
+    });
+
+    it("says it uses the legacy templates folder when the project has one", async () => {
+      const legacyDir = path.join(projectDir, CLAUDE_DIR, "templates");
+      await mkdir(legacyDir, { recursive: true });
+
+      await createLiquidEngine(projectDir);
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(`Using legacy templates from: ${legacyDir}`);
+    });
+
+    it("says nothing about templates for a project with neither folder", async () => {
+      await createLiquidEngine(projectDir);
+
+      expect(verbose).not.toHaveBeenCalled();
+    });
+
+    it("refuses a template that names a filter Liquid does not have", async () => {
+      const engine = await createLiquidEngine();
+
+      await expect(engine.parseAndRender("{{ 'x' | no_such_filter }}")).rejects.toThrow(
+        /undefined filter: no_such_filter/,
+      );
     });
   });
 

@@ -1,3 +1,4 @@
+import os from "os";
 import path from "path";
 import { mkdir, readdir, readFile, writeFile } from "fs/promises";
 import { parse as parseYaml } from "yaml";
@@ -6,7 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import { installedSkillTree } from "@workspace/compile/carried-skill";
 
-import { registerExternalSkills, writeExternalSkills } from "./external-skills.js";
+import {
+  carriedSkillsThatDiffer,
+  readCarriedSkills,
+  registerExternalSkills,
+  writeExternalSkills,
+} from "./external-skills.js";
+import { readForkedFromMetadata } from "../skills/skill-metadata.js";
 import { seedToInstallSelection } from "./seed-to-selection.js";
 import { STANDARD_FILES } from "../../consts.js";
 import { resolveInstallPaths } from "../installation/install-base-dir.js";
@@ -569,5 +576,178 @@ describe("writeExternalSkills", () => {
         expect(written).toStrictEqual(drawn);
       });
     }
+  });
+});
+
+/** The words each refusal is in, the seat a carried skill takes, and the reads its share does. */
+describe("carried skills — refusals, seats and reads", () => {
+  let matrix: MergedSkillsMatrix;
+  let tempDir: string;
+  let projectDir: string;
+
+  beforeEach(async () => {
+    matrix = catalogueWithFrameworkCategory();
+    initializeMatrix(matrix);
+    tempDir = await createTempDir("cc-external-carried-");
+    projectDir = path.join(tempDir, "project");
+    vi.stubEnv("HOME", tempDir);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    await cleanupTempDir(tempDir);
+  });
+
+  function installsFor(external: SeedExternalSkill) {
+    return registerExternalSkills(
+      buildSeedPayload({
+        skills: { [EXTERNAL_ID]: buildSeedSkill({ scope: "project" }) },
+        external: { [EXTERNAL_ID]: external },
+      }),
+      matrix,
+      projectDir,
+    );
+  }
+
+  async function ownedDirOf(skillDir: string) {
+    const provenance = await readForkedFromMetadata(skillDir);
+    if (provenance === null) throw new Error(`no provenance written into ${skillDir}`);
+    return { id: EXTERNAL_ID, skillDir, provenance };
+  }
+
+  it("refuses carried skills asked for as plugins in these words", () => {
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill({ install: "plugin" }) },
+      external: { [EXTERNAL_ID]: buildSeedExternalSkill() },
+    });
+
+    expect(() => registerExternalSkills(payload, matrix, projectDir)).toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: these skills travel inside it, so no marketplace serves them and they cannot be installed as plugins:",
+          `  ${EXTERNAL_ID}`,
+          "Re-share it with each skill above set to eject, which is the only way a carried skill installs.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("refuses an id the loaded catalogue holds even when no shipped catalogue does, in these words", () => {
+    const holding = createMockMatrix(
+      createMockSkill(EXTERNAL_ID, { category: "web-framework", slug: EXTERNAL_ID as SkillSlug }),
+      { categories: buildCategoryMap({ "web-framework": TEST_CATEGORIES.framework }) },
+    );
+    initializeMatrix(holding);
+    const payload = buildSeedPayload({
+      skills: { [EXTERNAL_ID]: buildSeedSkill() },
+      external: { [EXTERNAL_ID]: buildSeedExternalSkill() },
+    });
+
+    expect(() => registerExternalSkills(payload, holding, projectDir)).toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: these skills travel inside it under ids a catalogue already owns:",
+          `  ${EXTERNAL_ID}`,
+          "A skill id is the directory the skill installs into, so each would be written over the catalogue's own copy of that skill. Re-share it with each skill above added again, which mints an id — 'external-<category>-<name>' — that no catalogue owns.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("seats a carried skill under the skills folder and reachable by its own id as slug", () => {
+    installsFor(buildSeedExternalSkill());
+
+    expect(matrix.skills[EXTERNAL_ID]?.path).toBe(`.claude/skills/${EXTERNAL_ID}/`);
+    expect(matrix.slugMap.slugToId[EXTERNAL_ID as SkillSlug]).toBe(EXTERNAL_ID);
+  });
+
+  it("refuses a destination no shared configuration carried, naming it and its directory", async () => {
+    const skillDir = path.join(resolveInstallPaths(projectDir, "project").skillsDir, EXTERNAL_ID);
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(EXTERNAL_ID));
+
+    await expect(writeExternalSkills(installsFor(buildSeedExternalSkill()))).rejects.toThrow(
+      new Error(
+        [
+          "This configuration cannot be installed: these skills travel inside it under ids this installation already keeps a skill directory for, and no shared configuration put those directories there:",
+          `  ${EXTERNAL_ID}  ->  ${skillDir}`,
+          "A skill id is the directory the skill installs into, so each would be written over a skill written here by hand or ejected from a marketplace. Move or rename the directory above, or re-share the configuration with each skill added again, which mints an id — 'external-<category>-<name>' — that nothing here holds.",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  it("answers a changed skill when only its metadata moved", async () => {
+    await writeExternalSkills(installsFor(buildSeedExternalSkill()));
+
+    expect(
+      await writeExternalSkills(installsFor(buildSeedExternalSkill({ displayName: "Renamed" }))),
+    ).toStrictEqual([EXTERNAL_ID]);
+  });
+
+  it("answers what a write would change without writing it, and leaves no scratch behind", async () => {
+    vi.spyOn(os, "tmpdir").mockReturnValue(tempDir);
+    const skillDir = path.join(resolveInstallPaths(projectDir, "project").skillsDir, EXTERNAL_ID);
+
+    const before = await carriedSkillsThatDiffer(installsFor(buildSeedExternalSkill()));
+    expect(await fileExists(skillDir)).toBe(false);
+
+    await writeExternalSkills(installsFor(buildSeedExternalSkill()));
+    const after = await carriedSkillsThatDiffer(installsFor(buildSeedExternalSkill()));
+
+    expect({ before, after }).toStrictEqual({ before: [EXTERNAL_ID], after: [] });
+    expect(
+      (await readdir(tempDir)).filter((entry) => entry.startsWith("agents-inc-carried-")),
+    ).toStrictEqual([]);
+  });
+
+  it("answers nothing for no carried skills", async () => {
+    expect(await carriedSkillsThatDiffer([])).toStrictEqual([]);
+  });
+
+  it("reads an installed carried skill back whole, dotfiles included", async () => {
+    const files = {
+      "SKILL.md": renderSkillMd(UPSTREAM_SKILL_NAME, "Structured brainstorming"),
+      ".prettierrc": "{}\n",
+    };
+    await writeExternalSkills(installsFor(buildSeedExternalSkill({ files })));
+    const skillDir = path.join(resolveInstallPaths(projectDir, "project").skillsDir, EXTERNAL_ID);
+
+    const reading = await readCarriedSkills([await ownedDirOf(skillDir)]);
+
+    expect(reading.uncarryable).toStrictEqual([]);
+    expect(Object.keys(reading.external[EXTERNAL_ID]?.files ?? {}).sort()).toStrictEqual(
+      [".prettierrc", STANDARD_FILES.METADATA_YAML, STANDARD_FILES.SKILL_MD].sort(),
+    );
+  });
+
+  it("names a carried skill whose SKILL.md gives no description as unshareable", async () => {
+    await writeExternalSkills(installsFor(buildSeedExternalSkill()));
+    const skillDir = path.join(resolveInstallPaths(projectDir, "project").skillsDir, EXTERNAL_ID);
+    await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), "# No frontmatter here\n");
+
+    const reading = await readCarriedSkills([await ownedDirOf(skillDir)]);
+
+    expect(reading).toStrictEqual({
+      external: {},
+      uncarryable: [
+        `${EXTERNAL_ID} travels inside a shared configuration, and no description can be read from its SKILL.md`,
+      ],
+    });
+  });
+
+  it("names every reason a carried skill's entry would be refused, semicolon-separated", async () => {
+    await writeExternalSkills(installsFor(buildSeedExternalSkill()));
+    const skillDir = path.join(resolveInstallPaths(projectDir, "project").skillsDir, EXTERNAL_ID);
+    const owned = await ownedDirOf(skillDir);
+
+    const reading = await readCarriedSkills([
+      { ...owned, provenance: { ...owned.provenance, source: "github:", path: "" } },
+    ]);
+
+    expect(reading.uncarryable).toStrictEqual([
+      `${EXTERNAL_ID} travels inside a shared configuration, and Too small: expected string to have >=1 characters; Too small: expected string to have >=1 characters`,
+    ]);
   });
 });

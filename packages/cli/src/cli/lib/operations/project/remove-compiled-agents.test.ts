@@ -1,5 +1,5 @@
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { chmod, mkdir, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { removeCompiledAgents } from "./remove-compiled-agents";
@@ -147,4 +147,44 @@ describe("removeCompiledAgents", () => {
     ).toBe(true);
     expect(await directoryExists(agentsDir)).toBe(true);
   });
+});
+
+describe("removeCompiledAgents reports", () => {
+  let tempDir: string;
+  let agentsDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-remove-compiled-report-");
+    agentsDir = path.join(tempDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(path.join(agentsDir, `${REMOVED_AGENT}.md`), renderAgentMd(REMOVED_AGENT));
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("names each agent it removed and none that failed", async () => {
+    expect(await removeCompiledAgents({ agentsDir, agents: [REMOVED_AGENT] })).toStrictEqual({
+      removed: [REMOVED_AGENT],
+      failed: [],
+    });
+  });
+
+  // Skipped as root, which ignores the read-only folder.
+  it.skipIf(process.getuid?.() === 0)(
+    "names an agent it could not remove, with the reason",
+    async () => {
+      await chmod(agentsDir, 0o555);
+
+      try {
+        expect(await removeCompiledAgents({ agentsDir, agents: [REMOVED_AGENT] })).toStrictEqual({
+          removed: [],
+          failed: [{ name: REMOVED_AGENT, error: expect.stringContaining("EACCES") }],
+        });
+      } finally {
+        await chmod(agentsDir, 0o755);
+      }
+    },
+  );
 });

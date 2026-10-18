@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { MAX_EXTERNAL_SKILL_BYTES, SEED_VERSION } from "@workspace/matrix/seed";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { seedPayloadForInstallation } from "./installation-payload.js";
+import { seedPayloadForInstallation, skillsAuthoredHere } from "./installation-payload.js";
 import { registerExternalSkills, writeExternalSkills } from "./external-skills.js";
 import {
   CLAUDE_DIR,
@@ -317,6 +317,50 @@ describe("seedPayloadForInstallation", () => {
 
       expect(prepared.ok && Object.keys(prepared.payload.skills)).toStrictEqual([REACT_ID]);
       expect(prepared.ok && prepared.payload.skills[REACT_ID]?.install).toBe("plugin");
+    });
+  });
+
+  describe("an installation of skills alone, or of sub-agents alone", () => {
+    it("mints a payload for skills with no sub-agent", async () => {
+      await installConfig({
+        skills: [buildSkillConfig(REACT_ID, { origin: DEFAULT_PUBLIC_SOURCE_NAME })],
+        agents: [],
+      });
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && [prepared.skills, prepared.agents]).toStrictEqual([1, 0]);
+    });
+
+    it("mints a payload for a sub-agent with no skill", async () => {
+      await installConfig({ skills: [], agents: buildAgentConfigs([WEB_DEV]) });
+
+      const prepared = await seedPayloadForInstallation(projectDir);
+
+      expect(prepared.ok && [prepared.skills, prepared.agents]).toStrictEqual([0, 1]);
+    });
+  });
+
+  describe("skillsAuthoredHere", () => {
+    async function writeFolderWithoutProvenance(skillId: string): Promise<void> {
+      const skillDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS, skillId);
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(skillId));
+    }
+
+    it("names only an installed, copied skill whose folder records no provenance", async () => {
+      await writeFolderWithoutProvenance(SKILLS.vitest.id);
+      await writeFolderWithoutProvenance(REACT_ID);
+      await writeFolderWithoutProvenance(SKILLS.zustand.id);
+      const config = buildProjectConfig({
+        skills: [
+          buildSkillConfig(SKILLS.vitest.id, { origin: EJECT_SOURCE }),
+          buildSkillConfig(REACT_ID, { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
+          buildSkillConfig(SKILLS.zustand.id, { origin: EJECT_SOURCE, excluded: true }),
+        ],
+      });
+
+      expect([...(await skillsAuthoredHere(config, projectDir))]).toStrictEqual([SKILLS.vitest.id]);
     });
   });
 

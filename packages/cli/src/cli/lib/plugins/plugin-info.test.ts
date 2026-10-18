@@ -282,6 +282,32 @@ describe("plugin-info", () => {
       );
     });
 
+    it("counts only the compiled agent files, not other files or folders", async () => {
+      const configPath = getProjectConfigPath(PROJECT_DIR, "claude");
+      const agentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+
+      mockedDetectInstallation.mockResolvedValue(
+        buildInstallation({ configPath, projectDir: PROJECT_DIR }),
+      );
+      mockedDirectoryExists.mockResolvedValue(true);
+      mockReaddirByDir({
+        [agentsDir]: [
+          createDirent("web-developer.md", { isFile: true }),
+          createDirent("notes.txt", { isFile: true }),
+          createDirent("archive.md", { isDir: true }),
+        ],
+      });
+      mockedLoadProjectConfig.mockResolvedValue({
+        config: buildProjectConfig({ name: "counted", skills: [] }),
+        configPath,
+        provider: "claude",
+      });
+
+      const result = await getInstallationInfo();
+
+      expect(result?.agentCount).toBe(1);
+    });
+
     it("counts the home root only once when the installation is global", async () => {
       const homeDir = os.homedir();
       const configPath = getProjectConfigPath(homeDir, "claude");
@@ -786,6 +812,24 @@ describe("plugin-info", () => {
 
       expect(result).toContain("Installation: mixed-project\n");
       expect(result).toContain("Mode:    Mixed");
+    });
+
+    it("prints the report word for word when no directory holds agents", () => {
+      const info = buildInstallationInfo({ name: "empty-project", agentCount: 0, agentDirs: [] });
+
+      expect(formatInstallationDisplay(info)).toBe(
+        `Installation: empty-project\n  Mode:    Eject\n  Skills:  5\n  Agents:  0\n  Config:  ${info.configPath}`,
+      );
+    });
+
+    it("prints each agents directory on a line of its own", () => {
+      const globalAgentsDir = path.join(os.homedir(), CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const projectAgentsDir = path.join(PROJECT_DIR, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+      const info = buildInstallationInfo({ agentDirs: [globalAgentsDir, projectAgentsDir] });
+
+      expect(formatInstallationDisplay(info)).toContain(
+        `Config:  ${info.configPath}\n  Agents:  ${globalAgentsDir}\n  Agents:  ${projectAgentsDir}`,
+      );
     });
 
     it("should show zero counts correctly", () => {

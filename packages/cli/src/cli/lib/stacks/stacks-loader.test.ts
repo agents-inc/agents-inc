@@ -32,10 +32,11 @@ import {
   normalizeAgentConfig,
   normalizeStackRecord,
   resolveAgentConfigToSkills,
+  stackNotOfferedMessage,
 } from "./stacks-loader";
 import { loadConfig } from "../configuration/config-loader";
 import { DEFAULT_SOURCE } from "../configuration/config";
-import { warn } from "../../utils/logger";
+import { verbose, warn } from "../../utils/logger";
 import { getSkillById, initializeMatrix } from "../matrix/matrix-provider";
 import { elementAt, firstElement } from "../__tests__/helpers/element-at.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils";
@@ -743,5 +744,167 @@ describe("stacks-loader", () => {
         expect(firstElement(skills).usage).not.toBe(FALLBACK_USAGE["meta-design"]);
       });
     });
+  });
+});
+
+describe("stacks-loader, what it says", () => {
+  // The id still spells `shared-monorepo`; the matrix now answers `shared-task-runner`.
+  const MOVED_SKILL: SkillId = "shared-monorepo-turborepo";
+  const STALE_CATEGORY = "shared-monorepo";
+  const REACT: SkillId = "web-framework-react";
+  const VITEST: SkillId = "web-testing-vitest";
+  const TESTING_LIBRARY: SkillId = "web-testing-react-testing-library";
+  const DEFAULT_STACKS_PATH = "/project/config/stacks.ts";
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    initializeMatrix(BUILT_IN_MATRIX);
+  });
+
+  /** A fresh module, so no earlier spec's cache answers; its logger is the one it calls. */
+  async function freshLoader() {
+    const loader = await import("./stacks-loader");
+    const logger = await import("../../utils/logger");
+    return { ...loader, verbose: vi.mocked(logger.verbose) };
+  }
+
+  it("takes a well-formed assignment object as it is, saying nothing", () => {
+    expect(normalizeAgentConfig({ "web-framework": { id: REACT, preloaded: true } })).toStrictEqual(
+      {
+        "web-framework": [createMockSkillAssignment(REACT, true)],
+      },
+    );
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("warns about an assignment with no id, and passes it on for validation downstream", () => {
+    expect(normalizeAgentConfig({ "web-framework": [{ preloaded: true }] })).toStrictEqual({
+      "web-framework": [{ preloaded: true }],
+    });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      'Malformed skill assignment in stack data: {"preloaded":true}',
+    );
+  });
+
+  it.each([
+    ["null", null, "null"],
+    ["a number", 42, "42"],
+  ])("warns about an assignment that is %s rather than an object", (_kind, item, shown) => {
+    normalizeAgentConfig({ "web-framework": [item] });
+
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      `Malformed skill assignment in stack data: ${shown}`,
+    );
+  });
+
+  it("names each entry it re-keyed, with both categories, on one verbose line", () => {
+    normalizeStackRecord({
+      "web-developer": { [STALE_CATEGORY]: [MOVED_SKILL], "web-styling": [REACT] },
+    });
+
+    expect(verbose).toHaveBeenCalledExactlyOnceWith(
+      "Re-keyed stack entries to their live category: shared-monorepo-turborepo (shared-monorepo -> shared-task-runner), web-framework-react (web-styling -> web-framework)",
+    );
+  });
+
+  it("says nothing when every entry is under its live category", () => {
+    normalizeStackRecord({ "web-developer": { "web-framework": [REACT] } });
+
+    expect(verbose).not.toHaveBeenCalled();
+  });
+
+  it("keeps every skill a live category holds", () => {
+    expect(
+      normalizeStackRecord({ "web-developer": { "web-testing": [VITEST, TESTING_LIBRARY] } }),
+    ).toStrictEqual({
+      "web-developer": {
+        "web-testing": [
+          createMockSkillAssignment(VITEST),
+          createMockSkillAssignment(TESTING_LIBRARY),
+        ],
+      },
+    });
+  });
+
+  it("says where it found no stacks file", async () => {
+    vi.mocked(loadConfig).mockResolvedValue(null);
+    const { loadStacks, verbose: freshVerbose } = await freshLoader();
+
+    await loadStacks("/project");
+
+    expect(freshVerbose).toHaveBeenCalledExactlyOnceWith(
+      `No stacks file found at ${DEFAULT_STACKS_PATH}`,
+    );
+  });
+
+  it("says how many stacks it loaded and from where", async () => {
+    vi.mocked(loadConfig).mockResolvedValue(createMockRawStacksConfig());
+    const { loadStacks, verbose: freshVerbose } = await freshLoader();
+
+    await loadStacks("/project");
+
+    expect(freshVerbose).toHaveBeenCalledExactlyOnceWith(
+      `Loaded 2 stacks from ${DEFAULT_STACKS_PATH}`,
+    );
+  });
+
+  it("names the file and carries the cause when the stacks file fails to load", async () => {
+    const cause = new Error("ENOENT");
+    vi.mocked(loadConfig).mockRejectedValue(cause);
+    const { loadStacks } = await freshLoader();
+
+    await expect(loadStacks("/project")).rejects.toMatchObject({
+      message: `Failed to load stacks from '${DEFAULT_STACKS_PATH}': ENOENT`,
+      cause,
+    });
+  });
+
+  it("says which stack it found in the source's stacks file", async () => {
+    vi.mocked(loadConfig).mockResolvedValue(createMockRawStacksConfig());
+    const { loadStackById, verbose: freshVerbose } = await freshLoader();
+
+    await loadStackById("vue-spa", "/project", TEST_CUSTOM_SOURCE_URL);
+
+    expect(freshVerbose).toHaveBeenLastCalledWith("Found stack: Vue SPA (vue-spa)");
+  });
+
+  it("says a custom marketplace gets no built-in stand-in for a stack it does not ship", async () => {
+    vi.mocked(loadConfig).mockResolvedValue(null);
+    const { loadStackById, verbose: freshVerbose } = await freshLoader();
+
+    await loadStackById(BUILT_IN_STACK_ID, "/project", TEST_CUSTOM_SOURCE_URL);
+
+    expect(freshVerbose).toHaveBeenLastCalledWith(
+      `Marketplace '${TEST_CUSTOM_SOURCE_URL}' does not ship stack '${BUILT_IN_STACK_ID}', and gets no built-in stand-in`,
+    );
+  });
+
+  it("says which built-in stack stands in for the public catalogue", async () => {
+    vi.mocked(loadConfig).mockResolvedValue(null);
+    const { loadStackById, verbose: freshVerbose } = await freshLoader();
+
+    await loadStackById(BUILT_IN_STACK_ID, "/project", DEFAULT_SOURCE);
+
+    expect(freshVerbose).toHaveBeenLastCalledWith(
+      `Found default stack: Next.js Full-Stack (${BUILT_IN_STACK_ID})`,
+    );
+  });
+
+  it("says a stack is in neither the public catalogue nor the built-ins", async () => {
+    vi.mocked(loadConfig).mockResolvedValue(null);
+    const { loadStackById, verbose: freshVerbose } = await freshLoader();
+
+    await loadStackById("nonexistent-stack", "/project", DEFAULT_SOURCE);
+
+    expect(freshVerbose).toHaveBeenLastCalledWith(
+      "Stack 'nonexistent-stack' not found in the default marketplace or the built-ins",
+    );
+  });
+
+  it("refuses a stack a source does not offer in one wording", () => {
+    expect(stackNotOfferedMessage(BUILT_IN_STACK_ID, TEST_CUSTOM_SOURCE_URL)).toBe(
+      `Stack '${BUILT_IN_STACK_ID}' is not a stack the source '${TEST_CUSTOM_SOURCE_URL}' offers. A marketplace ships its own stacks; the CLI's built-in ones belong to the default public marketplace alone.`,
+    );
   });
 });

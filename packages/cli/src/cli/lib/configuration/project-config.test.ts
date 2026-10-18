@@ -3,6 +3,7 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ConfigLoadError,
+  configDirsInPlay,
   loadProjectConfig,
   loadProjectConfigFromDir,
   validateProjectConfig,
@@ -15,6 +16,12 @@ import { setVerbose } from "../../utils/logger";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { writeRawTestConfig, writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { silenceConsole } from "../__tests__/helpers/silence-console.js";
+import { useFakeHome } from "../__tests__/helpers/isolated-home.js";
+import { renderConfigTs } from "../__tests__/content-generators.js";
+import {
+  renderConfigTsExportingAString,
+  renderUnparseableConfigTs,
+} from "../__tests__/factories/unloadable-config-factories.js";
 import {
   buildAgentConfigs,
   buildPreRenameProjectConfig,
@@ -305,6 +312,123 @@ describe("project-config", () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors).toContain("Invalid input: expected object, received null");
+    });
+  });
+});
+
+describe("loading a config: refusals and defaults", () => {
+  const consoleSpies = silenceConsole(["log", "warn"]);
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("cc-project-config-refusals-");
+  });
+
+  afterEach(async () => {
+    setVerbose(false);
+    await cleanupTempDir(tempDir);
+  });
+
+  const home = useFakeHome(() => tempDir);
+
+  function loadingTheProject() {
+    return loadProjectConfigFromDir(tempDir, "claude");
+  }
+
+  it("refuses an unparseable config with the parser's reason, as a project ConfigLoadError", async () => {
+    await writeRawTestConfig(tempDir, renderUnparseableConfigTs());
+
+    await expect(loadingTheProject()).rejects.toMatchObject({
+      name: "ConfigLoadError",
+      scope: "project",
+      reason: expect.stringMatching(/^Failed to load config from '/),
+    });
+  });
+
+  it("refuses a config that exports nothing as having no valid default export", async () => {
+    const configPath = await writeRawTestConfig(tempDir, renderConfigTs({}));
+
+    await expect(loadingTheProject()).rejects.toMatchObject({
+      message: `Config at '${configPath}' could not be loaded: the file has no valid default export`,
+    });
+  });
+
+  it("refuses a config whose default export is a string as having no valid default export", async () => {
+    await writeRawTestConfig(tempDir, renderConfigTsExportingAString());
+
+    await expect(loadingTheProject()).rejects.toMatchObject({
+      reason: "the file has no valid default export",
+    });
+  });
+
+  it("names every problem the schema finds in one reason", async () => {
+    await writeRawTestConfig(
+      tempDir,
+      renderConfigTs({ name: "two-problems", skills: "nope", agents: "nope" }),
+    );
+
+    await expect(loadingTheProject()).rejects.toMatchObject({
+      reason:
+        "agents: Invalid input: expected array, received string; skills: Invalid input: expected array, received string",
+    });
+  });
+
+  it("names the folder for a config with no name, and says so", async () => {
+    const configPath = await writeRawTestConfig(
+      tempDir,
+      renderConfigTs({ skills: [], agents: [] }),
+    );
+
+    const loaded = await loadingTheProject();
+
+    expect(loaded?.config.name).toBe(path.basename(tempDir));
+    expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+      `  Warning: Project config at '${configPath}' is missing required 'name' field — defaulting to directory name`,
+    );
+  });
+
+  it("gives a config with no skills none, and says so", async () => {
+    const configPath = await writeRawTestConfig(
+      tempDir,
+      renderConfigTs({ name: "no-skills", agents: [] }),
+    );
+
+    const loaded = await loadingTheProject();
+
+    expect(loaded?.config.skills).toStrictEqual([]);
+    expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+      `  Warning: Project config at '${configPath}' is missing 'skills' array — defaulting to empty`,
+    );
+  });
+
+  it("says nothing about a config that has a name and skills", async () => {
+    await writeTestTsConfig(tempDir, buildProjectConfig());
+
+    await loadingTheProject();
+
+    expect(consoleSpies.warn).not.toHaveBeenCalled();
+  });
+
+  it("reads the project's config and the global one, or the global one alone at the home root", () => {
+    expect(configDirsInPlay(tempDir)).toStrictEqual([tempDir, home.dir]);
+    expect(configDirsInPlay(home.dir)).toStrictEqual([home.dir]);
+  });
+
+  it("looks for the global config once when run from the home root", async () => {
+    setVerbose(true);
+
+    expect(await loadProjectConfig(home.dir)).toBeNull();
+
+    expect(consoleSpies.log).toHaveBeenCalledExactlyOnceWith(
+      `  Global config not found at ${getProjectConfigPath(home.dir, "claude")}`,
+    );
+  });
+
+  it("answers a configuration that is not an object with the schema's error and no warnings", () => {
+    expect(validateProjectConfig(null)).toStrictEqual({
+      valid: false,
+      errors: ["Invalid input: expected object, received null"],
+      warnings: [],
     });
   });
 });

@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   holdInstalledGlobal,
   installPlanLines,
+  joinedStatement,
   notInstalledGlobally,
   reconcileSharedConfig,
   restoreInstalledGlobal,
+  skillLabel,
   withUnplaceableAssignees,
   type InstalledGlobal,
   type KeptFromRoundTrip,
@@ -14,17 +16,18 @@ import { seedToInstallSelection } from "./seed-to-selection";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories.js";
 import { buildSeedPayload, buildSeedSkill } from "../__tests__/factories/seed-factories.js";
-import { sa } from "../__tests__/factories/skill-factories.js";
+import { sa, saUnflagged } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers/skill-config-builders.js";
 import {
   CATEGORY_EXCLUSIVITY_MATRIX,
   HEALTH_AUDIT_UNIVERSAL_IN_EXCLUSIVE_MATRIX,
   HEALTH_AUDIT_UNIVERSAL_IN_OPEN_MATRIX,
+  REACT_ZUSTAND_HONO_OPEN_CLIENT_STATE_MATRIX,
   REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
 } from "../__tests__/mock-data/mock-matrices.js";
 import { SKILLS } from "../__tests__/test-fixtures.js";
 
-import type { MergedSkillsMatrix, SkillId } from "../../types/index.js";
+import type { MergedSkillsMatrix, SkillConfig, SkillId } from "../../types/index.js";
 
 /** The whole shape, so an authorship keep cannot read as a catalogue keep. */
 const NOTHING_KEPT: KeptFromRoundTrip = { authoredSkillIds: [], unplaceableSkillIds: [] };
@@ -871,5 +874,262 @@ describe("holding the global install as installed", () => {
         `  sub-agent ${API_DEV}: + ${HONO}`,
       ].join("\n"),
     ]);
+  });
+});
+
+describe("reconcileSharedConfig — what it hands back beside the result", () => {
+  it("names a kept row a filled one-skill category displaced as unassigned", () => {
+    initializeMatrix(CATEGORY_EXCLUSIVITY_MATRIX);
+    const installed = buildProjectConfig({
+      skills: buildSkillConfigs([REACT, VUE], { scope: "project" }),
+      agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
+      stack: { [WEB_DEV]: { "web-framework": [sa(VUE)] } },
+    });
+
+    const { unassigned } = reconcileSharedConfig({
+      decoded: decodedAgainst(REACT, CATEGORY_EXCLUSIVITY_MATRIX),
+      installed,
+      authoredHere: new Set<SkillId>([VUE]),
+      unplaceable: new Set(),
+    });
+
+    expect(unassigned).toStrictEqual([
+      { skillId: VUE, agentName: WEB_DEV, category: "web-framework" },
+    ]);
+  });
+
+  it("leaves the selected domains as they are when a kept skill's domain is already among them", () => {
+    initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
+    const decoded = { ...decodedFor(REACT), selectedDomains: ["api" as const, "web" as const] };
+    const installed = buildProjectConfig({
+      skills: buildSkillConfigs([REACT, ZUSTAND], { scope: "project" }),
+      agents: buildAgentConfigs([WEB_DEV], { scope: "project" }),
+    });
+
+    const { result } = reconcileSharedConfig({
+      decoded,
+      installed,
+      authoredHere: new Set<SkillId>([ZUSTAND]),
+      unplaceable: new Set(),
+    });
+
+    expect(result.selectedDomains).toStrictEqual(["api", "web"]);
+  });
+});
+
+describe("withUnplaceableAssignees — which unplaceable skills bring their sub-agents back", () => {
+  beforeEach(() => {
+    initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
+  });
+
+  const payload = buildSeedPayload({
+    skills: {
+      [REACT]: buildSeedSkill({ scope: "project", assignments: { [WEB_DEV]: "lazy" } }),
+      [UNPLACEABLE]: buildSeedSkill({ scope: "project", assignments: { [API_DEV]: "lazy" } }),
+    },
+    agents: { [WEB_DEV]: { scope: "project" }, [API_DEV]: { scope: "project" } },
+  });
+
+  function keptAgainst(installedSkills: SkillConfig[]) {
+    const { result, skippedSkillIds } = seedToInstallSelection(
+      payload,
+      REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+    );
+    const installed = buildProjectConfig({
+      skills: installedSkills,
+      agents: buildAgentConfigs([WEB_DEV, API_DEV], { scope: "project" }),
+    });
+    return withUnplaceableAssignees(result, installed, payload, new Set(skippedSkillIds));
+  }
+
+  it("brings none back for an unplaceable skill the installation does not hold", () => {
+    expect(
+      keptAgainst(buildSkillConfigs([REACT], { scope: "project" })).selectedAgents,
+    ).toStrictEqual([WEB_DEV]);
+  });
+
+  it("brings none back for an unplaceable skill the installation has only masked", () => {
+    const kept = keptAgainst([
+      buildSkillConfig(REACT, { scope: "project" }),
+      buildSkillConfig(UNPLACEABLE, { scope: "global", excluded: true }),
+    ]);
+
+    expect(kept.selectedAgents).toStrictEqual([WEB_DEV]);
+  });
+});
+
+describe("holdInstalledGlobal — what counts as restating a held sub-agent", () => {
+  const installedGlobal: InstalledGlobal = buildProjectConfig({
+    skills: buildSkillConfigs([ZUSTAND, HONO], { scope: "global" }),
+    agents: buildAgentConfigs([API_DEV], { scope: "global" }),
+    stack: { [API_DEV]: { "web-client-state": [sa(ZUSTAND)], "api-api": [sa(HONO)] } },
+  });
+
+  function decodedRestating(
+    rows: Record<string, "lazy" | "preloaded">,
+    apiDeveloper: { model?: "haiku"; effort?: "high" } = {},
+  ) {
+    return seedToInstallSelection(
+      buildSeedPayload({
+        skills: Object.fromEntries(
+          Object.entries(rows).map(([id, load]) => [
+            id,
+            buildSeedSkill({ scope: "global", assignments: { [API_DEV]: load } }),
+          ]),
+        ),
+        agents: { [API_DEV]: { scope: "global", ...apiDeveloper } },
+      }),
+      REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+    ).result;
+  }
+
+  beforeEach(() => {
+    initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
+  });
+
+  it("restates a held sub-agent whose rows arrive in another order", () => {
+    const held = holdInstalledGlobal(
+      decodedRestating({ [HONO]: "lazy", [ZUSTAND]: "lazy" }),
+      installedGlobal,
+    );
+
+    expect(held.keptAsInstalled.agentNames).toStrictEqual([]);
+  });
+
+  it.each([
+    ["model", decodedRestating({ [ZUSTAND]: "lazy", [HONO]: "lazy" }, { model: "haiku" })],
+    ["effort", decodedRestating({ [ZUSTAND]: "lazy", [HONO]: "lazy" }, { effort: "high" })],
+    ["a row's load", decodedRestating({ [ZUSTAND]: "preloaded", [HONO]: "lazy" })],
+  ])("keeps a held sub-agent whose %s alone differs, and names it", (_, decoded) => {
+    expect(holdInstalledGlobal(decoded, installedGlobal).keptAsInstalled.agentNames).toStrictEqual([
+      API_DEV,
+    ]);
+  });
+
+  it("restates a held sub-agent whose rows record no load, against rows that arrive lazy", () => {
+    const unflagged: InstalledGlobal = {
+      ...installedGlobal,
+      stack: {
+        [API_DEV]: { "web-client-state": [saUnflagged(ZUSTAND)], "api-api": [saUnflagged(HONO)] },
+      },
+    };
+
+    const held = holdInstalledGlobal(
+      decodedRestating({ [ZUSTAND]: "lazy", [HONO]: "lazy" }),
+      unflagged,
+    );
+
+    expect(held.keptAsInstalled.agentNames).toStrictEqual([]);
+  });
+
+  it("holds no global skill the install only masks", () => {
+    const masked: InstalledGlobal = {
+      ...installedGlobal,
+      skills: [buildSkillConfig(ZUSTAND, { scope: "global", excluded: true })],
+    };
+
+    expect(
+      holdInstalledGlobal(decodedRestating({ [ZUSTAND]: "lazy" }), masked).installed.skillIds,
+    ).toStrictEqual([]);
+  });
+});
+
+describe("holdInstalledGlobal — which rows join a held sub-agent", () => {
+  beforeEach(() => {
+    initializeMatrix(REACT_ZUSTAND_HONO_OPEN_CLIENT_STATE_MATRIX);
+  });
+
+  function decodedAssigning(ids: SkillId[]) {
+    return seedToInstallSelection(
+      buildSeedPayload({
+        skills: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            buildSeedSkill({ scope: "global", assignments: { [API_DEV]: "lazy" } }),
+          ]),
+        ),
+        agents: { [API_DEV]: { scope: "global" } },
+      }),
+      REACT_ZUSTAND_HONO_OPEN_CLIENT_STATE_MATRIX,
+    ).result;
+  }
+
+  it("brings no row for a held skill, even where the held sub-agent does not load it yet", () => {
+    const installed: InstalledGlobal = buildProjectConfig({
+      skills: buildSkillConfigs([ZUSTAND], { scope: "global" }),
+      agents: buildAgentConfigs([API_DEV], { scope: "global" }),
+    });
+
+    const held = holdInstalledGlobal(decodedAssigning([ZUSTAND]), installed);
+
+    expect(held.result.assignedStack).toStrictEqual({});
+    expect(held.joined).toStrictEqual([]);
+  });
+
+  it("brings no second row for a skill the held sub-agent already loads", () => {
+    const installed: InstalledGlobal = buildProjectConfig({
+      skills: buildSkillConfigs([ZUSTAND], { scope: "global" }),
+      agents: buildAgentConfigs([API_DEV], { scope: "global" }),
+      stack: { [API_DEV]: { "web-client-state": [sa(ZUSTAND)] } },
+    });
+
+    const held = holdInstalledGlobal(decodedAssigning([ZUSTAND, HONO]), installed);
+
+    expect(held.result.assignedStack).toStrictEqual({
+      [API_DEV]: { "web-client-state": [sa(ZUSTAND)], "api-api": [sa(HONO)] },
+    });
+  });
+
+  it("treats an emptied one-skill category as room for an arriving row", () => {
+    const installed: InstalledGlobal = buildProjectConfig({
+      skills: buildSkillConfigs([ZUSTAND], { scope: "global" }),
+      agents: buildAgentConfigs([API_DEV], { scope: "global" }),
+      stack: { [API_DEV]: { "web-framework": [] } },
+    });
+
+    const held = holdInstalledGlobal(decodedAssigning([REACT]), installed);
+
+    expect(held.result.assignedStack).toStrictEqual({
+      [API_DEV]: { "web-framework": [sa(REACT)] },
+    });
+  });
+});
+
+describe("restoreInstalledGlobal and the plan lines", () => {
+  beforeEach(() => {
+    initializeMatrix(REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX);
+  });
+
+  it("puts back no second copy of a global skill the configuration names", () => {
+    const installed: InstalledGlobal = buildProjectConfig({
+      skills: buildSkillConfigs([ZUSTAND], { scope: "global" }),
+      agents: [],
+    });
+    const decoded = seedToInstallSelection(
+      buildSeedPayload({ skills: { [ZUSTAND]: buildSeedSkill({ scope: "global" }) } }),
+      REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX,
+    ).result;
+
+    const restored = restoreInstalledGlobal(decoded, installed);
+
+    expect(restored.result.skills.map((skill) => skill.id)).toStrictEqual([ZUSTAND]);
+  });
+
+  it("prints no global heading and no joined line when nothing arrives there", () => {
+    const held = holdInstalledGlobal(decodedFor(REACT), null);
+
+    expect(installPlanLines(held)).toStrictEqual([
+      "Into this project:",
+      "  Skills:",
+      `    ${SKILLS.react.displayName} (${REACT})`,
+      "  Sub-agents:",
+      `    ${WEB_DEV}`,
+    ]);
+    expect(joinedStatement(held)).toStrictEqual([]);
+  });
+
+  it("labels a skill by its id alone when its display name is that id", () => {
+    expect(skillLabel(UNPLACEABLE)).toBe(UNPLACEABLE);
+    expect(skillLabel(REACT)).toBe(`${SKILLS.react.displayName} (${REACT})`);
   });
 });

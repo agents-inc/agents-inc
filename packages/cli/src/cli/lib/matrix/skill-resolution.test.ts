@@ -20,9 +20,19 @@ import { firstElement } from "../__tests__/helpers/element-at.js";
 
 vi.mock("../../utils/logger");
 
-import { mergeMatrixWithSkills, synthesizeCategory } from "./skill-resolution";
-import { warn } from "../../utils/logger";
-import type { CategoryPath, Category, SkillId, SkillSlug } from "../../types";
+import {
+  mergeMatrixWithSkills,
+  relationshipsForSource,
+  synthesizeCategory,
+} from "./skill-resolution";
+import { verbose, warn } from "../../utils/logger";
+import type {
+  CategoryPath,
+  Category,
+  RelationshipDefinitions,
+  SkillId,
+  SkillSlug,
+} from "../../types";
 
 const DUPLICATED_ID: SkillId = "web-framework-react";
 const FIRST_SKILL_PATH = "skills/web-framework-react/";
@@ -463,5 +473,193 @@ describe("skill-resolution", () => {
       const cat = synthesizeCategory("devops-iac" as Category, "cli");
       expect(cat.domain).toBe("cli");
     });
+  });
+});
+
+// Boundary cast: a slug no skill carries, outside the generated union
+const GHOST_SLUG = "ghost-skill" as SkillSlug;
+// Boundary cast: a category no definition declares, outside the generated union
+const UNDECLARED_CATEGORY = "web-house-rules" as CategoryPath;
+
+const NO_RELATIONSHIPS = { conflicts: [], discourages: [], requires: [], alternatives: [] };
+
+describe("skill-resolution — what a merge says and carries", () => {
+  it("names the rule kind and the skill a slug failed to resolve for", () => {
+    mergeMatrixWithSkills(
+      EMPTY_MATRIX_CONFIG.categories,
+      {
+        conflicts: [{ skills: ["react", GHOST_SLUG], reason: "r" }],
+        discourages: [{ skills: ["react", GHOST_SLUG], reason: "r" }],
+        requires: [
+          { skill: GHOST_SLUG, needs: ["react"], reason: "r" },
+          { skill: "react", needs: [GHOST_SLUG], reason: "r" },
+        ],
+        alternatives: [{ purpose: "p", skills: ["react", GHOST_SLUG] }],
+      },
+      [createMockExtractedSkill("web-framework-react")],
+    );
+
+    for (const context of [
+      "conflicts",
+      "discourages",
+      "alternatives",
+      "requires.skill",
+      "requires.needs",
+    ]) {
+      expect(warn).toHaveBeenCalledWith(
+        `Unresolved slug '${GHOST_SLUG}' in web-framework-react ${context} — skipping`,
+      );
+    }
+  });
+
+  it("relates a skill only to the members of groups it is in, each member once", () => {
+    const merged = mergeMatrixWithSkills(
+      EMPTY_MATRIX_CONFIG.categories,
+      {
+        ...NO_RELATIONSHIPS,
+        conflicts: [
+          { skills: ["react", "vue-composition-api"], reason: "first" },
+          { skills: ["react", "zustand"], reason: "second" },
+          { skills: ["vue-composition-api", "hono"], reason: "not react's" },
+        ],
+      },
+      [
+        createMockExtractedSkill("web-framework-react"),
+        createMockExtractedSkill("web-framework-vue-composition-api"),
+        createMockExtractedSkill("web-state-zustand"),
+        createMockExtractedSkill("api-framework-hono"),
+      ],
+    );
+
+    expect(merged.skills["web-framework-react"]?.conflictsWith).toStrictEqual([
+      { skillId: "web-framework-vue-composition-api", reason: "first" },
+      { skillId: "web-state-zustand", reason: "second" },
+    ]);
+  });
+
+  it("carries usage guidance and the custom flag only where the metadata declares them", () => {
+    const merged = mergeMatrixWithSkills(EMPTY_MATRIX_CONFIG.categories, NO_RELATIONSHIPS, [
+      createMockExtractedSkill("web-framework-react", {
+        usageGuidance: "Use when building React UIs.",
+        custom: true,
+      }),
+      createMockExtractedSkill("web-framework-vue-composition-api"),
+    ]);
+
+    expect(merged.skills["web-framework-react"]).toMatchObject({
+      usageGuidance: "Use when building React UIs.",
+      custom: true,
+    });
+    const vue = merged.skills["web-framework-vue-composition-api"];
+    expect(vue).toBeDefined();
+    expect(Object.keys(vue ?? {})).not.toContain("usageGuidance");
+    expect(Object.keys(vue ?? {})).not.toContain("custom");
+  });
+
+  it("warns about a slug two skills share only when the ids differ", () => {
+    mergeMatrixWithSkills(EMPTY_MATRIX_CONFIG.categories, NO_RELATIONSHIPS, [
+      createMockExtractedSkill(DUPLICATED_ID, { path: FIRST_SKILL_PATH, slug: COLLIDING_SLUG }),
+      createMockExtractedSkill(DUPLICATED_ID, { path: SECOND_SKILL_PATH, slug: COLLIDING_SLUG }),
+    ]);
+
+    expect(vi.mocked(warn).mock.calls).toStrictEqual([
+      [
+        `Duplicate skill id '${DUPLICATED_ID}': already resolved from '${FIRST_SKILL_PATH}', ignoring '${SECOND_SKILL_PATH}'`,
+      ],
+    ]);
+  });
+
+  it("files an undeclared category under the first skill's domain and names the one that disagrees", () => {
+    const merged = mergeMatrixWithSkills(EMPTY_MATRIX_CONFIG.categories, NO_RELATIONSHIPS, [
+      createMockExtractedSkill("web-framework-react", {
+        category: UNDECLARED_CATEGORY,
+        domain: "web",
+      }),
+      createMockExtractedSkill("api-framework-hono", {
+        category: UNDECLARED_CATEGORY,
+        domain: "api",
+      }),
+    ]);
+
+    expect(
+      Object.values(merged.categories).find((category) => category.id === UNDECLARED_CATEGORY)
+        ?.domain,
+    ).toBe("web");
+    expect(warn).toHaveBeenCalledWith(
+      `Category '${UNDECLARED_CATEGORY}' has no definition, so its domain was taken from the first skill naming it — 'web-framework-react' (web). 'api-framework-hono' declares 'api' and will be filed under 'web'. Declare the category in the marketplace's own config, or make the two skills agree.`,
+    );
+    expect(verbose).toHaveBeenCalledWith(
+      `Auto-synthesized category '${UNDECLARED_CATEGORY}' for skill 'web-framework-react'`,
+    );
+  });
+
+  it("says nothing when the skills sharing an undeclared category agree on its domain", () => {
+    mergeMatrixWithSkills(EMPTY_MATRIX_CONFIG.categories, NO_RELATIONSHIPS, [
+      createMockExtractedSkill("web-framework-react", {
+        category: UNDECLARED_CATEGORY,
+        domain: "web",
+      }),
+      createMockExtractedSkill("web-framework-vue-composition-api", {
+        category: UNDECLARED_CATEGORY,
+        domain: "web",
+      }),
+    ]);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("synthesizes a placeholder definition and says it did", () => {
+    expect(synthesizeCategory("web-framework", "web")).toStrictEqual({
+      id: "web-framework",
+      displayName: "Web Framework",
+      description: "Auto-generated category for web-framework",
+      domain: "web",
+      exclusive: false,
+      order: 999,
+    });
+    expect(verbose).toHaveBeenCalledWith(
+      "Category 'web-framework' has no definition in skill-categories.ts — using auto-generated placeholder",
+    );
+  });
+});
+
+describe("relationshipsForSource", () => {
+  it("keeps no built-in rule a lone shipped skill would be the only member of", () => {
+    expect(relationshipsForSource([createMockExtractedSkill("web-framework-react")])).toStrictEqual(
+      NO_RELATIONSHIPS,
+    );
+  });
+
+  it("drops a built-in requirement whose needs this source ships none of", () => {
+    expect(
+      relationshipsForSource([createMockExtractedSkill("web-state-zustand")]).requires,
+    ).toStrictEqual([]);
+  });
+
+  it("narrows a built-in requirement to the needs this source ships", () => {
+    const { requires } = relationshipsForSource([
+      createMockExtractedSkill("web-state-zustand"),
+      createMockExtractedSkill("web-framework-react"),
+    ]);
+
+    expect(requires.map(({ skill, needs }) => ({ skill, needs }))).toStrictEqual([
+      { skill: "zustand", needs: ["react"] },
+    ]);
+  });
+
+  it("puts the source's own rules of every kind ahead of the built-ins", () => {
+    const own: RelationshipDefinitions = {
+      conflicts: [{ skills: [GHOST_SLUG, "react"], reason: "own conflict" }],
+      discourages: [{ skills: [GHOST_SLUG, "react"], reason: "own discourage" }],
+      requires: [{ skill: GHOST_SLUG, needs: ["react"], reason: "own require" }],
+      alternatives: [{ purpose: "own alternative", skills: [GHOST_SLUG, "react"] }],
+    };
+
+    const merged = relationshipsForSource([createMockExtractedSkill("web-framework-react")], {
+      version: "1.0.0",
+      relationships: own,
+    });
+
+    expect(merged).toStrictEqual(own);
   });
 });

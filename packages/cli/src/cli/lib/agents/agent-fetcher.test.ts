@@ -35,6 +35,7 @@ import {
 } from "./agent-fetcher";
 import { fetchFromSource } from "../loading";
 import { loadSourceRepoConfig } from "../configuration";
+import { verbose } from "../../utils/logger";
 
 const mockFetchFromSource = vi.mocked(fetchFromSource);
 const mockLoadSourceRepoConfig = vi.mocked(loadSourceRepoConfig);
@@ -222,6 +223,35 @@ describe("agent-fetcher", () => {
 
       expect(mockFetchFromSource).not.toHaveBeenCalled();
       expect(result.sourcePath).toBe(tempDir);
+    });
+  });
+
+  describe("what fetching agent partials says", () => {
+    beforeEach(() => {
+      vi.mocked(verbose).mockClear();
+    });
+
+    it("says it loaded the CLI's own partials, and from where", async () => {
+      await createAgentDirStructure(tempDir);
+
+      await getLocalAgentDefinitions();
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        `Agent partials loaded from CLI: ${path.join(tempDir, "src/agents")}`,
+      );
+    });
+
+    it("says what it fetched, the agents folder the source config names, and where it landed", async () => {
+      const fetchedDir = await mockFetchedRemote(tempDir, "custom/agents");
+      mockLoadSourceRepoConfig.mockResolvedValue(buildSourceConfig({ agentsDir: "custom/agents" }));
+
+      await fetchAgentDefinitionsFromRemote(REMOTE_SOURCE);
+
+      expect(vi.mocked(verbose).mock.calls).toStrictEqual([
+        [`Fetching agent partials from remote: ${REMOTE_SOURCE}`],
+        ["Using agentsDir from source config: custom/agents"],
+        [`Agent partials fetched from: ${fetchedDir}`],
+      ]);
     });
   });
 });

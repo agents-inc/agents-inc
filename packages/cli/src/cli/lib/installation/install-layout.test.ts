@@ -8,7 +8,14 @@ import { buildProjectConfig } from "../__tests__/factories/config-factories.js";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io.js";
 import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils.js";
 import { getProjectConfigPath } from "./install-base-dir.js";
-import { providerInUse, sourceDir, sourceFolderInUse } from "./install-layout.js";
+import {
+  hostCompilesAgent,
+  providerInUse,
+  retiredSourceFolderIn,
+  skillsPathPrefix,
+  sourceDir,
+  sourceFolderInUse,
+} from "./install-layout.js";
 
 const CLAUDE_SOURCE_REL = ".agents-inc/claude";
 const CODEX_SOURCE_REL = ".agents-inc/codex";
@@ -163,3 +170,132 @@ describe.skipIf(process.getuid?.() === 0)(
     });
   },
 );
+
+describe("retiredSourceFolderIn", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await createTempDir("cc-retired-source-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(root);
+  });
+
+  it("answers nothing when no root holds the retired folder, and Claude's folder when one does", async () => {
+    const roots = [path.join(root, "project"), path.join(root, "home")];
+    await Promise.all(roots.map((dir) => mkdir(dir, { recursive: true })));
+
+    expect(retiredSourceFolderIn(roots)).toBeNull();
+
+    await mkdir(path.join(root, "home", ".claude-src"));
+
+    expect(retiredSourceFolderIn(roots)).toBe(CLAUDE_SOURCE_REL);
+  });
+});
+
+describe("providerInUse with both providers' folders", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await createTempDir("cc-provider-live-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(root);
+  });
+
+  it("takes the provider whose folder holds a config over one whose folder merely holds files", async () => {
+    await mkdir(path.join(root, CLAUDE_SOURCE_REL), { recursive: true });
+    await writeFile(path.join(root, CLAUDE_SOURCE_REL, "notes.md"), "started, never installed");
+    await writeTestTsConfig(root, buildProjectConfig(), CODEX_SOURCE_REL);
+
+    expect(providerInUse(root)).toBe("codex");
+  });
+});
+
+describe("hostCompilesAgent", () => {
+  it("compiles every sub-agent for Claude, including those Codex leaves out", () => {
+    expect(hostCompilesAgent("claude", "agent-summoner")).toBe(true);
+    expect(hostCompilesAgent("codex", "agent-summoner")).toBe(false);
+  });
+});
+
+describe("skillsPathPrefix under a relocated CODEX_HOME", () => {
+  const RELOCATION_VARS = ["HOME", "CODEX_HOME"] as const;
+  let root: string;
+  let saved: Partial<Record<(typeof RELOCATION_VARS)[number], string>>;
+
+  beforeEach(async () => {
+    root = await createTempDir("cc-skills-prefix-");
+    saved = Object.fromEntries(RELOCATION_VARS.map((name) => [name, process.env[name]]));
+  });
+
+  afterEach(async () => {
+    for (const name of RELOCATION_VARS) {
+      const value = saved[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await cleanupTempDir(root);
+  });
+
+  function relocated(home: string): void {
+    process.env.HOME = home;
+    process.env.CODEX_HOME = root;
+  }
+
+  it("names the global skills folder relative to the home when it sits under it", () => {
+    process.env.HOME = root;
+    delete process.env.CODEX_HOME;
+
+    expect(skillsPathPrefix("codex", "global", root)).toBe(".codex/skills");
+  });
+
+  it("names the global skills folder by its absolute path when it is the home itself", () => {
+    relocated(path.join(root, "skills"));
+
+    expect(skillsPathPrefix("codex", "global", root)).toBe(path.join(root, "skills"));
+  });
+
+  it("names the global skills folder by its absolute path when it is the home's parent", () => {
+    relocated(path.join(root, "skills", "home"));
+
+    expect(skillsPathPrefix("codex", "global", root)).toBe(path.join(root, "skills"));
+  });
+});
+
+// Skipped as root, which ignores `chmod 000`.
+describe.skipIf(process.getuid?.() === 0)("probes of a folder that cannot be read", () => {
+  let root: string;
+  const locked: string[] = [];
+
+  beforeEach(async () => {
+    root = await createTempDir("cc-layout-locked-");
+  });
+
+  afterEach(async () => {
+    await Promise.all(locked.splice(0).map((dir) => chmod(dir, 0o755)));
+    await cleanupTempDir(root);
+  });
+
+  async function lockedDir(...segments: readonly string[]): Promise<string> {
+    const dir = path.join(root, ...segments);
+    await mkdir(dir, { recursive: true });
+    await chmod(dir, 0o000);
+    locked.push(dir);
+    return dir;
+  }
+
+  it("counts a provider's source folder it cannot list as a started installation", async () => {
+    await lockedDir(".agents-inc", "codex");
+
+    expect(providerInUse(root)).toBe("codex");
+  });
+
+  it("finds no retired folder under a root it cannot look into", async () => {
+    const vault = await lockedDir("vault");
+
+    expect(retiredSourceFolderIn([vault])).toBeNull();
+  });
+});

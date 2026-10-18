@@ -26,7 +26,9 @@ import {
   agentFrontmatterValidationSchema,
   agentYamlConfigSchema,
   categoryPathSchema,
+  describeMetadataSchemaFailure,
   formatZodIssues,
+  isCustomMetadata,
   localRawMetadataSchema,
   marketplaceSchema,
   metadataValidationSchema,
@@ -34,6 +36,7 @@ import {
   projectSourceConfigSchema,
   skillMetadataLoaderSchema,
   skillCategoriesFileSchema,
+  skillRulesFileSchema,
   splitMetadataValidationIssues,
   validateNestingDepth,
   warnUnknownFields,
@@ -1122,5 +1125,195 @@ describe("the agent metadata a compiled agent is written from, against the schem
       refused,
       "a mode the vocabulary documents is refused at load, so an agent declaring it never reaches the template that emits it",
     ).toStrictEqual([]);
+  });
+});
+
+/** The issue a stale key raises, as `config.ts`'s reader reports it: where, and in which words. */
+describe("the issue a stale key in config.ts is reported at", () => {
+  function pathsAndMessages(result: {
+    error?: z.ZodError;
+  }): { path: PropertyKey[]; message: string }[] {
+    return (result.error?.issues ?? []).map(({ path, message }) => ({ path, message }));
+  }
+
+  it("reports a stale top-level key at its own path, with the sentence naming its rename", () => {
+    const result = projectConfigLoaderSchema.safeParse(buildPreRenameProjectConfig());
+
+    expect(pathsAndMessages(result)).toStrictEqual([
+      {
+        path: [PRE_RENAME_CONFIG_KEY],
+        message:
+          '"source" was renamed to "marketplace". Rename the key in this config — the CLI does not read "source" any more and will not fall back to it.',
+      },
+    ]);
+  });
+
+  it("reports a stale key in a skill entry under that entry's index", () => {
+    const result = projectConfigLoaderSchema.safeParse(buildPreRenameSkillEntryConfig());
+
+    expect(pathsAndMessages(result)).toStrictEqual([
+      {
+        path: ["skills", 0, PRE_RENAME_CONFIG_KEY],
+        message:
+          '"source" was renamed to "origin". Rename the key in this config — the CLI does not read "source" any more and will not fall back to it.',
+      },
+    ]);
+  });
+
+  it("refuses a skill entry that is not an object as a shape error, without failing to read it", () => {
+    const config = { ...buildProjectConfig(), skills: ["web-framework-react"] };
+
+    const result = projectConfigLoaderSchema.safeParse(config);
+
+    expect(result.success).toBe(false);
+    expect(pathsAndMessages(result).map(({ path }) => path)).toStrictEqual([["skills", 0]]);
+  });
+});
+
+/** The words a relationship rule naming a skill outside the catalogue is refused in. */
+describe("the refusal of a relationship rule naming a skill the catalogue does not carry", () => {
+  const REFUSAL_TAIL =
+    " is not a slug the public catalogue carries, and a relationship rule may only name skills the public catalogue carries — this marketplace's own skills cannot be named in one yet. Name a catalogue slug, or leave 'relationships' out: it is optional, and a marketplace shipping no relationship rules loads and installs like any other.";
+
+  function conflictMessages(skills: unknown[]): string[] {
+    const result = skillRulesFileSchema.safeParse({
+      version: "1.0.0",
+      relationships: {
+        conflicts: [{ skills, reason: "they overlap" }],
+        discourages: [],
+        requires: [],
+        alternatives: [],
+      },
+    });
+    return (result.error?.issues ?? []).map(({ message }) => message);
+  }
+
+  it("quotes the slug it does not know", () => {
+    expect(conflictMessages(["acme-widget", "react"])).toStrictEqual([
+      `'acme-widget'${REFUSAL_TAIL}`,
+    ]);
+  });
+
+  it("calls a value that is not a string 'That value'", () => {
+    expect(conflictMessages([NON_STRING_FIELD_VALUE, "react"])).toStrictEqual([
+      `That value${REFUSAL_TAIL}`,
+    ]);
+  });
+});
+
+describe("the refusal of a metadata.yaml slug the catalogue does not carry", () => {
+  const REFUSAL_TAIL =
+    " is not a slug the public catalogue carries. A published skill's slug is held to that catalogue unless the skill declares it is not from it — add 'custom: true' beside it in this metadata.yaml and the slug is read as your marketplace's own, any kebab-case name. That declaration is how a skill outside the catalogue's vocabulary is carried; a skill the catalogue does carry names its catalogue slug and leaves it off.";
+
+  function slugMessages(slug: unknown): string[] {
+    const result = metadataValidationSchema.safeParse({
+      ...VALID_EMBEDDED_SKILL_METADATA_FILE,
+      slug,
+    });
+    return (result.error?.issues ?? []).map(({ message }) => message);
+  }
+
+  it("quotes the slug it does not know and points at custom: true", () => {
+    expect(slugMessages("acme-widget")).toStrictEqual([`'acme-widget'${REFUSAL_TAIL}`]);
+  });
+
+  it("calls a slug that is not a string 'That value'", () => {
+    expect(slugMessages(NON_STRING_FIELD_VALUE)).toStrictEqual([`That value${REFUSAL_TAIL}`]);
+  });
+});
+
+describe("describeMetadataSchemaFailure", () => {
+  function describeFailure(rawMetadata: Record<string, unknown>): string {
+    const result = metadataValidationSchema.safeParse(rawMetadata);
+    return describeMetadataSchemaFailure(result.error?.issues ?? [], rawMetadata);
+  }
+
+  it("names one absent field as missing", () => {
+    const { category: _category, ...withoutCategory } = VALID_EMBEDDED_SKILL_METADATA_FILE;
+
+    expect(describeFailure(withoutCategory)).toBe("missing required field: category");
+  });
+
+  it("names absent fields together, then each malformed one, separated by semicolons", () => {
+    const {
+      category: _category,
+      displayName: _displayName,
+      ...rest
+    } = VALID_EMBEDDED_SKILL_METADATA_FILE;
+
+    expect(describeFailure({ ...rest, usageGuidance: "too short" })).toBe(
+      "missing required fields: displayName, category; usageGuidance: Too small: expected string to have >=10 characters",
+    );
+  });
+
+  it("does not call a key the schema refuses as unknown a missing field", () => {
+    expect(describeFailure({ ...VALID_EMBEDDED_SKILL_METADATA_FILE, extraKey: true })).toBe(
+      'Unrecognized key: "extraKey"',
+    );
+  });
+});
+
+describe("splitMetadataValidationIssues beyond cliDescription", () => {
+  it("keeps an over-length field other than cliDescription as an error", () => {
+    const rawMetadata = { ...VALID_EMBEDDED_SKILL_METADATA_FILE, displayName: "d".repeat(31) };
+    const result = metadataValidationSchema.safeParse(rawMetadata);
+    if (result.success) throw new Error("fixture must fail strict validation");
+
+    const { errors, warnings } = splitMetadataValidationIssues(result.error, rawMetadata);
+
+    expect(warnings).toStrictEqual([]);
+    expect(errors).toStrictEqual([formatZodIssues(result.error.issues)]);
+  });
+
+  it("splits the issues of a null document without reading a field off it", () => {
+    const result = metadataValidationSchema.safeParse(null);
+    if (result.success) throw new Error("fixture must fail strict validation");
+
+    const { errors, warnings } = splitMetadataValidationIssues(result.error, null);
+
+    expect(warnings).toStrictEqual([]);
+    expect(errors).toStrictEqual([formatZodIssues(result.error.issues)]);
+  });
+});
+
+describe("the nesting check over an array", () => {
+  it("refuses an array when any one element nests too deeply", () => {
+    expect(validateNestingDepth([1, { a: { b: { c: 1 } } }], 2)).toBe(false);
+  });
+});
+
+describe("isCustomMetadata", () => {
+  it("reads custom metadata only from custom: true", () => {
+    expect(isCustomMetadata({ custom: true })).toBe(true);
+    expect(isCustomMetadata({ custom: false })).toBe(false);
+    expect(isCustomMetadata({ slug: "react" })).toBe(false);
+    expect(isCustomMetadata(null)).toBe(false);
+  });
+});
+
+describe("relationship rules naming more than one skill", () => {
+  it("accepts a conflict among three, a requirement on two, and two alternatives", () => {
+    const result = skillRulesFileSchema.safeParse({
+      version: "1.0.0",
+      relationships: {
+        conflicts: [
+          {
+            skills: ["react", "vue-composition-api", "svelte"],
+            reason: "one framework per project",
+          },
+        ],
+        discourages: [],
+        requires: [
+          {
+            skill: "zustand",
+            needs: ["react", "vue-composition-api"],
+            reason: "it binds a framework",
+          },
+        ],
+        alternatives: [{ purpose: "client state", skills: ["zustand", "pinia"] }],
+      },
+    });
+
+    expect(result.error?.issues ?? []).toStrictEqual([]);
   });
 });

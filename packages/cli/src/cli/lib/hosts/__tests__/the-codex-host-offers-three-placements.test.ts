@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { hostFor } from "../host-for.js";
-import { refuseUnofferedPlacement } from "../offered-placements.js";
+import { refuseUnofferedPlacement, refuseUnofferedPlacements } from "../offered-placements.js";
+import { buildSkillConfigs } from "../../__tests__/helpers/skill-config-builders.js";
 import type { InstallPlacement, PluginHost } from "../plugin-host.js";
 
 /** Members rather than a count, which a swapped cell would leave green. */
@@ -69,5 +70,33 @@ describe("a plugin asked for at project scope on Codex", () => {
     expect(() =>
       refuseUnofferedPlacement(hostFor("claude"), PLUGIN_PROJECT, SUBJECT),
     ).not.toThrow();
+  });
+});
+
+describe("a configuration's skills checked against the Codex host", () => {
+  const PLUGIN_ORIGIN = "agents-inc";
+
+  it("refuses a plugin skill at project scope, naming it and the cells Codex offers", () => {
+    const skills = buildSkillConfigs([SUBJECT], { scope: "project", origin: PLUGIN_ORIGIN });
+
+    expect(() => refuseUnofferedPlacements(skills, hostFor("codex"))).toThrow(
+      "Refusing to install web-framework-react as plugin+project: the codex host offers plugin+global, eject+global, eject+project. Nothing has been changed.",
+    );
+  });
+
+  it("lets an ejected skill at project scope through", () => {
+    const skills = buildSkillConfigs([SUBJECT], { scope: "project" });
+
+    expect(() => refuseUnofferedPlacements(skills, hostFor("codex"))).not.toThrow();
+  });
+
+  it("skips an excluded row, which places nothing", () => {
+    const skills = buildSkillConfigs([SUBJECT], {
+      scope: "project",
+      origin: PLUGIN_ORIGIN,
+      excluded: true,
+    });
+
+    expect(() => refuseUnofferedPlacements(skills, hostFor("codex"))).not.toThrow();
   });
 });

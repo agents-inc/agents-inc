@@ -58,6 +58,8 @@ import { loadAgentDefs } from "./load-agent-defs.js";
 import { ensureBlankPair, writeConfigByScope } from "../../config-gate/index.js";
 import { ensureDir } from "../../../utils/fs.js";
 
+import { firstElement } from "../../__tests__/helpers/element-at.js";
+
 const mockBuildAndMergeConfig = vi.mocked(buildAndMergeConfig);
 const mockWriteConfigByScope = vi.mocked(writeConfigByScope);
 const mockResolveInstallPaths = vi.mocked(resolveInstallPaths);
@@ -132,6 +134,28 @@ describe("write-project-config", () => {
       wasMerged: false,
       propagation: buildGateReport(),
     });
+  });
+
+  it("hands the session's authority to the gate exactly as it handed it to the merge", async () => {
+    await writeProjectConfig({ selection, sourceResult, projectDir, authoritativeScope: "all" });
+
+    expect(mockBuildAndMergeConfig).toHaveBeenCalledWith(
+      selection,
+      sourceResult,
+      projectDir,
+      undefined,
+      "all",
+    );
+    expect(mockWriteConfigByScope).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ authoritativeScope: "all" }),
+    );
+  });
+
+  it("names no authority to the gate when the session claims none", async () => {
+    await writeProjectConfig({ selection, sourceResult, projectDir });
+
+    const [request] = firstElement(mockWriteConfigByScope.mock.calls);
+    expect(request).not.toHaveProperty("authoritativeScope");
   });
 
   it("should skip ensureBlankPair when installing from homedir", async () => {

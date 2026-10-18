@@ -26,7 +26,8 @@ import { DEFAULT_PLUGIN_NAME } from "../../consts";
 import { renderInstalledPluginsRegistry } from "../__tests__/factories/plugin-registry-factories";
 import type { fileExists, readFileSafe } from "../../utils/fs";
 import type { ClaudeConfigOptions } from "./claude-host";
-import { fakeChildProcess } from "./__tests__/helpers/fake-child-process.js";
+import { type FakeChildReply, fakeChildProcess } from "./__tests__/helpers/fake-child-process.js";
+import { warn } from "../../utils/logger";
 import {
   claudeHost,
   claudePluginInstall,
@@ -345,5 +346,134 @@ describe("which installation a listing is read from", () => {
       await claudeHost().listPlugins(PROJECT_DIR, { configDir: ISOLATED_CONFIG_DIR }),
       "an installation that has never installed a plugin is not a broken one, and reading it as an error would fail every command on a fresh machine",
     ).toStrictEqual([]);
+  });
+});
+
+/** What each Claude call answers and says when `claude` refuses, cannot run, or answers oddly. */
+describe("what the Claude host says when claude fails", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function claudeReplies(reply: FakeChildReply): void {
+    vi.mocked(spawn).mockImplementation(() => fakeChildProcess(reply));
+  }
+
+  const CANNOT_RUN: FakeChildReply = { unrunnable: true };
+
+  it("answers unavailable when claude cannot be run at all", async () => {
+    claudeReplies(CANNOT_RUN);
+
+    expect(await isClaudeCLIAvailable()).toBe(false);
+  });
+
+  it("answers an empty listing, quietly, when the listing command fails", async () => {
+    claudeReplies({ exitCode: 1, stdout: "" });
+
+    expect(await claudePluginMarketplaceList()).toStrictEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("answers an empty listing, and says so, when the listing is not JSON", async () => {
+    claudeReplies({ stdout: "not json" });
+
+    expect(await claudePluginMarketplaceList()).toStrictEqual([]);
+    expect(warn).toHaveBeenCalledWith("Failed to parse marketplace list output as JSON");
+  });
+
+  it("answers an empty listing, and says so, when the listing is not an array of entries", async () => {
+    claudeReplies({ stdout: JSON.stringify({ marketplaces: [] }) });
+
+    expect(await claudePluginMarketplaceList()).toStrictEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      "Unexpected marketplace list format — expected an array of marketplace entries",
+    );
+  });
+
+  it("takes a marketplace claude already has as added", async () => {
+    claudeReplies({
+      exitCode: 1,
+      stderr: `Marketplace '${MARKETPLACE_NAME}' is already installed`,
+    });
+
+    await expect(claudePluginMarketplaceAdd(MARKETPLACE_SOURCE)).resolves.toBeUndefined();
+  });
+
+  it("quotes claude, trimmed, when adding a marketplace fails", async () => {
+    claudeReplies({ exitCode: 1, stderr: "  network down \n" });
+
+    await expect(claudePluginMarketplaceAdd(MARKETPLACE_SOURCE)).rejects.toThrow(
+      new Error("Failed to add marketplace: network down"),
+    );
+  });
+
+  it("names the attempt and keeps the cause when claude cannot be run to add a marketplace", async () => {
+    claudeReplies(CANNOT_RUN);
+
+    await expect(claudePluginMarketplaceAdd(MARKETPLACE_SOURCE)).rejects.toMatchObject({
+      message: "Failed to add marketplace: spawn ENOENT",
+      cause: expect.objectContaining({ message: "spawn ENOENT" }),
+    });
+  });
+
+  it("removes a marketplace by name with claude's own remove verb", async () => {
+    claudeReplies({});
+
+    await claudePluginMarketplaceRemove(MARKETPLACE_NAME);
+
+    expect(vi.mocked(spawn).mock.lastCall?.[1]).toStrictEqual([
+      "plugin",
+      "marketplace",
+      "remove",
+      MARKETPLACE_NAME,
+    ]);
+  });
+
+  it.each(["Marketplace not found", "Marketplace not installed"])(
+    "takes a marketplace claude reports gone (%s) as removed",
+    async (said) => {
+      claudeReplies({ exitCode: 1, stderr: said });
+
+      await expect(claudePluginMarketplaceRemove(MARKETPLACE_NAME)).resolves.toBeUndefined();
+    },
+  );
+
+  it("quotes claude when removing a marketplace fails for another reason", async () => {
+    claudeReplies({ exitCode: 1, stderr: "permission denied" });
+
+    await expect(claudePluginMarketplaceRemove(MARKETPLACE_NAME)).rejects.toThrow(
+      new Error("Failed to remove marketplace: permission denied"),
+    );
+  });
+
+  it("names the attempt when claude cannot be run to remove or update a marketplace", async () => {
+    claudeReplies(CANNOT_RUN);
+
+    await expect(claudePluginMarketplaceRemove(MARKETPLACE_NAME)).rejects.toThrow(
+      new Error("Failed to remove marketplace: spawn ENOENT"),
+    );
+    await expect(claudePluginMarketplaceUpdate(MARKETPLACE_NAME)).rejects.toThrow(
+      new Error("Failed to update marketplace: spawn ENOENT"),
+    );
+  });
+
+  it("quotes stdout when claude said nothing on stderr, and calls silence an unknown error", async () => {
+    claudeReplies({ exitCode: 1, stdout: "said on stdout\n" });
+    await expect(claudePluginMarketplaceUpdate(MARKETPLACE_NAME)).rejects.toThrow(
+      new Error("Failed to update marketplace: said on stdout"),
+    );
+
+    claudeReplies({ exitCode: 1 });
+    await expect(claudePluginMarketplaceUpdate(MARKETPLACE_NAME)).rejects.toThrow(
+      new Error("Failed to update marketplace: Unknown error"),
+    );
+  });
+
+  it.each([
+    ["removed", (name: string) => claudePluginMarketplaceRemove(name)],
+    ["updated", (name: string) => claudePluginMarketplaceUpdate(name)],
+  ])("refuses a marketplace name it would not hand to claude before it is %s", async (_, call) => {
+    await expect(call("my marketplace; rm -rf /")).rejects.toThrow(/invalid characters/i);
+    expect(spawn).not.toHaveBeenCalled();
   });
 });

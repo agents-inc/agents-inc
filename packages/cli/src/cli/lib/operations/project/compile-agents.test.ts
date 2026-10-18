@@ -8,6 +8,7 @@ import {
 } from "../../__tests__/factories/config-factories.js";
 import { buildRecompileAgentsResult } from "../../__tests__/factories/recompile-factories.js";
 import { renderAgentMd } from "../../__tests__/content-generators.js";
+import { createMockSkillDefinition } from "../../__tests__/factories/skill-factories.js";
 import {
   cleanupTempDir,
   createTempDir,
@@ -69,6 +70,43 @@ describe("compile-agents", () => {
       agentScopeMap: undefined,
     });
     expect(result.compiled).toStrictEqual(["web-developer"]);
+  });
+
+  it("hands the requested agents, their scope map and the skills through when no scope filter applies", async () => {
+    const scopeMap = new Map<AgentName, SkillScope>([["web-developer", "project"]]);
+    const skills = { "web-framework-react": createMockSkillDefinition("web-framework-react") };
+
+    await compileAgents({
+      projectDir,
+      sourcePath,
+      agents: ["web-developer"],
+      agentScopeMap: scopeMap,
+      skills,
+    });
+
+    expect(mockRecompileAgents).toHaveBeenCalledExactlyOnceWith({
+      pluginDir: projectDir,
+      sourcePath,
+      agents: ["web-developer"],
+      skills,
+      projectDir,
+      agentScopeMap: scopeMap,
+    });
+  });
+
+  it("keeps the requested agents when a scope-filtered pass finds no configuration", async () => {
+    mockLoadInstalledConfig.mockResolvedValue(null);
+
+    await compileAgents({
+      projectDir,
+      sourcePath,
+      agents: ["web-developer"],
+      scopeFilter: "project",
+    });
+
+    expect(mockRecompileAgents).toHaveBeenCalledWith(
+      expect.objectContaining({ agents: ["web-developer"] }),
+    );
   });
 
   it("should use pluginDir defaulting to projectDir when not provided", async () => {

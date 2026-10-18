@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import path from "path";
 
 import {
@@ -35,7 +35,7 @@ vi.mock("../configuration/config-loader", async (importOriginal) => ({
 }));
 
 import { loadSkillCategories, loadSkillRules, extractAllSkills } from "./matrix-loader";
-import { warn } from "../../utils/logger";
+import { verbose, warn } from "../../utils/logger";
 import { firstElement } from "../__tests__/helpers/element-at.js";
 
 const SKILLS_DIR = "/marketplace/skills";
@@ -465,6 +465,111 @@ displayName: wrong
 
       expect(skills).toHaveLength(1);
       expect(firstElement(skills).id).toBe("skill-valid");
+    });
+  });
+
+  describe("what extraction carries and says", () => {
+    const GUIDANCE = "Use when building React components";
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    function oneSkillOnDisk(metadata: string, skillMd = renderSkillMd(HEALTHY_SKILL_ID)): void {
+      mockGlob.mockResolvedValue([`${HEALTHY_SKILL_DIR}/${STANDARD_FILES.METADATA_YAML}`]);
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockImplementation(async (filePath: string) =>
+        filePath.includes(STANDARD_FILES.METADATA_YAML) ? metadata : skillMd,
+      );
+      mockParseFrontmatter.mockReturnValue({
+        name: HEALTHY_SKILL_ID,
+        description: HEALTHY_SKILL_DESCRIPTION,
+      });
+    }
+
+    const extractedReact = {
+      id: HEALTHY_SKILL_ID,
+      directoryPath: HEALTHY_SKILL_DIR,
+      description: HEALTHY_SKILL_DESCRIPTION,
+      activationDescription: HEALTHY_SKILL_DESCRIPTION,
+      category: "web-framework",
+      author: "@test",
+      path: `skills/${HEALTHY_SKILL_DIR}/`,
+      domain: "web",
+      displayName: "React",
+      slug: "react",
+    };
+
+    it("carries usage guidance and the custom flag only when the metadata states them", async () => {
+      oneSkillOnDisk(
+        renderMetadataYaml({
+          contentHash: CONTENT_HASH,
+          category: "web-framework",
+          displayName: "React",
+          slug: "react",
+          usageGuidance: GUIDANCE,
+          custom: true,
+        }),
+      );
+
+      expect(await extractAllSkills(SKILLS_DIR)).toStrictEqual([
+        { ...extractedReact, usageGuidance: GUIDANCE, custom: true },
+      ]);
+      expect(verbose).toHaveBeenCalledWith(`Extracted skill: ${HEALTHY_SKILL_ID}`);
+    });
+
+    it("leaves usage guidance and the custom flag out when the metadata does not state them", async () => {
+      oneSkillOnDisk(
+        renderMetadataYaml({
+          contentHash: CONTENT_HASH,
+          category: "web-framework",
+          displayName: "React",
+          slug: "react",
+        }),
+      );
+
+      expect(await extractAllSkills(SKILLS_DIR)).toStrictEqual([extractedReact]);
+    });
+
+    it("says which metadata.yaml it skipped for having no SKILL.md, and warns about nothing", async () => {
+      mockGlob.mockResolvedValue([`orphan-skill/${STANDARD_FILES.METADATA_YAML}`]);
+      mockFileExists.mockResolvedValue(false);
+
+      await extractAllSkills(SKILLS_DIR);
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        "Skipping orphan-skill/metadata.yaml: No SKILL.md found",
+      );
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("warns nothing more for a frontmatter that reads but its schema refused", async () => {
+      oneSkillOnDisk(
+        renderMetadataYaml({
+          contentHash: CONTENT_HASH,
+          category: "web-framework",
+          displayName: "React",
+          slug: "react",
+        }),
+      );
+      mockParseFrontmatter.mockReturnValue(null);
+
+      expect(await extractAllSkills(SKILLS_DIR)).toStrictEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("says which categories and rules files it loaded", async () => {
+      mockLoadConfig.mockResolvedValueOnce({ version: "1.0.0", categories: {} });
+      await loadSkillCategories("/marketplace/config/skill-categories.ts");
+      mockLoadConfig.mockResolvedValueOnce({ version: "1.0.0" });
+      await loadSkillRules("/marketplace/config/skill-rules.ts");
+
+      expect(verbose).toHaveBeenCalledWith(
+        "Loaded skill categories: /marketplace/config/skill-categories.ts",
+      );
+      expect(verbose).toHaveBeenCalledWith(
+        "Loaded skill rules: /marketplace/config/skill-rules.ts",
+      );
     });
   });
 });

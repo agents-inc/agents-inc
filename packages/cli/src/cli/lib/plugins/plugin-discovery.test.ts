@@ -272,4 +272,68 @@ describe("plugin-discovery", () => {
       expect(mockListPlugins).toHaveBeenCalledWith("/custom/project");
     });
   });
+
+  describe("what discovery says", () => {
+    it("says how many enabled plugins it verified, and names a plugin whose manifest is gone", async () => {
+      mockListPlugins.mockResolvedValue([
+        installed("react@my-marketplace", "/cache/react"),
+        installed("zustand@my-marketplace", "/cache/zustand"),
+      ]);
+      mockFileExists.mockImplementation((file: string) =>
+        Promise.resolve(file.startsWith("/cache/react")),
+      );
+
+      await getVerifiedPluginInstallPaths("/project");
+
+      expect(vi.mocked(verbose).mock.calls).toStrictEqual([
+        [
+          `Plugin 'zustand@my-marketplace' manifest does not exist at: '${path.join("/cache/zustand", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)}'`,
+        ],
+        ["Verified 1 plugin install paths"],
+      ]);
+    });
+
+    it("says why it could not list the installed plugins", async () => {
+      mockListPlugins.mockRejectedValue(new Error("Invalid installed_plugins.json"));
+
+      await getVerifiedPluginInstallPaths("/project");
+
+      expect(verbose).toHaveBeenCalledExactlyOnceWith(
+        "Failed to list installed plugins: Invalid installed_plugins.json",
+      );
+    });
+
+    it("says no plugin is enabled for the project, and names each plugin it reads skills from", async () => {
+      mockListPlugins.mockResolvedValue([]);
+      await discoverAllPluginSkills("/project");
+      expect(verbose).toHaveBeenCalledWith("No enabled plugins found for '/project'");
+
+      vi.mocked(verbose).mockClear();
+      mockListPlugins.mockResolvedValue([installed("react@my-marketplace", "/cache/react")]);
+      mockLoadPluginSkills.mockResolvedValueOnce({});
+      await discoverAllPluginSkills("/project");
+      expect(verbose).toHaveBeenCalledWith(
+        "Discovering skills from plugin: 'react@my-marketplace'",
+      );
+      expect(verbose).not.toHaveBeenCalledWith("No enabled plugins found for '/project'");
+    });
+
+    it("answers no skills and says why when the manifests cannot be checked", async () => {
+      mockListPlugins.mockResolvedValue([installed("react@my-marketplace", "/cache/react")]);
+      mockFileExists.mockRejectedValue(new Error("EACCES: permission denied"));
+
+      expect(await discoverAllPluginSkills("/project")).toStrictEqual({});
+      expect(verbose).toHaveBeenCalledWith("Plugin discovery failed: EACCES: permission denied");
+    });
+
+    it("answers no plugin names and says why when the manifests cannot be checked", async () => {
+      mockListPlugins.mockResolvedValue([installed("react@my-marketplace", "/cache/react")]);
+      mockFileExists.mockRejectedValue(new Error("EACCES: permission denied"));
+
+      expect(await listPluginNames("/project")).toStrictEqual([]);
+      expect(verbose).toHaveBeenCalledWith(
+        "Failed to list plugin names: EACCES: permission denied",
+      );
+    });
+  });
 });

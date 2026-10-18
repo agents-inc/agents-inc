@@ -4,9 +4,11 @@ import {
   drainBuffer,
   enableBuffering,
   log,
+  sayingEachWarningOnce,
   setVerbose,
   verbose,
   warn,
+  warnOnce,
 } from "./logger";
 
 afterEach(() => {
@@ -206,5 +208,32 @@ describe("buffering", () => {
     enableBuffering();
     const messages = drainBuffer();
     expect(messages).toHaveLength(0);
+  });
+});
+
+// Said-once state lasts the process, so each spec here warns with text no other spec uses.
+describe("saying each warning once", () => {
+  it("prints a warnOnce warning the first time only", () => {
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    warnOnce("said once: printed");
+    warnOnce("said once: printed");
+
+    expect(consoleWarn).toHaveBeenCalledExactlyOnceWith("  Warning: said once: printed");
+  });
+
+  it("holds back a buffered repeat, and only the repeat", () => {
+    enableBuffering();
+
+    sayingEachWarningOnce(() => {
+      warn("said once: buffered first");
+      warn("said once: buffered first");
+      warn("said once: buffered second");
+    });
+
+    expect(drainBuffer()).toStrictEqual([
+      { level: "warn", text: "said once: buffered first" },
+      { level: "warn", text: "said once: buffered second" },
+    ]);
   });
 });

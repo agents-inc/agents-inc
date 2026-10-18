@@ -220,3 +220,14 @@ describe("fetchSeedConfig", () => {
     expect(result.ok ? "" : result.error).toContain("re-share the configuration");
   });
 });
+
+describe("fetchSeedConfig's user agent, as the store reads it", () => {
+  const worker = useMockWorker();
+
+  // A literal: the store tells an install from someone opening a share link by this exact string.
+  it("names itself agents-inc-cli", async () => {
+    await fetchSeedConfig(STORED_ID);
+
+    expect(firstElement(worker.requests).headers.get("user-agent")).toBe("agents-inc-cli");
+  });
+});

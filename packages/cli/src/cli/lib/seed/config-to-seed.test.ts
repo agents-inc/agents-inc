@@ -2,13 +2,13 @@ import { MATRIX_VERSION } from "@workspace/matrix";
 import { SEED_VERSION, installableSeedPayloadSchema } from "@workspace/matrix/seed";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { configToSeedPayload } from "./config-to-seed";
+import { configToSeedPayload, skillsItsMarketplaceLeavesBehind } from "./config-to-seed";
 import { seedToInstallSelection } from "./seed-to-selection";
 import { isScopePairCompatible } from "../configuration/config-generator";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories.js";
-import { buildSeedExternalSkill } from "../__tests__/factories/seed-factories.js";
+import { buildSeedExternalSkill, buildSeedPayload } from "../__tests__/factories/seed-factories.js";
 import { sa, saUnflagged } from "../__tests__/factories/skill-factories.js";
 import { buildSkillConfig } from "../__tests__/helpers/skill-config-builders.js";
 import { REACT_HONO_WEB_API_DOMAINS_MATRIX } from "../__tests__/mock-data/mock-matrices.js";
@@ -436,5 +436,56 @@ describe("configToSeedPayload", () => {
         ),
       );
     });
+  });
+});
+
+describe("configToSeedPayload refusal, word for word", () => {
+  beforeEach(() => {
+    initializeMatrix(REACT_HONO_WEB_API_DOMAINS_MATRIX);
+  });
+
+  it("frames each thing it cannot carry between the refusal and the reason not to share anyway", () => {
+    const config = buildProjectConfig({
+      skills: [buildSkillConfig(SKILLS.react.id, { scope: "project", origin: EJECT_SOURCE })],
+      agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
+      stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
+    });
+
+    expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
+      [
+        "This installation cannot be shared as it stands — a shared configuration has no way to carry:",
+        `  ${SKILLS.react.id} -> ${WEB_DEV}: a project-scoped skill never reaches a sub-agent that rests at global scope`,
+        "Sharing it anyway would mint an id that installs something else.",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("skillsItsMarketplaceLeavesBehind", () => {
+  /** One installed skill per origin, and an excluded one from the private marketplace. */
+  const config = buildProjectConfig({
+    marketplace: TEST_CUSTOM_SOURCE_URL,
+    marketplaceName: PRIVATE_MARKETPLACE,
+    skills: [
+      buildSkillConfig(SKILLS.react.id, { origin: EJECT_SOURCE }),
+      buildSkillConfig(SKILLS.hono.id, { origin: DEFAULT_PUBLIC_SOURCE_NAME }),
+      buildSkillConfig(SKILLS.zustand.id, { origin: PRIVATE_MARKETPLACE }),
+      buildSkillConfig(SKILLS.vitest.id, { origin: PRIVATE_MARKETPLACE, excluded: true }),
+    ],
+  });
+
+  it("leaves behind the installed plugins of other marketplaces when the payload names the public one", () => {
+    expect(skillsItsMarketplaceLeavesBehind(config, buildSeedPayload())).toStrictEqual([
+      SKILLS.zustand.id,
+    ]);
+  });
+
+  it("leaves behind the installed public plugins when the payload names the private marketplace", () => {
+    expect(
+      skillsItsMarketplaceLeavesBehind(
+        config,
+        buildSeedPayload({ marketplace: TEST_CUSTOM_SOURCE_URL }),
+      ),
+    ).toStrictEqual([SKILLS.hono.id]);
   });
 });

@@ -1,4 +1,4 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, realpath, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -13,7 +13,11 @@ import {
 } from "../../__tests__/helpers/git-repository.js";
 import { type IsolatedHome, setupIsolatedHome } from "../../__tests__/helpers/isolated-home.js";
 import { agentsDir, claudeStateFile } from "../../installation/install-layout.js";
-import { claudeCompileNotices, claudeProjectNeedsTrustMessage } from "../claude-project-trust.js";
+import {
+  claudeCompileNotices,
+  claudeProjectNeedsTrustMessage,
+  claudeProjectNeverAskedMessage,
+} from "../claude-project-trust.js";
 
 // Claude Code drops a project sub-agent's frontmatter hooks until its folder is trusted.
 
@@ -37,6 +41,12 @@ const A_POST_TOOL_USE_HOOK = JSON.stringify({
 });
 
 const AN_EMPTY_STOP_HOOK = JSON.stringify({ Stop: [] });
+
+/** Written by hand: Claude Code runs only a top-level `hooks:` key, so this gate never runs. */
+const A_STOP_HOOK_NESTED_UNDER_ANOTHER_KEY = `${A_POST_TOOL_USE_HOOK}\nmetadata:\n  hooks: ${A_STOP_HOOK}`;
+
+/** Written by hand, with more space after `hooks:` than the compiler writes. */
+const A_SPACED_OUT_STOP_HOOK = `   ${A_STOP_HOOK}`;
 
 let home: IsolatedHome;
 
@@ -131,6 +141,20 @@ describe("a Claude install asks for the folder to be trusted", () => {
     expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([
       claudeProjectNeedsTrustMessage(home.projectDir, 1),
     ]);
+  });
+
+  it("speaks for a completion gate written by hand with more space after its key", async () => {
+    await writingAgentCompiled(WRITING_AGENT, A_SPACED_OUT_STOP_HOOK);
+
+    expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([
+      claudeProjectNeedsTrustMessage(home.projectDir, 1),
+    ]);
+  });
+
+  it("says nothing about a Stop hook nested under another key, which Claude Code never runs", async () => {
+    await writingAgentCompiled(WRITING_AGENT, A_STOP_HOOK_NESTED_UNDER_ANOTHER_KEY);
+
+    expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([]);
   });
 
   it("says nothing about a project whose sub-agents carry no completion gate", async () => {
@@ -389,5 +413,52 @@ describe("a Claude install reads the trust record where CLAUDE_CONFIG_DIR puts i
     await trustRecordedIn(home.fakeHome, home.projectDir);
 
     expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([]);
+  });
+});
+
+describe("the words a Claude trust notice is in", () => {
+  it("asks for the trust prompt, naming the folder and one gate", () => {
+    expect(claudeProjectNeedsTrustMessage("/work/app", 1)).toBe(
+      "Claude Code runs a project sub-agent's completion gate (its Stop hook — the project's typecheck, unless the sub-agent declares its own) only once you trust the folder: open Claude Code in /work/app and accept the trust prompt. Until then, 1 sub-agent's completion gate will not run, and nothing will say so.",
+    );
+  });
+
+  it("counts several gates in the plural, and names the record to set where Claude Code never asks", () => {
+    expect(claudeProjectNeverAskedMessage("/work/app", 3)).toBe(
+      `Claude Code runs 3 sub-agents' completion gates only once you trust the folder, and will not ask here: set projects["/work/app"].hasTrustDialogAccepted to true in ${claudeStateFile()}.`,
+    );
+  });
+});
+
+describe("a Claude install at the root of a worktree whose own folder is the one recorded", () => {
+  it("names the main checkout's record, since the worktree's own entry stops Claude Code asking", async () => {
+    const main = path.join(home.projectDir, "main");
+    await makeGitRepositoryRoot(main);
+    const worktree = path.join(home.projectDir, "worktree");
+    await makeGitWorktree(path.join(main, ".git"), worktree);
+    await compiledInto(worktree, WRITING_AGENT, { tools: WRITING_TOOLS, hooks: A_STOP_HOOK });
+    await writeFile(claudeStateFile(), JSON.stringify(buildClaudeTrustState([worktree])));
+
+    expect(await claudeCompileNotices("claude", worktree)).toStrictEqual([
+      claudeProjectNeverAskedMessage(await realpath(main), 1),
+    ]);
+  });
+});
+
+describe("a Claude install whose .git pointer leads outside any worktrees folder", () => {
+  it("keys the folder by its own root, even when the directory it points at points back", async () => {
+    const elsewhere = path.join(home.projectDir, "store");
+    const ownGitDir = path.join(elsewhere, "not-worktrees", "app");
+    const project = path.join(home.projectDir, "app");
+    await mkdir(ownGitDir, { recursive: true });
+    await compiledInto(project, WRITING_AGENT, { tools: WRITING_TOOLS, hooks: A_STOP_HOOK });
+    await writeFile(path.join(project, ".git"), `gitdir: ${ownGitDir}\n`);
+    await writeFile(path.join(ownGitDir, "commondir"), "../..\n");
+    await writeFile(path.join(ownGitDir, "gitdir"), `${path.join(project, ".git")}\n`);
+    await writeFile(claudeStateFile(), JSON.stringify(buildClaudeTrustState([elsewhere])));
+
+    expect(await claudeCompileNotices("claude", project)).toStrictEqual([
+      claudeProjectNeedsTrustMessage(project, 1),
+    ]);
   });
 });

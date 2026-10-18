@@ -11,7 +11,9 @@ import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { SKILLS } from "../__tests__/test-fixtures";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { writeTestSkill } from "../__tests__/helpers/disk-writers.js";
-import { renderSkillMd } from "../__tests__/content-generators";
+import { renderSkillMd, renderUnparseableMetadataYaml } from "../__tests__/content-generators";
+import { silenceConsole } from "../__tests__/helpers/silence-console.js";
+import { setVerbose } from "../../utils/logger";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { computeSkillFolderHash } from "../versioning";
 import { firstElement } from "../__tests__/helpers/element-at.js";
@@ -437,6 +439,108 @@ describe("skill-plugin-compiler", () => {
 
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Compiled 1 skill plugin:"));
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("react"));
+    });
+  });
+
+  describe("what a compile says", () => {
+    const consoleSpies = silenceConsole(["log", "warn"]);
+
+    afterEach(() => setVerbose(false));
+
+    it("says each step of a compile, copying the reference and the examples", async () => {
+      const skillPath = await writeTestSkill(skillsDir, "web-framework-react");
+      await writeFile(path.join(skillPath, STANDARD_FILES.REFERENCE_MD), "# Reference");
+      await mkdir(path.join(skillPath, STANDARD_DIRS.EXAMPLES), { recursive: true });
+      await writeFile(path.join(skillPath, STANDARD_DIRS.EXAMPLES, "usage.md"), "# Usage");
+      setVerbose(true);
+
+      const { pluginPath } = await compileSkillPlugin({ skillPath, outputDir });
+
+      const said = [
+        `  Compiling skill plugin: web-framework-react from ${skillPath}`,
+        "    Wrote plugin.json for web-framework-react (v1.0.0)",
+        "    Copied SKILL.md",
+        "    Copied reference.md",
+        "    Copied examples/",
+        "    Generated README.md",
+      ];
+      expect(consoleSpies.log).toHaveBeenCalledTimes(said.length);
+      said.forEach((line, index) =>
+        expect(consoleSpies.log).toHaveBeenNthCalledWith(index + 1, line),
+      );
+      expect(
+        await readFile(
+          path.join(
+            pluginPath,
+            STANDARD_DIRS.SKILLS,
+            "web-framework-react",
+            STANDARD_FILES.REFERENCE_MD,
+          ),
+          "utf-8",
+        ),
+      ).toBe("# Reference");
+      expect(consoleSpies.warn).not.toHaveBeenCalled();
+    });
+
+    it("says nothing about a skill with no metadata.yaml", async () => {
+      const skillPath = await writeTestSkill(skillsDir, "web-framework-react", {
+        skipMetadata: true,
+      });
+
+      await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(consoleSpies.warn).not.toHaveBeenCalled();
+    });
+
+    it("warns about a metadata.yaml the schema refuses, naming the skill and why", async () => {
+      const skillPath = await writeTestSkill(skillsDir, "web-framework-react", {
+        extraMetadata: { category: 42 },
+      });
+
+      const result = await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(result.manifest.author).toBeUndefined();
+      expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        `  Warning: Invalid metadata.yaml at '${skillPath}': category: Invalid input: expected string, received number`,
+      );
+    });
+
+    it("warns about a metadata.yaml it cannot parse, naming the skill and the parser's reason", async () => {
+      const skillPath = await writeTestSkill(skillsDir, "web-framework-react", {
+        skipMetadata: true,
+      });
+      await writeFile(
+        path.join(skillPath, STANDARD_FILES.METADATA_YAML),
+        renderUnparseableMetadataYaml(),
+      );
+
+      await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining(
+          `Warning: Failed to read metadata.yaml at '${skillPath}': Nested mappings are not allowed`,
+        ),
+      );
+    });
+
+    it("names the SKILL.md whose frontmatter is invalid, and the failed skill's folder", async () => {
+      const badSkillPath = path.join(skillsDir, "bad-skill");
+      await mkdir(badSkillPath, { recursive: true });
+      await writeFile(path.join(badSkillPath, STANDARD_FILES.SKILL_MD), "# No frontmatter");
+
+      await compileAllSkillPlugins(skillsDir, outputDir);
+
+      expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        `  Warning: Failed to compile skill from 'bad-skill': Skill 'bad-skill' has invalid or missing YAML frontmatter in SKILL.md. File: ${path.join(badSkillPath, STANDARD_FILES.SKILL_MD)}`,
+      );
+    });
+
+    it("spells a + in a skill's name as a dash in the plugin's name", async () => {
+      const skillPath = await writeTestSkill(skillsDir, "web-framework-react", {
+        skillContent: renderSkillMd("web-cpp+tools", "C++ tooling"),
+      });
+
+      expect((await compileSkillPlugin({ skillPath, outputDir })).skillName).toBe("web-cpp-tools");
     });
   });
 });

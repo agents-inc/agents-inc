@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import path from "path";
 import { pick } from "remeda";
 
@@ -15,7 +15,7 @@ import {
   loadSkillsFromDir,
 } from "./loader";
 import { readFile, glob, directoryExists, fileExists } from "../../utils/fs";
-import { warn } from "../../utils/logger";
+import { verbose, warn } from "../../utils/logger";
 import { DIRS, LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import { renderSkillMd, renderAgentYaml } from "../__tests__/content-generators";
 import { EXPECTED_SKILLS } from "../__tests__/expected-values";
@@ -832,5 +832,140 @@ describe("loadSkillsFromDir with requireMetadata", () => {
       result.unusableMetadata,
       "the file describes its skill in every field — the skill is the thing with nowhere to go, so nothing here is repairable",
     ).toStrictEqual([]);
+  });
+});
+
+/** What the loaders record on each definition, and the verbose trail they leave. */
+describe("loader — what a load records and says", () => {
+  const SKILLS_DIR = "/project/.claude/skills";
+
+  // Earlier specs queue one-shot answers they never consume; none may reach these.
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("carries outputFormat and domain, and the custom flag only for CLI and source agents", async () => {
+    vi.mocked(glob).mockResolvedValue(["tuned/metadata.yaml"]);
+    vi.mocked(readFile).mockResolvedValue(
+      renderAgentYaml("web-developer", "A tuned agent", {
+        outputFormat: "markdown",
+        domain: "web",
+        custom: true,
+      }),
+    );
+    vi.mocked(directoryExists).mockResolvedValue(true);
+
+    const cliAgent = entryAt(await loadAllAgents("/project"), "web-developer");
+    const projectAgent = entryAt(await loadProjectAgents("/project"), "web-developer");
+
+    expect(pick(cliAgent, ["outputFormat", "domain", "custom"])).toStrictEqual({
+      outputFormat: "markdown",
+      domain: "web",
+      custom: true,
+    });
+    expect(Object.keys(projectAgent)).not.toContain("custom");
+  });
+
+  it("records no custom flag for an agent whose metadata says it is not custom", async () => {
+    vi.mocked(glob).mockResolvedValue(["plain/metadata.yaml"]);
+    vi.mocked(readFile).mockResolvedValue(
+      renderAgentYaml("web-developer", undefined, { custom: false }),
+    );
+
+    expect(Object.keys(entryAt(await loadAllAgents("/project"), "web-developer"))).not.toContain(
+      "custom",
+    );
+  });
+
+  it("records where a project agent lives, and names each agent it loaded", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["api-developer/metadata.yaml"]);
+    vi.mocked(readFile).mockResolvedValue(renderAgentYaml("api-developer"));
+
+    const projectAgent = entryAt(await loadProjectAgents("/project"), "api-developer");
+    await loadAllAgents("/project");
+
+    expect(projectAgent.agentBaseDir).toBe(".agents-inc/claude/agents");
+    expect(verbose).toHaveBeenCalledWith(
+      "Loaded project agent: api-developer from api-developer/metadata.yaml",
+    );
+    expect(verbose).toHaveBeenCalledWith(
+      "Loaded agent: api-developer from api-developer/metadata.yaml",
+    );
+  });
+
+  it("records no base directory for a CLI or source agent", async () => {
+    vi.mocked(glob).mockResolvedValue(["api-developer/metadata.yaml"]);
+    vi.mocked(readFile).mockResolvedValue(renderAgentYaml("api-developer"));
+
+    expect(Object.keys(entryAt(await loadAllAgents("/project"), "api-developer"))).not.toContain(
+      "agentBaseDir",
+    );
+  });
+
+  it("says a project with no agents folder has none", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(false);
+
+    await loadProjectAgents("/project");
+
+    expect(verbose).toHaveBeenCalledWith(
+      `No project agents directory at ${path.join("/project", ".agents-inc", "claude", "agents")}`,
+    );
+  });
+
+  it("loads skills with no path prefix and no metadata requirement by default", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["web-framework-react/SKILL.md"]);
+    vi.mocked(readFile).mockResolvedValue(renderSkillMd("web-framework-react", "React patterns"));
+
+    const result = await loadSkillsFromDir(SKILLS_DIR);
+
+    expect(result).toStrictEqual({
+      skills: {
+        "web-framework-react": {
+          id: "web-framework-react",
+          description: "React patterns",
+          path: "web-framework-react/",
+        },
+      },
+      unusableMetadata: [],
+    });
+    expect(fileExists).not.toHaveBeenCalled();
+    expect(verbose).toHaveBeenCalledWith("  Loaded skill: web-framework-react");
+  });
+
+  it("says which skill it could not read and why", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["unreadable-skill/SKILL.md"]);
+    vi.mocked(readFile).mockRejectedValue(new Error("EACCES: permission denied"));
+
+    await loadSkillsFromDir(SKILLS_DIR);
+
+    expect(verbose).toHaveBeenCalledWith(
+      "  Failed to load skill: unreadable-skill/SKILL.md - EACCES: permission denied",
+    );
+  });
+
+  it("says which skill's metadata it found unusable, and which wears the placeholder category", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue(["broken/SKILL.md", "placeholder/SKILL.md"]);
+    vi.mocked(fileExists).mockResolvedValue(true);
+    vi.mocked(readFile)
+      .mockResolvedValueOnce(UNPARSEABLE_METADATA)
+      .mockResolvedValueOnce(PLACEHOLDER_CATEGORY_METADATA);
+
+    await loadSkillsFromDir(SKILLS_DIR, { requireMetadata: true });
+
+    expect(verbose).toHaveBeenCalledWith("  Unusable metadata.yaml in 'broken'");
+    expect(verbose).toHaveBeenCalledWith("  Placeholder category in 'placeholder'");
+  });
+
+  it("reads a plugin's skills from its skills folder", async () => {
+    vi.mocked(directoryExists).mockResolvedValue(true);
+    vi.mocked(glob).mockResolvedValue([]);
+
+    await loadPluginSkills("/path/to/plugin");
+
+    expect(glob).toHaveBeenCalledWith("**/SKILL.md", path.join("/path/to/plugin", "skills"));
   });
 });

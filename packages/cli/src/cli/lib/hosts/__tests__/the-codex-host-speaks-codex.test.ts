@@ -4,6 +4,8 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hostFor } from "../host-for.js";
+import { verbose, warnOnce } from "../../../utils/logger.js";
+import { cleanupTempDir, createTempDir, directoryExists } from "../../__tests__/test-fs-utils.js";
 import { type FakeChildReply, fakeChildProcess } from "./helpers/fake-child-process.js";
 
 vi.mock("child_process", async (importOriginal) => {
@@ -67,13 +69,13 @@ function marketplaceListDocument(
 }
 
 function pluginListDocument(
-  entries: readonly { name: string; version: string; enabled: boolean }[],
+  entries: readonly { name: string; version: string; enabled: boolean; marketplace?: string }[],
 ): string {
   return JSON.stringify({
     installed: entries.map((entry) => ({
-      pluginId: `${entry.name}@${MARKETPLACE}`,
+      pluginId: `${entry.name}@${entry.marketplace ?? MARKETPLACE}`,
       name: entry.name,
-      marketplaceName: MARKETPLACE,
+      marketplaceName: entry.marketplace ?? MARKETPLACE,
       version: entry.version,
       installed: true,
       enabled: entry.enabled,
@@ -541,5 +543,232 @@ describe("the Codex host's invocations", () => {
         "without this half a validator that refused every name would satisfy the case above and refresh nothing at all",
       ).toContainEqual(["plugin", "marketplace", "upgrade", GIT_MARKETPLACE, "--json"]);
     });
+  });
+});
+
+/** Every failure message names the attempt and quotes Codex, or says why it could not. */
+describe("what the Codex host says when Codex fails", () => {
+  beforeEach(() => {
+    invocations.length = 0;
+    replies = [];
+    vi.spyOn(os, "homedir").mockReturnValue(HOME);
+    vi.mocked(spawn).mockImplementation((command, args, options) => {
+      invocations.push({ command, args, cwd: options.cwd, codexHome: options.env?.["CODEX_HOME"] });
+      return fakeChildProcess(replies.shift());
+    });
+  });
+
+  afterEach(() => {
+    vi.mocked(os.homedir).mockRestore();
+  });
+
+  const OPTIONS = { configDir: CODEX_STATE };
+  const OTHER_MARKETPLACE = "someone-elses";
+
+  it("creates the state directory before running codex", async () => {
+    const tempDir = await createTempDir("cc-codex-state-");
+    const stateDir = path.join(tempDir, ".codex");
+
+    await hostFor("codex").isAvailable({ configDir: stateDir });
+
+    expect(await directoryExists(stateDir)).toBe(true);
+    await cleanupTempDir(tempDir);
+  });
+
+  it("goes on when the state directory cannot be created, and says why", async () => {
+    await hostFor("codex").isAvailable(OPTIONS);
+
+    expect(verbose).toHaveBeenCalledWith(
+      expect.stringContaining(`Could not create the codex state directory at ${CODEX_STATE}: `),
+    );
+  });
+
+  it("names the attempt and keeps the cause when codex cannot be run at all", async () => {
+    replies = [{ unrunnable: true }];
+
+    await expect(
+      hostFor("codex").installPlugin(PLUGIN_REF, "global", PROJECT, OPTIONS),
+    ).rejects.toMatchObject({
+      message: `Failed to install ${PLUGIN_REF}: spawn ENOENT`,
+      cause: expect.objectContaining({ message: "spawn ENOENT" }),
+    });
+  });
+
+  it("quotes every line codex printed, trimmed, without the PATH-alias warning", async () => {
+    replies = [{ exitCode: 1, stderr: `${PATH_ALIAS_WARNING}\nfirst line\nsecond line\n` }];
+
+    await expect(hostFor("codex").addMarketplace(MARKETPLACE_SOURCE, OPTIONS)).rejects.toThrow(
+      new Error("Failed to add marketplace: first line\nsecond line"),
+    );
+  });
+
+  it("quotes stdout when codex said nothing on stderr", async () => {
+    replies = [{ exitCode: 1, stdout: "said on stdout\n" }];
+
+    await expect(hostFor("codex").addMarketplace(MARKETPLACE_SOURCE, OPTIONS)).rejects.toThrow(
+      new Error("Failed to add marketplace: said on stdout"),
+    );
+  });
+
+  it("calls a failure codex explained nowhere an unknown error", async () => {
+    replies = [{ exitCode: 1 }];
+
+    await expect(hostFor("codex").addMarketplace(MARKETPLACE_SOURCE, OPTIONS)).rejects.toThrow(
+      new Error("Failed to add marketplace: Unknown error"),
+    );
+  });
+
+  it("refuses a listing that is not JSON", async () => {
+    replies = [{ stdout: "not json" }];
+
+    await expect(hostFor("codex").marketplaceExists(MARKETPLACE, OPTIONS)).rejects.toMatchObject({
+      message: "Failed to read the marketplaces codex knows: codex answered no JSON at all",
+      cause: expect.any(SyntaxError),
+    });
+  });
+
+  it("refuses a listing in a shape this release cannot read", async () => {
+    replies = [{ stdout: "{}" }];
+
+    await expect(hostFor("codex").marketplaceExists(MARKETPLACE, OPTIONS)).rejects.toThrow(
+      new Error(
+        "Failed to read the marketplaces codex knows: codex answered a document this release cannot read",
+      ),
+    );
+  });
+
+  it("says which listing codex refused, and what it said, when it treats it as empty", async () => {
+    const refusal = "Error: failed to load marketplace(s):\n- `gone` at /gone: no manifest";
+    replies = [
+      { exitCode: 1, stderr: refusal },
+      { exitCode: 1, stderr: refusal },
+    ];
+
+    await hostFor("codex").marketplaceExists(MARKETPLACE, OPTIONS);
+    await hostFor("codex").listPlugins(PROJECT, OPTIONS);
+
+    expect(warnOnce).toHaveBeenCalledWith(
+      `Codex could not list the marketplaces it knows, so this run is treating it as having none. It said: Failed to read the marketplaces codex knows: ${refusal}`,
+    );
+    expect(warnOnce).toHaveBeenCalledWith(
+      `Codex could not list the plugins it has installed, so this run is treating it as having none. It said: Failed to read the plugins codex has installed: ${refusal}`,
+    );
+  });
+
+  it("refreshes the marketplace it was named, not the first one registered", async () => {
+    replies = [
+      {
+        stdout: marketplaceListDocument([
+          { name: OTHER_MARKETPLACE, sourceType: "git", source: "their-org/their-repo" },
+          { name: MARKETPLACE, sourceType: "local", source: MARKETPLACE_SOURCE },
+        ]),
+      },
+      { stdout: NOTHING_INSTALLED },
+    ];
+
+    await hostFor("codex").refreshMarketplace(MARKETPLACE, OPTIONS);
+
+    expect(everyArgv().flat()).not.toContain("upgrade");
+  });
+
+  it("refuses to refresh a marketplace codex does not know", async () => {
+    replies = [{ stdout: marketplaceListDocument([]) }];
+
+    await expect(hostFor("codex").refreshMarketplace(MARKETPLACE, OPTIONS)).rejects.toThrow(
+      new Error(`Failed to refresh marketplace: codex has no marketplace named '${MARKETPLACE}'`),
+    );
+  });
+
+  it("names a failed upgrade as a failed refresh", async () => {
+    replies = [
+      {
+        stdout: marketplaceListDocument([
+          { name: GIT_MARKETPLACE, sourceType: "git", source: "o/r" },
+        ]),
+      },
+      { exitCode: 1, stderr: "upgrade refused" },
+    ];
+
+    await expect(hostFor("codex").refreshMarketplace(GIT_MARKETPLACE, OPTIONS)).rejects.toThrow(
+      new Error("Failed to refresh marketplace: upgrade refused"),
+    );
+  });
+
+  it("re-adds only the plugins of the marketplace it refreshes", async () => {
+    replies = [
+      {
+        stdout: marketplaceListDocument([
+          { name: MARKETPLACE, sourceType: "local", source: MARKETPLACE_SOURCE },
+        ]),
+      },
+      {
+        stdout: pluginListDocument([
+          { name: PLUGIN, version: PLUGIN_VERSION, enabled: true },
+          {
+            name: DISABLED_PLUGIN,
+            version: DISABLED_PLUGIN_VERSION,
+            enabled: true,
+            marketplace: OTHER_MARKETPLACE,
+          },
+        ]),
+      },
+      { stdout: removalDocument(PLUGIN) },
+    ];
+
+    await hostFor("codex").refreshMarketplace(MARKETPLACE, OPTIONS);
+
+    expect(everyArgv().filter((argv) => argv[1] === "add")).toStrictEqual([
+      ["plugin", "add", PLUGIN_REF, "--json"],
+    ]);
+  });
+
+  it("refuses an install reference with characters outside a plugin path, spawning nothing", async () => {
+    await expect(
+      hostFor("codex").installPlugin("web framework; rm -rf /", "global", PROJECT, OPTIONS),
+    ).rejects.toThrow(/invalid characters/i);
+    expect(invocations).toStrictEqual([]);
+  });
+
+  it("names the plugin a failed install was for", async () => {
+    replies = [{ exitCode: 1, stderr: "no such plugin" }];
+
+    await expect(
+      hostFor("codex").installPlugin(PLUGIN_REF, "global", PROJECT, OPTIONS),
+    ).rejects.toThrow(new Error(`Failed to install ${PLUGIN_REF}: no such plugin`));
+  });
+
+  it("names the plugin a failed removal was for", async () => {
+    replies = [{ stdout: ONE_ENABLED_PLUGIN }, { exitCode: 1, stderr: "locked" }];
+
+    await expect(
+      hostFor("codex").uninstallPlugin(PLUGIN_REF, "global", PROJECT, OPTIONS),
+    ).rejects.toThrow(new Error(`Failed to remove ${PLUGIN_REF}: locked`));
+  });
+
+  it("says nothing else changed when a removal leaves the plugin listed", async () => {
+    replies = [
+      { stdout: ONE_ENABLED_PLUGIN },
+      { stdout: removalDocument(PLUGIN) },
+      { stdout: ONE_ENABLED_PLUGIN },
+    ];
+
+    await expect(
+      hostFor("codex").uninstallPlugin(PLUGIN_REF, "global", PROJECT, OPTIONS),
+    ).rejects.toThrow(
+      new Error(
+        `Failed to remove ${PLUGIN_REF}: codex still lists it after removing it. Nothing else has been changed.`,
+      ),
+    );
+  });
+
+  it("answers absent for a plugin not listed while another one is", async () => {
+    const otherOnly = pluginListDocument([
+      { name: DISABLED_PLUGIN, version: DISABLED_PLUGIN_VERSION, enabled: true },
+    ]);
+    replies = [{ stdout: otherOnly }, { stdout: removalDocument(PLUGIN) }, { stdout: otherOnly }];
+
+    expect(await hostFor("codex").uninstallPlugin(PLUGIN_REF, "global", PROJECT, OPTIONS)).toBe(
+      "absent",
+    );
   });
 });

@@ -136,6 +136,28 @@ const blankRefusalHandler = http.post(CONFIGS_URL, () =>
   HttpResponse.text("   ", { status: REFUSED }),
 );
 
+/** A mint the store acknowledged with something other than JSON. */
+const notJsonMintHandler = http.post(CONFIGS_URL, () =>
+  HttpResponse.text("created", { status: 201 }),
+);
+
+/** Two issues: one at a path, one about the payload as a whole. */
+const twoIssueRefusalHandler = http.post(CONFIGS_URL, () =>
+  HttpResponse.json(
+    {
+      success: false,
+      error: {
+        name: "ZodError",
+        message: JSON.stringify([
+          { code: "custom", path: ["skills", "web-framework-react"], message: "is not offered" },
+          { code: "custom", path: [], message: "Nothing here can be installed" },
+        ]),
+      },
+    },
+    { status: REFUSED },
+  ),
+);
+
 describe("publishSeedConfig", () => {
   const worker = useMockWorker();
 
@@ -324,5 +346,37 @@ describe("publishSeedConfig", () => {
 
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.error).toContain(SEED_API_URL);
+  });
+});
+
+describe("publishSeedConfig messages, word for word", () => {
+  useMockWorker();
+
+  it("reports a mint the store acknowledged with something other than JSON", async () => {
+    configMockServer.use(notJsonMintHandler);
+
+    expect(await publishSeedConfig(PAYLOAD)).toStrictEqual({
+      ok: false,
+      error: "The configuration store returned something that is not JSON.",
+    });
+  });
+
+  it("reports a mint that carries no id", async () => {
+    configMockServer.use(idlessMintHandler);
+
+    expect(await publishSeedConfig(PAYLOAD)).toStrictEqual({
+      ok: false,
+      error: "The configuration store did not return an id for this share.",
+    });
+  });
+
+  it("quotes each issue the store names, its path first, and a pathless one on its own", async () => {
+    configMockServer.use(twoIssueRefusalHandler);
+
+    expect(await publishSeedConfig(PAYLOAD)).toStrictEqual({
+      ok: false,
+      error:
+        "Sharing this configuration failed (HTTP 400). The store said: skills.web-framework-react: is not offered; Nothing here can be installed",
+    });
   });
 });

@@ -11,6 +11,7 @@ vi.mock("../../loading/index.js", () => ({
 vi.mock("../../../utils/logger.js");
 
 import { ensureMarketplace } from "./ensure-marketplace";
+import { requireMarketplace } from "./require-marketplace";
 import { createMockPluginHost } from "../../__tests__/helpers/mock-plugin-host.js";
 import { fetchMarketplace } from "../../loading/index.js";
 import { warn } from "../../../utils/logger.js";
@@ -113,5 +114,45 @@ describe("ensureMarketplace", () => {
     expect(mockMarketplaceExists).toHaveBeenCalledWith("resolved-marketplace");
     expect(mockMarketplaceAdd).toHaveBeenCalledWith("test/source");
     expect(result).toStrictEqual({ marketplace: "resolved-marketplace", registered: true });
+  });
+});
+
+describe("ensureMarketplace, a source that only mentions github:", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("registers it as written, stripping github: only from its front", async () => {
+    const sourceResult = buildSourceResult(EMPTY_MATRIX, "/tmp/test-source", {
+      sourceConfig: {
+        source: "https://mirror.example.com/github:test/source",
+        sourceOrigin: "flag",
+      },
+      isLocal: false,
+      marketplace: "agents-inc",
+    });
+    mockMarketplaceExists.mockResolvedValue(false);
+
+    await ensureMarketplace(sourceResult, host);
+
+    expect(mockMarketplaceAdd).toHaveBeenCalledExactlyOnceWith(
+      "https://mirror.example.com/github:test/source",
+    );
+  });
+});
+
+describe("requireMarketplace", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("refuses, naming what it could not do and the source, when no marketplace resolves", async () => {
+    mockFetchMarketplace.mockRejectedValue(new Error(FETCH_FAILURE_CAUSE));
+
+    expect(await requireMarketplace(makeSourceResult(), "install plugins", host)).toStrictEqual({
+      ok: false,
+      error:
+        "Cannot install plugins: marketplace could not be resolved from 'github:test/source'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.",
+    });
   });
 });

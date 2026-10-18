@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkMatrixHealth } from "./matrix-health-check";
+import { checkMatrixHealth, isFencedByMatrix } from "./matrix-health-check";
+import { LOCAL_PSEUDO_CATEGORY } from "../../consts";
 import { createMockSkill } from "../__tests__/factories/skill-factories.js";
 import { createMockMatrix } from "../__tests__/factories/matrix-factories.js";
 import { createMockCategory } from "../__tests__/factories/category-factories.js";
@@ -290,5 +291,19 @@ describe("matrix-health-check", () => {
 
       expect(issues).toStrictEqual([]);
     });
+  });
+});
+
+describe("isFencedByMatrix", () => {
+  it("fences no skill the matrix does not carry", () => {
+    expect(isFencedByMatrix(EMPTY_MATRIX, SKILLS.react.id)).toBe(false);
+  });
+
+  it("fences no skill in the local pseudo-category, which no category definition backs", () => {
+    const matrix = createMockMatrix(
+      createMockSkill(SKILLS.react.id, { category: LOCAL_PSEUDO_CATEGORY }),
+    );
+
+    expect(isFencedByMatrix(matrix, SKILLS.react.id)).toBe(false);
   });
 });

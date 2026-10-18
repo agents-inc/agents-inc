@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
-import { mkdir, writeFile } from "fs/promises";
+import { chmod, mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
 import {
   checkDirNameMatchesSkillId,
@@ -26,13 +26,17 @@ import {
   createMockMarketplacePlugin,
 } from "./__tests__/factories/plugin-factories.js";
 import { firstElement } from "./__tests__/helpers/element-at.js";
+import { useFakeHome } from "./__tests__/helpers/isolated-home";
+import { setVerbose } from "../utils/logger";
 import { SKILL_SLUGS } from "../types/generated/source-types";
 import {
   renderConfigTs,
   renderAgentYaml,
   renderSkillMd,
   renderUnparseableMetadataYaml,
+  renderUnparseableSkillMd,
 } from "./__tests__/content-generators";
+import { renderUnparseableConfigTs } from "./__tests__/factories/unloadable-config-factories";
 import {
   VALID_EMBEDDED_SKILL_METADATA_FILE,
   VALID_SKILL_CATEGORIES_FILE,
@@ -859,6 +863,26 @@ describe("source-validator", () => {
     });
 
     /** The load already says each health finding; filing them as rows must not say them again. */
+    describe("under --verbose", () => {
+      useFakeHome(() => tempDir);
+
+      afterEach(() => {
+        setVerbose(false);
+        vi.restoreAllMocks();
+      });
+
+      it("skips tagging skills with their sources, which no finding reads, as --verbose shows", async () => {
+        await writeMarketplaceManifest(sourceDir, MANIFEST_NAME_ACCEPTED);
+        setVerbose(true);
+        const said = vi.spyOn(console, "log").mockImplementation(() => {});
+
+        await validateSource(sourceDir);
+
+        expect(said).toHaveBeenCalledWith(`  Using local marketplace: ${sourceDir}`);
+        expect(said).not.toHaveBeenCalledWith(expect.stringContaining("Tagged"));
+      });
+    });
+
     describe("a health finding", () => {
       const SAID_ONCE_CATEGORY = "web-styling";
       const FINDING = `Category '${SAID_ONCE_CATEGORY}' has no domain`;
@@ -899,5 +923,106 @@ describe("source-validator", () => {
         ]);
       });
     });
+  });
+});
+
+describe("validateSource findings, word for word", () => {
+  const SKILL_ID = "web-framework-react";
+  const SKILL_MD_PATH = path.join("src", STANDARD_DIRS.SKILLS, SKILL_ID, STANDARD_FILES.SKILL_MD);
+  /** A source with no manifest also files that warning; it is not this describe's subject. */
+  const NO_MANIFEST_WARNING = expect.objectContaining({
+    severity: "warning",
+    file: MARKETPLACE_MANIFEST_PATH,
+  });
+
+  let tempDir: string;
+  let sourceDir: string;
+  let skillDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("source-validator-findings-");
+    sourceDir = path.join(tempDir, "source");
+    skillDir = path.join(sourceDir, "src", STANDARD_DIRS.SKILLS, SKILL_ID);
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      path.join(skillDir, STANDARD_FILES.METADATA_YAML),
+      stringifyYaml(VALID_EMBEDDED_SKILL_METADATA_FILE),
+    );
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  it("refuses a marketplace directory that does not exist with that one error", async () => {
+    const missing = path.join(tempDir, "missing");
+
+    expect(await validateSource(missing)).toStrictEqual({
+      issues: [
+        { severity: "error", file: missing, message: "Marketplace directory does not exist" },
+      ],
+      skillCount: 0,
+      errorCount: 1,
+      warningCount: 0,
+    });
+  });
+
+  it("warns that it cannot check a directory name when SKILL.md's frontmatter does not parse", async () => {
+    await writeFile(
+      path.join(skillDir, STANDARD_FILES.SKILL_MD),
+      renderUnparseableSkillMd(SKILL_ID),
+    );
+
+    expect(await validateSource(sourceDir)).toStrictEqual({
+      issues: [
+        {
+          severity: "warning",
+          file: SKILL_MD_PATH,
+          message:
+            "Cannot verify directory name 'web-framework-react': missing or invalid SKILL.md frontmatter",
+        },
+        NO_MANIFEST_WARNING,
+      ],
+      skillCount: 1,
+      errorCount: 0,
+      warningCount: 2,
+    });
+  });
+
+  it("warns that it cannot check a directory name when SKILL.md cannot be read, naming why", async () => {
+    const skillMd = path.join(skillDir, STANDARD_FILES.SKILL_MD);
+    await writeFile(skillMd, renderSkillMd(SKILL_ID));
+    await chmod(skillMd, 0o000);
+
+    try {
+      expect((await validateSource(sourceDir)).issues).toStrictEqual([
+        {
+          severity: "warning",
+          file: SKILL_MD_PATH,
+          message: `Cannot verify directory name 'web-framework-react': EACCES: permission denied, open '${skillMd}'`,
+        },
+        NO_MANIFEST_WARNING,
+      ]);
+    } finally {
+      await chmod(skillMd, 0o644);
+    }
+  });
+
+  it("names a config file that fails to load by its relative path, then the loader's reason", async () => {
+    await writeFile(path.join(skillDir, STANDARD_FILES.SKILL_MD), renderSkillMd(SKILL_ID));
+    await mkdir(path.join(sourceDir, "config"), { recursive: true });
+    await writeFile(path.join(sourceDir, STACKS_FILE_PATH), renderUnparseableConfigTs());
+
+    const stacksErrors = (await validateSource(sourceDir)).issues.filter(
+      (issue) => issue.file === STACKS_FILE_PATH,
+    );
+
+    expect(stacksErrors).toStrictEqual([
+      {
+        severity: "error",
+        file: STACKS_FILE_PATH,
+        message: expect.stringMatching(/^Failed to load config\/stacks\.ts: ParseError/),
+      },
+    ]);
   });
 });

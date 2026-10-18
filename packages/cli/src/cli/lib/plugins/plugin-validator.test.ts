@@ -11,6 +11,7 @@ import {
 } from "./plugin-validator";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+import { renderAgentMd } from "../__tests__/content-generators.js";
 import {
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
@@ -547,6 +548,171 @@ name: bad-skill
     });
   });
 
+  describe("the agents a plugin declares", () => {
+    const AGENTS_PATH = "./agents/";
+
+    async function writeAgentsPlugin(): Promise<string> {
+      await writePluginJson(tempDir, {
+        name: "test-plugin",
+        description: "Test",
+        agents: AGENTS_PATH,
+      });
+      await writeFile(path.join(tempDir, STANDARD_FILES.README_MD), "# Test");
+      return path.join(tempDir, "agents");
+    }
+
+    it("refuses a manifest whose agents path does not exist", async () => {
+      await writeAgentsPlugin();
+
+      const result = await validatePluginManifest(
+        path.join(tempDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
+      );
+
+      expect(result).toStrictEqual({
+        valid: false,
+        errors: [`Agents path does not exist: ${AGENTS_PATH}`],
+        warnings: [],
+      });
+    });
+
+    it("accepts a manifest whose agents path exists", async () => {
+      const agentsDir = await writeAgentsPlugin();
+      await mkdir(agentsDir, { recursive: true });
+
+      const result = await validatePluginManifest(
+        path.join(tempDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
+      );
+
+      expect(result).toStrictEqual({ valid: true, errors: [], warnings: [] });
+    });
+
+    it("validates no agent files where the agents path is missing", async () => {
+      await writeAgentsPlugin();
+
+      const result = await validatePlugin(tempDir);
+
+      expect(result).toStrictEqual({
+        valid: false,
+        errors: [`Agents path does not exist: ${AGENTS_PATH}`],
+        warnings: [],
+      });
+    });
+
+    it("warns about an agents directory holding no .md files, and stays valid", async () => {
+      const agentsDir = await writeAgentsPlugin();
+      await mkdir(agentsDir, { recursive: true });
+
+      const result = await validatePlugin(tempDir);
+
+      expect(result).toStrictEqual({
+        valid: true,
+        errors: [],
+        warnings: [`Agents directory exists but contains no .md files: ${AGENTS_PATH}`],
+      });
+    });
+
+    it("says nothing about an agents directory holding a valid agent", async () => {
+      const agentsDir = await writeAgentsPlugin();
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(path.join(agentsDir, "test-agent.md"), renderAgentMd("test-agent"));
+
+      const result = await validatePlugin(tempDir);
+
+      expect(result).toStrictEqual({ valid: true, errors: [], warnings: [] });
+    });
+
+    it("names each refused agent file by its path in the plugin", async () => {
+      const agentsDir = await writeAgentsPlugin();
+      await mkdir(agentsDir, { recursive: true });
+      await writeFile(path.join(agentsDir, "bad-agent.md"), renderAgentMd("Bad_Agent"));
+
+      const result = await validatePlugin(tempDir);
+
+      expect(result).toStrictEqual({
+        valid: false,
+        errors: [
+          `${path.join("agents", "bad-agent.md")}: name: Invalid string: must match pattern /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/`,
+          `${path.join("agents", "bad-agent.md")}: name must be kebab-case: "Bad_Agent"`,
+        ],
+        warnings: [],
+      });
+    });
+  });
+
+  describe("the skills a plugin declares", () => {
+    it("adds no empty-directory warning to a skills path that does not exist", async () => {
+      await writePluginJson(tempDir, {
+        name: "test-plugin",
+        description: "Test",
+        skills: "./skills/",
+      });
+      await writeFile(path.join(tempDir, STANDARD_FILES.README_MD), "# Test");
+
+      const result = await validatePlugin(tempDir);
+
+      expect(result).toStrictEqual({
+        valid: false,
+        errors: ["Skills path does not exist: ./skills/"],
+        warnings: [],
+      });
+    });
+
+    it("keeps a plugin whose skills directory is empty valid, with only the warning", async () => {
+      await writePluginJson(tempDir, {
+        name: "test-plugin",
+        description: "Test",
+        skills: "./skills/",
+      });
+      await mkdir(path.join(tempDir, STANDARD_DIRS.SKILLS), { recursive: true });
+      await writeFile(path.join(tempDir, STANDARD_FILES.README_MD), "# Test");
+
+      const result = await validatePlugin(tempDir);
+
+      expect(result).toStrictEqual({
+        valid: true,
+        errors: [],
+        warnings: ["Skills directory exists but contains no SKILL.md files: ./skills/"],
+      });
+    });
+  });
+
+  describe("validateAllPlugins over a directory that is not all plugins", () => {
+    it("validates only the subdirectories that carry a plugin manifest directory", async () => {
+      const pluginDir = path.join(tempDir, "plugin-one");
+      await writePluginJson(pluginDir, { name: "plugin-one", description: "One" });
+      await writeFile(path.join(pluginDir, STANDARD_FILES.README_MD), "# One");
+      await mkdir(path.join(tempDir, "not-a-plugin"), { recursive: true });
+
+      const result = await validateAllPlugins(tempDir);
+
+      expect(result.results.map(({ name }) => name)).toStrictEqual(["plugin-one"]);
+      expect(result.valid).toBe(true);
+    });
+
+    it("refuses a directory with no plugin in it, naming where plugins must live", async () => {
+      await mkdir(path.join(tempDir, "not-a-plugin"), { recursive: true });
+
+      const result = await validateAllPlugins(tempDir);
+
+      expect(result).toStrictEqual({
+        valid: false,
+        results: [
+          {
+            name: tempDir,
+            result: {
+              valid: false,
+              errors: [
+                `No plugins found in directory: ${tempDir}. Plugins must contain a .claude-plugin/ directory.`,
+              ],
+              warnings: [],
+            },
+          },
+        ],
+        summary: { total: 0, valid: 0, invalid: 1, withWarnings: 0 },
+      });
+    });
+  });
+
   describe("validateAllPlugins", () => {
     it("should validate multiple plugins", async () => {
       for (const name of ["plugin-one", "plugin-two"]) {
@@ -624,4 +790,48 @@ name: bad-skill
       });
     });
   });
+});
+
+/** Semantic Versioning 2.0.0's own grammar, read edge by edge. */
+describe("validatePluginManifest and semantic versions", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir("plugin-validator-semver-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  async function versionValid(version: string): Promise<boolean> {
+    const manifestPath = path.join(tempDir, PLUGIN_MANIFEST_FILE);
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ name: "test-plugin", version, description: "Test plugin" }),
+    );
+    return (await validatePluginManifest(manifestPath)).valid;
+  }
+
+  it.each([
+    "10.20.30",
+    "1.0.0-alpha",
+    "1.0.0-100",
+    "1.0.0-12a",
+    "1.0.0-alpha.10",
+    "1.0.0-alpha.beta",
+    "1.0.0-alpha.2b",
+    "1.0.0+build",
+    "1.0.0+build.10",
+    "1.0.0-rc.1+build.10",
+  ])("accepts %s", async (version) => {
+    expect(await versionValid(version)).toBe(true);
+  });
+
+  it.each(["v1.0.0", "1.0.0junk", "01.0.0", "1.0.0-01", "1.0.0+"])(
+    "refuses %s",
+    async (version) => {
+      expect(await versionValid(version)).toBe(false);
+    },
+  );
 });

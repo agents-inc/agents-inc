@@ -33,3 +33,9 @@ describe("the pair a refusal is built from", () => {
     expect(validateKebabCaseName("-leading-hyphen", NOUN)).toContain("kebab-case");
   });
 });
+
+describe("validateKebabCaseName, a name left blank", () => {
+  it.each(["", "   "])("asks for a name when given %j", (blank) => {
+    expect(validateKebabCaseName(blank, NOUN)).toBe("Marketplace name is required");
+  });
+});

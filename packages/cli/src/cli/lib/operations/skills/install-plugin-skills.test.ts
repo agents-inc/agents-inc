@@ -6,7 +6,16 @@ vi.mock("../../hosts/host-for.js", async () => {
   return { hostAt: () => host, hostFor: () => host };
 });
 
-import { installPluginSkills } from "./install-plugin-skills";
+import {
+  installPluginSkills,
+  unbackedPluginInstallError,
+  unbackedPluginSkillIds,
+} from "./install-plugin-skills";
+import {
+  createMockMultiSourceSkill,
+  createMockSkillSource,
+} from "../../__tests__/factories/skill-factories.js";
+import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
 import { hostAt } from "../../hosts/host-for.js";
 import { buildSkillConfig } from "../../__tests__/helpers/index.js";
 
@@ -107,5 +116,30 @@ describe("installPluginSkills", () => {
 
     expect(mockInstallPlugin).not.toHaveBeenCalled();
     expect(result).toStrictEqual({ installed: [], failed: [] });
+  });
+});
+
+describe("plugin skills no marketplace carries", () => {
+  /** Both exist only on this disk; one is installed as a plugin, the other as a copy. */
+  const LOCAL_ONLY_MATRIX = createMockMatrix(
+    createMockMultiSourceSkill("web-framework-react", [createMockSkillSource("local")]),
+    createMockMultiSourceSkill("web-state-zustand", [createMockSkillSource("local")]),
+  );
+
+  it("names a plugin-mode skill only this disk has, and not a copied one", () => {
+    const skills = [
+      buildSkillConfig("web-framework-react", { origin: MARKETPLACE }),
+      buildSkillConfig("web-state-zustand", { origin: "eject" }),
+    ];
+
+    expect(unbackedPluginSkillIds(skills, LOCAL_ONLY_MATRIX)).toStrictEqual([
+      "web-framework-react",
+    ]);
+  });
+
+  it("names every such skill in its refusal, and the two ways out", () => {
+    expect(unbackedPluginInstallError(["web-framework-react", "web-state-zustand"])).toBe(
+      "Cannot install 2 skill(s) as plugins — no marketplace carries them: web-framework-react, web-state-zustand. A skill that exists only in this project can only be installed as a local copy. Set its Install mode to eject in the editor, or publish it to a marketplace first.",
+    );
   });
 });

@@ -150,3 +150,155 @@ describe("what the install says about it", () => {
     ).toBeUndefined();
   });
 });
+
+describe("reading the user's own spelling of an answer", () => {
+  async function trustingWith(theirs: string) {
+    await theirConfigIs(theirs);
+    return { trust: await trustCodexProject(projectDir), written: await theConfig() };
+  }
+
+  function theirAnswerKept(level: string) {
+    return {
+      kind: "left as the user set it",
+      configFile: path.join(codexHome, CODEX_CONFIG_TOML),
+      level,
+    };
+  }
+
+  it("reads an indented trust line under the project's table as trusted", async () => {
+    const theirs = `[projects."${projectDir}"]\n  trust_level = "trusted"\n`;
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: { kind: "already trusted" },
+      written: theirs,
+    });
+  });
+
+  it("finds the project's table below the user's other top-level keys", async () => {
+    const theirs = `model = "o3"\n${trustedTable(projectDir)}\n`;
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: { kind: "already trusted" },
+      written: theirs,
+    });
+  });
+
+  it("reads a trusted table that ends the file with no final newline", async () => {
+    const theirs = trustedTable(projectDir);
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: { kind: "already trusted" },
+      written: theirs,
+    });
+  });
+
+  it("counts no trust_level outside the project's table as the project's", async () => {
+    const theirs = 'trust_level = "trusted"\n\n[marketplaces.their-own]\nsource_type = "git"\n';
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: { kind: "trusted now", configFile: path.join(codexHome, CODEX_CONFIG_TOML) },
+      written: `${theirs.trimEnd()}\n\n${trustedTable(projectDir)}\n`,
+    });
+  });
+
+  it("reads the project's table only up to the next table", async () => {
+    const theirs = [
+      `[projects."${projectDir}"]`,
+      "some_setting_of_theirs = true",
+      trustedTable(path.join(tempDir, "elsewhere")),
+      "",
+    ].join("\n");
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: { kind: "trusted now", configFile: path.join(codexHome, CODEX_CONFIG_TOML) },
+      written: [
+        trustedTable(projectDir),
+        "some_setting_of_theirs = true",
+        trustedTable(path.join(tempDir, "elsewhere")),
+        "",
+      ].join("\n"),
+    });
+  });
+
+  it("keeps an indented answer the user gave", async () => {
+    const theirs = `[projects."${projectDir}"]\n  trust_level = "untrusted"\n`;
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: theirAnswerKept("untrusted"),
+      written: theirs,
+    });
+  });
+
+  it("keeps an answer the user gave below their other top-level keys", async () => {
+    const theirs = `model = "o3"\n[projects."${projectDir}"]\ntrust_level = "untrusted"\n`;
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: theirAnswerKept("untrusted"),
+      written: theirs,
+    });
+  });
+
+  it("keeps an answer the user gave after the table's other settings", async () => {
+    const theirs = `[projects."${projectDir}"]\nsome_setting_of_theirs = true\ntrust_level = "untrusted"\n`;
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: theirAnswerKept("untrusted"),
+      written: theirs,
+    });
+  });
+
+  it("keeps an answer the user gave as a dotted key", async () => {
+    const theirs = `projects."${projectDir}".trust_level = "untrusted"\n`;
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: theirAnswerKept("untrusted"),
+      written: theirs,
+    });
+  });
+
+  it("reads a dotted answer only for the project's own path", async () => {
+    const samePathLength = path.join(tempDir, "another");
+    const theirs = `projects."${samePathLength}".trust_level = "untrusted"\n`;
+
+    expect(await trustingWith(theirs)).toStrictEqual({
+      trust: { kind: "trusted now", configFile: path.join(codexHome, CODEX_CONFIG_TOML) },
+      written: `${theirs}\n${trustedTable(projectDir)}\n`,
+    });
+  });
+
+  it("adds the key inside the user's indented table rather than a second table", async () => {
+    const { written } = await trustingWith(
+      `  [projects."${projectDir}"]\nsome_setting_of_theirs = true\n`,
+    );
+
+    expect(written).toBe(
+      `  [projects."${projectDir}"]\ntrust_level = "trusted"\nsome_setting_of_theirs = true\n`,
+    );
+  });
+
+  it("separates the entry from the user's own lines by one blank line", async () => {
+    const { written } = await trustingWith(THE_USERS_OWN_CONFIG);
+
+    expect(written).toBe(`${THE_USERS_OWN_CONFIG.trimEnd()}\n\n${trustedTable(projectDir)}\n`);
+  });
+});
+
+describe("what the install says, word for word", () => {
+  it("names the table, the line and the file it wrote", async () => {
+    const said = codexProjectTrustMessage(projectDir, await trustCodexProject(projectDir));
+
+    expect(said).toBe(
+      `Trusted this project in your Codex configuration, so Codex reads its sub-agents: added [projects."${projectDir}"] with trust_level = "trusted" to ${path.join(codexHome, CODEX_CONFIG_TOML)}.`,
+    );
+  });
+
+  it("names the user's own answer, where it is, and what would make Codex read the sub-agents", async () => {
+    await theirConfigIs(`[projects."${projectDir}"]\ntrust_level = "untrusted"\n`);
+
+    const said = codexProjectTrustMessage(projectDir, await trustCodexProject(projectDir));
+
+    expect(said).toBe(
+      `Codex reads this project's sub-agents only once it is trusted, and ${path.join(codexHome, CODEX_CONFIG_TOML)} sets trust_level = "untrusted" under [projects."${projectDir}"]. Left as you set it — change it to "trusted" for Codex to read them.`,
+    );
+  });
+});

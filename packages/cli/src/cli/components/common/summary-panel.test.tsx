@@ -66,6 +66,21 @@ describe("SummaryPanel component", () => {
   });
 
   describe("header", () => {
+    it("rules the header off from the summary with one line below it and none around it", () => {
+      const { lastFrame, unmount } = renderPanel();
+      cleanup = unmount;
+
+      expect(lastFrame()).toMatchInlineSnapshot(`
+        "┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+        │  Marketplace Agents Inc                                                                          │
+        │  Stack none                                                                                      │
+        │                                                                                                  │
+        │  ──────────────────────────────────────────────────────────────────────────────────────────────  │
+        │                                                                                                  │
+        └──────────────────────────────────────────────────────────────────────────────────────────────────┘"
+      `);
+    });
+
     it("should name the default public marketplace when nothing is selected", () => {
       const { lastFrame, unmount } = renderPanel();
       cleanup = unmount;

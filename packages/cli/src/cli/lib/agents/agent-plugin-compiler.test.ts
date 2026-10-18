@@ -10,6 +10,8 @@ import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { renderAgentMd } from "../__tests__/content-generators";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+import { silenceConsole } from "../__tests__/helpers/silence-console.js";
+import { setVerbose } from "../../utils/logger";
 
 describe("agent-plugin-compiler", () => {
   let tempDir: string;
@@ -303,6 +305,50 @@ describe("agent-plugin-compiler", () => {
       printAgentCompilationSummary([]);
 
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Compiled 0 agent plugins"));
+    });
+  });
+
+  describe("what an agent plugin compile says and where it writes", () => {
+    const consoleSpies = silenceConsole(["log", "warn"]);
+
+    afterEach(() => setVerbose(false));
+
+    it("writes the plugin into agent-<name>, saying each step", async () => {
+      const agentPath = path.join(agentsDir, "web-developer.md");
+      await writeFile(agentPath, renderAgentMd("web-developer", "Expert frontend developer"));
+      setVerbose(true);
+
+      const result = await compileAgentPlugin({ agentPath, outputDir });
+
+      expect(result.pluginPath).toBe(path.join(outputDir, "agent-web-developer"));
+      expect(consoleSpies.log).toHaveBeenCalledWith(
+        `  Compiling agent plugin: web-developer from ${agentPath}`,
+      );
+      expect(consoleSpies.log).toHaveBeenCalledWith(
+        "    Wrote plugin.json for web-developer (v1.0.0)",
+      );
+      expect(consoleSpies.log).toHaveBeenCalledWith(
+        "    Copied agent web-developer.md -> agents/web-developer.md",
+      );
+    });
+
+    it("names the file with no frontmatter, why, and where it is", async () => {
+      const agentPath = path.join(agentsDir, "bad-agent.md");
+      await writeFile(agentPath, "# No frontmatter here");
+
+      await expect(compileAgentPlugin({ agentPath, outputDir })).rejects.toThrow(
+        `Agent 'bad-agent.md' has invalid or missing YAML frontmatter: no YAML frontmatter block. File: ${agentPath}`,
+      );
+    });
+
+    it("warns about each agent it could not compile, naming its file", async () => {
+      await writeFile(path.join(agentsDir, "bad-agent.md"), "# No frontmatter here");
+
+      await compileAllAgentPlugins(agentsDir, outputDir);
+
+      expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        `  Warning: Failed to compile agent from 'bad-agent.md': Agent 'bad-agent.md' has invalid or missing YAML frontmatter: no YAML frontmatter block. File: ${path.join(agentsDir, "bad-agent.md")}`,
+      );
     });
   });
 });

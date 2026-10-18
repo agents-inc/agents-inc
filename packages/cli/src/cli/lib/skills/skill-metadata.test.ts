@@ -17,6 +17,7 @@ import {
   injectForkedFromMetadata,
   readForkedFromMetadata,
   readLocalSkillMetadata,
+  writeMetadataYaml,
 } from "./skill-metadata";
 
 function createValidMetadataYaml(skillId: SkillId, contentHash: string, date: string): string {
@@ -295,5 +296,23 @@ describe("skill-metadata", () => {
       expect(result).toBeNull();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("Invalid metadata.yaml"));
     });
+  });
+});
+
+describe("writeMetadataYaml", () => {
+  /** Longer than the yaml library's default 80-column fold. */
+  const LONG_DESCRIPTION = `A description that runs on ${"and on ".repeat(15)}past any column a folding writer stops at`;
+
+  it("writes a long value on one line, after the schema comment it is given", async () => {
+    await writeMetadataYaml(
+      "/skills/react/metadata.yaml",
+      { cliDescription: LONG_DESCRIPTION },
+      "# schema\n",
+    );
+
+    expect(writeFile).toHaveBeenLastCalledWith(
+      "/skills/react/metadata.yaml",
+      `# schema\ncliDescription: ${LONG_DESCRIPTION}\n`,
+    );
   });
 });

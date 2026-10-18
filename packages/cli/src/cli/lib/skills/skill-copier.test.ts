@@ -217,6 +217,40 @@ describe("skill-copier", () => {
       expect(failure).toContain("Could not copy 3 of 3 skills:");
     });
 
+    it("lists each failed skill on a line of its own", async () => {
+      const localSkillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      await mkdir(localSkillsDir, { recursive: true });
+      const sourceResult = initSourceResult(
+        createMockMatrix(SKILLS.react, SKILLS.tailwind),
+        projectDir,
+      );
+
+      await expect(
+        copySkillsToLocalFlattened(
+          ["web-framework-react", "web-styling-tailwind"],
+          localSkillsDir,
+          sourceResult,
+        ),
+      ).rejects.toThrow(
+        /\n {2}web-framework-react: ENOENT[^\n]*\n {2}web-styling-tailwind: ENOENT/,
+      );
+    });
+
+    it("refuses a skill whose recorded path climbs out of the source, copying nothing from there", async () => {
+      const localSkillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
+      await mkdir(localSkillsDir, { recursive: true });
+      const sourceResult = initSourceResult(
+        createMockMatrix({ ...SKILLS.react, path: "../../outside/" }),
+        projectDir,
+      );
+
+      await expect(
+        copySkillsToLocalFlattened(["web-framework-react"], localSkillsDir, sourceResult),
+      ).rejects.toThrow(
+        "web-framework-react: Invalid skill path: '../../outside/' escapes expected directory",
+      );
+    });
+
     it("counts one skill it could not copy, out of one, in the singular", async () => {
       const localSkillsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.SKILLS);
       await mkdir(localSkillsDir, { recursive: true });

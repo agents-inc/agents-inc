@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import path from "path";
 import os from "os";
 import {
@@ -26,6 +26,8 @@ vi.mock("../../utils/fs", async (importOriginal) => {
 });
 
 import { fileExists, readFileSafe } from "../../utils/fs";
+import { setVerbose } from "../../utils/logger";
+import { silenceConsole } from "../__tests__/helpers/silence-console";
 
 const mockedFileExists = vi.mocked(fileExists);
 const mockedReadFileSafe = vi.mocked(readFileSafe);
@@ -200,6 +202,48 @@ describe("plugin-finder", () => {
       expect(result!.keywords).toStrictEqual(["web", "react"]);
       expect(result!.skills).toBe("./skills/");
       expect(result!.agents).toBe("./agents/");
+    });
+  });
+
+  describe("what reading a manifest says", () => {
+    const consoleSpies = silenceConsole(["log"]);
+    const MANIFEST_PATH = path.join("/path/to/plugin", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
+
+    beforeEach(() => setVerbose(true));
+    afterEach(() => setVerbose(false));
+
+    it("says there is no manifest, and reads nothing", async () => {
+      mockedFileExists.mockResolvedValue(false);
+      mockedReadFileSafe.mockClear();
+
+      await readPluginManifest("/path/to/plugin");
+
+      expect(consoleSpies.log).toHaveBeenCalledExactlyOnceWith(
+        `    No manifest at ${MANIFEST_PATH}`,
+      );
+      expect(mockedReadFileSafe).not.toHaveBeenCalled();
+    });
+
+    it("says a manifest names no plugin", async () => {
+      mockedFileExists.mockResolvedValue(true);
+      mockedReadFileSafe.mockResolvedValue(JSON.stringify({ name: "", version: "1.0.0" }));
+
+      await readPluginManifest("/path/to/plugin");
+
+      expect(consoleSpies.log).toHaveBeenCalledExactlyOnceWith(
+        `    Invalid manifest at ${MANIFEST_PATH}: missing name`,
+      );
+    });
+
+    it("says why a manifest could not be parsed", async () => {
+      mockedFileExists.mockResolvedValue(true);
+      mockedReadFileSafe.mockResolvedValue("not valid json {{{");
+
+      await readPluginManifest("/path/to/plugin");
+
+      expect(consoleSpies.log).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining(`    Failed to parse manifest at ${MANIFEST_PATH}: `),
+      );
     });
   });
 });

@@ -12,6 +12,8 @@ import type { Marketplace } from "../types";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../consts";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import { firstElement } from "./__tests__/helpers/element-at.js";
+import { silenceConsole } from "./__tests__/helpers/silence-console.js";
+import { setVerbose } from "../utils/logger";
 
 const TEST_MARKETPLACE_OPTIONS = {
   name: "test-marketplace",
@@ -582,5 +584,89 @@ describe("marketplace-generator", () => {
 
       expect(validateSkillIdNamespace(marketplace)).toBeNull();
     });
+  });
+
+  describe("what generateMarketplace says and where it points", () => {
+    const consoleSpies = silenceConsole(["log", "warn"]);
+
+    beforeEach(() => setVerbose(true));
+    afterEach(() => setVerbose(false));
+
+    it("says which folder it scans, how many manifests it found and each plugin it took", async () => {
+      await createPlugin("web-said-a", { name: "web-said-a", version: "1.0.0" });
+
+      await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
+
+      expect(consoleSpies.log).toHaveBeenCalledWith(`  Scanning plugins directory: ${pluginsDir}`);
+      expect(consoleSpies.log).toHaveBeenCalledWith("  Found 1 plugin manifests");
+      expect(consoleSpies.log).toHaveBeenCalledWith("    [OK] web-said-a");
+    });
+
+    it("warns about a manifest it cannot read, naming it, and leaves its plugin out", async () => {
+      const brokenManifest = path.join("web-broken", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
+      await mkdir(path.join(pluginsDir, path.dirname(brokenManifest)), { recursive: true });
+      await writeFile(path.join(pluginsDir, brokenManifest), "{ not json");
+
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
+
+      expect(marketplace.plugins).toStrictEqual([]);
+      expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        `  Warning: Could not read plugin manifest: '${brokenManifest}'`,
+      );
+    });
+
+    it("reads a plugin whose folder name is a single character", async () => {
+      await createPlugin("a", { name: "a", version: "1.0.0" });
+
+      const marketplace = await generateMarketplace(pluginsDir, TEST_MARKETPLACE_OPTIONS);
+
+      expect(marketplace.plugins).toStrictEqual([
+        { name: "a", source: "./plugins/a", version: "1.0.0" },
+      ]);
+    });
+
+    it("keeps a plugin root that climbs out of the marketplace as written", async () => {
+      await createPlugin("web-test-a", { name: "web-test-a", version: "1.0.0" });
+
+      const marketplace = await generateMarketplace(pluginsDir, {
+        ...TEST_MARKETPLACE_OPTIONS,
+        pluginRoot: "../shared-plugins",
+      });
+
+      expect(firstElement(marketplace.plugins).source).toBe("./../shared-plugins/web-test-a");
+    });
+  });
+
+  describe("refusal texts, word for word", () => {
+    it("explains every reserved name and ends on the caller's way out", () => {
+      expect(validateMarketplaceName("external", AUTHOR_PACKAGE_NAME, NAME_WAY_OUT)).toBe(
+        "Marketplace name 'external' is reserved. 'agents-inc' is the public catalogue's own namespace, 'external' and 'local' hold the skills that belong to no marketplace, and 'eject' is what an installation records for a skill copied into it rather than installed as a plugin — a marketplace under any of them is read back as something it is not. Choose a name of your own: pick another name.",
+      );
+    });
+
+    it("lists each foreign id with the id it should be, and how to fix them", () => {
+      expect(
+        validateSkillIdNamespace(
+          marketplaceListing("acme", [
+            "web-framework-react",
+            "acme-api-framework-hono",
+            "api-framework-hono",
+          ]),
+        ),
+      ).toBe(
+        [
+          "Marketplace 'acme' ships 2 skill id(s) outside its own namespace. Every skill id must begin with the marketplace's name:",
+          "  web-framework-react -> acme-web-framework-react",
+          "  api-framework-hono -> acme-api-framework-hono",
+          "Rename each skill directory and the 'name' in its SKILL.md, re-run 'build plugins', then build the marketplace again.",
+        ].join("\n"),
+      );
+    });
+  });
+
+  it("counts a plugin with no category as uncategorized", () => {
+    expect(
+      getMarketplaceStats(marketplaceListing("acme", ["acme-web-framework-react"])),
+    ).toStrictEqual({ total: 1, byCategory: { uncategorized: 1 } });
   });
 });

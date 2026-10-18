@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractFrontmatter } from "./frontmatter";
+import { extractFrontmatter, unreadableFrontmatter } from "./frontmatter";
 
 describe("extractFrontmatter", () => {
   describe("valid frontmatter", () => {
@@ -167,5 +167,23 @@ describe("extractFrontmatter", () => {
 
       expect(extractFrontmatter(content)).toBeNull();
     });
+  });
+});
+
+describe("unreadableFrontmatter", () => {
+  it("says a file has no frontmatter at its top when the fences are missing", () => {
+    expect(unreadableFrontmatter("# Just a heading\n")).toBe(
+      "there is no frontmatter between --- fences at its top",
+    );
+  });
+
+  it("says frontmatter that holds only a comment is empty", () => {
+    expect(unreadableFrontmatter("---\n# nothing here yet\n---\n\n# Body\n")).toBe(
+      "its frontmatter is empty",
+    );
+  });
+
+  it("finds nothing wrong with frontmatter that reads", () => {
+    expect(unreadableFrontmatter("---\nname: web-framework-react\n---\n")).toBeUndefined();
   });
 });

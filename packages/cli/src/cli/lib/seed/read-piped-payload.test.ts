@@ -178,3 +178,50 @@ describe("reading a payload off a pipe", () => {
     expect(STDIN_IS_A_TERMINAL).toContain("terminal");
   });
 });
+
+describe("reading a payload off a pipe, word for word", () => {
+  /** Exactly as many unwritable pairs as the refusal names, so none is left to count. */
+  const FOUR_UNWRITABLE_PAIRS = buildSeedPayload({
+    skills: Object.fromEntries(
+      (["web-framework-react", "web-testing-vitest"] as const).map((id) => [
+        id,
+        buildSeedSkill({
+          scope: "project",
+          assignments: { "web-developer": "lazy", "api-developer": "lazy" },
+        }),
+      ]),
+    ),
+  });
+
+  const unwritable = (skill: string, agent: string) =>
+    `skills.${skill}.assignments.${agent}: a project-scoped skill has nowhere to be written on '${agent}', which rests at global scope`;
+
+  it("names exactly as many refused pairs as it lists, joined, with no count after them", () => {
+    expect(readPipedPayload(JSON.stringify(FOUR_UNWRITABLE_PAIRS))).toStrictEqual({
+      ok: false,
+      error: `The configuration on standard input is not one this store accepts: ${[
+        unwritable("web-framework-react", "web-developer"),
+        unwritable("web-framework-react", "api-developer"),
+        unwritable("web-testing-vitest", "web-developer"),
+        unwritable("web-testing-vitest", "api-developer"),
+      ].join("; ")}`,
+    });
+  });
+
+  it("quotes back the opening of a non-JSON body without its surrounding blanks", () => {
+    const read = readPipedPayload("  not json at all  ");
+
+    expect(read.ok ? "" : read.error).toMatch(/\. It began: not json at all$/);
+  });
+});
+
+describe("the empty-pipe refusal, as a person reads it", () => {
+  // A literal: the existing specs compare against the exported constant, which moves with it.
+  it("tells a person piping nothing how to pipe a configuration in", () => {
+    expect(readPipedPayload("")).toStrictEqual({
+      ok: false,
+      error:
+        "--stdin expects a configuration on standard input and none arrived. Pipe one in, as 'cat proposal.json | agents-inc share --stdin'.",
+    });
+  });
+});

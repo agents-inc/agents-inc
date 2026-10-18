@@ -82,3 +82,16 @@ describe("formatZodIssue", () => {
     });
   });
 });
+
+describe("formatZodIssue, several unrecognised keys", () => {
+  it("names each one, quoted, in one sentence", () => {
+    const issue: z.ZodIssue = {
+      code: "unrecognized_keys",
+      keys: ["keywords", "homepage"],
+      path: [],
+      message: 'Unrecognized keys: "keywords", "homepage"',
+    };
+
+    expect(formatZodIssue(issue)).toBe('Unrecognized key: "keywords", "homepage"');
+  });
+});

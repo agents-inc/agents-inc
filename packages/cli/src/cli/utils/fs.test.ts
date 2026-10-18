@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { chmod, mkdir, readdir, stat, writeFile as fsWriteFile } from "fs/promises";
-import { copy, readFileSafe } from "./fs";
+import {
+  copy,
+  glob,
+  listDirectories,
+  readFileOptional,
+  readFileSafe,
+  removeDirIfEmpty,
+  writeFile,
+} from "./fs";
 import { createTempDir, cleanupTempDir } from "../lib/__tests__/test-fs-utils";
 
 describe("fs utilities", () => {
@@ -115,6 +123,45 @@ describe("fs utilities", () => {
       const copied = await stat(path.join(dest, "run.sh"));
       expect(copied.mode & 0o100, "the executable bit must survive").toBeTruthy();
       expect(copied.mode & 0o200, "and the owner must be able to write it").toBeTruthy();
+    });
+  });
+
+  describe("reading and listing", () => {
+    it("answers an empty string for a file that is not there", async () => {
+      expect(await readFileOptional(path.join(tempDir, "absent.md"))).toBe("");
+    });
+
+    it("lists the folders in a directory and not its files, and nothing for a missing one", async () => {
+      await mkdir(path.join(tempDir, "a-folder"));
+      await fsWriteFile(path.join(tempDir, "a-file.md"), "# file");
+
+      expect(await listDirectories(tempDir)).toStrictEqual(["a-folder"]);
+      expect(await listDirectories(path.join(tempDir, "absent"))).toStrictEqual([]);
+    });
+
+    it("leaves dotfiles out of a scan unless asked for them", async () => {
+      await fsWriteFile(path.join(tempDir, ".hidden"), "");
+      await fsWriteFile(path.join(tempDir, "shown"), "");
+
+      expect(await glob("*", tempDir)).toStrictEqual(["shown"]);
+      expect((await glob("*", tempDir, { dot: true })).toSorted()).toStrictEqual([
+        ".hidden",
+        "shown",
+      ]);
+    });
+  });
+
+  describe("writing and removing", () => {
+    it("creates the folders a written file needs", async () => {
+      const nested = path.join(tempDir, "one", "two", "file.md");
+
+      await writeFile(nested, "# nested");
+
+      expect((await stat(nested)).isFile()).toBe(true);
+    });
+
+    it("removes nothing, and says so, for a directory that is not there", async () => {
+      expect(await removeDirIfEmpty(path.join(tempDir, "absent"))).toBe(false);
     });
   });
 });

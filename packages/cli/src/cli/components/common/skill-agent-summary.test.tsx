@@ -30,6 +30,56 @@ describe("SkillAgentSummary component", () => {
     cleanup = undefined;
   });
 
+  describe("layout", () => {
+    const COPIED_REACT_NOW_PLUGIN_ZUSTAND_AND_AN_AGENT: Partial<SkillAgentSummaryProps> = {
+      installedSkillConfigs: buildSkillConfigs(["web-framework-react"], { origin: "agents-inc" }),
+      skillConfigs: [
+        ...buildSkillConfigs(["web-framework-react"]),
+        ...buildSkillConfigs(["web-state-zustand"], { scope: "global", origin: "agents-inc" }),
+      ],
+      installedAgentConfigs: [],
+      agentConfigs: buildAgentConfigs(["web-developer"], { scope: "project" }),
+    };
+
+    it("lays skills and agents side by side under their scopes, divided by a rule", () => {
+      const { lastFrame, unmount } = renderSummary(COPIED_REACT_NOW_PLUGIN_ZUSTAND_AND_AN_AGENT);
+      cleanup = unmount;
+
+      expect(lastFrame()).toMatchInlineSnapshot(`
+        "Skills                                                           │  Agents
+                                                                         │
+         Project                                                         │   Project
+        ~ React ⏏                                                        │  + web-developer
+                                                                         │
+         Global                                                          │
+        + Zustand                                                        │"
+      `);
+    });
+
+    it("marks a copied skill with the eject symbol and a plugin skill without it", () => {
+      const { lastFrame, unmount } = renderSummary(COPIED_REACT_NOW_PLUGIN_ZUSTAND_AND_AN_AGENT);
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("~ React ⏏");
+      expect(output).toContain("+ Zustand");
+      expect(output).not.toContain("Zustand ⏏");
+    });
+
+    it("heads no Project scope in either column when every row is global", () => {
+      const { lastFrame, unmount } = renderSummary({
+        skillConfigs: buildSkillConfigs(["web-state-zustand"], { scope: "global" }),
+        agentConfigs: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      });
+      cleanup = unmount;
+
+      const output = lastFrame()!;
+      expect(output).toContain("+ Zustand");
+      expect(output).toContain("+ api-developer");
+      expect(output).not.toContain("Project");
+    });
+  });
+
   describe("source mode changes", () => {
     it("should show ~ prefix when skill source changes from plugin to eject", () => {
       const { lastFrame, unmount } = renderSummary({

@@ -11,8 +11,10 @@ import {
 } from "../../consts";
 import { METADATA_KEYS } from "../metadata-keys";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
-import { renderSkillMd } from "../__tests__/content-generators";
-import { warn } from "../../utils/logger";
+import { renderMetadataYaml, renderSkillMd } from "../__tests__/content-generators";
+import { silenceConsole } from "../__tests__/helpers/silence-console";
+import { setVerbose, warn } from "../../utils/logger";
+import { bytewise } from "../../utils/string";
 
 vi.mock("../../utils/logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../utils/logger")>()),
@@ -346,6 +348,109 @@ describe("local-skill-loader", () => {
       const result = await discoverLocalSkills(tempDir);
 
       expect(result?.skills).toStrictEqual([]);
+    });
+  });
+
+  describe("what discovery says and carries", () => {
+    const consoleSpies = silenceConsole(["log"]);
+
+    beforeEach(() => setVerbose(true));
+    afterEach(() => setVerbose(false));
+
+    const localSkillsPath = () => path.join(tempDir, LOCAL_SKILLS_PATH);
+
+    function usableMetadata(fields: { custom?: boolean } = {}): string {
+      return renderMetadataYaml({
+        contentHash: "abc123",
+        category: "web-framework",
+        displayName: "Said Skill",
+        slug: "said-skill",
+        ...fields,
+      });
+    }
+
+    const said = (line: string) => expect(consoleSpies.log).toHaveBeenCalledWith(`  ${line}`);
+
+    it("says there is no local skills folder", async () => {
+      await discoverLocalSkills(tempDir);
+
+      said(`Local skills directory not found: ${localSkillsPath()}`);
+    });
+
+    it("says how many local skills it discovered, and from where", async () => {
+      await writeLocalSkill("first-skill", {
+        metadata: usableMetadata(),
+        skillMd: renderSkillMd("first-skill", "First"),
+      });
+      await writeLocalSkill("second-skill", {
+        metadata: usableMetadata(),
+        skillMd: renderSkillMd("second-skill", "Second"),
+      });
+
+      await discoverLocalSkills(tempDir);
+
+      said(`Discovered 2 local skills from ${localSkillsPath()}`);
+    });
+
+    it("says which skill it skipped for having no metadata.yaml, and warns about nothing", async () => {
+      await writeLocalSkill("no-metadata", { skillMd: renderSkillMd("no-metadata") });
+
+      await discoverLocalSkills(tempDir);
+
+      said("Skipping local skill 'no-metadata': No metadata.yaml found");
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("says which skill it skipped for having no SKILL.md", async () => {
+      await writeLocalSkill("no-skillmd", { metadata: usableMetadata(), withSkillMd: false });
+
+      await discoverLocalSkills(tempDir);
+
+      said("Skipping local skill 'no-skillmd': No SKILL.md found");
+    });
+
+    it("says which skill it skipped for an invalid SKILL.md frontmatter", async () => {
+      await writeLocalSkill("bad-frontmatter", {
+        metadata: usableMetadata(),
+        skillMd: "---\ndescription: Only description, no name\n---\nContent",
+      });
+
+      await discoverLocalSkills(tempDir);
+
+      said("Skipping local skill 'bad-frontmatter': invalid SKILL.md frontmatter");
+    });
+
+    it("carries the activation description, and the custom flag only when the metadata states it", async () => {
+      await writeLocalSkill("custom-skill", {
+        metadata: usableMetadata({ custom: true }),
+        skillMd: renderSkillMd("custom-skill", "Activates on custom work"),
+      });
+      await writeLocalSkill("plain-skill", {
+        metadata: usableMetadata(),
+        skillMd: renderSkillMd("plain-skill", "Activates on plain work"),
+      });
+
+      const result = await discoverLocalSkills(tempDir);
+
+      const extracted = (dirName: string, description: string) => ({
+        id: dirName,
+        directoryPath: dirName,
+        description,
+        activationDescription: description,
+        category: "web-framework",
+        author: "@dummy-author",
+        path: `${LOCAL_SKILLS_PATH}/${dirName}/`,
+        local: true,
+        localPath: path.join(localSkillsPath(), dirName) + path.sep,
+        domain: "web",
+        slug: "said-skill",
+        displayName: "Said Skill",
+      });
+      expect(result?.skills.toSorted((a, b) => bytewise(a.id, b.id))).toStrictEqual([
+        { ...extracted("custom-skill", "Activates on custom work"), custom: true },
+        extracted("plain-skill", "Activates on plain work"),
+      ]);
+      said("Extracted local skill: custom-skill");
     });
   });
 });
