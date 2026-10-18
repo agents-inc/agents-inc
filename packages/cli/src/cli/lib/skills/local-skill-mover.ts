@@ -12,10 +12,14 @@ import { verbose, warn } from "../../utils/logger";
 import { resolveInstallPaths } from "../installation/install-base-dir";
 import type { SkillId, SkillScope } from "../../types";
 
+/** An id of `.` resolves to the skills directory itself, so a delete would take every skill. */
+const THE_DIRECTORY_ITSELF = ".";
+
 /** Runtime check: template literal types do not stop malformed ids arriving from YAML/JSON. */
-function validateSkillId(skillId: SkillId): boolean {
+function validateSkillId(skillId: string): boolean {
   return !(
     skillId.length === 0 ||
+    skillId === THE_DIRECTORY_ITSELF ||
     skillId.includes("\0") ||
     skillId.includes("..") ||
     skillId.includes("/") ||
