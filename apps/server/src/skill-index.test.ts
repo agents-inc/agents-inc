@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test"
+import { SKILL_INDEX_UNAVAILABLE_BODY } from "@workspace/api-mocks/fixtures"
 import { hc } from "hono/client"
-import { beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   SKILL_INDEX_FRESHNESS_HEADER,
@@ -68,6 +69,11 @@ describe("GET /skills", () => {
     await env.CONFIGS.delete(SKILL_INDEX_KEY)
   })
 
+  // `clearMocks` does not restore a spy.
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it("serves the whole index the scheduled build published", async () => {
     const published = indexBuiltAt(someTimeAgo(RECENTLY))
     await publish(published)
@@ -97,6 +103,41 @@ describe("GET /skills", () => {
     const response = await getIndex()
 
     expect(response.status).toBe(503)
+  })
+
+  // Against the api-mocks constant, so its mirror of this body cannot drift.
+  it("says the index is not available yet in the body of its 503", async () => {
+    const response = await getIndex()
+
+    expect(await response.text()).toBe(SKILL_INDEX_UNAVAILABLE_BODY)
+  })
+
+  it("503s, and logs why, when the store refuses the read", async () => {
+    vi.spyOn(env.CONFIGS, "get").mockRejectedValueOnce(
+      new Error("the store is down")
+    )
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const response = await getIndex()
+
+    expect(response.status).toBe(503)
+    expect(logged).toHaveBeenCalledWith({
+      event: "skill_index_failure",
+      reason: "could not read the published index: the store is down",
+    })
+  })
+
+  // The build publishes; a stored index the worker cannot serve is its signal.
+  it("logs that the published index broke the contract when it cannot serve it", async () => {
+    await env.CONFIGS.put(SKILL_INDEX_KEY, JSON.stringify({ skills: "no" }))
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await getIndex()
+
+    expect(logged).toHaveBeenCalledWith({
+      event: "skill_index_failure",
+      reason: "the published index no longer matches the contract",
+    })
   })
 
   // 503, not 500: the next build overwrites it and nobody links to it.

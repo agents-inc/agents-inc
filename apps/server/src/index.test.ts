@@ -2,13 +2,15 @@ import { SELF, env } from "cloudflare:test"
 import {
   COMPOSE_TOO_LONG_BODY,
   NO_CONFIG_BODY,
+  STORE_REFUSED_BODY,
   UNREADABLE_CONFIG_BODY,
   seedPayload,
 } from "@workspace/api-mocks/fixtures"
 import { SEED_VERSION } from "@workspace/matrix/seed"
 import { hc } from "hono/client"
+import { encodeBase64, encodeBase64Url } from "hono/utils/encode"
 import { http, HttpResponse } from "msw"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { upstreamMock } from "../vitest.setup"
 import { seedSession } from "./db/seed-session"
@@ -41,6 +43,31 @@ const post = (body: unknown) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   })
+
+const ID_LENGTH = 8
+
+// Written out rather than imported, so moving the cap reddens these.
+const BODY_CAP_BYTES = 1_048_576
+
+// Its payload hashes to `+/…` in standard base64, so both characters a URL
+// cannot carry fall inside the id.
+const URL_UNSAFE_STACK_ID = "url-unsafe-16"
+
+const sha256 = (text: string) =>
+  crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))
+
+/** Padded so its JSON is exactly `bytes` long. */
+const payloadOfLength = (bytes: number) => {
+  const unpadded = JSON.stringify(payload({ matrixVersion: "" })).length
+  return payload({ matrixVersion: "x".repeat(bytes - unpadded) })
+}
+
+const storeFailure = new Error("the store is down")
+
+// `clearMocks` does not restore a spy, and these replace console and KV.
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe("POST /configs", () => {
   it("stores a valid payload and returns its short id", async () => {
@@ -150,6 +177,83 @@ describe("POST /configs", () => {
 
     expect(response.status).toBe(201)
   })
+
+  // A `+` or `/` in the id would break the share link the editor builds from it.
+  it("names a payload by the base64url SHA-256 of what it stores", async () => {
+    const response = await post(payload({ stackId: URL_UNSAFE_STACK_ID }))
+    const { id } = await response.json<{ id: string }>()
+    const stored = await env.CONFIGS.get(id)
+    if (stored === null)
+      throw new Error("the worker named a key it never wrote")
+    const digest = await sha256(stored)
+
+    expect(encodeBase64(digest).slice(0, ID_LENGTH)).toMatch(/\+\//)
+    expect(id).toBe(encodeBase64Url(digest).slice(0, ID_LENGTH))
+  })
+
+  // The control for the oversized refusal: the cap itself is allowed.
+  it("stores a body exactly as long as the cap", async () => {
+    const response = await post(payloadOfLength(BODY_CAP_BYTES))
+
+    expect(response.status).toBe(201)
+  })
+
+  it("says the body was too large when it refuses one", async () => {
+    const response = await post(payloadOfLength(BODY_CAP_BYTES + 1))
+
+    expect(response.status).toBe(413)
+    expect(await response.text()).toBe("Payload too large")
+  })
+
+  // A stale bundle's payload may differ in shape too; reloading still fixes it.
+  it("answers 409 to another version's payload even when its shape is wrong as well", async () => {
+    const response = await post({
+      ...payload(),
+      v: SEED_VERSION - 1,
+      skills: "not-a-record",
+    })
+
+    expect(response.status).toBe(409)
+  })
+
+  // Not JSON means no version; a page on any origin can send such a body
+  // without a preflight, so storing it would let anyone mint links.
+  it("refuses a body not sent as JSON rather than storing it", async () => {
+    const response = await SELF.fetch(`${BASE}/configs`, {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify(payload()),
+    })
+
+    expect(response.status).toBe(409)
+  })
+
+  // Identical content is already there; a write would only spend the quota.
+  it("spends no write on a payload it already holds", async () => {
+    await post(payload({ stackId: "stored-once" }))
+    const put = vi.spyOn(env.CONFIGS, "put")
+
+    const again = await post(payload({ stackId: "stored-once" }))
+
+    expect(again.status).toBe(201)
+    expect(put).not.toHaveBeenCalled()
+  })
+
+  it("answers 503 and logs the failure when the store refuses the write", async () => {
+    vi.spyOn(env.CONFIGS, "put").mockRejectedValueOnce(storeFailure)
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    // A payload no earlier run stored, so the worker does try to write it.
+    const response = await post(payload({ stackId: crypto.randomUUID() }))
+
+    expect(response.status).toBe(503)
+    expect(await response.text()).toBe(STORE_REFUSED_BODY)
+    expect(logged).toHaveBeenCalledWith({
+      event: "kv_failure",
+      operation: "put",
+      message: storeFailure.message,
+    })
+  })
 })
 
 describe("GET /configs/:id", () => {
@@ -191,6 +295,51 @@ describe("GET /configs/:id", () => {
 
     expect(response.status).toBe(500)
     expect(await response.text()).toBe(UNREADABLE_CONFIG_BODY)
+  })
+
+  // The two corrupt cases log distinct reasons, so an operator can tell them apart.
+  it("logs the parser's complaint about stored bytes that are not JSON", async () => {
+    await env.CONFIGS.put("corrupt3", "half a payload")
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await SELF.fetch(`${BASE}/configs/corrupt3`)
+
+    expect(logged).toHaveBeenCalledWith({
+      event: "corrupt_payload",
+      id: "corrupt3",
+      message: expect.stringMatching(/not valid JSON/) as string,
+    })
+  })
+
+  it("logs which stored payload no longer validates", async () => {
+    await env.CONFIGS.put(
+      "corrupt4",
+      JSON.stringify({ v: SEED_VERSION, skills: "no" })
+    )
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    await SELF.fetch(`${BASE}/configs/corrupt4`)
+
+    expect(logged).toHaveBeenCalledWith({
+      event: "corrupt_payload",
+      id: "corrupt4",
+      message: expect.stringContaining("skills") as string,
+    })
+  })
+
+  it("answers 503 and logs the failure when the store refuses the read", async () => {
+    vi.spyOn(env.CONFIGS, "get").mockRejectedValueOnce(storeFailure)
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const response = await SELF.fetch(`${BASE}/configs/unknown1`)
+
+    expect(response.status).toBe(503)
+    expect(await response.text()).toBe("Could not read this config")
+    expect(logged).toHaveBeenCalledWith({
+      event: "kv_failure",
+      operation: "get",
+      message: storeFailure.message,
+    })
   })
 })
 
@@ -358,6 +507,45 @@ describe("CORS", () => {
       )
     }
   )
+
+  // A shared link opens through this read, from the editor's origin.
+  it("lets the web app read a stored config", async () => {
+    const created = await post(payload())
+    const { id } = await created.json<{ id: string }>()
+
+    const response = await SELF.fetch(`${BASE}/configs/${id}`, {
+      headers: { origin: "http://localhost:5173" },
+    })
+
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "http://localhost:5173"
+    )
+  })
+
+  // Each is sent with a content type or method that needs a preflight first.
+  const PREFLIGHTED = [
+    { method: "PATCH", path: "/stacks/abc123" },
+    { method: "DELETE", path: "/stacks/abc123" },
+    { method: "POST", path: "/monitoring" },
+    { method: "POST", path: "/compose" },
+  ]
+
+  it.each(PREFLIGHTED)(
+    "admits the web origin's $method to $path",
+    async ({ method, path }) => {
+      const response = await SELF.fetch(`${BASE}${path}`, {
+        method: "OPTIONS",
+        headers: {
+          origin: "http://localhost:5173",
+          "access-control-request-method": method,
+        },
+      })
+
+      expect(response.headers.get("access-control-allow-origin")).toBe(
+        "http://localhost:5173"
+      )
+    }
+  )
 })
 
 // The DSN guard keeps the tunnel from being an open relay.
@@ -411,5 +599,71 @@ describe("POST /monitoring", () => {
 
     expect(response.status).toBe(200)
     expect(sentry).toHaveBeenCalledTimes(1)
+  })
+
+  const relayTo = (status: number) => {
+    const sentry = vi.fn(() => new HttpResponse(null, { status }))
+    upstreamMock.use(
+      http.post(`https://${INGEST}/api/${PROJECT}/envelope/`, sentry)
+    )
+    return sentry
+  }
+
+  // With no line break there is no envelope, however readable the text is.
+  it("refuses a lone line, even one holding a readable header", async () => {
+    const sentry = relayTo(200)
+
+    const response = await tunnel(
+      `${JSON.stringify({ dsn: `https://key@${INGEST}/${PROJECT}` })} `
+    )
+
+    expect(response.status).toBe(400)
+    expect(sentry).not.toHaveBeenCalled()
+  })
+
+  const REFUSALS = [
+    {
+      body: "a body with no line break",
+      envelope: "not an envelope",
+      status: 400,
+      reason: "Not a readable envelope",
+    },
+    {
+      body: "a header that is not JSON",
+      envelope: "not json\n{}",
+      status: 400,
+      reason: "Not a readable envelope",
+    },
+    {
+      body: "a header with no dsn",
+      envelope: `${JSON.stringify({ event_id: "abc" })}\n{}`,
+      status: 400,
+      reason: "Envelope carries no DSN",
+    },
+    {
+      body: "a dsn naming another project",
+      envelope: envelope(`https://key@${INGEST}/9999999999999999`),
+      status: 403,
+      reason: "Envelope is addressed to another project",
+    },
+  ]
+
+  it.each(REFUSALS)(
+    "says why it refused $body",
+    async ({ envelope: refused, status, reason }) => {
+      const response = await tunnel(refused)
+
+      expect(response.status).toBe(status)
+      expect(await response.text()).toBe(reason)
+    }
+  )
+
+  // The SDK backs off on Sentry's own refusals, so they must reach it.
+  it("hands back the status Sentry answered with", async () => {
+    relayTo(429)
+
+    const response = await tunnel(envelope(`https://key@${INGEST}/${PROJECT}`))
+
+    expect(response.status).toBe(429)
   })
 })

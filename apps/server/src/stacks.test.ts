@@ -1,11 +1,12 @@
 import { SELF, env } from "cloudflare:test"
 import {
   CONFIG_WRITE_WINDOW_SECONDS,
+  NO_STACK_BODY,
   RATE_LIMITED_BODY,
   WORKER_EXPOSED_HEADERS,
 } from "@workspace/api-mocks/fixtures"
 import { SEED_VERSION } from "@workspace/matrix/seed"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { seedSession } from "./db/seed-session"
 
@@ -21,6 +22,11 @@ const GUARDED = [
   { method: "PATCH", path: "/stacks/abc123" },
   { method: "DELETE", path: "/stacks/abc123" },
 ] as const
+
+// `clearMocks` does not restore a spy.
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe("the auth handler", () => {
   it("is mounted, and answers a session request from a browser with no cookie", async () => {
@@ -140,6 +146,20 @@ describe("the write rate limit on POST /configs", () => {
       WORKER_EXPOSED_HEADERS
     )
   })
+
+  // Spied rather than spent: the limiter's window is the wall clock's minute.
+  it("spends no allowance on a read, and one on a write", async () => {
+    const ip = "203.0.113.40"
+    const limit = vi.spyOn(env.CONFIG_WRITES, "limit")
+
+    await SELF.fetch(`${BASE}/configs`, {
+      headers: { origin: WEB_ORIGIN, "cf-connecting-ip": ip },
+    })
+    expect(limit).not.toHaveBeenCalled()
+
+    await post(ip)
+    expect(limit).toHaveBeenCalledOnce()
+  })
 })
 
 const call = (cookie: string, path: string, init: RequestInit = {}) =>
@@ -243,6 +263,24 @@ describe("a person's own stacks", () => {
       (await call(cookie, "/stacks/never-existed", { method: "DELETE" })).status
     ).toBe(204)
   })
+
+  it("saves a name without the spaces around it", async () => {
+    const { cookie } = await seedSession(env)
+
+    await save(cookie, "  padded  ")
+
+    expect(await listNames(cookie)).toEqual(["padded"])
+  })
+
+  // The refusal beside the case above: nothing is left once trimmed.
+  it("refuses a name that is only spaces", async () => {
+    const { cookie } = await seedSession(env)
+
+    const saved = await save(cookie, "   ")
+
+    expect(saved.status).toBe(400)
+    expect(await listNames(cookie)).toEqual([])
+  })
 })
 
 describe("one person's stacks are nobody else's", () => {
@@ -270,6 +308,21 @@ describe("one person's stacks are nobody else's", () => {
     // Don't confirm another person's stack exists.
     expect(attempt.status).toBe(404)
     expect(await listNames(mine.cookie)).toEqual(["mine"])
+  })
+
+  // Against the api-mocks constant, so its mirror of this body cannot drift.
+  it("says only that it found nothing when somebody else renames one", async () => {
+    const mine = await seedSession(env)
+    const theirs = await seedSession(env)
+    const saved = await save(mine.cookie, "mine")
+    const { id } = await saved.json<{ id: string }>()
+
+    const attempt = await call(theirs.cookie, `/stacks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: "theirs now" }),
+    })
+
+    expect(await attempt.json()).toStrictEqual(NO_STACK_BODY)
   })
 
   it("leaves the row where it is when somebody else deletes it", async () => {

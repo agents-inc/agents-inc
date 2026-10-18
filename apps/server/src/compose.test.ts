@@ -1,16 +1,24 @@
 import { SELF, env } from "cloudflare:test"
 import {
+  COMPOSE_FAILED_BODY,
   COMPOSE_TOO_LONG_BODY,
+  COMPOSE_TOO_MANY_BODY,
   UNAUTHORIZED_BODY,
 } from "@workspace/api-mocks/fixtures"
 import { CATALOG } from "@workspace/matrix"
 import { http, HttpResponse } from "msw"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { upstreamMock } from "../vitest.setup"
 import { composeRoute } from "./compose"
 import { seedSession } from "./db/seed-session"
+import { app } from "./index"
 import { listStacksRoute } from "./stacks"
+
+// `clearMocks` does not restore a spy, and some cases replace console or a binding.
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 // The model is answered by msw: a real call would cost money and be
 // non-deterministic.
@@ -45,20 +53,27 @@ describe("who may ask", () => {
 
 const MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 
+type Proposal = { skillIds: string[]; reason: string }
+
+/** The model's reply; the SDK reads the proposal from its first text block. */
+const modelReply = (content: readonly { type: "text"; text: string }[]) =>
+  HttpResponse.json({
+    id: "msg_test",
+    type: "message",
+    role: "assistant",
+    model: "claude-opus-5",
+    content,
+    stop_reason: "end_turn",
+    stop_sequence: null,
+    usage: { input_tokens: 1, output_tokens: 1 },
+  })
+
+const proposing = (proposal: Proposal) =>
+  modelReply([{ type: "text", text: JSON.stringify(proposal) }])
+
 // A spy, so "never asked" is a call count. msw rejects unhandled requests.
-const answerWith = (proposal: { skillIds: string[]; reason: string }) => {
-  const model = vi.fn(() =>
-    HttpResponse.json({
-      id: "msg_test",
-      type: "message",
-      role: "assistant",
-      model: "claude-opus-5",
-      content: [{ type: "text", text: JSON.stringify(proposal) }],
-      stop_reason: "end_turn",
-      stop_sequence: null,
-      usage: { input_tokens: 1, output_tokens: 1 },
-    })
-  )
+const answerWith = (proposal: Proposal) => {
+  const model = vi.fn(() => proposing(proposal))
 
   upstreamMock.use(http.post(MESSAGES_URL, model))
 
@@ -78,6 +93,7 @@ const signedIn = (cookie: string, sentence: string) =>
 
 // Written out rather than imported, so moving the cap reddens this.
 const PAST_THE_CAP = "x".repeat(601)
+const AT_THE_CAP = "x".repeat(600)
 
 const COMPOSE_LIMIT = 10
 
@@ -129,6 +145,142 @@ describe("what may be asked", () => {
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: "empty" })
     expect(model).not.toHaveBeenCalled()
+  })
+
+  // The control for the length refusal: the cap itself is allowed.
+  it("takes a sentence exactly as long as the cap", async () => {
+    const { cookie } = await seedSession(env)
+    const model = answerWith({ skillIds: [], reason: "because" })
+
+    const response = await signedIn(cookie, AT_THE_CAP)
+
+    expect(response.status).toBe(200)
+    expect(model).toHaveBeenCalledOnce()
+  })
+
+  // The binding is stubbed: its window is the wall clock's minute, so spending
+  // it for real fails whenever the requests straddle a minute boundary.
+  it("says the allowance is spent in the body the editor reads", async () => {
+    const { cookie } = await seedSession(env)
+    const model = answerWith({ skillIds: [], reason: "because" })
+    vi.spyOn(env.COMPOSE_CALLS, "limit").mockResolvedValueOnce({
+      success: false,
+    })
+
+    const response = await signedIn(cookie, "a react app")
+
+    expect(response.status).toBe(429)
+    expect(await response.json()).toStrictEqual(COMPOSE_TOO_MANY_BODY)
+    expect(model).not.toHaveBeenCalled()
+  })
+})
+
+// The format the prompt itself states: one `id — name: description` per line,
+// sorted, so the cached prefix is byte-identical between calls.
+const CATALOGUE_AS_PROMPTED = Object.values(CATALOG.skillsById)
+  .map((skill) => `${skill.id} — ${skill.displayName}: ${skill.description}`)
+  .sort()
+  .join("\n")
+
+const GATEWAY_URL =
+  "https://gateway.ai.cloudflare.test/v1/account/gateway/anthropic"
+
+describe("what the model is asked", () => {
+  const recordAsking = () => {
+    const asked: unknown[] = []
+    upstreamMock.use(
+      http.post(MESSAGES_URL, async ({ request }) => {
+        asked.push(await request.json())
+        return proposing({ skillIds: [], reason: "because" })
+      })
+    )
+    return asked
+  }
+
+  it("sends the whole catalogue as a cached prefix and the trimmed sentence as the message", async () => {
+    const { cookie } = await seedSession(env)
+    const asked = recordAsking()
+
+    await signedIn(cookie, "  a react app  ")
+
+    expect(asked).toStrictEqual([
+      expect.objectContaining({
+        model: "claude-opus-5",
+        system: [
+          {
+            type: "text",
+            text: expect.stringContaining(CATALOGUE_AS_PROMPTED) as string,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        messages: [{ role: "user", content: "a react app" }],
+      }),
+    ])
+  })
+
+  // Bindings handed in directly: the suite's own leave the gateway unset.
+  it("asks through the AI Gateway when one is configured", async () => {
+    const { cookie } = await seedSession(env)
+    const gateway = vi.fn(() => proposing({ skillIds: [], reason: "because" }))
+    upstreamMock.use(http.post(`${GATEWAY_URL}/v1/messages`, gateway))
+
+    const response = await app.request(
+      `${BASE}/compose`,
+      {
+        method: "POST",
+        headers: {
+          origin: WEB_ORIGIN,
+          "content-type": "application/json",
+          cookie,
+        },
+        body: JSON.stringify({ sentence: "a react app" }),
+      },
+      { ...env, AI_GATEWAY_URL: GATEWAY_URL }
+    )
+
+    expect(response.status).toBe(200)
+    expect(gateway).toHaveBeenCalledOnce()
+  })
+})
+
+describe("when the model does not answer usefully", () => {
+  it("answers 502 when the reply holds no answer at all", async () => {
+    const { cookie } = await seedSession(env)
+    upstreamMock.use(http.post(MESSAGES_URL, () => modelReply([])))
+
+    const response = await signedIn(cookie, "a react app")
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toStrictEqual({ error: "unparseable" })
+  })
+
+  // The upstream message is logged, never returned: it can carry account details.
+  it("answers 502, and logs why, when the call itself fails", async () => {
+    const { cookie } = await seedSession(env)
+    upstreamMock.use(
+      http.post(MESSAGES_URL, () =>
+        HttpResponse.json(
+          {
+            type: "error",
+            error: {
+              type: "invalid_request_error",
+              message: "the request was malformed",
+            },
+          },
+          { status: 400 }
+        )
+      )
+    )
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const response = await signedIn(cookie, "a react app")
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toStrictEqual(COMPOSE_FAILED_BODY)
+    expect(logged).toHaveBeenCalledWith({
+      event: "compose_failure",
+      message: expect.stringContaining("the request was malformed") as string,
+    })
   })
 })
 
