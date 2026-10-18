@@ -187,6 +187,9 @@ function renderArray(
   entries: readonly ArrayEntry[],
   position: LinePosition
 ): string {
+  // Breaking it would print `[` and `]` on two lines; `line` moves it below its prefix instead.
+  if (entries.length === 0) return EMPTY_ARRAY
+
   const flat = flatArray(entries)
   if (flat !== undefined && fits(flat, position)) return flat
 
