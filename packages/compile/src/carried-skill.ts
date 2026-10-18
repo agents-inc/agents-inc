@@ -86,11 +86,12 @@ const ELLIPSIS = "…"
 function shortLabel(description: string): string {
   if (description.length <= CLI_DESCRIPTION_MAX_LENGTH) return description
 
-  const room = description.slice(
-    0,
-    CLI_DESCRIPTION_MAX_LENGTH - ELLIPSIS.length
-  )
-  return `${toLastWholeWord(room)}${ELLIPSIS}`
+  const roomLength = CLI_DESCRIPTION_MAX_LENGTH - ELLIPSIS.length
+  const room = description.slice(0, roomLength)
+  // A break right after the room means its last word is whole and fits.
+  const endsOnAWord = description[roomLength] === " "
+
+  return `${endsOnAWord ? room.trimEnd() : toLastWholeWord(room)}${ELLIPSIS}`
 }
 
 function toLastWholeWord(text: string): string {
