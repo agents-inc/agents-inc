@@ -31,7 +31,6 @@ import {
 
 import type { IncomingRequest, MockedAnswer } from "./answer"
 
-
 const jsonOf = (answer: MockedAnswer): unknown => {
   if (!answer.served) throw new Error(`Not served: ${answer.reason}`)
   return JSON.parse(new TextDecoder().decode(answer.body))
@@ -220,6 +219,44 @@ describe("what a node:http server hands these handlers", () => {
   // `new Request` refuses a GET with a body, and a server reads an empty one for every GET.
   it("gives a GET no body, whatever arrived with it", () => {
     expect(workerRequestFrom(arrived(), "left over").body).toBeNull()
+  })
+
+  it("gives a HEAD no body either", () => {
+    expect(
+      workerRequestFrom(arrived({ method: "HEAD" }), "left over").body
+    ).toBeNull()
+  })
+
+  // `new Request` would otherwise invent a `text/plain` content type for the empty string.
+  it("gives a request that arrived with no body none", () => {
+    const request = workerRequestFrom(arrived({ method: "POST" }))
+
+    expect(request.body).toBeNull()
+    expect(request.headers.get("content-type")).toBeNull()
+  })
+
+  it("reads a request that arrived with no method as a GET", () => {
+    expect(workerRequestFrom(arrived({ method: undefined })).method).toBe("GET")
+  })
+
+  // `new Request` keeps both, and neither describes the rebuilt request.
+  it("drops the keep-alive and transfer-encoding the hop carried", () => {
+    const request = workerRequestFrom(
+      arrived({
+        headers: { "keep-alive": "timeout=5", "transfer-encoding": "chunked" },
+      })
+    )
+
+    expect(request.headers.get("keep-alive")).toBeNull()
+    expect(request.headers.get("transfer-encoding")).toBeNull()
+  })
+
+  it("joins a header that arrived as a list into one line, as HTTP does", () => {
+    const request = workerRequestFrom(
+      arrived({ headers: { accept: ["text/html", "application/json"] } })
+    )
+
+    expect(request.headers.get("accept")).toBe("text/html, application/json")
   })
 })
 
