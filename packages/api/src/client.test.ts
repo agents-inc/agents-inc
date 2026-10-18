@@ -134,6 +134,14 @@ describe("retryAfterSeconds", () => {
     expect(retryAfterSeconds(rateLimited("60"))).toBe(60)
   })
 
+  it("reads a window of any number of digits", () => {
+    const windows = ["5", "120", "3600"]
+
+    expect(
+      windows.map((value) => retryAfterSeconds(rateLimited(value)))
+    ).toStrictEqual([5, 120, 3600])
+  })
+
   it("says nothing when the refusal says nothing", () => {
     expect(retryAfterSeconds(rateLimited())).toBeNull()
   })
