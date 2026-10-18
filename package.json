@@ -30,7 +30,7 @@
       "prettier --write"
     ],
     "packages/vitest-config/**/*.{ts,tsx}": "prettier --write",
-    "*.{js,json,yaml,yml,md,mdx}": "prettier --write"
+    "*.{js,mjs,cjs,json,yaml,yml,md,mdx}": "prettier --write"
   },
   "devDependencies": {
     "@stryker-mutator/core": "10.0.0",
