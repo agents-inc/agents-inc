@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "packages/cli/vitest.mutation.config.ts",
+    "related": false
+  },
+  "checkers": ["typescript"],
+  "tsconfigFile": "packages/cli/tsconfig.json",
+  "buildCommand": "bun run --cwd packages/cli build",
+  "mutate": [
+    "packages/cli/src/**/*.{ts,tsx}",
+    "!packages/cli/src/**/*.test.{ts,tsx}",
+    "!packages/cli/src/**/__tests__/**",
+    "!packages/cli/src/**/__mocks__/**",
+    "!packages/cli/src/cli/lib/testing/**",
+    "!packages/cli/src/cli/types/generated/**",
+    "!packages/cli/src/cli/lib/configuration/default-stacks.ts",
+    "!packages/cli/src/cli/lib/configuration/skill-audit.ts",
+    "!packages/cli/src/cli/lib/configuration/default-rules.ts"
+  ],
+  "disableTypeChecks": false,
+  "ignorePatterns": [
+    "/.claude",
+    "/.agents-inc",
+    "/reports",
+    ".turbo",
+    ".wrangler",
+    ".astro",
+    "*.tsbuildinfo",
+    "/packages/cli/dist",
+    "/packages/ui/storybook-static",
+    "/apps/www/dist",
+    "/apps/editor/dist",
+    "/apps/editor/dist-test",
+    "/apps/editor/screenshots",
+    "/apps/editor/playwright-report"
+  ],
+  "ignoreStatic": true,
+  "concurrency": 6,
+  "dryRunTimeoutMinutes": 30,
+  "timeoutMS": 30000,
+  "incremental": true,
+  "incrementalFile": "reports/stryker-incremental.cli.json",
+  "reporters": ["clear-text", "progress-append-only", "html", "json"],
+  "clearTextReporter": {
+    "reportTests": false
+  },
+  "cleanTempDir": "always"
+}

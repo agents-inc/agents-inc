@@ -91,3 +91,7 @@ todo/plans/CLI-729-skill-olympics/
 
 # Bundle written by packages/cli/scripts/handrun.mjs beside the e2e helpers.
 packages/cli/e2e/helpers/handrun.gen.mjs
+
+# StrykerJS (mutation testing)
+.stryker-tmp/
+/reports/

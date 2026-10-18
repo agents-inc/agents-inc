@@ -20,7 +20,8 @@
     "//deps:dead": "knip across every workspace. Not a gate: its output is read by hand. Tuning lives in knip.jsonc.",
     "deps:dead": "knip",
     "test:e2e": "turbo test:e2e",
-    "test": "turbo test"
+    "test": "turbo test",
+    "mutation": "stryker run"
   },
   "//lint-staged": "ESLint (config resolved per file) then Prettier on staged files. Patterns are disjoint because lint-staged runs them concurrently; packages/vitest-config has no eslint config, so it gets formatting only.",
   "lint-staged": {
@@ -32,6 +33,9 @@
     "*.{js,json,yaml,yml,md,mdx}": "prettier --write"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/typescript-checker": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@workspace/prettier-config": "workspace:*",
     "husky": "^9.1.7",
     "knip": "^6.32.0",

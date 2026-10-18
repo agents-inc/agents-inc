@@ -5,6 +5,6 @@
     "lib": ["ES2022", "DOM"]
   },
   // In a tsconfig so type-aware ESLint can parse it.
-  "include": ["src", "vitest.config.ts"],
+  "include": ["src", "vitest.config.ts", "vitest.mutation.config.ts"],
   "exclude": ["node_modules"]
 }

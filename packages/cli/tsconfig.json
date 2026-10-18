@@ -13,6 +13,9 @@
     "src/**/*",
     "tsup.config.ts",
     "vitest.config.ts",
+    "vitest.mutation.config.ts",
+    "vitest.loadtime.config.ts",
+    "vitest.loadtime.preload.setup.ts",
     "vitest.global-setup.ts",
     "vitest.setup.ts"
   ]

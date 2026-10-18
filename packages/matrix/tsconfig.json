@@ -7,6 +7,11 @@
     }
   },
   // vitest.config.ts is listed so type-aware ESLint can parse it.
-  "include": ["src", "scripts", "vitest.config.ts"],
+  "include": [
+    "src",
+    "scripts",
+    "vitest.config.ts",
+    "vitest.mutation.config.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

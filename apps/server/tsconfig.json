@@ -11,6 +11,7 @@
     "e2e",
     "worker-configuration.d.ts",
     "vitest.config.ts",
+    "vitest.mutation.config.ts",
     "vitest.e2e.config.ts",
     "vitest.setup.ts",
     "drizzle.config.ts"
