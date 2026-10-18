@@ -15,6 +15,16 @@ export function renderConfigTsWithoutDefaultExport(config: Record<string, unknow
   return `const config = ${JSON.stringify(config, null, 2)};\n`;
 }
 
+/** Exports a named binding and no default, so the loader names the missing default export. */
+export function renderConfigTsWithNamedExportOnly(config: Record<string, unknown>): string {
+  return `export const config = ${JSON.stringify(config, null, 2)};\n`;
+}
+
+/** Loads and has a default export, but it is a string rather than a configuration object. */
+export function renderConfigTsExportingAString(): string {
+  return 'export default "just a string";\n';
+}
+
 /**
  * Loads, but `skills` is a string, so the refusal is the schema's. `marketplace` asks whether a
  * settings-only reader still takes it from a file the loader refuses.

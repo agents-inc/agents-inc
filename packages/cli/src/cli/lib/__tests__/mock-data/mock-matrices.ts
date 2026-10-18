@@ -165,6 +165,20 @@ export const REACT_ZUSTAND_HONO_WEB_API_DOMAINS_MATRIX = createMockMatrix(
   },
 );
 
+/** The same, with client state open to several skills, so a held row there never fills it. */
+export const REACT_ZUSTAND_HONO_OPEN_CLIENT_STATE_MATRIX = createMockMatrix(
+  SKILLS.react,
+  SKILLS.zustand,
+  SKILLS.hono,
+  {
+    categories: buildCategoryMap({
+      "web-framework": TEST_CATEGORIES.framework,
+      "web-client-state": { ...TEST_CATEGORIES.clientState, exclusive: false },
+      "api-api": { ...TEST_CATEGORIES.api, domain: "api" },
+    }),
+  },
+);
+
 /** React requires Zustand here, so a decoded shared config with React alone must be refused. */
 export const REACT_REQUIRES_ZUSTAND_WEB_API_DOMAINS_MATRIX = createMockMatrix(
   REACT_REQUIRES_ZUSTAND,

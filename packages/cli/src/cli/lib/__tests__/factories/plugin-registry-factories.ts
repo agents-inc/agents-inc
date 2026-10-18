@@ -9,6 +9,11 @@ export function buildUserPluginInstallation(installPath: string, overrides: Reco
   return { scope: "user" as const, installPath, ...RECORD_DEFAULTS, ...overrides };
 }
 
+/** A record `claude plugin install --scope local` writes: no project named, as for a user one. */
+export function buildLocalPluginInstallation(installPath: string, overrides: RecordOverrides = {}) {
+  return { scope: "local" as const, installPath, ...RECORD_DEFAULTS, ...overrides };
+}
+
 /** A record `claude plugin install --scope project` writes, filed under the project it names. */
 export function buildProjectPluginInstallation(
   installPath: string,

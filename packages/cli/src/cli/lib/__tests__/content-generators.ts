@@ -33,6 +33,8 @@ export function renderAgentYaml(
     hooks?: Record<string, unknown>;
     experimental?: Record<string, unknown>;
     outputFormat?: string;
+    domain?: string;
+    custom?: boolean;
   },
 ): string {
   const desc = description ?? `Test ${name} agent`;
@@ -54,6 +56,8 @@ export function renderAgentYaml(
     ...(options?.hooks ? [`hooks: ${JSON.stringify(options.hooks)}`] : []),
     ...(options?.experimental ? [`experimental: ${JSON.stringify(options.experimental)}`] : []),
     ...(options?.outputFormat ? [`outputFormat: ${options.outputFormat}`] : []),
+    ...(options?.domain ? [`domain: ${options.domain}`] : []),
+    ...(options?.custom !== undefined ? [`custom: ${String(options.custom)}`] : []),
   ].join("\n");
 }
 

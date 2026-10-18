@@ -39,6 +39,7 @@ export {
 export {
   renderUnparseableConfigTs,
   renderConfigTsWithoutDefaultExport,
+  renderConfigTsWithNamedExportOnly,
   renderSchemaViolatingConfigTs,
 } from "./unloadable-config-factories.js";
 
@@ -76,3 +77,5 @@ export {
 } from "./operation-result-factories.js";
 
 export { buildRecompileAgentsResult } from "./recompile-factories.js";
+
+export { buildGateReport } from "./gate-report-factories.js";
