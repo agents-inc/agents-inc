@@ -85,11 +85,15 @@ describe("uninstall command", () => {
         selectedDomains: ["web"],
       }),
     );
+    await writeAgentFile(projectDir, E2E_AGENT["web-developer"].name, { frontmatter: true });
 
     // Everything to remove exists first, or the post-conditions pass on a no-op.
     const configDir = sourceFolderIn(projectDir);
     expect(await directoryExists(skillsPath(projectDir))).toBe(true);
     expect(await directoryExists(agentsPath(projectDir))).toBe(true);
+    expect(
+      await fileExists(path.join(agentsPath(projectDir), `${E2E_AGENT["web-developer"].name}.md`)),
+    ).toBe(true);
     expect(await directoryExists(configDir)).toBe(true);
 
     const { exitCode, stdout } = await CLI.run(["uninstall", "--yes"], { dir: projectDir });

@@ -69,7 +69,7 @@ import type { SkillScope } from "../types/config";
 /** Paths and names, never display strings, so the preview and the removal read one value. */
 type RemovalEntry =
   | { kind: "plugins"; pluginsDir: string; names: string[] }
-  | { kind: "skills"; skillsDir: string }
+  | { kind: "skills"; skillsDir: string; skillNames: string[] }
   | { kind: "agents"; agentsDir: string; agentNames: string[]; codec: AgentCodec }
   | { kind: "config"; sourceDir: string; fileNames: string[] };
 
@@ -107,24 +107,28 @@ function pluginsEntry(target: UninstallTarget): PluginRemoval[] {
   return [{ kind: "plugins", pluginsDir: target.pluginsDir, names: [...target.cliPluginNames] }];
 }
 
+/** Only those carrying `forkedFrom`, so the plan names no removal the run will not make. */
 function localSkillsEntry(target: UninstallTarget): SkillsRemoval[] {
-  if (!target.hasLocalSkills) return [];
-  return [{ kind: "skills", skillsDir: target.skillsDir }];
+  if (target.cliSkills.length === 0) return [];
+  return [{ kind: "skills", skillsDir: target.skillsDir, skillNames: [...target.cliSkills] }];
 }
 
 function compiledAgentsEntry(target: UninstallTarget): AgentsRemoval[] {
-  if (!target.hasLocalAgents) return [];
-
   const agentNames = identifiableAgents(target);
   if (agentNames.length === 0) return [];
 
   return [{ kind: "agents", agentsDir: target.agentsDir, agentNames, codec: target.agentCodec }];
 }
 
-/** The config's roster first (pre-marker installs carry none), else the provenance-marked files. */
+/**
+ * Only those with a file here, so the plan names no removal the run will not make: the config's
+ * roster first (pre-marker installs carry none), else the provenance-marked files.
+ */
 function identifiableAgents(target: UninstallTarget): string[] {
-  if (target.configuredAgents.length > 0) return target.configuredAgents;
-  return target.markedAgents;
+  if (target.configuredAgents.length === 0) return target.markedAgents;
+
+  const agentFiles = new Set([...target.markedAgents, ...target.unmarkedAgents]);
+  return target.configuredAgents.filter((name) => agentFiles.has(name));
 }
 
 function configManifestEntries(target: UninstallTarget): ConfigManifestRemoval[] {
@@ -258,7 +262,7 @@ export default class Uninstall extends BaseCommand {
     );
     const plan = buildRemovalPlan(target);
     if (!hasAnythingToRemove(plan)) {
-      this.reportNothingToUninstall();
+      this.reportNothingToUninstall(target.userSkills);
       return;
     }
 
@@ -279,7 +283,8 @@ export default class Uninstall extends BaseCommand {
     this.log("");
   }
 
-  private reportNothingToUninstall(): void {
+  private reportNothingToUninstall(userSkills: readonly string[]): void {
+    this.warnUserSkillsKept(userSkills);
     this.warn("Nothing to uninstall.");
     this.log("");
     this.log(notInstalledHere(this.brandingName));
@@ -429,7 +434,7 @@ export default class Uninstall extends BaseCommand {
   }
 
   private async removeLocalFiles(plan: RemovalPlan, target: UninstallTarget): Promise<void> {
-    await this.removePlannedSkills(planEntry(plan, "skills"));
+    await this.removePlannedSkills(planEntry(plan, "skills"), target.userSkills);
     await this.removePlannedAgents(planEntry(plan, "agents"));
 
     for (const statement of plan.kept) {
@@ -497,19 +502,29 @@ export default class Uninstall extends BaseCommand {
     }
   }
 
-  private async removePlannedSkills(entry: SkillsRemoval | undefined): Promise<void> {
-    if (!entry) return;
-
-    const result = await removeMatchingSkills(
-      entry,
-      (dirName) => this.log(`  Uninstalled skill '${dirName}'`),
-      (dirName) => this.warn(`Skipping '${dirName}': not created by ${this.brandingName} CLI`),
-    );
-    if (result.removedCount === 0) return;
+  /** The user's skills are named whether or not the plan removes any skill beside them. */
+  private async removePlannedSkills(
+    entry: SkillsRemoval | undefined,
+    userSkills: readonly string[],
+  ): Promise<void> {
+    const removedNames = await this.removeSkillsNamedBy(entry);
+    this.warnUserSkillsKept(userSkills);
+    if (removedNames.length === 0) return;
 
     this.logSuccess(
-      `Removed ${result.removedCount} CLI-installed ${result.removedCount === 1 ? "skill" : "skills"}`,
+      `Removed ${removedNames.length} CLI-installed ${removedNames.length === 1 ? "skill" : "skills"}`,
     );
+  }
+
+  private async removeSkillsNamedBy(entry: SkillsRemoval | undefined): Promise<string[]> {
+    if (entry === undefined) return [];
+    return removeMatchingSkills(entry, (dirName) => this.log(`  Uninstalled skill '${dirName}'`));
+  }
+
+  private warnUserSkillsKept(userSkills: readonly string[]): void {
+    for (const dirName of userSkills) {
+      this.warn(`Skipping '${dirName}': not created by ${this.brandingName} CLI`);
+    }
   }
 
   private async removePlannedAgents(entry: AgentsRemoval | undefined): Promise<void> {
@@ -532,8 +547,10 @@ export type UninstallTarget = {
   pluginNames: string[];
   /** Only those this CLI installed, matched against config skills. */
   cliPluginNames: string[];
-  hasLocalSkills: boolean;
-  hasLocalAgents: boolean;
+  /** Carrying `forkedFrom`: this CLI installed them. */
+  cliSkills: string[];
+  /** Without it: the user's, never removed. */
+  userSkills: string[];
   hasClaudeDir: boolean;
   pluginsDir: string;
   skillsDir: string;
@@ -566,18 +583,9 @@ type GlobalPropagationData = {
   provider: Provider;
 };
 
-type SkillRemovalResult = {
-  removedCount: number;
-  skippedCount: number;
-  removedNames: string[];
-  skippedNames: string[];
-  dirCleaned: boolean;
-};
-
 type AgentRemovalResult = {
   removedCount: number;
   removedNames: string[];
-  dirCleaned: boolean;
 };
 
 type UninstallPluginsResult = {
@@ -685,19 +693,17 @@ async function detectUninstallTarget(
   const claudeDir = path.join(projectDir, CLAUDE_DIR);
   const provider = providerInUse(projectDir);
 
-  const [hasLocalSkills, hasLocalAgents, hasClaudeDir, sourceFolder, agentProvenance] =
-    await Promise.all([
-      directoryExists(skillsDir),
-      directoryExists(agentsDir),
-      directoryExists(claudeDir),
-      readSourceFolder(
-        sourceFolderInUse(projectDir, provider),
-        projectDir,
-        provider,
-        onConfigLoadFailed,
-      ),
-      splitAgentsByProvenance(agentsDir, agentCodec(provider)),
-    ]);
+  const [skillProvenance, hasClaudeDir, sourceFolder, agentProvenance] = await Promise.all([
+    classifySkillDirs(skillsDir),
+    directoryExists(claudeDir),
+    readSourceFolder(
+      sourceFolderInUse(projectDir, provider),
+      projectDir,
+      provider,
+      onConfigLoadFailed,
+    ),
+    splitAgentsByProvenance(agentsDir, agentCodec(provider)),
+  ]);
 
   const { config } = sourceFolder;
 
@@ -719,8 +725,8 @@ async function detectUninstallTarget(
     hasPlugins: cliPluginNames.length > 0,
     pluginNames,
     cliPluginNames,
-    hasLocalSkills,
-    hasLocalAgents,
+    cliSkills: skillProvenance.cliSkills,
+    userSkills: skillProvenance.userSkills,
     hasClaudeDir,
     pluginsDir,
     skillsDir,
@@ -750,32 +756,10 @@ function shouldRemoveSkill(forkedFrom: { source?: string } | null): boolean {
   return forkedFrom !== null;
 }
 
-async function removeMatchingSkills(
-  entry: SkillsRemoval,
-  onRemoved?: (dirName: string) => void,
-  onSkipped?: (dirName: string) => void,
-): Promise<SkillRemovalResult> {
-  const classified = await classifySkillDirs(entry.skillsDir);
-  const removedNames = await removeClassifiedSkills(
-    classified.toRemove,
-    entry.skillsDir,
-    onRemoved,
-  );
-  classified.toSkip.forEach((name) => onSkipped?.(name));
-  const dirCleaned = await cleanupSkillsDir(entry.skillsDir, classified.toSkip.length === 0);
-
-  return {
-    removedCount: removedNames.length,
-    skippedCount: classified.toSkip.length,
-    removedNames,
-    skippedNames: classified.toSkip,
-    dirCleaned,
-  };
-}
-
+/** Read before the plan is built, so the plan and the removal read one classification. */
 async function classifySkillDirs(
   skillsDir: string,
-): Promise<{ toRemove: string[]; toSkip: string[] }> {
+): Promise<{ cliSkills: string[]; userSkills: string[] }> {
   const dirNames = await listDirectories(skillsDir);
   const entries = await Promise.all(
     dirNames.map(async (name) => ({
@@ -783,25 +767,23 @@ async function classifySkillDirs(
       forkedFrom: await readForkedFromMetadata(path.join(skillsDir, name)),
     })),
   );
-  const [removable, skippable] = partition(entries, (entry) => shouldRemoveSkill(entry.forkedFrom));
-  return { toRemove: removable.map((e) => e.name), toSkip: skippable.map((e) => e.name) };
+  const [removable, kept] = partition(entries, (entry) => shouldRemoveSkill(entry.forkedFrom));
+  return { cliSkills: removable.map((e) => e.name), userSkills: kept.map((e) => e.name) };
 }
 
-async function removeClassifiedSkills(
-  names: string[],
-  skillsDir: string,
-  onRemoved?: (name: string) => void,
+/** The planned skills still there: the count is what the run removed, not what it planned. */
+async function removeMatchingSkills(
+  entry: SkillsRemoval,
+  onRemoved: (dirName: string) => void,
 ): Promise<string[]> {
-  for (const name of names) {
-    await remove(path.join(skillsDir, name));
-    onRemoved?.(name);
-  }
-  return names;
-}
+  const present = await listDirectories(entry.skillsDir);
+  const removedNames = present.filter((name) => entry.skillNames.includes(name));
 
-async function cleanupSkillsDir(dir: string, allRemoved: boolean): Promise<boolean> {
-  if (!allRemoved) return false;
-  return removeDirIfEmpty(dir);
+  for (const name of removedNames) {
+    await remove(path.join(entry.skillsDir, name));
+    onRemoved(name);
+  }
+  return removedNames;
 }
 
 async function removeMatchingAgents(
@@ -818,12 +800,9 @@ async function removeMatchingAgents(
     onRemoved?.(agentName);
   }
 
-  const dirCleaned = await removeDirIfEmpty(entry.agentsDir);
-
   return {
     removedCount: removedNames.length,
     removedNames,
-    dirCleaned,
   };
 }
 
@@ -924,9 +903,16 @@ async function removeConfigManifest(
 
 /** Directories are not plan entries: each goes only once nothing of the user's is left in it. */
 async function cleanupEmptyDirs(
-  target: Pick<UninstallTarget, "hasClaudeDir" | "claudeDir" | "sourceRoot" | "sourceFolder">,
+  target: Pick<
+    UninstallTarget,
+    "skillsDir" | "agentsDir" | "hasClaudeDir" | "claudeDir" | "sourceRoot" | "sourceFolder"
+  >,
   manifestEntries: readonly ConfigManifestRemoval[],
 ): Promise<CleanupResult> {
+  // Whether or not the plan named a removal there: a folder holding nothing is no one's.
+  await removeDirIfEmpty(target.skillsDir);
+  await removeDirIfEmpty(target.agentsDir);
+
   const sourceFolder = await cleanupSourceFolder(
     target.sourceFolder,
     manifestEntries.find((entry) => entry.sourceDir === target.sourceFolder.dir),

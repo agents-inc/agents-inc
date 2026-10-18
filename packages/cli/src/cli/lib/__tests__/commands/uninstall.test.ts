@@ -2,8 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { TEST_SOURCE_URL } from "../test-constants.js";
 import path from "path";
 import fs from "fs";
-import { mkdir, writeFile, readFile } from "fs/promises";
-import { missingArgsRefusal, parseRefusal, runCliCommand } from "../helpers/cli-runner.js";
+import { chmod, mkdir, writeFile, readFile } from "fs/promises";
+import {
+  CLI_ROOT,
+  missingArgsRefusal,
+  parseRefusal,
+  runCliCommand,
+} from "../helpers/cli-runner.js";
+import { captureOutput } from "@oclif/test";
 import { setupIsolatedHome } from "../helpers/isolated-home.js";
 import { fileExists, directoryExists } from "../test-fs-utils";
 import { writeTestSkill, writeTestPluginManifest } from "../helpers/disk-writers.js";
@@ -25,7 +31,12 @@ import { getCliInstalledPluginKeys } from "../../../commands/uninstall";
 import { hostAt } from "../../hosts/host-for.js";
 import { stampProvenanceMarker } from "../../agents/agent-provenance.js";
 import { renderAgentMd } from "../content-generators.js";
-import { writeTestTsConfig } from "../helpers/config-io.js";
+import { writeRawTestConfig, writeTestTsConfig } from "../helpers/config-io.js";
+import { compactCliOutput, flattenCliOutput } from "../helpers/flatten-cli-output.js";
+import { standAtTerminal } from "../helpers/terminal-input.js";
+import { renderUnparseableConfigTs } from "../factories/unloadable-config-factories.js";
+import { delay, RENDER_DELAY_MS } from "../test-constants";
+import { EXIT_CODES } from "../../exit-codes";
 import { firstElement } from "../helpers/element-at.js";
 
 vi.mock("../../hosts/host-for.js", async () => {
@@ -985,6 +996,794 @@ describe("uninstall command", () => {
 
       expect(stdout).toContain("Removed 1 CLI-installed skill");
       expect(await directoryExists(path.join(globalSkillsDir, "web-framework-react"))).toBe(false);
+    });
+  });
+});
+
+/** What a person reads from uninstall, word for word, and what the run left behind. */
+describe("what uninstall says", () => {
+  let tempDir: string;
+  let projectDir: string;
+  let fakeHome: string;
+  let cleanup: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ tempDir, projectDir, fakeHome, cleanup } =
+      await setupIsolatedHome("cc-uninstall-says-test-"));
+    initializeMatrix(createMockMatrix(SKILLS.react, SKILLS.hono));
+  });
+
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  const HEADER = ["", "Agents Inc. Uninstall", ""];
+  const ENDING = ["", "Agents Inc. has been uninstalled.", "", "✓ Uninstall complete!", "", ""];
+
+  /** A CLI skill and agent, a user's skill and agent beside them, and the config naming them. */
+  async function installEjectedProject(): Promise<{ skillsDir: string; agentsDir: string }> {
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+    const skillsDir = await createProjectSkillsDir(projectDir);
+    await createCLISkill(skillsDir, "web-framework-react");
+    await createUserSkill(skillsDir, "api-framework-hono");
+    await createAgentFile(projectDir, "web-developer", { compiled: true });
+    await createAgentFile(projectDir, "my-own", { compiled: false });
+    return { skillsDir, agentsDir: path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS) };
+  }
+
+  it("lists the plan, each removal, what it kept and why, then that it is done", async () => {
+    const { skillsDir, agentsDir } = await installEjectedProject();
+    const keptAgents = `Kept 1 agent in ${agentsDir}/ — no agents-inc marker, so this CLI did not compile it.`;
+
+    const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "The following will be removed:",
+        "",
+        "  CLI-managed files:",
+        `    ${skillsDir}/ (matching the marketplace)`,
+        `    ${agentsDir}/ (CLI-compiled)`,
+        "  Config:",
+        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        "",
+        keptAgents,
+        "",
+        "  Uninstalled skill 'web-framework-react'",
+        "✓ Removed 1 CLI-installed skill",
+        "  Uninstalled agent 'web-developer'",
+        "✓ Removed 1 compiled agent",
+        keptAgents,
+        "✓ Removed .agents-inc/claude/",
+        "✓ Removed .agents-inc/",
+        "Kept .claude/ (contains user content)",
+        ...ENDING,
+      ].join("\n"),
+    );
+    expect(flattenCliOutput(stderr)).toContain(
+      "Warning: Skipping 'api-framework-hono': not created by Agents Inc. CLI",
+    );
+  });
+
+  it("says there is nothing to uninstall, and that nothing changed", async () => {
+    const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "",
+        "Agents Inc. is not installed in this project.",
+        "",
+        "No changes made.",
+        "",
+      ].join("\n"),
+    );
+    expect(flattenCliOutput(stderr)).toBe("Warning: Nothing to uninstall.");
+  });
+
+  it("counts several removals in the plural", async () => {
+    await createProjectConfig(projectDir, {
+      agents: buildAgentConfigs(["web-developer", "api-developer"]),
+    });
+    const skillsDir = await createProjectSkillsDir(projectDir);
+    await createCLISkill(skillsDir, "web-framework-react");
+    await createCLISkill(skillsDir, "api-framework-hono");
+    await createAgentFile(projectDir, "web-developer", { compiled: true });
+    await createAgentFile(projectDir, "api-developer", { compiled: true });
+
+    const { stdout } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(stdout).toContain("✓ Removed 2 CLI-installed skills\n");
+    expect(stdout).toContain("✓ Removed 2 compiled agents\n");
+    expect(stdout).toContain("✓ Removed .claude/\n");
+  });
+
+  it("removes only the active agents the config names, leaving an excluded one's file", async () => {
+    await createProjectConfig(projectDir, {
+      agents: [
+        ...buildAgentConfigs(["web-developer"]),
+        ...buildAgentConfigs(["api-developer"], { excluded: true }),
+      ],
+    });
+    await createAgentFile(projectDir, "web-developer", { compiled: true });
+    const excludedFile = await createAgentFile(projectDir, "api-developer", { compiled: true });
+
+    const { stdout } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(stdout).toContain("✓ Removed 1 compiled agent\n");
+    expect(await fileExists(excludedFile)).toBe(true);
+  });
+
+  it("says nothing of .claude/ when there was none", async () => {
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+
+    const { stdout } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(stdout).not.toContain(".claude/");
+  });
+
+  it("keeps the source folder that holds a file of the user's, saying it removed only the config", async () => {
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+    const sourceFolder = sourceFolderInUse(projectDir, "claude").dir;
+    await writeFile(path.join(sourceFolder, "notes.md"), "mine");
+
+    const { stdout } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(stdout).toContain("✓ Removed CLI config from .agents-inc/claude/\n");
+    expect(stdout).not.toContain("✓ Removed .agents-inc/");
+    expect(stdout).not.toContain("Kept .agents-inc/ (contains user content)");
+  });
+
+  it("keeps a source folder it holds no config in, saying it holds the user's content", async () => {
+    await createAgentFile(projectDir, "web-developer", { compiled: true });
+    const sourceFolder = sourceFolderInUse(projectDir, "claude").dir;
+    await mkdir(sourceFolder, { recursive: true });
+    await writeFile(path.join(sourceFolder, "notes.md"), "mine");
+
+    const { stdout } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(stdout).toContain("Kept .agents-inc/claude/ (contains user content)\n");
+    expect(stdout).not.toContain("Removed CLI config from");
+  });
+
+  it("keeps .agents-inc/ when something of the user's sits beside the provider folder", async () => {
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+    await writeFile(path.join(projectDir, ".agents-inc", "notes.md"), "mine");
+
+    const { stdout } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(stdout).toContain(
+      "✓ Removed .agents-inc/claude/\nKept .agents-inc/ (contains user content)\n",
+    );
+  });
+
+  it("removes the skills it installed where there was no provider folder, keeping no folder it never had", async () => {
+    const skillsDir = await createProjectSkillsDir(projectDir);
+    await createCLISkill(skillsDir, "web-framework-react");
+
+    const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "The following will be removed:",
+        "",
+        "  CLI-managed files:",
+        `    ${skillsDir}/ (matching the marketplace)`,
+        "",
+        "  Uninstalled skill 'web-framework-react'",
+        "✓ Removed 1 CLI-installed skill",
+        "✓ Removed .claude/",
+        ...ENDING,
+      ].join("\n"),
+    );
+  });
+
+  it("keeps a skill and an agent it did not make, and claims to have removed neither", async () => {
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+    const skillsDir = await createProjectSkillsDir(projectDir);
+    await createUserSkill(skillsDir, "api-framework-hono");
+    const agentsDir = path.dirname(
+      await createAgentFile(projectDir, "my-own", { compiled: false }),
+    );
+    const keptAgent = `Kept 1 agent in ${agentsDir}/ — no agents-inc marker, so this CLI did not compile it.`;
+
+    const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "The following will be removed:",
+        "",
+        "  Config:",
+        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        "",
+        keptAgent,
+        "",
+        keptAgent,
+        "✓ Removed .agents-inc/claude/",
+        "✓ Removed .agents-inc/",
+        "Kept .claude/ (contains user content)",
+        ...ENDING,
+      ].join("\n"),
+    );
+    expect(flattenCliOutput(stderr)).toContain(
+      "Warning: Skipping 'api-framework-hono': not created by Agents Inc. CLI",
+    );
+  });
+
+  it("names no agents folder in the plan when the agents the config names have no file there, and tidies the empty one away", async () => {
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+    const agentsDir = path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS);
+    await mkdir(agentsDir, { recursive: true });
+
+    const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "The following will be removed:",
+        "",
+        "  Config:",
+        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        "",
+        "✓ Removed .agents-inc/claude/",
+        "✓ Removed .agents-inc/",
+        "✓ Removed .claude/",
+        ...ENDING,
+      ].join("\n"),
+    );
+    expect(await directoryExists(path.join(projectDir, CLAUDE_DIR))).toBe(false);
+  });
+
+  it("tidies an empty agents folder away with the skills, rather than keeping .claude/ for it", async () => {
+    const skillsDir = await createProjectSkillsDir(projectDir);
+    await createCLISkill(skillsDir, "web-framework-react");
+    await mkdir(path.join(projectDir, CLAUDE_DIR, STANDARD_DIRS.AGENTS));
+
+    const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "The following will be removed:",
+        "",
+        "  CLI-managed files:",
+        `    ${skillsDir}/ (matching the marketplace)`,
+        "",
+        "  Uninstalled skill 'web-framework-react'",
+        "✓ Removed 1 CLI-installed skill",
+        "✓ Removed .claude/",
+        ...ENDING,
+      ].join("\n"),
+    );
+    expect(await directoryExists(path.join(projectDir, CLAUDE_DIR))).toBe(false);
+  });
+
+  it("names no skills folder in the plan when there is no skill in it, and tidies the empty one away", async () => {
+    await createProjectConfig(projectDir);
+    await createProjectSkillsDir(projectDir);
+
+    const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "The following will be removed:",
+        "",
+        "  Config:",
+        `    ${path.join(projectDir, ".agents-inc", "claude", STANDARD_FILES.CONFIG_TS)}`,
+        "",
+        "✓ Removed .agents-inc/claude/",
+        "✓ Removed .agents-inc/",
+        "✓ Removed .claude/",
+        ...ENDING,
+      ].join("\n"),
+    );
+    expect(await directoryExists(path.join(projectDir, CLAUDE_DIR))).toBe(false);
+  });
+
+  it("tidies an empty skills folder away with the agents, rather than keeping .claude/ for it", async () => {
+    const agentsDir = path.dirname(
+      await createAgentFile(projectDir, "web-developer", { compiled: true }),
+    );
+    await createProjectSkillsDir(projectDir);
+
+    const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "The following will be removed:",
+        "",
+        "  CLI-managed files:",
+        `    ${agentsDir}/ (CLI-compiled)`,
+        "",
+        "  Uninstalled agent 'web-developer'",
+        "✓ Removed 1 compiled agent",
+        "✓ Removed .claude/",
+        ...ENDING,
+      ].join("\n"),
+    );
+    expect(await directoryExists(path.join(projectDir, CLAUDE_DIR))).toBe(false);
+  });
+
+  /** The refusal beside "removes the skills it installed where there was no provider folder". */
+  it("says there is nothing to uninstall when the only skill there is the user's, keeping it and saying so", async () => {
+    const skillDir = await createUserSkill(
+      await createProjectSkillsDir(projectDir),
+      "api-framework-hono",
+    );
+    const metadataPath = path.join(skillDir, STANDARD_FILES.METADATA_YAML);
+    const metadataBefore = await readFile(metadataPath, "utf-8");
+
+    const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(error).toBeUndefined();
+    expect(stdout).toBe(
+      [
+        ...HEADER,
+        "",
+        "Agents Inc. is not installed in this project.",
+        "",
+        "No changes made.",
+        "",
+      ].join("\n"),
+    );
+    expect(flattenCliOutput(stderr)).toBe(
+      "Warning: Skipping 'api-framework-hono': not created by Agents Inc. CLI Warning: Nothing to uninstall.",
+    );
+    expect(await readFile(metadataPath, "utf-8")).toBe(metadataBefore);
+  });
+
+  it("refuses without a terminal to confirm at, and removes nothing", async () => {
+    const { skillsDir } = await installEjectedProject();
+
+    const { error } = await runCliCommand(["uninstall"]);
+
+    expect(error?.message).toBe(
+      "Uninstalling removes files, so it has to be confirmed — and there is no terminal here to confirm it at.\nRun 'npx agents-inc uninstall' from a terminal, or 'npx agents-inc uninstall --yes' to remove it without being asked.",
+    );
+    expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+    expect(await directoryExists(path.join(skillsDir, "web-framework-react"))).toBe(true);
+  });
+
+  describe("at a terminal", () => {
+    const terminal = standAtTerminal();
+
+    it("cancels on a no, removing nothing", async () => {
+      const { skillsDir } = await installEjectedProject();
+
+      const run = runCliCommand(["uninstall"]);
+      await delay(RENDER_DELAY_MS);
+      terminal.input.push("n");
+      const { stdout, error } = await run;
+
+      expect(stdout).toContain("\n\nUninstall cancelled\n");
+      expect(error?.oclif?.exit).toBe(EXIT_CODES.CANCELLED);
+      expect(await directoryExists(path.join(skillsDir, "web-framework-react"))).toBe(true);
+    });
+
+    it("removes on a yes", async () => {
+      const { skillsDir } = await installEjectedProject();
+
+      const run = runCliCommand(["uninstall"]);
+      await delay(RENDER_DELAY_MS);
+      terminal.input.push("y");
+      const { stdout, error } = await run;
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain("✓ Uninstall complete!");
+      expect(await directoryExists(path.join(skillsDir, "web-framework-react"))).toBe(false);
+    });
+  });
+
+  it("warns that it could not read the config, and uninstalls what it can still identify", async () => {
+    const configPath = await writeRawTestConfig(projectDir, renderUnparseableConfigTs());
+    await createAgentFile(projectDir, "web-developer", { compiled: true });
+
+    const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(compactCliOutput(stderr)).toContain(
+      compactCliOutput(
+        `Warning: Could not read the project config — plugins and compiled agents it lists may be left behind: Config at '${configPath}' could not be loaded`,
+      ),
+    );
+    expect(stdout).toContain("✓ Removed 1 compiled agent\n");
+  });
+
+  it("warns that it could not update the global registry, and still completes", async () => {
+    await createProjectConfig(projectDir, { agents: buildAgentConfigs(["web-developer"]) });
+    await writeRawTestConfig(fakeHome, renderUnparseableConfigTs());
+
+    const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+
+    expect(flattenCliOutput(stderr)).toContain(
+      "Warning: Could not update the global project registry:",
+    );
+    expect(stdout).toContain("✓ Uninstall complete!");
+  });
+
+  // Root writes through the mode bits, so the failure under test cannot happen there.
+  it.skipIf(process.getuid?.() === 0)(
+    "says local files could not be removed, and why, when the file system refuses",
+    async () => {
+      const { skillsDir } = await installEjectedProject();
+      await chmod(skillsDir, 0o555);
+      try {
+        const { stdout, error } = await runCliCommand(["uninstall", "--yes"]);
+
+        expect(stdout).toContain("\nFailed to remove local files\n");
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      } finally {
+        await chmod(skillsDir, 0o755);
+      }
+    },
+  );
+
+  describe("a global uninstall with projects registered against it", () => {
+    it("updates each registered project it can reach, and names each it cannot", async () => {
+      const gone = path.join(tempDir, "gone");
+      const codexProject = path.join(tempDir, "codex-project");
+      await mkdir(codexProject, { recursive: true });
+      await writeTestTsConfig(
+        codexProject,
+        buildProjectConfig({ name: "codex" }),
+        ".agents-inc/codex",
+      );
+      await writeTestTsConfig(projectDir, buildProjectConfig({ name: "registered" }));
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "global",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          projects: [gone, codexProject, projectDir],
+        }),
+      );
+      process.chdir(fakeHome);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error).toBeUndefined();
+      expect(stdout).toContain(
+        "✓ Updated 1 registered project\nRecompiled agents in 1 registered project, 0 unchanged\n",
+      );
+      expect(compactCliOutput(stderr)).toContain(
+        compactCliOutput(
+          [
+            `Warning: Skipped ${gone}: nothing is installed there any more.`,
+            `Warning: Skipped ${codexProject}: it is another provider's installation.`,
+          ].join(""),
+        ),
+      );
+    });
+
+    it("names a registered project whose config it cannot read, and claims no update", async () => {
+      const unreadable = path.join(tempDir, "unreadable-project");
+      await writeRawTestConfig(unreadable, renderUnparseableConfigTs());
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "global",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          projects: [unreadable],
+        }),
+      );
+      process.chdir(fakeHome);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error).toBeUndefined();
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          `Warning: Could not update registered project at ${unreadable} — its config may still reference the uninstalled global content`,
+        ),
+      );
+      expect(stdout).not.toContain("Updated");
+    });
+
+    it("warns that it could not update the registered projects when their catalogue cannot load, and still uninstalls", async () => {
+      await writeTestTsConfig(projectDir, buildProjectConfig({ name: "registered" }));
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "global",
+          marketplace: path.join(tempDir, "no-such-marketplace"),
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+          projects: [projectDir],
+        }),
+      );
+      process.chdir(fakeHome);
+
+      const { stdout, stderr, error } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(error).toBeUndefined();
+      expect(compactCliOutput(stderr)).toBe(
+        compactCliOutput(
+          `Warning: Could not update registered projects — their configs may still reference the uninstalled global content: Local marketplace not found: '${path.join(tempDir, "no-such-marketplace")}'`,
+        ) +
+          compactCliOutput(
+            "Nothing is at that path, and a local marketplace must be a directory holding skills. Check it for a typo, or name a marketplace that exists: --marketplace github:agents-inc/skills",
+          ),
+      );
+      expect(stdout).toContain("✓ Uninstall complete!");
+    });
+
+    it("says nothing of registered projects when there are none", async () => {
+      await writeTestTsConfig(
+        fakeHome,
+        buildProjectConfig({
+          name: "global",
+          skills: [],
+          agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+        }),
+      );
+      process.chdir(fakeHome);
+
+      const { stdout, stderr } = await runCliCommand(["uninstall", "--yes"]);
+
+      expect(stdout).not.toContain("registered project");
+      expect(stderr).not.toContain("registered project");
+    });
+  });
+});
+
+/**
+ * Plugin removal goes through the host, mocked above for the source modules, so these run the
+ * command from source rather than through `dist/`, which the module mock cannot reach.
+ */
+describe("what uninstall says of plugins", () => {
+  let projectDir: string;
+  let fakeHome: string;
+  let cleanup: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ projectDir, fakeHome, cleanup } = await setupIsolatedHome("cc-uninstall-plugins-test-"));
+    initializeMatrix(createMockMatrix(SKILLS.react, SKILLS.hono));
+  });
+
+  afterEach(async () => {
+    vi.mocked(hostAt(projectDir).listPlugins).mockResolvedValue([]);
+    vi.mocked(hostAt(projectDir).uninstallPlugin).mockResolvedValue("removed");
+    await cleanup();
+  });
+
+  /** A plugin directory per name, each listed by the host as enabled and on disk. */
+  async function installPlugins(names: readonly string[]): Promise<string> {
+    const pluginsDir = path.join(projectDir, CLAUDE_DIR, "plugins");
+    const listed = [];
+    for (const name of names) {
+      const installPath = path.join(pluginsDir, name);
+      await writeTestPluginManifest(installPath, { name, version: "1.0.0" }, { pretty: false });
+      listed.push({ pluginKey: name, installPath, enabled: true });
+    }
+    vi.mocked(hostAt(projectDir).listPlugins).mockResolvedValue(listed);
+    return pluginsDir;
+  }
+
+  async function runUninstall(): Promise<Awaited<ReturnType<typeof captureOutput>>> {
+    const { default: Uninstall } = await import("../../../commands/uninstall");
+    return captureOutput(() => Uninstall.run(["--yes"], { root: CLI_ROOT }), { print: false });
+  }
+
+  it("names each plugin the host removed, then counts them", async () => {
+    await createProjectConfig(projectDir, {
+      skills: buildSkillConfigs(["web-framework-react", "api-framework-hono"], {
+        scope: "project",
+        origin: "marketplace",
+      }),
+    });
+    await installPlugins(["web-framework-react@marketplace", "api-framework-hono@marketplace"]);
+
+    const { stdout } = await runUninstall();
+
+    expect(stdout).toContain(
+      [
+        "Uninstalling plugins...",
+        "  Uninstalled plugin 'web-framework-react@marketplace'",
+        "  Uninstalled plugin 'api-framework-hono@marketplace'",
+        "✓ Uninstalled 2 plugins",
+      ].join("\n"),
+    );
+  });
+
+  it("counts one plugin in the singular", async () => {
+    await createProjectConfig(projectDir, {
+      skills: buildSkillConfigs(["web-framework-react"], {
+        scope: "project",
+        origin: "marketplace",
+      }),
+    });
+    await installPlugins(["web-framework-react@marketplace"]);
+
+    const { stdout } = await runUninstall();
+
+    expect(stdout).toContain(
+      "Uninstalling plugins...\n  Uninstalled plugin 'web-framework-react@marketplace'\n✓ Uninstalled 1 plugin\n",
+    );
+  });
+
+  it("prints no count when the host removed none of them", async () => {
+    await createProjectConfig(projectDir, {
+      skills: buildSkillConfigs(["web-framework-react"], {
+        scope: "project",
+        origin: "marketplace",
+      }),
+    });
+    await installPlugins(["web-framework-react@marketplace"]);
+    vi.mocked(hostAt(projectDir).uninstallPlugin).mockResolvedValue("absent");
+
+    const { stdout } = await runUninstall();
+
+    expect(stdout).toContain("Uninstalling plugins...\n✓ Removed .agents-inc/claude/\n");
+  });
+
+  it("leaves a plugin the config does not name, or names only as excluded, alone", async () => {
+    await createProjectConfig(projectDir, {
+      skills: [
+        ...buildSkillConfigs(["web-framework-react"], { scope: "project", origin: "marketplace" }),
+        ...buildSkillConfigs(["api-framework-hono"], {
+          scope: "project",
+          origin: "marketplace",
+          excluded: true,
+        }),
+      ],
+    });
+    const pluginsDir = await installPlugins([
+      "web-framework-react@marketplace",
+      "api-framework-hono@marketplace",
+      "someone-elses@marketplace",
+    ]);
+
+    const { stdout } = await runUninstall();
+
+    expect(stdout).toContain("  Plugins:\n    web-framework-react@marketplace\n  Config:");
+    expect(await directoryExists(path.join(pluginsDir, "api-framework-hono@marketplace"))).toBe(
+      true,
+    );
+    expect(await directoryExists(path.join(pluginsDir, "someone-elses@marketplace"))).toBe(true);
+  });
+
+  describe("on a host that shares plugins machine-wide", () => {
+    beforeEach(() => {
+      Object.assign(hostAt(projectDir), { installsProjectScopedPlugins: false });
+    });
+
+    afterEach(() => {
+      Object.assign(hostAt(projectDir), { installsProjectScopedPlugins: true });
+    });
+
+    it("leaves the plugins alone when uninstalling a project", async () => {
+      await createProjectConfig(projectDir, {
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: "marketplace",
+        }),
+      });
+      const pluginsDir = await installPlugins(["web-framework-react@marketplace"]);
+
+      const { stdout } = await runUninstall();
+
+      expect(stdout).not.toContain("Plugins:");
+      expect(await directoryExists(path.join(pluginsDir, "web-framework-react@marketplace"))).toBe(
+        true,
+      );
+    });
+
+    it("removes them when uninstalling the global installation", async () => {
+      await createProjectConfig(fakeHome, {
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "global",
+          origin: "marketplace",
+        }),
+      });
+      process.chdir(fakeHome);
+      projectDir = fakeHome;
+      await installPlugins(["web-framework-react@marketplace"]);
+
+      const { stdout } = await runUninstall();
+
+      expect(stdout).toContain("  Plugins:\n    web-framework-react@marketplace\n");
+    });
+  });
+
+  // Root writes through the mode bits, so the failure under test cannot happen there.
+  it.skipIf(process.getuid?.() === 0)(
+    "says the plugin uninstall failed, and why, when a plugin's folder cannot be removed",
+    async () => {
+      await createProjectConfig(projectDir, {
+        skills: buildSkillConfigs(["web-framework-react"], {
+          scope: "project",
+          origin: "marketplace",
+        }),
+      });
+      const pluginsDir = await installPlugins(["web-framework-react@marketplace"]);
+      await chmod(pluginsDir, 0o555);
+      try {
+        const { stdout, error } = await runUninstall();
+
+        expect(stdout).toContain("Uninstalling plugins...\nPlugin uninstall failed\n");
+        expect(error?.message).toContain("EACCES");
+        expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
+      } finally {
+        await chmod(pluginsDir, 0o755);
+      }
+    },
+  );
+
+  describe("the scopes a plugin is swept at", () => {
+    async function sweptScopes(
+      config: ProjectConfig,
+      names: string[],
+    ): Promise<Array<[string, string]>> {
+      const uninstallPlugin = vi.mocked(hostAt(projectDir).uninstallPlugin);
+      uninstallPlugin.mockClear();
+      const pluginsDir = path.join(projectDir, CLAUDE_DIR, "plugins");
+      await mkdir(pluginsDir, { recursive: true });
+      const { uninstallPlugins: uninstallPluginsFn } = await import("../../../commands/uninstall");
+
+      await uninstallPluginsFn({ kind: "plugins", pluginsDir, names }, config, projectDir);
+
+      return uninstallPlugin.mock.calls.map(([ref, scope]) => [ref, scope]);
+    }
+
+    it("sweeps each plugin at its own skill's scope first", async () => {
+      const config = buildProjectConfig({
+        skills: [
+          ...buildSkillConfigs(["web-framework-react"], { scope: "global", origin: "marketplace" }),
+          ...buildSkillConfigs(["api-framework-hono"], { scope: "project", origin: "marketplace" }),
+        ],
+      });
+
+      expect(
+        await sweptScopes(config, [
+          "web-framework-react@marketplace",
+          "api-framework-hono@marketplace",
+        ]),
+      ).toStrictEqual([
+        ["web-framework-react@marketplace", "global"],
+        ["web-framework-react@marketplace", "project"],
+        ["api-framework-hono@marketplace", "project"],
+        ["api-framework-hono@marketplace", "global"],
+      ]);
+    });
+
+    it("sweeps only the plugin scopes the host offers, when the skill's own is not one", async () => {
+      const host = hostAt(projectDir);
+      const offered = host.offeredPlacements;
+      Object.assign(host, {
+        offeredPlacements: [
+          { mode: "plugin", scope: "global" },
+          { mode: "eject", scope: "global" },
+          { mode: "eject", scope: "project" },
+        ],
+      });
+      try {
+        const config = buildProjectConfig({
+          skills: buildSkillConfigs(["web-framework-react"], {
+            scope: "project",
+            origin: "marketplace",
+          }),
+        });
+
+        expect(await sweptScopes(config, ["web-framework-react@marketplace"])).toStrictEqual([
+          ["web-framework-react@marketplace", "global"],
+        ]);
+      } finally {
+        Object.assign(host, { offeredPlacements: offered });
+      }
     });
   });
 });
