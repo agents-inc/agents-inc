@@ -161,7 +161,10 @@ export default class Eject extends BaseCommand {
         : flags.output;
       const outputBase = path.resolve(projectDir, expandedPath);
 
-      if (await fileExists(outputBase)) {
+      // `fileExists` is true of a directory too; an existing directory is written into, and each
+      // kind then skips its own destination unless --force.
+      const namesAFile = (await fileExists(outputBase)) && !(await directoryExists(outputBase));
+      if (namesAFile) {
         this.error(`Output path exists as a file: ${outputBase}`, {
           exit: EXIT_CODES.INVALID_ARGS,
         });
@@ -214,16 +217,23 @@ export default class Eject extends BaseCommand {
         if (!sourceResult) {
           throw new Error("The marketplace must be loaded for skills eject");
         }
-        await this.handleSkills(projectDir, flags.force, sourceResult, directOutput, outputBase);
+        await this.handleSkills(
+          await skillsDestinationOf(projectDir, directOutput, outputBase),
+          flags.force,
+          sourceResult,
+        );
         break;
-      case "all":
+      case "all": {
         if (!sourceResult) {
           throw new Error("The marketplace must be loaded for full eject");
         }
+        // Read before the partials land: under --output they create the directory skills share.
+        const skillsDestination = await skillsDestinationOf(projectDir, directOutput, outputBase);
         await this.handleAgentPartials(outputBase, flags.force, directOutput, false);
         await this.handleAgentPartials(outputBase, true, directOutput, true);
-        await this.handleSkills(projectDir, flags.force, sourceResult, directOutput, outputBase);
+        await this.handleSkills(skillsDestination, flags.force, sourceResult);
         break;
+      }
       default: {
         const _exhaustive: never = ejectType;
         return _exhaustive;
@@ -293,14 +303,11 @@ export default class Eject extends BaseCommand {
   }
 
   private async handleSkills(
-    projectDir: string,
+    destination: SkillsDestination,
     force: boolean,
     sourceResult: SourceLoadResult,
-    directOutput: boolean,
-    outputBase: string,
   ): Promise<void> {
-    const destDir = directOutput ? outputBase : installedSkillsDir(projectDir);
-    const result = await ejectSkills({ destDir, force, sourceResult, matrix });
+    const result = await ejectSkills({ destination, force, sourceResult, matrix });
 
     if (result.skipped) {
       this.warn(result.skipReason);
@@ -308,7 +315,7 @@ export default class Eject extends BaseCommand {
     }
 
     this.logSuccess(
-      `${plural(result.copiedSkills.length, "skill")} ejected to ${destDir} from ${result.sourceLabel}`,
+      `${plural(result.copiedSkills.length, "skill")} ejected to ${destination.dir} from ${result.sourceLabel}`,
     );
     this.log("You can now customize skill content locally.");
   }
@@ -408,8 +415,23 @@ async function ejectAgentPartials(
   };
 }
 
+/** Where skills eject to, and whether it was there before this run wrote anything. */
+type SkillsDestination = {
+  dir: string;
+  existed: boolean;
+};
+
+async function skillsDestinationOf(
+  projectDir: string,
+  directOutput: boolean,
+  outputBase: string,
+): Promise<SkillsDestination> {
+  const dir = directOutput ? outputBase : installedSkillsDir(projectDir);
+  return { dir, existed: await directoryExists(dir) };
+}
+
 type EjectSkillsOptions = {
-  destDir: string;
+  destination: SkillsDestination;
   force: boolean;
   sourceResult: SourceLoadResult;
   matrix: MergedSkillsMatrix;
@@ -429,12 +451,12 @@ type EjectSkillsResult =
 
 /** Only the loaded marketplace's own non-local skills: others' skills are not on disk here. */
 async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResult> {
-  const { destDir, force, sourceResult, matrix } = options;
+  const { destination, force, sourceResult, matrix } = options;
 
-  if ((await directoryExists(destDir)) && !force) {
+  if (destination.existed && !force) {
     return {
       skipped: true,
-      skipReason: `Skills already exist at ${destDir}. Use --force to overwrite.`,
+      skipReason: `Skills already exist at ${destination.dir}. Use --force to overwrite.`,
       copiedSkills: [],
     };
   }
@@ -451,9 +473,9 @@ async function ejectSkills(options: EjectSkillsOptions): Promise<EjectSkillsResu
     };
   }
 
-  await ensureDir(destDir);
+  await ensureDir(destination.dir);
 
-  const copiedSkills = await copySkillsToLocalFlattened(skillIds, destDir, sourceResult);
+  const copiedSkills = await copySkillsToLocalFlattened(skillIds, destination.dir, sourceResult);
 
   const sourceLabel = sourceResult.isLocal
     ? sourceResult.sourcePath
