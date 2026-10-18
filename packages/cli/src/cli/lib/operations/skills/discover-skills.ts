@@ -107,11 +107,15 @@ export async function discoverInstalledSkills(projectDir: string): Promise<Disco
 
   const allSkills = mergeSkills(globalPluginSkills, globalLocal.skills, pluginSkills, local.skills);
   const totalSkillCount = typedKeys<SkillId>(allSkills).length;
+  // A plugin installed at both scopes is listed by both, but is one skill.
+  const distinctPluginSkillCount = typedKeys<SkillId>(
+    mergeSkills(globalPluginSkills, pluginSkills),
+  ).length;
 
   return {
     allSkills,
     totalSkillCount,
-    pluginSkillCount: globalPluginSkillCount + pluginSkillCount,
+    pluginSkillCount: distinctPluginSkillCount,
     localSkillCount: globalLocalSkillCount + localSkillCount,
     globalPluginSkillCount,
     globalLocalSkillCount,
