@@ -154,9 +154,100 @@ describe("classify", () => {
     });
   });
 
+  /** The writer emits no empty stack and an empty selectedDomains, so both readings occur. */
+  describe("an empty stack or domain list against an absent one", () => {
+    const WITHOUT_EITHER = buildProjectConfig({
+      name: "global",
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "global", origin: MARKETPLACE }),
+      agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
+    });
+
+    it("classifies a registration whose merge spelled out an empty stack and no domains as T3", () => {
+      const next: ProjectConfig = {
+        ...WITHOUT_EITHER,
+        stack: {},
+        selectedDomains: [],
+        projects: ["/tmp/another-project"],
+      };
+
+      expect(consequenceTier(classifyGlobalChange(WITHOUT_EITHER, next))).toBe("T3");
+    });
+
+    it("still classifies a stack that gained an entry as T1", () => {
+      const next: ProjectConfig = {
+        ...WITHOUT_EITHER,
+        stack: {
+          "web-developer": { "web-framework": [{ id: "web-framework-react", preloaded: true }] },
+        },
+      };
+
+      expect(consequenceTier(classifyGlobalChange(WITHOUT_EITHER, next))).toBe("T1");
+    });
+  });
+
   describe("T4 — no-op", () => {
     it("classifies a byte-identical config as T4 (no write)", () => {
       expect(tierOf({ ...BASELINE })).toBe("T4");
     });
+  });
+});
+
+describe("classifyGlobalChange, what moved", () => {
+  it("files a skill whose entry changed without changing its origin as otherwise changed, T1", () => {
+    const next = {
+      ...BASELINE,
+      skills: buildSkillConfigs(["web-framework-react"], { scope: "project", origin: MARKETPLACE }),
+    };
+
+    expect(classifyGlobalChange(BASELINE, next).skills).toStrictEqual({
+      added: [],
+      removed: [],
+      sourceChanged: [],
+      otherChanged: ["web-framework-react"],
+    });
+    expect(tierOf(next)).toBe("T1");
+  });
+
+  it("files a sub-agent whose entry changed as changed, and an added one as added only, T1", () => {
+    const next = {
+      ...BASELINE,
+      agents: [
+        ...buildAgentConfigs(["web-developer"], { scope: "global", model: "haiku" }),
+        ...buildAgentConfigs(["api-developer"], { scope: "global" }),
+      ],
+    };
+
+    expect(classifyGlobalChange(BASELINE, next).agents).toStrictEqual({
+      added: ["api-developer"],
+      removed: [],
+      changed: ["web-developer"],
+    });
+  });
+
+  it("treats a sub-agent's changed entry alone as T1", () => {
+    expect(
+      tierOf({
+        ...BASELINE,
+        agents: buildAgentConfigs(["web-developer"], { scope: "global", model: "haiku" }),
+      }),
+    ).toBe("T1");
+  });
+
+  it("names a scalar the new config dropped among the scalars that moved", () => {
+    const withAuthor = { ...BASELINE, author: "@someone" };
+
+    expect(classifyGlobalChange(withAuthor, BASELINE).scalarsChanged).toStrictEqual(["author"]);
+  });
+
+  it("names none of skills, agents, stack and domains among the scalars that moved", () => {
+    const next: ProjectConfig = {
+      ...BASELINE,
+      skills: buildSkillConfigs(["api-framework-hono"], { scope: "global", origin: MARKETPLACE }),
+      agents: buildAgentConfigs(["api-developer"], { scope: "global" }),
+      stack: { "api-developer": { "api-api": [{ id: "api-framework-hono", preloaded: true }] } },
+      selectedDomains: ["api"],
+    };
+
+    expect(classifyGlobalChange(BASELINE, next).scalarsChanged).toStrictEqual([]);
   });
 });

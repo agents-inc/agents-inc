@@ -1,4 +1,5 @@
 import { isDeepEqual } from "remeda";
+import { isRecord } from "../../utils/type-guards.js";
 import type { AgentName, ProjectConfig, SkillId } from "../../types";
 import type { AgentScopeConfig, SkillConfig } from "../../types/config";
 
@@ -45,11 +46,29 @@ const EXTRACTED_FIELDS = new Set(["skills", "agents", "stack", "selectedDomains"
 const REGISTRATION_FIELD = "projects";
 
 /**
- * A JSON round-trip, as the writer does, so an explicitly-`undefined` field equals an absent one.
+ * Fields an empty value leaves meaning nothing: the writer omits an empty `stack` and writes an
+ * empty `selectedDomains`, and the global merge spells both out, so either reading occurs.
+ */
+const EMPTY_MEANS_ABSENT = new Set(["stack", "selectedDomains"]);
+
+function isEmptyCollection(value: unknown): boolean {
+  return Array.isArray(value)
+    ? value.length === 0
+    : isRecord(value) && Object.keys(value).length === 0;
+}
+
+/**
+ * A JSON round-trip, as the writer does, so an explicitly-`undefined` field equals an absent one;
+ * an empty stack or domain list equals an absent one too.
  */
 function normalize(config: ProjectConfig): Record<string, unknown> {
   // Boundary cast: `JSON.parse` returns `any`; the round-trip yields the same record.
-  return JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+  const record = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      ([key, value]) => !(EMPTY_MEANS_ABSENT.has(key) && isEmptyCollection(value)),
+    ),
+  );
 }
 
 function field(config: Record<string, unknown>, key: string): unknown {
