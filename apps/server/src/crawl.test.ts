@@ -51,11 +51,18 @@ type FakeRepo = {
   stars: number
   defaultBranch: string
   tree: readonly TreeEntry[]
+  /** GitHub's flag for a tree too large to list whole. */
+  truncated: boolean
   /** Path → what raw.githubusercontent serves. A tree path absent here 404s. */
   files: Readonly<Record<string, string>>
 }
 
-type Call = { url: string; authorization: string | null }
+type Call = {
+  url: string
+  authorization: string | null
+  userAgent: string | null
+  accept: string | null
+}
 
 type RepoParams = { owner: string; name: string }
 
@@ -88,6 +95,7 @@ const fakeRepo = (
   tree:
     tree ??
     Object.entries(files).map(([path, text]) => blob(path, text.length)),
+  truncated: false,
   files,
 })
 
@@ -131,7 +139,7 @@ const serveGitHub = (repos: Record<string, FakeRepo>) => {
 
       return repo === undefined
         ? notFound()
-        : HttpResponse.json({ truncated: false, tree: repo.tree })
+        : HttpResponse.json({ truncated: repo.truncated, tree: repo.tree })
     }),
     http.get<RepoParams>(RAW_URL, ({ params, request }) => {
       const text = repoIn(params)?.files[fileRequestedBy(request.url)]
@@ -162,6 +170,8 @@ const recordCalls = () => {
     calls.push({
       url: request.url,
       authorization: request.headers.get("authorization"),
+      userAgent: request.headers.get("user-agent"),
+      accept: request.headers.get("accept"),
     })
   })
 
@@ -429,6 +439,204 @@ describe("crawlSkillIndex", () => {
 
     expect(calls.map((call) => call.authorization)).toStrictEqual(
       calls.map(() => null)
+    )
+  })
+
+  // `clearMocks` does not restore a spy either.
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // api.github.com refuses a call with no User-Agent.
+  it("names itself on every call, and asks the API for its own media type", async () => {
+    const calls = recordCalls()
+    serveGitHub(everyRepo())
+
+    await crawled(INDEXED_REPOS)
+
+    const api = calls.filter((call) => call.url.startsWith(REPO_API))
+    expect(api).not.toStrictEqual([])
+    expect(calls.map((call) => call.userAgent)).toStrictEqual(
+      calls.map(() => "agents-inc-skill-index")
+    )
+    expect(api.map((call) => call.accept)).toStrictEqual(
+      api.map(() => "application/vnd.github+json")
+    )
+  })
+
+  it("reads nothing from raw content but the SKILL.md files the tree lists", async () => {
+    const calls = recordCalls()
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo(
+        { "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things") },
+        [
+          blob("README.md", README_BYTES),
+          blob("skills/alpha/SKILL.md", MANIFEST_BYTES),
+          blob("skills/alpha/reference.md", REFERENCE_BYTES),
+        ]
+      ),
+    })
+
+    await crawled([FIRST_REPO])
+
+    expect(
+      calls.filter((call) => call.url.startsWith(RAW)).map((call) => call.url)
+    ).toStrictEqual([`${RAW}${FIRST_REPO}/main/skills/alpha/SKILL.md`])
+  })
+
+  // Two horizontal rules in the body are not frontmatter.
+  it("reads frontmatter only at the very top of the file", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({
+        "skills/delta/SKILL.md": "# Delta\n\n---\nname: not-delta\n---\n",
+      }),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(
+      index.skills.map((skill) => [skill.name, skill.description])
+    ).toStrictEqual([["delta", "Delta"]])
+  })
+
+  it("takes the first line that starts with a heading marker, not one holding a #", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({
+        "skills/epsilon/SKILL.md": "Write C# code.\n\n# Epsilon Skill\n",
+      }),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.description)).toStrictEqual([
+      "Epsilon Skill",
+    ])
+  })
+
+  it.each(["#\n\nSome prose.\n", "#   \n\nSome prose.\n"])(
+    "takes no description from a heading with no text, nor the line after it: %j",
+    async (manifest) => {
+      serveGitHub({
+        [FIRST_REPO]: fakeRepo({ "skills/theta/SKILL.md": manifest }),
+      })
+
+      const index = await crawled([FIRST_REPO])
+
+      expect(index.skills.map((skill) => skill.description)).toStrictEqual([""])
+    }
+  )
+
+  it("takes a heading's text however many spaces follow the marker", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({ "skills/kappa/SKILL.md": "#   Kappa Skill\n" }),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.description)).toStrictEqual([
+      "Kappa Skill",
+    ])
+  })
+
+  it("passes a heading with no text over for the first one that has some", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({
+        "skills/iota/SKILL.md": "#\nSome prose.\n\n#\tIota Skill\n",
+      }),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.description)).toStrictEqual([
+      "Iota Skill",
+    ])
+  })
+
+  it("trims the heading it falls back to", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({ "skills/zeta/SKILL.md": "# Zeta Skill   \n" }),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.description)).toStrictEqual([
+      "Zeta Skill",
+    ])
+  })
+
+  it("leaves the description empty when there is neither frontmatter nor a heading", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({ "skills/eta/SKILL.md": "Just prose.\n" }),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(
+      index.skills.map((skill) => [skill.name, skill.description])
+    ).toStrictEqual([["eta", ""]])
+  })
+
+  // The crawl runs in a scheduled Action; its log is where this surfaces.
+  it("warns, and still indexes what it got, when GitHub truncates the tree", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    serveGitHub({
+      [FIRST_REPO]: {
+        ...fakeRepo({
+          "skills/alpha/SKILL.md": skillMd("alpha", "Does alpha things"),
+        }),
+        truncated: true,
+      },
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills.map((skill) => skill.name)).toStrictEqual(["alpha"])
+    expect(logged).toHaveBeenCalledWith({
+      event: "skill_index_warning",
+      repo: FIRST_REPO,
+      reason: "the git tree came back truncated; some skills may be missing",
+    })
+  })
+
+  // The control for the warning above.
+  it("warns of nothing when the tree comes back whole", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    serveGitHub(everyRepo())
+
+    await crawled(INDEXED_REPOS)
+
+    expect(logged).not.toHaveBeenCalled()
+  })
+
+  // Only reads that all fail are an outage; a repository may hold no skills.
+  it("indexes nothing, without failing, from a repository holding no skills", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({ "README.md": "# Nothing to see\n" }),
+    })
+
+    const index = await crawled([FIRST_REPO])
+
+    expect(index.skills).toStrictEqual([])
+  })
+
+  it("names the repository and how many files it could not read", async () => {
+    serveGitHub({
+      [FIRST_REPO]: fakeRepo({}, [
+        blob("skills/alpha/SKILL.md", MANIFEST_BYTES),
+        blob("skills/beta/SKILL.md", MANIFEST_BYTES),
+      ]),
+    })
+
+    await expect(crawlSkillIndex([FIRST_REPO])).rejects.toThrow(
+      `${FIRST_REPO}: none of its 2 SKILL.md files could be read`
+    )
+  })
+
+  it("names the address and status when GitHub refuses a request", async () => {
+    serveGitHub({})
+
+    await expect(crawlSkillIndex([FIRST_REPO])).rejects.toThrow(
+      `${REPO_API}${FIRST_REPO} answered 404`
     )
   })
 })

@@ -56,7 +56,8 @@ const frontmatterSchema = z.object({
 })
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
-const FIRST_HEADING_PATTERN = /^#\s+(.+)$/m
+// Spaces or tabs only after the marker: `\s` would carry an empty heading onto the next line.
+const FIRST_HEADING_PATTERN = /^#[ \t]+(\S.*)$/m
 
 type RepoFacts = { stars: number; defaultBranch: string }
 
