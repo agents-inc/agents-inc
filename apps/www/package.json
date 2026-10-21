@@ -15,7 +15,7 @@
   },
   "//dependencies": "font-preloads.astro imports the fontsource packages for their file URLs, so they are declared rather than hoisted. This note sits at top level because bun resolves `//` keys inside `dependencies` as packages.",
   "dependencies": {
-    "@astrojs/starlight": "^0.41.6",
+    "@astrojs/starlight": "^0.42.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@workspace/matrix": "workspace:*",
@@ -29,7 +29,7 @@
     "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
-    "playwright": "1.56.1",
+    "playwright": "1.63.0",
     "tailwindcss": "^4",
     "typescript": "~6",
     "wrangler": "^4"
