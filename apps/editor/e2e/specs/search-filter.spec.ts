@@ -28,11 +28,20 @@ const designPxOf = async (locator: Locator, px: number) =>
   )) /
     16)
 
-const computedPx = (locator: Locator, property: "fontSize" | "paddingLeft") =>
-  locator.evaluate(
-    (node, key) => Number.parseFloat(getComputedStyle(node)[key]),
-    property
+const fontPx = (locator: Locator) =>
+  locator.evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize))
+
+// Where typed text starts: the input's box plus its own padding.
+const textStartOf = (input: Locator) =>
+  input.evaluate(
+    (node) =>
+      node.getBoundingClientRect().left +
+      Number.parseFloat(getComputedStyle(node).paddingLeft)
   )
+
+// The field's inside edge, past its border.
+const innerLeftOf = (field: Locator) =>
+  field.evaluate((node) => node.getBoundingClientRect().left + node.clientLeft)
 
 test.beforeEach(async ({ configure }) => {
   await configure.chooseStack(STACKS.nextjs)
@@ -88,13 +97,14 @@ test.describe("the search field at rest", () => {
     configure,
   }) => {
     const input = configure.searchInput
+    const inset =
+      (await textStartOf(input)) - (await innerLeftOf(configure.searchField))
 
-    expect(
-      await designPxOf(input, await computedPx(input, "fontSize"))
-    ).toBeCloseTo(QUERY_DESIGN_PX, 1)
-    expect(
-      await designPxOf(input, await computedPx(input, "paddingLeft"))
-    ).toBeCloseTo(FIELD_INSET_DESIGN_PX, 1)
+    expect(await designPxOf(input, await fontPx(input))).toBeCloseTo(
+      QUERY_DESIGN_PX,
+      1
+    )
+    expect(await designPxOf(input, inset)).toBeCloseTo(FIELD_INSET_DESIGN_PX, 1)
   })
 })
 

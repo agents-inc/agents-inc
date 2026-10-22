@@ -8,11 +8,7 @@ import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { buildAgentDefs } from "../factories/agent-factories.js";
-import {
-  buildConfigWriteResult,
-  buildProjectConfig,
-  buildSourceResult,
-} from "../factories/config-factories.js";
+import { buildSourceResult } from "../factories/config-factories.js";
 import {
   buildCompilationResult,
   buildDiscoveredSkills,
@@ -31,7 +27,6 @@ import type {
   discoverInstalledSkills,
   loadAgentDefs,
   loadSource,
-  writeProjectConfig,
 } from "../../operations/index.js";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
@@ -47,7 +42,6 @@ const WEB_DEV = "web-developer";
 const {
   mockInstallPlugin,
   mockLoadSource,
-  mockWriteProjectConfig,
   mockLoadAgentDefs,
   mockDiscoverInstalledSkills,
   mockCompileAgentsAllScopes,
@@ -55,7 +49,6 @@ const {
   // Typed against the real functions so a retired stub field is a compile error.
   mockInstallPlugin: vi.fn<PluginHost["installPlugin"]>(),
   mockLoadSource: vi.fn<typeof loadSource>(),
-  mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
   mockLoadAgentDefs: vi.fn<typeof loadAgentDefs>(),
   mockDiscoverInstalledSkills: vi.fn<typeof discoverInstalledSkills>(),
   mockCompileAgentsAllScopes: vi.fn<typeof compileAgentsAllScopes>(),
@@ -73,7 +66,6 @@ vi.mock("../../operations/index.js", async (importOriginal) => {
     ...original,
     loadSource: mockLoadSource,
     loadAgentDefs: mockLoadAgentDefs,
-    writeProjectConfig: mockWriteProjectConfig,
     discoverInstalledSkills: mockDiscoverInstalledSkills,
     compileAgentsAllScopes: mockCompileAgentsAllScopes,
   };
@@ -115,12 +107,6 @@ describe("init --from: a plugin install nothing backs", () => {
         buildSourceResult(MARKETPLACE_AND_CUSTOM_TAGGED_MATRIX, tempDir, {
           marketplace: MARKETPLACE,
         }),
-      ),
-    );
-    mockWriteProjectConfig.mockResolvedValue(
-      buildConfigWriteResult(
-        buildProjectConfig({ name: "unbacked", skills: [], agents: [] }),
-        getProjectConfigPath(projectDir, "claude"),
       ),
     );
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
@@ -166,7 +152,6 @@ describe("init --from: a plugin install nothing backs", () => {
       mockInstallPlugin,
       "the refusal is a precondition: nothing may reach the Claude CLI",
     ).not.toHaveBeenCalled();
-    expect(mockWriteProjectConfig).not.toHaveBeenCalled();
     expect(
       await fileExists(getProjectConfigPath(projectDir, "claude")),
       "no config.ts may be left behind by a refused plugin install",
@@ -194,6 +179,6 @@ describe("init --from: a plugin install nothing backs", () => {
       "project",
       process.cwd(),
     );
-    expect(mockWriteProjectConfig).toHaveBeenCalledTimes(1);
+    expect(await fileExists(getProjectConfigPath(projectDir, "claude"))).toBe(true);
   });
 });

@@ -34,7 +34,7 @@ import {
 import { buildAgentConfigs } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { sa } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 
 /**
  * `init --from`: per-skill `install` and `scope` route files (eject copies, plugin registers with
@@ -332,7 +332,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       env = await createTestEnvironment({ permissions: false });
-      const reactRef = buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName);
+      const reactRef = pluginKeyFor(E2E_SKILL.react.id, fixture.marketplaceName);
       store.publish(
         "Modes001",
         buildSeedPayload({
@@ -394,7 +394,7 @@ describe.skipIf(!claudeAvailable)("init --from <id>: mixed install modes", () =>
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       env = await createTestEnvironment({ permissions: false });
-      const reactRef = buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName);
+      const reactRef = pluginKeyFor(E2E_SKILL.react.id, fixture.marketplaceName);
       // `scope: "global"` maps to the Claude CLI's `user` scope.
       store.publish(
         "HomeMode1",

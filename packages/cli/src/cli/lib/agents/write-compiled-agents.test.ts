@@ -1,14 +1,11 @@
 import os from "os";
 import path from "path";
-import { Liquid } from "liquidjs";
+import { readFile } from "fs/promises";
+import type { Liquid } from "liquidjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../compiler.js", () => ({
-  compileAgentForHost: vi.fn(),
-}));
-
 import { writeCompiledAgentsByScope } from "./write-compiled-agents";
-import { compileAgentForHost } from "../compiler.js";
+import { createLiquidEngine } from "../compiler.js";
 import { resolveInstallPaths } from "../installation/install-base-dir";
 import { createMockAgentConfig } from "../__tests__/factories/agent-factories";
 import { createMockSkillEntry } from "../__tests__/factories/skill-factories";
@@ -19,28 +16,32 @@ import {
   fileExists,
 } from "../__tests__/test-fs-utils";
 import { SKILLS } from "../__tests__/test-fixtures";
-import { renderAgentMd } from "../__tests__/content-generators";
-import { EJECT_SOURCE } from "../../consts";
-import { firstElement } from "../__tests__/helpers/element-at";
-import type { AgentConfig, AgentName, SkillScope } from "../../types";
+import { DEFAULT_TEST_AGENTS } from "../__tests__/mock-data/mock-agents";
+import { writeSourceAgent } from "../__tests__/helpers/disk-writers";
+import { parseCompiledAgentSections } from "../__tests__/helpers/compiled-agent-sections.js";
+import { DIRS, EJECT_SOURCE } from "../../consts";
+import type { AgentConfig, AgentName, PluginSkillRef, SkillScope } from "../../types";
 
 const PROJECT_AGENT: AgentName = "web-developer";
 const GLOBAL_AGENT: AgentName = "api-developer";
-const COMPILED_BODY = renderAgentMd("agent", "compiled");
 
-const mockCompileAgentForHost = vi.mocked(compileAgentForHost);
+const REACT_PLUGIN_REF: PluginSkillRef = "web-framework-react:web-framework-react";
 
 describe("writeCompiledAgentsByScope", () => {
   let tempDir: string;
   let fakeHome: string;
   let projectDir: string;
+  let engine: Liquid;
 
   beforeEach(async () => {
     tempDir = await createTempDir("cc-write-compiled-agents-");
     fakeHome = path.join(tempDir, "home");
     projectDir = path.join(tempDir, "project");
     vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
-    mockCompileAgentForHost.mockResolvedValue(COMPILED_BODY);
+    for (const agent of DEFAULT_TEST_AGENTS) {
+      await writeSourceAgent(path.join(projectDir, DIRS.agents), agent);
+    }
+    engine = await createLiquidEngine();
   });
 
   afterEach(async () => {
@@ -57,7 +58,7 @@ describe("writeCompiledAgentsByScope", () => {
     writeCompiledAgentsByScope({
       resolvedAgents,
       sourcePath: projectDir,
-      engine: new Liquid(),
+      engine,
       projectAgentsDir: projectAgentsDir(),
       projectDir,
       ...(agentScopeMap !== undefined && { agentScopeMap }),
@@ -134,31 +135,32 @@ describe("writeCompiledAgentsByScope", () => {
   });
 
   /** Each skill's own `source` decides `${id}:${id}` versus a bare id, so assert per skill. */
-  describe("what reaches the compiler", () => {
-    it("forwards a marketplace-sourced skill with its source intact", async () => {
+  describe("how the written agent names its skills", () => {
+    const writtenProjectAgent = async (): Promise<string> =>
+      readFile(path.join(projectAgentsDir(), `${PROJECT_AGENT}.md`), "utf-8");
+
+    it("names a marketplace-sourced skill by its plugin reference", async () => {
       const pluginSkill = createMockSkillEntry(SKILLS.react.id, false, { source: "agents-inc" });
 
       await writeAgents({
         [PROJECT_AGENT]: createMockAgentConfig(PROJECT_AGENT, [pluginSkill]),
       });
 
-      expect(mockCompileAgentForHost).toHaveBeenCalledTimes(1);
-      const [, name, agent] = firstElement(mockCompileAgentForHost.mock.calls);
-      expect(name).toBe(PROJECT_AGENT);
-      expect(agent.skills).toStrictEqual([pluginSkill]);
+      expect(parseCompiledAgentSections(await writtenProjectAgent()).dynamicEntries).toStrictEqual([
+        { id: SKILLS.react.id, invokeRef: REACT_PLUGIN_REF },
+      ]);
     });
 
-    it("forwards an ejected skill with its source intact", async () => {
+    it("names an ejected skill by its bare id", async () => {
       const ejectSkill = createMockSkillEntry(SKILLS.react.id, false, { source: EJECT_SOURCE });
 
       await writeAgents({
         [PROJECT_AGENT]: createMockAgentConfig(PROJECT_AGENT, [ejectSkill]),
       });
 
-      expect(mockCompileAgentForHost).toHaveBeenCalledTimes(1);
-      const [, name, agent] = firstElement(mockCompileAgentForHost.mock.calls);
-      expect(name).toBe(PROJECT_AGENT);
-      expect(agent.skills).toStrictEqual([ejectSkill]);
+      expect(parseCompiledAgentSections(await writtenProjectAgent()).dynamicEntries).toStrictEqual([
+        { id: SKILLS.react.id, invokeRef: SKILLS.react.id },
+      ]);
     });
   });
 });

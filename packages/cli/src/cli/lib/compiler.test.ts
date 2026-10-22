@@ -1,15 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import path from "path";
 import { fileURLToPath } from "url";
 import { mkdir, readFile as fsReadFile, writeFile as fsWrite } from "fs/promises";
 import type { AgentConfig } from "../types";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
-import { renderAgentMd } from "./__tests__/content-generators.js";
 import { createMockSkillEntry } from "./__tests__/factories/skill-factories";
-import {
-  createMockAgentConfig,
-  createMockCompiledAgentData,
-} from "./__tests__/factories/agent-factories";
+import { createMockAgentConfig } from "./__tests__/factories/agent-factories";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,19 +20,12 @@ vi.mock("../utils/logger", async (importOriginal) => ({
   setVerbose: vi.fn(),
 }));
 
-import {
-  compileAgentForHost,
-  createLiquidEngine,
-  sanitizeLiquidSyntax,
-  sanitizeCompiledAgentData,
-  buildAgentTemplateContext,
-} from "./compiler";
-import { hasProvenanceMarker, stampProvenanceMarker } from "./agents/agent-provenance.js";
+import { compileAgentForHost, createLiquidEngine } from "./compiler";
+import { hasProvenanceMarker, provenanceMarker } from "./agents/agent-provenance.js";
 import { verbose, warn } from "../utils/logger";
 import { CLAUDE_DIR, DIRS, EJECT_SOURCE, STANDARD_DIRS } from "../consts";
 import { sourceFolderInUse } from "./installation/install-layout.js";
-import type { CompiledAgentData, PluginSkillRef, SkillId } from "../types";
-import { elementAt, firstElement } from "./__tests__/helpers/element-at.js";
+import type { PluginSkillRef, SkillId } from "../types";
 import {
   parseCompiledAgentSections,
   type CompiledAgentDynamicEntry,
@@ -77,17 +66,20 @@ async function createProjectFromFixtures(): Promise<string> {
 
 /** Only for the override spec: with it in place every agent renders through the fixture. */
 async function installProjectTemplateOverride(projectDir: string): Promise<void> {
+  await writeProjectTemplate(
+    projectDir,
+    await fsReadFile(path.join(FIXTURES_ROOT, "agents/_templates/agent.liquid"), "utf-8"),
+  );
+}
+
+async function writeProjectTemplate(projectDir: string, content: string): Promise<void> {
   const templatesDir = path.join(
     sourceFolderInUse(projectDir, "claude").dir,
     STANDARD_DIRS.AGENTS,
     path.basename(DIRS.templates),
   );
   await mkdir(templatesDir, { recursive: true });
-  const templateContent = await fsReadFile(
-    path.join(FIXTURES_ROOT, "agents/_templates/agent.liquid"),
-    "utf-8",
-  );
-  await fsWrite(path.join(templatesDir, "agent.liquid"), templateContent);
+  await fsWrite(path.join(templatesDir, "agent.liquid"), content);
 }
 
 /** The line only the fixture template emits, and therefore the one that says which rendered. */
@@ -166,16 +158,44 @@ const SHIPPED_TEMPLATE_SECTIONS = [
   "<system-reminder>",
 ] as const;
 
-/** Opaque: each assertion compares the compile's return against this same value. */
-const STUB_OUTPUT = renderAgentMd("web-developer");
+/** api-developer carries no critical files and no output.md, so only these sections open. */
+const SECTIONS_WITHOUT_CRITICAL_OR_OUTPUT = [
+  "# api-developer agent",
+  "<role>",
+  "<operating_principles>",
+  "## Workflow",
+  "<system-reminder>",
+] as const;
 
-/** Stubs `renderFile` and `parseAndRender`, which partials resolve through. */
-function stubEngine(rendered?: string): { renderFile: Mock; parseAndRender: Mock } {
-  return {
-    renderFile: rendered === undefined ? vi.fn() : vi.fn().mockResolvedValue(rendered),
-    parseAndRender: vi.fn((partial: string) => Promise.resolve(partial)),
-  };
+/** Prose an author may write that looks like Liquid; the compile must not evaluate it. */
+const PROSE_WITH_LIQUID_SYNTAX =
+  "Use ${{ secrets.DB_PASSWORD }} in GitHub Actions, and {% if ready %} in your own templates.";
+
+async function fixtureText(agent: string, file: string): Promise<string> {
+  return fsReadFile(path.join(FIXTURES_ROOT, "agents", agent, file), "utf-8");
 }
+
+/** A project template that stamps the marker itself, as an override is free to. */
+const TEMPLATE_THAT_STAMPS = [
+  "---",
+  "name: {{ agent.name }}",
+  "---",
+  provenanceMarker(),
+  "",
+  "# {{ agent.title }}",
+  "",
+].join("\n");
+
+/** What that template renders for web-developer: one marker, where the template put it. */
+const RENDERED_BY_THE_STAMPING_TEMPLATE = [
+  "---",
+  "name: web-developer",
+  "---",
+  provenanceMarker(),
+  "",
+  "# web-developer agent",
+  "",
+].join("\n");
 
 describe("compiler", () => {
   let projectDir: string;
@@ -189,59 +209,62 @@ describe("compiler", () => {
   });
 
   describe("reading agent source files", () => {
-    it("when compiling an agent, should pass agent data to template engine", async () => {
-      const engine = stubEngine(STUB_OUTPUT);
-
-      await compileAgentForHost(
+    it("compiles the agent's identity and playbook into its output", async () => {
+      const output = await compileAgentForHost(
         "claude",
         "api-developer",
         createMockAgentConfig("api-developer"),
         projectDir,
-        engine as never,
+        await createLiquidEngine(),
       );
 
-      expect(engine.renderFile).toHaveBeenCalledWith(
-        "agent",
-        expect.objectContaining({
-          identity: expect.stringContaining("API Developer"),
-          playbook: expect.stringContaining("Design the API"),
-        }),
-      );
+      expect(output).toContain(await fixtureText("api-developer", "identity.md"));
+      expect(output).toContain(await fixtureText("api-developer", "playbook.md"));
     });
 
-    it("when compiling an agent, should read optional output.md file", async () => {
-      const engine = stubEngine(STUB_OUTPUT);
-
-      await compileAgentForHost(
+    it("compiles the agent's own output.md into its output", async () => {
+      const output = await compileAgentForHost(
         "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
-        engine as never,
+        await createLiquidEngine(),
       );
 
-      expect(engine.renderFile).toHaveBeenCalledWith(
-        "agent",
-        expect.objectContaining({ output: expect.any(String) }),
-      );
+      expect(output).toContain(await fixtureText("web-developer", "output.md"));
     });
 
     it("when the agent directory is absent, should reject naming the path it could not read", async () => {
-      const engine = stubEngine();
-
       await expect(
         compileAgentForHost(
           "claude",
           "web-developer",
           createMockAgentConfig("web-developer", [], { path: "nonexistent-agent" }),
           projectDir,
-          engine as never,
+          await createLiquidEngine(),
         ),
       ).rejects.toThrow(/nonexistent-agent/);
     });
+
+    it("keeps Liquid-looking text in an agent's prose as written", async () => {
+      await fsWrite(
+        path.join(projectDir, "src/agents/api-developer/identity.md"),
+        PROSE_WITH_LIQUID_SYNTAX,
+      );
+
+      const output = await compileAgentForHost(
+        "claude",
+        "api-developer",
+        createMockAgentConfig("api-developer"),
+        projectDir,
+        await createLiquidEngine(),
+      );
+
+      expect(output).toContain(PROSE_WITH_LIQUID_SYNTAX);
+    });
   });
 
-  describe("what an agent's files hand the template", () => {
+  describe("what an agent's files put in its output", () => {
     const CATEGORY_OUTPUT = "## Output\n\nThe category's own output section.";
 
     /** An agent nested under a category folder that carries the category's output.md. */
@@ -259,42 +282,34 @@ describe("compiler", () => {
       return createMockAgentConfig("api-developer", [], { path: "developer/api-developer" });
     }
 
-    it("hands empty critical sections and no output for an agent whose files hold none", async () => {
-      const engine = stubEngine(STUB_OUTPUT);
-
-      await compileAgentForHost(
+    it("opens no critical or output section for an agent whose files hold none", async () => {
+      const output = await compileAgentForHost(
         "claude",
         "api-developer",
         createMockAgentConfig("api-developer"),
         projectDir,
-        engine as never,
+        await createLiquidEngine(),
       );
 
-      expect(engine.renderFile).toHaveBeenCalledWith(
-        "agent",
-        expect.objectContaining({ criticalRequirementsTop: "", criticalReminders: "", output: "" }),
-      );
+      expect(parseCompiledAgentSections(output).sectionOrder).toStrictEqual([
+        ...SECTIONS_WITHOUT_CRITICAL_OR_OUTPUT,
+      ]);
       expect(verbose).toHaveBeenCalledWith("Compiling agent: api-developer (claude)");
     });
 
     it.each([
       ["has no output.md", undefined],
       ["has an empty output.md", ""],
-    ])("hands the category's output when the agent %s", async (_case, ownOutput) => {
-      const engine = stubEngine(STUB_OUTPUT);
-
-      await compileAgentForHost(
+    ])("compiles the category's output when the agent %s", async (_case, ownOutput) => {
+      const output = await compileAgentForHost(
         "claude",
         "api-developer",
         await categorisedAgent(ownOutput),
         projectDir,
-        engine as never,
+        await createLiquidEngine(),
       );
 
-      expect(engine.renderFile).toHaveBeenCalledWith(
-        "agent",
-        expect.objectContaining({ output: CATEGORY_OUTPUT }),
-      );
+      expect(output).toContain(CATEGORY_OUTPUT);
     });
   });
 
@@ -338,12 +353,6 @@ describe("compiler", () => {
   });
 
   describe("createLiquidEngine", () => {
-    it("creates engine with default template root", async () => {
-      const engine = await createLiquidEngine();
-
-      expect(typeof engine.renderFile).toBe("function");
-    });
-
     /** An engine renders whatever it is given, so the marker alone cannot say which won. */
     it("renders a project's own agent template in place of the shipped one", async () => {
       await installProjectTemplateOverride(projectDir);
@@ -386,184 +395,33 @@ describe("compiler", () => {
     });
   });
 
-  describe("sanitizeLiquidSyntax", () => {
-    it("returns clean strings unchanged", () => {
-      expect(sanitizeLiquidSyntax("Web Developer", "test")).toBe("Web Developer");
-    });
-
-    it("strips {{ and }} delimiters from input", () => {
-      const result = sanitizeLiquidSyntax('{{ include "../../../etc/passwd" }}', "agent.name");
-      expect(result).toBe(' include "../../../etc/passwd" ');
-      expect(result).not.toContain("{{");
-      expect(result).not.toContain("}}");
-    });
-
-    it("strips {% and %} delimiters from input", () => {
-      const result = sanitizeLiquidSyntax('{% assign x = "malicious" %}', "agent.name");
-      expect(result).toBe(' assign x = "malicious" ');
-      expect(result).not.toContain("{%");
-      expect(result).not.toContain("%}");
-    });
-
-    it("strips mixed Liquid delimiters", () => {
-      const result = sanitizeLiquidSyntax("{{ x }}{% if true %}evil{% endif %}", "agent.name");
-      expect(result).not.toContain("{{");
-      expect(result).not.toContain("}}");
-      expect(result).not.toContain("{%");
-      expect(result).not.toContain("%}");
-    });
-
-    it("warns when stripping Liquid syntax", () => {
-      sanitizeLiquidSyntax("{{ malicious }}", "agent.name");
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("Stripped Liquid template syntax from 'agent.name'"),
-      );
-    });
-
-    it("does not warn for clean strings", () => {
-      vi.mocked(warn).mockClear();
-      sanitizeLiquidSyntax("Clean Agent Name", "agent.name");
-      expect(warn).not.toHaveBeenCalled();
-    });
-
-    it("handles strings with only Liquid delimiters", () => {
-      expect(sanitizeLiquidSyntax("{{}}", "test")).toBe("");
-      expect(sanitizeLiquidSyntax("{%%}", "test")).toBe("");
-    });
-
-    it("handles nested/repeated delimiters", () => {
-      const result = sanitizeLiquidSyntax("{{ {{ nested }} }}", "test");
-      expect(result).not.toContain("{{");
-      expect(result).not.toContain("}}");
-    });
-  });
-
-  describe("sanitizeCompiledAgentData", () => {
-    it("passes through clean data unchanged", () => {
-      const data = createMockCompiledAgentData();
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(result.agent.name).toBe("test-agent");
-      expect(result.agent.title).toBe("Test Agent");
-      expect(result.agent.description).toBe("A test agent");
-      expect(result.identity).toBe("Test identity");
-    });
-
-    it("sanitizes Liquid syntax in agent.name", () => {
-      const data = createMockCompiledAgentData({ name: '{{ forked_from.source | join: "|" }}' });
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(result.agent.name).not.toContain("{{");
-      expect(result.agent.name).not.toContain("}}");
-    });
-
-    it("sanitizes Liquid syntax in agent.title", () => {
-      const data = createMockCompiledAgentData({ title: "{% include 'malicious' %}" });
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(result.agent.title).not.toContain("{%");
-      expect(result.agent.title).not.toContain("%}");
-    });
-
-    it("sanitizes Liquid syntax in agent.description", () => {
-      const data = createMockCompiledAgentData({ description: "{{ evil }}" });
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(result.agent.description).not.toContain("{{");
-    });
-
-    it("sanitizes Liquid syntax in agent.tools array", () => {
-      const data = createMockCompiledAgentData({ tools: ["Read", "{{ malicious }}"] });
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(result.agent.tools[0]).toBe("Read");
-      expect(result.agent.tools[1]).not.toContain("{{");
-    });
-
-    it("preserves Liquid syntax in content fields (not re-evaluated by LiquidJS)", () => {
-      const data = createMockCompiledAgentData();
-      data.identity = "Use ${{ secrets.DB_PASSWORD }} in GitHub Actions";
-      data.playbook = "Template structure: {{ identity }} and {% if condition %}";
-      data.output = "{{ forked_from }} output example";
-      data.criticalRequirementsTop = "Include {{ variable }} syntax";
-      data.criticalReminders = "Use {% for item in list %} loops";
-
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(result.identity).toBe("Use ${{ secrets.DB_PASSWORD }} in GitHub Actions");
-      expect(result.playbook).toBe("Template structure: {{ identity }} and {% if condition %}");
-      expect(result.output).toBe("{{ forked_from }} output example");
-      expect(result.criticalRequirementsTop).toBe("Include {{ variable }} syntax");
-      expect(result.criticalReminders).toBe("Use {% for item in list %} loops");
-    });
-
-    it("sanitizes Liquid syntax in skill metadata", () => {
-      const skill = createMockSkillEntry("web-framework-react", true, {
-        description: "{{ malicious }} skill",
-        usage: "{% evil %} usage",
-      });
-
-      const data = createMockCompiledAgentData();
-      data.skills = [skill];
-      data.preloadedSkills = [skill];
-      data.preloadedSkillIds = [skill.id];
-
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(firstElement(result.skills).description).not.toContain("{{");
-      expect(firstElement(result.skills).usage).not.toContain("{%");
-    });
-
-    it("leaves absent optional fields absent", () => {
-      const data = createMockCompiledAgentData({});
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(result.agent.model).toBeUndefined();
-      expect(result.agent.permissionMode).toBeUndefined();
-    });
-
-    it("sanitizes optional string fields when present", () => {
-      const data = createMockCompiledAgentData({
-        model: "{{ inject }}" as NonNullable<AgentConfig["model"]>,
-        permissionMode: "{% evil %}" as NonNullable<AgentConfig["permissionMode"]>,
-      });
-      const result = sanitizeCompiledAgentData(data);
-
-      expect(String(result.agent.model)).not.toContain("{{");
-      expect(String(result.agent.permissionMode)).not.toContain("{%");
-    });
-  });
-
   describe("compileAgentForHost", () => {
-    it("stamps the compiled agent with the provenance marker", async () => {
-      const engine = stubEngine(STUB_OUTPUT);
-
+    it("stamps the compiled agent with the provenance marker, once", async () => {
       const output = await compileAgentForHost(
         "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
-        engine as never,
+        await createLiquidEngine(),
       );
 
       expect(hasProvenanceMarker(output)).toBe(true);
-      expect(output).toBe(stampProvenanceMarker(STUB_OUTPUT));
+      expect(output.indexOf(provenanceMarker())).toBe(output.lastIndexOf(provenanceMarker()));
     });
 
     /** A project template may emit the marker itself; the compile must leave exactly one. */
     it("does not stack a second marker when the render already carries one", async () => {
-      const alreadyStamped = stampProvenanceMarker(STUB_OUTPUT);
-      const engine = stubEngine(alreadyStamped);
+      await writeProjectTemplate(projectDir, TEMPLATE_THAT_STAMPS);
 
       const output = await compileAgentForHost(
         "claude",
         "web-developer",
         createMockAgentConfig("web-developer"),
         projectDir,
-        engine as never,
+        await createLiquidEngine(projectDir),
       );
 
-      expect(output).toBe(alreadyStamped);
+      expect(output).toBe(RENDERED_BY_THE_STAMPING_TEMPLATE);
     });
   });
 
@@ -681,129 +539,23 @@ describe("compiler", () => {
   });
 
   describe("template injection prevention (integration)", () => {
-    it("when agent.name contains Liquid syntax, should not execute it", async () => {
-      const engine = stubEngine(STUB_OUTPUT);
-
-      await compileAgentForHost(
+    it("writes Liquid syntax in an agent's name and title as text, and says it stripped it", async () => {
+      const output = await compileAgentForHost(
         "claude",
         "web-developer",
         WEB_DEV_LIQUID_INJECTION,
         projectDir,
-        engine as never,
+        await createLiquidEngine(),
       );
 
-      const renderCall = elementAt(
-        firstElement(engine.renderFile.mock.calls),
-        1,
-      ) as CompiledAgentData;
-      expect(renderCall.agent.name).not.toContain("{{");
-      expect(renderCall.agent.name).not.toContain("}}");
-      expect(renderCall.agent.title).not.toContain("{%");
-      expect(renderCall.agent.title).not.toContain("%}");
-    });
-  });
-
-  describe("buildAgentTemplateContext", () => {
-    const agentFiles = {
-      identity: "Test identity content",
-      playbook: "Test playbook content",
-      output: "Test output content",
-      criticalRequirementsTop: "Test requirements",
-      criticalReminders: "Test reminders",
-    };
-
-    it("should build template context with all file content", () => {
-      const agent = createMockAgentConfig("web-developer", []);
-
-      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
-
-      // Derived: every compiled sub-agent is granted the Skill tool.
-      expect(result.agent).toStrictEqual({ ...agent, tools: ["Read", "Write", "Skill"] });
-      expect(result.identity).toBe("Test identity content");
-      expect(result.playbook).toBe("Test playbook content");
-      expect(result.output).toBe("Test output content");
-      expect(result.criticalRequirementsTop).toBe("Test requirements");
-      expect(result.criticalReminders).toBe("Test reminders");
-    });
-
-    it("should include all skills from agent config", () => {
-      const skills = [
-        createMockSkillEntry("web-framework-react", true),
-        createMockSkillEntry("web-testing-vitest", false),
-      ];
-      const agent = createMockAgentConfig("web-developer", skills);
-
-      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
-
-      expect(result.skills).toStrictEqual(skills);
-      expect(result.skills).toHaveLength(2);
-    });
-
-    it("should separate preloaded from dynamic skills", () => {
-      const preloadedSkill = createMockSkillEntry("web-framework-react", true);
-      const dynamicSkill = createMockSkillEntry("web-testing-vitest", false);
-      const agent = createMockAgentConfig("web-developer", [preloadedSkill, dynamicSkill]);
-
-      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
-
-      expect(result.preloadedSkills).toStrictEqual([preloadedSkill]);
-      expect(result.dynamicSkills).toStrictEqual([dynamicSkill]);
-    });
-
-    it("should extract preloaded skill IDs", () => {
-      const preloaded1 = createMockSkillEntry("web-framework-react", true);
-      const preloaded2 = createMockSkillEntry("web-testing-vitest", true);
-      const dynamic = createMockSkillEntry("web-state-zustand", false);
-      const agent = createMockAgentConfig("web-developer", [preloaded1, preloaded2, dynamic]);
-
-      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
-
-      expect(result.preloadedSkillIds).toStrictEqual(["web-framework-react", "web-testing-vitest"]);
-    });
-
-    it("should handle agent with no skills", () => {
-      const agent = createMockAgentConfig("web-developer", []);
-
-      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
-
-      expect(result.skills).toStrictEqual([]);
-      expect(result.preloadedSkills).toStrictEqual([]);
-      expect(result.dynamicSkills).toStrictEqual([]);
-      expect(result.preloadedSkillIds).toStrictEqual([]);
-    });
-
-    it("should handle agent with only preloaded skills", () => {
-      const skills = [
-        createMockSkillEntry("web-framework-react", true),
-        createMockSkillEntry("web-testing-vitest", true),
-      ];
-      const agent = createMockAgentConfig("web-developer", skills);
-
-      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
-
-      expect(result.preloadedSkills).toHaveLength(2);
-      expect(result.dynamicSkills).toHaveLength(0);
-      expect(result.preloadedSkillIds).toHaveLength(2);
-      expect(result.preloadedSkills).toStrictEqual(skills);
-      expect(result.dynamicSkills).toStrictEqual([]);
-      expect(result.preloadedSkillIds).toStrictEqual(["web-framework-react", "web-testing-vitest"]);
-    });
-
-    it("should handle agent with only dynamic skills", () => {
-      const skills = [
-        createMockSkillEntry("web-framework-react", false),
-        createMockSkillEntry("web-testing-vitest", false),
-      ];
-      const agent = createMockAgentConfig("web-developer", skills);
-
-      const result = buildAgentTemplateContext("web-developer", agent, agentFiles);
-
-      expect(result.preloadedSkills).toHaveLength(0);
-      expect(result.dynamicSkills).toHaveLength(2);
-      expect(result.preloadedSkillIds).toHaveLength(0);
-      expect(result.preloadedSkills).toStrictEqual([]);
-      expect(result.dynamicSkills).toStrictEqual(skills);
-      expect(result.preloadedSkillIds).toStrictEqual([]);
+      expect(output).not.toContain(WEB_DEV_LIQUID_INJECTION.name);
+      expect(output).not.toContain(WEB_DEV_LIQUID_INJECTION.title);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Stripped Liquid template syntax from 'agent.name'"),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Stripped Liquid template syntax from 'agent.title'"),
+      );
     });
   });
 });

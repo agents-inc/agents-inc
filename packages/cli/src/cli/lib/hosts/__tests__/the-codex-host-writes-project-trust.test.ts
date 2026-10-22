@@ -55,11 +55,6 @@ function trustedTable(dir: string): string {
   return `[projects."${dir}"]\ntrust_level = "trusted"`;
 }
 
-/** More than one table for a path is a file Codex refuses to load. */
-function tablesFor(config: string, dir: string): number {
-  return config.split(`[projects."${dir}"]`).length - 1;
-}
-
 describe("trusting a project for Codex", () => {
   it("creates the config with the one entry when the user has none", async () => {
     const trust = await trustCodexProject(projectDir);
@@ -73,10 +68,9 @@ describe("trusting a project for Codex", () => {
 
     await trustCodexProject(projectDir);
 
-    const written = await theConfig();
-    expect(written.startsWith(THE_USERS_OWN_CONFIG.trimEnd())).toBe(true);
-    expect(written).toContain(trustedTable(projectDir));
-    expect(tablesFor(written, projectDir)).toBe(1);
+    expect(await theConfig()).toBe(
+      `${THE_USERS_OWN_CONFIG.trimEnd()}\n\n${trustedTable(projectDir)}\n`,
+    );
   });
 
   it("adds the key inside the user's own table for this project rather than a second table", async () => {
@@ -84,10 +78,7 @@ describe("trusting a project for Codex", () => {
 
     await trustCodexProject(projectDir);
 
-    const written = await theConfig();
-    expect(tablesFor(written, projectDir)).toBe(1);
-    expect(written).toContain(trustedTable(projectDir));
-    expect(written).toContain("some_setting_of_theirs = true");
+    expect(await theConfig()).toBe(`${trustedTable(projectDir)}\nsome_setting_of_theirs = true\n`);
   });
 
   it("writes the path with no trailing separator, the one spelling Codex matches", async () => {

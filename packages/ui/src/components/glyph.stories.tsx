@@ -40,16 +40,19 @@ export const EveryGlyph: Story = {
   ),
 }
 
-// Round caps are invisible at 11px until two glyphs share a row, so this is asserted.
+// Round caps are invisible at 11px until two glyphs share a row, so this is asserted. Computed on
+// every drawn shape, so it holds wherever the stroke is declared and fails when CSS overrides it.
 export const OneGeometryForEveryGlyph: Story = {
   ...EveryGlyph,
   play: async ({ canvas }) => {
     for (const name of Object.keys(GLYPH_PATHS)) {
-      const glyph = canvas.getByTestId(name)
+      for (const shape of canvas.getByTestId(name).querySelectorAll("*")) {
+        const stroke = getComputedStyle(shape)
 
-      await expect(glyph).toHaveAttribute("stroke-width", "1.75")
-      await expect(glyph).toHaveAttribute("stroke-linecap", "butt")
-      await expect(glyph).toHaveAttribute("stroke-linejoin", "miter")
+        await expect(stroke.strokeWidth).toBe("1.75px")
+        await expect(stroke.strokeLinecap).toBe("butt")
+        await expect(stroke.strokeLinejoin).toBe("miter")
+      }
     }
   },
 }

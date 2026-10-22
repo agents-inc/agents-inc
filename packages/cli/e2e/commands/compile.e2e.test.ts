@@ -30,10 +30,16 @@ import {
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
 import { saUnflagged } from "../../src/cli/lib/__tests__/factories/skill-factories.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, DIRS, FILES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import {
+  DIRS,
+  EJECT_SOURCE_NAME,
+  EXIT_CODES,
+  FILES,
+  STEP_TEXT,
+  TIMEOUTS,
+} from "../pages/constants.js";
 import { createE2ESource } from "../helpers/create-e2e-source.js";
 import { CLI } from "../fixtures/cli.js";
-import { provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 import "../matchers/setup.js";
 
 /**
@@ -41,8 +47,6 @@ import "../matchers/setup.js";
  * catalogue answers with the placeholder.
  */
 const PROJECT_SKILL_USAGE = "Use when testing E2E scenarios";
-
-const EJECT_ORIGIN = "eject";
 
 describe("compile command", () => {
   let tempDir: string;
@@ -127,7 +131,10 @@ describe("compile command", () => {
       projectDir,
       buildProjectConfig({
         name: "empty",
-        skills: buildSkillConfigs([E2E_SKILL.react.id], { scope: "project", origin: EJECT_ORIGIN }),
+        skills: buildSkillConfigs([E2E_SKILL.react.id], {
+          scope: "project",
+          origin: EJECT_SOURCE_NAME,
+        }),
         agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
       }),
     );
@@ -314,7 +321,7 @@ describe("compile command", () => {
           name: "empty",
           skills: buildSkillConfigs([E2E_SKILL.react.id], {
             scope: "project",
-            origin: EJECT_ORIGIN,
+            origin: EJECT_SOURCE_NAME,
           }),
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
         }),
@@ -378,7 +385,7 @@ describe("compile command", () => {
           path.join(agentsPath(project.dir), `${agentName}.md`),
         );
         expect(agentContent.startsWith("---\n")).toBe(true);
-        expect(agentContent).toContain(`\n---\n${provenanceMarker()}\n\n# `);
+        expect(agentContent).toContain(`\n---\n${STEP_TEXT.PROVENANCE_MARKER}\n\n# `);
       }
     });
 
@@ -661,7 +668,7 @@ describe("compile command", () => {
           name: "global-test",
           skills: buildSkillConfigs(["web-testing-cypress-e2e"], {
             scope: "project",
-            origin: EJECT_ORIGIN,
+            origin: EJECT_SOURCE_NAME,
           }),
           agents: buildAgentConfigs([E2E_AGENT["web-developer"].name], { scope: "project" }),
         }),
@@ -726,7 +733,10 @@ describe("compile command", () => {
           globalHome,
           buildProjectConfig({
             name: "fan-out-seat-global",
-            skills: buildSkillConfigs([globalSkill.id], { scope: "global", origin: EJECT_ORIGIN }),
+            skills: buildSkillConfigs([globalSkill.id], {
+              scope: "global",
+              origin: EJECT_SOURCE_NAME,
+            }),
             agents: buildAgentConfigs([globalAgent.name], { scope: "global" }),
             stack: { [globalAgent.name]: { "web-framework": [saUnflagged(globalSkill.id)] } },
             projects: [realpathSync(projectDir)],
@@ -747,8 +757,14 @@ describe("compile command", () => {
           buildProjectConfig({
             name: "fan-out-seat-project",
             skills: [
-              ...buildSkillConfigs([globalSkill.id], { scope: "global", origin: EJECT_ORIGIN }),
-              ...buildSkillConfigs([projectSkill.id], { scope: "project", origin: EJECT_ORIGIN }),
+              ...buildSkillConfigs([globalSkill.id], {
+                scope: "global",
+                origin: EJECT_SOURCE_NAME,
+              }),
+              ...buildSkillConfigs([projectSkill.id], {
+                scope: "project",
+                origin: EJECT_SOURCE_NAME,
+              }),
             ],
             agents: buildAgentConfigs([projectAgent.name], { scope: "project" }),
             stack: { [projectAgent.name]: { "web-testing": [saUnflagged(projectSkill.id)] } },

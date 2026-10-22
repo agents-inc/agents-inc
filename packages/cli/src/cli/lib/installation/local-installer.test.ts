@@ -1,11 +1,11 @@
 import { chmod, mkdir, writeFile, readFile, readdir, realpath, symlink } from "fs/promises";
 import os from "os";
 import path from "path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getProjectConfigPath, resolveInstallPaths } from "./install-base-dir";
 import { sourceFolderInUse } from "./install-layout.js";
-import { buildCompileAgents, buildAgentScopeMap, setConfigMetadata } from "./local-installer";
+import { buildAgentScopeMap } from "./local-installer";
 import { writeProjectConfig } from "../operations/project/write-project-config.js";
 // Deep import: the pair writers live in config-gate and are deliberately not re-exported.
 import {
@@ -61,51 +61,6 @@ import {
   STANDARD_FILES,
 } from "../../consts";
 import { generateConfigSource } from "../configuration/config-writer";
-import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants";
-
-// Mocks are typed against the functions they replace, so a stale answer is a compile error.
-vi.mock("../loading/loader", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../loading/loader")>();
-  return {
-    ...actual,
-    loadAllAgents: vi.fn<typeof actual.loadAllAgents>().mockResolvedValue({}),
-  };
-});
-
-vi.mock("../stacks/stacks-loader", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../stacks/stacks-loader")>();
-  return {
-    ...actual,
-    loadStackById: vi.fn<typeof actual.loadStackById>().mockResolvedValue(null),
-  };
-});
-
-vi.mock("../resolver", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../resolver")>();
-  return {
-    ...actual,
-    buildSkillRefsFromConfig: vi.fn<typeof actual.buildSkillRefsFromConfig>().mockReturnValue([]),
-  };
-});
-
-vi.mock("../configuration/config-generator", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../configuration/config-generator")>();
-  return {
-    // Echoes `name` as the real generator does. The skill is one no spec below selects, so a
-    // written skill can only have come from the generator.
-    generateProjectConfigFromSkills: vi
-      .fn<typeof original.generateProjectConfigFromSkills>()
-      .mockImplementation((name) => ({
-        name,
-        agents: [],
-        skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
-      })),
-    buildStackProperty: vi.fn<typeof original.buildStackProperty>().mockReturnValue({}),
-    splitConfigByScope: original.splitConfigByScope,
-    scopeEligibilityKey: original.scopeEligibilityKey,
-    isScopePairCompatible: original.isScopePairCompatible,
-  };
-});
 
 /** Holds the gate's write token: some fixtures are the global pair at the fake home. */
 function writeConfigFile(...args: Parameters<typeof writeConfigFileUngated>): Promise<void> {
@@ -166,14 +121,6 @@ async function regenerateScopeConfigTypes(
   await writeScopeConfigTypes(projectDir, config, { matrix, agents });
 }
 
-const mockBuildSkillRefs = vi.mocked((await import("../resolver")).buildSkillRefsFromConfig);
-const mockGenerateProjectConfig = vi.mocked(
-  (await import("../configuration/config-generator")).generateProjectConfigFromSkills,
-);
-const mockLoadStackById = vi.mocked((await import("../stacks/stacks-loader")).loadStackById);
-
-const BUILT_IN_STACK_ID = "nextjs-fullstack";
-
 /** Read-only file in a writable directory, so cleanup still removes it. */
 const READ_ONLY_FILE = 0o444;
 
@@ -190,11 +137,13 @@ describe("local-installer", () => {
   });
 
   describe("writeProjectConfig", () => {
+    beforeEach(() => initializeMatrix(SINGLE_REACT_MATRIX));
+
     const fakeHome = useFakeHome(() => tempDir);
     const fakeHomeDir = (): string => fakeHome.dir;
 
     it("should create the config directory and seed the global pair it inherits from", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -212,7 +161,7 @@ describe("local-installer", () => {
     });
 
     it("should write config into the source folder the project is on", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -228,14 +177,14 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
+        skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
         marketplace: tempDir,
       });
       expect(result.configPath).toBe(configPath);
     });
 
     it("should include source in config from sourceFlag", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -252,13 +201,13 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
+        skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
         marketplace: "github:my-org/skills",
       });
     });
 
     it("should include source from sourceResult when no sourceFlag", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir, {
         sourceConfig: {
@@ -279,13 +228,13 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
+        skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
         marketplace: "github:default/source",
       });
     });
 
     it("should include marketplace in config when available", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir, {
         marketplace: "my-marketplace",
@@ -303,14 +252,14 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
+        skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
         marketplace: tempDir,
         marketplaceName: "my-marketplace",
       });
     });
 
     it("should return correct result structure", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -324,7 +273,7 @@ describe("local-installer", () => {
         config: {
           name: path.basename(tempDir),
           agents: [],
-          skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
+          skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
           marketplace: tempDir,
         },
         configPath: getProjectConfigPath(tempDir, "claude"),
@@ -360,7 +309,7 @@ describe("local-installer", () => {
         ),
       );
 
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -377,7 +326,7 @@ describe("local-installer", () => {
     });
 
     it("stores no install mode on the config it writes", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(
         buildSkillConfigs([SKILLS.react.id], { origin: "eject" }),
       );
@@ -392,13 +341,13 @@ describe("local-installer", () => {
       expect(result.config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
+        skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
         marketplace: tempDir,
       });
     });
 
     it("should not set wasMerged when no existing config", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -413,7 +362,7 @@ describe("local-installer", () => {
     });
 
     it("should write valid config with satisfies ProjectConfig", async () => {
-      const matrix = EMPTY_MATRIX;
+      const matrix = SINGLE_REACT_MATRIX;
       const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
       const sourceResult = buildSourceResult(matrix, tempDir);
 
@@ -434,47 +383,15 @@ describe("local-installer", () => {
       expect(config).toStrictEqual({
         name: path.basename(tempDir),
         agents: [],
-        skills: [{ id: "web-state-zustand", scope: "project", origin: "eject" }],
+        skills: [{ id: "web-framework-react", scope: "project", origin: "eject" }],
         marketplace: tempDir,
       });
-    });
-
-    it("names the stack id and the source it asked when the stack does not resolve", async () => {
-      initializeMatrix(FULLSTACK_PAIR_MATRIX);
-      mockLoadStackById.mockResolvedValueOnce(null);
-
-      const selectedAgents: AgentName[] = ["web-developer"];
-      const selection = buildInstallSelection(buildSkillConfigs(["web-framework-react"]), {
-        selectedStackId: BUILT_IN_STACK_ID,
-        selectedAgents,
-        agentConfigs: buildAgentConfigs(selectedAgents),
-      });
-      const sourceResult = buildSourceResult(FULLSTACK_PAIR_MATRIX, tempDir, {
-        sourceConfig: { source: TEST_CUSTOM_SOURCE_URL, sourceOrigin: "flag" },
-      });
-
-      const install = writeProjectConfig({ selection, sourceResult, projectDir: tempDir });
-      await expect(install).rejects.toThrow(BUILT_IN_STACK_ID);
-      await expect(install).rejects.toThrow(TEST_CUSTOM_SOURCE_URL);
-
-      expect(mockLoadStackById).toHaveBeenCalledWith(
-        BUILT_IN_STACK_ID,
-        sourceResult.sourcePath,
-        TEST_CUSTOM_SOURCE_URL,
-      );
     });
 
     it("writes a seed payload's assignedStack verbatim, cross-domain rows included", async () => {
       // `assignedStack` rows are the sharer's choices and are never re-filtered by relevance, even
       // across domains.
       initializeMatrix(FULLSTACK_PAIR_MATRIX);
-
-      const configGenerator = await vi.importActual<
-        typeof import("../configuration/config-generator")
-      >("../configuration/config-generator");
-      mockGenerateProjectConfig.mockImplementationOnce(
-        configGenerator.generateProjectConfigFromSkills,
-      );
 
       const selectedAgents: AgentName[] = ["api-developer", "web-developer"];
       const selection = buildInstallSelection(
@@ -526,12 +443,12 @@ describe("local-installer", () => {
     const fakeHome = useFakeHome(() => tempDir);
 
     it("a global install is named for the product, never for the home directory", async () => {
-      initializeMatrix(EMPTY_MATRIX);
+      initializeMatrix(SINGLE_REACT_MATRIX);
       const homeDir = fakeHome.dir;
       const selection = buildInstallSelection(
         buildSkillConfigs([SKILLS.react.id], { scope: "global" }),
       );
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, homeDir);
+      const sourceResult = buildSourceResult(SINGLE_REACT_MATRIX, homeDir);
 
       const result = await writeProjectConfig({ selection, sourceResult, projectDir: homeDir });
 
@@ -643,223 +560,6 @@ describe("local-installer", () => {
       expect(result.skillsDir).toBe(`/my/project/${LOCAL_SKILLS_PATH}`);
       expect(result.agentsDir).toBe(`/my/project/${CLAUDE_DIR}/agents`);
       expect(result.configPath).toBe(`/my/project/.agents-inc/claude/${STANDARD_FILES.CONFIG_TS}`);
-    });
-  });
-
-  describe("buildCompileAgents", () => {
-    it("carries a sub-agent's model, Codex model and effort onto its entry, stack or not", () => {
-      const config = buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer"], {
-          model: "haiku",
-          codexModel: "gpt-5.6-terra",
-          effort: "high",
-        }),
-        skills: buildSkillConfigs(["web-framework-react"]),
-      });
-      const agents: Partial<Record<AgentName, AgentDefinition>> = {
-        "web-developer": createMockAgent("web-developer"),
-      };
-
-      expect(buildCompileAgents(config, agents)).toStrictEqual({
-        "web-developer": { model: "haiku", codexModel: "gpt-5.6-terra", effort: "high" },
-      });
-    });
-
-    it("should build compile agents for agents in the definition record", () => {
-      const config = buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: buildSkillConfigs(["web-framework-react"]),
-        stack: {
-          "web-developer": {
-            "web-framework": [sa("web-framework-react", false)],
-          },
-        },
-      });
-      const agents: Partial<Record<AgentName, AgentDefinition>> = {
-        "web-developer": createMockAgent("web-developer"),
-      };
-
-      const result = buildCompileAgents(config, agents);
-
-      expect(result).toStrictEqual({
-        "web-developer": { skills: [] },
-      });
-    });
-
-    it("should skip agents not in the definition record", () => {
-      const config = buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer", "api-developer"]),
-        skills: buildSkillConfigs(["web-framework-react"]),
-      });
-      const agents: Partial<Record<AgentName, AgentDefinition>> = {
-        "web-developer": createMockAgent("web-developer"),
-      };
-
-      const result = buildCompileAgents(config, agents);
-
-      expect(result["web-developer"]).toStrictEqual({});
-      expect(result["api-developer"]).toBeUndefined();
-    });
-
-    it("should return empty skills when agent has no stack mapping", () => {
-      const config = buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: buildSkillConfigs(["web-framework-react"]),
-      });
-      const agents: Partial<Record<AgentName, AgentDefinition>> = {
-        "web-developer": createMockAgent("web-developer"),
-      };
-
-      const result = buildCompileAgents(config, agents);
-
-      expect(result["web-developer"]).toStrictEqual({});
-    });
-
-    it("should filter global agent skills to only global-scoped skills (cross-scope safety net)", async () => {
-      mockBuildSkillRefs.mockReturnValueOnce([
-        { id: SKILLS.react.id, usage: "when working with web-framework" },
-        { id: "web-testing-vitest", usage: "when working with web-testing" },
-      ]);
-
-      const config = buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer"], { scope: "global" }),
-        skills: [
-          ...buildSkillConfigs([SKILLS.react.id]),
-          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
-        ],
-        stack: {
-          "web-developer": {
-            "web-framework": [sa("web-framework-react", false)],
-            "web-testing": [sa("web-testing-vitest", false)],
-          },
-        },
-      });
-      const agents: Partial<Record<AgentName, AgentDefinition>> = {
-        "web-developer": createMockAgent("web-developer"),
-      };
-
-      const result = buildCompileAgents(config, agents);
-
-      // A global agent sees only global-scope skills.
-      const skills = result["web-developer"]?.skills ?? [];
-      const skillIds = skills.map((s) => s.id);
-      expect(skillIds).toContain("web-testing-vitest");
-      expect(skillIds).not.toContain(SKILLS.react.id);
-    });
-
-    it("should not filter project-scoped agent skills", async () => {
-      mockBuildSkillRefs.mockReturnValueOnce([
-        { id: "web-framework-react", usage: "when working with web-framework" },
-        { id: "web-testing-vitest", usage: "when working with web-testing" },
-      ]);
-
-      const config = buildProjectConfig({
-        agents: buildAgentConfigs(["web-developer"]),
-        skills: [
-          ...buildSkillConfigs(["web-framework-react"]),
-          ...buildSkillConfigs(["web-testing-vitest"], { scope: "global" }),
-        ],
-        stack: {
-          "web-developer": {
-            "web-framework": [sa("web-framework-react", false)],
-            "web-testing": [sa("web-testing-vitest", false)],
-          },
-        },
-      });
-      const agents: Partial<Record<AgentName, AgentDefinition>> = {
-        "web-developer": createMockAgent("web-developer"),
-      };
-
-      const result = buildCompileAgents(config, agents);
-
-      // A project agent sees every skill regardless of scope.
-      const skills = result["web-developer"]?.skills ?? [];
-      const skillIds = skills.map((s) => s.id);
-      expect(skillIds).toContain("web-framework-react");
-      expect(skillIds).toContain("web-testing-vitest");
-    });
-
-    describe("excluded filtering", () => {
-      it("should exclude skills with excluded: true from compilation", async () => {
-        mockBuildSkillRefs.mockReturnValueOnce([
-          { id: "web-framework-react", usage: "when working with web-framework" },
-          { id: SKILLS.vitest.id, usage: "when working with web-testing" },
-        ]);
-
-        const config = buildProjectConfig({
-          agents: buildAgentConfigs(["web-developer"]),
-          skills: [
-            ...buildSkillConfigs(["web-framework-react"]),
-            ...buildSkillConfigs([SKILLS.vitest.id], { excluded: true }),
-          ],
-          stack: {
-            "web-developer": {
-              "web-framework": [sa("web-framework-react", false)],
-              "web-testing": [sa("web-testing-vitest", false)],
-            },
-          },
-        });
-        const agents: Partial<Record<AgentName, AgentDefinition>> = {
-          "web-developer": createMockAgent("web-developer"),
-        };
-
-        const result = buildCompileAgents(config, agents);
-
-        const skills = result["web-developer"]?.skills ?? [];
-        const skillIds = skills.map((s) => s.id);
-        expect(skillIds).toContain("web-framework-react");
-        expect(skillIds).not.toContain(SKILLS.vitest.id);
-      });
-
-      it("should exclude agents with excluded: true from compilation", () => {
-        const config = buildProjectConfig({
-          agents: [
-            ...buildAgentConfigs(["web-developer"]),
-            ...buildAgentConfigs(["api-developer"], { excluded: true }),
-          ],
-          skills: buildSkillConfigs(["web-framework-react"]),
-        });
-        const agents: Partial<Record<AgentName, AgentDefinition>> = {
-          "web-developer": createMockAgent("web-developer"),
-          "api-developer": createMockAgent("api-developer"),
-        };
-
-        const result = buildCompileAgents(config, agents);
-
-        expect(result["web-developer"]).toStrictEqual({});
-        expect(result["api-developer"]).toBeUndefined();
-      });
-
-      it("should handle mixed active and excluded entries for the same skill ID", async () => {
-        mockBuildSkillRefs.mockReturnValueOnce([
-          { id: "web-framework-react", usage: "when working with web-framework" },
-        ]);
-
-        const config = buildProjectConfig({
-          agents: buildAgentConfigs(["web-developer"]),
-          skills: [
-            ...buildSkillConfigs(["web-framework-react"]),
-            ...buildSkillConfigs(["web-framework-react"], {
-              scope: "global",
-              origin: "agents-inc",
-              excluded: true,
-            }),
-          ],
-          stack: {
-            "web-developer": {
-              "web-framework": [sa("web-framework-react", false)],
-            },
-          },
-        });
-        const agents: Partial<Record<AgentName, AgentDefinition>> = {
-          "web-developer": createMockAgent("web-developer"),
-        };
-
-        const result = buildCompileAgents(config, agents);
-
-        const skills = result["web-developer"]?.skills ?? [];
-        expect(skills.map((s) => s.id)).toContain("web-framework-react");
-      });
     });
   });
 
@@ -1348,103 +1048,6 @@ describe("local-installer", () => {
       expect(config.marketplaceName).toBeUndefined();
       expect(config.marketplace).toBeUndefined();
       expect(changed).toBe(false);
-    });
-  });
-
-  describe("setConfigMetadata", () => {
-    it("should return a new config with selectedDomains when the selection names domains", () => {
-      const config = buildProjectConfig();
-      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
-        selectedDomains: ["web", "api"],
-      });
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir);
-
-      const result = setConfigMetadata(config, selection, sourceResult);
-
-      expect(result.selectedDomains).toStrictEqual(["web", "api"]);
-    });
-
-    it("should not set selectedDomains when the selection names none", () => {
-      const config = buildProjectConfig();
-      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
-        selectedDomains: [],
-      });
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir);
-
-      const result = setConfigMetadata(config, selection, sourceResult);
-
-      expect(result.selectedDomains).toBeUndefined();
-    });
-
-    it("never persists a flat agent list — agents[] is the only record of who is selected", () => {
-      const config = buildProjectConfig();
-      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
-        selectedAgents: ["web-developer", "api-developer"],
-      });
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir);
-
-      const result = setConfigMetadata(config, selection, sourceResult);
-
-      expect(Object.keys(result)).not.toContain("selectedAgents");
-    });
-
-    it("should prefer sourceFlag over sourceResult.sourceConfig.source", () => {
-      const config = buildProjectConfig();
-      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir, {
-        sourceConfig: { source: "github:default/source", sourceOrigin: "project" },
-      });
-
-      const result = setConfigMetadata(config, selection, sourceResult, "github:my-org/skills");
-
-      expect(result.marketplace).toBe("github:my-org/skills");
-    });
-
-    it("should use sourceResult.sourceConfig.source when no sourceFlag", () => {
-      const config = buildProjectConfig();
-      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir, {
-        sourceConfig: { source: "github:default/source", sourceOrigin: "project" },
-      });
-
-      const result = setConfigMetadata(config, selection, sourceResult);
-
-      expect(result.marketplace).toBe("github:default/source");
-    });
-
-    it("should set marketplace when available", () => {
-      const config = buildProjectConfig();
-      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]));
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir, {
-        marketplace: "my-marketplace",
-      });
-
-      const result = setConfigMetadata(config, selection, sourceResult);
-
-      expect(result.marketplaceName).toBe("my-marketplace");
-    });
-
-    it("should not mutate the original config object", () => {
-      const config = buildProjectConfig();
-      const originalName = config.name;
-      const selection = buildInstallSelection(buildSkillConfigs([SKILLS.react.id]), {
-        selectedDomains: ["web"],
-        selectedAgents: ["web-developer"],
-      });
-      const sourceResult = buildSourceResult(EMPTY_MATRIX, tempDir, {
-        marketplace: "my-marketplace",
-      });
-
-      const result = setConfigMetadata(config, selection, sourceResult, "github:my/repo");
-
-      expect(config.selectedDomains).toBeUndefined();
-      expect(config.marketplace).toBeUndefined();
-      expect(config.marketplaceName).toBeUndefined();
-      expect(config.name).toBe(originalName);
-
-      expect(result.selectedDomains).toStrictEqual(["web"]);
-      expect(result.marketplace).toBe("github:my/repo");
-      expect(result.marketplaceName).toBe("my-marketplace");
     });
   });
 

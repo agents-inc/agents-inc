@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import "../matchers/setup.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EJECT_SOURCE_NAME, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupTempDir,
   configTsPath,
@@ -20,15 +20,12 @@ import {
 } from "../helpers/type-check-probe.js";
 
 /**
- * A global-scope edit that narrows the global unions must not turn an untouched project's
- * generated config.ts (which inlines global rows) into a type error. `web-state-zustand` is
- * dynamic and alone in its category, so removing it narrows Category as well as SkillId.
+ * `web-state-zustand` is dynamic and alone in its category, so removing it narrows Category as
+ * well as SkillId.
  */
 
 const NARROWED_SKILL = E2E_SKILL.zustand;
 const NARROWED_CATEGORY = "web-client-state";
-
-const EJECT_SOURCE = "eject";
 
 function sourceFolderOf(dir: string): string {
   return path.dirname(configTsPath(dir));
@@ -81,10 +78,9 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global skill it is about to be orphaned from",
-      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE });
+      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE_NAME });
       expect((await readAllSkillEntries(fakeHome)).map((s) => s.id)).toContain(NARROWED_SKILL.id);
 
-      // Control: what the install wrote type-checks.
       const afterInstall = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
       expect(
         afterInstall.exitCode,
@@ -107,7 +103,7 @@ describe("a global-scope narrowing keeps an untouched project's config.ts type-c
       expect(
         await readAllSkillEntries(projectDir),
         "the untouched project config must still inline the now-removed global row",
-      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE });
+      ).toContainEqual({ id: NARROWED_SKILL.id, scope: "global", origin: EJECT_SOURCE_NAME });
 
       const afterNarrowing = await typecheckGeneratedConfig(sourceFolderOf(projectDir));
       expect(

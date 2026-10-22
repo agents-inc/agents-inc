@@ -22,12 +22,11 @@ import {
   E2E_MARKETPLACE_PREFIX,
   EXIT_CODES,
   FILES,
+  PUBLIC_MARKETPLACE_NAME,
   SOURCE_PATHS,
   STEP_TEXT,
   TIMEOUTS,
 } from "../pages/constants.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
-import { validateKebabCaseName } from "../../src/cli/lib/validate-kebab-name.js";
 
 // A marketplace's name is its skills' id prefix, so it must be constant across runs. Slugs are
 // pinned (it.fails) rather than met: the fixture borrows catalogue slugs because `skillRefInRules`
@@ -46,11 +45,7 @@ describe("E2E fixture marketplace namespace", () => {
       expect(
         E2E_MARKETPLACE_NAME,
         "the public catalogue owns its namespace; a fixture claiming it collides with every catalogue id",
-      ).not.toBe(DEFAULT_PUBLIC_SOURCE_NAME);
-    });
-
-    it("is a name build marketplace accepts", () => {
-      expect(validateKebabCaseName(E2E_MARKETPLACE_NAME, "Marketplace")).toBeNull();
+      ).not.toBe(PUBLIC_MARKETPLACE_NAME);
     });
   });
 
@@ -138,7 +133,7 @@ describe("E2E fixture marketplace namespace", () => {
       ).toBe(true);
     });
 
-    it.fails("carry the marketplace's namespace, as its ids do", async () => {
+    it.fails("carry the marketplace's namespace, as its ids do", { retry: 0 }, async () => {
       const published = await publishedSlugs();
 
       expect(

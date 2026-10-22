@@ -20,14 +20,14 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
   cleanupTempDir,
+  cliVersionUnderTest,
   directoryExists,
   fileExists,
   flattenCliOutput,
+  type InstallTree,
   normalizeInstallTree,
   readInstallTree,
-  type InstallTree,
 } from "../helpers/test-utils.js";
-import { cliVersion } from "../../src/cli/lib/agents/agent-provenance.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -39,6 +39,10 @@ import { DIRS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
  * `--provider` is a location parameter on one command: meaningless without `--from`, `--provider
  * claude` installs exactly what no flag does, and once a scope holds two installations no command
  * picks one silently. Nothing reads a config for the provider, so the assertions are about folders.
+ * Written before the flag existed, every test red on oclif's `Nonexistent flag: --provider`. It
+ * stayed green while the flag was hidden, since hidden is not disabled, so only
+ * `provider-is-on-every-help-screen.e2e.test.ts` can tell a shipped flag from an undiscoverable
+ * one.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -338,5 +342,8 @@ async function installedTreeOf(home: string): Promise<InstallTree> {
       path.posix.join(DIRS.CLAUDE, DIRS.CLAUDE_BACKUPS),
     ],
   });
-  return normalizeInstallTree(tree, { roots: { home: [home] }, cliVersion: await cliVersion() });
+  return normalizeInstallTree(tree, {
+    roots: { home: [home] },
+    cliVersion: await cliVersionUnderTest(),
+  });
 }

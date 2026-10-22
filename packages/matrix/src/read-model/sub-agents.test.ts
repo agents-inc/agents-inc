@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AGENT_DEFINITIONS } from "../generated/agents"
 import { SUB_AGENT_GROUPS, type SubAgentGroup } from "./sub-agents"
@@ -83,5 +83,61 @@ describe("SUB_AGENT_GROUPS", () => {
 
     vi.doUnmock("../generated/agents")
     vi.resetModules()
+  })
+})
+
+const WEB_DEVELOPER = AGENT_DEFINITIONS["web-developer"]
+
+const loadRosterOf = (definitions: Record<string, unknown>) => {
+  vi.doMock("../generated/agents", () => ({ AGENT_DEFINITIONS: definitions }))
+  return import("./sub-agents")
+}
+
+// The permitted halves are the shipped roster above and the model-less agent below.
+describe("the generated roster it is built from", () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    vi.doUnmock("../generated/agents")
+    vi.resetModules()
+  })
+
+  it("refuses an agent id the generated union does not carry", async () => {
+    await expect(
+      loadRosterOf({ "web-engineer": { ...WEB_DEVELOPER, id: "web-engineer" } })
+    ).rejects.toThrow(/web-engineer/)
+  })
+
+  it("refuses a model the CLI no longer offers", async () => {
+    await expect(
+      loadRosterOf({
+        "web-developer": { ...WEB_DEVELOPER, model: "sonnet-3-5" },
+      })
+    ).rejects.toThrow(/model/)
+  })
+
+  it("refuses a model present holding undefined", async () => {
+    await expect(
+      loadRosterOf({ "web-developer": { ...WEB_DEVELOPER, model: undefined } })
+    ).rejects.toThrow(/model/)
+  })
+
+  it("carries a sub-agent naming no model with no model at all", async () => {
+    const { model: _dropped, ...withoutModel } = WEB_DEVELOPER
+
+    const { subAgentById } = await loadRosterOf({
+      "web-developer": withoutModel,
+    })
+
+    expect(subAgentById("web-developer")).toStrictEqual({
+      id: "web-developer",
+      label: "Developer",
+      title: WEB_DEVELOPER.title,
+      description: WEB_DEVELOPER.description,
+      domainId: "web",
+      flavor: "developer",
+    })
   })
 })

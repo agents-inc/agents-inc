@@ -1,6 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
-import { E2E_MARKETPLACE_NAME, EXIT_CODES } from "../pages/constants.js";
+import {
+  E2E_MARKETPLACE_NAME,
+  EJECT_SOURCE_NAME,
+  EXIT_CODES,
+  PUBLIC_MARKETPLACE_NAME,
+} from "../pages/constants.js";
 import {
   createTempDir,
   cleanupTempDir,
@@ -10,7 +15,6 @@ import {
 } from "../helpers/test-utils.js";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../src/cli/consts.js";
 import type { SkillId } from "../../src/cli/types/index.js";
 
 /**
@@ -166,12 +170,12 @@ describe("search command", () => {
       const { exitCode, stdout } = await CLI.run(["search", spare.slug], { dir: tempDir });
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-      // One match is one row; asserted as cells because every fixture id begins with the
-      // marketplace's name.
+      // One match is one row. A cell is bounded by spaces, since every fixture id carries the
+      // marketplace name followed by `-`; not by `│`, which @oclif/table drops when CI is truthy.
       expect(stdout).toContain(`Found 1 skill matching "${spare.slug}"`);
-      expect(stdout).toContain(`│ ${E2E_MARKETPLACE_NAME} │`);
-      expect(stdout).not.toContain(`│ ${DEFAULT_PUBLIC_SOURCE_NAME} │`);
-      expect(stdout.toLowerCase()).not.toContain(EJECT_SOURCE);
+      expect(stdout).toContain(` ${E2E_MARKETPLACE_NAME} `);
+      expect(stdout).not.toContain(` ${PUBLIC_MARKETPLACE_NAME} `);
+      expect(stdout.toLowerCase()).not.toContain(EJECT_SOURCE_NAME);
     });
 
     it("names the local source for a skill that only exists on disk", async () => {
@@ -185,8 +189,8 @@ describe("search command", () => {
 
       expect(exitCode).toBe(EXIT_CODES.SUCCESS);
       expect(stdout).toContain(`Found 1 skill matching "${LOCAL_ONLY_SKILL.slug}"`);
-      expect(stdout.toLowerCase()).toContain(EJECT_SOURCE);
-      expect(stdout).not.toContain(`│ ${E2E_MARKETPLACE_NAME} │`);
+      expect(stdout.toLowerCase()).toContain(EJECT_SOURCE_NAME);
+      expect(stdout).not.toContain(` ${E2E_MARKETPLACE_NAME} `);
     });
   });
 

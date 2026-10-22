@@ -1,12 +1,5 @@
 import { expect, test } from "../fixtures"
-import { ConfigurePage } from "../pages/configure-page"
-
-// Quoted from the design's palette, not read from the stylesheet, so the
-// assertion can fail.
-const PAGE_BACKGROUND = {
-  light: "rgb(255, 255, 255)",
-  dark: "rgb(22, 21, 19)",
-} as const
+import { ConfigurePage, PAGE_BACKGROUND } from "../pages/configure-page"
 
 // One glyph: only the active theme's icon is drawn, so the accessible name is
 // the action.
@@ -20,10 +13,18 @@ test.describe("the theme control", () => {
     )
   })
 
-  // Follows the OS until asked: no `data-theme` on arrival, since one written
-  // on mount would freeze the machine's setting.
-  test("says nothing until it is asked to", async ({ configure }) => {
-    expect(await configure.theme()).toBeNull()
+  // A theme written on arrival would freeze the machine's setting.
+  test("follows the operating system until it is asked", async ({
+    configure,
+  }) => {
+    const { page } = configure
+    const body = page.locator("body")
+
+    await page.emulateMedia({ colorScheme: "dark" })
+    await expect(body).toHaveCSS("background-color", PAGE_BACKGROUND.dark)
+
+    await page.emulateMedia({ colorScheme: "light" })
+    await expect(body).toHaveCSS("background-color", PAGE_BACKGROUND.light)
   })
 
   test("repaints the app, and offers the way back", async ({ configure }) => {
@@ -34,7 +35,6 @@ test.describe("the theme control", () => {
 
     await configure.themeToggle.click()
 
-    expect(await configure.theme()).toBe("dark")
     await expect(configure.page.locator("body")).toHaveCSS(
       "background-color",
       PAGE_BACKGROUND.dark
@@ -47,7 +47,6 @@ test.describe("the theme control", () => {
     // control rather than a one-way switch.
     await configure.themeToggle.click()
 
-    expect(await configure.theme()).toBe("light")
     await expect(configure.page.locator("body")).toHaveCSS(
       "background-color",
       PAGE_BACKGROUND.light
@@ -70,7 +69,6 @@ test.describe("the theme control", () => {
     // The glyph is drawing a dark app, so pressing it asks for light.
     await configure.themeToggle.click()
 
-    expect(await configure.theme()).toBe("light")
     await expect(page.locator("body")).toHaveCSS(
       "background-color",
       PAGE_BACKGROUND.light
@@ -79,13 +77,15 @@ test.describe("the theme control", () => {
 
   test("remembers the choice across a reload", async ({ configure, page }) => {
     await configure.themeToggle.click()
-    expect(await configure.theme()).toBe("dark")
+    await expect(page.locator("body")).toHaveCSS(
+      "background-color",
+      PAGE_BACKGROUND.dark
+    )
 
     await page.reload()
     const reopened = new ConfigurePage(page)
     await reopened.stacks.waitFor()
 
-    expect(await reopened.theme()).toBe("dark")
     await expect(page.locator("body")).toHaveCSS(
       "background-color",
       PAGE_BACKGROUND.dark

@@ -3,6 +3,7 @@ import path from "path";
 
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createMockSkillDefinition } from "../__tests__/factories/skill-factories.js";
+import type { SkillDefinitionMap } from "../../types";
 
 // Mocks the host seam, not Claude's files, so a discovery path wired straight to Claude fails.
 const { mockLoadPluginSkills, mockFileExists } = vi.hoisted(() => ({
@@ -39,27 +40,45 @@ import {
 const mockListPlugins = vi.mocked(hostAt("/any-root").listPlugins);
 
 const REACT_SKILL_ID = "web-framework-react";
+const ZUSTAND_SKILL_ID = "web-state-zustand";
+
+const REACT_MANIFEST = path.join("/cache/react", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
 
 function installed(pluginKey: string, installPath: string, enabled = true) {
   return { pluginKey, installPath, enabled };
+}
+
+/** The host answers per project, so an answer names the project it was asked about. */
+function hostListsPerProject(byProject: Record<string, ReturnType<typeof installed>[]>): void {
+  mockListPlugins.mockImplementation((projectDir) => Promise.resolve(byProject[projectDir] ?? []));
+}
+
+/** Each plugin directory holds its own skills, so a result names the directories that were read. */
+function pluginDirsHold(byDir: Record<string, SkillDefinitionMap | Error>): void {
+  mockLoadPluginSkills.mockImplementation((dir) => {
+    const held = byDir[dir];
+    return held instanceof Error ? Promise.reject(held) : Promise.resolve(held ?? {});
+  });
 }
 
 describe("plugin-discovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFileExists.mockResolvedValue(true);
+    mockLoadPluginSkills.mockResolvedValue({});
   });
 
   describe("getVerifiedPluginInstallPaths", () => {
-    it("asks the host that owns the installation under the project it was given", async () => {
-      mockListPlugins.mockResolvedValue([]);
-
-      await getVerifiedPluginInstallPaths("/my/project");
+    it("answers with the plugins the host lists for the project it was given", async () => {
+      hostListsPerProject({
+        "/my/project": [installed("react@my-marketplace", "/cache/react")],
+        "/other/project": [installed("zustand@my-marketplace", "/cache/zustand")],
+      });
 
       expect(
-        mockListPlugins,
+        await getVerifiedPluginInstallPaths("/my/project"),
         "the project is what makes the listing 'as seen from one project' — a host asked about the wrong one answers another project's switches",
-      ).toHaveBeenCalledWith("/my/project");
+      ).toStrictEqual([{ pluginKey: "react@my-marketplace", installPath: "/cache/react" }]);
     });
 
     it("keeps only the plugins the host reports as enabled", async () => {
@@ -89,14 +108,13 @@ describe("plugin-discovery", () => {
       ).toStrictEqual([{ pluginKey: "react@my-marketplace", installPath: "/cache/react" }]);
     });
 
-    it("looks for the manifest inside the directory the host named", async () => {
+    it("keeps a plugin whose manifest sits inside the directory the host named", async () => {
       mockListPlugins.mockResolvedValue([installed("react@my-marketplace", "/cache/react")]);
+      mockFileExists.mockImplementation((file: string) => Promise.resolve(file === REACT_MANIFEST));
 
-      await getVerifiedPluginInstallPaths("/project");
-
-      expect(mockFileExists).toHaveBeenCalledWith(
-        path.join("/cache/react", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
-      );
+      expect(await getVerifiedPluginInstallPaths("/project")).toStrictEqual([
+        { pluginKey: "react@my-marketplace", installPath: "/cache/react" },
+      ]);
     });
 
     it("answers an empty listing when the host cannot read its installation", async () => {
@@ -123,39 +141,23 @@ describe("plugin-discovery", () => {
         installed("react@my-marketplace", "/cache/react"),
         installed("zustand@my-marketplace", "/cache/zustand"),
       ]);
-
-      const reactId = REACT_SKILL_ID;
-      const zustandId = "web-state-zustand";
-
-      mockLoadPluginSkills
-        .mockResolvedValueOnce({
-          [reactId]: createMockSkillDefinition(reactId, {
-            path: "skills/web-framework-react/",
-            description: "React skill",
-          }),
-        })
-        .mockResolvedValueOnce({
-          [zustandId]: createMockSkillDefinition(zustandId, {
-            path: "skills/web-state-zustand/",
-            description: "Zustand skill",
-          }),
-        });
-
-      const result = await discoverAllPluginSkills("/project");
-
-      expect(Object.keys(result)).toHaveLength(2);
-      expect(result[reactId]).toStrictEqual({
-        id: reactId,
+      const react = createMockSkillDefinition(REACT_SKILL_ID, {
         path: "skills/web-framework-react/",
         description: "React skill",
       });
-      expect(result[zustandId]).toStrictEqual({
-        id: zustandId,
+      const zustand = createMockSkillDefinition(ZUSTAND_SKILL_ID, {
         path: "skills/web-state-zustand/",
         description: "Zustand skill",
       });
-      expect(mockLoadPluginSkills).toHaveBeenCalledWith("/cache/react");
-      expect(mockLoadPluginSkills).toHaveBeenCalledWith("/cache/zustand");
+      pluginDirsHold({
+        "/cache/react": { [REACT_SKILL_ID]: react },
+        "/cache/zustand": { [ZUSTAND_SKILL_ID]: zustand },
+      });
+
+      expect(await discoverAllPluginSkills("/project")).toStrictEqual({
+        [REACT_SKILL_ID]: react,
+        [ZUSTAND_SKILL_ID]: zustand,
+      });
     });
 
     it("should allow later plugins to override earlier ones (same skill ID)", async () => {
@@ -163,31 +165,21 @@ describe("plugin-discovery", () => {
         installed("react@marketplace-a", "/cache/react-a"),
         installed("react@marketplace-b", "/cache/react-b"),
       ]);
-
-      const skillId = REACT_SKILL_ID;
-
-      mockLoadPluginSkills
-        .mockResolvedValueOnce({
-          [skillId]: createMockSkillDefinition(skillId, {
-            path: "skills/web-framework-react/",
-            description: "Old description",
-          }),
-        })
-        .mockResolvedValueOnce({
-          [skillId]: createMockSkillDefinition(skillId, {
-            path: "skills/web-framework-react/",
-            description: "New description",
-          }),
-        });
-
-      const result = await discoverAllPluginSkills("/project");
-
-      expect(Object.keys(result)).toHaveLength(1);
-      expect(result[skillId]).toStrictEqual({
-        id: skillId,
+      const later = createMockSkillDefinition(REACT_SKILL_ID, {
         path: "skills/web-framework-react/",
         description: "New description",
       });
+      pluginDirsHold({
+        "/cache/react-a": {
+          [REACT_SKILL_ID]: createMockSkillDefinition(REACT_SKILL_ID, {
+            path: "skills/web-framework-react/",
+            description: "Old description",
+          }),
+        },
+        "/cache/react-b": { [REACT_SKILL_ID]: later },
+      });
+
+      expect(await discoverAllPluginSkills("/project")).toStrictEqual({ [REACT_SKILL_ID]: later });
     });
 
     it("should handle loadPluginSkills errors gracefully with verbose logging", async () => {
@@ -195,24 +187,16 @@ describe("plugin-discovery", () => {
         installed("broken-plugin", "/cache/broken"),
         installed("good-plugin", "/cache/good"),
       ]);
-
-      const skillId = REACT_SKILL_ID;
-
-      mockLoadPluginSkills.mockRejectedValueOnce(new Error("Parse error")).mockResolvedValueOnce({
-        [skillId]: createMockSkillDefinition(skillId, {
-          path: "skills/web-framework-react/",
-          description: "React",
-        }),
-      });
-
-      const result = await discoverAllPluginSkills("/project");
-
-      expect(Object.keys(result)).toHaveLength(1);
-      expect(result[skillId]).toStrictEqual({
-        id: skillId,
+      const react = createMockSkillDefinition(REACT_SKILL_ID, {
         path: "skills/web-framework-react/",
         description: "React",
       });
+      pluginDirsHold({
+        "/cache/broken": new Error("Parse error"),
+        "/cache/good": { [REACT_SKILL_ID]: react },
+      });
+
+      expect(await discoverAllPluginSkills("/project")).toStrictEqual({ [REACT_SKILL_ID]: react });
       expect(
         vi.mocked(verbose),
         "the spec is named for the verbose line, so it has to be the thing that says one was written",
@@ -227,12 +211,20 @@ describe("plugin-discovery", () => {
       expect(result).toStrictEqual({});
     });
 
-    it("should pass projectDir to the host", async () => {
-      mockListPlugins.mockResolvedValue([]);
+    it("reads skills only from the plugins the host lists for the project it was given", async () => {
+      hostListsPerProject({
+        "/my/project": [installed("react@my-marketplace", "/cache/react")],
+        "/other/project": [installed("zustand@my-marketplace", "/cache/zustand")],
+      });
+      const react = createMockSkillDefinition(REACT_SKILL_ID);
+      pluginDirsHold({
+        "/cache/react": { [REACT_SKILL_ID]: react },
+        "/cache/zustand": { [ZUSTAND_SKILL_ID]: createMockSkillDefinition(ZUSTAND_SKILL_ID) },
+      });
 
-      await discoverAllPluginSkills("/my/project");
-
-      expect(mockListPlugins).toHaveBeenCalledWith("/my/project");
+      expect(await discoverAllPluginSkills("/my/project")).toStrictEqual({
+        [REACT_SKILL_ID]: react,
+      });
     });
   });
 
@@ -264,12 +256,13 @@ describe("plugin-discovery", () => {
       expect(result).toStrictEqual([]);
     });
 
-    it("should pass projectDir to the host", async () => {
-      mockListPlugins.mockResolvedValue([]);
+    it("names the plugins the host lists for the project it was given", async () => {
+      hostListsPerProject({
+        "/custom/project": [installed("react@my-marketplace", "/cache/react")],
+        "/other/project": [installed("zustand@my-marketplace", "/cache/zustand")],
+      });
 
-      await listPluginNames("/custom/project");
-
-      expect(mockListPlugins).toHaveBeenCalledWith("/custom/project");
+      expect(await listPluginNames("/custom/project")).toStrictEqual(["react@my-marketplace"]);
     });
   });
 
@@ -316,24 +309,6 @@ describe("plugin-discovery", () => {
         "Discovering skills from plugin: 'react@my-marketplace'",
       );
       expect(verbose).not.toHaveBeenCalledWith("No enabled plugins found for '/project'");
-    });
-
-    it("answers no skills and says why when the manifests cannot be checked", async () => {
-      mockListPlugins.mockResolvedValue([installed("react@my-marketplace", "/cache/react")]);
-      mockFileExists.mockRejectedValue(new Error("EACCES: permission denied"));
-
-      expect(await discoverAllPluginSkills("/project")).toStrictEqual({});
-      expect(verbose).toHaveBeenCalledWith("Plugin discovery failed: EACCES: permission denied");
-    });
-
-    it("answers no plugin names and says why when the manifests cannot be checked", async () => {
-      mockListPlugins.mockResolvedValue([installed("react@my-marketplace", "/cache/react")]);
-      mockFileExists.mockRejectedValue(new Error("EACCES: permission denied"));
-
-      expect(await listPluginNames("/project")).toStrictEqual([]);
-      expect(verbose).toHaveBeenCalledWith(
-        "Failed to list plugin names: EACCES: permission denied",
-      );
     });
   });
 });

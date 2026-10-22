@@ -24,8 +24,7 @@ import {
 } from "../fixtures/seed-config-store.js";
 import { PINNED_WIRE_VERSION, ejectedGlobalSkill } from "../fixtures/seed-wire-contract.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
+import { EXIT_CODES, FILES, PUBLIC_MARKETPLACE_NAME, STEP_TEXT } from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -205,7 +204,7 @@ describe("share refuses ejected skills", () => {
         name: "plugin-share",
         skills: buildSkillConfigs([E2E_SKILL.react.id, E2E_SKILL.vitest.id], {
           scope: "global",
-          origin: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: PUBLIC_MARKETPLACE_NAME,
         }),
         agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
       }),
@@ -228,7 +227,7 @@ describe("share refuses ejected skills", () => {
     const project = await ProjectBuilder.editable({
       skills: [E2E_SKILL.vitest.id],
       globalSkills: [E2E_SKILL.react.id],
-      globalSkillsSource: DEFAULT_PUBLIC_SOURCE_NAME,
+      globalSkillsSource: PUBLIC_MARKETPLACE_NAME,
     });
     tempDirs.push(path.dirname(project.dir));
 

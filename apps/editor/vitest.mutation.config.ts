@@ -6,7 +6,7 @@ import baseConfig from "./vitest.config.ts"
 
 // In Stryker's copy this reads instrumented source rather than the source it checks.
 const READS_SOURCE_TEXT = [
-  "src/features/configure/components/output-preview-dialog.test.ts",
+  "src/features/configure/components/output-preview-injects-no-markup.test.ts",
 ]
 
 // Stryker runs from the repo root, so the root is set back to this app.

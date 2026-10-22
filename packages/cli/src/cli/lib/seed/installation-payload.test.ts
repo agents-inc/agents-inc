@@ -82,7 +82,7 @@ describe("seedPayloadForInstallation", () => {
     expect(prepared.ok).toBe(true);
     expect(prepared.ok && prepared.payload).toStrictEqual({
       v: SEED_VERSION,
-      matrixVersion: expect.any(String) as string,
+      matrixVersion: expect.any(String),
       stackId: null,
       skills: {
         [REACT_ID]: { install: "eject", scope: "global", assignments: { [WEB_DEV]: "lazy" } },
@@ -255,6 +255,48 @@ describe("seedPayloadForInstallation", () => {
       expect(prepared.ok && prepared.payload.skills[REACT_ID]?.assignments).toStrictEqual({
         [WEB_DEV]: "lazy",
       });
+    });
+  });
+
+  describe("an installation shared from HOME itself", () => {
+    const ZUSTAND_ID = SKILLS.zustand.id;
+    const ZUSTAND_CATEGORY = SKILLS.zustand.category;
+
+    function homeInstall(zustandScope: SkillScope): Partial<FixtureProjectConfig> {
+      return installedOverrides({
+        skills: [
+          buildSkillConfig(REACT_ID, { scope: "global", origin: EJECT_SOURCE }),
+          buildSkillConfig(ZUSTAND_ID, { scope: zustandScope, origin: EJECT_SOURCE }),
+        ],
+        stack: {
+          [WEB_DEV]: { [REACT_CATEGORY]: [sa(REACT_ID)], [ZUSTAND_CATEGORY]: [sa(ZUSTAND_ID)] },
+        },
+      });
+    }
+
+    it("mints a payload carrying every row of a global sub-agent's stack", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig(homeInstall("global")));
+
+      const prepared = await seedPayloadForInstallation(tempDir);
+
+      expect(prepared.ok && prepared.payload.skills).toStrictEqual({
+        [REACT_ID]: { install: "eject", scope: "global", assignments: { [WEB_DEV]: "lazy" } },
+        [ZUSTAND_ID]: { install: "eject", scope: "global", assignments: { [WEB_DEV]: "lazy" } },
+      });
+    });
+
+    it("refuses a stack row a project-scoped skill holds in a global sub-agent's stack", async () => {
+      await writeTestTsConfig(tempDir, buildProjectConfig(homeInstall("project")));
+
+      const prepared = await seedPayloadForInstallation(tempDir);
+
+      expect(prepared.ok ? "" : prepared.error).toBe(
+        [
+          "This installation cannot be shared as it stands — a shared configuration has no way to carry:",
+          "  web-state-zustand -> web-developer: a project-scoped skill never reaches a sub-agent that rests at global scope",
+          "Sharing it anyway would mint an id that installs something else.",
+        ].join("\n"),
+      );
     });
   });
 

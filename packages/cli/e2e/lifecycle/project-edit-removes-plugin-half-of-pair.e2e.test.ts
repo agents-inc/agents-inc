@@ -38,13 +38,6 @@ import {
   skillsPath,
   type TreeSnapshotEntry,
 } from "../helpers/test-utils.js";
-import { EJECT_SOURCE } from "../../src/cli/consts.js";
-
-/**
- * Journey 8 with a plugin on one or both sides of a `[P][G]` pair: a project edit dropping the
- * project's half removes that half and nothing global (config bytes, skills tree, agents,
- * settings, registry timestamps), and reports only the removal. Requires the Claude CLI.
- */
 
 const HONO = E2E_SKILL.hono;
 
@@ -86,7 +79,7 @@ describe.skipIf(!claudeAvailable)(
     }
 
     function originFor(mode: InstallMode): string {
-      return mode === "local" ? EJECT_SOURCE : source.marketplaceName;
+      return mode === "local" ? "eject" : source.marketplaceName;
     }
 
     function installOf(mode: InstallMode): "eject" | "plugin" {
@@ -151,7 +144,6 @@ describe.skipIf(!claudeAvailable)(
       };
     }
 
-    /** The project half's removal, and no mode switch or copy. */
     function expectOnlyTheRemovalReported(output: string): void {
       expect(output, "the drop must report the project half's removal").toContain(
         `${REMOVED_MARKER} ${HONO.display} [P]`,

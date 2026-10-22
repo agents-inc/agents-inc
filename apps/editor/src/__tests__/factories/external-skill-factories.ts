@@ -9,7 +9,7 @@ const HOUSE_CATEGORY = "web-styling"
 export const HOUSE_SKILL_ID = externalSkillId(HOUSE_CATEGORY, "House Styles")
 
 /** A skill added from a third-party repository, as a payload carries it. */
-export const carriedHouseSkill = (
+const carriedHouseSkill = (
   overrides: Partial<SeedExternalSkill> = {}
 ): SeedExternalSkill => ({
   displayName: "House Styles",

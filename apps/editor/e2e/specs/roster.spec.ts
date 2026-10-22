@@ -30,6 +30,8 @@ const LOAD_TRACK_REM = 1.875
 const AGENT_ROW_DESIGN_PX = 18
 const AGENT_PITCH_DESIGN_PX = 26
 
+const NO_FILL = "rgba(0, 0, 0, 0)"
+
 // A second ahead: the installed clock runs on while `pauseAt` is in flight, so
 // pausing at "now" can land in its past.
 const freezeClock = async (page: Page) => {
@@ -52,9 +54,6 @@ const rootFontPx = (locator: Locator) =>
     Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
   )
 
-// The roster stores nothing — every line is derived from `assignments` and
-// `agents`, so a copy would make the rows and the Install label disagree with
-// the grid.
 test.describe("roster panel", () => {
   test("starts with every agent off", async ({ configure }) => {
     await expect(configure.roster.installButton).toContainText(
@@ -129,14 +128,17 @@ test.describe("roster panel", () => {
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
 
-    await expect(row).toHaveClass(/bg-flash/)
+    await expect(row).toHaveCSS(
+      "background-color",
+      await configure.tokenColor("--color-flash")
+    )
 
     await page.clock.fastForward(2600)
-    await expect(row).not.toHaveClass(/bg-flash/)
+    await expect(row).toHaveCSS("background-color", NO_FILL)
   })
 
-  // Geometry rather than a class: the pulsing box measured against the hovered
-  // one, which adds a fill and no geometry.
+  // The pulsing box measured against the hovered one, which adds a fill and no
+  // geometry.
   test("paints the pulse on exactly the row hover highlights", async ({
     configure,
     page,
@@ -145,11 +147,17 @@ test.describe("roster panel", () => {
     const row = configure.roster.agentRow("web", "developer")
 
     await row.hover()
-    await expect(row).toHaveClass(/hover:bg-roster-hover/)
+    await expect(row).toHaveCSS(
+      "background-color",
+      await configure.tokenColor("--color-roster-hover")
+    )
     const hovered = (await row.boundingBox())!
 
     await configure.skillIn(web, CATEGORY, REACT).toggle()
-    await expect(row).toHaveClass(/bg-flash/)
+    await expect(row).toHaveCSS(
+      "background-color",
+      await configure.tokenColor("--color-flash")
+    )
     const painted = (await row.boundingBox())!
 
     expect(painted.x).toBeCloseTo(hovered.x, 0)
@@ -169,8 +177,9 @@ test.describe("roster panel", () => {
     const pulsing = (await name.boundingBox())!
 
     await page.clock.fastForward(2600)
-    await expect(configure.roster.agentRow("web", "developer")).not.toHaveClass(
-      /bg-flash/
+    await expect(configure.roster.agentRow("web", "developer")).toHaveCSS(
+      "background-color",
+      NO_FILL
     )
     const resting = (await name.boundingBox())!
 
@@ -184,10 +193,13 @@ test.describe("roster panel", () => {
     const react = configure.skillIn(web, CATEGORY, REACT)
 
     await react.toggle()
-    await expect(row).toHaveClass(/bg-flash/)
+    await expect(row).toHaveCSS(
+      "background-color",
+      await configure.tokenColor("--color-flash")
+    )
 
     await react.toggle()
-    await expect(row).not.toHaveClass(/bg-flash/)
+    await expect(row).toHaveCSS("background-color", NO_FILL)
   })
 
   test("clicking an agent pins it off and back on", async ({ configure }) => {
@@ -267,15 +279,12 @@ test.describe("roster panel", () => {
   // controls carry `aria-expanded`.
   test("domain bands stack rather than replace each other", async ({
     configure,
-    page,
   }) => {
     // A stack is what makes the rail tall enough to scroll.
     await configure.chooseStack(STACKS.nextjs)
 
-    const rail = page.locator("aside .rail-scrollbar")
-    const bands = page.locator(
-      'aside .rail-scrollbar [data-slot="roster-band"]'
-    )
+    const rail = configure.roster.scroller
+    const bands = configure.roster.bands
 
     const total = await bands.count()
     const step = (await bands.first().boundingBox())!.height
@@ -342,8 +351,7 @@ test.describe("roster bands", () => {
   })
 })
 
-// The rail holds no agent options: they live on the 03 cards. What a row still
-// does is pin the agent, switch a skill off for it, and flip the load word.
+// Agent options live on the 03 cards.
 test.describe("an agent's rows", () => {
   test("hold no agent options, and the pin, the row and the load word still act", async ({
     configure,
@@ -378,18 +386,19 @@ test.describe("an agent's rows", () => {
     await expect.poll(() => opacityOf(load)).toBe(1)
   })
 
-  test("are three tracks: bullet, name, load word", async ({ configure }) => {
+  test("set the load word in its own column, right of the name", async ({
+    configure,
+  }) => {
     await configure.skillIn(web, CATEGORY, REACT).toggle()
     const cell = configure.roster.skillRowCell(REACT, "web-developer")
 
-    const tracks = await cell.evaluate((node) =>
-      getComputedStyle(node)
-        .gridTemplateColumns.split(" ")
-        .map((track) => Number.parseFloat(track))
-    )
+    const name = (await cell.getByText(REACT, { exact: true }).boundingBox())!
+    const load = (await configure.roster
+      .loadWord(REACT, "web-developer")
+      .boundingBox())!
 
-    expect(tracks).toHaveLength(3)
-    expect(tracks[2]).toBeCloseTo(LOAD_TRACK_REM * (await rootFontPx(cell)), 0)
+    expect(load.width).toBeCloseTo(LOAD_TRACK_REM * (await rootFontPx(cell)), 0)
+    expect(name.x + name.width).toBeLessThanOrEqual(load.x)
   })
 
   test("draw the name row 18 design px tall, with the first skill straight under it", async ({
@@ -490,16 +499,14 @@ test.describe("where-used", () => {
     await expect(roster.whereUsedTip).toBeHidden()
   })
 
-  test("a scroll closes it", async ({ configure, page }) => {
+  test("a scroll closes it", async ({ configure }) => {
     await configure.chooseStack(STACKS.nextjs)
     const { roster } = configure
 
     await roster.skillRow(STACK_MEMBER_SKILL, "web-developer").focus()
     await expect(roster.whereUsedTip).toBeVisible()
 
-    await page
-      .locator("aside .rail-scrollbar")
-      .evaluate((el) => el.scrollBy(0, 40))
+    await roster.scroller.evaluate((el) => el.scrollBy(0, 40))
 
     await expect(roster.whereUsedTip).toBeHidden()
   })

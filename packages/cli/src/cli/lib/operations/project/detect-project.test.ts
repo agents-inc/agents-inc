@@ -1,85 +1,80 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { buildProjectConfig } from "../../__tests__/factories/config-factories.js";
-import { buildInstallation } from "../../__tests__/factories/installation-factories.js";
+import path from "path";
+import { mkdir } from "fs/promises";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-vi.mock("../../installation/index.js", () => ({
-  detectInstallation: vi.fn(),
-}));
+import { detectProject } from "./detect-project.js";
+import { resolveInstallPaths } from "../../installation/index.js";
+import { getProjectConfigPath } from "../../installation/install-base-dir.js";
+import {
+  buildAgentConfigs,
+  buildProjectConfig,
+} from "../../__tests__/factories/config-factories.js";
+import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
+import { setupIsolatedHome, type IsolatedHome } from "../../__tests__/helpers/isolated-home.js";
 
-vi.mock("../../configuration/index.js", () => ({
-  loadProjectConfig: vi.fn(),
-}));
-
-import { detectProject } from "./detect-project";
-import { detectInstallation } from "../../installation/index.js";
-import { loadProjectConfig } from "../../configuration/index.js";
-
-const mockDetectInstallation = vi.mocked(detectInstallation);
-const mockLoadProjectConfig = vi.mocked(loadProjectConfig);
-
-const MOCK_INSTALLATION = buildInstallation();
-
-const MOCK_CONFIG = buildProjectConfig();
-
-const LOADED_CONFIG_PATH = "/tmp/project/.agents-inc/claude/config.ts";
+const INSTALLED_CONFIG = buildProjectConfig({
+  agents: buildAgentConfigs(["web-developer"]),
+  skills: [],
+});
 
 describe("detectProject", () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
+  let home: IsolatedHome;
+
+  beforeEach(async () => {
+    home = await setupIsolatedHome("cc-detect-project-");
   });
 
-  it("should return null when no installation found", async () => {
-    mockDetectInstallation.mockResolvedValue(null);
-
-    const result = await detectProject("/tmp/project");
-
-    expect(result).toBeNull();
-    expect(mockLoadProjectConfig).not.toHaveBeenCalled();
+  afterEach(async () => {
+    await home.cleanup();
   });
 
-  it("should return installation with config when both exist", async () => {
-    mockDetectInstallation.mockResolvedValue(MOCK_INSTALLATION);
-    mockLoadProjectConfig.mockResolvedValue({
-      config: MOCK_CONFIG,
-      configPath: LOADED_CONFIG_PATH,
-      provider: "claude",
+  const detectedAt = (dir: string) => ({
+    installation: {
+      mode: "eject",
+      configPath: getProjectConfigPath(dir, "claude"),
+      agentsDir: resolveInstallPaths(dir, "project").agentsDir,
+      skillsDir: resolveInstallPaths(dir, "project").skillsDir,
+      projectDir: dir,
+    },
+    config: INSTALLED_CONFIG,
+    configPath: getProjectConfigPath(dir, "claude"),
+  });
+
+  it("answers no project where neither the project nor home holds an installation", async () => {
+    expect(await detectProject(home.projectDir)).toBeNull();
+  });
+
+  it("answers the project's installation with the configuration it holds", async () => {
+    await writeTestTsConfig(home.projectDir, INSTALLED_CONFIG);
+
+    expect(await detectProject(home.projectDir)).toStrictEqual(detectedAt(home.projectDir));
+  });
+
+  it("answers the installation in the directory it is given, not the current directory", async () => {
+    const elsewhere = path.join(home.tempDir, "elsewhere");
+    await mkdir(elsewhere);
+    await writeTestTsConfig(elsewhere, INSTALLED_CONFIG);
+
+    expect(process.cwd()).not.toBe(elsewhere);
+    expect(await detectProject(elsewhere)).toStrictEqual(detectedAt(elsewhere));
+  });
+
+  it("answers the global installation for a project that holds none", async () => {
+    await writeTestTsConfig(home.fakeHome, INSTALLED_CONFIG);
+
+    expect(await detectProject(home.projectDir)).toStrictEqual({
+      ...detectedAt(home.fakeHome),
+      installation: {
+        ...detectedAt(home.fakeHome).installation,
+        agentsDir: resolveInstallPaths(home.fakeHome, "global").agentsDir,
+      },
     });
-
-    const result = await detectProject("/tmp/project");
-
-    expect(result).toStrictEqual({
-      installation: MOCK_INSTALLATION,
-      config: MOCK_CONFIG,
-      configPath: LOADED_CONFIG_PATH,
-    });
   });
 
-  it("should return installation with null config when config not found", async () => {
-    mockDetectInstallation.mockResolvedValue(MOCK_INSTALLATION);
-    mockLoadProjectConfig.mockResolvedValue(null);
+  it("looks in the current directory when no project directory is named", async () => {
+    await writeTestTsConfig(home.projectDir, INSTALLED_CONFIG);
 
-    const result = await detectProject("/tmp/project");
-
-    expect(result).toStrictEqual({
-      installation: MOCK_INSTALLATION,
-      config: null,
-      configPath: null,
-    });
-  });
-
-  it("should use process.cwd() when no projectDir provided", async () => {
-    mockDetectInstallation.mockResolvedValue(null);
-
-    await detectProject();
-
-    expect(mockDetectInstallation).toHaveBeenCalledWith(process.cwd());
-  });
-
-  it("should pass projectDir to detectInstallation", async () => {
-    mockDetectInstallation.mockResolvedValue(null);
-
-    await detectProject("/custom/dir");
-
-    expect(mockDetectInstallation).toHaveBeenCalledWith("/custom/dir");
+    expect(await detectProject()).toStrictEqual(detectedAt(process.cwd()));
+    expect(process.cwd()).toBe(home.projectDir);
   });
 });

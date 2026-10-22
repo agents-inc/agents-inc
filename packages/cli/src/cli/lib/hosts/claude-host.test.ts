@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
@@ -7,24 +7,16 @@ vi.mock("child_process", async (importOriginal) => {
 
 vi.mock("../../utils/logger");
 
-// The listing reads files rather than spawning, so its installation is observed here.
-const { mockFileExists, mockReadFileSafe } = vi.hoisted(() => ({
-  mockFileExists: vi.fn<typeof fileExists>(),
-  mockReadFileSafe: vi.fn<typeof readFileSafe>(),
-}));
-
-vi.mock("../../utils/fs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../utils/fs")>()),
-  fileExists: mockFileExists,
-  readFileSafe: mockReadFileSafe,
-}));
-
 import { spawn } from "child_process";
-import os from "os";
+import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { DEFAULT_PLUGIN_NAME } from "../../consts";
-import { renderInstalledPluginsRegistry } from "../__tests__/factories/plugin-registry-factories";
-import type { fileExists, readFileSafe } from "../../utils/fs";
+import {
+  buildUserPluginInstallation,
+  renderInstalledPluginsRegistry,
+} from "../__tests__/factories/plugin-registry-factories";
+import { useFakeHome } from "../__tests__/helpers/isolated-home";
+import { cleanupTempDir, createTempDir } from "../__tests__/test-fs-utils";
 import type { ClaudeConfigOptions } from "./claude-host";
 import { type FakeChildReply, fakeChildProcess } from "./__tests__/helpers/fake-child-process.js";
 import { warn } from "../../utils/logger";
@@ -313,37 +305,60 @@ describe("Claude config dir isolation", () => {
 });
 
 describe("which installation a listing is read from", () => {
-  const REGISTRY_FILE = "installed_plugins.json";
+  const PINNED_PLUGIN = "pinned-skill@my-marketplace";
+  const USERS_OWN_PLUGIN = "users-own-skill@my-marketplace";
+  let tempDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    mockFileExists.mockResolvedValue(true);
-    mockReadFileSafe.mockResolvedValue(renderInstalledPluginsRegistry({}));
+    tempDir = await createTempDir("cc-claude-listing-");
   });
 
+  afterEach(async () => {
+    await cleanupTempDir(tempDir);
+  });
+
+  const home = useFakeHome(() => tempDir);
+
+  /** Claude's own registry under `<configRoot>/plugins`, recording one user-scoped install. */
+  async function registerIn(configRoot: string, pluginKey: string): Promise<void> {
+    const pluginsRoot = path.join(configRoot, "plugins");
+    await mkdir(pluginsRoot, { recursive: true });
+    await writeFile(
+      path.join(pluginsRoot, "installed_plugins.json"),
+      renderInstalledPluginsRegistry({
+        [pluginKey]: [buildUserPluginInstallation(path.join(configRoot, "cache", pluginKey))],
+      }),
+    );
+  }
+
+  async function listedKeys(options?: ClaudeConfigOptions): Promise<string[]> {
+    return (await claudeHost().listPlugins(PROJECT_DIR, options)).map((plugin) => plugin.pluginKey);
+  }
+
   it("reads the registry of the installation the caller pinned", async () => {
-    await claudeHost().listPlugins(PROJECT_DIR, { configDir: ISOLATED_CONFIG_DIR });
+    const pinned = path.join(tempDir, "isolated-claude-config");
+    await registerIn(pinned, PINNED_PLUGIN);
+    await registerIn(path.join(home.dir, ".claude"), USERS_OWN_PLUGIN);
 
     expect(
-      mockFileExists,
+      await listedKeys({ configDir: pinned }),
       "without this the option is accepted and dropped, and a smoke run reads the machine's real ~/.claude while writing into a temp tree",
-    ).toHaveBeenCalledWith(path.join(ISOLATED_CONFIG_DIR, "plugins", REGISTRY_FILE));
+    ).toStrictEqual([PINNED_PLUGIN]);
   });
 
   it("reads the user's own installation when nothing is pinned", async () => {
-    await claudeHost().listPlugins(PROJECT_DIR);
+    await registerIn(path.join(home.dir, ".claude"), USERS_OWN_PLUGIN);
 
     expect(
-      mockFileExists,
+      await listedKeys(),
       "a host that always demanded a pinned directory would answer nothing in production, where the installation is whichever one the process already points at",
-    ).toHaveBeenCalledWith(path.join(os.homedir(), ".claude", "plugins", REGISTRY_FILE));
+    ).toStrictEqual([USERS_OWN_PLUGIN]);
   });
 
   it("answers an empty listing for an installation with no registry at all", async () => {
-    mockFileExists.mockResolvedValue(false);
-
     expect(
-      await claudeHost().listPlugins(PROJECT_DIR, { configDir: ISOLATED_CONFIG_DIR }),
+      await listedKeys({ configDir: path.join(tempDir, "never-installed-anything") }),
       "an installation that has never installed a plugin is not a broken one, and reading it as an error would fail every command on a fresh machine",
     ).toStrictEqual([]);
   });

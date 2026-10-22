@@ -2,24 +2,21 @@ import { z } from "zod"
 
 // Shared by the browser and vite.config.ts, so nothing here may touch
 // `import.meta`.
-export const envSchema = z.object({
+
+// CI substitutes unset secrets with "".
+const emptyAsAbsent = (value: unknown) => (value === "" ? undefined : value)
+
+const envSchema = z.object({
   // Required in production, where `.env.production` supplies it.
   VITE_API_URL: z.url(),
 
-  // Absent disables Sentry. Empty folds to absent because CI substitutes unset
-  // secrets with "".
-  VITE_SENTRY_DSN: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.url().optional()
-  ),
+  // Absent disables Sentry.
+  VITE_SENTRY_DSN: z.preprocess(emptyAsAbsent, z.url().optional()),
 
-  // As above; absent means PostHog is never downloaded.
-  VITE_POSTHOG_KEY: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().min(1).optional()
-  ),
+  // Absent means PostHog is never downloaded.
+  VITE_POSTHOG_KEY: z.preprocess(emptyAsAbsent, z.string().min(1).optional()),
   VITE_POSTHOG_HOST: z.preprocess(
-    (value) => (value === "" ? undefined : value),
+    emptyAsAbsent,
     z.url().default("https://us.i.posthog.com")
   ),
 })

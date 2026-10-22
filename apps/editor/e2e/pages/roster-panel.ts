@@ -47,6 +47,16 @@ export class RosterPanel {
     })
   }
 
+  // The rail's scrolling box, which holds the header and every band. A class
+  // is not a contract, so it is reached from the header.
+  get scroller(): Locator {
+    return this.header.locator("..")
+  }
+
+  get bands(): Locator {
+    return this.scroller.locator('[data-slot="roster-band"]')
+  }
+
   groupOption(value: "domain" | "scope"): Locator {
     return this.groupControl.getByRole("radio", { name: value, exact: true })
   }

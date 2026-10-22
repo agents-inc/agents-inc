@@ -72,12 +72,27 @@ test.describe("skill state badges", () => {
     await expect(skill.scopeGroup.getByRole("radio")).toHaveCount(2)
   })
 
-  // One tab stop per pair, not per cell.
-  test("only the cell that is on takes the tab stop", async ({ configure }) => {
+  // One tab stop per pair, not per cell: either way out of the cell that is on
+  // leaves the pair, and back in the other way lands on it again.
+  test("only the cell that is on takes the tab stop", async ({
+    configure,
+    page,
+  }) => {
     const skill = configure.skillIn(web, CATEGORY, SKILL)
+    const on = skill.installCell("plugin")
+    const inThePair = skill.installGroup.locator(":focus")
 
-    await expect(skill.installCell("plugin")).toHaveAttribute("tabindex", "0")
-    await expect(skill.installCell("eject")).toHaveAttribute("tabindex", "-1")
+    await on.focus()
+    for (const [out, back] of [
+      ["Tab", "Shift+Tab"],
+      ["Shift+Tab", "Tab"],
+    ] as const) {
+      await page.keyboard.press(out)
+      await expect(inThePair).toHaveCount(0)
+
+      await page.keyboard.press(back)
+      await expect(on).toBeFocused()
+    }
   })
 
   // A badge configures a skill; it is not a way of choosing one. The value it

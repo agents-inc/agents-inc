@@ -457,6 +457,163 @@ const INSTALLED_SOURCE_FORMAT = {
   trailingComma: "all",
 } as const satisfies Options
 
+const PRINT_WIDTH = INSTALLED_SOURCE_FORMAT.printWidth
+
+/** Three ids whose union ends exactly on the print width beside `export type SkillId =`. */
+const THREE_STATE_SKILLS = buildCatalog(
+  {
+    "web-client-state": buildCatalogCategory({
+      displayName: "Client State",
+      domain: "web",
+    }),
+  },
+  [
+    buildCatalogSkill("web-state-ngrx-signalstore", {
+      displayName: "NgRx SignalStore",
+      category: "web-client-state",
+    }),
+    buildCatalogSkill("web-state-redux-toolkit", {
+      displayName: "Redux Toolkit",
+      category: "web-client-state",
+    }),
+    buildCatalogSkill("web-state-zustand", {
+      displayName: "Zustand",
+      category: "web-client-state",
+    }),
+  ]
+)
+
+const THREE_STATE_SKILLS_ALIAS =
+  "export type SkillId = 'web-state-ngrx-signalstore' | 'web-state-redux-toolkit' | 'web-state-zustand'"
+
+/** Two ids whose stack property ends exactly on the print width, its closing `>[]` included. */
+const TWO_OBSERVABILITY_SKILLS = buildCatalog(
+  {
+    "ai-observability": buildCatalogCategory({
+      displayName: "Observability",
+      domain: "ai",
+    }),
+  },
+  [
+    buildCatalogSkill("ai-observability-langfuse", {
+      displayName: "Langfuse",
+      category: "ai-observability",
+    }),
+    buildCatalogSkill("ai-observability-promptfoo", {
+      displayName: "Promptfoo",
+      category: "ai-observability",
+    }),
+  ]
+)
+
+const TWO_OBSERVABILITY_SKILLS_STACK =
+  "  'ai-observability'?: SkillAssignment<'ai-observability-langfuse' | 'ai-observability-promptfoo'>[]"
+
+/** Two ids whose stack property fits up to its closing `>[]`, which takes it a column past. */
+const TWO_ANIMATION_SKILLS = buildCatalog(
+  {
+    "web-animation": buildCatalogCategory({
+      displayName: "Animation",
+      domain: "web",
+    }),
+  },
+  [
+    buildCatalogSkill("web-animation-css-animations", {
+      displayName: "CSS Animations",
+      category: "web-animation",
+    }),
+    buildCatalogSkill("web-animation-framer-motion", {
+      displayName: "Framer Motion",
+      category: "web-animation",
+    }),
+  ]
+)
+
+const TWO_ANIMATION_SKILLS_STACK = `  'web-animation'?: SkillAssignment<
+    'web-animation-css-animations' | 'web-animation-framer-motion'
+  >[]
+`
+
+/** Custom skill ids with no catalogue skill beside them: the union is one section. */
+const renderOnlyCustomSkills = (skillIds: string[]) =>
+  generateConfigTypesSource(buildCatalog({}, []), [], [], {
+    extraSkillIds: skillIds,
+  })
+
+const CUSTOM_LINE_AT_PRINT_WIDTH =
+  "  'acme-api-conventions' | 'acme-design-system' | 'acme-incident-runbook' | 'acme-release-checklist'"
+
+const renderCustomLineAtPrintWidth = () =>
+  renderOnlyCustomSkills([
+    "acme-release-checklist",
+    "acme-incident-runbook",
+    "acme-design-system",
+    "acme-api-conventions",
+  ])
+
+/** One id a column longer than its counterpart above. */
+const renderCustomLineAColumnWider = () =>
+  renderOnlyCustomSkills([
+    "acme-release-checklist",
+    "acme-incident-runbook",
+    "acme-design-system",
+    "acme-onboarding-notes",
+  ])
+
+const CUSTOM_STACKED = `export type SkillId =
+  // Custom
+  | 'acme-design-system'
+  | 'acme-incident-runbook'
+  | 'acme-onboarding-notes'
+  | 'acme-release-checklist'
+`
+
+describe("a union that ends exactly on the print width", () => {
+  it("stays on its alias's line", () => {
+    expect(
+      THREE_STATE_SKILLS_ALIAS,
+      "the fixture no longer lands on the print width"
+    ).toHaveLength(PRINT_WIDTH)
+    expect(generateConfigTypesSource(THREE_STATE_SKILLS, [])).toContain(
+      `\n${THREE_STATE_SKILLS_ALIAS}\n\n`
+    )
+  })
+
+  it("stays on its stack property's line", () => {
+    expect(
+      TWO_OBSERVABILITY_SKILLS_STACK,
+      "the fixture no longer lands on the print width"
+    ).toHaveLength(PRINT_WIDTH)
+    expect(generateConfigTypesSource(TWO_OBSERVABILITY_SKILLS, [])).toContain(
+      `\n${TWO_OBSERVABILITY_SKILLS_STACK}\n}\n`
+    )
+  })
+})
+
+describe("a stack property that only its closing >[] takes past the print width", () => {
+  it("moves its union to an indented line of its own", () => {
+    expect(generateConfigTypesSource(TWO_ANIMATION_SKILLS, [])).toContain(
+      `\n${TWO_ANIMATION_SKILLS_STACK}}\n`
+    )
+  })
+})
+
+describe("a union of custom members alone", () => {
+  it("sits on one indented line under its heading when that line is exactly the print width", () => {
+    expect(
+      CUSTOM_LINE_AT_PRINT_WIDTH,
+      "the fixture no longer lands on the print width"
+    ).toHaveLength(PRINT_WIDTH)
+    expect(renderCustomLineAtPrintWidth()).toContain(
+      `\nexport type SkillId =\n  // Custom\n${CUSTOM_LINE_AT_PRINT_WIDTH}\n\n`
+    )
+  })
+
+  it("stacks one member per line once that line is a column wider", () => {
+    expect(renderCustomLineAColumnWider()).toContain(`\n${CUSTOM_STACKED}\n`)
+  })
+})
+
 const RENDERS = {
   renderWholeCatalogue,
   renderCustomConfig,
@@ -467,6 +624,14 @@ const RENDERS = {
     generateConfigTypesSource(THREE_TESTING_SKILLS, []),
   renderFourTestingSkills: () =>
     generateConfigTypesSource(FOUR_TESTING_SKILLS, []),
+  renderThreeStateSkills: () =>
+    generateConfigTypesSource(THREE_STATE_SKILLS, []),
+  renderTwoObservabilitySkills: () =>
+    generateConfigTypesSource(TWO_OBSERVABILITY_SKILLS, []),
+  renderTwoAnimationSkills: () =>
+    generateConfigTypesSource(TWO_ANIMATION_SKILLS, []),
+  renderCustomLineAtPrintWidth,
+  renderCustomLineAColumnWider,
 }
 
 describe("every file rendered above", () => {

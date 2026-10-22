@@ -573,9 +573,31 @@ describe("a prior stack", () => {
     })
   })
 
-  it("keys a gained pair by sub-agent and skill", () => {
-    expect(scopeEligibilityKey("web-developer", REACT)).toBe(
-      "web-developer|web-framework-react"
+  it("under curation, admits only the gained pair: not its skill on another sub-agent, nor another skill on its own", () => {
+    const config = generateProjectConfigFromSkills(
+      "my-app",
+      [REACT, TAILWIND, VITEST],
+      {
+        selectedAgents: ["web-developer", "web-tester"],
+        skillConfigs: globalSkills(REACT, TAILWIND, VITEST),
+        agentConfigs: [WEB_DEVELOPER, WEB_TESTER],
+        existingStack: {
+          "web-developer": { "web-framework": [{ id: REACT }] },
+          "web-tester": { "web-framework": [{ id: REACT }] },
+        },
+        newlyAddedSkillIds: [],
+        scopeEligibilityGained: new Set([
+          scopeEligibilityKey("web-developer", TAILWIND),
+        ]),
+      }
     )
+
+    expect(config.stack).toStrictEqual({
+      "web-developer": {
+        "web-framework": [{ id: REACT }],
+        "web-styling": [{ id: TAILWIND, preloaded: true }],
+      },
+      "web-tester": { "web-framework": [{ id: REACT }] },
+    })
   })
 })

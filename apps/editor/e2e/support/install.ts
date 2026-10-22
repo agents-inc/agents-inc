@@ -97,8 +97,7 @@ export const HARBOR_STORE = {
     "Harbor's client store, its slices and its selectors. Load when adding state to a Harbor app.",
 } as const satisfies AuthoredSkill
 
-// A stack with a description, because where that sentence lands is one of
-// the things the two writers disagreed about.
+// Carries a description so the spec compares where each writer puts it.
 export const HARBOR_STACK = {
   id: "harbor-house-stack",
   name: "Harbor House Stack",
@@ -246,7 +245,7 @@ const buildPublicCatalogue = async (): Promise<PublicCatalogue> => {
   return { dir, cleanup: () => rm(root, { recursive: true, force: true }) }
 }
 
-export type CliRun = { exitCode: number | null; output: string }
+type CliRun = { exitCode: number | null; output: string }
 
 // Long enough for a cold `init --from` on a loaded machine, short enough that a
 // CLI waiting on something it will never get fails the spec rather than its

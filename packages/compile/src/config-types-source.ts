@@ -96,9 +96,6 @@ export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
   /** The name that marketplace's manifest gives it, which plugins are registered under */
   marketplaceName?: string
 
-  /** Agents source path or URL (when agents come from a different source than skills) */
-  agentsSource?: string
-
   /** Selected domains */
   selectedDomains?: Domain[]
 
@@ -107,9 +104,6 @@ export const PROJECT_CONFIG_INTERFACE_AFTER = `export interface ProjectConfig {
 
   /** Custom skills directory override (default: "src/skills") */
   skillsDir?: string
-
-  /** Custom agents directory override (default: "src/agents") */
-  agentsDir?: string
 
   /** Custom stacks file path override (default: "config/stacks.ts") */
   stacksFile?: string
@@ -348,47 +342,10 @@ export function generateConfigTypesSource(
   extras?: ConfigTypesExtras,
   config?: ProjectConfig
 ): string {
-  // Boundary cast: extra ids from CLI args may not match the strict unions.
-  const extraSkillIds = (extras?.extraSkillIds ?? []) as SkillId[]
-  const extraAgentNamesArr = (extras?.extraAgentNames ?? []) as AgentName[]
-  const extraDomainsArr = extras?.extraDomains ?? []
-  const extraCategoriesArr = (extras?.extraCategories ?? []) as Category[]
-
-  let skillIds: SkillId[]
-  let sortedAgents: AgentName[]
-  let domains: string[]
-  let categories: Category[]
-
-  if (config) {
-    const configSkillIds = config.skills.map((s) => s.id)
-    skillIds = unique([...configSkillIds, ...extraSkillIds]).sort()
-
-    const configAgentNames = config.agents.map((a) => a.name)
-    sortedAgents = unique([...configAgentNames, ...extraAgentNamesArr]).sort()
-
-    const configCategories = deriveCategories(configSkillIds, catalog)
-    categories = unique([...configCategories, ...extraCategoriesArr]).sort()
-
-    // selectedDomains may carry domains with no skills in this scope.
-    const configDomains = deriveDomains(categories, catalog)
-    domains = unique([
-      ...configDomains,
-      ...(config.selectedDomains ?? []),
-      ...extraDomainsArr,
-    ]).sort()
-  } else {
-    // No config: the full catalogue (e.g., a blank global config).
-    skillIds = unique([
-      ...typedKeys<SkillId>(catalog.skills),
-      ...extraSkillIds,
-    ]).sort()
-    sortedAgents = unique([...agentNames, ...extraAgentNamesArr]).sort()
-    domains = unique([...extractDomains(catalog), ...extraDomainsArr]).sort()
-    categories = unique([
-      ...typedKeys<Category>(catalog.categories),
-      ...extraCategoriesArr,
-    ]).sort()
-  }
+  const extra = extraMembers(extras)
+  const { skillIds, agents, domains, categories } = config
+    ? configMembers(config, extra, catalog)
+    : catalogueMembers(agentNames, extra, catalog)
 
   const declaredAgents = new Set<AgentName>(agentNames)
   const flaggedCustomAgents = new Set<AgentName>(customAgentNames)
@@ -397,7 +354,7 @@ export function generateConfigTypesSource(
   const skillIdLine = formatMaybeSectionedUnion(skillIds, (id) =>
     isCustomSkill(id, catalog)
   )
-  const agentNameLine = formatMaybeSectionedUnion(sortedAgents, (name) =>
+  const agentNameLine = formatMaybeSectionedUnion(agents, (name) =>
     isCustomAgent(name, declaredAgents, flaggedCustomAgents)
   )
   const domainLine = formatMaybeSectionedUnion(domains, (domain) =>
@@ -407,19 +364,15 @@ export function generateConfigTypesSource(
     isUndeclaredCategory(category, catalog)
   )
 
-  const selectedAgents = config?.agents ? activeAgentNames(config.agents) : []
-  const selectedAgentNameLine =
-    selectedAgents.length > 0
-      ? literalUnion(selectedAgents)
-      : typeReference("AgentName")
-
-  const projectScopedAgents = config?.agents
-    ? activeProjectAgentNames(config.agents)
-    : []
-  const projectAgentNameLine =
-    projectScopedAgents.length > 0
-      ? literalUnion(projectScopedAgents)
-      : typeReference("SelectedAgentName")
+  const configAgents = config?.agents ?? []
+  const selectedAgentNameLine = narrowedUnion(
+    activeAgentNames(configAgents),
+    "AgentName"
+  )
+  const projectAgentNameLine = narrowedUnion(
+    activeProjectAgentNames(configAgents),
+    "SelectedAgentName"
+  )
 
   const skillsByCategory = buildSkillsByCategory(skillIds, categories, catalog)
   const stackAgentConfigType = generateStackAgentConfig(
@@ -436,6 +389,75 @@ export function generateConfigTypesSource(
     category: categoryLine,
     stackAgentConfig: stackAgentConfigType,
   })
+}
+
+type UnionMembers = {
+  skillIds: SkillId[]
+  agents: AgentName[]
+  domains: string[]
+  categories: Category[]
+}
+
+function extraMembers(extras: ConfigTypesExtras | undefined): UnionMembers {
+  // Boundary cast: extra ids from CLI args may not match the strict unions.
+  return {
+    skillIds: (extras?.extraSkillIds ?? []) as SkillId[],
+    agents: (extras?.extraAgentNames ?? []) as AgentName[],
+    domains: extras?.extraDomains ?? [],
+    categories: (extras?.extraCategories ?? []) as Category[],
+  }
+}
+
+function configMembers(
+  config: ProjectConfig,
+  extra: UnionMembers,
+  catalog: CompileCatalog
+): UnionMembers {
+  const configSkillIds = config.skills.map((s) => s.id)
+  const categories = sortedUnion(
+    deriveCategories(configSkillIds, catalog),
+    extra.categories
+  )
+
+  return {
+    skillIds: sortedUnion(configSkillIds, extra.skillIds),
+    agents: sortedUnion(
+      config.agents.map((a) => a.name),
+      extra.agents
+    ),
+    // selectedDomains may carry domains with no skills in this scope.
+    domains: sortedUnion(
+      deriveDomains(categories, catalog),
+      config.selectedDomains ?? [],
+      extra.domains
+    ),
+    categories,
+  }
+}
+
+/** No config: the full catalogue (e.g., a blank global config). */
+function catalogueMembers(
+  agentNames: AgentName[],
+  extra: UnionMembers,
+  catalog: CompileCatalog
+): UnionMembers {
+  return {
+    skillIds: sortedUnion(typedKeys<SkillId>(catalog.skills), extra.skillIds),
+    agents: sortedUnion(agentNames, extra.agents),
+    domains: sortedUnion(extractDomains(catalog), extra.domains),
+    categories: sortedUnion(
+      typedKeys<Category>(catalog.categories),
+      extra.categories
+    ),
+  }
+}
+
+function sortedUnion<T extends string>(...lists: (readonly T[])[]): T[] {
+  return unique(lists.flat()).sort()
+}
+
+function narrowedUnion(members: readonly string[], fallback: string): AliasRhs {
+  return members.length > 0 ? literalUnion(members) : typeReference(fallback)
 }
 
 // The full-catalogue domain union for the standalone types file.
@@ -525,16 +547,20 @@ export function generateProjectConfigTypesSource(
     options.projectDomains
   )
 
-  const projectCategories = options.projectCategories ?? []
-  const categoryUnion = formatExtendedUnion("GlobalCategory", projectCategories)
+  const categoryUnion = formatExtendedUnion(
+    "GlobalCategory",
+    options.projectCategories ?? []
+  )
 
-  const selectedAgentNameUnion = options.selectedAgentNames?.length
-    ? literalUnion(options.selectedAgentNames)
-    : typeReference("AgentName")
+  const selectedAgentNameUnion = narrowedUnion(
+    options.selectedAgentNames ?? [],
+    "AgentName"
+  )
 
-  const projectAgentNameUnion = options.projectScopedAgentNames?.length
-    ? literalUnion(options.projectScopedAgentNames)
-    : typeReference("SelectedAgentName")
+  const projectAgentNameUnion = narrowedUnion(
+    options.projectScopedAgentNames ?? [],
+    "SelectedAgentName"
+  )
 
   // Category is re-exported either way, so it is always imported.
   const importBlock = renderTypeImportLine(

@@ -113,12 +113,14 @@ describe("the saved stacks' slot", () => {
   })
 
   it("persists under a key of its own", async () => {
-    const store = await storeOnABrowserHolding(new Map())
+    const held = new Map<string, string>()
+    const store = await storeOnABrowserHolding(held)
 
-    expect(store.persist.getOptions().name).toBe(SLOT)
+    store.getState().save("Weekday", valid())
+
+    expect([...held.keys()]).toStrictEqual([SLOT])
   })
 
-  // The v1 slot is not read.
   it("ignores a stack under the retired single-slot key", async () => {
     const held = new Map([
       [

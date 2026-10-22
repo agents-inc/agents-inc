@@ -21,10 +21,13 @@ const gapBetween = async (
   return second.y - (first.y + first.height)
 }
 
-const marginTopOf = (configure: ConfigurePage, words: string) =>
-  configure
-    .stepHinge(words)
-    .evaluate((node) => parseFloat(getComputedStyle(node).marginTop))
+// The clearance above a title, `step-titles.spec.ts`'s gutter.
+const TITLE_CLEARANCE_REM = 3.75
+
+const rootFontPx = (configure: ConfigurePage) =>
+  configure.page.evaluate(() =>
+    parseFloat(getComputedStyle(document.documentElement).fontSize)
+  )
 
 test.describe("folding a step", () => {
   // Both directions, so the absence is shown against a presence.
@@ -96,12 +99,11 @@ test.describe("folding a step", () => {
     expect(await configure.storedConfig()).toBe(chosen)
   })
 
-  // Title clearances are margins, so two folded titles' margins collapse to the
-  // larger one; a new formatting context around a title would stop that.
+  // One clearance between two folded titles, not one each.
   test("two adjacent folded titles sit one title margin apart", async ({
     configure,
   }) => {
-    const clearance = await marginTopOf(configure, AGENTS)
+    const clearance = TITLE_CLEARANCE_REM * (await rootFontPx(configure))
     // The control: with the grid in place the gap is far larger.
     expect(await gapBetween(configure, STACK, AGENTS)).toBeGreaterThan(
       clearance * 2

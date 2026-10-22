@@ -19,7 +19,7 @@ import {
   fileExists,
   renderSkillMd,
 } from "../helpers/test-utils.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 import { EXIT_CODES, FILES } from "../pages/constants.js";
 
 // Facts about the pinned `@openai/codex` that the Codex install design rests on, measured against
@@ -134,7 +134,7 @@ describe("the surfaces a Codex install writes to, measured on the pinned binary"
   });
 
   it("accepts a marketplace whose only manifests are .claude-plugin ones, and serves its skill", async () => {
-    const ref = buildMarketplacePluginRef(PLUGIN_SKILL_ID, fixture.marketplaceName);
+    const ref = pluginKeyFor(PLUGIN_SKILL_ID, fixture.marketplaceName);
 
     // The product's real build output, not a hand-written imitation.
     expect(
@@ -158,8 +158,8 @@ describe("the surfaces a Codex install writes to, measured on the pinned binary"
   });
 
   it("answers a removal identically whether there was anything to remove or not", async () => {
-    const ref = buildMarketplacePluginRef(PLUGIN_SKILL_ID, fixture.marketplaceName);
-    const absent = buildMarketplacePluginRef("never-installed", fixture.marketplaceName);
+    const ref = pluginKeyFor(PLUGIN_SKILL_ID, fixture.marketplaceName);
+    const absent = pluginKeyFor("never-installed", fixture.marketplaceName);
 
     await runCodex(home, ["plugin", "marketplace", "add", fixture.sourceDir], project);
     const installed = await runCodex(home, ["plugin", "add", ref], project);

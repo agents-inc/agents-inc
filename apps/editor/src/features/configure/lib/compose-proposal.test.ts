@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { groupsFor } from "./compose-proposal"
 
+import type { ProposalRow } from "../components/proposal"
 import type { CatalogSkill } from "@workspace/matrix"
 
 // Rows and applied ids must come from one derivation: an id the rows drop but
@@ -32,20 +33,15 @@ const nothingSelected: Record<string, unknown> = {}
 describe("groupsFor", () => {
   it("draws one added row per proposed skill the catalogue can name", () => {
     const { groups } = groupsFor([KNOWN.id], catalogue, nothingSelected)
+    const reactRow: Record<keyof ProposalRow, unknown> = {
+      name: "React",
+      state: expect.any(String),
+      amber: false,
+      added: true,
+    }
 
     expect(groups).toStrictEqual([
-      {
-        subject: "Skills",
-        verb: "added",
-        rows: [
-          {
-            name: "React",
-            state: expect.any(String) as string,
-            amber: false,
-            added: true,
-          },
-        ],
-      },
+      { subject: "Skills", verb: "added", rows: [reactRow] },
     ])
   })
 

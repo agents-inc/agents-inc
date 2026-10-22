@@ -11,7 +11,7 @@ const proposalSchema = z.object({
   reason: z.string(),
 })
 
-export type ComposedProposal = z.infer<typeof proposalSchema>
+type ComposedProposal = z.infer<typeof proposalSchema>
 
 export type ComposeRefusal =
   "signed-out" | "too-many" | "too-long" | "refused" | "unreachable"

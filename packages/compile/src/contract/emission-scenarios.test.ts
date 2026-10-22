@@ -107,8 +107,7 @@ describe("the source an install writes", () => {
     expect(
       source,
       "generateBlankGlobalConfigSource() is not a fixed point of prettier — expected is what " +
-        "prettier makes of its output, received is its output. This is NOT CLI-841, which is " +
-        "about this emitter disagreeing with generateStandaloneConfig rather than about format"
+        "prettier makes of its output, received is its output"
     ).toBe(await reformat(source))
   })
 

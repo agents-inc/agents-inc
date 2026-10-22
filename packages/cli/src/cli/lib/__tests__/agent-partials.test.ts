@@ -16,63 +16,48 @@ import type { AgentName } from "../../types/generated/source-types.js";
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const AGENTS_DIR = path.join(CLI_ROOT, "src", "agents");
 const TEMPLATES_DIR = "_templates";
-const AGENT_TEMPLATE = path.join(AGENTS_DIR, TEMPLATES_DIR, "agent.liquid");
-
-/** The body half: `agent.liquid` is frontmatter only, and the wrappers live in the body. */
-const AGENT_BODY_TEMPLATE = path.join(AGENTS_DIR, TEMPLATES_DIR, "agent-body.liquid");
-
-async function wholeAgentTemplate(): Promise<string> {
-  const [frontmatter, body] = await Promise.all([
-    readFile(AGENT_TEMPLATE, "utf8"),
-    readFile(AGENT_BODY_TEMPLATE, "utf8"),
-  ]);
-
-  return `${frontmatter}${body}`;
-}
-
 const AGENT_GLOB = "*/*";
+
+/** `renderKey` is the field the template wraps, so the wrapper is proved by rendering. */
+type PartialContract = {
+  file: string;
+  requires: string;
+  wrapper: string;
+  renderKey: keyof CompiledAgentData;
+};
 
 /**
  * Required partials (read without a fallback, so an agent missing one cannot compile), their
  * technique tag, and the wrapper the template adds around them. A partial opening with that wrapper
- * would emit the tag twice; `template` is asserted first so the negative polices a real wrapper.
+ * would emit the tag twice; the render is asserted first so the negative polices a real wrapper.
  */
 const REQUIRED_PARTIALS = [
   {
     file: "identity.md",
     requires: "<domain_scope>",
     wrapper: "role",
-    template: "<role>\n{{ identity }}\n</role>",
+    renderKey: "identity",
   },
-] as const;
+] as const satisfies readonly PartialContract[];
 
 /**
  * Optional partials: no presence roster, since a correct agent may omit them, but a copy that
- * exists owes its technique and must not self-wrap. `renderKey` names a field so the guard is
- * proved by rendering, not by a template substring.
+ * exists owes its technique and must not self-wrap.
  */
 const OPTIONAL_PARTIALS = [
   {
     file: "critical-requirements.md",
     requires: "<self_correction_triggers>",
     wrapper: "critical_requirements",
-    template: "<critical_requirements>\n{{ criticalRequirementsTop }}\n</critical_requirements>",
     renderKey: "criticalRequirementsTop",
   },
   {
     file: "critical-reminders.md",
     requires: "<post_action_reflection>",
     wrapper: "critical_reminders",
-    template: "<critical_reminders>\n{{ criticalReminders }}\n</critical_reminders>",
     renderKey: "criticalReminders",
   },
-] as const satisfies readonly {
-  file: string;
-  requires: string;
-  wrapper: string;
-  template: string;
-  renderKey: keyof CompiledAgentData;
-}[];
+] as const satisfies readonly PartialContract[];
 
 /**
  * A ledger of which agents ship each optional partial, so the conditional assertions have a
@@ -178,12 +163,14 @@ describe("every agent partial carries its technique and none carries the templat
   });
 
   it.each(PARTIAL_CONTRACTS)(
-    "agent.liquid supplies the wrapper around $file",
-    async ({ template }) => {
+    "the compiled agent wraps what $file says in <$wrapper>",
+    async ({ wrapper, renderKey }) => {
+      const said = `${wrapper} content`;
+
       expect(
-        await wholeAgentTemplate(),
+        await renderWith({ [renderKey]: said }),
         "the template no longer adds this wrapper, so the partials below are being checked against nothing",
-      ).toContain(template);
+      ).toContain(`<${wrapper}>\n${said}\n</${wrapper}>`);
     },
   );
 

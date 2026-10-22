@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setReportingSink } from "@/lib/observability/report"
 
-import type { ReportingSink } from "@/lib/observability/report"
+import type { IssueContext, ReportingSink } from "@/lib/observability/report"
 
 import { createSharedConfig, fetchSharedConfig, isRateLimited } from "./configs"
 
@@ -134,12 +134,13 @@ describe("createSharedConfig", () => {
   // skill.
   it("reports both the skill and the sub-agent the write contract objected to", async () => {
     await createSharedConfig(OUT_OF_SCOPE_PAYLOAD)
+    const refusal: IssueContext = {
+      problems: [expect.stringContaining(UNWRITABLE_SKILL)],
+    }
 
     expect(sink.issue).toHaveBeenCalledWith(
       "Share POST refused a configuration nobody could install",
-      {
-        problems: [expect.stringContaining(UNWRITABLE_SKILL) as unknown],
-      }
+      refusal
     )
     const [, context] = sink.issue.mock.calls[0]!
     const { problems } = context as { problems: string[] }

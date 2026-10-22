@@ -8,6 +8,7 @@ import { format, type Options } from "prettier"
 import { describe, expect, it } from "vitest"
 
 import {
+  canonicalizeStackOrder,
   generateBlankGlobalConfigSource,
   generateConfigSource,
   refuseUnwritableStack,
@@ -21,6 +22,7 @@ import {
   buildAgentScopeConfig,
   buildProjectConfig,
   buildSkillConfig,
+  withUnnamedField,
 } from "./__tests__/factories/config-factories"
 
 const REACT = "web-framework-react"
@@ -408,6 +410,44 @@ describe("a standalone config", () => {
   })
 })
 
+// A renderer that draws sub-agents from a stack it never writes (the editor's
+// preview) takes the writer's order from here.
+describe("canonicalizeStackOrder", () => {
+  const scrambled = () =>
+    canonicalizeStackOrder(
+      {
+        "web-developer": {
+          "web-testing": [{ id: VITEST }],
+          "web-framework": [{ id: REACT }],
+          "web-styling": [{ id: TAILWIND }],
+        },
+        "api-developer": { "web-testing": [{ id: VITEST }] },
+      },
+      CATALOG
+    )
+
+  it("orders sub-agents by code unit", () => {
+    expect(Object.keys(scrambled())).toStrictEqual([
+      "api-developer",
+      "web-developer",
+    ])
+  })
+
+  it("orders each sub-agent's categories as the catalogue declares them", () => {
+    expect(Object.keys(scrambled()["web-developer"]!)).toStrictEqual([
+      "web-framework",
+      "web-styling",
+      "web-testing",
+    ])
+  })
+
+  it("moves no assignment", () => {
+    expect(scrambled()["web-developer"]!["web-styling"]).toStrictEqual([
+      { id: TAILWIND },
+    ])
+  })
+})
+
 describe("the blank global config", () => {
   it("names the global config and holds nothing", () => {
     expect(generateBlankGlobalConfigSource()).toBe(BLANK_GLOBAL_SOURCE)
@@ -487,10 +527,10 @@ describe("a project config given no global config", () => {
     expect(() =>
       generateConfigSource(BARE_PROJECT, CATALOG, { isProjectConfig: true })
     ).toThrow(
-      "A project config needs the global config it extends: pass `globalConfig` to inline its " +
-        "entries, or `globalImportPath` to import and spread them. Neither was given, and the " +
-        "standalone writer this used to fall through to emits a global-shaped config carrying " +
-        "the `projects` tracking array a project root must never hold."
+      new Error(
+        "A project config needs the global config it extends: pass `globalConfig` to inline its " +
+          "entries, or `globalImportPath` to import and spread them. Neither was given."
+      )
     )
   })
 })
@@ -544,4 +584,201 @@ describe("the bytes pinned above", () => {
       expect(source).toBe(await format(source, INSTALLED_SOURCE_FORMAT))
     })
   }
+})
+
+const PRINT_WIDTH = INSTALLED_SOURCE_FORMAT.printWidth
+
+/** A run of columns, for a line measured against the print width. */
+const columns = (count: number): string => "x".repeat(count)
+
+const NOTHING = buildProjectConfig({ agents: [], skills: [] })
+
+/** The line after the last field, which ends a pin so a line printed under it fails. */
+const FILE_END = "} satisfies ProjectConfig\n"
+
+/** The whole file is held against prettier before a spec reads the one line it is about. */
+async function writtenAndFormatted(config: ProjectConfig): Promise<string> {
+  const source = generateConfigSource(config, CATALOG)
+
+  expect(
+    source,
+    "the file is not a fixed point of prettier: expected is what prettier makes of it"
+  ).toBe(await format(source, INSTALLED_SOURCE_FORMAT))
+
+  return source
+}
+
+describe("the quotes a string is written in", () => {
+  it.each([
+    [
+      "switches to double quotes when that saves escaping an apostrophe",
+      "it's",
+      `"it's"`,
+    ],
+    [
+      "leaves double quotes unescaped inside single quotes",
+      'say "hi"',
+      `'say "hi"'`,
+    ],
+    [
+      "keeps single quotes on a tie and escapes the apostrophe",
+      `a'b"c`,
+      `'a\\'b"c'`,
+    ],
+    ["escapes a newline as JSON does", "a\nb", "'a\\nb'"],
+  ])("%s", async (_rule, author, written) => {
+    const source = await writtenAndFormatted(
+      buildProjectConfig({ agents: [], skills: [], author })
+    )
+
+    expect(source).toContain(`\n  author: ${written},\n`)
+  })
+})
+
+describe("the key a field is written under", () => {
+  it("is bare when an identifier can spell it, dollar, underscore and digit included", async () => {
+    const source = await writtenAndFormatted(
+      withUnnamedField(NOTHING, "$scope_1", "x")
+    )
+
+    expect(source).toContain("\n  $scope_1: 'x',\n")
+  })
+
+  it("is quoted when it opens with a digit", async () => {
+    const source = await writtenAndFormatted(
+      withUnnamedField(NOTHING, "1st", "x")
+    )
+
+    expect(source).toContain("\n  '1st': 'x',\n")
+  })
+})
+
+describe("a value beside its key", () => {
+  it("is an empty list or an empty record written as such", async () => {
+    const source = await writtenAndFormatted(
+      buildProjectConfig({ agents: [], skills: [], projects: [], branding: {} })
+    )
+
+    expect(source).toContain("\n  projects: [],\n")
+    expect(source).toContain("\n  branding: {},\n")
+  })
+
+  it("keeps an empty record inside a flat one as {}", async () => {
+    const source = await writtenAndFormatted(
+      withUnnamedField(NOTHING, "kept", { web: {} })
+    )
+
+    expect(source).toContain("\n  kept: { web: {} },\n")
+  })
+
+  const AUTHOR_LINE = `  author: '',`
+
+  it("stays on its key's line when the line ends exactly on the print width", async () => {
+    const author = columns(PRINT_WIDTH - AUTHOR_LINE.length)
+    const line = `  author: '${author}',`
+
+    expect(line, "the fixture no longer lands on the print width").toHaveLength(
+      PRINT_WIDTH
+    )
+    expect(
+      await writtenAndFormatted(
+        buildProjectConfig({ agents: [], skills: [], author })
+      )
+    ).toContain(`\n${line}\n`)
+  })
+
+  it("moves below its key once its line is a column wider", async () => {
+    const author = columns(PRINT_WIDTH - AUTHOR_LINE.length + 1)
+
+    expect(
+      await writtenAndFormatted(
+        buildProjectConfig({ agents: [], skills: [], author })
+      )
+    ).toContain(`\n  author:\n    '${author}',\n${FILE_END}`)
+  })
+
+  it("moves below its key as null when it does not fit", async () => {
+    const key = columns(94)
+
+    expect(
+      await writtenAndFormatted(withUnnamedField(NOTHING, key, null))
+    ).toContain(`\n  ${key}:\n    null,\n${FILE_END}`)
+  })
+
+  it("moves below its key as an empty list or record when it does not fit", async () => {
+    const key = columns(96)
+
+    expect(
+      await writtenAndFormatted(withUnnamedField(NOTHING, key, []))
+    ).toContain(`\n  ${key}:\n    [],\n${FILE_END}`)
+    expect(
+      await writtenAndFormatted(withUnnamedField(NOTHING, key, {}))
+    ).toContain(`\n  ${key}:\n    {},\n${FILE_END}`)
+  })
+
+  it("stays on its key's line, however wide, when the key is under five columns", async () => {
+    const name = columns(PRINT_WIDTH)
+
+    expect(
+      await writtenAndFormatted(
+        buildProjectConfig({ agents: [], skills: [], name })
+      )
+    ).toContain(`\n  name: '${name}',\n`)
+  })
+
+  it("moves below a key of five columns once it does not fit", async () => {
+    const value = columns(PRINT_WIDTH)
+
+    expect(
+      await writtenAndFormatted(withUnnamedField(NOTHING, "fives", value))
+    ).toContain(`\n  fives:\n    '${value}',\n${FILE_END}`)
+  })
+
+  it("stays beside a short key inside a record it breaks", async () => {
+    const id = columns(PRINT_WIDTH)
+
+    expect(
+      await writtenAndFormatted(withUnnamedField(NOTHING, "kept", { id }))
+    ).toContain(`\n  kept: {\n    id: '${id}',\n  },\n${FILE_END}`)
+  })
+
+  it("stays on its key's line as a number, however wide", async () => {
+    const key = columns(98)
+
+    expect(
+      await writtenAndFormatted(withUnnamedField(NOTHING, key, 12345))
+    ).toContain(`\n  ${key}: 12345,\n`)
+  })
+
+  it("stays where it is as a list element, having no key to move under", async () => {
+    const element = columns(PRINT_WIDTH)
+
+    expect(
+      await writtenAndFormatted(
+        buildProjectConfig({ agents: [], skills: [], projects: [element] })
+      )
+    ).toContain(`\n  projects: [\n    '${element}',\n  ],\n${FILE_END}`)
+  })
+})
+
+/** Skills and a stack but no sub-agents or domains, whose type import is exactly the print width. */
+const SKILLS_AND_STACK = buildProjectConfig({
+  agents: [],
+  skills: [buildSkillConfig(REACT, { scope: "global" })],
+  stack: { "web-developer": { "web-framework": [{ id: REACT }] } },
+})
+
+const IMPORT_AT_PRINT_WIDTH =
+  "import type { ProjectConfig, ProjectAgentName, SkillConfig, StackAgentConfig } from './config-types'"
+
+describe("the type import a config opens with", () => {
+  it("stays on one line when it is exactly the print width", async () => {
+    expect(
+      IMPORT_AT_PRINT_WIDTH,
+      "the fixture no longer lands on the print width"
+    ).toHaveLength(PRINT_WIDTH)
+    expect(await writtenAndFormatted(SKILLS_AND_STACK)).toContain(
+      `${IMPORT_AT_PRINT_WIDTH}\n`
+    )
+  })
 })

@@ -8,11 +8,7 @@ import { CLI_ROOT } from "../helpers/cli-runner.js";
 import { useMockWorker } from "../helpers/mock-worker.js";
 import { createTempDir, cleanupTempDir, fileExists } from "../test-fs-utils";
 import { buildAgentDefs } from "../factories/agent-factories.js";
-import {
-  buildConfigWriteResult,
-  buildProjectConfig,
-  buildSourceResult,
-} from "../factories/config-factories.js";
+import { buildSourceResult } from "../factories/config-factories.js";
 import {
   buildCompilationResult,
   buildDiscoveredSkills,
@@ -31,15 +27,14 @@ import type {
   discoverInstalledSkills,
   loadAgentDefs,
   loadSource,
-  writeProjectConfig,
 } from "../../operations/index.js";
 import type { SkillId } from "../../../types";
 import { getProjectConfigPath } from "../../installation/install-base-dir.js";
 
 /**
  * `init --from` hands each plugin skill to the host once, at its own scope, and that install gates
- * the config write. Only the host (below `installPluginSkills`) is mocked, so ref construction and
- * scope mapping run for real.
+ * the config write. Below `installPluginSkills` only the host is mocked, so ref construction, scope
+ * mapping and the config write run for real.
  */
 
 const MARKETPLACE = "drift-lock-marketplace";
@@ -58,7 +53,6 @@ const CLAUDE_INSTALL_FAILURE = "Plugin installation failed: no such plugin";
 const {
   mockInstallPlugin,
   mockLoadSource,
-  mockWriteProjectConfig,
   mockLoadAgentDefs,
   mockDiscoverInstalledSkills,
   mockCompileAgentsAllScopes,
@@ -66,7 +60,6 @@ const {
   // Typed against the real functions so a retired stub field is a compile error.
   mockInstallPlugin: vi.fn<PluginHost["installPlugin"]>(),
   mockLoadSource: vi.fn<typeof loadSource>(),
-  mockWriteProjectConfig: vi.fn<typeof writeProjectConfig>(),
   mockLoadAgentDefs: vi.fn<typeof loadAgentDefs>(),
   mockDiscoverInstalledSkills: vi.fn<typeof discoverInstalledSkills>(),
   mockCompileAgentsAllScopes: vi.fn<typeof compileAgentsAllScopes>(),
@@ -79,14 +72,13 @@ vi.mock("../../hosts/host-for.js", async () => {
   return { hostAt: () => host, hostFor: () => host };
 });
 
-// `installPluginSkills` stays real; only the source load and the write/compile tail are stubbed.
+// `installPluginSkills` and the config write stay real; the source load and the compile are stubbed.
 vi.mock("../../operations/index.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../operations/index.js")>();
   return {
     ...original,
     loadSource: mockLoadSource,
     loadAgentDefs: mockLoadAgentDefs,
-    writeProjectConfig: mockWriteProjectConfig,
     discoverInstalledSkills: mockDiscoverInstalledSkills,
     compileAgentsAllScopes: mockCompileAgentsAllScopes,
   };
@@ -154,12 +146,6 @@ describe("init --from: plugin install spine", () => {
         buildSourceResult(REACT_HONO_WEB_API_DOMAINS_MATRIX, tempDir, { marketplace: MARKETPLACE }),
       ),
     );
-    mockWriteProjectConfig.mockResolvedValue(
-      buildConfigWriteResult(
-        buildProjectConfig({ name: "drift-lock", skills: [], agents: [] }),
-        getProjectConfigPath(projectDir, "claude"),
-      ),
-    );
     mockLoadAgentDefs.mockResolvedValue(buildAgentDefs({}, tempDir));
     mockDiscoverInstalledSkills.mockResolvedValue(buildDiscoveredSkills());
     mockCompileAgentsAllScopes.mockResolvedValue(buildCompilationResult());
@@ -188,18 +174,13 @@ describe("init --from: plugin install spine", () => {
     }
   });
 
-  it("writes the config only after every plugin install has succeeded", async () => {
+  /** The allowed half of the refusals below: with every install landed, the config is written. */
+  it("writes the config once every plugin install has succeeded", async () => {
     serveSeed(buildTwoScopePluginPayload());
 
     await Init.run(["--from", SEED_ID, "--marketplace", tempDir], { root: CLI_ROOT });
 
-    expect(mockWriteProjectConfig).toHaveBeenCalledTimes(1);
-    const [installOrder] = mockInstallPlugin.mock.invocationCallOrder.slice(-1);
-    const [writeOrder] = mockWriteProjectConfig.mock.invocationCallOrder;
-    expect(
-      installOrder,
-      "the last plugin install must precede the config write, not follow it",
-    ).toBeLessThan(writeOrder ?? 0);
+    expect(await fileExists(getProjectConfigPath(projectDir, "claude"))).toBe(true);
   });
 
   it("reaches neither the Claude CLI nor the config write when run at the global root", async () => {
@@ -220,7 +201,7 @@ describe("init --from: plugin install spine", () => {
     ).toBeDefined();
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
     expect(mockInstallPlugin).not.toHaveBeenCalled();
-    expect(mockWriteProjectConfig).not.toHaveBeenCalled();
+    expect(await fileExists(getProjectConfigPath(tempDir, "claude"))).toBe(false);
   });
 
   it("never reaches the config write when a plugin install fails, and exits non-zero", async () => {
@@ -239,7 +220,6 @@ describe("init --from: plugin install spine", () => {
 
     expect(error, "a failed plugin install must not exit successfully").toBeDefined();
     expect(error?.oclif?.exit).toBe(EXIT_CODES.ERROR);
-    expect(mockWriteProjectConfig).not.toHaveBeenCalled();
     expect(
       await fileExists(getProjectConfigPath(projectDir, "claude")),
       "no config.ts may be left behind by a failed plugin install",

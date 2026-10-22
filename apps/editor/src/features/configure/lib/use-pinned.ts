@@ -47,7 +47,7 @@ export function usePinnedAttribute(bar: RefObject<HTMLElement | null>) {
 }
 
 // The same fact on the root, for anything outside the bar.
-export const BAR_STUCK_ATTRIBUTE = "data-bar-stuck"
+const BAR_STUCK_ATTRIBUTE = "data-bar-stuck"
 
 export function useBarStuckAttribute(stuck: boolean) {
   useEffect(() => {

@@ -25,7 +25,7 @@ import {
   listFiles,
   renderSkillMd,
 } from "../helpers/test-utils.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -33,9 +33,8 @@ import {
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * Uninstall on Codex removes exactly what the install wrote and reports what it OBSERVED: `codex
- * plugin remove` exits 0 with the same output whether or not anything was removed, so the count
- * comes from the listing taken before. Filesystem and listing are both read.
+ * `codex plugin remove` exits 0 with the same output whether or not anything was removed, so the
+ * count comes from the listing taken before.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -94,7 +93,7 @@ describe("uninstalling a Codex installation", () => {
     );
     expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
 
-    return buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName);
+    return pluginKeyFor(E2E_SKILL.react.id, fixture.marketplaceName);
   }
 
   async function pluginsCodexReports(target: TestEnvironment): Promise<string> {

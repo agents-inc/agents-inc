@@ -131,7 +131,7 @@ describe("edit --from", () => {
 
   /** `--ui` opens whatever `--from` names, else the command's own subject. */
   describe("--ui opens what --from names", () => {
-    it("succeeds, where it used to refuse", async () => {
+    it("succeeds with both flags given", async () => {
       await installConfig(installed());
 
       const error = await runEdit(["--ui", "--from", DEAD_LINK_ID]);

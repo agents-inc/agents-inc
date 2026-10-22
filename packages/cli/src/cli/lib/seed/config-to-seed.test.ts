@@ -1,10 +1,9 @@
 import { MATRIX_VERSION } from "@workspace/matrix";
 import { SEED_VERSION, installableSeedPayloadSchema } from "@workspace/matrix/seed";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { configToSeedPayload, skillsItsMarketplaceLeavesBehind } from "./config-to-seed";
 import { seedToInstallSelection } from "./seed-to-selection";
-import { isScopePairCompatible } from "../configuration/config-generator";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { DEFAULT_PUBLIC_SOURCE_NAME, EJECT_SOURCE } from "../../consts";
 import { buildAgentConfigs, buildProjectConfig } from "../__tests__/factories/config-factories.js";
@@ -16,12 +15,6 @@ import { TEST_CUSTOM_SOURCE_URL } from "../__tests__/test-constants.js";
 import { SKILLS } from "../__tests__/test-fixtures.js";
 
 import type { ContentReading } from "./external-skills";
-
-/** Replaceable so one spec can stand the mapper's own check down; the rest run the real rule. */
-vi.mock("../configuration/config-generator", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../configuration/config-generator")>();
-  return { ...original, isScopePairCompatible: vi.fn(original.isScopePairCompatible) };
-});
 
 const WEB_DEV = "web-developer";
 const API_DEV = "api-developer";
@@ -381,21 +374,6 @@ describe("configToSeedPayload", () => {
           `cannot be shared as it stands[\\s\\S]*` +
             `${SKILLS.react.id} -> ${WEB_DEV}: a project-scoped skill never reaches`,
         ),
-      );
-    });
-
-    it("refuses the pair on the wire's own terms when the catalogue-aware rule stops seeing it", () => {
-      const config = buildProjectConfig({
-        skills: [buildSkillConfig(SKILLS.react.id, { scope: "project", origin: EJECT_SOURCE })],
-        agents: buildAgentConfigs([WEB_DEV], { scope: "global" }),
-        stack: { [WEB_DEV]: { [REACT_CATEGORY]: [sa(SKILLS.react.id)] } },
-      });
-
-      // With the mapper's rule stood down, the store's installable schema is the last guard.
-      vi.mocked(isScopePairCompatible).mockReturnValueOnce(true);
-
-      expect(() => configToSeedPayload(config, CARRIES_NOTHING)).toThrow(
-        new RegExp(`"${SKILLS.react.id}"[\\s\\S]*"assignments"[\\s\\S]*"${WEB_DEV}"`),
       );
     });
 

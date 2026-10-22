@@ -244,13 +244,6 @@ describe("the install layout answers the host roles per provider", () => {
       ).toStrictEqual(CODEX_PROJECT);
     });
 
-    it("no longer answers null for the agents directory it was pinned absent at", () => {
-      expect(
-        agentsDir("codex", "project", PROJECT),
-        "pinned null until 2026-09-21 on a measurement a 23-run tie-break overturned: a project role DOES register, while the user's global config trusts this exact path",
-      ).toBe(path.join(PROJECT, CODEX_DIR, "agents"));
-    });
-
     it("does not move when CODEX_HOME does, because a project's Codex state is its own", () => {
       process.env[CODEX_HOME] = RELOCATED_CODEX_HOME;
 

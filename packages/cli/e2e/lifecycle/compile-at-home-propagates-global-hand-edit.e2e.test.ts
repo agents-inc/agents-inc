@@ -5,7 +5,7 @@ import "../matchers/setup.js";
 import { CLI } from "../fixtures/cli.js";
 import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EJECT_SOURCE_NAME, EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -23,17 +23,10 @@ import {
 import { e2eStackPayload } from "../fixtures/e2e-stack-seed.js";
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
 
-/**
- * Hand-editing the global `config.ts` and running `compile` at home must propagate to registered
- * projects: their config.ts, config-types.ts and compiled agents stop naming the removed skill.
- */
-
 const REMOVED_SKILL = E2E_SKILL.hono;
 
 /** Its compiled `.md` preloads the removed skill, so it proves propagation drove a recompile. */
 const PROJECT_AGENT = E2E_AGENT["api-developer"];
-
-const EJECT_SOURCE = "eject";
 
 const PROJECT_AGENT_ONLY_ID = "ProjAgt1";
 
@@ -102,7 +95,7 @@ describe("compile at the home directory fans a hand-edited global config out to 
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global skill it is about to be orphaned from",
-      ).toContainEqual({ id: REMOVED_SKILL.id, scope: "global", origin: EJECT_SOURCE });
+      ).toContainEqual({ id: REMOVED_SKILL.id, scope: "global", origin: EJECT_SOURCE_NAME });
       await expect({ dir: projectDir }).toHaveCompiledAgentContent(PROJECT_AGENT.name, {
         contains: [REMOVED_SKILL.id],
       });

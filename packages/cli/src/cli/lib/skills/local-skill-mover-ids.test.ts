@@ -74,6 +74,26 @@ describe("local skill ids", () => {
       expect(await directoryExists(skill)).toBe(false);
       expect(verbose).toHaveBeenCalledWith(`Deleted local skill '${SKILL_ID}'`);
     });
+
+    /** Only filesystem safety is judged here; a catalogue prefix is the parse boundary's rule. */
+    it("deletes a skill whose id no catalogue names", async () => {
+      // Boundary cast: a local skill's id need not belong to the generated union
+      const localId = "acme-pipeline-deploy" as SkillId;
+      const skill = await writeTestSkill(projectSkillsDir(), localId, { skipMetadata: true });
+
+      await deleteLocalSkill(projectDir, localId);
+
+      expect(await directoryExists(skill)).toBe(false);
+    });
+
+    it("warns about nothing when the skill is not installed", async () => {
+      const sibling = await writeTestSkill(projectSkillsDir(), SIBLING_ID, { skipMetadata: true });
+
+      await deleteLocalSkill(projectDir, SKILL_ID);
+
+      expect(warn).not.toHaveBeenCalled();
+      expect(await directoryExists(sibling)).toBe(true);
+    });
   });
 
   describe("migrateLocalSkillScope", () => {

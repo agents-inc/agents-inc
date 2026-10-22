@@ -15,7 +15,7 @@ import { createTestSource, cleanupTestSource, type TestDirs } from "../fixtures/
 import { DEFAULT_TEST_SKILLS } from "../mock-data/mock-skills";
 import { createTempDir, cleanupTempDir, directoryExists } from "../test-fs-utils";
 import { silenceConsole } from "../helpers/silence-console.js";
-import { COMPILATION_TEST_STACK } from "../mock-data/mock-stacks.js";
+import { PIPELINE_TEST_STACKS } from "../mock-data/mock-stacks.js";
 
 const TEST_MARKETPLACE_OPTIONS = {
   name: "test-marketplace",
@@ -101,25 +101,11 @@ describe("Integration: Full Skill Pipeline", () => {
 
 describe("Integration: Stack Discovery", () => {
   it("should list available stacks from fixture", async () => {
-    const stackDirs = await createTestSource({
-      stacks: [
-        {
-          id: COMPILATION_TEST_STACK.id,
-          name: COMPILATION_TEST_STACK.name,
-          description: COMPILATION_TEST_STACK.description,
-          // Boundary cast: createTestSource expects simplified agent record
-          agents: COMPILATION_TEST_STACK.agents as unknown as Record<
-            string,
-            Record<string, string>
-          >,
-        },
-      ],
-    });
+    const stackDirs = await createTestSource({ stacks: PIPELINE_TEST_STACKS });
 
     const stacks = await loadStacks(stackDirs.sourceDir);
 
-    expect(stacks).toHaveLength(1);
-    expect(stacks.map((s) => s.id)).toStrictEqual(["test-stack"]);
+    expect(stacks.map((s) => s.id)).toStrictEqual(["custom-pipeline"]);
 
     await cleanupTestSource(stackDirs);
   });

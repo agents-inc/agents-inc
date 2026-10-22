@@ -5,7 +5,7 @@ import { E2E_SOURCE } from "../helpers/create-e2e-source.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { applyEditFrom } from "../fixtures/e2e-stack-seed.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import {
   agentsPath,
   cleanupTempDir,
@@ -35,14 +35,12 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
-import { CLAUDE_DIR } from "../../src/cli/consts.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * A removal that empties a scope directory (`.claude/skills/`, `.claude/agents/`) removes it, and
- * no flow pre-creates one. Emptiness is filesystem emptiness, not roster emptiness; `.claude/`
- * itself is uninstall's decision.
+ * Emptiness is filesystem emptiness, not roster emptiness; `.claude/` itself is uninstall's
+ * decision.
  */
 
 // Outside the AgentName union: never compiled, never pruned.
@@ -193,7 +191,7 @@ describe("empty scope directories", () => {
         "an agents directory the prune emptied must not survive",
       ).toBe(false);
       expect(
-        await directoryExists(path.join(projectDir, CLAUDE_DIR)),
+        await directoryExists(path.join(projectDir, DIRS.CLAUDE)),
         ".claude itself is uninstall's decision — compile must leave it alone",
       ).toBe(true);
     },
@@ -259,7 +257,7 @@ describe("empty scope directories", () => {
         "an agents directory the removal emptied must not survive it",
       ).toBe(false);
       expect(
-        await directoryExists(path.join(projectDir, CLAUDE_DIR)),
+        await directoryExists(path.join(projectDir, DIRS.CLAUDE)),
         ".claude itself is uninstall's decision — the edit path must leave it alone",
       ).toBe(true);
     },
@@ -334,7 +332,7 @@ describe("empty scope directories", () => {
         "an emptied skills directory must not survive the removal",
       ).toBe(false);
       expect(
-        await directoryExists(path.join(globalHome, CLAUDE_DIR)),
+        await directoryExists(path.join(globalHome, DIRS.CLAUDE)),
         ".claude itself is uninstall's decision — the edit path must leave it alone",
       ).toBe(true);
     },

@@ -46,7 +46,7 @@ const inAnEnglishList = (items: readonly string[]) =>
 
 // Names the refused placement and all three offered ones, as the CLI's
 // `unbackedPluginInstallError` does.
-export const unofferedPlacementReason = (): string =>
+const unofferedPlacementReason = (): string =>
   `Codex installs plugins for the whole machine, so plugin+project is not offered. ` +
   `It installs ${inAnEnglishList(CODEX_OFFERS)}.`
 
@@ -55,6 +55,14 @@ export const placementRefusal = (
   options: SkillOptions
 ): string | undefined =>
   offersPlacement(provider, options) ? undefined : unofferedPlacementReason()
+
+// Asked of the placement the press would produce, so every door refuses alike.
+export const pressRefusal = (
+  provider: Provider,
+  options: SkillOptions,
+  patch: Partial<SkillOptions>
+): string | undefined =>
+  placementRefusal(provider, { ...options, ...patchForPress(provider, patch) })
 
 export const UNOFFERED_PLACEMENT_ERROR = {
   lead: "Codex has no project-level plugins.",
@@ -83,6 +91,12 @@ export const compilesAgent = (provider: Provider, agentId: string): boolean =>
 // The recorded reason, not a capability claim: both compile as role files.
 export const leftOutOfCodexReason = (): string =>
   `Codex installs leave this sub-agent out for v1 — its roster mechanics on Codex are not proven.`
+
+export const agentRefusal = (
+  provider: Provider,
+  agentId: string
+): string | undefined =>
+  compilesAgent(provider, agentId) ? undefined : leftOutOfCodexReason()
 
 export const agentsLeftOutOfCodexNotice = (
   agentNames: readonly string[]

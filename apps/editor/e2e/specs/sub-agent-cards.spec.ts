@@ -86,23 +86,15 @@ const FLOOR = { width: 1200, height: 1000 }
 const { web } = DOMAINS
 const { name: CATEGORY, first: REACT } = EXCLUSIVE_CATEGORY
 
+// A jump lands the section's top on the bar's underside, floored to the pixel.
+const LANDING_WINDOW = 2
+
 // The rail names a row by the lowercased label, inside its domain's band.
 const railAgent = (configure: ConfigurePage, domainId: string, label: string) =>
   configure.roster.agentButton(domainId, label.toLowerCase())
 
 const isPressed = async (button: Locator) =>
   (await button.getAttribute("aria-pressed")) === "true"
-
-const line = (cell: Locator) =>
-  cell.evaluate((node) => {
-    const after = getComputedStyle(node, "::after")
-    return {
-      content: after.content,
-      outlineWidth: after.outlineWidth,
-      outlineColor: after.outlineColor,
-      top: parseFloat(after.top),
-    }
-  })
 
 // The first painted layer inside an effort radio: the bar, wherever it is drawn.
 const bar = (radio: Locator) =>
@@ -287,12 +279,18 @@ test.describe("the sub-agent step", () => {
     expectDesignPx(text.y - group.y, 22, await pxPerDesignPx(configure))
   })
 
-  // The domain tabs jump to the first anchor carrying their id.
-  test("marks no domain anchor", async ({ configure }) => {
+  // A group shares its domain's name, and must not take the tab's jump.
+  test("lets a domain tab pass them for the domain's skills", async ({
+    configure,
+  }) => {
     const cards = configure.subAgents
     await expect(cards.group(WEB)).toBeVisible()
 
-    await expect(cards.groups.locator("[data-domain-anchor]")).toHaveCount(0)
+    await configure.domainTab(web).click()
+
+    const gap = () => configure.domainGapUnderBar(web)
+    await expect.poll(gap).toBeGreaterThanOrEqual(0)
+    await expect.poll(gap).toBeLessThan(LANDING_WINDOW)
   })
 
   test("the 03 title folds the groups away and brings them back", async ({
@@ -309,22 +307,23 @@ test.describe("the sub-agent step", () => {
     await expect(cards.group(WEB)).toBeVisible()
   })
 
-  test("a card draws its line in ::after (138a)", async ({ configure }) => {
+  // The card sits in its grid's first row, so the gap above it is the padding.
+  test("a card draws one hairline, inset by its grid's padding", async ({
+    configure,
+  }) => {
     const cards = configure.subAgents
     const cell = cards.cell(WEB, "Developer")
     await expect(cell).toBeVisible()
+    const padding = (await boxOf(cell)).y - (await boxOf(cards.lattice(WEB))).y
 
-    const drawn = await line(cell)
-    expect(drawn.content).not.toBe("none")
-    expect(drawn.outlineWidth).toBe("1px")
-    expect(
-      await cell.evaluate((node) => getComputedStyle(node).borderTopWidth)
-    ).toBe("0px")
-    expect(drawn.top).toBe(
-      await cards
-        .lattice(WEB)
-        .evaluate((node) => parseFloat(getComputedStyle(node).paddingTop))
-    )
+    expect(padding).toBeGreaterThan(0)
+    expect(await configure.strokes(cell)).toStrictEqual([
+      {
+        colour: await configure.tokenColor("--color-hairline"),
+        width: 1,
+        inset: expect.closeTo(padding, 1),
+      },
+    ])
   })
 
   test("lays a card out at the design's measurements", async ({
@@ -460,12 +459,15 @@ test.describe("pressing a card", () => {
       "true"
     )
 
-    expect((await line(cards.cell(WEB, "Developer"))).outlineColor).toBe(
-      await configure.tokenColor("--color-brand")
-    )
-    expect((await line(cards.cell(WEB, "Researcher"))).outlineColor).toBe(
-      await configure.tokenColor("--color-hairline")
-    )
+    const colours = async (cell: Locator) =>
+      (await configure.strokes(cell)).map(({ colour }) => colour)
+
+    expect(await colours(cards.cell(WEB, "Developer"))).toStrictEqual([
+      await configure.tokenColor("--color-brand"),
+    ])
+    expect(await colours(cards.cell(WEB, "Researcher"))).toStrictEqual([
+      await configure.tokenColor("--color-hairline"),
+    ])
   })
 
   test("applying a stack presses exactly the cards the rail presses", async ({
@@ -674,18 +676,27 @@ test.describe("effort", () => {
   }) => {
     const cards = configure.subAgents
     const group = cards.effortGroup(DEVELOPER)
+    const high = cards.effortOption(DEVELOPER, "high")
     await expect(group).toBeVisible()
     await cards.effortOption(DEVELOPER, AGENT_OPTIONS.restingEffort).focus()
 
     await configure.page.keyboard.press("ArrowRight")
 
-    await expect(cards.effortOption(DEVELOPER, "high")).toBeChecked()
-    await expect(cards.effortOption(DEVELOPER, "high")).toBeFocused()
-    await expect(group.locator('[tabindex="0"]')).toHaveCount(1)
-    await expect(cards.effortOption(DEVELOPER, "high")).toHaveAttribute(
-      "tabindex",
-      "0"
-    )
+    await expect(high).toBeChecked()
+    await expect(high).toBeFocused()
+
+    // Out each way: a second stop on either side of the checked level would
+    // keep focus in the track.
+    for (const [out, back] of [
+      ["Tab", "Shift+Tab"],
+      ["Shift+Tab", "Tab"],
+    ] as const) {
+      await configure.page.keyboard.press(out)
+      await expect(group.locator(":focus")).toHaveCount(0)
+
+      await configure.page.keyboard.press(back)
+      await expect(high).toBeFocused()
+    }
   })
 
   test("draws each level as a 14×4 bar in a 16-tall hit, 5 apart", async ({
@@ -776,9 +787,7 @@ test.describe("effort", () => {
     expect(await level.evaluate((node) => node.matches(":focus-visible"))).toBe(
       true
     )
-    expect(
-      await level.evaluate((node) => getComputedStyle(node).boxShadow)
-    ).toContain(await configure.tokenColor("--color-ring"))
+    expect((await configure.focusRing(level)).ringVisible).toBe(true)
   })
 
   test("offers the same five levels on Codex", async ({ configure }) => {
@@ -925,9 +934,7 @@ test.describe("Codex model", () => {
     expect(await first.evaluate((node) => node.matches(":focus-visible"))).toBe(
       true
     )
-    expect(
-      await first.evaluate((node) => getComputedStyle(node).boxShadow)
-    ).toContain(await configure.tokenColor("--color-ring"))
+    expect((await configure.focusRing(first)).ringVisible).toBe(true)
   })
 
   test("a pressed model survives a reload", async ({ configure, page }) => {

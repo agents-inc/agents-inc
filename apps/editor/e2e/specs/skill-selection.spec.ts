@@ -1,6 +1,7 @@
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY, MULTI_CATEGORY } from "../support/catalog"
 
+import { PAGE_BACKGROUND } from "../pages/configure-page"
 import type { SkillCell } from "../pages/skill-cell"
 
 test.describe("skill selection", () => {
@@ -97,7 +98,10 @@ test.describe("a skill cell under the keyboard", () => {
     test.describe(`in the ${theme} theme`, () => {
       test.beforeEach(async ({ configure }) => {
         if (theme === "dark") await configure.themeToggle.click()
-        expect(await configure.theme()).toBe(theme === "dark" ? "dark" : null)
+        await expect(configure.page.locator("body")).toHaveCSS(
+          "background-color",
+          PAGE_BACKGROUND[theme]
+        )
       })
 
       test("draws a focus ring", async ({ configure }) => {

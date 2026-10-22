@@ -11,7 +11,7 @@ const DARK_QUERY = "(prefers-color-scheme: dark)"
 
 const THEME_ATTRIBUTE = "data-theme"
 
-export type Theme = "light" | "dark"
+type Theme = "light" | "dark"
 
 const darkQuery = () =>
   typeof window.matchMedia === "function" ? window.matchMedia(DARK_QUERY) : null

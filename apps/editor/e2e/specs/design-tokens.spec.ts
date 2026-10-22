@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test"
 
 import { expect, test } from "../fixtures"
+import { PAGE_BACKGROUND } from "../pages/configure-page"
 
 // Quoted from the design file rather than imported, so the assertion can fail.
 const NEW_TOKENS = {
@@ -124,7 +125,10 @@ test.describe("design tokens", () => {
     const light = await errorPairContrast(configure.page)
 
     await configure.themeToggle.click()
-    expect(await configure.theme()).toBe("dark")
+    await expect(configure.page.locator("body")).toHaveCSS(
+      "background-color",
+      PAGE_BACKGROUND.dark
+    )
 
     expect(await errorPairContrast(configure.page)).toBeGreaterThanOrEqual(
       light

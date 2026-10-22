@@ -14,8 +14,12 @@ import {
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
-import { E2E_MARKETPLACE_NAME, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
+import {
+  E2E_MARKETPLACE_NAME,
+  EXIT_CODES,
+  PUBLIC_MARKETPLACE_NAME,
+  STEP_TEXT,
+} from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -192,7 +196,7 @@ describe("share names the marketplace its id installs from", () => {
 
   it("shares a project from a custom marketplace under a global from the public catalogue, naming the catalogue's skills", async () => {
     const env = await takeEnvironment();
-    await writeTwoMarketplaceProject(env, { origin: DEFAULT_PUBLIC_SOURCE_NAME });
+    await writeTwoMarketplaceProject(env, { origin: PUBLIC_MARKETPLACE_NAME });
 
     const { exitCode, output } = await runShare(store, {
       dir: env.projectDir,

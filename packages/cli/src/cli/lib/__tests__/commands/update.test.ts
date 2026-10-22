@@ -163,15 +163,15 @@ describe("update command", () => {
       await installConfig({
         skills: [buildSkillConfig("web-framework-react", { origin: EJECT_SOURCE })],
       });
+      mockHostAvailable.mockResolvedValue(false);
 
       const error = await runUpdate();
 
-      expect(error, "an eject-only install is a successful no-op").toBeUndefined();
-      expect(mockMarketplaceUpdate).not.toHaveBeenCalled();
       expect(
-        mockHostAvailable,
+        error,
         "nothing needs the Claude CLI, so its absence must not be able to fail the run",
-      ).not.toHaveBeenCalled();
+      ).toBeUndefined();
+      expect(mockMarketplaceUpdate).not.toHaveBeenCalled();
     });
 
     it("succeeds without an installation", async () => {

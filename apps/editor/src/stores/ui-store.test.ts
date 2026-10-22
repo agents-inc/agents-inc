@@ -14,7 +14,10 @@ import {
 
 const SLOT = "agents-inc:ui:v1"
 
-// Exactly what `partialize` may write.
+// Never bumped: nothing migrates a slot written at it.
+const SLOT_VERSION = 3
+
+// Exactly what the slot may hold.
 const PERSISTED_UI_KEYS = [
   "agentsCollapsed",
   "providerCollapsed",
@@ -32,9 +35,7 @@ const BLOB_FROM_THE_PREVIOUS_SCHEMA = { rosterCollapsed: { web: true } }
  * `window` it never attaches `api.persist`. So the stub has to exist before
  * the dynamic import.
  */
-const uiStoreOnAStandingBrowser = async () => {
-  const held = new Map<string, string>()
-
+const uiStoreOnAStandingBrowser = async (held = new Map<string, string>()) => {
   vi.stubGlobal("window", {
     localStorage: {
       getItem: (key: string) => held.get(key) ?? null,
@@ -53,79 +54,95 @@ const uiStoreOnAStandingBrowser = async () => {
   return useUiStore
 }
 
+const slotHolding = (state: unknown) =>
+  new Map([[SLOT, JSON.stringify({ state, version: SLOT_VERSION })]])
+
+const writtenTo = (held: ReadonlyMap<string, string>) =>
+  JSON.parse(held.get(SLOT)!) as { state: object; version: number }
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("the ui slot's persist options", () => {
-  it("declares its slot, a version, a partialize and a merge", async () => {
-    const store = await uiStoreOnAStandingBrowser()
-    const options = store.persist.getOptions()
+describe("what the ui slot holds", () => {
+  it("is written under a key of its own", async () => {
+    const held = new Map<string, string>()
+    const store = await uiStoreOnAStandingBrowser(held)
 
-    expect(options.name).toBe(SLOT)
-    expect(options.version).toBeTypeOf("number")
-    expect(options.partialize).toBeTypeOf("function")
-    expect(options.merge).toBeTypeOf("function")
+    store.getState().setRosterGroupBy("scope")
+
+    expect([...held.keys()]).toStrictEqual([SLOT])
   })
 
-  // The only thing enforcing the store's "never bumped" rule.
   it("is version 3, and adding a field does not bump it", async () => {
-    const store = await uiStoreOnAStandingBrowser()
+    const held = new Map<string, string>()
+    const store = await uiStoreOnAStandingBrowser(held)
 
-    expect(store.persist.getOptions().version).toBe(3)
+    store.getState().setRosterGroupBy("scope")
+
+    expect(writtenTo(held).version).toBe(SLOT_VERSION)
   })
 
-  it("writes exactly the arrangement fields", async () => {
-    const store = await uiStoreOnAStandingBrowser()
-    const written = store.persist.getOptions().partialize!(
-      store.getInitialState()
-    )
+  it("is exactly the arrangement fields", async () => {
+    const held = new Map<string, string>()
+    const store = await uiStoreOnAStandingBrowser(held)
 
-    expect(Object.keys(written).sort()).toStrictEqual(
+    store.getState().setRosterGroupBy("scope")
+
+    expect(Object.keys(writtenTo(held).state).sort()).toStrictEqual(
       [...PERSISTED_UI_KEYS].sort()
     )
   })
 })
 
-describe("the ui slot's merge", () => {
+describe("restoring the ui slot", () => {
   it("keeps a blob written before the two new keys existed", async () => {
-    const store = await uiStoreOnAStandingBrowser()
-
-    const merged = store.persist.getOptions().merge!(
-      BLOB_FROM_THE_PREVIOUS_SCHEMA,
-      store.getInitialState()
+    const store = await uiStoreOnAStandingBrowser(
+      slotHolding(BLOB_FROM_THE_PREVIOUS_SCHEMA)
     )
+    const restored = store.getState()
 
-    expect(merged.rosterCollapsed).toStrictEqual({ web: true })
-    expect(merged.rosterGroupBy).toBe("domain")
-    expect(merged.stackCollapsed).toBe(false)
-    expect(merged.providerCollapsed).toBe(false)
-    expect(merged.agentsCollapsed).toBe(false)
+    expect(restored.rosterCollapsed).toStrictEqual({ web: true })
+    expect(restored.rosterGroupBy).toBe("domain")
+    expect(restored.stackCollapsed).toBe(false)
+    expect(restored.providerCollapsed).toBe(false)
+    expect(restored.agentsCollapsed).toBe(false)
   })
 
   it("falls back one field at a time rather than discarding the blob", async () => {
-    const store = await uiStoreOnAStandingBrowser()
-
-    const merged = store.persist.getOptions().merge!(
-      { ...BLOB_FROM_THE_PREVIOUS_SCHEMA, rosterGroupBy: "nonsense" },
-      store.getInitialState()
+    const store = await uiStoreOnAStandingBrowser(
+      slotHolding({
+        ...BLOB_FROM_THE_PREVIOUS_SCHEMA,
+        rosterGroupBy: "nonsense",
+      })
     )
 
-    expect(merged.rosterCollapsed).toStrictEqual({ web: true })
-    expect(merged.rosterGroupBy).toBe("domain")
+    expect(store.getState().rosterCollapsed).toStrictEqual({ web: true })
+    expect(store.getState().rosterGroupBy).toBe("domain")
   })
 
-  // The control: shows `merge` does fall back, so the tests above are about
-  // the schema rather than `merge` refusing everything.
-  it("falls back to the defaults on a wholly unreadable blob", async () => {
-    const store = await uiStoreOnAStandingBrowser()
+  // `system` is the fallback too, so only these two show a choice surviving.
+  it.each(["light", "dark"] as const)(
+    "brings back the %s palette chosen before the reload",
+    async (theme) => {
+      const held = new Map<string, string>()
+      const before = await uiStoreOnAStandingBrowser(held)
+      before.getState().setTheme(theme)
 
-    const merged = store.persist.getOptions().merge!(
-      "not an object at all",
-      store.getInitialState()
+      const reloaded = await uiStoreOnAStandingBrowser(held)
+
+      expect(reloaded.getState().theme).toBe(theme)
+    }
+  )
+
+  // The control: shows restoring does fall back, so the tests above are about
+  // the schema rather than the slot being refused whole.
+  it("falls back to the defaults on a wholly unreadable blob", async () => {
+    const store = await uiStoreOnAStandingBrowser(
+      slotHolding("not an object at all")
     )
 
-    expect(merged).toStrictEqual(store.getInitialState())
+    expect(store.getState()).toStrictEqual(store.getInitialState())
   })
 })
 
@@ -167,12 +184,12 @@ describe("the ui slot's arrangement actions", () => {
   }
 
   it("keeps the skills fold out of storage", async () => {
-    const store = await uiStoreOnAStandingBrowser()
+    const held = new Map<string, string>()
+    const store = await uiStoreOnAStandingBrowser(held)
+
     store.getState().toggleSkillsCollapsed()
 
-    const written = store.persist.getOptions().partialize!(store.getState())
-
-    expect(written).not.toHaveProperty("skillsCollapsed")
+    expect(writtenTo(held).state).not.toHaveProperty("skillsCollapsed")
   })
 
   it("opens the save dialog like any other", async () => {
@@ -271,6 +288,15 @@ describe("persistedUiSchema", () => {
       agentsCollapsed: false,
       theme: "system",
     } satisfies PersistedUi)
+  })
+
+  it("reads a blank palette as none, so the page follows the machine", () => {
+    const parsed = persistedUiSchema.parse({
+      ...BLOB_FROM_THE_PREVIOUS_SCHEMA,
+      theme: "",
+    })
+
+    expect(parsed.theme).toBe("system")
   })
 
   it("offers exactly the two grouping modes, in declaration order", () => {

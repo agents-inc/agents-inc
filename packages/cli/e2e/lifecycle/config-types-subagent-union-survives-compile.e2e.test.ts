@@ -19,14 +19,12 @@ import {
   startSeedConfigStore,
   type SeedConfigStore,
 } from "../fixtures/seed-config-store.js";
-import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
+import { EXIT_CODES, FILES, SOURCE_PATHS, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 import { readGeneratedUnion } from "../../src/cli/lib/__tests__/helpers/generated-types.js";
-import { DIRS, STANDARD_FILES } from "../../src/cli/consts.js";
 import "../matchers/setup.js";
 
 /**
- * A `compile` right after `init` leaves `config-types.ts` byte-identical, `// Custom` labels
- * included. The marketplace declares `web-developer` as the user's own, so a CLI-only roster and a
+ * The marketplace declares `web-developer` as the user's own, so a CLI-only roster and a
  * marketplace-aware one disagree.
  */
 const STACK_AT_HOME_ID = "StackHm1";
@@ -44,9 +42,9 @@ describe("the sub-agent unions an install generates", () => {
     // Appended, so nothing about the sub-agent is restated here.
     const marketplaceAgentMetadata = path.join(
       source.sourceDir,
-      DIRS.agents,
+      SOURCE_PATHS.AGENTS_DIR,
       "web-developer",
-      STANDARD_FILES.AGENT_METADATA_YAML,
+      FILES.METADATA_YAML,
     );
     const declared = await readFile(marketplaceAgentMetadata, "utf-8");
     await writeFile(marketplaceAgentMetadata, `${declared.trimEnd()}\ncustom: true\n`);

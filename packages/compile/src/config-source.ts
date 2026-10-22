@@ -9,9 +9,9 @@ import {
   INDENT_STEP,
   commentEntry,
   isKeyedRecord,
+  propertyPosition,
   quoteText,
   renderArrayLine,
-  renderKey,
   renderTypeImportLine,
   renderValueLine,
   sourceEntry,
@@ -20,11 +20,13 @@ import {
   type LinePosition,
 } from "./installed-format.js"
 import { DEFAULT_PLUGIN_NAME, GLOBAL_CONFIG_NAME } from "./paths.js"
+import { bytewise } from "./string.js"
 import type {
   AgentScopeConfig,
   ProjectConfig,
   SkillAssignment,
   SkillConfig,
+  SkillScope,
 } from "./types.js"
 
 // Renders `config.ts` sources and writes nothing; writing is `config-gate/`'s alone.
@@ -51,7 +53,6 @@ export type ConfigSourceOptions = {
 export const HAND_WRITTEN_FIELDS = [
   "branding",
   "skillsDir",
-  "agentsDir",
   "stacksFile",
   "categoriesFile",
   "rulesFile",
@@ -79,7 +80,6 @@ const CANONICAL_FIELD_ORDER = [
   "stack",
   "marketplace",
   "marketplaceName",
-  "agentsSource",
   "projects",
 ] as const satisfies readonly (keyof ProjectConfig)[]
 
@@ -146,7 +146,6 @@ function withEntriesInSchemaOrder(
   return reordered
 }
 
-/** Elements that are not keyed records (off `JSON.parse`) pass through whole. */
 function entriesInSchemaOrder(
   entries: unknown[],
   schemaOrder: readonly string[]
@@ -165,30 +164,21 @@ function withKeysOrderedBy<T>(
   )
 }
 
-/** Code units, as a bare `.sort()`; `localeCompare` would make the bytes depend on the machine. */
-function compareNamesInCodeUnitOrder(a: string, b: string): number {
-  if (a === b) return 0
-  return a < b ? -1 : 1
-}
-
 /**
  * Sub-agents by name and categories in catalogue declaration order, whoever assembled the stack: a
  * compiled sub-agent lists its skills in stack order, so producer order would change its file.
  */
-function canonicalizeStackOrder(
-  stack: Record<string, Record<string, unknown>>,
+export function canonicalizeStackOrder<Assignments>(
+  stack: Record<string, Record<string, Assignments>>,
   catalog: CompileCatalog
-): Record<string, Record<string, unknown>> {
+): Record<string, Record<string, Assignments>> {
   const byDeclaration = byCategoryDeclarationOrder(catalog)
   const withCategoriesInOrder = Object.entries(stack).map(
     ([agent, categories]) =>
       [agent, withKeysOrderedBy(categories, byDeclaration)] as const
   )
 
-  return withKeysOrderedBy(
-    Object.fromEntries(withCategoriesInOrder),
-    compareNamesInCodeUnitOrder
-  )
+  return withKeysOrderedBy(Object.fromEntries(withCategoriesInOrder), bytewise)
 }
 
 const CONFIG_TYPES_SPECIFIER = "./config-types"
@@ -212,31 +202,23 @@ function entryDeclaration(
   return ["", renderArrayLine(entries, declarationPosition(name, type))]
 }
 
-function exportFieldPosition(key: string): LinePosition {
-  return {
-    indent: INDENT_STEP,
-    prefix: `${renderKey(key)}: `,
-    suffix: ",",
-  }
-}
-
 function renderScalarField(key: string, value: unknown): string {
-  return renderValueLine(value, exportFieldPosition(key))
+  return renderValueLine(value, propertyPosition(key, INDENT_STEP))
 }
 
 type ConfigArrays = {
-  skills: unknown[]
-  agents: unknown[]
+  skills: SkillConfig[]
+  agents: AgentScopeConfig[]
   stack: Record<string, unknown> | undefined
   selectedDomains: unknown[]
 }
 
 function extractConfigArrays(cleaned: Record<string, unknown>): ConfigArrays {
-  // Boundary cast: plain JSON values. `??` runs first because the round trip drops
-  // undefined-valued keys.
+  // Boundary cast: the JSON round trip of a `ProjectConfig`. `??` runs first because the round
+  // trip drops undefined-valued keys.
   return {
-    skills: (cleaned.skills ?? []) as unknown[],
-    agents: (cleaned.agents ?? []) as unknown[],
+    skills: (cleaned.skills ?? []) as SkillConfig[],
+    agents: (cleaned.agents ?? []) as AgentScopeConfig[],
     stack: cleaned.stack as Record<string, unknown> | undefined,
     selectedDomains: (cleaned.selectedDomains ?? []) as unknown[],
   }
@@ -311,149 +293,140 @@ function generateProjectConfig(
 
   throw new Error(
     "A project config needs the global config it extends: pass `globalConfig` to inline its " +
-      "entries, or `globalImportPath` to import and spread them. Neither was given, and the " +
-      "standalone writer this used to fall through to emits a global-shaped config carrying " +
-      "the `projects` tracking array a project root must never hold."
+      "entries, or `globalImportPath` to import and spread them. Neither was given."
   )
 }
 
-/** Spreads the global config's arrays first, then the project's. */
 function generateProjectConfigWithGlobalImport(
   cleaned: Record<string, unknown>,
   globalImportPath: string
 ): string {
-  const importPath = `${globalImportPath}/config`
-
   const { skills, agents, stack, selectedDomains } =
     extractConfigArrays(cleaned)
-
-  const hasProjectDomains = selectedDomains.length > 0
-  const hasStack = stack != null && Object.keys(stack).length > 0
-
-  const typeImports = buildTypeImports({
+  const emitted: EmittedSections = {
     hasSkills: true,
     hasAgents: true,
-    hasStack,
-    hasSelectedDomains: hasProjectDomains,
-  })
-
-  const lines: string[] = [
-    `import globalConfig from ${quoteText(importPath)}`,
-    renderTypeImportLine(typeImports, CONFIG_TYPES_SPECIFIER),
-  ]
-
-  lines.push(
-    ...entryDeclaration("skills", "SkillConfig[]", [
-      sourceEntry("...globalConfig.skills"),
-      ...valueEntries(skills),
-    ])
-  )
-  lines.push(
-    ...entryDeclaration("agents", "AgentScopeConfig[]", [
-      sourceEntry("...globalConfig.agents"),
-      ...valueEntries(agents),
-    ])
-  )
-
-  if (hasStack) {
-    lines.push(...declaration("stack", STACK_TYPE, stack))
+    hasStack: hasStackEntries(stack),
+    hasSelectedDomains: selectedDomains.length > 0,
   }
-
-  if (hasProjectDomains) {
-    lines.push(
-      ...entryDeclaration("selectedDomains", "Domain[]", [
-        sourceEntry("...(globalConfig.selectedDomains ?? [])"),
-        ...valueEntries(selectedDomains),
-      ])
-    )
-  }
-
   const scalarFields = Object.entries(cleaned)
-    .filter(([key]) => !EXTRACTED_FIELDS.has(key) && key !== "name")
+    .filter(([key]) => isCopiedScalarField(key))
     .map(([key, value]) => renderScalarField(key, value))
 
-  const exportFields: string[] = [
-    `  ...globalConfig,`,
-    renderScalarField("name", resolveProjectName(cleaned)),
-    `  skills,`,
-    `  agents,`,
-    ...(hasStack ? [`  stack,`] : []),
-    ...(hasProjectDomains ? [`  selectedDomains,`] : []),
-    ...scalarFields,
-  ]
-
-  lines.push(``)
-  lines.push(`export default {`)
-  lines.push(...exportFields)
-  lines.push(`} satisfies ProjectConfig`)
-
-  lines.push(``)
-  return lines.join("\n")
+  return assembleConfigSource({
+    imports: [
+      `import globalConfig from ${quoteText(`${globalImportPath}/config`)}`,
+      renderTypeImportLine(buildTypeImports(emitted), CONFIG_TYPES_SPECIFIER),
+    ],
+    declarations: [
+      ...entryDeclaration("skills", "SkillConfig[]", [
+        sourceEntry("...globalConfig.skills"),
+        ...valueEntries(skills),
+      ]),
+      ...entryDeclaration("agents", "AgentScopeConfig[]", [
+        sourceEntry("...globalConfig.agents"),
+        ...valueEntries(agents),
+      ]),
+      ...(emitted.hasStack ? declaration("stack", STACK_TYPE, stack) : []),
+      ...(emitted.hasSelectedDomains
+        ? entryDeclaration("selectedDomains", "Domain[]", [
+            sourceEntry("...(globalConfig.selectedDomains ?? [])"),
+            ...valueEntries(selectedDomains),
+          ])
+        : []),
+    ],
+    exportFields: [
+      `  ...globalConfig,`,
+      renderScalarField("name", resolveProjectName(cleaned)),
+      `  skills,`,
+      `  agents,`,
+      ...(emitted.hasStack ? [`  stack,`] : []),
+      ...(emitted.hasSelectedDomains ? [`  selectedDomains,`] : []),
+      ...scalarFields,
+    ],
+  })
 }
 
 function generateStandaloneConfig(cleaned: Record<string, unknown>): string {
   const { skills, agents, stack, selectedDomains } =
     extractConfigArrays(cleaned)
+  const emitted: EmittedSections = {
+    hasSkills: skills.length > 0,
+    hasAgents: agents.length > 0,
+    hasStack: hasStackEntries(stack),
+    hasSelectedDomains: selectedDomains.length > 0,
+  }
 
-  const hasSkills = skills.length > 0
-  const hasAgents = agents.length > 0
-  const hasStack = stack != null && Object.keys(stack).length > 0
-  const hasSelectedDomains = selectedDomains.length > 0
-
-  const typeImports = buildTypeImports({
-    hasSkills,
-    hasAgents,
-    hasStack,
-    hasSelectedDomains,
+  return assembleConfigSource({
+    imports: [
+      renderTypeImportLine(buildTypeImports(emitted), CONFIG_TYPES_SPECIFIER),
+    ],
+    declarations: [
+      ...(emitted.hasSkills
+        ? declaration("skills", "SkillConfig[]", skills)
+        : []),
+      ...(emitted.hasAgents
+        ? declaration("agents", "AgentScopeConfig[]", agents)
+        : []),
+      ...(emitted.hasStack ? declaration("stack", STACK_TYPE, stack) : []),
+      ...(emitted.hasSelectedDomains
+        ? declaration("selectedDomains", "Domain[]", selectedDomains)
+        : []),
+    ],
+    exportFields: Object.entries(cleaned).flatMap(([key, value]) =>
+      standaloneExportField(key, value, emitted)
+    ),
   })
-
-  const lines: string[] = [
-    renderTypeImportLine(typeImports, CONFIG_TYPES_SPECIFIER),
-  ]
-
-  if (hasSkills) {
-    lines.push(...declaration("skills", "SkillConfig[]", skills))
-  }
-
-  if (hasAgents) {
-    lines.push(...declaration("agents", "AgentScopeConfig[]", agents))
-  }
-
-  if (hasStack) {
-    lines.push(...declaration("stack", STACK_TYPE, stack))
-  }
-
-  if (hasSelectedDomains) {
-    lines.push(...declaration("selectedDomains", "Domain[]", selectedDomains))
-  }
-
-  // Extracted fields reference their variable, or an empty literal when none was emitted.
-  const renderExportField = (key: string, value: unknown): string[] => {
-    if (!EXTRACTED_FIELDS.has(key)) return [renderScalarField(key, value)]
-    if (key === "skills") return [`  skills${hasSkills ? "" : ": []"},`]
-    if (key === "agents") return [`  agents${hasAgents ? "" : ": []"},`]
-    if (key === "stack") return hasStack ? [`  stack,`] : []
-    return [`  selectedDomains${hasSelectedDomains ? "" : ": []"},`]
-  }
-  const exportFields = Object.entries(cleaned).flatMap(([key, value]) =>
-    renderExportField(key, value)
-  )
-
-  lines.push(``)
-  lines.push(`export default {`)
-  lines.push(...exportFields)
-  lines.push(`} satisfies ProjectConfig`)
-
-  lines.push(``)
-  return lines.join("\n")
 }
 
-function buildTypeImports(flags: {
+/** Extracted fields reference their variable, or an empty literal when none was emitted. */
+function standaloneExportField(
+  key: string,
+  value: unknown,
+  emitted: EmittedSections
+): string[] {
+  if (!EXTRACTED_FIELDS.has(key)) return [renderScalarField(key, value)]
+  if (key === "skills") return [`  skills${emitted.hasSkills ? "" : ": []"},`]
+  if (key === "agents") return [`  agents${emitted.hasAgents ? "" : ": []"},`]
+  if (key === "stack") return emitted.hasStack ? [`  stack,`] : []
+  return [`  selectedDomains${emitted.hasSelectedDomains ? "" : ": []"},`]
+}
+
+type ConfigSourceParts = {
+  imports: string[]
+  /** Each already led by its blank line. */
+  declarations: string[]
+  exportFields: string[]
+}
+
+function assembleConfigSource({
+  imports,
+  declarations,
+  exportFields,
+}: ConfigSourceParts): string {
+  return [
+    ...imports,
+    ...declarations,
+    "",
+    "export default {",
+    ...exportFields,
+    "} satisfies ProjectConfig",
+    "",
+  ].join("\n")
+}
+
+type EmittedSections = {
   hasSkills: boolean
   hasAgents: boolean
   hasStack: boolean
   hasSelectedDomains: boolean
-}): string[] {
+}
+
+function hasStackEntries(stack: Record<string, unknown> | undefined): boolean {
+  return stack != null && Object.keys(stack).length > 0
+}
+
+function buildTypeImports(flags: EmittedSections): string[] {
   return [
     flags.hasSelectedDomains && "Domain",
     "ProjectConfig",
@@ -462,6 +435,11 @@ function buildTypeImports(flags: {
     flags.hasSkills && "SkillConfig",
     flags.hasStack && "StackAgentConfig",
   ].filter((t): t is string => Boolean(t))
+}
+
+/** A project copies these as they stand; its `name` is {@link resolveProjectName}'s. */
+function isCopiedScalarField(key: string): boolean {
+  return !EXTRACTED_FIELDS.has(key) && key !== "name"
 }
 
 /** Project configs never inherit "global" as their name from the globalConfig spread. */
@@ -473,10 +451,10 @@ function resolveProjectName(cleaned: Record<string, unknown>): unknown {
 
 type InlinedGlobalPartition = {
   /** Global entries with active entries replaced by their project tombstones. */
-  globalSkills: unknown[]
-  globalAgents: unknown[]
-  projectSkills: unknown[]
-  projectAgents: unknown[]
+  globalSkills: SkillConfig[]
+  globalAgents: AgentScopeConfig[]
+  projectSkills: SkillConfig[]
+  projectAgents: AgentScopeConfig[]
   filteredStack: Record<string, unknown> | undefined
   selectedDomains: unknown[]
 }
@@ -492,47 +470,53 @@ function partitionInlinedConfigEntries(
   const project = extractConfigArrays(cleaned)
   const global = extractConfigArrays(cleanedGlobal)
 
-  // Boundary casts: entries are plain JSON records off the round trip.
-  const isExcluded = (entry: unknown): boolean =>
-    (entry as { excluded?: boolean }).excluded === true
-  const idOf = (entry: unknown): string => (entry as { id: string }).id
-  const nameOf = (entry: unknown): string => (entry as { name: string }).name
-
   const excludedGlobalSkills = project.skills.filter(isExcluded)
   const excludedGlobalAgents = project.agents.filter(isExcluded)
-  const projectSkills = project.skills.filter((s) => !isExcluded(s))
   const projectAgents = project.agents.filter((a) => !isExcluded(a))
 
-  const excludedSkillIds = new Set(excludedGlobalSkills.map(idOf))
-  const excludedAgentNames = new Set(excludedGlobalAgents.map(nameOf))
-  const globalSkills = [
-    ...global.skills.filter((s) => !excludedSkillIds.has(idOf(s))),
-    ...excludedGlobalSkills,
-  ]
-  const globalAgents = [
-    ...global.agents.filter((a) => !excludedAgentNames.has(nameOf(a))),
-    ...excludedGlobalAgents,
-  ]
-
-  const projectAgentNames = new Set(projectAgents.map(nameOf))
-  const filteredStack: Record<string, unknown> | undefined = project.stack
-    ? Object.fromEntries(
-        Object.entries(project.stack).filter(([agent]) =>
-          projectAgentNames.has(agent)
-        )
-      )
-    : undefined
-
   return {
-    globalSkills,
-    globalAgents,
-    projectSkills,
+    globalSkills: maskedByTombstones(global.skills, excludedGlobalSkills, idOf),
+    globalAgents: maskedByTombstones(
+      global.agents,
+      excludedGlobalAgents,
+      nameOf
+    ),
+    projectSkills: project.skills.filter((s) => !isExcluded(s)),
     projectAgents,
-    filteredStack,
+    filteredStack: stackOfAgents(project.stack, projectAgents),
     selectedDomains: [
       ...new Set([...global.selectedDomains, ...project.selectedDomains]),
     ],
   }
+}
+
+const isExcluded = (entry: SkillConfig | AgentScopeConfig): boolean =>
+  entry.excluded === true
+const idOf = (skill: SkillConfig): string => skill.id
+const nameOf = (agent: AgentScopeConfig): string => agent.name
+
+function maskedByTombstones<Entry>(
+  globalEntries: Entry[],
+  tombstones: Entry[],
+  keyOf: (entry: Entry) => string
+): Entry[] {
+  const masked = new Set(tombstones.map(keyOf))
+  return [
+    ...globalEntries.filter((entry) => !masked.has(keyOf(entry))),
+    ...tombstones,
+  ]
+}
+
+function stackOfAgents(
+  stack: Record<string, unknown> | undefined,
+  agents: AgentScopeConfig[]
+): Record<string, unknown> | undefined {
+  if (!stack) return undefined
+
+  const names = new Set(agents.map(nameOf))
+  return Object.fromEntries(
+    Object.entries(stack).filter(([agent]) => names.has(agent))
+  )
 }
 
 /**
@@ -548,7 +532,7 @@ function mergeInlinedScalarFields(
       ...omit(cleanedGlobal, HAND_WRITTEN_FIELDS),
       ...cleaned,
     })
-  ).filter(([key]) => !EXTRACTED_FIELDS.has(key) && key !== "name")
+  ).filter(([key]) => isCopiedScalarField(key))
 }
 
 /** Self-contained: global items under `// global`, then project items under `// project`. */
@@ -557,85 +541,51 @@ function generateProjectConfigWithInlinedGlobal(
   cleanedGlobal: Record<string, unknown>
 ): string {
   const partition = partitionInlinedConfigEntries(cleaned, cleanedGlobal)
-  const {
-    globalSkills,
-    globalAgents,
-    projectSkills,
-    projectAgents,
-    filteredStack,
-  } = partition
-
-  const hasGlobalSkills = globalSkills.length > 0
-  const hasProjectSkills = projectSkills.length > 0
-  const hasSkills = hasGlobalSkills || hasProjectSkills
-
-  const hasGlobalAgents = globalAgents.length > 0
-  const hasProjectAgents = projectAgents.length > 0
-  const hasAgents = hasGlobalAgents || hasProjectAgents
-
-  const hasStack =
-    filteredStack != null && Object.keys(filteredStack).length > 0
-  const hasSelectedDomains = partition.selectedDomains.length > 0
-
-  const typeImports = buildTypeImports({
-    hasSkills,
-    hasAgents,
-    hasStack,
-    hasSelectedDomains,
-  })
-
-  const lines: string[] = [
-    renderTypeImportLine(typeImports, CONFIG_TYPES_SPECIFIER),
-  ]
-
-  if (hasSkills) {
-    lines.push(
-      ...entryDeclaration(
-        "skills",
-        "SkillConfig[]",
-        scopeSectionEntries(globalSkills, projectSkills)
-      )
-    )
+  const emitted: EmittedSections = {
+    hasSkills:
+      partition.globalSkills.length > 0 || partition.projectSkills.length > 0,
+    hasAgents:
+      partition.globalAgents.length > 0 || partition.projectAgents.length > 0,
+    hasStack: hasStackEntries(partition.filteredStack),
+    hasSelectedDomains: partition.selectedDomains.length > 0,
   }
-
-  if (hasAgents) {
-    lines.push(
-      ...entryDeclaration(
-        "agents",
-        "AgentScopeConfig[]",
-        scopeSectionEntries(globalAgents, projectAgents)
-      )
-    )
-  }
-
-  if (hasStack) {
-    lines.push(...declaration("stack", STACK_TYPE, filteredStack))
-  }
-
-  if (hasSelectedDomains) {
-    lines.push(
-      ...declaration("selectedDomains", "Domain[]", partition.selectedDomains)
-    )
-  }
-
   const scalarFields = mergeInlinedScalarFields(cleaned, cleanedGlobal)
 
-  const exportFields: string[] = [
-    renderScalarField("name", resolveProjectName(cleaned)),
-    ...scalarFields.map(([key, value]) => renderScalarField(key, value)),
-    hasSkills ? `  skills,` : `  skills: [],`,
-    hasAgents ? `  agents,` : `  agents: [],`,
-    ...(hasStack ? [`  stack,`] : []),
-    ...(hasSelectedDomains ? [`  selectedDomains,`] : []),
-  ]
-
-  lines.push(``)
-  lines.push(`export default {`)
-  lines.push(...exportFields)
-  lines.push(`} satisfies ProjectConfig`)
-
-  lines.push(``)
-  return lines.join("\n")
+  return assembleConfigSource({
+    imports: [
+      renderTypeImportLine(buildTypeImports(emitted), CONFIG_TYPES_SPECIFIER),
+    ],
+    declarations: [
+      ...(emitted.hasSkills
+        ? entryDeclaration(
+            "skills",
+            "SkillConfig[]",
+            scopeSectionEntries(partition.globalSkills, partition.projectSkills)
+          )
+        : []),
+      ...(emitted.hasAgents
+        ? entryDeclaration(
+            "agents",
+            "AgentScopeConfig[]",
+            scopeSectionEntries(partition.globalAgents, partition.projectAgents)
+          )
+        : []),
+      ...(emitted.hasStack
+        ? declaration("stack", STACK_TYPE, partition.filteredStack)
+        : []),
+      ...(emitted.hasSelectedDomains
+        ? declaration("selectedDomains", "Domain[]", partition.selectedDomains)
+        : []),
+    ],
+    exportFields: [
+      renderScalarField("name", resolveProjectName(cleaned)),
+      ...scalarFields.map(([key, value]) => renderScalarField(key, value)),
+      emitted.hasSkills ? `  skills,` : `  skills: [],`,
+      emitted.hasAgents ? `  agents,` : `  agents: [],`,
+      ...(emitted.hasStack ? [`  stack,`] : []),
+      ...(emitted.hasSelectedDomains ? [`  selectedDomains,`] : []),
+    ],
+  })
 }
 
 /** The scope comments are entries: a `//` line keeps the array one entry per line. */
@@ -644,13 +594,15 @@ function scopeSectionEntries(
   project: unknown[]
 ): ArrayEntry[] {
   return [
-    ...(global.length > 0
-      ? [commentEntry("global"), ...valueEntries(global)]
-      : []),
-    ...(project.length > 0
-      ? [commentEntry("project"), ...valueEntries(project)]
-      : []),
+    ...scopeSection("global", global),
+    ...scopeSection("project", project),
   ]
+}
+
+function scopeSection(scope: SkillScope, entries: unknown[]): ArrayEntry[] {
+  return entries.length > 0
+    ? [commentEntry(scope), ...valueEntries(entries)]
+    : []
 }
 
 function carriesFlags(assignment: SkillAssignment): boolean {

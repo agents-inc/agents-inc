@@ -2,7 +2,6 @@ import { realpath } from "fs/promises";
 import path from "path";
 import { format, resolveConfig } from "prettier";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { cliVersion } from "../../src/cli/lib/agents/agent-provenance.js";
 import { typedEntries } from "../../src/cli/utils/typed-object.js";
 import { CLI } from "../fixtures/cli.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
@@ -24,23 +23,19 @@ import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 import { buildSeedSkill } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { formatInstalledConfigs } from "../../src/cli/lib/__tests__/helpers/golden-tree.js";
 import {
-  CLI_ROOT,
   cleanupTempDir,
+  CLI_ROOT,
+  cliVersionUnderTest,
   createPermissionsFile,
   createTempDir,
   fileExists,
+  type InstallTree,
   isClaudeCLIAvailable,
   normalizeInstallTree,
   readInstallTree,
-  type InstallTree,
 } from "../helpers/test-utils.js";
 
-/**
- * Every file a Claude install leaves, pinned byte for byte against golden trees, so "no behaviour
- * change for Claude users" is checked. A golden records behaviour, not correctness; re-record
- * deliberately with `-u`. Normalised: temp roots, version line, `forkedFrom` date, registry
- * instants, and config.ts line breaks.
- */
+/** A golden records behaviour, not correctness; re-record deliberately with `-u`. */
 
 const GOLDEN_TREES_DIR = path.join(CLI_ROOT, "e2e", "fixtures", "claude-golden-trees");
 
@@ -102,7 +97,7 @@ async function installTreeUnder(
   return formatInstalledConfigs(
     normalizeInstallTree(tree, {
       roots: Object.fromEntries(spellings),
-      cliVersion: await cliVersion(),
+      cliVersion: await cliVersionUnderTest(),
     }),
   );
 }

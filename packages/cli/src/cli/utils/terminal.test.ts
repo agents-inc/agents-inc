@@ -38,10 +38,14 @@ describe("clearTerminalScreen", () => {
   });
 
   it("homes the cursor and clears the screen and its scrollback", () => {
-    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    let written = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written += String(chunk);
+      return true;
+    });
 
     clearTerminalScreen();
 
-    expect(write).toHaveBeenCalledExactlyOnceWith("\u001B[H\u001B[2J\u001B[3J");
+    expect(written).toBe("\u001B[H\u001B[2J\u001B[3J");
   });
 });

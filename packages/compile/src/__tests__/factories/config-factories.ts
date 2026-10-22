@@ -30,3 +30,12 @@ export function buildProjectConfig(
 ): ProjectConfig {
   return { name: "test-project", ...fields }
 }
+
+/** A field no schema names, which the loader's `.passthrough()` hands the writer as it was. */
+export function withUnnamedField(
+  config: ProjectConfig,
+  key: string,
+  value: unknown
+): ProjectConfig {
+  return { ...config, [key]: value }
+}

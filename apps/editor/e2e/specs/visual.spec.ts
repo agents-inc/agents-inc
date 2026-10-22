@@ -1,7 +1,7 @@
 import { argosScreenshot } from "@argos-ci/playwright"
 
 import { expect, test } from "../fixtures"
-import type { ConfigurePage } from "../pages/configure-page"
+import { PAGE_BACKGROUND, type ConfigurePage } from "../pages/configure-page"
 import { DOMAINS, EXCLUSIVE_CATEGORY, STACKS } from "../support/catalog"
 import { stubCreateConfig } from "../support/sharing"
 import { stubSkillIndex } from "../support/skill-index"
@@ -19,16 +19,10 @@ type Theme = (typeof THEMES)[number]
 const screenshotName = (name: string, theme: Theme) =>
   theme === "light" ? name : `${name}-dark`
 
-// Quoted rather than read from the stylesheet, so it can fail; it guards the
-// harness, since Argos cannot tell a dark pass rendered light.
-const PAGE_BACKGROUND = {
-  light: "rgb(255, 255, 255)",
-  dark: "rgb(22, 21, 19)",
-} as const satisfies Record<Theme, string>
-
 const capture = async (configure: ConfigurePage, name: string) => {
   for (const theme of THEMES) {
     await configure.page.emulateMedia({ colorScheme: theme })
+    // Guards the harness: Argos cannot tell a dark pass rendered light.
     await expect(configure.page.locator("body")).toHaveCSS(
       "background-color",
       PAGE_BACKGROUND[theme]

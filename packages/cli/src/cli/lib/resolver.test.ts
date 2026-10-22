@@ -1,14 +1,12 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import path from "path";
 import type { Liquid } from "liquidjs";
 import { pick } from "remeda";
-import {
-  resolveSkillReference,
-  resolveSkillReferences,
-  buildSkillRefsFromConfig,
-  resolveAgentSkillRefs,
-  resolveAgents,
-} from "./resolver";
-import { buildAgentTemplateContext, createLiquidEngine } from "./compiler";
+import { buildSkillRefsFromConfig, resolveAgents } from "./resolver";
+import { compileAgentForHost, createLiquidEngine } from "./compiler";
+import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
+import { writeSourceAgent } from "./__tests__/helpers/disk-writers";
+import { DIRS } from "../consts";
 import { expectAgentCompilation } from "./__tests__/assertions/agent-assertions";
 import { parseCompiledAgentSections } from "./__tests__/helpers/compiled-agent-sections.js";
 import {
@@ -36,11 +34,9 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentName,
-  CompileAgentConfig,
   Skill,
   SkillDefinition,
   SkillId,
-  SkillReference,
   StackAgentConfig,
 } from "../types";
 
@@ -54,11 +50,6 @@ const HONO_DEFINITION = createMockSkillDefinition("api-framework-hono", {
   description: "Hono API framework",
 });
 
-const ZUSTAND_DEFINITION = createMockSkillDefinition("web-state-zustand", {
-  path: "skills/web/client-state-management/zustand/",
-  description: "Lightweight state management",
-});
-
 const SCSS_DEFINITION = createMockSkillDefinition("web-styling-scss-modules", {
   path: "skills/web/styling/scss-modules/",
   description: "SCSS Modules styling",
@@ -68,16 +59,6 @@ const DRIZZLE_DEFINITION = createMockSkillDefinition("api-database-drizzle", {
   path: "skills/api/database/drizzle/",
   description: "Drizzle ORM",
 });
-
-const RESOLVE_SKILL_MAP: Record<string, SkillDefinition> = {
-  "web-framework-react": REACT_DEFINITION,
-  "api-framework-hono": HONO_DEFINITION,
-};
-
-const RESOLVE_SKILLS_MAP: Record<string, SkillDefinition> = {
-  "web-framework-react": REACT_DEFINITION,
-  "web-state-zustand": ZUSTAND_DEFINITION,
-};
 
 const RESOLVE_AGENTS_SKILL_MAP: Record<string, SkillDefinition> = {
   "web-framework-react": REACT_DEFINITION,
@@ -177,136 +158,26 @@ describe("buildSkillRefsFromConfig", () => {
   });
 });
 
-describe("resolveSkillReference", () => {
-  it("should resolve a skill reference to a full Skill object", () => {
-    const ref: SkillReference = {
-      id: "web-framework-react",
-      usage: "when building React components",
-      preloaded: true,
-    };
-
-    const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
-
-    expect(result).toStrictEqual({
-      id: "web-framework-react",
-      path: "skills/web/framework/react/",
-      description: "React component patterns",
-      usage: "when building React components",
-      preloaded: true,
-      // `source` is threaded onto the resolved Skill so the compiler picks the pluginRef per skill.
-    });
-  });
-
-  it("should default preloaded to false when not specified", () => {
-    const ref: SkillReference = {
-      id: "api-framework-hono",
-      usage: "when building APIs",
-    };
-
-    const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
-
-    expect(result).not.toBeNull();
-    expect(result!.preloaded).toBe(false);
-  });
-
-  it("when skill ID does not exist in skills map, should return null", () => {
-    const ref: SkillReference = {
-      id: "web-nonexistent-skill" as SkillId,
-      usage: "never",
-    };
-
-    const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
-    expect(result).toBeNull();
-  });
-
-  it("should preserve `source` from the SkillReference onto the resolved Skill", () => {
-    const ref: SkillReference = {
-      id: "web-framework-react",
-      usage: "when building React components",
-      preloaded: true,
-      source: "agents-inc",
-    };
-
-    const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
-
-    expect(result).not.toBeNull();
-    expect(result!.source).toBe("agents-inc");
-  });
-
-  it("should leave `source` undefined on the resolved Skill when the SkillReference has no source", () => {
-    const ref: SkillReference = {
-      id: "web-framework-react",
-      usage: "when building React components",
-    };
-
-    const result = resolveSkillReference(ref, RESOLVE_SKILL_MAP);
-
-    expect(result).not.toBeNull();
-    // The compiler reads missing source as eject, so a stale value would misclassify local skills.
-    expect(result!.source).toBeUndefined();
-  });
-});
-
-describe("resolveSkillReferences", () => {
-  it("should resolve multiple skill references with full skill shape", () => {
-    const refs: SkillReference[] = [
-      { id: "web-framework-react", usage: "for components" },
-      { id: "web-state-zustand", usage: "for state", preloaded: true },
-    ];
-
-    const results = resolveSkillReferences(refs, RESOLVE_SKILLS_MAP);
-
-    expect(results).toStrictEqual([
-      {
-        id: "web-framework-react",
-        path: "skills/web/framework/react/",
-        description: "React component patterns",
-        usage: "for components",
-        preloaded: false,
-      },
-      {
-        id: "web-state-zustand",
-        path: "skills/web/client-state-management/zustand/",
-        description: "Lightweight state management",
-        usage: "for state",
-        preloaded: true,
-      },
-    ]);
-  });
-
-  it("should filter out unresolvable skill references", () => {
-    const refs: SkillReference[] = [
-      { id: "web-framework-react", usage: "for components" },
-      { id: "web-nonexistent-skill" as SkillId, usage: "never" },
-    ];
-
-    const results = resolveSkillReferences(refs, RESOLVE_SKILLS_MAP);
-
-    expect(results).toHaveLength(1);
-    expect(firstElement(results).id).toBe("web-framework-react");
-  });
-
-  it("should return empty array for empty input", () => {
-    const results = resolveSkillReferences([], RESOLVE_SKILLS_MAP);
-    expect(results).toStrictEqual([]);
-  });
-});
-
-/** Rendered through the shipped `agent.liquid`; the expected text is the template's own. */
+/** Compiled through the shipped `agent.liquid`; the expected text is the template's own. */
 describe("preloaded vs dynamic skills in compiled agent output", () => {
-  let engine: Liquid;
+  const AGENT_NAME: AgentName = "web-developer";
 
-  const AGENT_FILES = {
-    identity: "Test identity content",
-    playbook: "Test playbook content",
-    output: "Test output content",
-    criticalRequirementsTop: "",
-    criticalReminders: "",
-  };
+  let engine: Liquid;
+  let sourceDir: string;
 
   beforeEach(async () => {
     // No project directory, so no local override shadows the shipped template.
     engine = await createLiquidEngine();
+    sourceDir = await createTempDir("resolver-compiled-output-");
+    await writeSourceAgent(path.join(sourceDir, DIRS.agents), {
+      name: AGENT_NAME,
+      title: "Test Agent",
+      description: "A test agent for skill testing",
+    });
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(sourceDir);
   });
 
   function makeSkill(
@@ -321,14 +192,14 @@ describe("preloaded vs dynamic skills in compiled agent output", () => {
   }
 
   async function compileAgentWithSkills(skills: Skill[]): Promise<string> {
-    const agent = createMockAgentConfig("test-agent", skills, {
+    const agent = createMockAgentConfig(AGENT_NAME, skills, {
       title: "Test Agent",
       description: "A test agent for skill testing",
       model: "opus",
       tools: ["Read", "Write", "Edit"],
     });
 
-    return engine.renderFile("agent", buildAgentTemplateContext(agent.name, agent, AGENT_FILES));
+    return compileAgentForHost("claude", AGENT_NAME, agent, sourceDir, engine);
   }
 
   describe("preloaded skills appear in agent frontmatter", () => {
@@ -513,32 +384,6 @@ describe("preloaded vs dynamic skills in compiled agent output", () => {
   });
 });
 
-describe("resolveAgentSkillRefs", () => {
-  it("should return the skill references the compile config names", () => {
-    const agentConfig: CompileAgentConfig = {
-      skills: [
-        {
-          id: "web-styling-scss-modules",
-          usage: "when styling",
-          preloaded: true,
-        },
-      ],
-    };
-
-    const result = resolveAgentSkillRefs(agentConfig);
-
-    expect(result).toHaveLength(1);
-    expect(firstElement(result).id).toBe("web-styling-scss-modules");
-    expect(firstElement(result).preloaded).toBe(true);
-  });
-
-  it("should return an empty array when the compile config names no skills", () => {
-    const result = resolveAgentSkillRefs({});
-
-    expect(result).toStrictEqual([]);
-  });
-});
-
 describe("resolveAgents", () => {
   describe("when every agent's compile config names skills", () => {
     it("should assign correct skill IDs to web-developer", async () => {
@@ -546,7 +391,6 @@ describe("resolveAgents", () => {
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
         WEB_AND_API_SKILLS_COMPILE_CONFIG,
-        "/test/path",
       );
 
       expect(result["web-developer"]?.skills).toHaveLength(2);
@@ -561,7 +405,6 @@ describe("resolveAgents", () => {
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
         WEB_AND_API_SKILLS_COMPILE_CONFIG,
-        "/test/path",
       );
 
       const reactSkill = result["web-developer"]?.skills.find(
@@ -580,7 +423,6 @@ describe("resolveAgents", () => {
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
         WEB_AND_API_SKILLS_COMPILE_CONFIG,
-        "/test/path",
       );
 
       expect(result["api-developer"]?.skills).toHaveLength(2);
@@ -595,7 +437,6 @@ describe("resolveAgents", () => {
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
         WEB_AND_API_SKILLS_COMPILE_CONFIG,
-        "/test/path",
       );
 
       const honoSkill = result["api-developer"]?.skills.find((s) => s.id === "api-framework-hono");
@@ -613,7 +454,6 @@ describe("resolveAgents", () => {
       RESOLVE_AGENTS_DEFINITIONS,
       RESOLVE_AGENTS_SKILL_MAP,
       WEB_ONLY_COMPILE_CONFIG,
-      "/test/path",
     );
 
     expect(result["web-developer"]?.skills).toStrictEqual([]);
@@ -623,12 +463,7 @@ describe("resolveAgents", () => {
     const unknownAgentConfig = createMockCompileConfig({ "unknown-agent": {} });
 
     await expect(
-      resolveAgents(
-        RESOLVE_AGENTS_DEFINITIONS,
-        RESOLVE_AGENTS_SKILL_MAP,
-        unknownAgentConfig,
-        "/test/path",
-      ),
+      resolveAgents(RESOLVE_AGENTS_DEFINITIONS, RESOLVE_AGENTS_SKILL_MAP, unknownAgentConfig),
     ).rejects.toThrow("Agent 'unknown-agent' referenced in compile config but not found");
   });
 
@@ -636,12 +471,7 @@ describe("resolveAgents", () => {
     const nonexistentAgentConfig = createMockCompileConfig({ "nonexistent-agent": {} });
 
     await expect(
-      resolveAgents(
-        RESOLVE_AGENTS_DEFINITIONS,
-        RESOLVE_AGENTS_SKILL_MAP,
-        nonexistentAgentConfig,
-        "/test/path",
-      ),
+      resolveAgents(RESOLVE_AGENTS_DEFINITIONS, RESOLVE_AGENTS_SKILL_MAP, nonexistentAgentConfig),
     ).rejects.toThrow("Available agents: web-developer, api-developer");
   });
 
@@ -650,13 +480,83 @@ describe("resolveAgents", () => {
       RESOLVE_AGENTS_DEFINITIONS,
       RESOLVE_AGENTS_SKILL_MAP,
       WEB_SKILLS_API_NONE_COMPILE_CONFIG,
-      "/test/path",
     );
 
     expect(result["web-developer"]?.skills).toHaveLength(1);
     expect(result["web-developer"]?.skills[0]?.id).toBe("web-framework-react");
 
     expect(result["api-developer"]?.skills).toStrictEqual([]);
+  });
+
+  describe("the skills an agent resolves to", () => {
+    it("joins each named skill to its definition, with the config's usage and preloaded flag", async () => {
+      const result = await resolveAgents(
+        RESOLVE_AGENTS_DEFINITIONS,
+        RESOLVE_AGENTS_SKILL_MAP,
+        createMockCompileConfig({
+          "web-developer": {
+            skills: [
+              { id: "web-framework-react", usage: "when building components", preloaded: true },
+              { id: "web-styling-scss-modules", usage: "when styling" },
+            ],
+          },
+        }),
+      );
+
+      expect(result["web-developer"]?.skills).toStrictEqual([
+        { ...REACT_DEFINITION, usage: "when building components", preloaded: true },
+        { ...SCSS_DEFINITION, usage: "when styling", preloaded: false },
+      ]);
+    });
+
+    it("leaves off a named skill no definition exists for, keeping the rest", async () => {
+      const result = await resolveAgents(
+        RESOLVE_AGENTS_DEFINITIONS,
+        RESOLVE_AGENTS_SKILL_MAP,
+        createMockCompileConfig({
+          "web-developer": {
+            skills: [
+              { id: "web-framework-react", usage: "when building components" },
+              { id: "web-state-zustand", usage: "when managing state" },
+            ],
+          },
+        }),
+      );
+
+      expect(result["web-developer"]?.skills.map((skill) => skill.id)).toStrictEqual([
+        "web-framework-react",
+      ]);
+    });
+
+    it("carries the source a skill reference names, and none where it names none", async () => {
+      const result = await resolveAgents(
+        RESOLVE_AGENTS_DEFINITIONS,
+        RESOLVE_AGENTS_SKILL_MAP,
+        createMockCompileConfig({
+          "web-developer": {
+            skills: [
+              {
+                id: "web-framework-react",
+                usage: "when building components",
+                source: "agents-inc",
+              },
+              { id: "web-styling-scss-modules", usage: "when styling" },
+            ],
+          },
+        }),
+      );
+
+      // The compiler reads a missing source as eject, so a stale value would misclassify local skills.
+      expect(result["web-developer"]?.skills).toStrictEqual([
+        {
+          ...REACT_DEFINITION,
+          usage: "when building components",
+          preloaded: false,
+          source: "agents-inc",
+        },
+        { ...SCSS_DEFINITION, usage: "when styling", preloaded: false },
+      ]);
+    });
   });
 
   /** The definition pins `sonnet`, unlike override and bundle, so a value names its side. */
@@ -670,7 +570,6 @@ describe("resolveAgents", () => {
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
         tunedConfig,
-        "/test/path",
       );
 
       expect(result["web-developer"]?.model).toBe("haiku");
@@ -686,7 +585,6 @@ describe("resolveAgents", () => {
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
         effortOnlyConfig,
-        "/test/path",
       );
 
       expect(result["web-developer"]?.model).toBe("sonnet");
@@ -702,7 +600,6 @@ describe("resolveAgents", () => {
         RESOLVE_AGENTS_DEFINITIONS,
         RESOLVE_AGENTS_SKILL_MAP,
         pinnedConfig,
-        "/test/path",
       );
 
       expect(result["web-developer"]?.model).toBe("haiku");
@@ -732,7 +629,6 @@ describe("resolveAgents", () => {
         definitions,
         RESOLVE_AGENTS_SKILL_MAP,
         WEB_ONLY_COMPILE_CONFIG,
-        "/test/path",
       );
 
       expect(
@@ -751,7 +647,6 @@ describe("resolveAgents", () => {
         { "web-developer": declaresNone },
         RESOLVE_AGENTS_SKILL_MAP,
         WEB_ONLY_COMPILE_CONFIG,
-        "/test/path",
       );
 
       expect(
@@ -783,7 +678,6 @@ describe("what resolving says", () => {
       agents,
       RESOLVE_AGENTS_SKILL_MAP,
       createMockCompileConfig({ "unknown-agent": {} }),
-      "/test/path",
     );
   }
 
@@ -792,10 +686,18 @@ describe("what resolving says", () => {
 
     afterEach(() => setVerbose(false));
 
-    it("says which skill reference it skipped for want of a definition", () => {
+    it("says which skill reference it skipped for want of a definition", async () => {
       setVerbose(true);
 
-      resolveSkillReference({ id: "web-state-zustand", usage: "Use when", preloaded: false }, {});
+      await resolveAgents(
+        RESOLVE_AGENTS_DEFINITIONS,
+        {},
+        createMockCompileConfig({
+          "web-developer": {
+            skills: [{ id: "web-state-zustand", usage: "Use when", preloaded: false }],
+          },
+        }),
+      );
 
       expect(consoleSpies.log).toHaveBeenCalledExactlyOnceWith(
         "  Skill 'web-state-zustand' not found in available skills, skipping",
@@ -832,7 +734,6 @@ describe("what resolving says", () => {
       },
       RESOLVE_AGENTS_SKILL_MAP,
       createMockCompileConfig({ "web-developer": {}, "api-developer": {} }),
-      "/test/path",
     );
 
     expect(result["web-developer"]).toMatchObject({

@@ -1,4 +1,3 @@
-import type { Locator } from "@playwright/test"
 import { SKILL_INDEX } from "@workspace/api-mocks/fixtures"
 
 import { expect, test } from "../fixtures"
@@ -15,37 +14,6 @@ const MATRIX_ROLE = "dev"
 // The first agent behind the Meta fold: a Tab out of the fold's toggle lands
 // on it.
 const FIRST_META_AGENT = "agent-summoner"
-
-// A ring is only proven by pixels: photographed with it and with its colour
-// transparent, identical pictures mean nobody could see it. Focus by keyboard,
-// for `:focus-visible`.
-const RING_ROOM = 4
-
-const focusRing = async (locator: Locator) => {
-  const focused = await locator.evaluate(
-    (node) => node === document.activeElement
-  )
-  const box = await locator.boundingBox()
-  if (!box) throw new Error("the focused control has no box on screen")
-
-  const clip = {
-    x: box.x - RING_ROOM,
-    y: box.y - RING_ROOM,
-    width: box.width + 2 * RING_ROOM,
-    height: box.height + 2 * RING_ROOM,
-  }
-  const photograph = () =>
-    locator.page().screenshot({ clip, animations: "disabled" })
-
-  const drawn = await photograph()
-  await locator.evaluate((node) =>
-    node.style.setProperty("--tw-ring-color", "transparent")
-  )
-  const withoutTheRing = await photograph()
-  await locator.evaluate((node) => node.style.removeProperty("--tw-ring-color"))
-
-  return { focused, ringVisible: !drawn.equals(withoutTheRing) }
-}
 
 // The one piece of explanatory copy in the panel, behind the info glyph.
 const SCOPE_TIP =
@@ -114,7 +82,9 @@ test.describe("skill options panel", () => {
     await skill.root.focus()
     await page.keyboard.press("Tab")
 
-    const { focused, ringVisible } = await focusRing(skill.optionsButton)
+    const { focused, ringVisible } = await configure.focusRing(
+      skill.optionsButton
+    )
     expect(focused).toBe(true)
     expect(ringVisible).toBe(true)
   })
@@ -258,7 +228,9 @@ test.describe("source code link", () => {
     await skill.options.root.getByRole("button", { name: "Meta" }).focus()
     await page.keyboard.press("Tab")
 
-    const { focused, ringVisible } = await focusRing(skill.options.sourceLink)
+    const { focused, ringVisible } = await configure.focusRing(
+      skill.options.sourceLink
+    )
     expect(focused).toBe(true)
     expect(ringVisible).toBe(true)
   })
@@ -395,7 +367,7 @@ test.describe("sub-agent assignment", () => {
     await fold.focus()
     await page.keyboard.press("Tab")
 
-    const { focused, ringVisible } = await focusRing(
+    const { focused, ringVisible } = await configure.focusRing(
       skill.options.option(FIRST_META_AGENT)
     )
     expect(focused).toBe(true)

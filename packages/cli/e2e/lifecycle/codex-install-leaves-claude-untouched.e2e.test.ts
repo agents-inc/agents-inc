@@ -19,25 +19,21 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
   cleanupTempDir,
+  cliVersionUnderTest,
   directoryExists,
   fileExists,
   flattenCliOutput,
+  type InstallTree,
   normalizeInstallTree,
   readInstallTree,
-  type InstallTree,
 } from "../helpers/test-utils.js";
-import { cliVersion } from "../../src/cli/lib/agents/agent-provenance.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { DIRS, EXIT_CODES, FILES, TIMEOUTS } from "../pages/constants.js";
 
-/**
- * A Codex install, and every later command on it, leaves Claude untouched: no `.claude/` on a
- * machine without Claude, and byte-identical Claude trees on one with it. Every payload ejects, so
- * no host binary is involved.
- */
+/** Every payload ejects, so no host binary is involved. */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
 
@@ -49,9 +45,8 @@ const CLAUDE_SESSION_STATE = [
 ];
 
 /**
- * Every command a Codex installation reaches after install, `uninstall` last. `eject` passes
- * `--force` because the project already holds that folder. `edit --from` refuses with no terminal,
- * which pins that its refusal writes nothing.
+ * `eject` passes `--force` because the project already holds that folder. `edit --from` refuses
+ * with no terminal, which pins that its refusal writes nothing.
  */
 const LATER_COMMANDS = [
   { label: "compile", argv: ["compile"] },
@@ -117,7 +112,6 @@ describe("a Codex install and the Claude side of the machine", () => {
       );
       expect(exitCode, flattenCliOutput(output)).toBe(EXIT_CODES.SUCCESS);
 
-      // The folder is the provider's only record, so each scope carries its own pair.
       for (const root of [env.fakeHome, env.projectDir]) {
         expect(
           await fileExists(path.join(root, CODEX_SOURCE_REL, FILES.CONFIG_TS)),
@@ -131,7 +125,6 @@ describe("a Codex install and the Claude side of the machine", () => {
         ),
       ).toBe(true);
 
-      // Catches a path that bypassed the layout funnel and wrote somewhere plausible.
       for (const root of [env.fakeHome, env.projectDir]) {
         expect(await directoryExists(path.join(root, DIRS.CLAUDE)), `${root}/.claude`).toBe(false);
         expect(
@@ -263,7 +256,7 @@ type ClaudeSide = { home: InstallTree; project: InstallTree };
  * would otherwise count as a change.
  */
 async function claudeSideOf(env: TestEnvironment): Promise<ClaudeSide> {
-  const context = { roots: { home: [env.fakeHome] }, cliVersion: await cliVersion() };
+  const context = { roots: { home: [env.fakeHome] }, cliVersion: await cliVersionUnderTest() };
   const projectUnderHome = path.relative(env.fakeHome, env.projectDir).split(path.sep).join("/");
 
   const home = await readInstallTree(env.fakeHome, {

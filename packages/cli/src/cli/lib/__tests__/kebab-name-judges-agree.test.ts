@@ -21,9 +21,8 @@ const PRODUCT_SOURCES = ["src/cli/**/*.ts", "src/cli/**/*.tsx"];
 const NOT_PRODUCT = ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**", "**/__mocks__/**"];
 
 /**
- * Every module judging whether a name is kebab-case must reach the same verdict. The roster is
- * derived: `kebabCaseJudgesIn` finds judges by what their patterns accept, so a new spelling shows
- * up here. Only verdicts are pinned; the error prose legitimately differs per surface.
+ * Every module judging whether a name is kebab-case must reach the same verdict. Only verdicts are
+ * pinned; the error prose legitimately differs per surface.
  */
 describe("every judge of a kebab-case name", () => {
   let tempDir: string;
@@ -71,31 +70,26 @@ describe("every judge of a kebab-case name", () => {
     {
       surface: "a plugin.json name",
       file: "src/cli/lib/plugins/plugin-validator.ts",
-      judge: SHARED_PATTERN,
       accepts: pluginManifestAccepts,
     },
     {
       surface: "a marketplace being loaded",
       file: "src/cli/lib/schemas.ts",
-      judge: SHARED_PATTERN,
       accepts: marketplaceLoadAccepts,
     },
     {
       surface: "a custom skill's slug",
       file: "src/cli/lib/schemas.ts",
-      judge: SHARED_PATTERN,
       accepts: customSkillSlugAccepts,
     },
     {
       surface: "a marketplace being published",
       file: "src/cli/lib/validate-kebab-name.ts",
-      judge: SHARED_PATTERN,
       accepts: marketplacePublishAccepts,
     },
   ] as const satisfies readonly {
     surface: string;
     file: string;
-    judge: string;
     accepts: (name: string) => boolean | Promise<boolean>;
   }[];
 
@@ -129,18 +123,13 @@ describe("every judge of a kebab-case name", () => {
 
   type Judge = (typeof JUDGES)[number];
 
-  /** Shared by the scan and the roster, so the two cannot spell a site differently. */
-  function siteOf(judge: Judge): string {
-    return `${judge.file}: ${judge.judge}`;
-  }
-
-  /** Deduplicated: the scan names a file's pattern once, so schemas.ts is one site. */
+  /**
+   * Each rostered file once, reaching the shared pattern by name: the scan names a file's pattern
+   * once, so `schemas.ts` is one site, and a judge restating the rule is a site no roster names.
+   */
   function sitesOf(judges: readonly Judge[]): string[] {
-    return [...new Set(judges.map(siteOf))];
+    return [...new Set(judges.map(({ file }) => `${file}: ${SHARED_PATTERN}`))];
   }
-
-  /** The trailing pattern name keeps `endsWith` from matching a longer name. */
-  const REACHES_THE_ONE_PATTERN = `: ${SHARED_PATTERN}`;
 
   async function verdictsFor(name: string): Promise<Record<string, boolean>> {
     const answers = await Promise.all(
@@ -159,15 +148,6 @@ describe("every judge of a kebab-case name", () => {
       await judgeSitesInProduct(),
       "a surface judging a kebab-case name and not rostered here is one nothing holds to the verdict below — the scan finds it by what its pattern accepts, so a new spelling arrives on its first day",
     ).toStrictEqual(sitesOf(JUDGES));
-  });
-
-  it("reaches the one statement of the rule rather than restating it", async () => {
-    const sites = await judgeSitesInProduct();
-
-    expect(
-      sites.filter((site) => !site.endsWith(REACHES_THE_ONE_PATTERN)),
-      "a judge written with its own regex is how one surface starts refusing what another emits, and rostering it is how that becomes permanent",
-    ).toStrictEqual([]);
   });
 
   it.each(NAMES)(

@@ -2,19 +2,13 @@ import path from "path";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../utils/fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../../utils/fs")>();
-  return { ...actual, writeFile: vi.fn(actual.writeFile) };
-});
-
 vi.mock("../../../utils/logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../utils/logger")>()),
   verbose: vi.fn(),
 }));
 
 import { buildConfigTypesBackgroundData, regenerateConfigTypes } from "../config-types-io";
-import { GlobalPairWriteViolation } from "../../config-gate/gate-token.js";
-import { writeFile as productWriteFile } from "../../../utils/fs";
+import { GlobalPairWriteViolation, withGateToken } from "../../config-gate/gate-token.js";
 import { verbose } from "../../../utils/logger";
 import { createMockAgent } from "../../__tests__/factories/agent-factories.js";
 import {
@@ -24,7 +18,7 @@ import {
 import { createMockMatrix } from "../../__tests__/factories/matrix-factories.js";
 import { writeTestTsConfig } from "../../__tests__/helpers/config-io.js";
 import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
-import { cleanupTempDir, createTempDir } from "../../__tests__/test-fs-utils.js";
+import { cleanupTempDir, createTempDir, fileExists } from "../../__tests__/test-fs-utils.js";
 import { SKILLS } from "../../__tests__/test-fixtures.js";
 
 /** Literal paths: a test reading the folder names off the product would move with them. */
@@ -103,13 +97,13 @@ describe("regenerateConfigTypes", () => {
     });
   });
 
-  it("refuses the home directory before reading or writing anything", async () => {
-    vi.mocked(productWriteFile).mockResolvedValueOnce(undefined);
+  it("refuses the home directory even under the gate token, and leaves no types file there", async () => {
+    const homeTypesPath = path.join(home.dir, CLAUDE_SOURCE_FOLDER, CONFIG_TYPES_TS);
 
-    await expect(regenerateConfigTypes(home.dir, backgroundData())).rejects.toThrow(
-      new GlobalPairWriteViolation(path.join(home.dir, CLAUDE_SOURCE_FOLDER, CONFIG_TYPES_TS)),
-    );
-    expect(productWriteFile).not.toHaveBeenCalled();
+    await expect(
+      withGateToken(() => regenerateConfigTypes(home.dir, backgroundData())),
+    ).rejects.toThrow(new GlobalPairWriteViolation(homeTypesPath));
+    expect(await fileExists(homeTypesPath)).toBe(false);
   });
 });
 

@@ -2,13 +2,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { chmod, mkdir, writeFile } from "fs/promises";
 import { stringify as stringifyYaml } from "yaml";
-import {
-  checkDirNameMatchesSkillId,
-  checkSnakeCaseKeys,
-  isSnakeCase,
-  validateSkillFilePairs,
-  validateSource,
-} from "./source-validator";
+import { validateSource } from "./source-validator";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
 import {
   DIRS,
@@ -95,206 +89,6 @@ async function writeMarketplaceManifest(sourceDir: string, name: string): Promis
 }
 
 describe("source-validator", () => {
-  describe("isSnakeCase", () => {
-    it("should return true for snake_case keys", () => {
-      expect(isSnakeCase("display_name")).toBe(true);
-      expect(isSnakeCase("some_key")).toBe(true);
-      expect(isSnakeCase("a_b_c")).toBe(true);
-    });
-
-    it("should return false for camelCase keys", () => {
-      expect(isSnakeCase("displayName")).toBe(false);
-      expect(isSnakeCase("someKey")).toBe(false);
-    });
-
-    it("should return false for keys without underscores", () => {
-      expect(isSnakeCase("name")).toBe(false);
-      expect(isSnakeCase("slug")).toBe(false);
-    });
-
-    it("should return false for uppercase_UPPER patterns", () => {
-      expect(isSnakeCase("UPPER_CASE")).toBe(false);
-      expect(isSnakeCase("A_B")).toBe(false);
-    });
-
-    it("should return false for empty string", () => {
-      expect(isSnakeCase("")).toBe(false);
-    });
-
-    it("should return false for leading/trailing underscores without lowercase pair", () => {
-      expect(isSnakeCase("_name")).toBe(false);
-      expect(isSnakeCase("name_")).toBe(false);
-    });
-  });
-
-  describe("checkSnakeCaseKeys", () => {
-    const REL_PATH = "src/skills/web/framework/react/metadata.yaml";
-
-    it("should report error for snake_case keys", () => {
-      const rawMetadata = {
-        display_name: "react",
-        category: "web-framework",
-      };
-
-      const issues = checkSnakeCaseKeys(rawMetadata, REL_PATH);
-
-      expect(issues).toHaveLength(1);
-      expect(issues[0]?.severity).toBe("error");
-      expect(issues[0]?.message).toContain("display_name");
-      expect(issues[0]?.file).toBe(REL_PATH);
-    });
-
-    it("should report multiple snake_case keys", () => {
-      const rawMetadata = {
-        display_name: "react",
-        usage_guidance: "use for React",
-        category: "web-framework",
-      };
-
-      const issues = checkSnakeCaseKeys(rawMetadata, REL_PATH);
-
-      expect(issues).toHaveLength(2);
-    });
-
-    it("should return no issues for camelCase keys", () => {
-      const rawMetadata = {
-        displayName: "react",
-        usageGuidance: "use for React",
-        category: "web-framework",
-      };
-
-      const issues = checkSnakeCaseKeys(rawMetadata, REL_PATH);
-
-      expect(issues).toStrictEqual([]);
-    });
-
-    it("should handle null rawMetadata without crashing", () => {
-      const issues = checkSnakeCaseKeys(null, REL_PATH);
-
-      expect(issues).toStrictEqual([]);
-    });
-
-    it("should handle array rawMetadata without crashing", () => {
-      const issues = checkSnakeCaseKeys([1, 2, 3], REL_PATH);
-
-      expect(issues).toStrictEqual([]);
-    });
-
-    it("should set file path on all reported issues", () => {
-      const rawMetadata = { display_name: "A", usage_guidance: "B" };
-
-      const issues = checkSnakeCaseKeys(rawMetadata, REL_PATH);
-
-      for (const issue of issues) {
-        expect(issue.file).toBe(REL_PATH);
-      }
-    });
-  });
-
-  describe("checkDirNameMatchesSkillId", () => {
-    const REL_PATH = "src/skills/web-framework-react/SKILL.md";
-
-    it("should warn when directory name does not match skill id", () => {
-      const issues = checkDirNameMatchesSkillId("web-framework-react", REL_PATH, "react");
-
-      expect(issues).toHaveLength(1);
-      expect(issues[0]?.severity).toBe("warning");
-      expect(issues[0]?.message).toContain("web-framework-react");
-      expect(issues[0]?.message).toContain("'react'");
-      expect(issues[0]?.file).toBe(REL_PATH);
-    });
-
-    it("should return no issues when directory name matches skill id", () => {
-      const issues = checkDirNameMatchesSkillId(
-        "web-framework-react",
-        REL_PATH,
-        "web-framework-react",
-      );
-
-      expect(issues).toStrictEqual([]);
-    });
-  });
-
-  describe("validateSkillFilePairs", () => {
-    const SKILLS_DIR = "/source/src/skills";
-
-    it("should return no issues when all pairs match", () => {
-      const skillMdDirs = new Set(["web/framework/react", "api/database/drizzle"]);
-      const metadataDirs = new Set(["web/framework/react", "api/database/drizzle"]);
-
-      const issues = validateSkillFilePairs(skillMdDirs, metadataDirs, SKILLS_DIR);
-
-      expect(issues).toStrictEqual([]);
-    });
-
-    it("should report error for directories with SKILL.md but no metadata.yaml", () => {
-      const skillMdDirs = new Set(["web/framework/react", "web/framework/vue"]);
-      const metadataDirs = new Set(["web/framework/react"]);
-
-      const issues = validateSkillFilePairs(skillMdDirs, metadataDirs, SKILLS_DIR);
-
-      expect(issues).toHaveLength(1);
-      expect(issues[0]?.severity).toBe("error");
-      expect(issues[0]?.message).toContain("Missing metadata.yaml");
-      expect(issues[0]?.message).toContain("SKILL.md");
-      expect(issues[0]?.file).toContain("web/framework/vue");
-    });
-
-    it("should report error for directories with metadata.yaml but no SKILL.md", () => {
-      const skillMdDirs = new Set(["web/framework/react"]);
-      const metadataDirs = new Set(["web/framework/react", "web/framework/vue"]);
-
-      const issues = validateSkillFilePairs(skillMdDirs, metadataDirs, SKILLS_DIR);
-
-      expect(issues).toHaveLength(1);
-      expect(issues[0]?.severity).toBe("error");
-      expect(issues[0]?.message).toContain("Missing SKILL.md");
-      expect(issues[0]?.message).toContain("metadata.yaml");
-      expect(issues[0]?.file).toContain("web/framework/vue");
-    });
-
-    it("should report multiple missing pairs", () => {
-      const skillMdDirs = new Set(["a", "b"]);
-      const metadataDirs = new Set(["c", "d"]);
-
-      const issues = validateSkillFilePairs(skillMdDirs, metadataDirs, SKILLS_DIR);
-
-      // a and b missing metadata.yaml, c and d missing SKILL.md
-      expect(issues).toHaveLength(4);
-      const missingMetadata = issues.filter((i) => i.message.includes("Missing metadata.yaml"));
-      const missingSkillMd = issues.filter((i) => i.message.includes("Missing SKILL.md"));
-      expect(missingMetadata).toHaveLength(2);
-      expect(missingSkillMd).toHaveLength(2);
-    });
-
-    it("should return no issues for empty sets", () => {
-      const skillMdDirs = new Set<string>();
-      const metadataDirs = new Set<string>();
-
-      const issues = validateSkillFilePairs(skillMdDirs, metadataDirs, SKILLS_DIR);
-
-      expect(issues).toStrictEqual([]);
-    });
-
-    it("should construct file paths using skillsDir", () => {
-      const skillMdDirs = new Set(["web/framework/react"]);
-      const metadataDirs = new Set<string>();
-
-      const issues = validateSkillFilePairs(skillMdDirs, metadataDirs, SKILLS_DIR);
-
-      expect(issues[0]?.file).toBe("/source/src/skills/web/framework/react");
-    });
-
-    it("should handle single-entry sets correctly", () => {
-      const skillMdDirs = new Set(["only-skill-md"]);
-      const metadataDirs = new Set(["only-metadata"]);
-
-      const issues = validateSkillFilePairs(skillMdDirs, metadataDirs, SKILLS_DIR);
-
-      expect(issues).toHaveLength(2);
-    });
-  });
-
   describe("validateSource", () => {
     let tempDir: string;
     let sourceDir: string;
@@ -315,7 +109,6 @@ describe("source-validator", () => {
       const result = await validateSource(sourceDir);
 
       expect(result.skillCount).toBe(0);
-      // Zero skills is not an error — the source simply has no skills yet
       expect(result.issues.every((i) => !i.message.includes("does not exist"))).toBe(true);
     });
 
@@ -339,6 +132,118 @@ describe("source-validator", () => {
       const yamlErrors = result.issues.filter((i) => i.message.includes("Failed to parse YAML"));
       expect(yamlErrors).toHaveLength(1);
       expect(yamlErrors[0]?.severity).toBe("error");
+    });
+
+    describe("a skill directory holding half of its pair", () => {
+      const skillDir = (): string => path.join(skillsDir, "web-framework-react");
+
+      beforeEach(async () => {
+        await mkdir(skillDir(), { recursive: true });
+      });
+
+      it("refuses SKILL.md with no metadata.yaml beside it, naming the directory", async () => {
+        await writeFile(
+          path.join(skillDir(), STANDARD_FILES.SKILL_MD),
+          renderSkillMd("web-framework-react", "React"),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        expect(result.issues.filter((issue) => issue.file === skillDir())).toStrictEqual([
+          {
+            severity: "error",
+            file: skillDir(),
+            message: "Missing metadata.yaml — skill directory has SKILL.md but no metadata",
+          },
+        ]);
+      });
+
+      it("refuses metadata.yaml with no SKILL.md beside it, naming the directory", async () => {
+        await writeFile(
+          path.join(skillDir(), STANDARD_FILES.METADATA_YAML),
+          stringifyYaml(VALID_EMBEDDED_SKILL_METADATA_FILE),
+        );
+
+        const result = await validateSource(sourceDir);
+
+        expect(result.issues.filter((issue) => issue.file === skillDir())).toStrictEqual([
+          {
+            severity: "error",
+            file: skillDir(),
+            message: "Missing SKILL.md — skill directory has metadata.yaml but no SKILL.md",
+          },
+        ]);
+      });
+    });
+
+    describe("snake_case keys in metadata.yaml", () => {
+      const METADATA_PATH = path.join(
+        "src",
+        STANDARD_DIRS.SKILLS,
+        "web-framework-react",
+        STANDARD_FILES.METADATA_YAML,
+      );
+
+      async function writeSkillWithMetadataText(metadataText: string): Promise<void> {
+        const skillDir = path.join(skillsDir, "web-framework-react");
+        await mkdir(skillDir, { recursive: true });
+        await writeFile(
+          path.join(skillDir, STANDARD_FILES.SKILL_MD),
+          renderSkillMd("web-framework-react", "React"),
+        );
+        await writeFile(path.join(skillDir, STANDARD_FILES.METADATA_YAML), metadataText);
+      }
+
+      const snakeCaseFindings = async () =>
+        (await validateSource(sourceDir)).issues.filter((issue) =>
+          issue.message.includes("snake_case"),
+        );
+
+      it("refuses each snake_case key, naming the key and the file", async () => {
+        await writeSkillWithMetadataText(
+          stringifyYaml({
+            ...VALID_EMBEDDED_SKILL_METADATA_FILE,
+            display_name: "react",
+            usage_guidance: "use for React",
+          }),
+        );
+
+        expect(await snakeCaseFindings()).toStrictEqual([
+          {
+            severity: "error",
+            file: METADATA_PATH,
+            message: "Key 'display_name' uses snake_case — use camelCase instead",
+          },
+          {
+            severity: "error",
+            file: METADATA_PATH,
+            message: "Key 'usage_guidance' uses snake_case — use camelCase instead",
+          },
+        ]);
+      });
+
+      it("calls a key snake_case only where an underscore joins two lowercase letters", async () => {
+        await writeSkillWithMetadataText(
+          stringifyYaml({
+            ...VALID_EMBEDDED_SKILL_METADATA_FILE,
+            UPPER_CASE: "a",
+            A_b: "b",
+            _leading: "c",
+            trailing_: "d",
+          }),
+        );
+
+        expect(await snakeCaseFindings()).toStrictEqual([]);
+      });
+
+      it.each([
+        ["empty", ""],
+        ["a list", stringifyYaml(["display_name"])],
+      ])("reads a metadata.yaml that is %s without a snake_case finding", async (_shape, text) => {
+        await writeSkillWithMetadataText(text);
+
+        expect(await snakeCaseFindings()).toStrictEqual([]);
+      });
     });
 
     describe("cliDescription severity routing", () => {
@@ -470,13 +375,15 @@ describe("source-validator", () => {
 
         const result = await validateSource(sourceDir);
 
-        const dirNameIssues = result.issues.filter((i) =>
-          i.message.includes("does not match skill id"),
-        );
-        expect(dirNameIssues).toHaveLength(1);
-        expect(dirNameIssues[0]?.severity).toBe("warning");
-        expect(dirNameIssues[0]?.message).toContain("'react'");
-        expect(dirNameIssues[0]?.message).toContain("'web-framework-react'");
+        expect(
+          result.issues.filter((i) => i.message.includes("does not match skill id")),
+        ).toStrictEqual([
+          {
+            severity: "warning",
+            file: path.join("src", STANDARD_DIRS.SKILLS, "react", STANDARD_FILES.SKILL_MD),
+            message: "Directory name 'react' does not match skill id 'web-framework-react'",
+          },
+        ]);
       });
     });
 

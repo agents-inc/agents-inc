@@ -41,7 +41,6 @@
     "@vitest/browser": "^4",
     "@vitest/browser-playwright": "^4",
     "@workspace/eslint-config": "workspace:*",
-    "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "@workspace/vitest-config": "workspace:*",
     "chromatic": "^18",

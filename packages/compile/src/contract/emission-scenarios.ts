@@ -64,9 +64,6 @@ export interface ProjectConfig {
   /** The name that marketplace's manifest gives it, which plugins are registered under */
   marketplaceName?: string
 
-  /** Agents source path or URL (when agents come from a different source than skills) */
-  agentsSource?: string
-
   /** Selected domains */
   selectedDomains?: Domain[]
 
@@ -75,9 +72,6 @@ export interface ProjectConfig {
 
   /** Custom skills directory override (default: "src/skills") */
   skillsDir?: string
-
-  /** Custom agents directory override (default: "src/agents") */
-  agentsDir?: string
 
   /** Custom stacks file path override (default: "config/stacks.ts") */
   stacksFile?: string

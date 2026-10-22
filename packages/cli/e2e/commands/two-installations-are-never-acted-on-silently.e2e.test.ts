@@ -16,7 +16,6 @@ import {
 import { metadataFieldsFor } from "../fixtures/project-builder.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, EXIT_CODES, FILES } from "../pages/constants.js";
-import { STANDARD_DIRS } from "../../src/cli/consts.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -27,7 +26,9 @@ import type { AgentName } from "../../src/cli/types/index.js";
 /**
  * One scope holding a Claude and a Codex installation: every command that acts on it refuses naming
  * `--provider` (doctor reports it), and each case is paired with the same command succeeding once
- * `--provider` names one.
+ * `--provider` names one. Measured against the built CLI before the fix, in a project carrying both
+ * source folders: `compile` exited 0 rewriting the Claude installation unnamed, `update` exited 0
+ * silent about which config it read, and `list` named one installation and nothing about the other.
  */
 
 const CLAUDE_INSTALL = "two-installations-claude";
@@ -41,7 +42,7 @@ const SKILL_ID = E2E_SKILL.vitest.id;
  * satisfies everything for free.
  */
 const SKILLS_DIR = {
-  claude: path.join(DIRS.CLAUDE, STANDARD_DIRS.SKILLS),
+  claude: path.join(DIRS.CLAUDE, DIRS.SKILLS),
   codex: DIRS.CODEX_PROJECT_SKILLS,
 } as const;
 
@@ -170,7 +171,7 @@ describe("a scope holding two installations", () => {
 
     const { combined } = await run(["list"]);
 
-    // Naming the Claude one is correct; the defect was not saying it is one of two.
+    // Naming the Claude one is correct.
     expect(combined).toContain(CLAUDE_INSTALL);
     expect(
       combined,

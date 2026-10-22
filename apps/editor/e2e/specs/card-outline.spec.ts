@@ -26,51 +26,36 @@ const CARDS: Card[] = [
   },
 ]
 
-const line = (cell: Locator) =>
-  cell.evaluate((node) => {
-    const after = getComputedStyle(node, "::after")
-    return {
-      content: after.content,
-      outlineWidth: after.outlineWidth,
-      outlineColor: after.outlineColor,
-      top: parseFloat(after.top),
-    }
-  })
+const backgroundOf = (cell: Locator) =>
+  cell.evaluate((node) => getComputedStyle(node).backgroundColor)
 
-const style = (cell: Locator) =>
-  cell.evaluate((node) => {
-    const own = getComputedStyle(node)
-    return {
-      borderTopWidth: own.borderTopWidth,
-      outlineStyle: own.outlineStyle,
-      backgroundColor: own.backgroundColor,
-      boxShadow: own.boxShadow,
-    }
-  })
+const boxOf = async (target: Locator, what: string) => {
+  const box = await target.boundingBox()
+  if (!box) throw new Error(`${what} must be drawn`)
+  return box
+}
 
 for (const { kind, cell } of CARDS) {
   test.describe(`a ${kind} card`, () => {
-    test("draws no border of its own", async ({ configure }) => {
-      expect((await style(cell(configure))).borderTopWidth).toBe("0px")
-    })
+    test("draws one line, one pixel wide", async ({ configure }) => {
+      const strokes = await configure.strokes(cell(configure))
 
-    test("draws its line in ::after, one pixel wide", async ({ configure }) => {
-      const drawn = await line(cell(configure))
-
-      expect(drawn.content).not.toBe("none")
-      expect(drawn.outlineWidth).toBe("1px")
+      expect(strokes.map(({ width }) => width)).toStrictEqual([1])
     })
 
     // Unequal, the edge cards would carry different white from the inner ones.
+    // Both cards sit in the first row, so the gap above them is the padding.
     test("insets its line by the grid's own padding", async ({ configure }) => {
       const card = cell(configure)
-      const padding = await card
-        .locator(`xpath=ancestor::*[@data-slot="lattice"][1]`)
-        .evaluate((node) => parseFloat(getComputedStyle(node).paddingTop))
-      const { top } = await line(card)
+      const grid = await boxOf(
+        card.locator(`xpath=ancestor::*[@data-slot="lattice"][1]`),
+        "the grid"
+      )
+      const padding = (await boxOf(card, "the card")).y - grid.y
+      const [line] = await configure.strokes(card)
 
       expect(padding).toBeGreaterThan(0)
-      expect(top).toBe(padding)
+      expect(line?.inset).toBeCloseTo(padding, 1)
     })
   })
 }
@@ -95,21 +80,23 @@ test.describe("a chosen stack card", () => {
     const hairline = await configure.tokenColor("--color-hairline")
     const white = await configure.tokenColor("--color-cell")
 
-    expect((await style(chosen)).outlineStyle).toBe("none")
-    expect((await line(chosen)).outlineColor).toBe(brand)
-    expect((await line(sibling)).outlineColor).toBe(hairline)
-    expect((await style(chosen)).backgroundColor).toBe(white)
-    expect((await style(sibling)).backgroundColor).toBe(white)
+    const colours = async (card: Locator) =>
+      (await configure.strokes(card)).map(({ colour }) => colour)
+
+    expect(await colours(chosen)).toStrictEqual([brand])
+    expect(await colours(sibling)).toStrictEqual([hairline])
+    expect(await backgroundOf(chosen)).toBe(white)
+    expect(await backgroundOf(sibling)).toBe(white)
   })
 
   test("takes no hover tint", async ({ configure }) => {
     const chosen = configure.stack(STACKS.nextjs)
     await configure.page.mouse.move(0, 0)
-    const atRest = (await style(chosen)).backgroundColor
+    const atRest = await backgroundOf(chosen)
 
     await chosen.hover()
 
-    expect((await style(chosen)).backgroundColor).toBe(atRest)
+    expect(await backgroundOf(chosen)).toBe(atRest)
   })
 })
 
@@ -125,21 +112,19 @@ test("a keyboard-focused stack card draws the ring", async ({ configure }) => {
   expect(await card.evaluate((node) => node.matches(":focus-visible"))).toBe(
     true
   )
-  const focused = await style(card)
-  expect(focused.outlineStyle).toBe("none")
-  expect(focused.boxShadow).toContain(
-    await configure.tokenColor("--color-ring")
-  )
+  expect(await configure.focusRing(card)).toStrictEqual({
+    focused: true,
+    ringVisible: true,
+  })
 })
 
 test("the stack grid draws no line of its own", async ({ configure }) => {
-  const grid = await configure.stacks.evaluate(
-    (node, lattice) => ({
-      border: getComputedStyle(node).borderTopWidth,
-      matches: node.matches(lattice),
-    }),
-    LATTICE
-  )
+  expect(
+    await configure.stacks.evaluate(
+      (node, lattice) => node.matches(lattice),
+      LATTICE
+    )
+  ).toBe(true)
 
-  expect(grid).toStrictEqual({ border: "0px", matches: true })
+  expect(await configure.strokes(configure.stacks)).toStrictEqual([])
 })

@@ -29,14 +29,12 @@ import {
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
-import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import type { AgentName } from "../../src/cli/types/index.js";
 import type { FixtureProjectConfig, FixtureStackAgentConfig } from "../helpers/test-utils.js";
 
 /**
- * A plugin -> eject source change at global scope must reach a registered project's COMPILED
- * agents, not just its config.ts. The stale agent is a real `compile`'s output. No Claude CLI
- * needed: the plugin uninstall is best-effort.
+ * The stale agent is a real `compile`'s output. No Claude CLI needed: the plugin uninstall is
+ * best-effort.
  */
 
 const REACT_PLUGIN_REF = `${E2E_SKILL.react.id}:${E2E_SKILL.react.id}`;
@@ -191,12 +189,9 @@ describe("global-scope source change propagates to registered projects", () => {
     expect(
       projectConfig.skills.filter((s) => s.id === E2E_SKILL.react.id),
       "the registered project's inlined react entry must record the eject source",
-    ).toStrictEqual(
-      buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: EJECT_SOURCE }),
-    );
+    ).toStrictEqual(buildSkillConfigs([E2E_SKILL.react.id], { scope: "global", origin: "eject" }));
   });
 
-  // What the registered project never got.
   it("recompiles the current context's global agent to the bare skill reference", async () => {
     await expect({ dir: fakeHome }).toHaveAgentFrontmatter(E2E_AGENT["api-developer"].name, {
       skills: [E2E_SKILL.react.id],

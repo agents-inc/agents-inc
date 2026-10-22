@@ -1,16 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFile, writeFile } from "fs/promises";
+import path from "path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockExecCommand } = vi.hoisted(() => ({ mockExecCommand: vi.fn() }));
-
-vi.mock("./exec.js", () => ({ execCommand: mockExecCommand }));
-
-const { browserOpenerCommand, openUrl } = await import("./open-url.js");
-const { editorConfigUrl } = await import("../consts.js");
+import { browserOpenerCommand, openUrl } from "./open-url.js";
+import { editorConfigUrl } from "../consts.js";
+import { cleanupTempDir, createTempDir } from "../lib/__tests__/test-fs-utils.js";
 
 // Built from the product function so it cannot drift from the real link shape.
 const EDITOR_LINK = editorConfigUrl("Ab3xY9_Q");
 const OPENER_REFUSED_EXIT = 3;
-const MISSING_OPENER_MESSAGE = "spawn xdg-open ENOENT";
 
 describe("browserOpenerCommand", () => {
   it("asks macOS to open the link with its own handler", () => {
@@ -39,36 +37,46 @@ describe("browserOpenerCommand", () => {
   });
 });
 
+/** The opener is spawned by name, so PATH is a folder holding a script of that name, or nothing. */
 describe("openUrl", () => {
-  beforeEach(() => {
-    mockExecCommand.mockReset();
+  const { command: opener } = browserOpenerCommand(process.platform, EDITOR_LINK);
+  let binDir: string;
+
+  beforeEach(async () => {
+    binDir = await createTempDir("cc-open-url-");
+    vi.stubEnv("PATH", binDir);
   });
 
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await cleanupTempDir(binDir);
+  });
+
+  async function openerRuns(script: string): Promise<void> {
+    await writeFile(path.join(binDir, opener), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+  }
+
   it("hands the link to the platform's opener", async () => {
-    mockExecCommand.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+    const argvLog = path.join(binDir, "opener-argv.log");
+    await openerRuns(`printf '%s\\n' "$@" > ${JSON.stringify(argvLog)}`);
 
-    const result = await openUrl(EDITOR_LINK);
-
-    expect(result).toStrictEqual({ ok: true });
-    expect(mockExecCommand).toHaveBeenCalledTimes(1);
-    expect(mockExecCommand.mock.calls[0]?.[1]).toContain(EDITOR_LINK);
+    expect(await openUrl(EDITOR_LINK)).toStrictEqual({ ok: true });
+    expect(await readFile(argvLog, "utf8")).toBe(`${EDITOR_LINK}\n`);
   });
 
   it("reports an opener that refused rather than throwing", async () => {
-    mockExecCommand.mockResolvedValue({ stdout: "", stderr: "", exitCode: OPENER_REFUSED_EXIT });
+    await openerRuns(`exit ${OPENER_REFUSED_EXIT}`);
 
-    const result = await openUrl(EDITOR_LINK);
-
-    expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.error).toContain(String(OPENER_REFUSED_EXIT));
+    expect(await openUrl(EDITOR_LINK)).toStrictEqual({
+      ok: false,
+      error: `Could not open your browser — '${opener}' exited ${OPENER_REFUSED_EXIT}.`,
+    });
   });
 
   it("reports a missing opener as a message, so a headless machine is never a failed command", async () => {
-    mockExecCommand.mockRejectedValue(new Error(MISSING_OPENER_MESSAGE));
-
-    const result = await openUrl(EDITOR_LINK);
-
-    expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.error).toContain(MISSING_OPENER_MESSAGE);
+    expect(await openUrl(EDITOR_LINK)).toStrictEqual({
+      ok: false,
+      error: `Could not open your browser — '${opener}' could not be run: spawn ${opener} ENOENT`,
+    });
   });
 });

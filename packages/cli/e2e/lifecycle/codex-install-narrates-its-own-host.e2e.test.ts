@@ -22,7 +22,7 @@ import {
   directoryExists,
   flattenCliOutput,
 } from "../helpers/test-utils.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
+import { pluginKeyFor } from "../fixtures/plugin-install-state.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
@@ -30,9 +30,8 @@ import {
 import { DIRS, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 
 /**
- * A Codex install that refuses writes nothing (the placement check is a pre-flight, so an
- * offerable first row is not installed before an unofferable second one aborts), and one that
- * succeeds never names Claude's `.claude/` in what it prints.
+ * The placement check is a pre-flight, so an offerable first row is not installed before an
+ * unofferable second one aborts.
  */
 
 const WEB_DEV = E2E_AGENT["web-developer"].name;
@@ -71,7 +70,7 @@ describe("a Codex install talks about the host it is acting on", () => {
     { timeout: TIMEOUTS.PLUGIN_TEST },
     async () => {
       env = await createTestEnvironment({ permissions: false });
-      const offerable = buildMarketplacePluginRef(E2E_SKILL.react.id, fixture.marketplaceName);
+      const offerable = pluginKeyFor(E2E_SKILL.react.id, fixture.marketplaceName);
 
       store.publish(
         "CdxMixed",

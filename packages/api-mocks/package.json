@@ -15,7 +15,6 @@
   },
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",
-    "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "@workspace/vitest-config": "workspace:*",
     "eslint": "^10",

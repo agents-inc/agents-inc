@@ -1,6 +1,7 @@
+import { spawnSync } from "child_process";
 import { cpSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "fs";
 import path from "path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CorpusAgentPartials } from "@workspace/compile/corpus";
 import { AGENT_CORPUS, CORPUS_CLI_VERSION, CORPUS_TEMPLATES } from "@workspace/compile/corpus";
@@ -8,6 +9,7 @@ import { createEngineFromTemplates } from "@workspace/compile/engine";
 import { renderAgent } from "@workspace/compile/agent-source";
 
 import { cliVersion } from "../src/cli/lib/agents/agent-provenance.js";
+import { EXIT_CODES } from "../src/cli/lib/exit-codes.js";
 import {
   buildAgentTemplateContext,
   compileAgentForHost,
@@ -30,6 +32,10 @@ const COMPILE_SRC = path.join(COMPILE_ROOT, "src");
 const AGENTS_DIR = path.join(CLI_ROOT, "src/agents");
 
 const CORPUS_FILE = "src/generated/corpus.ts";
+const COMMITTED_CORPUS = path.join(COMPILE_ROOT, CORPUS_FILE);
+
+/** Lets the suite drive the entry point's branches against a directory outside the tree. */
+const COMPILE_ROOT_FLAG = "--compile-root";
 
 const DRIFTED_CONTENT = "// hand-edited after generation\n";
 
@@ -253,25 +259,92 @@ describe("check mode", () => {
   });
 });
 
+describe("bun run generate:compile and generate:compile:check, given --compile-root <dir>", () => {
+  let scratchRoot: string;
+  let committedCorpusBefore: string;
+  let committedModifiedBefore: bigint;
+
+  beforeEach(async () => {
+    scratchRoot = await createTempDir("compile-root-flag-");
+    committedCorpusBefore = readFileSync(COMMITTED_CORPUS, "utf-8");
+    committedModifiedBefore = modifiedAt(COMMITTED_CORPUS);
+  });
+
+  afterEach(async () => {
+    // A runner that ignores the option rewrites the tracked corpus: the spec has failed by then, and
+    // putting the corpus back keeps that failure from leaving the tree changed.
+    if (readFileSync(COMMITTED_CORPUS, "utf-8") !== committedCorpusBefore) {
+      writeFileSync(COMMITTED_CORPUS, committedCorpusBefore);
+    }
+    await cleanupTempDir(scratchRoot);
+  });
+
+  it("writes into the directory it names the bytes committed to packages/compile, says where, and leaves packages/compile as it was", () => {
+    const result = spawnSync("bun", ["run", "generate:compile", COMPILE_ROOT_FLAG, scratchRoot], {
+      cwd: CLI_ROOT,
+      encoding: "utf-8",
+    });
+    const written = listFilesRecursive(scratchRoot, ".ts");
+
+    expect(written).toContain(CORPUS_FILE);
+    expect([result.status, result.stdout]).toStrictEqual([
+      EXIT_CODES.SUCCESS,
+      `  ✓ wrote ${written.length} files to ${scratchRoot}\n`,
+    ]);
+    expect(
+      readEmitted(scratchRoot, written),
+      "generate:compile must write what generate:compile:check holds packages/compile to",
+    ).toStrictEqual(readEmitted(COMPILE_ROOT, written));
+    expect(modifiedAt(COMMITTED_CORPUS)).toBe(committedModifiedBefore);
+  });
+
+  it("checks the directory it names rather than packages/compile, and writes nothing there", () => {
+    const result = spawnSync(
+      "bun",
+      ["run", "generate:compile:check", COMPILE_ROOT_FLAG, scratchRoot],
+      { cwd: CLI_ROOT, encoding: "utf-8" },
+    );
+
+    expect([result.status, result.stdout]).toStrictEqual([EXIT_CODES.ERROR, ""]);
+    expect(result.stderr).toContain(`${scratchRoot} is out of date:\n  ${CORPUS_FILE}\n\n`);
+    expect(listFilesRecursive(scratchRoot, ".ts")).toStrictEqual([]);
+  });
+
+  it("refuses the option with no directory after it, naming it, rather than write packages/compile", () => {
+    const result = spawnSync("bun", ["run", "generate:compile", COMPILE_ROOT_FLAG], {
+      cwd: CLI_ROOT,
+      encoding: "utf-8",
+    });
+
+    expect([result.status, result.stdout]).toStrictEqual([EXIT_CODES.INVALID_ARGS, ""]);
+    expect(result.stderr).toContain(`${COMPILE_ROOT_FLAG} needs a directory`);
+    expect(modifiedAt(COMMITTED_CORPUS)).toBe(committedModifiedBefore);
+  });
+});
+
 describe("the gate is wired where its sibling is", () => {
+  // Parse boundary, typed to the one script read: a package.json without it throws in the spec.
   const manifest = JSON.parse(readFileSync(path.join(CLI_ROOT, "package.json"), "utf8")) as {
-    scripts: Record<string, string>;
+    scripts: { generate: string };
   };
 
-  it("declares generate:compile and generate:compile:check", () => {
-    expect(manifest.scripts["generate:compile"]).toBe(
-      "bun scripts/run-generate-compile-package.ts",
-    );
-    expect(manifest.scripts["generate:compile:check"]).toBe(
-      "bun scripts/run-generate-compile-package.ts --check",
-    );
+  it("passes generate:compile:check on the committed corpus", () => {
+    const checked = spawnSync("bun", ["run", "generate:compile:check"], {
+      cwd: CLI_ROOT,
+      encoding: "utf-8",
+    });
+
+    expect([checked.status, checked.stdout]).toStrictEqual([
+      EXIT_CODES.SUCCESS,
+      "  ✓ packages/compile matches what the generator emits\n",
+    ]);
   });
 
   it("puts generate:compile in the generate chain", () => {
     expect(
-      manifest.scripts["generate"],
+      manifest.scripts.generate.split(" && "),
       "a marketplace or agent change that skips this leaves the vendored corpus stale",
-    ).toContain("generate:compile");
+    ).toContain("bun run generate:compile");
   });
 
   it("runs the check in CI beside the matrix one", () => {

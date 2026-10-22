@@ -33,28 +33,15 @@ const designPx = async (configure: ConfigurePage, px: number) =>
   )) /
     16)
 
-// The scroll position at which each domain's top meets the pinned bar's
-// underside, by domain id. Read while pinned.
-const pinnedStops = async (
-  configure: ConfigurePage
-): Promise<Record<string, number>> => {
-  await configure.scrollToDomain("api")
+// The scroll position at which a domain's top meets the pinned bar's
+// underside. Read while pinned.
+const pinnedStop = async (configure: ConfigurePage, label: string) => {
+  await configure.scrollToDomain(api)
   await expect.poll(() => configure.isBarStuck()).toBe(true)
 
-  return configure.page.evaluate(() => {
-    const bar = document.querySelector('[data-slot="filter-bar"]')
-    if (!bar) throw new Error("the bar must be drawn")
-    const edge = bar.getBoundingClientRect().bottom
-
-    return Object.fromEntries(
-      [...document.querySelectorAll("[data-domain-anchor]")].map(
-        (anchor): [string, number] => [
-          anchor.getAttribute("data-domain-anchor") ?? "",
-          anchor.getBoundingClientRect().top + window.scrollY - edge,
-        ]
-      )
-    )
-  })
+  return (
+    (await configure.scrollY()) + (await configure.domainGapUnderBar(label))
+  )
 }
 
 const scrollBetween = async (
@@ -63,10 +50,8 @@ const scrollBetween = async (
   to: string,
   t: number
 ) => {
-  const stops = await pinnedStops(configure)
-  const [a, b] = [stops[from], stops[to]]
-  if (a === undefined || b === undefined)
-    throw new Error(`no stop for ${from} or ${to}`)
+  const a = await pinnedStop(configure, from)
+  const b = await pinnedStop(configure, to)
 
   await configure.scrollTo(a + (b - a) * t)
 }
@@ -97,8 +82,8 @@ const expectIndicatorUnder = async (
     })
 }
 
-const expectLanded = async (configure: ConfigurePage, domainId: string) => {
-  const gap = () => configure.domainGapUnderBar(domainId)
+const expectLanded = async (configure: ConfigurePage, label: string) => {
+  const gap = () => configure.domainGapUnderBar(label)
 
   await expect.poll(gap).toBeGreaterThanOrEqual(0)
   await expect.poll(gap).toBeLessThan(LANDING_WINDOW)
@@ -141,8 +126,8 @@ test.describe("the domain strip", () => {
     expect(await designPx(configure, tab.height)).toBeCloseTo(TAB_HEIGHT, 0)
   })
 
-  // A label that jumped size on selection reflowed the column and moved
-  // which domain the page called current.
+  // A label that jumps size on selection reflows the column and moves which
+  // domain is current.
   test("draws the active label at the same size as the others", async ({
     configure,
   }) => {
@@ -242,7 +227,7 @@ test.describe("the indicator", () => {
     configure,
   }) => {
     await expect(indicatorOf(configure)).toBeVisible()
-    await scrollBetween(configure, "web", "api", 0.5)
+    await scrollBetween(configure, web, api, 0.5)
 
     await expect
       .poll(async () => {
@@ -296,7 +281,7 @@ test.describe("picking a domain from the strip", () => {
     await configure.domainTab(api).click()
 
     await expect.poll(() => configure.isBarStuck()).toBe(true)
-    await expectLanded(configure, "api")
+    await expectLanded(configure, api)
   })
 
   test("clicking the same tab again takes you there again", async ({
@@ -309,7 +294,7 @@ test.describe("picking a domain from the strip", () => {
     await configure.domainTab(api).click()
 
     await expect(configure.activeDomainTab).toContainText(api)
-    await expectLanded(configure, "api")
+    await expectLanded(configure, api)
   })
 
   test("hands the strip back to the page the moment you scroll off", async ({
@@ -347,7 +332,7 @@ test.describe("the domain in the address", () => {
     await configure.domainTab(api).click()
     await expect(configure.page).toHaveURL(/[?&]domain=api\b/)
 
-    await configure.scrollToDomain("ai")
+    await configure.scrollToDomain(ai)
     await expect(configure.activeDomainTab).toContainText(ai)
 
     await expect(configure.page).toHaveURL(/[?&]domain=api\b/)
@@ -359,7 +344,7 @@ test.describe("the domain in the address", () => {
     await configure.gotoDomain("api")
 
     await expect(configure.activeDomainTab).toContainText(api)
-    await expectLanded(configure, "api")
+    await expectLanded(configure, api)
     await expect(configure.domain(web)).toBeVisible()
   })
 
@@ -372,14 +357,14 @@ test.describe("the strip as a scroll indicator", () => {
   test("follows the page down without filtering anything", async ({
     configure,
   }) => {
-    await configure.scrollToDomain("api")
+    await configure.scrollToDomain(api)
 
     await expect(configure.activeDomainTab).toContainText(api)
     await expect(configure.domain(web)).toBeVisible()
   })
 
   test("follows the page back up again", async ({ configure }) => {
-    await configure.scrollToDomain("api")
+    await configure.scrollToDomain(api)
     await expect(configure.activeDomainTab).toContainText(api)
 
     await configure.scrollTo(0)
@@ -390,7 +375,7 @@ test.describe("the strip as a scroll indicator", () => {
   test("keeps exactly one tab current while the page moves", async ({
     configure,
   }) => {
-    await configure.scrollToDomain("ai")
+    await configure.scrollToDomain(ai)
 
     await expect(configure.activeDomainTab).toHaveCount(1)
   })
@@ -398,13 +383,13 @@ test.describe("the strip as a scroll indicator", () => {
   test("holds the current domain until halfway to the next", async ({
     configure,
   }) => {
-    await scrollBetween(configure, "web", "api", 0.4)
+    await scrollBetween(configure, web, api, 0.4)
 
     await expect(configure.activeDomainTab).toContainText(web)
   })
 
   test("hands it on past halfway", async ({ configure }) => {
-    await scrollBetween(configure, "web", "api", 0.6)
+    await scrollBetween(configure, web, api, 0.6)
 
     await expect(configure.activeDomainTab).toContainText(api)
   })

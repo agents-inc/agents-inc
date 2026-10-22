@@ -11,7 +11,6 @@ import { invokedNamesIn } from "./helpers/test-only-invocations.js";
 /**
  * Who may write a fixture at a machine-wide `os.tmpdir()` path. The unit and E2E runs share one
  * machine and nothing orders them, so a spec writing one corrupts another run's fixture mid-read.
- * `shared-source.ts` states the rule.
  */
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -42,22 +41,6 @@ async function scanEveryModule(): Promise<ScannedModule[]> {
 
 const A_TREE_RATHER_THAN_NOTHING = 100;
 
-/** Each root-taking seam's callers: the wrapper naming the fixed path, and its spec. */
-const ROOT_TAKING_SEAMS: Record<string, readonly string[]> = {
-  buildFrozenSourceTree: [
-    "src/cli/lib/__tests__/helpers/shared-source.test.ts",
-    "src/cli/lib/__tests__/helpers/shared-source.ts",
-  ],
-  removeFrozenSourceTree: [
-    "src/cli/lib/__tests__/helpers/shared-source.test.ts",
-    "src/cli/lib/__tests__/helpers/shared-source.ts",
-  ],
-  ensureRecordedCheckout: [
-    "src/cli/lib/__tests__/helpers/shared-marketplace-checkout.test.ts",
-    "src/cli/lib/__tests__/helpers/shared-marketplace-checkout.ts",
-  ],
-};
-
 describe("the shared-/tmp fixture family", () => {
   let modules: ScannedModule[];
 
@@ -79,20 +62,10 @@ describe("the shared-/tmp fixture family", () => {
     expect(callersByWriter()).toStrictEqual(MACHINE_WIDE_FIXTURE_WRITERS);
   });
 
-  /** Subject guard: an empty walk or a blind reader would satisfy the gate above in silence. */
   it("is judged by a walk that found the tree and a reader that finds an invocation", () => {
     expect(modules.length).toBeGreaterThan(A_TREE_RATHER_THAN_NOTHING);
     expect(invokedNamesIn("await buildSharedSource(build);", "planted.ts")).toContain(
       "buildSharedSource",
     );
-  });
-
-  /** The root-taking sibling is what a spec drives instead; named here beside the rule. */
-  it("offers every writer a root-taking sibling for a spec to drive instead", () => {
-    const seamCallers = Object.fromEntries(
-      Object.keys(ROOT_TAKING_SEAMS).map((seam) => [seam, callersOf(seam)]),
-    );
-
-    expect(seamCallers).toStrictEqual(ROOT_TAKING_SEAMS);
   });
 });

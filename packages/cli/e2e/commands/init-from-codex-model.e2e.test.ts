@@ -15,6 +15,7 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   cleanupFixture,
   cleanupTempDir,
+  cliVersionUnderTest,
   compactCliOutput,
   configTsPath,
   directoryExists,
@@ -28,9 +29,7 @@ import {
   writeCorruptConfig,
   writeProjectConfig,
 } from "../helpers/test-utils.js";
-import { DIRS, EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
-import { DEFAULT_PUBLIC_SOURCE_NAME } from "../../src/cli/consts.js";
-import { cliVersion } from "../../src/cli/lib/agents/agent-provenance.js";
+import { DIRS, EXIT_CODES, FILES, PUBLIC_MARKETPLACE_NAME, STEP_TEXT } from "../pages/constants.js";
 import {
   buildAgentConfigs,
   buildProjectConfig,
@@ -202,7 +201,7 @@ describe("init --from <id>: a sub-agent's Codex model", () => {
       [],
     );
 
-    const version = await cliVersion();
+    const version = await cliVersionUnderTest();
     const normalisedRole = async (env: TestEnvironment) =>
       normalizeInstallTree(await readInstallTree(codexProjectAgentsDir(env.projectDir)), {
         roots: { project: [env.projectDir], home: [env.fakeHome] },
@@ -299,7 +298,7 @@ describe("init --from <id>: a sub-agent's Codex model", () => {
         name: "codex-model-share",
         skills: buildSkillConfigs([E2E_SKILL.react.id], {
           scope: "project",
-          origin: DEFAULT_PUBLIC_SOURCE_NAME,
+          origin: PUBLIC_MARKETPLACE_NAME,
         }),
         agents: buildAgentConfigs([WEB_DEV], { scope: "project", codexModel: PINNED_CODEX_MODEL }),
       }),

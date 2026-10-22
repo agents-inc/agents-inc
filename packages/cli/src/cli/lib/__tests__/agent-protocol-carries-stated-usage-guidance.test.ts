@@ -12,11 +12,14 @@ import {
   createMockSkillAssignment,
   createMockSkillDefinition,
 } from "./factories/skill-factories.js";
+import { createMockCompileConfig } from "./factories/plugin-factories.js";
 import { parseCompiledAgentSections } from "./helpers/compiled-agent-sections.js";
+import { entryAt } from "./helpers/element-at.js";
+import { RESOLVE_AGENTS_DEFINITIONS } from "./mock-data/mock-agents.js";
 import { USAGE_GUIDANCE_MATRIX } from "./mock-data/mock-matrices.js";
 import { FALLBACK_USAGE, GUIDED_SKILL, STATED_USAGE_GUIDANCE } from "./mock-data/mock-skills.js";
 import { initializeMatrix } from "../matrix/matrix-provider.js";
-import { resolveSkillReferences } from "../resolver.js";
+import { resolveAgents } from "../resolver.js";
 import { resolveAgentConfigToSkills } from "../stacks/stacks-loader.js";
 import type { SkillDefinitionMap, StackAgentConfig } from "../../types";
 
@@ -24,6 +27,8 @@ const RENDER_VERSION = "0.0.0-usage-guidance";
 
 /** The category key the assignment is filed under — the word a derived usage would take. */
 const GUIDED_CATEGORY = "web-client-state";
+
+const GUIDED_AGENT = "web-developer";
 
 /** `preloadedSkillIds` stays empty so the template takes its `dynamicSkills` branch. */
 async function renderAgentWithGuidedSkill(): Promise<string> {
@@ -34,10 +39,14 @@ async function renderAgentWithGuidedSkill(): Promise<string> {
     [GUIDED_SKILL.id]: createMockSkillDefinition(GUIDED_SKILL.id),
   };
 
-  const dynamicSkills = resolveSkillReferences(
-    resolveAgentConfigToSkills(agentConfig),
+  const resolved = await resolveAgents(
+    RESOLVE_AGENTS_DEFINITIONS,
     definitions,
+    createMockCompileConfig({
+      [GUIDED_AGENT]: { skills: resolveAgentConfigToSkills(agentConfig) },
+    }),
   );
+  const dynamicSkills = entryAt(resolved, GUIDED_AGENT).skills;
   const engine = await createLiquidEngine();
 
   return renderAgent(

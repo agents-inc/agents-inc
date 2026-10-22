@@ -1,54 +1,44 @@
 /**
- * Holds that astro.config.ts imports the syntax theme from @workspace/ui and
- * declares none of it, and that the built docs still render the four token
- * colours (membership both ways: a count cannot see a swap). The code-block
- * surface is not checked: Starlight's chrome replaces it. Needs `astro build`;
- * Expressive Code caches output, so clear `dist .astro node_modules/.astro` if in doubt.
+ * Holds that the built docs render the syntax theme @workspace/ui exports: its
+ * token colours and no other (membership both ways: a count cannot see a swap),
+ * and italic on its italic rules' colours alone. The code-block surface is not
+ * checked: Starlight's chrome replaces it. Needs `astro build`; Expressive Code
+ * caches output, so clear `dist .astro node_modules/.astro` if in doubt.
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const ASTRO_CONFIG = fileURLToPath(
-  new URL("../astro.config.ts", import.meta.url)
-)
-const ASTRO_CONFIG_LABEL = "astro.config.ts"
+import { inkRampSyntaxTheme } from "@workspace/ui/lib/syntax-theme"
 
 // Only /docs carries code blocks.
 const DIST_DOCS = fileURLToPath(new URL("../dist/docs/", import.meta.url))
 const DIST_DOCS_LABEL = "dist/docs/"
 
 const THEME_MODULE = "@workspace/ui/lib/syntax-theme"
-const THEME_FACTORY = "inkRampSyntaxTheme"
 
-// `SYNTAX_THEMES` is not listed: the Starlight light/dark pair stays local.
-const MOVED_BINDINGS = [
-  THEME_FACTORY,
-  "PALETTE",
-  "STRUCTURE_SCOPES",
-  "LITERAL_SCOPES",
-  "COMMENT_SCOPES",
-]
-
-// Quoted, so only a string literal matches, not a hex cited in a comment.
-const PALETTE_LITERALS = [
-  '"#242320"',
-  '"#6a675c"',
-  '"#8b8778"',
-  '"#a06a1c"',
-  '"#faf9f5"',
-]
+// Name and type set no colour.
+const THEME = inkRampSyntaxTheme("agents-inc", "light")
 
 // Expressive Code writes each colour, uppercased, into a custom property per span.
-const RENDERED_TOKEN_COLOURS = {
-  "#242320": "default text, from --color-ink",
-  "#6A675C": "keywords and punctuation, from --color-subtle",
-  "#A06A1C": "string and numeric literals, from --color-brand-ink",
-  "#8B8778": "comments, from --color-faint",
-} as const
+const asRendered = (hex: string) => hex.toUpperCase()
 
-const ITALIC_COLOUR = "#8B8778"
+const distinctSorted = (hexes: string[]) => [...new Set(hexes)].sort()
+
+// Default text, then each rule's foreground.
+const TOKEN_COLOURS = distinctSorted(
+  [
+    THEME.colors["editor.foreground"],
+    ...THEME.settings.map((rule) => rule.settings.foreground),
+  ].map(asRendered)
+)
+
+const ITALIC_COLOURS = distinctSorted(
+  THEME.settings
+    .filter((rule) => rule.settings.fontStyle === "italic")
+    .map((rule) => asRendered(rule.settings.foreground))
+)
 
 /** `style="--0:#6A675C;--1:#6A675C"` — the first is the light theme's slot. */
 const TOKEN_COLOUR = /--0:(#[0-9A-Fa-f]{6})/g
@@ -62,63 +52,33 @@ type Drift = {
 }
 
 function main(): never {
-  const drift = [
-    paletteStatedOnce(),
-    renderedColoursUnchanged(),
-    italicIsOnCommentsAlone(),
-  ].filter(isDrift)
+  const drift = [renderedColoursAreTheTheme(), italicIsTheThemes()].filter(
+    isDrift
+  )
 
   return exitWith(drift)
 }
 
-function paletteStatedOnce(): Drift | null {
-  if (!existsSync(ASTRO_CONFIG)) refuse(`${ASTRO_CONFIG_LABEL} is not there`)
-  const source = readFileSync(ASTRO_CONFIG, "utf8")
-
-  const missing = source.includes(THEME_MODULE)
-    ? []
-    : [`an import of ${THEME_FACTORY} from ${THEME_MODULE}`]
-
-  const lowered = source.toLowerCase()
-  const surviving = [
-    ...MOVED_BINDINGS.filter((name) => source.includes(`const ${name}`)).map(
-      (name) => `a local declaration of ${name}`
-    ),
-    ...PALETTE_LITERALS.filter((hex) => lowered.includes(hex)).map(
-      (hex) => `the literal ${hex}`
-    ),
-  ]
-
-  return driftBetween(
-    `${ASTRO_CONFIG_LABEL} must read the theme from ${THEME_MODULE} and state none of it itself`,
-    missing,
-    surviving
-  )
-}
-
-/** The four measured colours, and no fifth. */
-function renderedColoursUnchanged(): Drift | null {
+function renderedColoursAreTheTheme(): Drift | null {
   const rendered = distinctMatches(TOKEN_COLOUR)
   if (rendered.length === 0) {
     refuse(`${DIST_DOCS_LABEL} has no highlighted code block in it`)
   }
 
-  const expected = Object.keys(RENDERED_TOKEN_COLOURS)
-
   return driftBetween(
-    "the built pages must render the four palette colours and no others",
-    expected.filter((hex) => !rendered.includes(hex)),
-    rendered.filter((hex) => !expected.includes(hex))
+    `the built pages must render the token colours ${THEME_MODULE} exports and no others`,
+    TOKEN_COLOURS.filter((hex) => !rendered.includes(hex)),
+    rendered.filter((hex) => !TOKEN_COLOURS.includes(hex))
   )
 }
 
-function italicIsOnCommentsAlone(): Drift | null {
+function italicIsTheThemes(): Drift | null {
   const italic = distinctMatches(ITALIC_TOKEN)
 
   return driftBetween(
-    `only ${ITALIC_COLOUR} — comments, from --color-faint — may render italic`,
-    [ITALIC_COLOUR].filter((hex) => !italic.includes(hex)),
-    italic.filter((hex) => hex !== ITALIC_COLOUR)
+    `only the colours ${THEME_MODULE} sets italic may render italic`,
+    ITALIC_COLOURS.filter((hex) => !italic.includes(hex)),
+    italic.filter((hex) => !ITALIC_COLOURS.includes(hex))
   )
 }
 
@@ -160,9 +120,8 @@ function isDrift(verdict: Drift | null): verdict is Drift {
 
 function exitWith(drift: Drift[]): never {
   if (drift.length === 0) {
-    const colours = Object.keys(RENDERED_TOKEN_COLOURS).length
     console.log(
-      `syntax theme: one definition, ${colours} token colours, all rendered`
+      `syntax theme: ${TOKEN_COLOURS.length} token colours from ${THEME_MODULE}, all rendered`
     )
     process.exit(0)
   }

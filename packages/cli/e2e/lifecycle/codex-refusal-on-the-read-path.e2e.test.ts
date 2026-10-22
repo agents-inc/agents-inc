@@ -19,16 +19,14 @@ import {
 } from "../helpers/test-utils.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
 import { buildSkillConfigs } from "../../src/cli/lib/__tests__/helpers/skill-config-builders.js";
-import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 
 /**
- * The placement refusal fires where a configuration is READ (a Codex folder can be made with `cp`),
- * from every command acting on it; `doctor` reports it as a row and finishes. Each refusal pairs
- * with an offerable Codex configuration that compiles, and the same placement accepted on Claude.
+ * Refused where a configuration is READ, since a Codex folder can be made with `cp`. Each refusal
+ * pairs with an offerable Codex configuration that compiles, and the same placement accepted on
+ * Claude.
  */
 
-/** The one field a configuration cannot be written without. */
 const CONFIG_NAME = "read-path-refusal";
 
 /**
@@ -53,7 +51,6 @@ const A_MARKETPLACE = "agents-inc";
  */
 const NOWHERE = "http://127.0.0.1:1";
 
-/** `category` and `slug` are stated, never derived from the id. */
 const EJECTED_SKILL = {
   category: "web-framework",
   description: "React framework",
@@ -101,7 +98,6 @@ describe("an unofferable placement in a Codex folder", () => {
       expect(said).toContain(CODEX_REFUSED_CELL);
       for (const cell of CODEX_OFFERED_CELLS) expect(said).toContain(cell);
 
-      // It wrote nothing on the way to refusing, at either provider's agents directory.
       expect(await directoryExists(path.join(env.projectDir, DIRS.CODEX, DIRS.AGENTS))).toBe(false);
       expect(await directoryExists(path.join(env.projectDir, DIRS.CLAUDE))).toBe(false);
     },
@@ -121,7 +117,6 @@ describe("an unofferable placement in a Codex folder", () => {
     expect(said).toContain(CODEX_REFUSED_CELL);
     for (const cell of CODEX_OFFERED_CELLS) expect(said).toContain(cell);
 
-    // A row after the placements one still prints: it reported rather than stopped.
     expect(said).toContain(STEP_TEXT.DOCTOR_ROW_SKILLS_RESOLVED);
     expect(said).toContain(STEP_TEXT.DOCTOR_SUMMARY);
   });
@@ -140,7 +135,7 @@ describe("an unofferable placement in a Codex folder", () => {
         name: CONFIG_NAME,
         skills: buildSkillConfigs([E2E_SKILL.react.id], {
           scope: "project",
-          origin: EJECT_SOURCE,
+          origin: "eject",
         }),
         agents: [],
       }),

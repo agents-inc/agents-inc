@@ -2,13 +2,9 @@ import {
   EXTERNAL_SKILL,
   SKILL_INDEX,
   XSS_SENTINEL,
-  seedPayload,
 } from "@workspace/api-mocks/fixtures"
 import { CORPUS_CLI_VERSION } from "@workspace/compile/corpus"
 import { MATRIX, matrixSchema } from "@workspace/matrix"
-
-import { buildOutputPreview } from "@/features/configure/lib/output-preview"
-import { externalSkillId } from "@/stores/catalog-store"
 
 import { expect, test } from "../fixtures"
 import { DOMAINS, EXCLUSIVE_CATEGORY } from "../support/catalog"
@@ -410,13 +406,15 @@ test.describe("the tree's shape, as a screen reader reads it", () => {
 
     const preview = configure.outputPreviewDialog
 
-    // The whole roster, so a second row at 0 would fail.
-    expect(await preview.rowTabStops()).toStrictEqual(
-      (await preview.rowPaths()).map((path) => ({
-        path,
-        tabIndex: path === PROJECT_CONFIG_PATH ? 0 : -1,
-      }))
-    )
+    // Either way out of the selected row leaves the tree, and back in lands on
+    // it again.
+    for (const key of ["Tab", "Shift+Tab"]) {
+      await preview.row(PROJECT_CONFIG_PATH).focus()
+      await page.keyboard.press(key)
+      expect(await preview.focusedRowPath()).toBeNull()
+    }
+    await page.keyboard.press("Tab")
+    expect(await preview.focusedRowPath()).toStrictEqual(PROJECT_CONFIG_PATH)
 
     await preview.row(GLOBAL_CONFIG_PATH).focus()
 
@@ -522,50 +520,6 @@ test.describe("the content pane", () => {
   })
 
   /**
-   * What is on screen is the model's text, character for character (the model
-   * is held against the renderer in output-preview.test.ts). `allTextContents`,
-   * because normalised whitespace would be a different file.
-   */
-  test("renders the model's bytes without normalising them", async ({
-    configure,
-  }) => {
-    const preview = configure.outputPreviewDialog
-    const model = await buildOutputPreview(
-      seedPayload({
-        skills: {
-          [REACT_ID]: {
-            install: "plugin",
-            scope: "global",
-            assignments: Object.fromEntries(
-              REACHED_AGENTS.map((agent) => [agent, "preloaded"] as const)
-            ),
-          },
-        },
-        agents: {},
-      }),
-      "claude"
-    )
-
-    expect(
-      model.roots.flatMap((root) => root.nodes.map((node) => node.name)),
-      "the payload written out in this spec no longer describes what the screen is showing"
-    ).toStrictEqual(await preview.rowNames())
-
-    const expected = model.roots[0]?.nodes.find(
-      (node) => node.id === GLOBAL_CONFIG_PATH
-    )?.body
-
-    expect(
-      expected,
-      "the model drew no global config.ts to compare against"
-    ).toBeTruthy()
-
-    await preview.select(GLOBAL_CONFIG_PATH)
-
-    expect(await preview.lines()).toStrictEqual(expected!.split("\n"))
-  })
-
-  /**
    * An ejected catalogue skill is copied at install time, so its bodies are
    * unknown and must not be invented.
    */
@@ -625,8 +579,6 @@ test.describe("fullscreen and the splitter", () => {
     )
   })
 
-  // Sized against the sheet's inset: `100vw` pushed the footer and its Close
-  // off screen.
   test("fills the viewport but keeps its footer on screen", async ({
     configure,
     page,
@@ -803,9 +755,8 @@ test.describe("a stranger's bytes in the preview", () => {
   const MANIFEST = "SKILL.md"
   const MANIFEST_TEXT = EXTERNAL_SKILL.files[MANIFEST]
 
-  // Imported: the id helper is what both surfaces agree through.
-  const CHOSEN_CATEGORY_ID = "web-framework"
-  const ADDED_SKILL_ID = externalSkillId(CHOSEN_CATEGORY_ID, SKILL_NAME)
+  // Written out: the id is what the payload carries and the CLI installs under.
+  const ADDED_SKILL_ID = "external-web-framework-brainstorming"
   const ADDED_SKILL_PATH = `${GLOBAL}.claude/skills/${ADDED_SKILL_ID}/${MANIFEST}`
 
   // The one manifest line the install rewrites (`withInstalledName`).

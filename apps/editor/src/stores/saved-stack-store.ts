@@ -18,7 +18,7 @@ const savedStackSchema = z.object({
 
 export type SavedStack = z.infer<typeof savedStackSchema>
 
-export type LocalSaveResult =
+type LocalSaveResult =
   { ok: true; save: SavedStack } | { ok: false; problem: SaveNameProblem }
 
 const slotSchema = z.object({ saves: z.array(z.unknown()) })
@@ -78,7 +78,6 @@ export const useSavedStackStore = create<SavedStackState>()(
       setOwed: (owed) => set({ owed }),
     }),
     {
-      // No `migrate`: the retired `agents-inc:saved-stack:v1` slot is not read.
       name: "agents-inc:saved-stacks:v1",
       partialize: ({ saves, owed }) => ({ saves, owed }),
       merge: (persisted, current) => ({

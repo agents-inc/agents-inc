@@ -9,5 +9,3 @@ export const nodeConfig = defineConfig({
     clearMocks: true,
   },
 })
-
-export default nodeConfig

@@ -5,7 +5,7 @@ import { TIMEOUTS, DIRS } from "../pages/constants.js";
 import { E2E_SKILL } from "../fixtures/expected-values.js";
 import {
   DUAL_SCOPE,
-  applyFromSeed,
+  applyUnchangedFromSeed,
   e2eStackPayload,
   installE2EStackDualScope,
 } from "../fixtures/e2e-stack-seed.js";
@@ -14,12 +14,9 @@ import {
   cleanupTempDir,
   configTsPath,
   directoryExists,
-  normalizeConfigPreservingOrder,
   readTestFile,
 } from "../helpers/test-utils.js";
 import { createTestEnvironment } from "../fixtures/dual-scope-helpers.js";
-
-/** An edit that changes nothing does not mutate scope or config. */
 
 describe("scope toggle roundtrip", () => {
   let store: SeedConfigStore;
@@ -56,21 +53,17 @@ describe("scope toggle roundtrip", () => {
       const projectConfigBefore = await readTestFile(projectConfigPath);
       const globalConfigBefore = await readTestFile(globalConfigPath);
 
-      await applyFromSeed(store, "Unchanged1", e2eStackPayload(DUAL_SCOPE), {
+      await applyUnchangedFromSeed(store, "Unchanged1", e2eStackPayload(DUAL_SCOPE), {
         dir: projectDir,
         home: fakeHome,
       });
 
       // The project config is where a project-scope passthrough would write, so check both.
       const globalConfigAfter = await readTestFile(globalConfigPath);
-      expect(normalizeConfigPreservingOrder(globalConfigAfter)).toStrictEqual(
-        normalizeConfigPreservingOrder(globalConfigBefore),
-      );
+      expect(globalConfigAfter).toStrictEqual(globalConfigBefore);
 
       const projectConfigAfter = await readTestFile(projectConfigPath);
-      expect(normalizeConfigPreservingOrder(projectConfigAfter)).toStrictEqual(
-        normalizeConfigPreservingOrder(projectConfigBefore),
-      );
+      expect(projectConfigAfter).toStrictEqual(projectConfigBefore);
 
       const globalSkillsDir = path.join(fakeHome, DIRS.CLAUDE, DIRS.SKILLS);
       for (const skillName of [E2E_SKILL.react.id, E2E_SKILL.vitest.id, E2E_SKILL.zustand.id]) {

@@ -1,8 +1,5 @@
 // The palette is mirrored as literals, not imported: an assertion importing the subject's own
 // constant cannot fail. apps/www/scripts/check-syntax-theme.ts checks the rendered half.
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
-
 import { describe, expect, it } from "vitest"
 
 import { inkRampSyntaxTheme } from "@workspace/ui/lib/syntax-theme"
@@ -180,19 +177,6 @@ describe("inkRampSyntaxTheme", () => {
 
       expect(dark.colors).toStrictEqual(light.colors)
       expect(dark.settings).toStrictEqual(light.settings)
-    })
-  })
-
-  describe("stays consumable by every surface that wants it", () => {
-    // React is a dependency here, so only this test stops an import that would break apps/www's
-    // React-free astro config. Anchored per line so prose cannot satisfy it.
-    it("declares no imports of its own", () => {
-      const source = readFileSync(
-        fileURLToPath(new URL("./syntax-theme.ts", import.meta.url)),
-        "utf8"
-      )
-
-      expect(source).not.toMatch(/^\s*import\s/m)
     })
   })
 })

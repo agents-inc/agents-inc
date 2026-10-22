@@ -82,7 +82,7 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
     expectValidAgentMarkdown(content, "pm");
   });
 
-  it("should detect and incorporate skill edits on recompile", async () => {
+  it("should recompile cleanly after a skill's SKILL.md is edited", async () => {
     const pluginDir = dirs.pluginDir!;
     const pluginSkillsDir = path.join(pluginDir, STANDARD_DIRS.SKILLS);
 
@@ -107,10 +107,8 @@ describe("User Journey: Edit -> Recompile -> Verify", () => {
       "web-framework-react",
       STANDARD_FILES.SKILL_MD,
     );
-    if (await fileExists(reactSkillPath)) {
-      const originalSkill = await readTestFile(reactSkillPath);
-      await writeTestFile(reactSkillPath, originalSkill + APPENDED_SKILL_SECTION);
-    }
+    const originalSkill = await readTestFile(reactSkillPath);
+    await writeTestFile(reactSkillPath, originalSkill + APPENDED_SKILL_SECTION);
 
     const recompileOptions = buildRecompileOptions(dirs, outputDir, {
       agents: ["pm"],

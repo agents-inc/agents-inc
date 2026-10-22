@@ -16,12 +16,10 @@ import {
 } from "../helpers/test-utils.js";
 import "../matchers/setup.js";
 import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
-import { EJECT_SOURCE } from "../../src/cli/consts.js";
 
 /**
- * The global config written by a PROJECT-scope init must carry `marketplace` (and `source`):
- * without it no plugin key matches, so a global `uninstall --yes` skips the plugins and removes
- * the only record of them. The home-root init is the control.
+ * Without `marketplace` no plugin key matches, so a global `uninstall --yes` would skip the plugins
+ * and remove the only record of them.
  */
 
 const claudeAvailable = await isClaudeCLIAvailable();
@@ -78,7 +76,7 @@ describe.skipIf(!claudeAvailable)("project-scope plugin init writes a global con
       expect(
         globalConfig.skills.find((s) => s.id === E2E_SKILL.react.id)?.origin,
         "global skill entry must be marketplace-sourced, not eject",
-      ).not.toBe(EJECT_SOURCE);
+      ).not.toBe("eject");
 
       await expect({ dir: fakeHome }).toHavePluginInRegistry(reactPluginKey);
       await expect({ dir: fakeHome }).toHavePlugin(reactPluginKey);

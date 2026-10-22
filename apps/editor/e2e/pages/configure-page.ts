@@ -30,8 +30,7 @@ const SAVED_STACK_STORAGE_KEY = "agents-inc:saved-stack:v1"
 // The persist version this release writes; the key's `v1` is not it.
 const MARKETPLACE_PERSIST_VERSION = 2
 
-// The keyed shape before the ref was normalised: its keys are the bare
-// `owner/repo` the dialog's field used to store verbatim.
+// The keyed shape whose keys are bare `owner/repo` refs.
 const UNNORMALISED_PERSIST_VERSION = 1
 
 /**
@@ -66,6 +65,11 @@ const MARKETPLACE_SECTION = '[data-slot="marketplace-row"]'
 // Far enough past the bar's own top that it has pinned and changed shape.
 const PAST_THE_PIN = 400
 
+// Room around an element for a ring drawn outside its box.
+const RING_ROOM = 4
+
+type Stroke = { colour: string; width: number; inset: number }
+
 // Headroom for the keyboard walk to the pin. A walk that spends it all leaves
 // the bar unstuck for the spec to fail on.
 const MAX_TAB_STEPS = 200
@@ -96,6 +100,13 @@ const focusCoveredBy = (cover: HTMLElement) => {
 
 // The retired single slot's cell name.
 export const SAVED_STACK = "Saved stack"
+
+// The page's ground in each theme, quoted from the design's palette rather than
+// read from the stylesheet, so an assertion against it can fail.
+export const PAGE_BACKGROUND = {
+  light: "rgb(255, 255, 255)",
+  dark: "rgb(22, 21, 19)",
+} as const satisfies Record<"light" | "dark", string>
 
 // Scoped through landmarks rather than CSS, so a class rename cannot break the
 // suite and the locators double as a check that the page is navigable.
@@ -270,7 +281,7 @@ export class ConfigurePage {
     )
   }
 
-  /** Seeds the keyed slot as it was written before the ref was normalised. */
+  /** Seeds the keyed slot under a bare `owner/repo` key. */
   async seedUnnormalisedSlot(marketplace: string, token: string) {
     await this.page.evaluate(
       ([key, blob]) => window.localStorage.setItem(key!, blob!),
@@ -384,41 +395,36 @@ export class ConfigurePage {
     return this.domainTabs.getByRole("button", { name: label, exact: true })
   }
 
-  // `data-active` is the domain in view.
+  // The domain in view, as the strip tells assistive technology.
   get activeDomainTab(): Locator {
-    return this.domainTabs.locator("[data-active]")
+    return this.domainTabs.locator('[aria-current="true"]')
+  }
+
+  // Where a domain's skills begin: the top of its first category.
+  domainStart(label: string): Locator {
+    return this.domain(label).getByRole("group").first()
   }
 
   // Measured rather than a coordinate, because the grid's height is the
   // generated catalogue's.
-  async scrollToDomain(domainId: string) {
-    await this.page.evaluate((id) => {
-      const anchor = document.querySelector(`[data-domain-anchor="${id}"]`)
-      if (!anchor) throw new Error(`no anchor for the ${id} domain`)
-
-      window.scrollTo(0, window.scrollY + anchor.getBoundingClientRect().top)
-    }, domainId)
+  async scrollToDomain(label: string) {
+    await this.domainStart(label).evaluate((start) =>
+      window.scrollTo(0, window.scrollY + start.getBoundingClientRect().top)
+    )
   }
 
   // How far a domain's top edge sits below the bar's underside. Negative is
-  // hidden behind the bar; a large positive means the jump undershot.
-  async domainGapUnderBar(domainId: string) {
-    return this.page.evaluate((id) => {
-      const anchor = document.querySelector(`[data-domain-anchor="${id}"]`)
+  // hidden behind the bar; a large positive means the jump undershot. One read,
+  // so the two edges are measured in the same frame.
+  async domainGapUnderBar(label: string) {
+    return this.domainStart(label).evaluate((start) => {
       const bar = document.querySelector('[data-slot="filter-bar"]')
-      if (!anchor || !bar) throw new Error(`no anchor or bar for ${id}`)
+      if (!bar) throw new Error("the bar must be drawn")
 
       return (
-        anchor.getBoundingClientRect().top - bar.getBoundingClientRect().bottom
+        start.getBoundingClientRect().top - bar.getBoundingClientRect().bottom
       )
-    }, domainId)
-  }
-
-  // `null` is "whatever the OS asked for".
-  async theme() {
-    return this.page.evaluate(
-      () => document.documentElement.dataset.theme ?? null
-    )
+    })
   }
 
   // A colour token as the page resolves it now, in `rgb(…)` form. Read through
@@ -434,6 +440,85 @@ export class ConfigurePage {
     }, token)
   }
 
+  /**
+   * Every line `target` paints around itself, whichever of its own box, its
+   * `::before` or its `::after` draws it, as an outline or a top border.
+   * `inset` is how far inside `target`'s box the line's outer edge sits.
+   */
+  async strokes(target: Locator): Promise<Stroke[]> {
+    return target.evaluate((node) =>
+      [null, "::before", "::after"].flatMap((pseudo) => {
+        const style = getComputedStyle(node, pseudo)
+        if (pseudo !== null && style.content === "none") return []
+
+        const at = pseudo === null ? 0 : Number.parseFloat(style.top) || 0
+        const outline = Number.parseFloat(style.outlineWidth)
+        const border = Number.parseFloat(style.borderTopWidth)
+        const painted = (colour: string) => colour !== "rgba(0, 0, 0, 0)"
+
+        return [
+          ...(style.outlineStyle !== "none" &&
+          outline > 0 &&
+          painted(style.outlineColor)
+            ? [
+                {
+                  colour: style.outlineColor,
+                  width: outline,
+                  inset:
+                    at - (Number.parseFloat(style.outlineOffset) + outline),
+                },
+              ]
+            : []),
+          ...(style.borderTopStyle !== "none" &&
+          border > 0 &&
+          painted(style.borderTopColor)
+            ? [{ colour: style.borderTopColor, width: border, inset: at }]
+            : []),
+        ]
+      })
+    )
+  }
+
+  /**
+   * Whether anything `target` draws in `token` reaches the screen: photographed
+   * as drawn, then with the token transparent on it. A paint clipped or covered
+   * changes no pixel. `target` must already be on screen.
+   */
+  async paintsWith(target: Locator, token: string) {
+    const box = await target.boundingBox()
+    if (!box) throw new Error("the element must be drawn to be photographed")
+
+    const clip = {
+      x: box.x - RING_ROOM,
+      y: box.y - RING_ROOM,
+      width: box.width + 2 * RING_ROOM,
+      height: box.height + 2 * RING_ROOM,
+    }
+    const photograph = () =>
+      this.page.screenshot({ clip, animations: "disabled" })
+    // Both spellings: a utility reads one and an arbitrary value the other.
+    const names = [`--${token}`, `--color-${token}`]
+
+    const drawn = await photograph()
+    await target.evaluate((node, keys) => {
+      for (const key of keys) node.style.setProperty(key, "transparent")
+    }, names)
+    const withoutIt = await photograph()
+    await target.evaluate((node, keys) => {
+      for (const key of keys) node.style.removeProperty(key)
+    }, names)
+
+    return !drawn.equals(withoutIt)
+  }
+
+  // Whether the focused `target` shows a ring in the ring token.
+  async focusRing(target: Locator) {
+    const focused = await target.evaluate(
+      (node) => node === document.activeElement
+    )
+    return { focused, ringVisible: await this.paintsWith(target, "ring") }
+  }
+
   category(domainLabel: string, categoryName: string): Locator {
     return this.domain(domainLabel).getByRole("group", {
       name: categoryName,
@@ -445,11 +530,17 @@ export class ConfigurePage {
     return this.category(domainLabel, categoryName).locator(LATTICE)
   }
 
-  // Computed style rather than a class name: what the browser laid out.
+  // How many cells fit across, measured off the boxes: the grid's width over
+  // one cell's, which its padding cannot round to another count.
   async latticeTracks(lattice: Locator) {
-    return lattice.evaluate(
-      (node) => getComputedStyle(node).gridTemplateColumns.split(" ").length
-    )
+    const grid = await lattice.boundingBox()
+    const cell = await lattice
+      .locator('[data-slot="lattice-cell"]')
+      .first()
+      .boundingBox()
+    if (!grid || !cell) throw new Error("the grid and a cell must be drawn")
+
+    return Math.round(grid.width / cell.width)
   }
 
   // Scope to a category when a skill name might repeat across domains.

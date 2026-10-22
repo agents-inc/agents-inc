@@ -26,11 +26,9 @@
     "@astrojs/check": "^0.9.5",
     "@tailwindcss/vite": "^4",
     "@workspace/eslint-config": "workspace:*",
-    "@workspace/prettier-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "eslint": "^10",
     "playwright": "1.56.1",
-    "tailwindcss": "^4",
     "typescript": "~6",
     "wrangler": "^4"
   }

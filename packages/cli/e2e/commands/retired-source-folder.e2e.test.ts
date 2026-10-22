@@ -12,13 +12,12 @@ import {
 } from "../helpers/test-utils.js";
 import { DIRS, EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { buildProjectConfig } from "../../src/cli/lib/__tests__/factories/config-factories.js";
-import { RETIRED_SOURCE_FOLDER } from "../../src/cli/lib/installation/install-layout.js";
 
 /**
  * The retired source folder holds no installation: it is ignored and named once at startup. Each
  * spec pinning the line is paired with one where the folder is absent.
  */
-const NOTICE = `${RETIRED_SOURCE_FOLDER}/ ${STEP_TEXT.RETIRED_SOURCE_FOLDER_UNSUPPORTED}`;
+const NOTICE = `${DIRS.RETIRED_SOURCE}/ ${STEP_TEXT.RETIRED_SOURCE_FOLDER_UNSUPPORTED}`;
 
 /** A user's file in the retired folder, which no run may touch. */
 const KEPT_IN_THE_RETIRED_FOLDER = path.join("agents", "my-agent", "identity.md");
@@ -56,11 +55,11 @@ describe("the retired source folder", () => {
   async function retiredFolderIn(root: string, name: string): Promise<void> {
     await writeProjectConfigIn(
       root,
-      RETIRED_SOURCE_FOLDER,
+      DIRS.RETIRED_SOURCE,
       buildProjectConfig({ name, skills: [], agents: [] }),
     );
-    await writeConfigTypes(root, RETIRED_SOURCE_FOLDER);
-    const kept = path.join(root, RETIRED_SOURCE_FOLDER, KEPT_IN_THE_RETIRED_FOLDER);
+    await writeConfigTypes(root, DIRS.RETIRED_SOURCE);
+    const kept = path.join(root, DIRS.RETIRED_SOURCE, KEPT_IN_THE_RETIRED_FOLDER);
     await mkdir(path.dirname(kept), { recursive: true });
     await writeFile(kept, KEPT_IN_THE_RETIRED_FOLDER_BODY);
   }

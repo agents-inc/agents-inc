@@ -14,7 +14,6 @@ import {
 } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
-import { provenanceMarker } from "../../src/cli/lib/agents/agent-provenance.js";
 
 /**
  * `compile` stamps a provenance marker on the first body line after the frontmatter (not a
@@ -69,7 +68,7 @@ describe("compiled-agent provenance marker", () => {
 
     const compiled = await readTestFile(agentFile);
 
-    expect(compiled).toContain(`\n---\n${provenanceMarker()}\n`);
+    expect(compiled).toContain(`\n---\n${STEP_TEXT.PROVENANCE_MARKER}\n`);
   });
 
   /** A stamp that appended would grow the file each compile. */

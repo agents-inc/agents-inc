@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createTestEnvironment, readSkillEntries } from "../fixtures/dual-scope-helpers.js";
-import { EJECT_SOURCE } from "../../src/cli/consts.js";
 import {
   createE2EPluginSource,
   type E2EPluginSource,
@@ -11,11 +10,6 @@ import { applyFromSeed, e2eStackPayload, installFromSeed } from "../fixtures/e2e
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
 import { cleanupFixture, cleanupTempDir, isClaudeCLIAvailable } from "../helpers/test-utils.js";
 import { E2E_AGENT, E2E_SKILL, E2E_STACK_SKILL_IDS } from "../fixtures/expected-values.js";
-
-/**
- * Local skill copies follow each skill's scope: project-scoped to `<project>/.claude/skills/`,
- * global-scoped to `~/.claude/skills/`. Requires the Claude CLI.
- */
 
 const claudeAvailable = await isClaudeCLIAvailable();
 
@@ -119,7 +113,7 @@ describe.skipIf(!claudeAvailable)("scope-aware local skill copying", () => {
         expect(
           (await readSkillEntries(fakeHome, E2E_SKILL.react.id)).map((entry) => entry.origin),
           "the global config must record the eject source the migration performed",
-        ).toEqual([EJECT_SOURCE]);
+        ).toEqual(["eject"]);
         await expect({ dir: fakeHome }).toHaveCompiledAgent(E2E_AGENT["web-developer"].name);
       },
     );

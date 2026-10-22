@@ -20,13 +20,8 @@ import {
   skillsPath,
 } from "../helpers/test-utils.js";
 import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
-import { UI_SYMBOLS } from "../../src/cli/consts.js";
 
-/**
- * The global `config.ts` deleted with its installation still on disk: what every command does with
- * it, since their recovery advice is all that stands between the user and deleting directories by
- * hand. `doctor`'s orphan row names each stranded file, as an error because no command repairs it.
- */
+/** `doctor`'s orphan row names each stranded file, as an error because no command repairs it. */
 
 /** Nothing removes or refreshes it. */
 const ORPHANED_TYPE_SURFACE = "export type SkillId";
@@ -130,7 +125,6 @@ describe("a global install whose config.ts was deleted", () => {
       expect(list.exitCode, list.output).toBe(EXIT_CODES.SUCCESS);
       expect(list.stdout).toContain(STEP_TEXT.NO_INSTALLATION);
 
-      // Refusing is not repairing: the installation is left as found, on every surface.
       expect(
         (await listFiles(skillsPath(fakeHome))).sort(),
         "a refused command must not remove the stranded skills",
@@ -182,9 +176,7 @@ describe("a global install whose config.ts was deleted", () => {
       const { stdout } = await CLI.run(["doctor"], { dir: fakeHome }, { env: { HOME: fakeHome } });
 
       // The row's other verdict is a warning because the next `compile` prunes what it names.
-      expect(stdout).toMatch(
-        new RegExp(`${STEP_TEXT.DOCTOR_ROW_NO_ORPHANS}\\s+${UI_SYMBOLS.CROSS}\\s`),
-      );
+      expect(stdout).toMatch(new RegExp(`${STEP_TEXT.DOCTOR_ROW_NO_ORPHANS}\\s+✗\\s`));
       expect(stdout).toContain(STEP_TEXT.DOCTOR_UNOWNED_INSTALL);
 
       // Named, not counted: the content layer already counts them.

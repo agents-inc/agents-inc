@@ -1,158 +1,162 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import path from "path";
+import { mkdir } from "fs/promises";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { ensureMarketplace } from "./ensure-marketplace.js";
+import { requireMarketplace } from "./require-marketplace.js";
 import type { SourceLoadResult } from "../../loading/source-loader.js";
 import { buildSourceResult } from "../../__tests__/factories/config-factories.js";
-import { createMockMarketplace } from "../../__tests__/factories/plugin-factories.js";
+import {
+  cleanupTestSource,
+  createTestSource,
+  TEST_MARKETPLACE_NAME,
+  type TestDirs,
+} from "../../__tests__/fixtures/create-test-source.js";
+import { createMockPluginHost } from "../../__tests__/helpers/mock-plugin-host.js";
+import { useFakeHome } from "../../__tests__/helpers/isolated-home.js";
 import { EMPTY_MATRIX } from "../../__tests__/mock-data/mock-matrices.js";
 
-vi.mock("../../loading/index.js", () => ({
-  fetchMarketplace: vi.fn(),
-}));
+const RECORDED_MARKETPLACE = "agents-inc";
+const GITHUB_SOURCE = "github:test/source";
 
-vi.mock("../../../utils/logger.js");
-
-import { ensureMarketplace } from "./ensure-marketplace";
-import { requireMarketplace } from "./require-marketplace";
-import { createMockPluginHost } from "../../__tests__/helpers/mock-plugin-host.js";
-import { fetchMarketplace } from "../../loading/index.js";
-import { warn } from "../../../utils/logger.js";
-
-const host = createMockPluginHost();
-const mockMarketplaceExists = vi.mocked(host.marketplaceExists);
-const mockMarketplaceAdd = vi.mocked(host.addMarketplace);
-const mockMarketplaceUpdate = vi.mocked(host.refreshMarketplace);
-const mockFetchMarketplace = vi.mocked(fetchMarketplace);
-const mockWarn = vi.mocked(warn);
-
-const FETCH_FAILURE_CAUSE = "Network error";
-
-function makeSourceResult(marketplace?: string): SourceLoadResult {
-  return buildSourceResult(EMPTY_MATRIX, "/tmp/test-source", {
-    sourceConfig: { source: "github:test/source", sourceOrigin: "flag" },
-    isLocal: false,
-    ...(marketplace !== undefined && { marketplace }),
-  });
-}
-
+/** The host is the seam to the coding agent's CLI; the marketplace is resolved from disk. */
 describe("ensureMarketplace", () => {
-  beforeEach(() => {
+  let dirs: TestDirs;
+  let noMarketplaceDir: string;
+  const host = createMockPluginHost();
+
+  beforeEach(async () => {
     vi.resetAllMocks();
+    dirs = await createTestSource();
+    noMarketplaceDir = path.join(dirs.tempDir, "a-repository-with-no-marketplace");
+    await mkdir(noMarketplaceDir, { recursive: true });
   });
 
-  it("should return existing marketplace without registering", async () => {
-    const sourceResult = makeSourceResult("agents-inc");
-    mockMarketplaceExists.mockResolvedValue(true);
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await cleanupTestSource(dirs);
+  });
+
+  useFakeHome(() => dirs.tempDir);
+
+  function sourceResultFor(source: string, marketplace?: string): SourceLoadResult {
+    return buildSourceResult(EMPTY_MATRIX, source, {
+      sourceConfig: { source, sourceOrigin: "flag" },
+      isLocal: false,
+      ...(marketplace !== undefined && { marketplace }),
+    });
+  }
+
+  it("refreshes a marketplace the host already has, registering nothing", async () => {
+    vi.mocked(host.marketplaceExists).mockImplementation((name) =>
+      Promise.resolve(name === RECORDED_MARKETPLACE),
+    );
+
+    const result = await ensureMarketplace(
+      sourceResultFor(GITHUB_SOURCE, RECORDED_MARKETPLACE),
+      host,
+    );
+
+    expect(host.refreshMarketplace).toHaveBeenCalledExactlyOnceWith(RECORDED_MARKETPLACE);
+    expect(host.addMarketplace).not.toHaveBeenCalled();
+    expect(result).toStrictEqual({ marketplace: RECORDED_MARKETPLACE, registered: false });
+  });
+
+  it("registers a marketplace the host lacks, by its source without the github: prefix", async () => {
+    vi.mocked(host.marketplaceExists).mockResolvedValue(false);
+
+    const result = await ensureMarketplace(
+      sourceResultFor(GITHUB_SOURCE, RECORDED_MARKETPLACE),
+      host,
+    );
+
+    expect(host.addMarketplace).toHaveBeenCalledWith("test/source");
+    expect(result).toStrictEqual({ marketplace: RECORDED_MARKETPLACE, registered: true });
+  });
+
+  it("names a marketplace no one recorded from the source's own manifest, then registers it", async () => {
+    vi.mocked(host.marketplaceExists).mockResolvedValue(false);
+    const sourceResult = sourceResultFor(dirs.sourceDir);
 
     const result = await ensureMarketplace(sourceResult, host);
 
-    expect(mockMarketplaceExists).toHaveBeenCalledWith("agents-inc");
-    expect(mockMarketplaceAdd).not.toHaveBeenCalled();
-    expect(result).toStrictEqual({ marketplace: "agents-inc", registered: false });
+    expect(sourceResult.marketplace).toBe(TEST_MARKETPLACE_NAME);
+    expect(host.addMarketplace).toHaveBeenCalledExactlyOnceWith(dirs.sourceDir);
+    expect(result).toStrictEqual({ marketplace: TEST_MARKETPLACE_NAME, registered: true });
   });
 
-  it("should register new marketplace when not exists", async () => {
-    const sourceResult = makeSourceResult("agents-inc");
-    mockMarketplaceExists.mockResolvedValue(false);
+  it("resolves no marketplace, and registers or refreshes nothing, for a source that has none", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = await ensureMarketplace(sourceResult, host);
+    const result = await ensureMarketplace(sourceResultFor(noMarketplaceDir), host);
 
-    expect(mockMarketplaceAdd).toHaveBeenCalledWith("test/source");
-    expect(result).toStrictEqual({ marketplace: "agents-inc", registered: true });
-  });
-
-  it("should return null marketplace when no marketplace configured and fetch fails", async () => {
-    const sourceResult = makeSourceResult(undefined);
-    mockFetchMarketplace.mockRejectedValue(new Error(FETCH_FAILURE_CAUSE));
-
-    const result = await ensureMarketplace(sourceResult, host);
-
-    expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source");
-    expect(mockMarketplaceExists).not.toHaveBeenCalled();
+    expect(host.addMarketplace).not.toHaveBeenCalled();
+    expect(host.refreshMarketplace).not.toHaveBeenCalled();
     expect(result).toStrictEqual({ marketplace: null, registered: false });
   });
 
   it("names the cause when the marketplace cannot be resolved", async () => {
-    const sourceResult = makeSourceResult(undefined);
-    mockFetchMarketplace.mockRejectedValue(new Error(FETCH_FAILURE_CAUSE));
+    const said = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    await ensureMarketplace(sourceResult, host);
+    await ensureMarketplace(sourceResultFor(noMarketplaceDir), host);
 
     expect(
-      mockWarn,
+      said,
       "the hard error downstream names no cause, so this warning is the only place the reason reaches the user",
-    ).toHaveBeenCalledWith(
-      `Could not resolve a marketplace from 'github:test/source': ${FETCH_FAILURE_CAUSE}`,
+    ).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(
+        `  Warning: Could not resolve a marketplace from '${noMarketplaceDir}': Marketplace not found at: ${noMarketplaceDir}\n`,
+      ),
     );
   });
 
-  it("should warn when marketplace update fails", async () => {
-    const sourceResult = makeSourceResult("agents-inc");
-    mockMarketplaceExists.mockResolvedValue(true);
-    mockMarketplaceUpdate.mockRejectedValue(new Error("Update failed"));
+  it("warns and carries on with the cached marketplace when the refresh fails", async () => {
+    const said = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(host.marketplaceExists).mockResolvedValue(true);
+    vi.mocked(host.refreshMarketplace).mockRejectedValue(new Error("Update failed"));
 
-    const result = await ensureMarketplace(sourceResult, host);
-
-    expect(mockMarketplaceUpdate).toHaveBeenCalledWith("agents-inc");
-    expect(mockWarn).toHaveBeenCalledWith(
-      "Could not update marketplace — continuing with cached version",
+    const result = await ensureMarketplace(
+      sourceResultFor(GITHUB_SOURCE, RECORDED_MARKETPLACE),
+      host,
     );
-    expect(result).toStrictEqual({ marketplace: "agents-inc", registered: false });
+
+    expect(said).toHaveBeenCalledExactlyOnceWith(
+      "  Warning: Could not update marketplace — continuing with cached version",
+    );
+    expect(result).toStrictEqual({ marketplace: RECORDED_MARKETPLACE, registered: false });
   });
 
-  it("should lazily resolve marketplace name via fetchMarketplace", async () => {
-    const sourceResult = makeSourceResult(undefined);
-    mockFetchMarketplace.mockResolvedValue({
-      marketplace: { ...createMockMarketplace(), name: "resolved-marketplace" },
-      sourcePath: "/tmp/resolved",
-      fromCache: false,
-    });
-    mockMarketplaceExists.mockResolvedValue(false);
+  it("registers a source that only mentions github: as written, stripping it only from its front", async () => {
+    vi.mocked(host.marketplaceExists).mockResolvedValue(false);
 
-    const result = await ensureMarketplace(sourceResult, host);
+    await ensureMarketplace(
+      sourceResultFor("https://mirror.example.com/github:test/source", RECORDED_MARKETPLACE),
+      host,
+    );
 
-    expect(mockFetchMarketplace).toHaveBeenCalledWith("github:test/source");
-    expect(sourceResult.marketplace).toBe("resolved-marketplace");
-    expect(mockMarketplaceExists).toHaveBeenCalledWith("resolved-marketplace");
-    expect(mockMarketplaceAdd).toHaveBeenCalledWith("test/source");
-    expect(result).toStrictEqual({ marketplace: "resolved-marketplace", registered: true });
-  });
-});
-
-describe("ensureMarketplace, a source that only mentions github:", () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-  });
-
-  it("registers it as written, stripping github: only from its front", async () => {
-    const sourceResult = buildSourceResult(EMPTY_MATRIX, "/tmp/test-source", {
-      sourceConfig: {
-        source: "https://mirror.example.com/github:test/source",
-        sourceOrigin: "flag",
-      },
-      isLocal: false,
-      marketplace: "agents-inc",
-    });
-    mockMarketplaceExists.mockResolvedValue(false);
-
-    await ensureMarketplace(sourceResult, host);
-
-    expect(mockMarketplaceAdd).toHaveBeenCalledExactlyOnceWith(
+    expect(host.addMarketplace).toHaveBeenCalledExactlyOnceWith(
       "https://mirror.example.com/github:test/source",
     );
   });
-});
 
-describe("requireMarketplace", () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-  });
+  describe("requireMarketplace", () => {
+    it("refuses, naming what it could not do and the source, when no marketplace resolves", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
 
-  it("refuses, naming what it could not do and the source, when no marketplace resolves", async () => {
-    mockFetchMarketplace.mockRejectedValue(new Error(FETCH_FAILURE_CAUSE));
+      expect(
+        await requireMarketplace(sourceResultFor(noMarketplaceDir), "install plugins", host),
+      ).toStrictEqual({
+        ok: false,
+        error: `Cannot install plugins: marketplace could not be resolved from '${noMarketplaceDir}'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.`,
+      });
+    });
 
-    expect(await requireMarketplace(makeSourceResult(), "install plugins", host)).toStrictEqual({
-      ok: false,
-      error:
-        "Cannot install plugins: marketplace could not be resolved from 'github:test/source'. Plugin install mode requires a marketplace — fix the marketplace or switch the affected skills to eject mode.",
+    it("answers the marketplace it resolved, and whether it registered it", async () => {
+      vi.mocked(host.marketplaceExists).mockResolvedValue(false);
+
+      expect(
+        await requireMarketplace(sourceResultFor(dirs.sourceDir), "install plugins", host),
+      ).toStrictEqual({ ok: true, marketplace: TEST_MARKETPLACE_NAME, registered: true });
     });
   });
 });

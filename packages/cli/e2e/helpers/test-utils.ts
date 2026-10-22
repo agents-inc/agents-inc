@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, realpath, stat, writeFile } from "fs/promises
 import { stripVTControlCharacters } from "node:util";
 import path from "path";
 import { fileURLToPath } from "url";
+import { z } from "zod";
 import {
   CLAUDE_DIR,
   PLUGIN_MANIFEST_DIR,
@@ -28,10 +29,7 @@ import {
   renderUnparseableSkillMd,
 } from "../../src/cli/lib/__tests__/content-generators.js";
 import { writeTestPackageJson } from "../../src/cli/lib/__tests__/helpers/config-io.js";
-import {
-  normalizeConfigPreservingOrder,
-  normalizeGlobalConfig,
-} from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
+import { normalizeGlobalConfig } from "../../src/cli/lib/__tests__/helpers/config-comparison.js";
 import { parseCompiledAgentSections } from "../../src/cli/lib/__tests__/helpers/compiled-agent-sections.js";
 import {
   normalizeInstallTree,
@@ -68,13 +66,20 @@ export const MONOREPO_ROOT = path.resolve(CLI_ROOT, "../..");
 /** Requires `bun run build` first. */
 export const BIN_RUN = path.join(CLI_ROOT, "bin", "run.js");
 
-// The scope's source folder as the product resolves it, from the provider on disk.
+const cliManifestSchema = z.object({ version: z.string().min(1) });
+
+/** The version the CLI under test stamps into what it compiles, read from its own manifest. */
+export async function cliVersionUnderTest(): Promise<string> {
+  const manifest = await readFile(path.join(CLI_ROOT, FILES.PACKAGE_JSON), "utf-8");
+  return cliManifestSchema.parse(JSON.parse(manifest)).version;
+}
+
 export function sourceFolderIn(dir: string): string {
   return sourceFolderInUse(dir, providerInUse(dir)).dir;
 }
 
 /** Relative to `dir`, e.g. `.agents-inc/claude`. */
-export function sourceFolderRelIn(dir: string): string {
+function sourceFolderRelIn(dir: string): string {
   return sourceFolderInUse(dir, providerInUse(dir)).relName;
 }
 
@@ -171,7 +176,6 @@ export {
   cleanupTempDir,
   directoryExists,
   fileExists,
-  normalizeConfigPreservingOrder,
   normalizeGlobalConfig,
   normalizeInstallTree,
   parseCompiledAgentSections,
@@ -300,6 +304,7 @@ export async function runCLI(
         CC_MARKETPLACE: undefined,
         XDG_CACHE_HOME: undefined,
         GIGET_AUTH: undefined,
+        AGENTS_INC_EDITOR_URL: undefined,
         VITEST: undefined,
         ...options?.env,
         HOME: home,
@@ -592,7 +597,7 @@ export {
   flattenCliOutput,
 } from "../../src/cli/lib/__tests__/helpers/flatten-cli-output.js";
 
-export { createE2ESource, E2E_AGENT_TITLES } from "./create-e2e-source.js";
+export { createE2ESource } from "./create-e2e-source.js";
 export type { E2ESource } from "./create-e2e-source.js";
 
 // Driven directly rather than through `PluginHost`: marketplace list/remove are on no host interface.

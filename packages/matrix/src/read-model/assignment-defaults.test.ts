@@ -186,7 +186,7 @@ describe("targeting: a shared skill reaches every agent the roster fields", () =
 })
 
 describe("targeting: a meta skill reaches the flavors its row names", () => {
-  // Pinned on a fixture row: every shipped meta skill now falls in some craft.
+  // Pinned on a fixture row: every shipped meta skill falls in some craft.
   it("reaches exactly its row's flavors on top of its craft's agents", () => {
     const asTesters = createAssignmentResolver({
       [METHODOLOGY_CRAFT_SKILL]: ["tester"],
@@ -682,7 +682,7 @@ const agentsReachedBy = (skill: SkillId | SkillTaxonomy) =>
 const loadOnFor = (skill: SkillId, agentId: AgentName) =>
   resolveAssignment(skill).find((t) => t.agentId === agentId)?.load
 
-describe("CLI-846: the meta-flavor agents are inside the default system", () => {
+describe("the meta-flavor agents are inside the default system", () => {
   it("reaches every meta-flavor agent with a design skill", () => {
     for (const skill of DESIGN_CRAFT_SKILLS) {
       expect(agentsReachedBy(skill)).toEqual(

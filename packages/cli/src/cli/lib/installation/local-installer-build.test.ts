@@ -5,12 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  buildAndMergeConfig,
-  buildCompileAgents,
-  refuseUnofferedStack,
-  setConfigMetadata,
-} from "./local-installer";
+import { buildAndMergeConfig, buildCompileAgents, refuseUnofferedStack } from "./local-installer";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import {
@@ -20,16 +15,21 @@ import {
   buildSourceResult,
 } from "../__tests__/factories/config-factories";
 import { createMockAgent } from "../__tests__/factories/agent-factories";
+import { sa } from "../__tests__/factories/skill-factories";
+import { cleanupTestSource, createTestSource } from "../__tests__/fixtures/create-test-source";
 import { buildSkillConfig, buildSkillConfigs } from "../__tests__/helpers/skill-config-builders";
 import { writeTestTsConfig } from "../__tests__/helpers/config-io";
 import { silenceConsole } from "../__tests__/helpers/silence-console";
 import { useFakeHome } from "../__tests__/helpers/isolated-home";
-import { FULLSTACK_PAIR_MATRIX } from "../__tests__/mock-data/mock-matrices";
+import { FULLSTACK_PAIR_MATRIX, FULLSTACK_TRIO_MATRIX } from "../__tests__/mock-data/mock-matrices";
+import { CUSTOM_TEST_STACKS } from "../__tests__/mock-data/mock-stacks";
+import { firstElement } from "../__tests__/helpers/element-at";
 import { setVerbose } from "../../utils/logger";
 import { DEFAULT_SOURCE } from "../configuration";
-import type { AgentName, SkillId, StackAgentConfig } from "../../types";
+import type { AgentDefinition, AgentName, SkillId, StackAgentConfig } from "../../types";
 
 const REACT: SkillId = "web-framework-react";
+const VITEST: SkillId = "web-testing-vitest";
 const HONO = "api-framework-hono";
 const WEB_DEVELOPER = "web-developer";
 const API_DEVELOPER = "api-developer";
@@ -168,6 +168,36 @@ describe("buildAndMergeConfig", () => {
     expect(additive.config.skills.map((skill) => skill.id)).toContain(HONO);
     expect(authoritative.config.skills.map((skill) => skill.id)).not.toContain(HONO);
   });
+
+  it("finds the stack it applies in the marketplace's own folder", async () => {
+    const offered = firstElement(CUSTOM_TEST_STACKS);
+    const marketplace = await createTestSource({ stacks: CUSTOM_TEST_STACKS });
+    try {
+      const { config } = await buildAndMergeConfig(
+        selectionWithAgent({ selectedStackId: offered.id }),
+        buildSourceResult(FULLSTACK_PAIR_MATRIX, marketplace.sourceDir, {
+          sourceConfig: { source: marketplace.sourceDir, sourceOrigin: "flag" },
+        }),
+        tempDir,
+      );
+
+      expect(config.description).toBe(offered.description);
+    } finally {
+      await cleanupTestSource(marketplace);
+    }
+  });
+
+  it("records no marketplace for a load that names none", async () => {
+    const { config } = await buildAndMergeConfig(
+      buildInstallSelection([]),
+      buildSourceResult(FULLSTACK_PAIR_MATRIX, "", {
+        sourceConfig: { source: "", sourceOrigin: "default" },
+      }),
+      tempDir,
+    );
+
+    expect(Object.keys(config)).not.toContain("marketplace");
+  });
 });
 
 describe("refuseUnofferedStack", () => {
@@ -194,39 +224,152 @@ describe("refuseUnofferedStack", () => {
   });
 });
 
-describe("setConfigMetadata with a load that names no marketplace", () => {
-  it("records no marketplace", () => {
-    const config = setConfigMetadata(
-      buildProjectConfig(),
-      buildInstallSelection([]),
-      buildSourceResult(FULLSTACK_PAIR_MATRIX, "", {
-        sourceConfig: { source: "", sourceOrigin: "default" },
-      }),
-    );
-
-    expect(Object.keys(config)).not.toContain("marketplace");
+/** Run on the real resolver, so each skill reference is the one a compile receives. */
+describe("buildCompileAgents", () => {
+  beforeEach(() => {
+    initializeMatrix(FULLSTACK_TRIO_MATRIX);
   });
-});
 
-describe("buildCompileAgents and a skill's origin", () => {
+  const definitions = (...names: AgentName[]): Partial<Record<AgentName, AgentDefinition>> =>
+    Object.fromEntries(names.map((name) => [name, createMockAgent(name)]));
+
+  const REACT_AND_VITEST_STACK: Partial<Record<AgentName, StackAgentConfig>> = {
+    [WEB_DEVELOPER]: {
+      "web-framework": [sa(REACT, false)],
+      "web-testing": [sa(VITEST, false)],
+    },
+  };
+
+  const REACT_REF = {
+    id: REACT,
+    usage: "Use when working with web-framework.",
+    preloaded: false,
+    source: "eject",
+  };
+  const VITEST_REF = {
+    id: VITEST,
+    usage: "Use when working with web-testing.",
+    preloaded: false,
+    source: "eject",
+  };
+
+  it("carries a sub-agent's model, Codex model and effort onto its entry, stack or not", () => {
+    const config = buildProjectConfig({
+      agents: buildAgentConfigs([WEB_DEVELOPER], {
+        model: "haiku",
+        codexModel: "gpt-5.6-terra",
+        effort: "high",
+      }),
+      skills: buildSkillConfigs([REACT]),
+    });
+
+    expect(buildCompileAgents(config, definitions(WEB_DEVELOPER))).toStrictEqual({
+      [WEB_DEVELOPER]: { model: "haiku", codexModel: "gpt-5.6-terra", effort: "high" },
+    });
+  });
+
+  it("hands a sub-agent each skill its stack assigns", () => {
+    const config = buildProjectConfig({
+      agents: buildAgentConfigs([WEB_DEVELOPER]),
+      skills: buildSkillConfigs([REACT]),
+      stack: { [WEB_DEVELOPER]: { "web-framework": [sa(REACT, false)] } },
+    });
+
+    expect(buildCompileAgents(config, definitions(WEB_DEVELOPER))).toStrictEqual({
+      [WEB_DEVELOPER]: { skills: [REACT_REF] },
+    });
+  });
+
+  it("leaves out a sub-agent no definition answers, and gives one with no stack row no skills", () => {
+    const config = buildProjectConfig({
+      agents: buildAgentConfigs([WEB_DEVELOPER, API_DEVELOPER]),
+      skills: buildSkillConfigs([REACT]),
+    });
+
+    expect(buildCompileAgents(config, definitions(WEB_DEVELOPER))).toStrictEqual({
+      [WEB_DEVELOPER]: {},
+    });
+  });
+
   it("hands each referenced skill the origin its config records", () => {
-    initializeMatrix(FULLSTACK_PAIR_MATRIX);
     const agents = buildCompileAgents(
       buildProjectConfig({
         skills: [buildSkillConfig(REACT, { origin: PLUGIN_MARKETPLACE })],
         agents: buildAgentConfigs([WEB_DEVELOPER]),
         stack: ASSIGNED_STACK,
       }),
-      { [WEB_DEVELOPER]: createMockAgent(WEB_DEVELOPER) },
+      definitions(WEB_DEVELOPER),
     );
 
     expect(agents[WEB_DEVELOPER]?.skills).toStrictEqual([
-      {
-        id: REACT,
-        usage: "Use when working with web-framework.",
-        preloaded: false,
-        source: PLUGIN_MARKETPLACE,
-      },
+      { ...REACT_REF, source: PLUGIN_MARKETPLACE },
     ]);
+  });
+
+  it("gives a global sub-agent only the skills active at global scope", () => {
+    const config = buildProjectConfig({
+      agents: buildAgentConfigs([WEB_DEVELOPER], { scope: "global" }),
+      skills: [...buildSkillConfigs([REACT]), ...buildSkillConfigs([VITEST], { scope: "global" })],
+      stack: REACT_AND_VITEST_STACK,
+    });
+
+    expect(buildCompileAgents(config, definitions(WEB_DEVELOPER))).toStrictEqual({
+      [WEB_DEVELOPER]: { skills: [VITEST_REF] },
+    });
+  });
+
+  it("gives a project sub-agent every skill its stack assigns, whatever their scope", () => {
+    const config = buildProjectConfig({
+      agents: buildAgentConfigs([WEB_DEVELOPER]),
+      skills: [...buildSkillConfigs([REACT]), ...buildSkillConfigs([VITEST], { scope: "global" })],
+      stack: REACT_AND_VITEST_STACK,
+    });
+
+    expect(buildCompileAgents(config, definitions(WEB_DEVELOPER))).toStrictEqual({
+      [WEB_DEVELOPER]: { skills: [REACT_REF, VITEST_REF] },
+    });
+  });
+
+  describe("excluded entries", () => {
+    it("leaves out a skill the configuration excludes", () => {
+      const config = buildProjectConfig({
+        agents: buildAgentConfigs([WEB_DEVELOPER]),
+        skills: [...buildSkillConfigs([REACT]), ...buildSkillConfigs([VITEST], { excluded: true })],
+        stack: REACT_AND_VITEST_STACK,
+      });
+
+      expect(buildCompileAgents(config, definitions(WEB_DEVELOPER))).toStrictEqual({
+        [WEB_DEVELOPER]: { skills: [REACT_REF] },
+      });
+    });
+
+    it("leaves out a sub-agent the configuration excludes", () => {
+      const config = buildProjectConfig({
+        agents: [
+          ...buildAgentConfigs([WEB_DEVELOPER]),
+          ...buildAgentConfigs([API_DEVELOPER], { excluded: true }),
+        ],
+        skills: buildSkillConfigs([REACT]),
+      });
+
+      expect(buildCompileAgents(config, definitions(WEB_DEVELOPER, API_DEVELOPER))).toStrictEqual({
+        [WEB_DEVELOPER]: {},
+      });
+    });
+
+    it("keeps a skill whose excluded entry is only its other scope's, with its active entry's origin", () => {
+      const config = buildProjectConfig({
+        agents: buildAgentConfigs([WEB_DEVELOPER]),
+        skills: [
+          ...buildSkillConfigs([REACT]),
+          ...buildSkillConfigs([REACT], { scope: "global", origin: "agents-inc", excluded: true }),
+        ],
+        stack: { [WEB_DEVELOPER]: { "web-framework": [sa(REACT, false)] } },
+      });
+
+      expect(buildCompileAgents(config, definitions(WEB_DEVELOPER))).toStrictEqual({
+        [WEB_DEVELOPER]: { skills: [REACT_REF] },
+      });
+    });
   });
 });

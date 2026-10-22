@@ -179,15 +179,29 @@ test.describe("signed out", () => {
   })
 })
 
-// A section's `::before` hairline: `"1px"` where drawn, `"auto"` where not.
-const ruleOn = async (section: Locator) =>
-  await section.evaluate((node) => {
-    const style = getComputedStyle(node, "::before")
-    return {
-      height: style.height,
-      width: parseFloat(style.width),
-      section: node.getBoundingClientRect().width,
-    }
+// The rules a section draws, whichever of its own box, its `::before` or its
+// `::after` draws them: a top border, or a filled layer one pixel tall.
+const rulesOn = (section: Locator) =>
+  section.evaluate((node) => {
+    const own = node.getBoundingClientRect().width
+    const painted = (colour: string) => colour !== "rgba(0, 0, 0, 0)"
+
+    return [null, "::before", "::after"].flatMap((pseudo) => {
+      const style = getComputedStyle(node, pseudo)
+      if (pseudo !== null && style.content === "none") return []
+
+      const length = pseudo === null ? own : Number.parseFloat(style.width)
+      const bordered =
+        style.borderTopStyle !== "none" &&
+        Number.parseFloat(style.borderTopWidth) > 0 &&
+        painted(style.borderTopColor)
+      const filled =
+        pseudo !== null &&
+        Number.parseFloat(style.height) === 1 &&
+        painted(style.backgroundColor)
+
+      return bordered || filled ? [{ length, section: own }] : []
+    })
   })
 
 test.describe("the rail's order", () => {
@@ -216,12 +230,12 @@ test.describe("the rail's order", () => {
     stubSignedOut(page)
     const configure = await arrive(page)
 
-    const marketplace = await ruleOn(configure.marketplaceSection)
-    expect(marketplace.height).toBe("1px")
-    expect(marketplace.width).toBeGreaterThan(0)
-    expect(marketplace.width).toBeLessThan(marketplace.section)
+    const [marketplace, ...more] = await rulesOn(configure.marketplaceSection)
+    expect(more).toStrictEqual([])
+    expect(marketplace?.length).toBeGreaterThan(0)
+    expect(marketplace?.length).toBeLessThan(marketplace!.section)
 
-    expect((await ruleOn(configure.accountRow)).height).toBe("auto")
+    expect(await rulesOn(configure.accountRow)).toStrictEqual([])
   })
 })
 
@@ -841,8 +855,7 @@ test.describe("a sign-in the worker will not serve", () => {
   })
 })
 
-// A refusal is said in the dialog, which stays open with the name kept. The
-// rail button no longer narrates.
+// A refusal is said in the dialog, which stays open with the name kept.
 test.describe("a save the worker will not take", () => {
   test("a refused mint is said in the dialog, with the name kept", async ({
     page,

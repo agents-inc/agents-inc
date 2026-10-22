@@ -436,13 +436,16 @@ describe("multi-source-loader — what the tagging pass says and adds", () => {
     expect(verbose).not.toHaveBeenCalledWith("No plugin skills discovered from settings.json");
   });
 
-  it("reads the home directory's plugins once when the load is for the home directory", async () => {
+  it("takes the home directory's plugins as its own, never as global ones, when the load is for the home directory", async () => {
     pluginsInstalledGlobally();
     const matrix = createMockMatrix({ ...SKILLS.react });
 
     await loadSkillsFromAllSources(matrix, DEFAULT_SOURCE_CONFIG, os.homedir());
 
-    expect(mockDiscoverAllPluginSkills).toHaveBeenCalledTimes(1);
+    expect(matrix.skills["web-framework-react"]?.availableSources).toStrictEqual([
+      { name: "agents-inc", type: "public", installed: true, installMode: "plugin", primary: true },
+    ]);
+    expect(verbose).toHaveBeenCalledWith("Tagged 1 plugin-installed skills");
     expect(verbose).not.toHaveBeenCalledWith("Found 1 global plugin skill(s)");
   });
 

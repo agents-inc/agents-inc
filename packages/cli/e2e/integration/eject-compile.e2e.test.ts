@@ -4,7 +4,6 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
-  CLI_ROOT,
   createLocalSkill,
   createTempDir,
   directoryExists,
@@ -183,40 +182,45 @@ describe("template ejection + custom compilation", () => {
 
   describe("edge cases", () => {
     // BUG: compile reports per-agent template errors as warnings and exits 0.
-    it.fails("should fail gracefully when ejected template has broken Liquid syntax", async () => {
+    it.fails(
+      "should fail gracefully when ejected template has broken Liquid syntax",
+      { retry: 0 },
+      async () => {
+        const project = await ProjectBuilder.minimal();
+        tempDir = path.dirname(project.dir);
+        const projectDir = project.dir;
+
+        const ejectResult = await CLI.run(["eject", "templates"], { dir: projectDir });
+        expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
+
+        const ejectedTemplatePath = getEjectedTemplatePath(projectDir);
+        await writeFile(ejectedTemplatePath, "{% if agent.name %}{{ agent.name }{% endfor %}");
+
+        const compileResult = await CLI.run(["compile"], { dir: projectDir });
+        expect(compileResult.exitCode).not.toBe(EXIT_CODES.SUCCESS);
+      },
+    );
+
+    // The marker spec above pins that compile reads the ejected copy; this pins what the copy renders.
+    it("should compile every agent through an unmodified ejected template exactly as through the built-in one", async () => {
       const project = await ProjectBuilder.minimal();
       tempDir = path.dirname(project.dir);
       const projectDir = project.dir;
 
-      const ejectResult = await CLI.run(["eject", "templates"], { dir: projectDir });
-      expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      const ejectedTemplatePath = getEjectedTemplatePath(projectDir);
-      await writeFile(ejectedTemplatePath, "{% if agent.name %}{{ agent.name }{% endfor %}");
-
-      const compileResult = await CLI.run(["compile"], { dir: projectDir });
-      expect(compileResult.exitCode).not.toBe(EXIT_CODES.SUCCESS);
-    });
-
-    it("should verify ejected template path matches Liquid engine resolution path", async () => {
-      const project = await ProjectBuilder.minimal();
-      tempDir = path.dirname(project.dir);
-      const projectDir = project.dir;
+      const builtInCompile = await CLI.run(["compile"], { dir: projectDir });
+      expect(builtInCompile.exitCode, builtInCompile.output).toBe(EXIT_CODES.SUCCESS);
+      const throughBuiltIn = await readCompiledAgents(projectDir);
+      expect(Object.keys(throughBuiltIn).sort()).toStrictEqual(
+        MINIMAL_PROJECT_AGENT_NAMES.map((name) => `${name}.md`).sort(),
+      );
 
       const ejectResult = await CLI.run(["eject", "templates"], { dir: projectDir });
       expect(ejectResult.exitCode).toBe(EXIT_CODES.SUCCESS);
-
-      // The path createLiquidEngine() resolves.
       await expect({ dir: projectDir }).toHaveEjectedTemplate();
 
-      // Eject copies byte-for-byte; compare the whole file, since a substring check missed real drift.
-      const sourceTemplatePath = path.join(CLI_ROOT, "src", "agents", "_templates", "agent.liquid");
-      const expectedPath = getEjectedTemplatePath(projectDir);
-      const [ejectedContent, sourceContent] = await Promise.all([
-        readTestFile(expectedPath),
-        readTestFile(sourceTemplatePath),
-      ]);
-      expect(ejectedContent).toStrictEqual(sourceContent);
+      const ejectedCompile = await CLI.run(["compile"], { dir: projectDir });
+      expect(ejectedCompile.exitCode, ejectedCompile.output).toBe(EXIT_CODES.SUCCESS);
+      expect(await readCompiledAgents(projectDir)).toStrictEqual(throughBuiltIn);
     });
   });
 });

@@ -92,27 +92,6 @@ describe("Integration: Multi-Source Skill Resolution", () => {
   });
 
   describe("Scenario 2: Active source wins when same skill ID exists in multiple sources", () => {
-    it("should use installed source as activeSource over non-installed sources", () => {
-      const matrix = buildMultiSourceMatrix();
-      initializeMatrix(matrix);
-
-      // Simulate acme-corp version being installed
-      const reactSkill = matrix.skills["web-framework-react"]!;
-      const acmeSource = reactSkill.availableSources!.find((s) => s.name === "acme-corp")!;
-      acmeSource.installed = true;
-      acmeSource.installMode = "eject";
-
-      // Re-compute active source (same logic as setActiveSources in multi-source-loader)
-      const availableSources = reactSkill.availableSources ?? [];
-      const activeSource =
-        availableSources.find((s) => s.installed) ?? firstElement(availableSources);
-      reactSkill.activeSource = activeSource;
-
-      expect(activeSource.name).toBe("acme-corp");
-      expect(activeSource.type).toBe("private");
-      expect(activeSource.installed).toBe(true);
-    });
-
     it("should respect sourceSelections when determining which source is preferred", () => {
       const matrix = buildMultiSourceMatrix();
       initializeMatrix(matrix);

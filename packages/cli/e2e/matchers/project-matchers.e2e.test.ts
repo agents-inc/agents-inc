@@ -5,18 +5,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import "./setup.js";
 import {
   createPluginInstalledProject,
+  pluginKeyFor,
   type PluginInstalledProjectOptions,
 } from "../fixtures/plugin-install-state.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { DIRS, E2E_MARKETPLACE_NAME, FILES } from "../pages/constants.js";
 import { cleanupTempDir, createTempDir, readTestFile } from "../helpers/test-utils.js";
-import { buildMarketplacePluginRef } from "../../src/cli/lib/plugins/plugin-ref.js";
 
 // A registry entry alone is not an install: these pin the matcher over real content, an empty
 // plugin root, and a dangling installPath.
 
 const MARKETPLACE = E2E_MARKETPLACE_NAME;
-const REACT_REF = buildMarketplacePluginRef(E2E_SKILL.react.id, MARKETPLACE);
+const REACT_REF = pluginKeyFor(E2E_SKILL.react.id, MARKETPLACE);
 
 const REACT_PLUGIN_PROJECT: Omit<PluginInstalledProjectOptions, "pluginsDir"> = {
   marketplace: MARKETPLACE,

@@ -4,21 +4,18 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   agentsPath,
   cleanupTempDir,
+  configTsPath,
   createTempDir,
   directoryExists,
   getEjectedTemplatePath,
   listFiles,
+  readCompiledAgents,
   readTestFile,
-  sourceFolderIn,
 } from "../helpers/test-utils.js";
-import { ProjectBuilder } from "../fixtures/project-builder.js";
+import { MINIMAL_PROJECT_AGENT_NAMES, ProjectBuilder } from "../fixtures/project-builder.js";
 import "../matchers/setup.js";
-import { EXIT_CODES, FILES, STEP_TEXT } from "../pages/constants.js";
+import { EXIT_CODES, STEP_TEXT } from "../pages/constants.js";
 import { CLI } from "../fixtures/cli.js";
-
-/** A named member, so an assertion can tell the right ejected tree from any tree. */
-const EJECTED_PARTIAL_CATEGORY = "developer";
-const EJECTED_PARTIAL_AGENT = "web-developer";
 
 describe("eject command integration", () => {
   let tempDir: string | undefined;
@@ -30,46 +27,32 @@ describe("eject command integration", () => {
     }
   });
 
-  it("ejected template path matches Liquid engine resolution", async () => {
-    tempDir = await createTempDir();
+  // eject-compile's custom-intro spec pins that compile reads the ejected partials; this pins what
+  // eject writes into them.
+  it("recompiling through freshly ejected agent partials leaves every compiled agent unchanged", async () => {
+    const project = await ProjectBuilder.minimal();
+    tempDir = path.dirname(project.dir);
+    const projectDir = project.dir;
 
-    const { exitCode, stdout } = await CLI.run(["eject", "templates"], { dir: tempDir });
+    const builtInCompile = await CLI.run(["compile"], { dir: projectDir });
+    expect(builtInCompile.exitCode, builtInCompile.output).toBe(EXIT_CODES.SUCCESS);
+    const throughBuiltIn = await readCompiledAgents(projectDir);
+    expect(Object.keys(throughBuiltIn).sort()).toStrictEqual(
+      MINIMAL_PROJECT_AGENT_NAMES.map((name) => `${name}.md`).sort(),
+    );
+    const configBefore = await readTestFile(configTsPath(projectDir));
 
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-    expect(stdout).toContain(STEP_TEXT.EJECT_SUCCESS);
+    const ejectResult = await CLI.run(["eject", "agent-partials"], { dir: projectDir });
+    expect(ejectResult.exitCode, ejectResult.output).toBe(EXIT_CODES.SUCCESS);
+    expect(ejectResult.output).toContain(STEP_TEXT.EJECT_SUCCESS);
 
-    // The path createLiquidEngine() checks.
-    await expect({ dir: tempDir }).toHaveEjectedTemplate();
-
-    const templatePath = getEjectedTemplatePath(tempDir);
-    const content = await readTestFile(templatePath);
-    expect(content).toContain("{{ agent.name }}");
-    expect(content).toMatch(/\{\{|\{%/);
-  });
-
-  it("ejected agent-partials structure matches readAgentFiles expectations", async () => {
-    tempDir = await createTempDir();
-
-    const { exitCode } = await CLI.run(["eject", "agent-partials"], { dir: tempDir });
-
-    expect(exitCode).toBe(EXIT_CODES.SUCCESS);
-
-    // The path loadProjectAgents() scans.
-    const agentsDir = path.join(sourceFolderIn(tempDir), "agents");
-    expect(await directoryExists(agentsDir)).toBe(true);
-
-    expect(await listFiles(agentsDir)).toContain(EJECTED_PARTIAL_CATEGORY);
-    const partialDir = path.join(agentsDir, EJECTED_PARTIAL_CATEGORY, EJECTED_PARTIAL_AGENT);
-    const partialFiles = await listFiles(partialDir);
-    expect(partialFiles).toContain(FILES.IDENTITY_MD);
-    expect(partialFiles).toContain(FILES.PLAYBOOK_MD);
-    expect(partialFiles).toContain(FILES.METADATA_YAML);
-
-    const identity = await readTestFile(path.join(partialDir, FILES.IDENTITY_MD));
-    expect(identity).toMatch(/\w+ \w+/);
-
-    const playbook = await readTestFile(path.join(partialDir, FILES.PLAYBOOK_MD));
-    expect(playbook).toContain("##");
+    const ejectedCompile = await CLI.run(["compile"], { dir: projectDir });
+    expect(ejectedCompile.exitCode, ejectedCompile.output).toBe(EXIT_CODES.SUCCESS);
+    expect(await readCompiledAgents(projectDir)).toStrictEqual(throughBuiltIn);
+    expect(
+      await readTestFile(configTsPath(projectDir)),
+      "ejecting agent partials must leave config.ts byte-identical",
+    ).toBe(configBefore);
   });
 
   it("eject templates -> modify -> compile picks up modified template", async () => {

@@ -141,16 +141,6 @@ export class OutputPreviewDialog {
     )
   }
 
-  async rowTabStops() {
-    await this.waitForTree()
-    return this.root.locator(ROW_SELECTOR).evaluateAll((rows) =>
-      rows.map((row) => ({
-        path: row.getAttribute("data-path"),
-        tabIndex: row.tabIndex,
-      }))
-    )
-  }
-
   async focusedRowPath() {
     return this.treePane.evaluate((pane, selector) => {
       const active = pane.ownerDocument.activeElement

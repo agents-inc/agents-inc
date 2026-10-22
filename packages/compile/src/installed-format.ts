@@ -5,9 +5,12 @@
  * `contract/emission-scenarios.test.ts` checks prettier leaves the output unchanged.
  */
 
-export const PRINT_WIDTH = 100
+const PRINT_WIDTH = 100
 
 export const INDENT_STEP = 2
+
+/** Prettier's `isObjectPropertyWithShortKey`: a key narrower than this keeps its value beside it. */
+const SHORT_KEY_WIDTH = INDENT_STEP + 3
 
 const PREFERRED_QUOTE = "'"
 const FALLBACK_QUOTE = '"'
@@ -62,6 +65,8 @@ export type LinePosition = {
   prefix: string
   /** What follows the value on its last line. */
   suffix: string
+  /** The printed key, when the value is an object property's. */
+  key?: string
 }
 
 export function renderValueLine(
@@ -155,12 +160,21 @@ function line(
   position: LinePosition
 ): string {
   const prefix = position.prefix.trimEnd()
-  if (!mayMoveBelowPrefix || prefix === "" || fits(rendered, position)) {
+  if (
+    !mayMoveBelowPrefix ||
+    prefix === "" ||
+    hasShortKey(position) ||
+    fits(rendered, position)
+  ) {
     return asLine(rendered, position)
   }
 
   const body = `${spaces(position.indent + INDENT_STEP)}${rendered}${position.suffix}`
   return `${spaces(position.indent)}${prefix}\n${body}`
+}
+
+function hasShortKey({ key }: LinePosition): boolean {
+  return key !== undefined && key.length < SHORT_KEY_WIDTH
 }
 
 /**
@@ -216,13 +230,14 @@ function renderRecord(
 
   const inner = position.indent + INDENT_STEP
   const lines = properties.map(([key, value]) =>
-    renderValueLine(value, {
-      indent: inner,
-      prefix: `${renderKey(key)}: `,
-      suffix: ",",
-    })
+    renderValueLine(value, propertyPosition(key, inner))
   )
   return ["{", ...lines, `${spaces(position.indent)}}`].join("\n")
+}
+
+export function propertyPosition(key: string, indent: number): LinePosition {
+  const printed = renderKey(key)
+  return { indent, prefix: `${printed}: `, suffix: ",", key: printed }
 }
 
 function flatArray(entries: readonly ArrayEntry[]): string | undefined {

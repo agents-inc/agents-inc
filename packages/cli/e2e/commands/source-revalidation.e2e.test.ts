@@ -19,6 +19,9 @@ import { EXIT_CODES, STEP_TEXT, TIMEOUTS } from "../pages/constants.js";
 
 const SPARE = E2E_SKILL["visual-regression"];
 
+/** The only answer the stand-in sends the tarball's bytes with. */
+const DOWNLOAD = "GET 200";
+
 type RequestLog = string[];
 
 describe("remote source revalidation", () => {
@@ -75,9 +78,9 @@ describe("remote source revalidation", () => {
     expect(control.exitCode).toBe(EXIT_CODES.SUCCESS);
     expect(control.output).toContain(E2E_SKILL.vitest.display);
     expect(
-      controlRequests.filter((request) => request.startsWith("GET")),
+      controlRequests.filter((request) => request === DOWNLOAD),
       "a source with no cached copy is downloaded once, not once per load",
-    ).toStrictEqual(["GET 200"]);
+    ).toStrictEqual([DOWNLOAD]);
   });
 
   it("does not offer a skill the source has not published yet", () => {
@@ -101,7 +104,7 @@ describe("remote source revalidation", () => {
         `${STEP_TEXT.SOURCE_HAS_NEWER_CONTENT}[\\s\\S]*${STEP_TEXT.SOURCE_HAS_NEWER_CONTENT}`,
       ),
     );
-    expect(changeRequests, "a moved source is re-downloaded").toContain("GET 200");
+    expect(changeRequests, "a moved source is re-downloaded").toContain(DOWNLOAD);
   });
 
   it("revalidates an unchanged source and serves it from cache without re-downloading", () => {
@@ -111,7 +114,8 @@ describe("remote source revalidation", () => {
       servedFromCache.output,
       "nothing moved, so nothing may claim to have been fetched",
     ).not.toContain(STEP_TEXT.SOURCE_HAS_NEWER_CONTENT);
-    expect(cacheRequests, "one question asked, no body transferred").toStrictEqual(["HEAD 200"]);
+    expect(cacheRequests, "no body transferred").not.toContain(DOWNLOAD);
+    expect(cacheRequests, "one question asked").toHaveLength(1);
   });
 
   it("falls back to the cached copy when the source cannot be reached, and names the staleness", () => {

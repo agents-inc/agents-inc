@@ -8,7 +8,7 @@ import {
   type E2EPluginSource,
 } from "../helpers/create-e2e-plugin-source.js";
 import "../matchers/setup.js";
-import { E2E_MARKETPLACE_NAME, TIMEOUTS } from "../pages/constants.js";
+import { E2E_MARKETPLACE_NAME, EJECT_SOURCE_NAME, TIMEOUTS } from "../pages/constants.js";
 import {
   cleanupFixture,
   cleanupTempDir,
@@ -101,11 +101,9 @@ describe("dual-scope edit lifecycle -- agent content and config integrity", () =
 /** Not `agents-inc`: that is the public catalogue's namespace, refused by `build marketplace`. */
 const MARKETPLACE_SOURCE = E2E_MARKETPLACE_NAME;
 
-const EJECT_SOURCE = "eject";
-
 /**
- * Every skill the global install owns, all plugin-sourced. A project init has no authority over
- * them, so all stay plugin-sourced; hono's project-scope ejected copy leaves the global one as is.
+ * Every skill the global install owns, all plugin-sourced; hono's project-scope ejected copy leaves
+ * the global one as is.
  */
 const GLOBAL_SKILL_IDS = [
   E2E_SKILL.hono.id,
@@ -218,7 +216,7 @@ describe.skipIf(!claudeAvailable)("dual-scope edit lifecycle -- config preservat
         {
           skillIds: [E2E_SKILL.hono.id],
           agents: [...E2E_AGENTS.API],
-          origin: EJECT_SOURCE,
+          origin: EJECT_SOURCE_NAME,
         },
       );
 

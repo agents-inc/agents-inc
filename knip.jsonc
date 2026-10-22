@@ -4,16 +4,23 @@
     ".": {
       // Exists only to throw; nothing imports it.
       "entry": ["vitest.config.mjs"],
+      // `bun run mutation <config>` names one at run time.
+      "stryker": ["stryker.config.json", "stryker.*.config.mjs"],
       // ESLint is hoisted from the workspaces, which each declare it.
       "ignoreBinaries": ["eslint"],
+      // Prettier imports the shared config's plugin by name from its working directory, the root.
+      "ignoreDependencies": ["prettier-plugin-tailwindcss"],
     },
     "packages/api": {
       // The vitest include is re-exported one hop from the config knip reads.
       "entry": ["src/**/*.test.ts"],
+      // The mutation config is named by Stryker's, not by a script.
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts"],
     },
     "packages/api-mocks": {
       // The vitest include is re-exported one hop from the config knip reads.
       "entry": ["src/**/*.test.ts"],
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts"],
     },
     "packages/cli": {
       "entry": [
@@ -24,34 +31,54 @@
         "bin/*.js",
         // knip resolves globalSetup from the config's directory, vitest from the root.
         "e2e/global-setup.ts",
+        // Run with bun; the mutation ones by hand.
+        "scripts/run-*.ts",
+        // `node scripts/handrun.mjs` bundles handrun-journeys.ts and runs it.
+        "scripts/handrun.mjs",
+        "e2e/handrun-journeys.ts",
       ],
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts", "vitest.loadtime.config.ts"],
       "ignore": ["src/cli/types/generated/**"],
       "ignoreUnresolved": ["./e2e/global-setup.ts"],
+      // The e2e fixtures resolve its package.json through createRequire.
+      "ignoreDependencies": ["@openai/codex"],
+      // Status lists the mutation-ranges spec passes to `bun <runner>`, read as a binary.
+      "ignoreBinaries": ["^\\w+(,\\w+)+$"],
     },
     "packages/compile": {
       // The vitest include is re-exported one hop from the config knip reads.
       "entry": ["src/**/*.test.ts"],
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts"],
     },
     "packages/matrix": {
       // The vitest include is re-exported one hop from the config knip reads.
       "entry": ["src/**/*.test.ts"],
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts"],
       // Vendored by packages/cli's generate:matrix.
       "ignore": ["src/vendor/**"],
     },
     "packages/ui": {
       // Stories are one hop past knip's storybook plugin; terrazzo.config.js is read by `tz`.
       "entry": ["src/**/*.stories.tsx", "terrazzo.config.js"],
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts"],
     },
     "apps/editor": {
       // Off: evaluating the config validates the environment and can throw.
       "vite": false,
       // Named so its plugin imports still count.
       "entry": ["vite.config.ts"],
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts"],
     },
     "apps/server": {
-      "entry": ["scripts/*.ts"],
+      // Spawned by path by e2e/helpers/stand-in-commands.ts.
+      "entry": ["scripts/*.ts", "e2e/helpers/stand-in-command.mjs"],
+      "vitest": ["vitest.config.ts", "vitest.mutation.config.ts"],
       // `cloudflare:test` is a virtual module, not a package.
       "ignoreDependencies": ["cloudflare"],
+      // A system binary, as the //test:e2e note says.
+      "ignoreBinaries": ["openssl"],
+      // `bun run dev` is spawned with this workspace as its cwd; knip resolves from the spawning file.
+      "ignoreUnresolved": ["scripts/dev.ts"],
     },
   },
 }

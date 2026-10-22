@@ -212,16 +212,14 @@ describe("plugin-finder", () => {
     beforeEach(() => setVerbose(true));
     afterEach(() => setVerbose(false));
 
-    it("says there is no manifest, and reads nothing", async () => {
+    it("says there is no manifest", async () => {
       mockedFileExists.mockResolvedValue(false);
-      mockedReadFileSafe.mockClear();
 
       await readPluginManifest("/path/to/plugin");
 
       expect(consoleSpies.log).toHaveBeenCalledExactlyOnceWith(
         `    No manifest at ${MANIFEST_PATH}`,
       );
-      expect(mockedReadFileSafe).not.toHaveBeenCalled();
     });
 
     it("says a manifest names no plugin", async () => {

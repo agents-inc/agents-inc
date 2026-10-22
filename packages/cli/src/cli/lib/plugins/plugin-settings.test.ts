@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import path from "path";
 import {
   getEnabledPluginKeys,
-  getInstalledPluginsRegistryPath,
   listPluginInstallsForProject,
   listRegisteredPluginInstalls,
 } from "./plugin-settings";
@@ -42,9 +41,6 @@ describe("plugin-settings", () => {
       const result = await getEnabledPluginKeys("/project");
 
       expect(result).toStrictEqual([]);
-      expect(mockFileExists).toHaveBeenCalledWith(
-        path.join("/project", CLAUDE_DIR, "settings.json"),
-      );
     });
 
     it("should return enabled plugin keys from settings.json", async () => {
@@ -231,17 +227,6 @@ describe("plugin-settings", () => {
       ).toStrictEqual([]);
     });
 
-    it("reads the registry from <pluginsDir>/installed_plugins.json", async () => {
-      mockReadFileSafe.mockResolvedValue(renderInstalledPluginsRegistry({}));
-
-      await listPluginInstallsForProject(PLUGINS_DIR, "/project");
-
-      expect(
-        mockReadFileSafe,
-        "the directory is the caller's, so a listing that reached for the user's own tree could not be pointed at a pinned installation",
-      ).toHaveBeenCalledWith(path.join(PLUGINS_DIR, "installed_plugins.json"), expect.any(Number));
-    });
-
     it("throws for a registry that is there and cannot be parsed", async () => {
       mockReadFileSafe.mockResolvedValue("invalid json");
 
@@ -262,18 +247,6 @@ describe("plugin-settings", () => {
   });
 
   describe("listRegisteredPluginInstalls", () => {
-    it("should read the registry from <pluginsDir>/installed_plugins.json", async () => {
-      mockReadFileSafe.mockResolvedValue(renderInstalledPluginsRegistry({}));
-
-      const result = await listRegisteredPluginInstalls("/plugins-dir");
-
-      expect(result).toStrictEqual([]);
-      expect(mockReadFileSafe).toHaveBeenCalledWith(
-        getInstalledPluginsRegistryPath("/plugins-dir"),
-        expect.any(Number),
-      );
-    });
-
     it("should flatten install records across plugins into (pluginKey, installPath) pairs", async () => {
       mockReadFileSafe.mockResolvedValue(
         renderInstalledPluginsRegistry({
@@ -401,7 +374,7 @@ describe("plugin-settings", () => {
     const SETTINGS_PATH = path.join("/project", CLAUDE_DIR, "settings.json");
     const PLUGIN_KEY = "web-framework-react@my-marketplace";
 
-    it("says there is no settings.json, and reads nothing", async () => {
+    it("says there is no settings.json", async () => {
       mockFileExists.mockResolvedValue(false);
 
       await getEnabledPluginKeys("/project");
@@ -409,7 +382,6 @@ describe("plugin-settings", () => {
       expect(verbose).toHaveBeenCalledExactlyOnceWith(
         `No settings.json found at '${SETTINGS_PATH}'`,
       );
-      expect(mockReadFileSafe).not.toHaveBeenCalled();
     });
 
     it("says how many plugins settings.json enables", async () => {

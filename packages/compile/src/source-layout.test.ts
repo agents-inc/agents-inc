@@ -1,6 +1,6 @@
 // Pins that each provider's folder segment is the provider's own value.
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 
 import { SOURCE_ROOT_DIR } from "./paths.js"
 import { PROVIDERS, sourceDirName, type Provider } from "./source-layout.js"
@@ -13,21 +13,23 @@ const SOURCE_DIR_NAMES = {
   codex: ".agents-inc/codex",
 } as const satisfies Record<Provider, string>
 
-// The whole export roster, so a default provider cannot creep back; an absence a rename satisfies.
-const EVERY_EXPORT = ["PROVIDERS", "sourceDirName"] as const
-
 describe("the providers a source folder can belong to", () => {
-  it("is exactly the two the rename introduces", () => {
+  it("is exactly claude and codex", () => {
     expect(PROVIDERS).toStrictEqual(EVERY_PROVIDER)
   })
 
+  // By value, not by name: an absence asserted by name passes once the default is renamed.
   it("hands out no provider a caller can leave unsaid", async () => {
-    const sourceLayout = await import("./source-layout.js")
+    const published = await import("./index.js")
+    const providers: readonly unknown[] = PROVIDERS
 
     expect(
-      Object.keys(sourceLayout).sort(),
-      "a default provider is still exported, so a path builder that never asks which installation it is about still compiles"
-    ).toStrictEqual([...EVERY_EXPORT].sort())
+      Object.entries(published)
+        .filter(([, value]) => providers.includes(value))
+        .map(([name]) => name),
+      "the package exports a lone provider, so a path builder that never asks which installation it is about still compiles"
+    ).toStrictEqual([])
+    expectTypeOf(sourceDirName).parameters.toEqualTypeOf<[Provider]>()
   })
 })
 

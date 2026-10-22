@@ -1,15 +1,50 @@
+import type { Locator } from "@playwright/test"
+
 import { expect, test } from "../fixtures"
 import type { ConfigurePage } from "../pages/configure-page"
 
-// The 04 words are the no-stack form; `stacks.spec.ts` owns the stack form.
-const STEPS = [
-  { index: "01", words: "choose your provider" },
-  { index: "02", words: "then your stack" },
-  { index: "03", words: "then your sub-agents" },
-  { index: "04", words: "then pick your skills" },
-] as const
+const boxOf = async (target: Locator) => {
+  const box = await target.boundingBox()
+  if (!box) throw new Error("the element must be drawn")
+  return box
+}
 
-const SKILLS_WORDS = STEPS[3].words
+const bottomOf = async (target: Locator) => {
+  const box = await boxOf(target)
+  return box.y + box.height
+}
+
+// The 04 words are the no-stack form; `stacks.spec.ts` owns the stack form.
+// Each title sits between the edge above it (the column's top, then the step
+// before) and its own step's first content.
+const STEPS = [
+  {
+    index: "01",
+    words: "choose your provider",
+    edgeAbove: async (configure: ConfigurePage) =>
+      (await boxOf(configure.page.getByRole("main"))).y,
+    content: (configure: ConfigurePage) => configure.provider.root,
+  },
+  {
+    index: "02",
+    words: "then your stack",
+    edgeAbove: (configure: ConfigurePage) => bottomOf(configure.provider.root),
+    content: (configure: ConfigurePage) => configure.stacks,
+  },
+  {
+    index: "03",
+    words: "then your sub-agents",
+    edgeAbove: (configure: ConfigurePage) => bottomOf(configure.stacks),
+    content: (configure: ConfigurePage) => configure.subAgents.groups.first(),
+  },
+  {
+    index: "04",
+    words: "then pick your skills",
+    edgeAbove: (configure: ConfigurePage) =>
+      bottomOf(configure.subAgents.groups.last()),
+    content: (configure: ConfigurePage) => configure.searchField,
+  },
+] as const
 
 // In rem, so the assertion holds whatever the root's sizing knob is set to.
 const inRootUnits = async (configure: ConfigurePage, px: number) =>
@@ -17,12 +52,6 @@ const inRootUnits = async (configure: ConfigurePage, px: number) =>
   (await configure.page.evaluate(() =>
     parseFloat(getComputedStyle(document.documentElement).fontSize)
   ))
-
-const marginsOf = (configure: ConfigurePage, words: string) =>
-  configure.stepHinge(words).evaluate((node) => ({
-    top: parseFloat(getComputedStyle(node).marginTop),
-    bottom: parseFloat(getComputedStyle(node).marginBottom),
-  }))
 
 test.describe("the step titles", () => {
   for (const { index, words } of STEPS) {
@@ -44,27 +73,20 @@ test.describe("the step titles", () => {
     expect(ruled).toStrictEqual([])
   })
 
-  for (const { words } of STEPS) {
+  for (const { words, edgeAbove, content } of STEPS) {
     test(`"${words}" takes a gutter above and 20px below`, async ({
       configure,
     }) => {
-      const margins = await marginsOf(configure, words)
+      const title = await boxOf(configure.stepTitle(words))
+      const below = await boxOf(content(configure))
+      const above = title.y - (await edgeAbove(configure))
 
-      expect(await inRootUnits(configure, margins.top)).toBeCloseTo(3.75, 2)
-      expect(await inRootUnits(configure, margins.bottom)).toBeCloseTo(1.25, 2)
+      expect(await inRootUnits(configure, above)).toBeCloseTo(3.75, 2)
+      expect(
+        await inRootUnits(configure, below.y - (title.y + title.height))
+      ).toBeCloseTo(1.25, 2)
     })
   }
-
-  test("the search field sits one title margin under the skills title", async ({
-    configure,
-  }) => {
-    const title = await configure.stepHinge(SKILLS_WORDS).boundingBox()
-    const field = await configure.searchField.boundingBox()
-    if (!title || !field) throw new Error("the title and the field must draw")
-    const { bottom } = await marginsOf(configure, SKILLS_WORDS)
-
-    expect(field.y - (title.y + title.height)).toBeCloseTo(bottom, 0)
-  })
 
   test("paint the words, the noun and the index in their tokens", async ({
     configure,

@@ -141,19 +141,6 @@ export const LOCAL_SKILL_STACK = createMockStack("test-stack", {
   },
 });
 
-export const COMPILATION_TEST_STACK = createMockStack("test-stack", {
-  name: "Test Stack",
-  description: "A test stack for integration testing",
-  agents: {
-    "web-developer": {
-      "web-framework": [sa("web-framework-react", true)],
-    },
-    "api-developer": {
-      "api-api": [sa("api-framework-hono", true)],
-    },
-  },
-});
-
 export const CUSTOM_TEST_STACKS: TestStack[] = [
   {
     id: "custom-fullstack",

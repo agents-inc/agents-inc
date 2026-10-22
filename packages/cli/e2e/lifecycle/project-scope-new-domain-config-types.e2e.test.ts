@@ -14,19 +14,12 @@ import { createTestEnvironment, readAllSkillEntries } from "../fixtures/dual-sco
 import { installFromSeed } from "../fixtures/e2e-stack-seed.js";
 import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { startSeedConfigStore, type SeedConfigStore } from "../fixtures/seed-config-store.js";
-import { EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
+import { EJECT_SOURCE_NAME, EXIT_CODES, TIMEOUTS } from "../pages/constants.js";
 import { typecheckGeneratedConfig } from "../helpers/type-check-probe.js";
 import {
   buildSeedPayload,
   buildSeedSkill,
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
-
-/**
- * A project-scoped skill in a category the global install lacks widens the project's own
- * `Category` and `Domain` unions, or the sibling `config.ts` stops type-checking.
- */
-
-const EJECT_SOURCE = "eject";
 
 /** The only category the fixture ships outside the `web` domain. */
 const NEW_CATEGORY = "api-api";
@@ -105,13 +98,13 @@ describe("a project-scoped skill in a category the global install lacks widens t
       expect(
         await readAllSkillEntries(fakeHome),
         "the global config must hold react alone — the divergence is that it never sees hono",
-      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE }]);
+      ).toStrictEqual([{ id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE_NAME }]);
       expect(
         await readAllSkillEntries(projectDir),
         "the project config must inline the global react row and own hono at project scope",
       ).toStrictEqual([
-        { id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE },
-        { id: E2E_SKILL.hono.id, scope: "project", origin: EJECT_SOURCE },
+        { id: E2E_SKILL.react.id, scope: "global", origin: EJECT_SOURCE_NAME },
+        { id: E2E_SKILL.hono.id, scope: "project", origin: EJECT_SOURCE_NAME },
       ]);
 
       expect(
@@ -126,7 +119,6 @@ describe("a project-scoped skill in a category the global install lacks widens t
       const globalTypes = await readTestFile(configTypesTsPath(fakeHome));
       const projectTypes = await readTestFile(configTypesTsPath(projectDir));
 
-      // The control: absent globally, so the project's line is an extension.
       expect(
         globalTypes,
         "the global Category union must not name the project-only category — with it there, the project's extension proves nothing",

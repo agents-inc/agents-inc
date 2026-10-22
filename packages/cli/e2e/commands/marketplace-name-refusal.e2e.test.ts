@@ -22,6 +22,7 @@ import { E2E_AGENT, E2E_SKILL } from "../fixtures/expected-values.js";
 import { flattenCliOutput } from "../helpers/test-utils.js";
 import {
   E2E_MARKETPLACE_NAME,
+  EJECT_SOURCE_NAME,
   EXIT_CODES,
   FILES,
   SOURCE_PATHS,
@@ -34,9 +35,10 @@ import {
 } from "../../src/cli/lib/__tests__/factories/seed-factories.js";
 
 /**
- * A `marketplace.json` name must be kebab-case, and the refusal reaches the load and `doctor`'s
- * Marketplaces row; each leg has its accepted twin. The second block is the reserved name `eject`,
- * which made plugin installs silently eject.
+ * A `marketplace.json` name must be kebab-case, because it is the namespace Claude Code registers
+ * every plugin in and the CLI piggybacks on what Claude Code accepts (owner ruling 2026-08-20). The
+ * refusal reaches the load and `doctor`'s Marketplaces row; each leg has its accepted twin. The
+ * second block is the reserved name `eject`, which would make plugin installs silently eject.
  */
 
 const NAME_REFUSED = "Acme_Skills";
@@ -146,17 +148,10 @@ describe("a marketplace whose manifest names it something Claude Code cannot reg
   });
 });
 
-/** Read back by the installer as "copied, not installed". */
-const EJECT_MARKER_NAME = "eject";
-
 const PLUGIN_PLAN = `Install mode: ${STEP_TEXT.PLUGIN_NATIVE}`;
-/** What the defect printed instead. */
 const EJECT_PLAN = `Install mode: ${STEP_TEXT.EJECT_LOCAL_COPY}`;
 
-/**
- * The same built marketplace under its own name; asserts the install plan, which is what the defect
- * falsified.
- */
+/** The same built marketplace under its own name; asserts the install plan. */
 describe("a marketplace whose manifest names it after the ejected-copy marker", () => {
   const webDev = E2E_AGENT["web-developer"].name;
   const sharedId = "EjectMk1";
@@ -208,7 +203,7 @@ describe("a marketplace whose manifest names it after the ejected-copy marker", 
 
   it("is refused by init --from as a reserved name, which writes nothing", async () => {
     env = await createTestEnvironment({ permissions: false });
-    await republishUnder(EJECT_MARKER_NAME);
+    await republishUnder(EJECT_SOURCE_NAME);
     const before = await readTreeSnapshot(env.fakeHome);
 
     const { exitCode, output } = await runInitFrom(
@@ -222,7 +217,7 @@ describe("a marketplace whose manifest names it after the ejected-copy marker", 
     expect(said, "a plugin asked for must never be announced as a copy").not.toContain(EJECT_PLAN);
     expect(exitCode, said).toBe(EXIT_CODES.ERROR);
     expect(said, "the refusal is the reserved-name one build marketplace gives").toContain(
-      `Marketplace name '${EJECT_MARKER_NAME}' is reserved`,
+      `Marketplace name '${EJECT_SOURCE_NAME}' is reserved`,
     );
     expect(
       await readTreeSnapshot(env.fakeHome),
@@ -279,7 +274,7 @@ describe("an installation whose config.ts recorded a reserved name its manifest 
   }
 
   it("is refused by search as a name the installation recorded, not one to rename", async () => {
-    const projectDir = await installationRecording(EJECT_MARKER_NAME);
+    const projectDir = await installationRecording(EJECT_SOURCE_NAME);
     const before = await readTreeSnapshot(projectDir);
 
     const { exitCode, combined } = await runCLI(["search", E2E_SKILL.react.slug], projectDir, {
@@ -289,7 +284,7 @@ describe("an installation whose config.ts recorded a reserved name its manifest 
     const said = flattenCliOutput(combined);
     expect(exitCode, said).toBe(EXIT_CODES.ERROR);
     expect(said, "the reserved name is what is refused").toContain(
-      `Marketplace name '${EJECT_MARKER_NAME}' is reserved`,
+      `Marketplace name '${EJECT_SOURCE_NAME}' is reserved`,
     );
     expect(said, "the manifest's own name is fine, so renaming it is no way out").not.toContain(
       STEP_TEXT.RESERVED_NAME_MANIFEST_WAY_OUT,

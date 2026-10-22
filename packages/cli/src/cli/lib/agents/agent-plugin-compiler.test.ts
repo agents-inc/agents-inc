@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import { mkdir, writeFile, readFile, stat } from "fs/promises";
-import {
-  compileAgentPlugin,
-  compileAllAgentPlugins,
-  printAgentCompilationSummary,
-} from "./agent-plugin-compiler";
+import { compileAllAgentPlugins, printAgentCompilationSummary } from "./agent-plugin-compiler";
 import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE } from "../../consts";
 import { createTempDir, cleanupTempDir } from "../__tests__/test-fs-utils";
 import { renderAgentMd } from "../__tests__/content-generators";
@@ -30,54 +26,52 @@ describe("agent-plugin-compiler", () => {
     await cleanupTempDir(tempDir);
   });
 
-  describe("compileAgentPlugin", () => {
-    it("should compile a single agent into a plugin", async () => {
-      const agentPath = path.join(agentsDir, "web-developer.md");
-      await writeFile(agentPath, renderAgentMd("web-developer", "Expert frontend developer"));
+  describe("one agent's plugin", () => {
+    const consoleSpies = silenceConsole(["log", "warn"]);
 
-      const result = await compileAgentPlugin({
-        agentPath,
-        outputDir,
-      });
+    async function compileOnly(fileName: string, content: string) {
+      const agentPath = path.join(agentsDir, fileName);
+      await writeFile(agentPath, content);
+      return compileAllAgentPlugins(agentsDir, outputDir);
+    }
 
-      expect(result.agentName).toBe("web-developer");
-      expect(result.manifest.name).toBe("agent-web-developer");
-      expect(result.manifest.version).toBe("1.0.0");
+    it("compiles an agent into a plugin named agent-<name>, at 1.0.0", async () => {
+      const [result] = await compileOnly(
+        "web-developer.md",
+        renderAgentMd("web-developer", "Expert frontend developer"),
+      );
 
-      const stats = await stat(result.pluginPath);
-      expect(stats.isDirectory()).toBe(true);
+      expect(result?.agentName).toBe("web-developer");
+      expect(result?.manifest.name).toBe("agent-web-developer");
+      expect(result?.manifest.version).toBe("1.0.0");
+      expect((await stat(path.join(outputDir, "agent-web-developer"))).isDirectory()).toBe(true);
     });
 
-    it("should create correct directory structure", async () => {
-      const agentPath = path.join(agentsDir, "cli-developer.md");
-      await writeFile(agentPath, renderAgentMd("cli-developer", "CLI development agent"));
+    it("writes the manifest and the agent's markdown inside the plugin", async () => {
+      await compileOnly(
+        "cli-developer.md",
+        renderAgentMd("cli-developer", "CLI development agent"),
+      );
+      const pluginDir = path.join(outputDir, "agent-cli-developer");
 
-      const result = await compileAgentPlugin({
-        agentPath,
-        outputDir,
-      });
-
-      const manifestPath = path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
-      const manifestStats = await stat(manifestPath);
-      expect(manifestStats.isFile()).toBe(true);
-
-      const agentMdPath = path.join(result.pluginPath, "agents", "cli-developer.md");
-      const agentStats = await stat(agentMdPath);
-      expect(agentStats.isFile()).toBe(true);
+      expect(
+        (await stat(path.join(pluginDir, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE))).isFile(),
+      ).toBe(true);
+      expect((await stat(path.join(pluginDir, "agents", "cli-developer.md"))).isFile()).toBe(true);
     });
 
-    it("should generate valid plugin.json with agents path", async () => {
-      const agentPath = path.join(agentsDir, "api-developer.md");
-      await writeFile(agentPath, renderAgentMd("api-developer", "Backend API developer"));
+    it("writes a plugin.json naming the agents path and the agent's description", async () => {
+      await compileOnly(
+        "api-developer.md",
+        renderAgentMd("api-developer", "Backend API developer"),
+      );
 
-      const result = await compileAgentPlugin({
-        agentPath,
-        outputDir,
-      });
-
-      const manifestPath = path.join(result.pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
-      const content = await readFile(manifestPath, "utf-8");
-      const manifest = JSON.parse(content);
+      const manifest = JSON.parse(
+        await readFile(
+          path.join(outputDir, "agent-api-developer", PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE),
+          "utf-8",
+        ),
+      );
 
       expect(manifest.name).toBe("agent-api-developer");
       expect(manifest.version).toBe("1.0.0");
@@ -85,34 +79,27 @@ describe("agent-plugin-compiler", () => {
       expect(manifest.description).toBe("Backend API developer");
     });
 
-    it("should read name and description from frontmatter", async () => {
-      const agentPath = path.join(agentsDir, "my-agent.md");
-      await writeFile(agentPath, renderAgentMd("custom-agent", "A custom agent for testing"));
-
-      const result = await compileAgentPlugin({
-        agentPath,
-        outputDir,
-      });
-
-      expect(result.agentName).toBe("custom-agent");
-      expect(result.manifest.description).toBe("A custom agent for testing");
-    });
-
-    it("should copy agent .md file to agents/ subdirectory", async () => {
-      const body = "# Web Developer\n\nYou are an expert frontend developer.";
-      const agentPath = path.join(agentsDir, "web-dev.md");
-      await writeFile(
-        agentPath,
-        renderAgentMd("web-dev", "Frontend developer agent", { body: body }),
+    it("names the plugin from the frontmatter, not the file name", async () => {
+      const [result] = await compileOnly(
+        "my-agent.md",
+        renderAgentMd("custom-agent", "A custom agent for testing"),
       );
 
-      const result = await compileAgentPlugin({
-        agentPath,
-        outputDir,
-      });
+      expect(result?.agentName).toBe("custom-agent");
+      expect(result?.manifest.description).toBe("A custom agent for testing");
+    });
 
-      const copiedPath = path.join(result.pluginPath, "agents", "web-dev.md");
-      const content = await readFile(copiedPath, "utf-8");
+    it("copies the agent's markdown into agents/ as written", async () => {
+      const body = "# Web Developer\n\nYou are an expert frontend developer.";
+      await compileOnly(
+        "web-dev.md",
+        renderAgentMd("web-dev", "Frontend developer agent", { body }),
+      );
+
+      const content = await readFile(
+        path.join(outputDir, "agent-web-dev", "agents", "web-dev.md"),
+        "utf-8",
+      );
 
       expect(content).toContain("name: web-dev");
       expect(content).toContain("description: Frontend developer agent");
@@ -120,44 +107,29 @@ describe("agent-plugin-compiler", () => {
       expect(content).toContain("You are an expert frontend developer.");
     });
 
-    it("should throw error when frontmatter is missing", async () => {
-      const agentPath = path.join(agentsDir, "bad-agent.md");
-      await writeFile(agentPath, "# No frontmatter here");
+    it("skips an agent whose frontmatter lacks a required field, saying why", async () => {
+      const results = await compileOnly("incomplete.md", "---\nname: incomplete\n---\n\n# Agent");
 
-      await expect(compileAgentPlugin({ agentPath, outputDir })).rejects.toThrow(
-        /has invalid or missing YAML frontmatter/,
+      expect(results).toStrictEqual([]);
+      expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+        expect.stringContaining("Agent 'incomplete.md' has invalid or missing YAML frontmatter"),
       );
     });
 
-    it("should throw error when frontmatter is missing required fields", async () => {
-      const agentPath = path.join(agentsDir, "incomplete.md");
-      await writeFile(agentPath, "---\nname: incomplete\n---\n\n# Agent");
-
-      await expect(compileAgentPlugin({ agentPath, outputDir })).rejects.toThrow(
-        /has invalid or missing YAML frontmatter/,
-      );
-    });
-
-    it("should bump version on content change", async () => {
-      const agentPath = path.join(agentsDir, "versioned.md");
-      await writeFile(
-        agentPath,
+    it("bumps the version when the agent's content changes, and only then", async () => {
+      const [first] = await compileOnly(
+        "versioned.md",
         renderAgentMd("versioned", "Versioned agent", { body: "# Version 1" }),
       );
-
-      const result1 = await compileAgentPlugin({ agentPath, outputDir });
-      expect(result1.manifest.version).toBe("1.0.0");
-
-      const result2 = await compileAgentPlugin({ agentPath, outputDir });
-      expect(result2.manifest.version).toBe("1.0.0");
-
-      await writeFile(
-        agentPath,
+      const [unchanged] = await compileAllAgentPlugins(agentsDir, outputDir);
+      const [changed] = await compileOnly(
+        "versioned.md",
         renderAgentMd("versioned", "Versioned agent", { body: "# Version 2 - updated" }),
       );
 
-      const result3 = await compileAgentPlugin({ agentPath, outputDir });
-      expect(result3.manifest.version).toBe("2.0.0");
+      expect(first?.manifest.version).toBe("1.0.0");
+      expect(unchanged?.manifest.version).toBe("1.0.0");
+      expect(changed?.manifest.version).toBe("2.0.0");
     });
   });
 
@@ -318,9 +290,9 @@ describe("agent-plugin-compiler", () => {
       await writeFile(agentPath, renderAgentMd("web-developer", "Expert frontend developer"));
       setVerbose(true);
 
-      const result = await compileAgentPlugin({ agentPath, outputDir });
+      const [result] = await compileAllAgentPlugins(agentsDir, outputDir);
 
-      expect(result.pluginPath).toBe(path.join(outputDir, "agent-web-developer"));
+      expect(result?.pluginPath).toBe(path.join(outputDir, "agent-web-developer"));
       expect(consoleSpies.log).toHaveBeenCalledWith(
         `  Compiling agent plugin: web-developer from ${agentPath}`,
       );
@@ -329,15 +301,6 @@ describe("agent-plugin-compiler", () => {
       );
       expect(consoleSpies.log).toHaveBeenCalledWith(
         "    Copied agent web-developer.md -> agents/web-developer.md",
-      );
-    });
-
-    it("names the file with no frontmatter, why, and where it is", async () => {
-      const agentPath = path.join(agentsDir, "bad-agent.md");
-      await writeFile(agentPath, "# No frontmatter here");
-
-      await expect(compileAgentPlugin({ agentPath, outputDir })).rejects.toThrow(
-        `Agent 'bad-agent.md' has invalid or missing YAML frontmatter: no YAML frontmatter block. File: ${agentPath}`,
       );
     });
 

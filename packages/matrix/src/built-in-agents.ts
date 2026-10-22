@@ -5,7 +5,7 @@ import { MODEL_NAMES } from "./vendor/matrix"
 const agentNameSchema = z.enum(AGENT_NAMES)
 const modelNameSchema = z.enum(MODEL_NAMES)
 
-export const agentDefinitionSchema = z.object({
+const agentDefinitionSchema = z.object({
   id: agentNameSchema,
   title: z.string(),
   description: z.string(),

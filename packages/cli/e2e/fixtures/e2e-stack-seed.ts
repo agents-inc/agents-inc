@@ -86,7 +86,8 @@ export async function installFromSeed(
   return result;
 }
 
-// At a real terminal, approving the plan; asserts nothing about the exit.
+// At a real terminal, approving the plan; asserts nothing about the exit. A run that never asks
+// times out here: {@link applyUnchangedFromSeed} is the path for one that changes nothing.
 export async function applyEditFrom(
   store: SeedConfigStore,
   id: string,
@@ -118,6 +119,34 @@ export async function applyFromSeed(
   const applied = await applyEditFrom(store, id, { dir: site.dir, globalHome: site.home });
   expect(applied.exitCode, `edit --from ${id} failed: ${applied.output}`).toBe(expectedExit);
   return applied;
+}
+
+/** At a real terminal, a run that changes nothing: it says so and exits without asking. */
+export async function applyUnchangedFromSeed(
+  store: SeedConfigStore,
+  id: string,
+  payload: SeedPayload,
+  site: InstallSite,
+): Promise<{ exitCode: number; output: string }> {
+  store.publish(id, payload);
+  const prompt = new InteractivePrompt(["edit", "--from", id], site.dir, {
+    env: { AGENTS_INC_API_URL: store.url, HOME: site.home },
+  });
+
+  try {
+    const exitCode = await prompt.waitForExit(TIMEOUTS.WIZARD_LOAD);
+    const output = prompt.getOutput();
+    expect(exitCode, `edit --from ${id} failed: ${output}`).toBe(EXIT_CODES.SUCCESS);
+    expect(output, `edit --from ${id} must say it changed nothing`).toContain(
+      STEP_TEXT.EDIT_UNCHANGED,
+    );
+    expect(output, "a run that changes nothing has nothing to confirm").not.toContain(
+      STEP_TEXT.SHARED_CONFIG_APPLY_CONFIRM,
+    );
+    return { exitCode, output };
+  } finally {
+    await prompt.destroy();
+  }
 }
 
 export function installE2EStackGlobally(

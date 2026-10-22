@@ -15,12 +15,8 @@ export type AnalyticsEvent =
   | { name: "assignment_cycled"; skillId: string; agentId: string }
   | { name: "agent_pinned"; agentId: string; on: boolean }
   | { name: "agent_configured"; agentId: string; field: string; value: string }
-
   | { name: "skill_searched"; resultCount: number }
   | { name: "skill_added"; fullName: string }
-
   | { name: "install_opened"; skillCount: number; agentCount: number }
   | { name: "share_result"; outcome: ShareRefusal | "copied" | "copy-refused" }
   | { name: "config_imported"; skillCount: number }
-
-export type AnalyticsEventName = AnalyticsEvent["name"]

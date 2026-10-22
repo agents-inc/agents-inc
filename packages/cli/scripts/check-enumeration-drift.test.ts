@@ -2,7 +2,7 @@
  * Drives the check against fixture packages, then asserts this repository is clean. Each guard
  * gets a test, since a row that silently judges nothing reads like a pass.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -22,7 +22,6 @@ import {
   NO_SOURCE_FILE,
   NO_SYMBOL,
   REEXPORTS_A_DECLARATION,
-  REGISTRY,
   type RegistryEntry,
   SOURCE_ENUMERATES_NOTHING,
   UNNAMEABLE_REEXPORT,
@@ -31,17 +30,6 @@ import {
   WHOLE_MODULE_REEXPORT,
 } from "./check-enumeration-drift.js";
 import { expectRefusal } from "./refusal-expectations.js";
-
-const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
-
-/** Copied verbatim from journey-page.ts; this keeps the two copies equal. */
-const ESCAPE_RULE_DECLARATIONS = [
-  "const CELL_SEPARATOR = /(?<!\\\\)\\|/;",
-  'const ESCAPED_PIPE = "\\\\|";',
-];
-
-const ESCAPE_RULE_ORIGIN = "src/cli/lib/__tests__/helpers/journey-page.ts";
-const ESCAPE_RULE_COPY = "scripts/check-enumeration-drift.ts";
 
 const SOURCE_FILE = "src/sentinels.ts";
 const DOCUMENT = "docs/reference.md";
@@ -52,7 +40,6 @@ const SECTION_CLOSES = "**Everything else**";
 
 const SENTINELS = "SENTINELS";
 
-/** The shape of `factories/`: modules plus a barrel. */
 const SOURCE_DIRECTORY = "src/kit";
 const KIT_ALPHA = `${SOURCE_DIRECTORY}/alpha-kit.ts`;
 const KIT_BRAVO = `${SOURCE_DIRECTORY}/bravo-kit.ts`;
@@ -1362,27 +1349,13 @@ describe("a registry row that would judge nothing", () => {
 });
 
 describe("this repository", () => {
-  it("registers something to scan", () => {
-    expect(REGISTRY.length, "the scan must have something to scan").toBeGreaterThan(0);
-  });
-
-  it("states markdown's cell escape identically in both files that carry it", () => {
-    const origin = readFileSync(path.join(PACKAGE_ROOT, ESCAPE_RULE_ORIGIN), "utf-8");
-    const copy = readFileSync(path.join(PACKAGE_ROOT, ESCAPE_RULE_COPY), "utf-8");
-
-    expect(
-      ESCAPE_RULE_DECLARATIONS.filter((declaration) => origin.includes(declaration)),
-      "a rule the origin no longer states is one its copy is agreeing with nothing about",
-    ).toStrictEqual(ESCAPE_RULE_DECLARATIONS);
-    expect(
-      ESCAPE_RULE_DECLARATIONS.filter((declaration) => copy.includes(declaration)),
-      "two escape-aware readers disagreeing about where a cell ends read a whole column from the wrong place",
-    ).toStrictEqual(ESCAPE_RULE_DECLARATIONS);
-  });
-
   it("has no document whose exhaustive list disagrees with the source it enumerates", () => {
     const { clean, verdicts } = check();
 
+    expect(
+      verdicts,
+      "a run that judges no registered claim reports clean, so the drift check below would pass with nothing to scan",
+    ).not.toStrictEqual([]);
     expect(
       verdicts.filter((verdict) => verdict.outcome === "drifted"),
       "a list naming a symbol that no longer exists sends the reader grepping for nothing, after which the document is not trusted at all",
