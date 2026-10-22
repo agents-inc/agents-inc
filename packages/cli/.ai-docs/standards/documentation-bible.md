@@ -788,7 +788,8 @@ sends you to the absence vocabulary rather than to the name you just brought bac
 `scripts/generate-matrix-package.ts` copies the files in `VENDORED_TYPE_FILES` into
 `packages/matrix/src/vendor/` **byte for byte**, and byte for byte includes comments. Correcting a
 stale JSDoc line in `src/cli/types/skills.ts` — a change with no type, no value and no behaviour in
-it — drifts the vendored copies and turns `scripts/generate-matrix-package.test.ts` red. Every agent
+it — drifts the vendored copies and turns
+`scripts/generate-matrix-package-against-this-repository.test.ts` red. Every agent
 already knows a type change propagates; nobody expects a comment to, which is the whole of the
 defect. `bun scripts/run-generate-matrix-package.ts --check` compares in memory and answers it
 without writing anything.

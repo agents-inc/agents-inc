@@ -235,15 +235,11 @@ await expectOnlySourceFolder(
 
 In `e2e/assertions/config-assertions.ts`, which holds this and nothing else. Asserts a string array holds no repeats, with `label`/`context` folded into the failure message — use it for skill-id and agent-name lists where a duplicate is the bug. Callers needing a composite invariant ("no duplicate (name, scope) pair") map their rows to a joined key first; the key string is what the failure reports.
 
-### `normalizeConfigPreservingOrder(config)` and `normalizeGlobalConfig(config)`
+### `normalizeGlobalConfig(config)`
 
-**Not in `e2e/assertions/`.** Both live in `src/cli/lib/__tests__/helpers/config-comparison.ts` — one module, one implementation — and both reach specs through `e2e/helpers/test-utils.ts`. Each takes a serialized `config.ts` and returns a string to hand a `toStrictEqual`.
+**Not in `e2e/assertions/`.** It lives in `src/cli/lib/__tests__/helpers/config-comparison.ts` and reaches specs through `e2e/helpers/test-utils.ts`. It takes a serialized `config.ts` and returns a string to hand a `toStrictEqual`.
 
-They differ in exactly one property, and it is load-bearing. `normalizeGlobalConfig` sorts the lines, so a re-serialization that reorders entries compares equal and the assertion means "the same entries are present"; it is what the dual-scope integrity specs use to claim a project-scope edit left global MEMBERSHIP untouched. `normalizeConfigPreservingOrder` leaves every line in place, so reordering still fails and the assertion means "byte for byte" — which is the regression class `e2e/lifecycle/scope-toggle-roundtrip.e2e.test.ts` exists to guard.
-
-**Swapping one for the other under an existing assertion is an assertion change, not a refactor.** The two are one substitution apart and read identically at the call site, so deleting one and importing the other compiles, passes, and looks like a dedup while silently weakening "the passthrough edit rewrote the config byte for byte" into "it kept the same set of lines in any order". The strength is carried in the name rather than in a boolean a reader has to go and look up.
-
-**The discrimination is pinned, not merely described.** One `it` in `config-comparison.test.ts` asserts, on the same reordered input, that `normalizeConfigPreservingOrder` does NOT compare equal and that `normalizeGlobalConfig` does. Neither half means anything alone — an order-sensitive normaliser that rejects a reordering proves nothing about the trap unless the sibling accepting it sits beside it — so both directions are asserted in a single `it`, which more than satisfies CLAUDE.md's requirement that a pinned negative and its permitted counterpart share one file. Nothing makes two assertions in separate files move together.
+It sorts the lines, so a re-serialization that reorders entries compares equal and the assertion means "the same entries are present"; it is what the dual-scope integrity specs use to claim a project-scope edit left global MEMBERSHIP untouched. A byte-for-byte claim compares the raw text with no normaliser, as `e2e/lifecycle/scope-toggle-roundtrip.e2e.test.ts` does, so **putting this normaliser under such an assertion is an assertion change, not a refactor**: it compiles, passes, and silently weakens "rewrote the config byte for byte" into "kept the same set of lines in any order".
 
 ### A shared helper's signature is a claim about what it checks — in TYPE and in MECHANISM
 

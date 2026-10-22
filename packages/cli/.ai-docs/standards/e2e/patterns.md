@@ -49,7 +49,7 @@ describe("compile command", () => {
 
 Key points:
 
-- No `beforeAll` for the build: `e2e/setup.ts` registers the dist door once, in a `beforeAll`, so it runs before every spec file in the suite. It was `ensureBinaryExists()` called from each file's own `beforeAll` until 2026-08-24 — 248 files of per-file discipline with no checker over it, where forgetting the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted it correctly from one that forgot. `spec-gates.test.ts` now asserts the ABSENCE of the per-spec call, so the discipline cannot grow back.
+- No `beforeAll` for the build: `e2e/setup.ts` registers the dist door once, in a `beforeAll`, so it runs before every spec file in the suite. It was `ensureBinaryExists()` called from each file's own `beforeAll` until 2026-08-24 — 248 files of per-file discipline with no checker over it, where forgetting the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted it correctly from one that forgot.
 - `ProjectBuilder.minimal()` creates the project; `tempDir` captures the parent for cleanup
 - `CLI.run()` takes a `ProjectHandle` and returns ANSI-stripped output
 - Matchers verify file system state without reading files in the test

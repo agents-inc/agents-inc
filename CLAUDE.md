@@ -53,6 +53,10 @@ publishes to npm.
   deliberately (clarified by the owner 2026-08-09; the rule previously read as an absolute ban).
   This rule is in `packages/cli/CLAUDE.md` as well, but it is not the CLI's rule and that file
   does not load from here.
+- **A commit plan is one planner and minutes, never a multi-agent run** (owner, 2026-10-22). Group
+  the tree by concern into about 10–20 commits a person can review. Don't fan out analysts,
+  reviewers or build simulations over it. Don't plan around the staged index: the owner unstages
+  first. An hour-long, ten-agent run that produced 88 commits is what this rule forbids.
 - **The CLI is deliberately narrower than the editor.** It handles a few clear use cases; the full
   experience is the editor, and the two front doors are not meant to be feature-equivalent. So a CLI
   surface that is smaller than the editor's is a design decision rather than a gap. The test is
@@ -122,6 +126,10 @@ open one.** Four of its rules are restated here because everything else depends 
   is written down as each lane lands.
 - **Name the files each lane owns whenever more than one agent is working.** An agent needing a
   change in someone else's file reports the exact change rather than making it.
+
+**Never build an owner decision that was not given** (owner, 2026-10-21). A question put to the owner (a
+decision card, a questions page, an open ruling) is answered only by the owner. If the answer cannot be found, stop
+that work and say where you looked; a recommendation is never built in its place, and no brief tells an agent to.
 
 Three principles were ruled on 2026-08-19 and are not re-litigated: **the verifier is never the
 fixer**; **a verdict carries a reproduction, not a judgement**; and **prefer deleting a claim to

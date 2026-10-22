@@ -497,7 +497,7 @@ The suite holds no split/loop/filter over raw `config.ts` text, and since the no
 grep -rn 'split("\n")' e2e --include='*.ts' | grep -v handrun.gen
 ```
 
-The two whole-file normalizers, `normalizeConfigPreservingOrder` and `normalizeGlobalConfig`, live in `src/cli/lib/__tests__/helpers/config-comparison.ts` with their own spec and reach specs through `e2e/helpers/test-utils.ts`; both hand a whole config to an equality and extract nothing, which is what keeps them outside this ban.
+The whole-file normalizer `normalizeGlobalConfig` lives in `src/cli/lib/__tests__/helpers/config-comparison.ts` with its own spec and reaches specs through `e2e/helpers/test-utils.ts`; it hands a whole config to an equality and extracts nothing, which is what keeps it outside this ban.
 
 ### Never put an extractor in front of an assertion
 
@@ -939,7 +939,7 @@ The counter-example is in the tree: `e2e/commands/compile-scope-filtering.e2e.te
 These rules come from the monolith this directory was split out of. `e2e-testing-bible.md` is now a pointer into here, so this is where they live:
 
 - **No task IDs anywhere except file-level JSDoc.** Never include `D-NNN` / `P-BUILD-1` / `Bug A` tokens in `describe()` names, `it()` names, assertion messages (2nd arg to `expect`), or inline test-body comments. Test names describe BEHAVIOR, assertion messages describe INVARIANTS ("config.ts must not contain version field"). IDs look authoritative but rot once the task closes.
-- **Never call the dist door from a spec.** `e2e/setup.ts` registers the dist door once, in a `beforeAll`, so it runs before every spec file in the suite. It was `ensureBinaryExists()` called from each file's own `beforeAll` until 2026-08-24 — 248 files of per-file discipline with no checker over it, where forgetting the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted it correctly from one that forgot. `spec-gates.test.ts` now asserts the ABSENCE of the per-spec call, so the discipline cannot grow back. A spec calling it again is not wrong, it is redundant, and redundancy is how the per-file discipline grows back.
+- **Never call the dist door from a spec.** `e2e/setup.ts` registers the dist door once, in a `beforeAll`, so it runs before every spec file in the suite. It was `ensureBinaryExists()` called from each file's own `beforeAll` until 2026-08-24 — 248 files of per-file discipline with no checker over it, where forgetting the call bought a 45-second timeout naming nothing and no reader could tell a spec that omitted it correctly from one that forgot. A spec calling it again is not wrong, it is redundant, and redundancy is how the per-file discipline grows back.
 - **`describe.skipIf()` for external dependencies.** Plugin tests use `describe.skipIf(!claudeAvailable)`. Marketplace tests use `describe.skipIf(!hasSkillsSource)`.
 - **Split files at 300 LOC** or when covering 2+ unrelated concerns.
 - **Never test the Claude CLI binary from E2E tests.** Testing `claude plugin install` directly is a smoke test. Place in `smoke/` with `.smoke.test.ts` extension.

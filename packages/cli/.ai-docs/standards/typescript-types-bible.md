@@ -88,7 +88,7 @@ categories: Partial<Record<Category, CategoryDefinition>>;
 This applies universally:
 
 - `Partial<Record<SkillId, ResolvedSkill>>` — not all skills present
-- `Partial<Record<SkillAlias, SkillId>>` — not all aliases mapped
+- `Partial<Record<SkillSlug, SkillId>>` — not every slug mapped
 - `Partial<Record<AgentName, StackAgentConfig>>` — not every agent in a stack
 
 **TypeScript forces you to handle `undefined` access, which is correct.**
@@ -190,16 +190,15 @@ The failure mode is not a crash — the invariant holds — it is that a later c
 Data that passes through a resolution/normalization step should have different types before and after:
 
 ```typescript
-// Pre-resolution: user input can be alias OR canonical ID
-type ExtractedSkillMetadata = {
-  requires: (SkillAlias | SkillId)[]; // "react" or "web-framework-react"
-  conflictsWith: (SkillAlias | SkillId)[];
+// Pre-resolution: the rules file names skills by slug
+type RequireRule = {
+  skill: SkillSlug; // "react"
+  needs: SkillSlug[];
 };
 
 // Post-resolution: always canonical IDs
-type ResolvedSkill = {
-  requires: SkillId[]; // always "web-framework-react"
-  conflictsWith: SkillId[];
+type SkillRequirement = {
+  skillIds: SkillId[]; // "web-framework-react"
 };
 ```
 
@@ -252,7 +251,7 @@ export function typedKeys<K extends string>(obj: Partial<Record<K, unknown>>): K
 }
 ```
 
-**Runtime narrowing uses type guards, not casts.** For string-to-union narrowing at runtime, use the guards in `src/cli/utils/type-guards.ts` — `isCategory()`, `isAgentName()`, `isCategoryPath()`. They check membership against the generated `CATEGORIES` / `AGENT_NAMES` arrays from `src/cli/types/generated/source-types.ts`, so adding a new value to the source automatically widens the guard.
+**Runtime narrowing uses type guards, not casts.** For string-to-union narrowing at runtime, use the guards in `src/cli/utils/type-guards.ts`, such as `isAgentName()`. They check membership against the generated arrays in `src/cli/types/generated/source-types.ts`, so adding a new value to the source automatically widens the guard.
 
 ```typescript
 // BAD — cast asserts membership without checking
@@ -377,8 +376,7 @@ Deleting them is a separate and arguable call; the disables are the inventory fo
 DefinitelyTyped is not a contract. `process.stdout.columns` is declared `number` and is `undefined`
 whenever stdout is not a TTY, so `process.stdout.columns ?? MIN_TERMINAL_SIZE.COLS` in
 `base-command.ts` is load-bearing and the type is a lie. Prefer a targeted disable naming the lie
-over deletion — four sites carry it today, the `columns` and `rows` pair in `base-command.ts` and
-the same pair in `use-terminal-dimensions.test.ts`.
+over deletion, as the `columns` and `rows` pair in `base-command.ts` does.
 
 **4. A report on a `??` or `?.` over a field the type declares REQUIRED is evidence about the
 DECLARATION, not about the guard.** The first three verdicts are about a graph that under-reports;

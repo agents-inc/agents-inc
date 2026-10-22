@@ -36,7 +36,7 @@ route left out of it is missing from every client.
 
 | Route                     | Where                        | What                                                                                                                                                                            |
 | ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /configs`           | `index.ts` `createConfig`    | Validates `installableSeedPayloadSchema`, content-addresses the body, and stores it in KV `CONFIGS`. A different `v` gets `409` (`refuseAnotherSeedVersion`)                               |
+| `POST /configs`           | `index.ts` `createConfig`    | Validates `installableSeedPayloadSchema`, content-addresses the body, and stores it in KV `CONFIGS`. A different `v` gets `409` (`refuseAnotherSeedVersion`)                    |
 | `GET /configs/{id}`       | `index.ts` `getConfig`       | Serves the payload. The CLI identifies itself with `user-agent: agents-inc-cli` (`SEED_USER_AGENT`)                                                                             |
 | `GET /skills`             | `index.ts`, `skill-index.ts` | The external-skill search index, stored under `SKILL_INDEX_KEY` and carrying an `x-skill-index: fresh\|stale` header. `.github/workflows/build-skill-index.yml` builds it daily |
 | `/stacks`, `/stacks/{id}` | `stacks.ts`                  | A signed-in user's saved stacks (D1). Each one points at a `configId`                                                                                                           |
@@ -67,7 +67,8 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
    through `@workspace/api` against `SEED_API_URL` (`AGENTS_INC_API_URL` overrides it), maps it
    with `seedToInstallSelection`. `edit --from` applies a payload to an existing
    installation. `share` and a bare `edit` (`edit --ui`) go the other way:
-   `seedPayloadForInstallation` then `publishSeedConfig`.
+   `seedPayloadForInstallation` then `publishSeedConfig`. The editor links the CLI prints are built
+   on `EDITOR_URL` (`AGENTS_INC_EDITOR_URL` overrides it).
 4. **Install and write.** Skills are installed per skill (see below), and skills the editor added
    from GitHub travel inline in the payload's `external` map (`writeExternalSkills`). The config is
    written only through `lib/config-gate/`, by `writeConfigByScope`. That call splits it by
@@ -133,7 +134,7 @@ one's `:check` form compares in memory, names every drifted file and writes noth
 | ------------------------- | ----------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `generate:types` (cli)    | the `skills` checkout (or a path argument), agent `metadata.yaml` | `packages/cli/src/cli/types/generated/`    | `generate:types:check` in `prepublishOnly` only, because CI has no skills checkout. `regenerate-catalog.yml` regenerates on a `skills-updated` dispatch and opens a PR |
 | `generate:schemas` (cli)  | the CLI's zod schemas                                             | `packages/cli/src/schemas/*.json`          | `generate:schemas:check` in CI `check-cli` and `prepublishOnly`; `generate-json-schemas.test.ts`                                                                       |
-| `generate:matrix` (cli)   | `src/cli/types/`, agent metadata                                  | `packages/matrix/src/{vendor,generated}/`  | `generate:matrix:check` in CI `check-web`; `generate-matrix-package.test.ts`                                                                                           |
+| `generate:matrix` (cli)   | `src/cli/types/`, agent metadata                                  | `packages/matrix/src/{vendor,generated}/`  | `generate:matrix:check` in CI `check-web`; `generate-matrix-package-against-this-repository.test.ts`                                                                   |
 | `generate:compile` (cli)  | `src/agents/` partials and templates, the CLI version             | `packages/compile/src/generated/corpus.ts` | `generate:compile:check` in CI `check-web`; `generate-compile-package.test.ts`. It embeds `CORPUS_CLI_VERSION`, so a version bump makes it stale                       |
 | `db:generate` (server)    | `apps/server/src/db/*.schema.ts`                                  | `apps/server/migrations/`                  | `db:generate:check` in pre-commit and CI                                                                                                                               |
 | `cf-typegen` (server)     | `wrangler.jsonc`                                                  | `apps/server/worker-configuration.d.ts`    | nothing                                                                                                                                                                |
@@ -158,13 +159,66 @@ output; regenerate it and commit everything the generator wrote.
 There is no correct root Vitest run, so the root `vitest.config.mjs` throws. Run suites through
 turbo or from inside the workspace.
 
+### Mutation testing
+
+StrykerJS runs from the repository root, one run at a time: `bun run mutation <config>`.
+`ls stryker*` lists the configs. `stryker.config.json` is the CLI's first pass, and
+`stryker.cli-lib.config.mjs` and `stryker.cli-commands.config.mjs` narrow it to the library code and
+to the commands. Each `stryker.<name>.static.config.mjs` is the static pass of a first pass.
+
+Each run replaces `reports/mutation/mutation.json`, so copy it aside before the next.
+`bun packages/cli/scripts/run-mutation-summary.ts <report> --list` counts its mutants by status and
+lists each one still open. Its `Survived after 0 tests` must be 0, because no test judged such a
+mutant.
+
+Run the cheapest workspace first; the CLI's passes take hours, so they go last. For each, run the
+first pass, then its static config on the first pass's Ignored and Survived mutants. A static
+mutant that only a few tests load lazily is run against those tests alone in the first pass, so it
+is reported Survived rather than Ignored:
+
+```
+ranges=$(bun packages/cli/scripts/run-mutation-ranges.ts <first pass report> Ignored,Survived) &&
+  bun run mutation stryker.<name>.static.config.mjs --mutate "$ranges"
+```
+
+The ranges script refuses, exiting non-zero, when no mutant in the report has the statuses asked
+for: the pass it would feed has nothing to judge. Keep the two steps apart as above. Written inline
+as `--mutate "$(…)"`, the refusal would not stop Stryker, which reads an empty `--mutate` as
+nothing to mutate and does a dry run that exits 0.
+
+The CLI's commands take four runs:
+
+1. `stryker.cli-commands.config.mjs`, the first pass.
+2. `bun packages/cli/scripts/run-rebuild-loadtime-files.ts <its report>` rewrites
+   `packages/cli/vitest.loadtime.files.json`: the test files that can see a command's load-time code.
+   `--output <file>` writes the list there instead. It needs a full first pass, and refuses a report
+   narrowed with `--mutate`.
+3. `stryker.cli-commands.static.config.mjs`, on the first pass's Ignored and Survived mutants as
+   above.
+4. `stryker.cli-commands.loaded-dist.config.mjs`, on the first pass's open mutants:
+
+   ```
+   ranges=$(bun packages/cli/scripts/run-mutation-ranges.ts <first pass report> Survived,NoCoverage,Timeout) &&
+     bun run mutation stryker.cli-commands.loaded-dist.config.mjs --mutate "$ranges"
+   ```
+
+   That re-runs every open command mutant, not only the load-time code this pass exists for, so it
+   is slower than the hand-picked load-time set the pass was first run on.
+
+Stryker cannot reach the e2e and smoke specs, Playwright, or the Storybook stories: the code they
+test runs in another process or in a browser, where Stryker does not see it.
+
+Stryker never mutates code under a TypeScript `as`, `as const` included, and the report does not
+say so: a list written `[…] as const satisfies T` or the `??` in `(x ?? []) as T` gets no mutant,
+so break such code by hand.
+
 ## Gates
 
 | Gate                            | Runs                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.husky/pre-commit`             | `lint-staged`, which runs `eslint --fix` then `prettier --write` on the staged files. `deps:check` when a manifest or a shared-tool config is staged. `turbo run lint typecheck test --filter='...[HEAD]'`, then `db:generate:check` on the same filter                                                                                                                                                              |
 | `.husky/pre-push`               | Picks a side from `@{push}..HEAD`: the CLI side is `packages/cli` or matrix, compile, api or api-mocks; the web side is anything else under `apps/` or `packages/`; root tooling picks both. It runs `deps:check` on the same condition as pre-commit, lints each side that moved, then runs that side's `test` and `test:e2e`. The first web push on a machine needs `bunx playwright install --with-deps chromium` |
-| CI `check-web`                  | `deps:check`, `generate:matrix:check`, `generate:compile:check`, `db:generate:check`, then typecheck, lint, test and test:e2e `--filter='!agents-inc'`                                                                                                                                                                                                                                                               |
+| CI `check-web`                  | `deps:check`, `format:check`, `generate:matrix:check`, `generate:compile:check`, `db:generate:check`, then typecheck, lint, test and test:e2e `--filter='!agents-inc'`                                                                                                                                                                                                                                               |
 | CI `check-cli`                  | `generate:schemas:check`, then typecheck, lint, test and test:e2e `--filter=agents-inc`, then `test:smoke`                                                                                                                                                                                                                                                                                                           |
 | CI `visual-ui`, `visual-editor` | Chromatic and Argos. A changed render fails until someone accepts it                                                                                                                                                                                                                                                                                                                                                 |
 | CI `deploy`                     | On pushes to `main`, after `check-web`: applies the D1 migrations, then runs `bun run deploy` for the editor, worker and site                                                                                                                                                                                                                                                                                        |
