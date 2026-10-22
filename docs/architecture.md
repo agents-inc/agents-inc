@@ -20,7 +20,7 @@ manager (one `bun.lock`) and turbo runs every task. Only `packages/cli` publishe
 | `packages/{eslint,prettier,typescript,vitest}-config` | `@workspace/*-config`  | Shared configs. `bun run deps:check` fails a workspace that stops extending one without a `//no-shared-*` reason in its `package.json`                                                                                   |
 | `apps/editor`                                         | `editor`               | The editor at `agentsinc.sh/editor`: Vite, React, TanStack Router, zustand stores persisted to localStorage. Deployed as Cloudflare static assets                                                                        |
 | `apps/server`                                         | `server`               | The API worker at `api.agentsinc.sh`: Hono with `@hono/zod-openapi`, KV `CONFIGS`, D1 through drizzle, better-auth (GitHub)                                                                                              |
-| `apps/www`                                            | `www`                  | Astro and Starlight at `agentsinc.sh`: landing page at `/`, user docs at `/docs` from `apps/www/src/content/docs/docs/`. It has no React integration, on purpose (see `astro.config.ts`)                                 |
+| `apps/www`                                            | `www`                  | Astro and Starlight at `agentsinc.sh`: `/` redirects to the editor (`public/_redirects`), user docs at `/docs` from `apps/www/src/content/docs/docs/`. It has no React integration, on purpose (see `astro.config.ts`)                                 |
 
 Skill content lives in the separate [`agents-inc/skills`](https://github.com/agents-inc/skills)
 repository. It is the CLI's default marketplace (`DEFAULT_SOURCE` in `packages/compile/src/paths.ts`),
@@ -68,7 +68,8 @@ toSeedPayload ──POST /configs──▶  validate, hash, KV  ──id──�
    with `seedToInstallSelection`. `edit --from` applies a payload to an existing
    installation. `share` and a bare `edit` (`edit --ui`) go the other way:
    `seedPayloadForInstallation` then `publishSeedConfig`. The editor links the CLI prints are built
-   on `EDITOR_URL` (`AGENTS_INC_EDITOR_URL` overrides it).
+   on `EDITOR_URL`, which is the local editor (`http://localhost:5173/editor`) when
+   `AGENTS_INC_API_URL` names this machine.
 4. **Install and write.** Skills are installed per skill (see below), and skills the editor added
    from GitHub travel inline in the payload's `external` map (`writeExternalSkills`). The config is
    written only through `lib/config-gate/`, by `writeConfigByScope`. That call splits it by

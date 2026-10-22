@@ -10,7 +10,7 @@ publishes to npm.
 | -------------------- | ------------------------------------------------------------------------- |
 | `packages/cli`       | the published CLI — `agents-inc` on npm                                   |
 | `apps/editor`        | the editor (Vite + React, deployed to Cloudflare)                         |
-| `apps/www`           | the Astro site — landing page at `/`, docs at `/docs`                     |
+| `apps/www`           | the Astro site — docs at `/docs`; `/` redirects to the editor             |
 | `apps/server`        | the API worker (Hono)                                                     |
 | `packages/matrix`    | the skill catalog the web app reads                                       |
 | `packages/compile`   | the pure renderers the CLI writes with and the editor previews            |
