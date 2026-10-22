@@ -23,7 +23,6 @@ description: "Implements frontend features from detailed specs - UI components, 
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 model: opus
 permissionMode: default
-hooks: {"Stop":[{"hooks":[{"type":"command","command":"command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0; out=$(npm run --if-present --silent typecheck 2>&1) || { printf '%s\\n' \"$out\" >&2; exit 2; }"}]}]}
 skills:
   - web-framework-react:web-framework-react
   - web-styling-cva:web-styling-cva
@@ -59,19 +58,19 @@ The frontmatter is the entire contract with Claude Code: what the sub-agent is c
 
 ## The frontmatter
 
-| Key               | Where the value comes from                                                                                               | What Claude Code does with it                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `name`            | the agent's key at compile time — it matches the filename stem                                                           | the address the `Task` tool dispatches to                                                              |
-| `description`     | `description:` in the agent's `metadata.yaml`, copied verbatim                                                           | shown to the dispatching model; it's how an agent gets picked                                          |
-| `tools`           | the `tools:` list in `metadata.yaml`, plus `Skill`, which the compile step always appends                                | the allowlist the sub-agent spawns with                                                                |
-| `disallowedTools` | `disallowedTools:` in `metadata.yaml` — omitted when it isn't set                                                        | tools the sub-agent may not use                                                                        |
-| `model`           | `model:` for the agent in `config.ts`, falling back to `metadata.yaml`, then to `inherit`                                | which model runs the sub-agent                                                                         |
-| `effort`          | `effort:` in `config.ts`, falling back to `metadata.yaml` — omitted when neither sets it                                 | reasoning effort for the run                                                                           |
-| `permissionMode`  | `permissionMode:` in `metadata.yaml`, falling back to `default`                                                          | the sub-agent's permission posture                                                                     |
-| `isolation`       | `isolation:` in `metadata.yaml` — omitted when it isn't set                                                              | runs the sub-agent in a git worktree of its own                                                        |
-| `experimental`    | `experimental:` in `metadata.yaml` — omitted when it isn't set                                                           | an escape hatch for frontmatter options outside the stable set — `cacheTtl` is the only one documented |
-| `hooks`           | `hooks:` in `metadata.yaml`, merged with a completion gate the compile step adds for any agent holding `Write` or `Edit` | processes Claude Code runs around the sub-agent's lifecycle                                            |
-| `skills`          | the preloaded subset of the agent's skills — omitted when there are none                                                 | each named skill is loaded into the sub-agent's context at spawn                                       |
+| Key               | Where the value comes from                                                                | What Claude Code does with it                                                                          |
+| ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `name`            | the agent's key at compile time — it matches the filename stem                            | the address the `Task` tool dispatches to                                                              |
+| `description`     | `description:` in the agent's `metadata.yaml`, copied verbatim                            | shown to the dispatching model; it's how an agent gets picked                                          |
+| `tools`           | the `tools:` list in `metadata.yaml`, plus `Skill`, which the compile step always appends | the allowlist the sub-agent spawns with                                                                |
+| `disallowedTools` | `disallowedTools:` in `metadata.yaml` — omitted when it isn't set                         | tools the sub-agent may not use                                                                        |
+| `model`           | `model:` for the agent in `config.ts`, falling back to `metadata.yaml`, then to `inherit` | which model runs the sub-agent                                                                         |
+| `effort`          | `effort:` in `config.ts`, falling back to `metadata.yaml` — omitted when neither sets it  | reasoning effort for the run                                                                           |
+| `permissionMode`  | `permissionMode:` in `metadata.yaml`, falling back to `default`                           | the sub-agent's permission posture                                                                     |
+| `isolation`       | `isolation:` in `metadata.yaml` — omitted when it isn't set                               | runs the sub-agent in a git worktree of its own                                                        |
+| `experimental`    | `experimental:` in `metadata.yaml` — omitted when it isn't set                            | an escape hatch for frontmatter options outside the stable set — `cacheTtl` is the only one documented |
+| `hooks`           | `hooks:` in `metadata.yaml` — omitted when it isn't set                                   | processes Claude Code runs around the sub-agent's lifecycle                                            |
+| `skills`          | the preloaded subset of the agent's skills — omitted when there are none                  | each named skill is loaded into the sub-agent's context at spawn                                       |
 
 **Five of the eleven are on every compiled file:** `name`, `description`, `tools`, `model` and `permissionMode`. The last two always render because the template supplies a fallback — `inherit` and `default` — so their presence says nothing about whether anyone chose them. The other six appear only when something puts them there.
 
@@ -86,26 +85,6 @@ The frontmatter is the entire contract with Claude Code: what the sub-agent is c
 **`experimental` is an escape hatch, not a tuning knob you're likely to reach for.** Claude Code documents exactly one option under it today, `cacheTtl`, accepting `5m` or `1h`. No shipped agent sets it.
 
 **The doubled skill reference is `plugin:skill`.** `web-framework-react:web-framework-react` names the plugin on the left and the skill inside it on the right; the halves are identical because each skill ships as its own single-skill plugin. A skill you've ejected renders as a bare id instead, with no colon — see [Install modes](/docs/concepts/install-modes).
-
-## The completion gate
-
-The long `hooks:` line is a `Stop` hook — Claude Code converts it to `SubagentStop` when it registers a sub-agent's hooks, which is the name the logs show — and every agent that can write files gets the same one. When the sub-agent tries to finish, Claude Code runs the command; exiting 2 blocks the stop and hands the command's output back to the sub-agent, so a failing typecheck comes back as the errors themselves and the agent keeps working instead of reporting done.
-
-It is a hook rather than a sentence in the prompt because those are different kinds of claim. "Check your work before stopping" is advice a model may decline to take. This runs whether it does or not.
-
-The command reads, unwrapped:
-
-```bash
-command -v npm >/dev/null 2>&1 && [ -f package.json ] || exit 0
-out=$(npm run --if-present --silent typecheck 2>&1) \
-  || { printf '%s\n' "$out" >&2; exit 2; }
-```
-
-**It is inert wherever it can't be right.** Your compiled agents get installed into whatever repository you point them at, and a gate that hard-blocks in a project with no npm would make every sub-agent unstoppable. So the first line exits 0 unless there is both an `npm` and a `package.json`, and `--if-present` exits 0 for a script the project doesn't define. What's left is exactly the case the gate is for: a project that declares these checks, failing one of them.
-
-**Who gets it.** Any agent whose `tools` include `Write` or `Edit`. A hook the agent declares for another event — a `PostToolUse` formatter, say — is added beside the gate; declaring a stop hook of your own (`Stop`, or the `SubagentStop` spelling Claude Code converts it to) replaces the gate, because a project stating its own completion check keeps it. Of the eighteen shipped agents, thirteen qualify; the four researchers and the reviewer read without writing, so their compiled files carry no `hooks` key at all.
-
-**The completion gate is registered only in a folder Claude Code trusts.** Frontmatter hooks under `~/.claude/agents/` always load; under `<project>/.claude/agents/` they load only once that project's trust dialog has been accepted, and they are dropped in silence otherwise. A project-scope gate in a folder nobody has opened interactively — CI, a fresh checkout, `claude -p` — does nothing, and reports nothing.
 
 ## The body
 
@@ -159,7 +138,7 @@ The block ends in one of three ways, depending on how the agent's skills load:
 
 Three kinds of input produce the file: the shared templates, one shared partial, and five markdown files belonging to the agent itself.
 
-**The templates** are `agent.liquid` and the `agent-body.liquid` it pulls in. `agent.liquid` emits the frontmatter shape, the completion gate included; `agent-body.liquid` lays out the body, the rules between sections and the trailing block, and decides where everything else lands. The split is what lets a Codex role file carry the body without the frontmatter.
+**The templates** are `agent.liquid` and the `agent-body.liquid` it pulls in. `agent.liquid` emits the frontmatter shape; `agent-body.liquid` lays out the body, the rules between sections and the trailing block, and decides where everything else lands. The split is what lets a Codex role file carry the body without the frontmatter.
 
 **The shared partial** is `methodologies/operating-principles.liquid`, which emits `<operating_principles>`. It's the one block every agent carries identically, so a working principle written once applies to all of them.
 

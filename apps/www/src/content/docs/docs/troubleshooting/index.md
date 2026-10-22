@@ -39,7 +39,7 @@ Agents Inc. Doctor
     Placements Offered      ✓  Every configured skill is placeable
     Skills Resolved         ✓  44/44 skills found
     Agents Compiled         ✓  13/13 agents compiled
-    No Orphans              ✓  No orphaned agent files
+    No Orphans              ✓  No orphaned skills or agent files
     Skills Installed        ✓  No eject-mode skills configured
     Plugins Installed       ✓  44/44 plugin-mode skills installed
     Marketplace Reachable   ✓  Connected to remote: /home/me/.cache/agents-inc/sources/github-agents-inc-skills-53f27da1d39533ac

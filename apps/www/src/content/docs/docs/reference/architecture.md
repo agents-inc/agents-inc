@@ -121,8 +121,6 @@ A Claude Code project installation lays out as below; [Scopes and paths](/docs/c
 
 Agent prompts are assembled from partials — a `metadata.yaml` carrying the frontmatter, plus the markdown sections `identity.md`, `playbook.md`, `critical-requirements.md`, `critical-reminders.md` and `output.md`. The compiler reads agent definitions, builds a template context with all selected skills injected, sanitizes user-controlled fields to prevent Liquid injection (`{{`, `{%` stripped), and renders through LiquidJS. On Claude Code, output is one markdown file per agent in `.claude/agents/`.
 
-The same pass writes each agent's completion gate into that frontmatter: the product's built-in typecheck gate, for every agent that can write files and whose definition declares no `Stop` hook of its own.
-
 ## Test Infrastructure
 
 | Layer       | Config Project         | Scope                                           |
@@ -143,4 +141,4 @@ E2E tests cover 5 categories: commands, interactive prompts, lifecycle flows, in
 - **Remeda over imperative loops** for data transformations.
 - **Domain-driven modules** in `lib/` with barrel `index.ts` exports.
 - **Named constants** for exit codes, paths, colors, symbols, file size limits (no magic numbers).
-- **Type guards** (`isCategory()`, `isAgentName()`, etc.) instead of `as` casts for runtime narrowing.
+- **Type guards** (`isAgentName()`, etc.) instead of `as` casts for runtime narrowing.

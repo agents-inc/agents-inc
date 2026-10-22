@@ -64,7 +64,7 @@ export default {
 } satisfies ProjectConfig
 ```
 
-Four fields carry the installation: `skills` is the install manifest, `agents` is the roster, `stack` maps skills onto sub-agents, and `marketplace` says where skills are fetched from. Seventeen exist in all — [Config reference](/docs/configuration/config-reference) is the exhaustive list, and [Editing your config](/docs/guides/editing-config) walks those four as a task rather than as a table.
+Four fields carry the installation: `skills` is the install manifest, `agents` is the roster, `stack` maps skills onto sub-agents, and `marketplace` says where skills are fetched from. [Config reference](/docs/configuration/config-reference) is the exhaustive list, and [Editing your config](/docs/guides/editing-config) walks those four as a task rather than as a table.
 
 Key order is the writer's, not the order you selected things in — top-level fields, the keys inside `stack`, and the keys inside each entry are all placed in a fixed order. Two configs holding the same values are therefore the same file, which is what keeps an edit that changed one skill from rewriting the lines about the others.
 
@@ -89,7 +89,7 @@ Two things it reports rather than fixes, both of which a hand-edit can create. A
 ## The rest of this section
 
 - [Config reference](/docs/configuration/config-reference) — every field of every type, in tables.
-- [Scopes and paths](/docs/configuration/scopes-and-paths) — project versus global, and the five path overrides.
+- [Scopes and paths](/docs/configuration/scopes-and-paths) — project versus global, and the path overrides.
 - [Models and effort](/docs/configuration/models-and-effort) — per-agent tuning, and `branding`.
 - [Claude or Codex](/docs/configuration/providers) — which coding agent an installation is for, and what each can do.
 - [Editing your config](/docs/guides/editing-config) — the task-shaped walkthrough of skills, agents and `stack`.

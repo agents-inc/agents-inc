@@ -26,7 +26,7 @@ It declares nothing, so the CLI doesn't count it as an installation yet. Everyth
 
 ## `ProjectConfig`
 
-The default export. Seventeen fields, three of them required.
+The default export. Three of its fields are required.
 
 | Field             | Type                               | Required | What it does                                                                                                                                                               |
 | ----------------- | ---------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,15 +34,13 @@ The default export. Seventeen fields, three of them required.
 | `description`     | `string`                           | No       | Free text. Carried into a configuration you `share`; nothing in a compiled agent reads it.                                                                                 |
 | `agents`          | `AgentScopeConfig[]`               | Yes      | The roster — which sub-agents this installation has, and at which scope. See [`AgentScopeConfig`](#agentscopeconfig).                                                      |
 | `skills`          | `SkillConfig[]`                    | Yes      | The install manifest — which skills are installed, where, and how. See [`SkillConfig`](#skillconfig).                                                                      |
-| `author`          | `string`                           | No       | Author handle, by convention `@handle`. Preserved across edits and rewritten by `eject`; nothing reads it back.                                                            |
+| `author`          | `string`                           | No       | Author handle, by convention `@handle`. Preserved across edits; nothing reads it back.                                                                                     |
 | `stack`           | `Record<string, StackAgentConfig>` | No       | Which skills each sub-agent receives, keyed sub-agent → category. [The field you'll edit most](#stack-in-detail).                                                          |
-| `marketplace`     | `string`                           | No       | The path or URL skills are fetched from. Defaults to `github:agents-inc/skills`. See [`marketplace` and its two neighbors](#marketplace-and-its-two-neighbors).            |
+| `marketplace`     | `string`                           | No       | The path or URL skills are fetched from. Defaults to `github:agents-inc/skills`. See [`marketplace` and its neighbor](#marketplace-and-its-neighbor).                      |
 | `marketplaceName` | `string`                           | No       | The name that marketplace's own `marketplace.json` gives it. Plugin skills are registered under it.                                                                        |
-| `agentsSource`    | `string`                           | No       | Declared and preserved. Nothing in the CLI reads it — see [Fields that are accepted but inert](#fields-that-are-accepted-but-inert).                                       |
 | `selectedDomains` | `Domain[]`                         | No       | The domains this installation covers — derived from your skills by `init --from`. Omitted when empty.                                                                      |
 | `branding`        | `BrandingConfig`                   | No       | The display name commands print. See [Models and effort](/docs/configuration/models-and-effort#branding).                                                                  |
-| `skillsDir`       | `string`                           | No       | Where a **marketplace repository** keeps its skills. Default `src/skills`. See [Scopes and paths](/docs/configuration/scopes-and-paths#the-five-path-overrides).           |
-| `agentsDir`       | `string`                           | No       | Declared for a marketplace's sub-agent partials, and not reached — sub-agent definitions ship with the CLI.                                                                |
+| `skillsDir`       | `string`                           | No       | Where a **marketplace repository** keeps its skills. Default `src/skills`. See [Scopes and paths](/docs/configuration/scopes-and-paths#the-path-overrides).                |
 | `stacksFile`      | `string`                           | No       | Where a **marketplace repository** keeps its stacks file. Default `config/stacks.ts`.                                                                                      |
 | `categoriesFile`  | `string`                           | No       | Accepted, preserved, and never read. The categories file path is fixed.                                                                                                    |
 | `rulesFile`       | `string`                           | No       | Accepted, preserved, and never read. The rules file path is fixed.                                                                                                         |
@@ -165,33 +163,30 @@ The mode of the whole installation is derived from the set: all-eject is `eject`
 
 For an agent, `excluded: true` removes it from compilation entirely.
 
-## `marketplace` and its two neighbors
+## `marketplace` and its neighbor
 
-Three fields sound alike and do different things:
+Two fields sound alike and do different things:
 
 | Field             | Holds                                           | Example                                       |
 | ----------------- | ----------------------------------------------- | --------------------------------------------- |
 | `marketplace`     | a **reference** — a path or a URL               | `github:agents-inc/skills`, `/home/me/skills` |
 | `marketplaceName` | a **name** — what that marketplace calls itself | `agents-inc`                                  |
-| `agentsSource`    | a reference for sub-agent definitions. Inert.   | —                                             |
 
 They can't be folded together: the name is only knowable once the marketplace has been fetched and its manifest read, so it's recorded separately after the fact. `marketplaceName` is what the plugin registry key is built from — `<skill-id>@<marketplace-name>` — which is why an install that never fetched a manifest doesn't have one.
 
 **`marketplace` is resolved by precedence, not by this field alone**: `init --from` reads the `--marketplace` flag, then the marketplace the configuration names, then the `CC_MARKETPLACE` environment variable; every command then falls to the project config, the global config, and `github:agents-inc/skills`. A flag naming something that can't be a marketplace fails the run; a bad environment variable warns and falls through to the next rung.
 
-**Accepted forms**: `github:`, `gh:`, `gitlab:`, `bitbucket:` and `sourcehut:` prefixes, `https://` and `http://` URLs, or a local directory path. Values are capped at 512 characters, and `..` traversal and private or reserved IP addresses are refused.
+**Accepted forms**: `github:`, `gh:`, `gitlab:`, `bitbucket:` and `sourcehut:` prefixes, `https://` and `http://` URLs, or a local directory path. Values are capped at 512 characters, and `..` traversal, private or reserved IP addresses, and URLs carrying a username or password are refused.
 
 ## Fields that are accepted but inert
 
 These load, validate and survive a rewrite, and change nothing. They're listed here so you don't spend an afternoon on one:
 
-| Field                               | Status                                                                                            |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `agentsSource`                      | Preserved. Its only would-be consumer is never reached — sub-agent definitions ship with the CLI. |
-| `agentsDir`                         | Same. A marketplace can't supply sub-agent partials.                                              |
-| `categoriesFile`                    | Preserved and never read. The categories file path is fixed.                                      |
-| `rulesFile`                         | Preserved and never read. The rules file path is fixed.                                           |
-| `author`                            | Preserved and rewritten by `eject`. Nothing reads it back.                                        |
-| `local` and `path` on an assignment | Round-trip only.                                                                                  |
+| Field                               | Status                                                       |
+| ----------------------------------- | ------------------------------------------------------------ |
+| `categoriesFile`                    | Preserved and never read. The categories file path is fixed. |
+| `rulesFile`                         | Preserved and never read. The rules file path is fixed.      |
+| `author`                            | Preserved. Nothing reads it back.                            |
+| `local` and `path` on an assignment | Round-trip only.                                             |
 
 `description` is a near miss rather than a member: it has no effect on anything compiled, but it does travel with a configuration you `share`.

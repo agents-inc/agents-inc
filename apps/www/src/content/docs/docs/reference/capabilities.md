@@ -114,7 +114,7 @@ Everything here reads or writes your machine, so all of it is the CLI's. [Comman
 | Diagnose a broken installation      | `yes` | `n/a`  | `npx agents-inc doctor` checks config validity, the source-folder layout, the placements the provider offers, skill resolution, agent compilation, orphans, plugin registration and marketplace reachability. See [Common problems](/docs/troubleshooting/common-problems). |
 | Rebuild sub-agents from your config | `yes` | `n/a`  | `npx agents-inc compile`, one scope per run.                                                                                                                                                                                                                                |
 | Search the catalogue                | `yes` | `yes`  | `npx agents-inc search <query>` matches id, name, slug, description and category, across the marketplace plus the local skills already on disk. In the editor, the search field filters the grid.                                                                           |
-| Remove everything                   | `yes` | `n/a`  | `npx agents-inc uninstall`. It works even on a config it can't read, and says what it kept.                                                                                                                                                                                 |
+| Remove everything                   | `yes` | `n/a`  | `npx agents-inc uninstall`. It works even on a config it can't read.                                                                                                                                                                                                        |
 
 ## Where the CLI stops on purpose
 
@@ -137,8 +137,6 @@ Built-in stacks are an open question rather than a settled split. They ship with
 ### What can't make the round trip
 
 `npx agents-inc share` refuses outright rather than dropping a value quietly, and it refuses over four things: a marketplace it can't name, a sub-agent pinned to `inherit`, a project-scoped skill assigned to a global-scoped sub-agent, and an ejected skill — one added in the editor included, since it installs as a local copy. Refusing is the right behaviour for each — leaving a model out would mean "keep the sub-agent's own default", which is a different instruction from `inherit`.
-
-One field goes the other way, and it's worth knowing before you rely on it: `agentsSource` is **dropped silently**. The shared-configuration format has no word for it and nothing refuses over it. Nothing in the CLI reads the field either, so in practice you lose nothing — see [Fields that are accepted but inert](/docs/configuration/config-reference#fields-that-are-accepted-but-inert).
 
 ## Related
 

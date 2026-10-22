@@ -66,7 +66,7 @@ A ref starting with `github:`, `gh:`, `gitlab:`, `bitbucket:`, `sourcehut:`, `ht
 npx agents-inc init --from <id> --marketplace ./acme-skills
 ```
 
-Refs are capped at 512 characters. A remote ref may not contain `..`, may not point at a private or reserved IP address, and a shorthand one has to spell `owner/repo`; a local path may not be a Windows UNC network path.
+Refs are capped at 512 characters. A remote ref may not contain `..`, may not point at a private or reserved IP address, may not carry a username or password (set `GIGET_AUTH`), and a shorthand one has to spell `owner/repo`; a local path may not be a Windows UNC network path.
 
 ## If it can't be reached
 

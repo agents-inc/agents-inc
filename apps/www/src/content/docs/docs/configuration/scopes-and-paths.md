@@ -1,11 +1,11 @@
 ---
 title: Scopes and paths
-description: Where project scope and global scope each write, how a project config reads the global one, why globally installed items are read-only inside a project, and what the five path-override fields actually override.
+description: Where project scope and global scope each write, how a project config reads the global one, why globally installed items are read-only inside a project, and what the path-override fields actually override.
 sidebar:
   order: 3
 ---
 
-Every skill and every sub-agent carries a `scope`, and it's the field that decides which directory tree its files land in. This page is where each scope writes, how the two configs relate, and the five fields that override a path — none of which mean what their names suggest.
+Every skill and every sub-agent carries a `scope`, and it's the field that decides which directory tree its files land in. This page is where each scope writes, how the two configs relate, and the fields that override a path — none of which mean what their names suggest.
 
 ## Quick start
 
@@ -88,19 +88,18 @@ Nothing in `config.ts` is rewritten, so the row survives and the warning repeats
 
 A registered project the fan-out can't reach is warned by name and the run continues. The type unions at the scope you compiled were still written.
 
-## The five path overrides
+## The path overrides
 
-`skillsDir`, `agentsDir`, `stacksFile`, `categoriesFile` and `rulesFile` are the five fields whose names suggest they configure your installation. **They don't.** Every one of them is read from a _marketplace repository's_ own `.agents-inc/config.ts` — the config in the repository the CLI is fetching skills _from_. Note the missing provider segment: a source repo's config is provider-neutral, because `skillsDir` and `stacksFile` describe that repository's own layout and have nothing to do with which assistant installs from it. Setting one in your own project config changes nothing about your project.
+`skillsDir`, `stacksFile`, `categoriesFile` and `rulesFile` are the fields whose names suggest they configure your installation. **They don't.** Every one of them is read from a _marketplace repository's_ own `.agents-inc/config.ts` — the config in the repository the CLI is fetching skills _from_. Note the missing provider segment: a source repo's config is provider-neutral, because `skillsDir` and `stacksFile` describe that repository's own layout and have nothing to do with which assistant installs from it. Setting one in your own project config changes nothing about your project.
 
 | Field            | What a marketplace declares with it | Default                      | Read?                  |
 | ---------------- | ----------------------------------- | ---------------------------- | ---------------------- |
 | `skillsDir`      | where its skills live               | `src/skills`                 | Yes                    |
 | `stacksFile`     | where its stacks file lives         | `config/stacks.ts`           | Yes                    |
-| `agentsDir`      | where its sub-agent partials live   | `src/agents`                 | No — never reached     |
 | `categoriesFile` | where its categories file lives     | `config/skill-categories.ts` | No — the path is fixed |
 | `rulesFile`      | where its relationship rules live   | `config/skill-rules.ts`      | No — the path is fixed |
 
-`agentsDir` is declared but unreachable: sub-agent definitions ship with the CLI and are never fetched from a marketplace, so the branch that would read it has no caller. `categoriesFile` and `rulesFile` load, validate and survive a rewrite, and nothing consults them — the categories and rules files are looked for at their fixed paths.
+`categoriesFile` and `rulesFile` load, validate and survive a rewrite, and nothing consults them — the categories and rules files are looked for at their fixed paths.
 
 **An unreadable source config aborts rather than defaulting.** If a marketplace's own config can't be read, the run stops. Falling back to `src/skills` for a marketplace that says its skills are elsewhere would walk an empty tree and report the catalog as empty, which looks like a marketplace with no skills rather than a config that failed to load.
 
