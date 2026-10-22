@@ -7,6 +7,23 @@ Each release has detailed notes in its own file under [`changelogs/`](./changelo
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.172.0] - 2026-10-22
+
+**`init --from`, `edit --from` and `uninstall` show the summary panel at the question, the editor names the sub-agents a skill switches and holds a project link's global entries, links are version 7, and agentsinc.sh/ opens the editor**
+
+- REPO-44:
+  - The editor names the sub-agents a skill switches on or off in a toast, keeps a stack's sub-agents on with no skills, and holds the global entries of a link a bare `edit` mints in a project. Share links are version 7, so earlier links and saves must be made again.
+  - Text a link carries prints inert on one line, a marketplace value holding a line break is refused, and a carried file whose path leaves its folder is refused.
+  - Agent plugins version by the files they ship, `list` keeps long names whole, a carried skill's name may pass 30 characters, and remedies name the installation they act on.
+  - agentsinc.sh/ redirects to the editor, and the landing page is gone.
+- CLI-925: `doctor` fails its marketplace row offline or on a refusal, lists no ejected skill as an orphan, and passes two healthy installations. Sub-agents install without a skill that fails to load. A local `AGENTS_INC_API_URL` selects the local editor and `AGENTS_INC_EDITOR_URL` is gone. `build marketplace` refuses an empty config, a global edit says it recompiles its registered projects, and a no-op `edit --from` without a terminal exits 0.
+- CLI-908: `init --from`, `edit --from` and `uninstall` show the summary panel where they ask, marking a changed sub-agent `~` and a skill written over `↻`.
+- CLI-915: `init --from` in a project writes the link's own description, or none, never the global installation's.
+- EDITOR-97: a link the CLI mints also opens on a signed-in account's save it equals.
+- Five items still fail in one case each (E1-d, E2, F5b, F9, FU2); the detailed notes list them under Backlog.
+
+See [changelogs/0.172.0.md](./changelogs/0.172.0.md) for full details.
+
 ## [0.171.0] - 2026-10-22
 
 **`doctor` reads each installation, `edit --from` names what it deletes and overwrites, a link's carried skill cannot write outside its folder, and compiled sub-agents carry only the hooks they declare**
