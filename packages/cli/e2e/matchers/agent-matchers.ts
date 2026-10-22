@@ -20,6 +20,11 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
 
+// `agent.liquid` writes the allowlist as one comma-separated string, the form Claude Code reads.
+function grantedTools(value: unknown): string[] {
+  return typeof value === "string" ? value.split(",").map((tool) => tool.trim()) : [];
+}
+
 const COMPLETION_GATE_EVENTS = ["Stop", "SubagentStop"] as const;
 
 function carriesCompletionGate(hooks: unknown): boolean {
@@ -38,6 +43,7 @@ export type AgentFrontmatterExpectations = {
   effort?: string;
   /** No `effort` key at all; effort has no default, so absence is its own outcome. */
   noEffort?: boolean;
+  /** Subset check of the comma-separated `tools:` line. */
   tools?: readonly string[];
   /** Subset check; use `exactSkills` to forbid extras. */
   skills?: readonly string[];
@@ -127,13 +133,13 @@ export const agentMatchers = {
     }
 
     if (expectations.tools) {
-      const tools = asStringArray(fm.tools);
+      const tools = grantedTools(fm.tools);
       const missingTool = expectations.tools.find((tool) => !tools.includes(tool));
       if (missingTool) {
         return {
           pass: false,
           message: () =>
-            `Expected agent frontmatter tools to contain "${missingTool}" but found: ${JSON.stringify(tools)}`,
+            `Expected agent frontmatter tools to contain "${missingTool}" but found: ${JSON.stringify(fm.tools)}`,
         };
       }
     }

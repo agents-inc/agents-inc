@@ -6,21 +6,21 @@ import { z } from "zod";
 import { agentCodec, agentsDir, claudeStateFile } from "../installation/install-layout.js";
 import { isHomeDirectory } from "../installation/is-home-directory.js";
 import { fileExists, glob, readFile, readFileOptional } from "../../utils/fs.js";
+import { extractFrontmatter } from "../../utils/frontmatter.js";
 import type { Provider } from "../../consts.js";
 
 /**
- * Warns when Claude Code will drop a project sub-agent's Stop hook: project hooks run only once
- * `~/.claude.json` records `projects[<key>].hasTrustDialogAccepted`, keyed by the git repository
- * root (a linked worktree's main checkout). Reads that state, never writes it.
+ * Warns when Claude Code will drop a project sub-agent's hooks, on every event: project hooks run
+ * only once `~/.claude.json` records `projects[<key>].hasTrustDialogAccepted`, keyed by the git
+ * repository root (a linked worktree's main checkout). Reads that state, never writes it.
  */
 
 const claudeStateSchema = z.object({ projects: z.record(z.string(), z.unknown()) });
 
 const trustedProjectSchema = z.object({ hasTrustDialogAccepted: z.literal(true) });
 
-/** `Stop`/`SubagentStop` with at least one definition; the template writes compact JSON. */
-const STOP_HOOK_LINE = /^hooks:\s*\{.*"(Stop|SubagentStop)":\[\{/m;
-const FRONTMATTER_FENCE = "---";
+/** Claude Code reads only a top-level `hooks:` key: event name to its definitions. */
+const declaredHooksSchema = z.object({ hooks: z.record(z.string(), z.array(z.unknown())) });
 
 const GIT_ENTRY = ".git";
 const GITDIR_PREFIX = "gitdir:";
@@ -44,17 +44,17 @@ export async function claudeCompileNotices(
   if (provider !== "claude") return [];
   if (isHomeDirectory(projectDir)) return [];
 
-  const withAStopHook = await projectAgentsWithAStopHook(projectDir);
-  if (withAStopHook.length === 0) return [];
+  const agentsWithHooks = await countProjectAgentsDeclaringHooks(projectDir);
+  if (agentsWithHooks === 0) return [];
 
   const trust = await claudeTrustOf(projectDir);
   switch (trust.kind) {
     case "trusted":
       return [];
     case "asks":
-      return [claudeProjectNeedsTrustMessage(projectDir, withAStopHook.length)];
+      return [claudeProjectNeedsTrustMessage(projectDir, agentsWithHooks)];
     case "never asks":
-      return [claudeProjectNeverAskedMessage(trust.recordKey, withAStopHook.length)];
+      return [claudeProjectNeverAskedMessage(trust.recordKey, agentsWithHooks)];
     default: {
       const _exhaustive: never = trust;
       return _exhaustive;
@@ -64,23 +64,22 @@ export async function claudeCompileNotices(
 
 export function claudeProjectNeedsTrustMessage(projectDir: string, count: number): string {
   return (
-    `Claude Code runs a project sub-agent's completion gate (its Stop hook — the project's ` +
-    `typecheck, unless the sub-agent declares its own) only once you trust the folder: open ` +
-    `Claude Code in ${projectDir} and accept the trust prompt. Until then, ${completionGates(count)} ` +
-    `will not run, and nothing will say so.`
+    `Claude Code runs a project sub-agent's hooks only once you trust the folder: open Claude ` +
+    `Code in ${projectDir} and accept the trust prompt. Until then, ${hooksOf(count)} will not ` +
+    `run, and nothing will say so.`
   );
 }
 
 export function claudeProjectNeverAskedMessage(recordKey: string, count: number): string {
   return (
-    `Claude Code runs ${completionGates(count)} only once you trust the folder, and will not ask ` +
-    `here: set projects[${JSON.stringify(recordKey)}].hasTrustDialogAccepted to true in ` +
+    `Claude Code runs ${hooksOf(count)} only once you trust the folder, and will not ask here: ` +
+    `set projects[${JSON.stringify(recordKey)}].hasTrustDialogAccepted to true in ` +
     `${claudeStateFile()}.`
   );
 }
 
-function completionGates(count: number): string {
-  return count === 1 ? "1 sub-agent's completion gate" : `${count} sub-agents' completion gates`;
+function hooksOf(count: number): string {
+  return count === 1 ? "1 sub-agent's hooks" : `${count} sub-agents' hooks`;
 }
 
 async function claudeTrustOf(projectDir: string): Promise<ClaudeTrust> {
@@ -173,16 +172,18 @@ async function realpathOrUndefined(file: string): Promise<string | undefined> {
   }
 }
 
-async function projectAgentsWithAStopHook(projectDir: string): Promise<string[]> {
+async function countProjectAgentsDeclaringHooks(projectDir: string): Promise<number> {
   const dir = agentsDir("claude", "project", projectDir);
   const files = await glob(agentCodec("claude").listGlob, dir);
-  const carriers = await Promise.all(
-    files.map(async (file) => ((await carriesAStopHook(path.join(dir, file))) ? [file] : [])),
-  );
-  return carriers.flat();
+  const agents = await Promise.all(files.map((file) => readFile(path.join(dir, file))));
+  return agents.filter(declaresAHook).length;
 }
 
-async function carriesAStopHook(agentFile: string): Promise<boolean> {
-  const [, frontmatter = ""] = (await readFile(agentFile)).split(FRONTMATTER_FENCE);
-  return STOP_HOOK_LINE.test(frontmatter);
+/** An event with no definition runs nothing, so it is not a hook to warn about. */
+function declaresAHook(agentMarkdown: string): boolean {
+  const frontmatter = declaredHooksSchema.safeParse(extractFrontmatter(agentMarkdown));
+  return (
+    frontmatter.success &&
+    Object.values(frontmatter.data.hooks).some((definitions) => definitions.length > 0)
+  );
 }

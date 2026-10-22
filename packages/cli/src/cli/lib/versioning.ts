@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { readFile as readFileBytes } from "fs/promises";
 import path from "path";
 import { getErrorMessage } from "../utils/errors";
 import { readFile, readFileSafe, writeFile, glob, fileExists } from "../utils/fs";
@@ -58,12 +59,16 @@ export async function computeSkillFolderHash(skillPath: string): Promise<string>
 
 const CONTENT_HASH_FILE = ".content-hash";
 
-export function parseMajorVersion(version: string): number {
+function contentHashFileBeside(manifestPath: string): string {
+  return manifestPath.replace(STANDARD_FILES.PLUGIN_JSON, CONTENT_HASH_FILE);
+}
+
+function parseMajorVersion(version: string): number {
   const [, major] = version.match(/^(\d+)\./) ?? [];
   return major === undefined ? 1 : parseInt(major, 10);
 }
 
-export function bumpMajorVersion(version: string): string {
+function bumpMajorVersion(version: string): string {
   const major = parseMajorVersion(version);
   return `${major + 1}.0.0`;
 }
@@ -79,22 +84,72 @@ async function readExistingPluginManifest(
   }
 
   try {
-    const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
-    const manifest = pluginManifestSchema.parse(JSON.parse(content));
+    const version = await readManifestVersion(manifestPath);
 
-    const hashFilePath = manifestPath.replace(STANDARD_FILES.PLUGIN_JSON, CONTENT_HASH_FILE);
+    const hashFilePath = contentHashFileBeside(manifestPath);
     const contentHash = (await fileExists(hashFilePath))
       ? (await readFile(hashFilePath)).trim()
       : undefined;
 
-    return {
-      version: manifest.version ?? DEFAULT_VERSION,
-      contentHash,
-    };
+    return { version, contentHash };
   } catch (error) {
     warn(`Failed to read plugin manifest at '${manifestPath}': ${getErrorMessage(error)}`);
     return null;
   }
+}
+
+async function readManifestVersion(manifestPath: string): Promise<string> {
+  const content = await readFileSafe(manifestPath, MAX_PLUGIN_FILE_SIZE);
+  return pluginManifestSchema.parse(JSON.parse(content)).version ?? DEFAULT_VERSION;
+}
+
+async function computeBytesHash(filePath: string): Promise<string> {
+  return createHash("sha256")
+    .update(await readFileBytes(filePath))
+    .digest("hex");
+}
+
+/** NUL-delimited, since no path can hold a NUL. */
+async function describeShippedFile(pluginDir: string, file: string): Promise<string> {
+  return `${file}\0${await computeBytesHash(path.join(pluginDir, file))}\0`;
+}
+
+/** Every file in a plugin's folder, by path and bytes: what a host copies when it installs it. */
+export async function computeShippedHash(pluginDir: string): Promise<string> {
+  const files = await glob("**/*", pluginDir, { dot: true });
+  const described = await Promise.all(files.map((file) => describeShippedFile(pluginDir, file)));
+  return createHash("sha256").update(described.join("")).digest("hex");
+}
+
+type EarlierBuild = { version: string; shippedHash: string };
+
+/**
+ * Read before a rebuild clears the folder. Null where no build made it, and, warning, where its
+ * manifest cannot be read.
+ */
+export async function readEarlierBuild(
+  pluginDir: string,
+  getManifestPath: (dir: string) => string,
+): Promise<EarlierBuild | null> {
+  const manifestPath = getManifestPath(pluginDir);
+  if (!(await fileExists(manifestPath))) return null;
+
+  const version = await readManifestVersion(manifestPath).catch((error: unknown) => {
+    warn(`Failed to read plugin manifest at '${manifestPath}': ${getErrorMessage(error)}`);
+    return null;
+  });
+  if (version === null) return null;
+
+  return { version, shippedHash: await computeShippedHash(pluginDir) };
+}
+
+/**
+ * `shippedHash` is the rebuild's, made at the earlier build's version, so that the two differ only
+ * where what the plugin ships does.
+ */
+export function versionAfterRebuild(earlier: EarlierBuild | null, shippedHash: string): string {
+  if (!earlier) return DEFAULT_VERSION;
+  return earlier.shippedHash === shippedHash ? earlier.version : bumpMajorVersion(earlier.version);
 }
 
 export async function determinePluginVersion(
@@ -129,9 +184,5 @@ export async function writeContentHash(
   contentHash: string,
   getManifestPath: (dir: string) => string,
 ): Promise<void> {
-  const hashFilePath = getManifestPath(pluginDir).replace(
-    STANDARD_FILES.PLUGIN_JSON,
-    CONTENT_HASH_FILE,
-  );
-  await writeFile(hashFilePath, contentHash);
+  await writeFile(contentHashFileBeside(getManifestPath(pluginDir)), contentHash);
 }

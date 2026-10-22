@@ -1,7 +1,17 @@
 import path from "path";
 import { parse as parseYaml } from "yaml";
 import { getErrorMessage } from "../../utils/errors";
-import { readFile, writeFile, ensureDir, glob, fileExists, copy } from "../../utils/fs";
+import {
+  readFile,
+  writeFile,
+  ensureDir,
+  glob,
+  fileExists,
+  copy,
+  isPathWithin,
+  isDirectoryEmpty,
+  remove,
+} from "../../utils/fs";
 import { log, verbose, warn } from "../../utils/logger";
 import {
   generateSkillPluginManifest,
@@ -9,18 +19,31 @@ import {
   getPluginManifestPath,
 } from "../plugins";
 import { parseFrontmatter } from "../loading";
-import { computeSkillFolderHash, determinePluginVersion, writeContentHash } from "../versioning";
+import {
+  computeShippedHash,
+  computeSkillFolderHash,
+  readEarlierBuild,
+  versionAfterRebuild,
+  writeContentHash,
+} from "../versioning";
 import type { PluginManifest, SkillFrontmatter } from "../../types";
 import { formatZodIssues, skillMetadataLoaderSchema } from "../schemas";
 import type { z } from "zod";
 
 type SkillMetadata = z.infer<typeof skillMetadataLoaderSchema>;
-import { DEFAULT_BRANDING, STANDARD_FILES } from "../../consts";
+import {
+  DEFAULT_BRANDING,
+  DEFAULT_VERSION,
+  PLUGIN_MANIFEST_DIR,
+  PLUGIN_MANIFEST_FILE,
+  STANDARD_DIRS,
+  STANDARD_FILES,
+} from "../../consts";
 import { stripYamlSchemaComment } from "../../utils/yaml-schema";
 import { plural } from "../../utils/string";
 import { SKILL_CONTENT_FILES, SKILL_CONTENT_DIRS } from "../metadata-keys";
 
-export type SkillPluginOptions = {
+type SkillPluginOptions = {
   skillPath: string;
   outputDir: string;
   skillName?: string;
@@ -32,7 +55,7 @@ export type CompiledSkillPlugin = {
   skillName: string;
 };
 
-export type SkillCompilationRun = {
+type SkillCompilationRun = {
   compiled: CompiledSkillPlugin[];
   /** Directory basenames of skills that failed to compile this run. */
   failed: string[];
@@ -40,6 +63,53 @@ export type SkillCompilationRun = {
 
 function sanitizeSkillName(name: string): string {
   return name.replace(/\+/g, "-");
+}
+
+function isSingleFolderName(name: string): boolean {
+  return name !== "" && name !== "." && name !== ".." && path.basename(name) === name;
+}
+
+/**
+ * A plugin's folder is cleared before each build, so it must be one folder directly inside the
+ * output directory, must not hold the skill's own source, and must not hold files no build made.
+ */
+async function assertClearable(
+  pluginDir: string,
+  skillPath: string,
+  skillName: string,
+): Promise<void> {
+  const skill = `Skill '${path.basename(skillPath)}'`;
+  const file = `File: ${path.join(skillPath, STANDARD_FILES.SKILL_MD)}`;
+
+  if (!isSingleFolderName(skillName)) {
+    throw new Error(
+      `${skill} is named '${skillName}', which is not a single folder name, so its plugin cannot be built inside the output directory. ${file}`,
+    );
+  }
+  if (isPathWithin(skillPath, pluginDir)) {
+    throw new Error(
+      `${skill} would be built into ${pluginDir}, which holds its own source, so building it would overwrite that source. Build into an output directory outside the skills directory. ${file}`,
+    );
+  }
+  if (await holdsContentNoBuildMade(pluginDir)) {
+    throw new Error(
+      `${skill} would be built into ${pluginDir}, which holds no ${path.join(PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)} and is not empty, so no earlier build made it and a rebuild would delete what it holds. Move its contents out, or build into another output directory. ${file}`,
+    );
+  }
+}
+
+/** A folder an earlier build made holds its plugin manifest. */
+async function isEarlierBuild(pluginDir: string): Promise<boolean> {
+  return fileExists(getPluginManifestPath(pluginDir));
+}
+
+async function holdsContentNoBuildMade(pluginDir: string): Promise<boolean> {
+  if (await isEarlierBuild(pluginDir)) return false;
+  return !(await isDirectoryEmpty(pluginDir));
+}
+
+async function clearEarlierBuild(pluginDir: string): Promise<void> {
+  if (await isEarlierBuild(pluginDir)) await remove(pluginDir);
 }
 
 /**
@@ -94,11 +164,39 @@ This skill is automatically available when installed.
 `;
 }
 
-export async function compileSkillPlugin(
-  options: SkillPluginOptions,
-): Promise<CompiledSkillPlugin> {
-  const { skillPath, outputDir, skillName: overrideName } = options;
+async function writeSkillFiles(
+  skillPath: string,
+  pluginSkillDir: string,
+  skillMdContent: string,
+): Promise<void> {
+  await ensureDir(pluginSkillDir);
+  await writeFile(path.join(pluginSkillDir, STANDARD_FILES.SKILL_MD), skillMdContent);
+  verbose(`  Copied ${STANDARD_FILES.SKILL_MD}`);
 
+  for (const fileName of SKILL_CONTENT_FILES) {
+    if (fileName === STANDARD_FILES.SKILL_MD) continue;
+
+    const sourcePath = path.join(skillPath, fileName);
+    if (await fileExists(sourcePath)) {
+      const content = await readFile(sourcePath);
+      await writeFile(path.join(pluginSkillDir, fileName), content);
+      verbose(`  Copied ${fileName}`);
+    }
+  }
+
+  for (const dirName of SKILL_CONTENT_DIRS) {
+    const sourceDir = path.join(skillPath, dirName);
+    if (await fileExists(sourceDir)) {
+      await copy(sourceDir, path.join(pluginSkillDir, dirName));
+      verbose(`  Copied ${dirName}/`);
+    }
+  }
+}
+
+/** A plugin is built from the skill's SKILL.md, so one that is absent or unparseable refuses. */
+async function readSkillMdToBuild(
+  skillPath: string,
+): Promise<{ skillMdContent: string; frontmatter: SkillFrontmatter }> {
   const dirBasename = path.basename(skillPath);
 
   const skillMdPath = path.join(skillPath, STANDARD_FILES.SKILL_MD);
@@ -119,65 +217,57 @@ export async function compileSkillPlugin(
     );
   }
 
+  return { skillMdContent, frontmatter };
+}
+
+export async function compileSkillPlugin(
+  options: SkillPluginOptions,
+): Promise<CompiledSkillPlugin> {
+  const { skillPath, outputDir, skillName: overrideName } = options;
+  const { skillMdContent, frontmatter } = await readSkillMdToBuild(skillPath);
+
   const skillName = overrideName ?? sanitizeSkillName(frontmatter.name);
+  const pluginDir = path.join(outputDir, skillName);
+  await assertClearable(pluginDir, skillPath, skillName);
 
   verbose(`Compiling skill plugin: ${skillName} from ${skillPath}`);
 
   const metadata = await readPluginSkillMetadata(skillPath);
+  const manifestAt = (version: string): PluginManifest =>
+    generateSkillPluginManifest({
+      skillName,
+      description: frontmatter.description,
+      ...(metadata?.author !== undefined && { author: metadata.author }),
+      ...(metadata?.category !== undefined && { category: metadata.category }),
+      version,
+    });
 
-  const pluginDir = path.join(outputDir, skillName);
-  const skillsDir = path.join(pluginDir, "skills", skillName);
+  // Read before the clear: what the earlier build shipped decides whether the version moves.
+  const earlierBuild = await readEarlierBuild(pluginDir, getPluginManifestPath);
+  await clearEarlierBuild(pluginDir);
 
-  await ensureDir(pluginDir);
-  await ensureDir(skillsDir);
+  // At the earlier build's version, so the version alone cannot set the two builds apart; and
+  // first, so a build that stops halfway leaves a folder the next build may clear.
+  await writePluginManifest(pluginDir, manifestAt(earlierBuild?.version ?? DEFAULT_VERSION));
 
-  const newHash = await computeSkillFolderHash(skillPath);
+  // Nothing reads it back. Every plugin built so far ships it, so dropping it would bump them all.
+  await writeContentHash(pluginDir, await computeSkillFolderHash(skillPath), getPluginManifestPath);
 
-  const { version, contentHash } = await determinePluginVersion(
-    newHash,
-    pluginDir,
-    getPluginManifestPath,
+  await writeSkillFiles(
+    skillPath,
+    path.join(pluginDir, STANDARD_DIRS.SKILLS, skillName),
+    skillMdContent,
   );
-
-  const manifest = generateSkillPluginManifest({
-    skillName,
-    description: frontmatter.description,
-    ...(metadata?.author !== undefined && { author: metadata.author }),
-    ...(metadata?.category !== undefined && { category: metadata.category }),
-    version,
-  });
-
-  await writePluginManifest(pluginDir, manifest);
-
-  await writeContentHash(pluginDir, contentHash, getPluginManifestPath);
-
-  verbose(`  Wrote plugin.json for ${skillName} (v${version})`);
-
-  await writeFile(path.join(skillsDir, STANDARD_FILES.SKILL_MD), skillMdContent);
-  verbose(`  Copied ${STANDARD_FILES.SKILL_MD}`);
-
-  for (const fileName of SKILL_CONTENT_FILES) {
-    if (fileName === STANDARD_FILES.SKILL_MD) continue;
-
-    const sourcePath = path.join(skillPath, fileName);
-    if (await fileExists(sourcePath)) {
-      const content = await readFile(sourcePath);
-      await writeFile(path.join(skillsDir, fileName), content);
-      verbose(`  Copied ${fileName}`);
-    }
-  }
-
-  for (const dirName of SKILL_CONTENT_DIRS) {
-    const sourceDir = path.join(skillPath, dirName);
-    if (await fileExists(sourceDir)) {
-      await copy(sourceDir, path.join(skillsDir, dirName));
-      verbose(`  Copied ${dirName}/`);
-    }
-  }
 
   const readme = generateReadme(skillName, frontmatter);
   await writeFile(path.join(pluginDir, STANDARD_FILES.README_MD), readme);
   verbose("  Generated README.md");
+
+  const manifest = manifestAt(
+    versionAfterRebuild(earlierBuild, await computeShippedHash(pluginDir)),
+  );
+  await writePluginManifest(pluginDir, manifest);
+  verbose(`  Wrote plugin.json for ${skillName} (v${manifest.version})`);
 
   return {
     pluginPath: pluginDir,

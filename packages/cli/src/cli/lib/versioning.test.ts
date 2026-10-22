@@ -6,14 +6,15 @@ import {
   computeStringHash,
   computeFileHash,
   computeSkillFolderHash,
-  parseMajorVersion,
-  bumpMajorVersion,
+  computeShippedHash,
   determinePluginVersion,
+  readEarlierBuild,
+  versionAfterRebuild,
 } from "./versioning";
 import { getPluginManifestPath } from "./plugins/plugin-finder";
 import { silenceConsole } from "./__tests__/helpers/silence-console";
 import { createTempDir, cleanupTempDir } from "./__tests__/test-fs-utils";
-import { STANDARD_FILES } from "../consts";
+import { PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE, STANDARD_FILES } from "../consts";
 
 describe("getCurrentDate", () => {
   it("should return date in YYYY-MM-DD format", () => {
@@ -175,29 +176,6 @@ describe("computeSkillFolderHash", () => {
   });
 });
 
-describe("parseMajorVersion", () => {
-  it("should extract major version from semver string", () => {
-    expect(parseMajorVersion("1.0.0")).toBe(1);
-    expect(parseMajorVersion("3.2.1")).toBe(3);
-    expect(parseMajorVersion("10.0.0")).toBe(10);
-  });
-
-  it("should return 1 for non-semver strings", () => {
-    expect(parseMajorVersion("latest")).toBe(1);
-  });
-});
-
-describe("bumpMajorVersion", () => {
-  it("should increment major version and reset minor/patch", () => {
-    expect(bumpMajorVersion("1.0.0")).toBe("2.0.0");
-    expect(bumpMajorVersion("3.2.1")).toBe("4.0.0");
-  });
-
-  it("should handle non-semver by bumping from default 1", () => {
-    expect(bumpMajorVersion("latest")).toBe("2.0.0");
-  });
-});
-
 describe("computeSkillFolderHash, the hashed text", () => {
   let tempDir: string;
 
@@ -250,15 +228,10 @@ describe("computeSkillFolderHash, nested example files", () => {
   });
 });
 
-describe("parseMajorVersion, a version that does not open with its major", () => {
-  it("reads it as major 1", () => {
-    expect(parseMajorVersion("v2.0.0")).toBe(1);
-  });
-});
-
 describe("determinePluginVersion", () => {
   const consoleSpies = silenceConsole(["warn"]);
   const NEW_HASH = "abc1234";
+  const OLD_HASH = "0123456";
   let pluginDir: string;
 
   beforeEach(async () => {
@@ -296,6 +269,34 @@ describe("determinePluginVersion", () => {
     });
   });
 
+  it("bumps the major and resets minor and patch when the recorded hash differs", async () => {
+    await pluginOnDisk(JSON.stringify({ name: "acme-react", version: "3.2.1" }), OLD_HASH);
+
+    expect(await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).toStrictEqual({
+      version: "4.0.0",
+      contentHash: NEW_HASH,
+    });
+  });
+
+  it("reads a major of more than one digit", async () => {
+    await pluginOnDisk(JSON.stringify({ name: "acme-react", version: "10.0.0" }), OLD_HASH);
+
+    expect((await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).version).toBe(
+      "11.0.0",
+    );
+  });
+
+  it.each(["latest", "v2.0.0"])(
+    "bumps %s, a version that does not open with its major, as though it were major 1",
+    async (version) => {
+      await pluginOnDisk(JSON.stringify({ name: "acme-react", version }), OLD_HASH);
+
+      expect(
+        (await determinePluginVersion(NEW_HASH, pluginDir, getPluginManifestPath)).version,
+      ).toBe("2.0.0");
+    },
+  );
+
   it("starts over at 1.0.0 from a manifest it cannot read, and names it", async () => {
     const manifestPath = await pluginOnDisk("{ not json");
 
@@ -308,5 +309,138 @@ describe("determinePluginVersion", () => {
         new RegExp(`^  Warning: Failed to read plugin manifest at '${manifestPath}': .+`),
       ),
     );
+  });
+});
+
+async function writePluginFile(
+  pluginDir: string,
+  relativePath: string,
+  content: string | Uint8Array,
+): Promise<void> {
+  const filePath = path.join(pluginDir, relativePath);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, content);
+}
+
+describe("computeShippedHash", () => {
+  const MANIFEST = ".claude-plugin/plugin.json";
+  const SKILL = "skills/acme-react/SKILL.md";
+  let pluginDir: string;
+  let otherDir: string;
+
+  beforeEach(async () => {
+    pluginDir = await createTempDir("versioning-shipped-");
+    otherDir = await createTempDir("versioning-shipped-other-");
+    await writePluginFile(pluginDir, MANIFEST, '{ "name": "acme-react" }');
+    await writePluginFile(pluginDir, SKILL, "# React");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(pluginDir);
+    await cleanupTempDir(otherDir);
+  });
+
+  it("answers the same for two folders holding the same files, written in another order", async () => {
+    await writePluginFile(otherDir, SKILL, "# React");
+    await writePluginFile(otherDir, MANIFEST, '{ "name": "acme-react" }');
+
+    expect(await computeShippedHash(otherDir)).toBe(await computeShippedHash(pluginDir));
+  });
+
+  it("answers differently when one file's bytes differ", async () => {
+    await writePluginFile(otherDir, MANIFEST, '{ "name": "acme-react" }');
+    await writePluginFile(otherDir, SKILL, "# React, edited");
+
+    expect(await computeShippedHash(otherDir)).not.toBe(await computeShippedHash(pluginDir));
+  });
+
+  it.each(["skills/acme-react/examples/orphan.md", ".claude-plugin/.content-hash"])(
+    "answers differently when one folder also holds %s",
+    async (extraFile) => {
+      await writePluginFile(otherDir, MANIFEST, '{ "name": "acme-react" }');
+      await writePluginFile(otherDir, SKILL, "# React");
+      await writePluginFile(otherDir, extraFile, "0123456");
+
+      expect(await computeShippedHash(otherDir)).not.toBe(await computeShippedHash(pluginDir));
+    },
+  );
+
+  it("answers differently when the same bytes sit at another path", async () => {
+    await writePluginFile(otherDir, MANIFEST, '{ "name": "acme-react" }');
+    await writePluginFile(otherDir, "skills/acme-react/reference.md", "# React");
+
+    expect(await computeShippedHash(otherDir)).not.toBe(await computeShippedHash(pluginDir));
+  });
+
+  it("tells apart files whose bytes differ where they are not text", async () => {
+    await writePluginFile(pluginDir, "skills/acme-react/scripts/tool.bin", Uint8Array.of(0xff));
+    await writePluginFile(otherDir, MANIFEST, '{ "name": "acme-react" }');
+    await writePluginFile(otherDir, SKILL, "# React");
+    await writePluginFile(otherDir, "skills/acme-react/scripts/tool.bin", Uint8Array.of(0xfe));
+
+    expect(await computeShippedHash(otherDir)).not.toBe(await computeShippedHash(pluginDir));
+  });
+});
+
+describe("readEarlierBuild", () => {
+  const MANIFEST_PATH = path.join(PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE);
+  const consoleSpies = silenceConsole(["warn"]);
+  let pluginDir: string;
+
+  beforeEach(async () => {
+    pluginDir = await createTempDir("versioning-earlier-");
+  });
+
+  afterEach(async () => {
+    await cleanupTempDir(pluginDir);
+  });
+
+  it("answers null for a folder no build made, warning about nothing", async () => {
+    await writePluginFile(pluginDir, "notes.md", "# Not a build");
+
+    expect(await readEarlierBuild(pluginDir, getPluginManifestPath)).toBeNull();
+    expect(consoleSpies.warn).not.toHaveBeenCalled();
+  });
+
+  it("reads the earlier build's version and what its folder ships", async () => {
+    await writePluginFile(
+      pluginDir,
+      MANIFEST_PATH,
+      JSON.stringify({ name: "acme-react", version: "3.0.0" }),
+    );
+    await writePluginFile(pluginDir, "skills/acme-react/SKILL.md", "# React");
+
+    expect(await readEarlierBuild(pluginDir, getPluginManifestPath)).toStrictEqual({
+      version: "3.0.0",
+      shippedHash: await computeShippedHash(pluginDir),
+    });
+  });
+
+  it("answers null from a manifest it cannot read, and names it", async () => {
+    await writePluginFile(pluginDir, MANIFEST_PATH, "{ not json");
+    const manifestPath = path.join(pluginDir, MANIFEST_PATH);
+
+    expect(await readEarlierBuild(pluginDir, getPluginManifestPath)).toBeNull();
+    expect(consoleSpies.warn).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(
+        new RegExp(`^  Warning: Failed to read plugin manifest at '${manifestPath}': .+`),
+      ),
+    );
+  });
+});
+
+describe("versionAfterRebuild", () => {
+  const EARLIER = { version: "3.2.1", shippedHash: "0123456" };
+
+  it("starts a plugin no earlier build made at 1.0.0", () => {
+    expect(versionAfterRebuild(null, "abc1234")).toBe("1.0.0");
+  });
+
+  it("keeps the earlier version when the rebuild ships what the earlier build shipped", () => {
+    expect(versionAfterRebuild(EARLIER, EARLIER.shippedHash)).toBe("3.2.1");
+  });
+
+  it("bumps the major and resets minor and patch when the rebuild ships anything else", () => {
+    expect(versionAfterRebuild(EARLIER, "abc1234")).toBe("4.0.0");
   });
 });

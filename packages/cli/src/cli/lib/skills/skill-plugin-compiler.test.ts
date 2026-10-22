@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
-import { mkdir, readFile, stat, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "fs/promises";
 import {
   compileSkillPlugin,
   compileAllSkillPlugins,
@@ -17,6 +17,7 @@ import { setVerbose } from "../../utils/logger";
 import { initializeMatrix } from "../matrix/matrix-provider";
 import { computeSkillFolderHash } from "../versioning";
 import { firstElement } from "../__tests__/helpers/element-at.js";
+import { readInstallTree } from "../__tests__/helpers/golden-tree.js";
 import {
   PLUGIN_MANIFEST_DIR,
   PLUGIN_MANIFEST_FILE,
@@ -266,6 +267,235 @@ describe("skill-plugin-compiler", () => {
     });
   });
 
+  describe("rebuilding a plugin over its earlier build", () => {
+    async function writeFirstBuildSource(): Promise<string> {
+      const skillPath = await writeTestSkill(skillsDir, "web-testing-vitest");
+      await writeFile(path.join(skillPath, STANDARD_FILES.REFERENCE_MD), "# Reference");
+      await mkdir(path.join(skillPath, STANDARD_DIRS.EXAMPLES), { recursive: true });
+      await writeFile(path.join(skillPath, STANDARD_DIRS.EXAMPLES, "kept.md"), "# Kept");
+      await writeFile(path.join(skillPath, STANDARD_DIRS.EXAMPLES, "removed.md"), "# Removed");
+      await mkdir(path.join(skillPath, STANDARD_DIRS.SCRIPTS), { recursive: true });
+      await writeFile(path.join(skillPath, STANDARD_DIRS.SCRIPTS, "setup.sh"), "echo setup");
+      return skillPath;
+    }
+
+    async function removeFromSource(skillPath: string): Promise<void> {
+      await rm(path.join(skillPath, STANDARD_DIRS.EXAMPLES, "removed.md"));
+      await rm(path.join(skillPath, STANDARD_FILES.REFERENCE_MD));
+      await rm(path.join(skillPath, STANDARD_DIRS.SCRIPTS), { recursive: true });
+    }
+
+    it("leaves exactly the files the source produces now, and none it produced before", async () => {
+      const skillPath = await writeFirstBuildSource();
+      const first = await compileSkillPlugin({ skillPath, outputDir });
+      const firstTree = await readInstallTree(first.pluginPath);
+      expect(Object.keys(firstTree.files).sort()).toStrictEqual([
+        ".claude-plugin/.content-hash",
+        ".claude-plugin/plugin.json",
+        "README.md",
+        "skills/web-testing-vitest/SKILL.md",
+        "skills/web-testing-vitest/examples/kept.md",
+        "skills/web-testing-vitest/examples/removed.md",
+        "skills/web-testing-vitest/reference.md",
+        "skills/web-testing-vitest/scripts/setup.sh",
+      ]);
+
+      await removeFromSource(skillPath);
+      const second = await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(await readInstallTree(second.pluginPath)).toStrictEqual({
+        files: {
+          ".claude-plugin/.content-hash": await computeSkillFolderHash(skillPath),
+          ".claude-plugin/plugin.json": firstTree.files[".claude-plugin/plugin.json"]?.replace(
+            '"version": "1.0.0"',
+            '"version": "2.0.0"',
+          ),
+          "README.md": firstTree.files["README.md"],
+          "skills/web-testing-vitest/SKILL.md":
+            firstTree.files["skills/web-testing-vitest/SKILL.md"],
+          "skills/web-testing-vitest/examples/kept.md": "# Kept",
+        },
+        emptyDirectories: [],
+      });
+    });
+
+    it("carries the earlier build's version forward, bumped because the content changed", async () => {
+      const skillPath = await writeFirstBuildSource();
+      await compileSkillPlugin({ skillPath, outputDir });
+
+      await removeFromSource(skillPath);
+      const { pluginPath, manifest } = await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(manifest.version).toBe("2.0.0");
+      const written = JSON.parse(
+        await readFile(path.join(pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE), "utf-8"),
+      );
+      expect(written.version).toBe("2.0.0");
+    });
+
+    it.each([
+      [
+        "a file this build does not",
+        (pluginPath: string) =>
+          path.join(
+            pluginPath,
+            STANDARD_DIRS.SKILLS,
+            "web-testing-vitest",
+            STANDARD_DIRS.EXAMPLES,
+            "orphan.md",
+          ),
+      ],
+      [
+        "a file whose bytes this build does not reproduce",
+        (pluginPath: string) => path.join(pluginPath, STANDARD_FILES.README_MD),
+      ],
+    ])(
+      "takes a new version when its earlier build shipped %s, though the source is unchanged",
+      async (_, earlierBuildFile) => {
+        const skillPath = await writeFirstBuildSource();
+        const first = await compileSkillPlugin({ skillPath, outputDir });
+        const firstTree = await readInstallTree(first.pluginPath);
+        await writeFile(earlierBuildFile(first.pluginPath), "# Left by an earlier build");
+
+        const second = await compileSkillPlugin({ skillPath, outputDir });
+
+        expect(second.manifest.version).toBe("2.0.0");
+        expect(await readInstallTree(second.pluginPath)).toStrictEqual({
+          files: {
+            ...firstTree.files,
+            ".claude-plugin/plugin.json": firstTree.files[".claude-plugin/plugin.json"]?.replace(
+              '"version": "1.0.0"',
+              '"version": "2.0.0"',
+            ),
+          },
+          emptyDirectories: [],
+        });
+      },
+    );
+
+    it("takes a new version when only the manifest it writes changes", async () => {
+      const skillPath = await writeTestSkill(skillsDir, "web-framework-react", {
+        extraMetadata: { author: "@vince" },
+      });
+      await compileSkillPlugin({ skillPath, outputDir });
+      const sourceHash = await computeSkillFolderHash(skillPath);
+
+      await writeTestSkill(skillsDir, "web-framework-react", {
+        extraMetadata: { author: "@someone-else" },
+      });
+      const { pluginPath, manifest } = await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(await computeSkillFolderHash(skillPath)).toBe(sourceHash);
+      expect(manifest.version).toBe("2.0.0");
+      expect(manifest.author).toStrictEqual({ name: "@someone-else" });
+      expect(
+        JSON.parse(
+          await readFile(path.join(pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE), "utf-8"),
+        ),
+      ).toStrictEqual(manifest);
+    });
+
+    it("keeps the version it bumped to when the next rebuild ships the same files", async () => {
+      const skillPath = await writeFirstBuildSource();
+      await compileSkillPlugin({ skillPath, outputDir });
+      await removeFromSource(skillPath);
+      const bumped = await compileSkillPlugin({ skillPath, outputDir });
+      const bumpedTree = await readInstallTree(bumped.pluginPath);
+
+      const rebuilt = await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(rebuilt.manifest.version).toBe("2.0.0");
+      expect(await readInstallTree(rebuilt.pluginPath)).toStrictEqual(bumpedTree);
+    });
+
+    it("leaves the other plugins in the output directory as they were", async () => {
+      const otherPlugin = await compileSkillPlugin({
+        skillPath: await writeTestSkill(skillsDir, "web-framework-react"),
+        outputDir,
+      });
+      const otherBefore = await readInstallTree(otherPlugin.pluginPath);
+      const skillPath = await writeFirstBuildSource();
+      await compileSkillPlugin({ skillPath, outputDir });
+
+      await removeFromSource(skillPath);
+      await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(await readInstallTree(otherPlugin.pluginPath)).toStrictEqual(otherBefore);
+    });
+
+    it("refuses, on every build, a folder holding files but no plugin manifest, and writes nothing", async () => {
+      const skillPath = await writeFirstBuildSource();
+      const pluginDir = path.join(outputDir, "web-testing-vitest");
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(path.join(pluginDir, "notes.md"), "# Not written by a build");
+      const refusal = `Skill 'web-testing-vitest' would be built into ${pluginDir}, which holds no ${path.join(PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE)} and is not empty, so no earlier build made it and a rebuild would delete what it holds. Move its contents out, or build into another output directory. File: ${path.join(skillPath, STANDARD_FILES.SKILL_MD)}`;
+
+      await expect(compileSkillPlugin({ skillPath, outputDir })).rejects.toThrow(refusal);
+      await expect(compileSkillPlugin({ skillPath, outputDir })).rejects.toThrow(refusal);
+
+      expect(await readInstallTree(outputDir)).toStrictEqual({
+        files: { "web-testing-vitest/notes.md": "# Not written by a build" },
+        emptyDirectories: [],
+      });
+    });
+
+    it("leaves a file standing where the plugin's folder would go", async () => {
+      const skillPath = await writeFirstBuildSource();
+      await writeFile(path.join(outputDir, "web-testing-vitest"), "# Not a folder");
+
+      await expect(compileSkillPlugin({ skillPath, outputDir })).rejects.toThrow(/ENOTDIR/);
+
+      expect(await readInstallTree(outputDir)).toStrictEqual({
+        files: { "web-testing-vitest": "# Not a folder" },
+        emptyDirectories: [],
+      });
+    });
+
+    it("builds into an empty folder no earlier build made", async () => {
+      const skillPath = await writeFirstBuildSource();
+      await mkdir(path.join(outputDir, "web-testing-vitest"));
+
+      const { pluginPath } = await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(
+        await readFile(path.join(pluginPath, PLUGIN_MANIFEST_DIR, PLUGIN_MANIFEST_FILE), "utf-8"),
+      ).toContain('"version": "1.0.0"');
+    });
+
+    it.each(["", ".", "..", "../outside-the-output", "nested/name"])(
+      "refuses a skill named '%s', which is not a folder directly inside the output directory, and writes nothing",
+      async (name) => {
+        const otherPlugin = await compileSkillPlugin({
+          skillPath: await writeTestSkill(skillsDir, "web-framework-react"),
+          outputDir,
+        });
+        const outputBefore = await readInstallTree(outputDir);
+        const tempBefore = await readInstallTree(tempDir, { skip: ["skills"] });
+        const skillPath = await writeTestSkill(skillsDir, "web-state-zustand", {
+          // Quoted, so an empty name reaches the compiler as "" rather than as a YAML null.
+          skillContent: renderSkillMd(JSON.stringify(name), "A name that is not a folder name"),
+        });
+
+        await expect(compileSkillPlugin({ skillPath, outputDir })).rejects.toThrow(
+          `Skill 'web-state-zustand' is named '${name}', which is not a single folder name, so its plugin cannot be built inside the output directory. File: ${path.join(skillPath, STANDARD_FILES.SKILL_MD)}`,
+        );
+        expect(await readInstallTree(outputDir)).toStrictEqual(outputBefore);
+        expect(await readInstallTree(tempDir, { skip: ["skills"] })).toStrictEqual(tempBefore);
+        expect(otherPlugin.skillName).toBe("web-framework-react");
+      },
+    );
+
+    it("refuses to build a plugin into the folder holding its own source, and writes nothing", async () => {
+      const skillPath = await writeFirstBuildSource();
+      const sourceBefore = await readInstallTree(skillsDir);
+
+      await expect(compileSkillPlugin({ skillPath, outputDir: skillsDir })).rejects.toThrow(
+        `Skill 'web-testing-vitest' would be built into ${skillPath}, which holds its own source, so building it would overwrite that source. Build into an output directory outside the skills directory. File: ${path.join(skillPath, STANDARD_FILES.SKILL_MD)}`,
+      );
+      expect(await readInstallTree(skillsDir)).toStrictEqual(sourceBefore);
+    });
+  });
+
   describe("compileAllSkillPlugins", () => {
     it("should compile multiple skills from directory", async () => {
       await writeTestSkill(skillsDir, "web-framework-react");
@@ -307,7 +537,6 @@ describe("skill-plugin-compiler", () => {
       const { compiled: results } = await compileAllSkillPlugins(skillsDir, outputDir);
 
       expect(results).toHaveLength(1);
-      // Should use frontmatter.name, not directory name
       expect(firstElement(results).skillName).toBe("actual-skill-name");
     });
 
@@ -458,11 +687,11 @@ describe("skill-plugin-compiler", () => {
 
       const said = [
         `  Compiling skill plugin: web-framework-react from ${skillPath}`,
-        "    Wrote plugin.json for web-framework-react (v1.0.0)",
         "    Copied SKILL.md",
         "    Copied reference.md",
         "    Copied examples/",
         "    Generated README.md",
+        "    Wrote plugin.json for web-framework-react (v1.0.0)",
       ];
       expect(consoleSpies.log).toHaveBeenCalledTimes(said.length);
       said.forEach((line, index) =>
@@ -480,6 +709,22 @@ describe("skill-plugin-compiler", () => {
         ),
       ).toBe("# Reference");
       expect(consoleSpies.warn).not.toHaveBeenCalled();
+    });
+
+    it("says the version a rebuild settled on", async () => {
+      const skillPath = await writeTestSkill(skillsDir, "web-framework-react");
+      const { pluginPath } = await compileSkillPlugin({ skillPath, outputDir });
+      await writeFile(
+        path.join(pluginPath, STANDARD_FILES.README_MD),
+        "# Left by an earlier build",
+      );
+      setVerbose(true);
+
+      await compileSkillPlugin({ skillPath, outputDir });
+
+      expect(consoleSpies.log).toHaveBeenLastCalledWith(
+        "    Wrote plugin.json for web-framework-react (v2.0.0)",
+      );
     });
 
     it("says nothing about a skill with no metadata.yaml", async () => {

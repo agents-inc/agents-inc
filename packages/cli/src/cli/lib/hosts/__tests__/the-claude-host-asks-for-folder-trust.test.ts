@@ -24,7 +24,6 @@ import {
 const WRITING_AGENT = "web-developer";
 const READ_ONLY_AGENT = "web-researcher";
 
-/** `Write` or `Edit` earns a sub-agent compile's completion gate. */
 const WRITING_TOOLS = ["Read", "Write", "Edit"];
 const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
 
@@ -42,11 +41,21 @@ const A_POST_TOOL_USE_HOOK = JSON.stringify({
 
 const AN_EMPTY_STOP_HOOK = JSON.stringify({ Stop: [] });
 
-/** Written by hand: Claude Code runs only a top-level `hooks:` key, so this gate never runs. */
-const A_STOP_HOOK_NESTED_UNDER_ANOTHER_KEY = `${A_POST_TOOL_USE_HOOK}\nmetadata:\n  hooks: ${A_STOP_HOOK}`;
+/** Written by hand: Claude Code runs only a top-level `hooks:` key, so this hook never runs. */
+const A_STOP_HOOK_NESTED_UNDER_ANOTHER_KEY = `{}\nmetadata:\n  hooks: ${A_STOP_HOOK}`;
 
 /** Written by hand, with more space after `hooks:` than the compiler writes. */
 const A_SPACED_OUT_STOP_HOOK = `   ${A_STOP_HOOK}`;
+
+/** Written by hand as block YAML rather than the compiler's one JSON line. */
+const A_POST_TOOL_USE_HOOK_IN_BLOCK_YAML = [
+  "",
+  "  PostToolUse:",
+  "    - matcher: Bash",
+  "      hooks:",
+  "        - type: command",
+  "          command: echo ran",
+].join("\n");
 
 let home: IsolatedHome;
 
@@ -75,8 +84,8 @@ async function compiledIntoTheProject(
   await compiledInto(home.projectDir, name, frontmatter);
 }
 
-async function writingAgentCompiled(name: string, stopHook = A_STOP_HOOK): Promise<void> {
-  await compiledIntoTheProject(name, { tools: WRITING_TOOLS, hooks: stopHook });
+async function writingAgentCompiled(name: string, hooks = A_STOP_HOOK): Promise<void> {
+  await compiledIntoTheProject(name, { tools: WRITING_TOOLS, hooks });
 }
 
 /** From the home directory, the project's agents folder is the global `~/.claude/agents/`. */
@@ -135,7 +144,7 @@ describe("a Claude install asks for the folder to be trusted", () => {
     expect(await claudeCompileNotices("claude", home.projectDir)).toHaveLength(1);
   });
 
-  it("speaks for a completion gate the sub-agent declared under SubagentStop", async () => {
+  it("speaks for a hook the sub-agent declared under SubagentStop", async () => {
     await writingAgentCompiled(WRITING_AGENT, A_SUBAGENT_STOP_HOOK);
 
     expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([
@@ -143,7 +152,16 @@ describe("a Claude install asks for the folder to be trusted", () => {
     ]);
   });
 
-  it("speaks for a completion gate written by hand with more space after its key", async () => {
+  it("speaks for a read-only sub-agent whose only hook is a PostToolUse hook", async () => {
+    await readOnlyAgentCompiled(READ_ONLY_AGENT, A_POST_TOOL_USE_HOOK);
+
+    expect(
+      await claudeCompileNotices("claude", home.projectDir),
+      "Claude Code drops a project sub-agent's hooks on every event until the folder is trusted",
+    ).toStrictEqual([claudeProjectNeedsTrustMessage(home.projectDir, 1)]);
+  });
+
+  it("speaks for a hook written by hand with more space after its key", async () => {
     await writingAgentCompiled(WRITING_AGENT, A_SPACED_OUT_STOP_HOOK);
 
     expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([
@@ -151,20 +169,22 @@ describe("a Claude install asks for the folder to be trusted", () => {
     ]);
   });
 
-  it("says nothing about a Stop hook nested under another key, which Claude Code never runs", async () => {
+  it("speaks for a hook written by hand as block YAML", async () => {
+    await readOnlyAgentCompiled(READ_ONLY_AGENT, A_POST_TOOL_USE_HOOK_IN_BLOCK_YAML);
+
+    expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([
+      claudeProjectNeedsTrustMessage(home.projectDir, 1),
+    ]);
+  });
+
+  it("says nothing about a hook nested under another key, which Claude Code never runs", async () => {
     await writingAgentCompiled(WRITING_AGENT, A_STOP_HOOK_NESTED_UNDER_ANOTHER_KEY);
 
     expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([]);
   });
 
-  it("says nothing about a project whose sub-agents carry no completion gate", async () => {
+  it("says nothing about a project whose sub-agents declare no hook", async () => {
     await readOnlyAgentCompiled(READ_ONLY_AGENT);
-
-    expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([]);
-  });
-
-  it("says nothing about a sub-agent whose only hook is on another event", async () => {
-    await readOnlyAgentCompiled(READ_ONLY_AGENT, A_POST_TOOL_USE_HOOK);
 
     expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([]);
   });
@@ -181,9 +201,9 @@ describe("a Claude install asks for the folder to be trusted", () => {
     expect(await claudeCompileNotices("claude", os.homedir())).toStrictEqual([]);
   });
 
-  it("counts only the sub-agents carrying a completion gate", async () => {
+  it("counts only the sub-agents declaring a hook, on whichever event", async () => {
     await writingAgentCompiled(WRITING_AGENT);
-    await writingAgentCompiled("web-tester");
+    await writingAgentCompiled("web-tester", A_POST_TOOL_USE_HOOK);
     await readOnlyAgentCompiled(READ_ONLY_AGENT);
 
     expect(await claudeCompileNotices("claude", home.projectDir)).toStrictEqual([
@@ -417,15 +437,15 @@ describe("a Claude install reads the trust record where CLAUDE_CONFIG_DIR puts i
 });
 
 describe("the words a Claude trust notice is in", () => {
-  it("asks for the trust prompt, naming the folder and one gate", () => {
+  it("asks for the trust prompt, naming the folder and one sub-agent's hooks", () => {
     expect(claudeProjectNeedsTrustMessage("/work/app", 1)).toBe(
-      "Claude Code runs a project sub-agent's completion gate (its Stop hook — the project's typecheck, unless the sub-agent declares its own) only once you trust the folder: open Claude Code in /work/app and accept the trust prompt. Until then, 1 sub-agent's completion gate will not run, and nothing will say so.",
+      "Claude Code runs a project sub-agent's hooks only once you trust the folder: open Claude Code in /work/app and accept the trust prompt. Until then, 1 sub-agent's hooks will not run, and nothing will say so.",
     );
   });
 
-  it("counts several gates in the plural, and names the record to set where Claude Code never asks", () => {
+  it("counts several sub-agents in the plural, and names the record to set where Claude Code never asks", () => {
     expect(claudeProjectNeverAskedMessage("/work/app", 3)).toBe(
-      `Claude Code runs 3 sub-agents' completion gates only once you trust the folder, and will not ask here: set projects["/work/app"].hasTrustDialogAccepted to true in ${claudeStateFile()}.`,
+      `Claude Code runs 3 sub-agents' hooks only once you trust the folder, and will not ask here: set projects["/work/app"].hasTrustDialogAccepted to true in ${claudeStateFile()}.`,
     );
   });
 });
